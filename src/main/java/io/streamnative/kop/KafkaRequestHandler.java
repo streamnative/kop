@@ -10,20 +10,20 @@ import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 
 @Slf4j
-public class KafkaRequestHandler extends KopCommandDecoder {
+public class KafkaRequestHandler extends KafkaCommandDecoder {
 
-    private final KopService kopService;
+    private final KafkaService kafkaService;
     private final String clusterName;
     private final String kafkaNamespace;
     private final ExecutorService executor;
 
-    public KafkaRequestHandler(KopService kopService) {
+    public KafkaRequestHandler(KafkaService kafkaService) {
         super();
-        this.kopService = kopService;
+        this.kafkaService = kafkaService;
 
-        this.clusterName = kopService.getKopConfig().getClusterName();
-        this.kafkaNamespace = kopService.getKopConfig().getKopClusterName();
-        this.executor = kopService.getExecutor();
+        this.clusterName = kafkaService.getKafkaConfig().getClusterName();
+        this.kafkaNamespace = kafkaService.getKafkaConfig().getKafkaNamespace();
+        this.executor = kafkaService.getExecutor();
     }
 
     protected void handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest) {

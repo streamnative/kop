@@ -32,7 +32,7 @@ import org.apache.pulsar.common.protocol.Commands;
 import org.slf4j.bridge.SLF4JBridgeHandler;
 
 @Slf4j
-public class KopStarter {
+public class KafkaStarter {
 
     private static class BrokerStarter {
         private final KafkaServiceConfiguration brokerConfig;

@@ -14,8 +14,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
-import io.streamnative.kop.KopCommandDecoder.KafkaHeaderAndRequest;
-import io.streamnative.kop.KopCommandDecoder.KafkaHeaderAndResponse;
+import io.streamnative.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
+import io.streamnative.kop.KafkaCommandDecoder.KafkaHeaderAndResponse;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -28,18 +28,18 @@ import org.testng.annotations.Test;
 
 public class KafkaRequestHandlerTest {
 
-    private KopService kopService;
+    private KafkaService kafkaService;
 
     private KafkaRequestHandler handler;
 
     @BeforeMethod
     public void setup() {
-        kopService = new KopService(new KopServiceConfiguration());
-        handler = new KafkaRequestHandler(kopService);
+        kafkaService = new KafkaService(new KafkaServiceConfiguration());
+        handler = new KafkaRequestHandler(kafkaService);
     }
 
     @Test
-    public void TestByteBufToRequest() {
+    public void testByteBufToRequest() {
         int correlationId = 7777;
         String clientId = "KopClientId";
 
@@ -71,7 +71,7 @@ public class KafkaRequestHandlerTest {
 
 
     @Test
-    public void TestResponseToByteBuf() throws Exception {
+    public void testResponseToByteBuf() throws Exception {
         int correlationId = 7777;
         String clientId = "KopClientId";
 
@@ -132,7 +132,7 @@ public class KafkaRequestHandlerTest {
         handler = mock(KafkaRequestHandler.class, CALLS_REAL_METHODS);
         handler.channelActive(ctx);
         handler.channelRead(mock(ChannelHandlerContext.class), inputBuf);
-        
+
         verify(handler, times(1)).handleApiVersionsRequest(anyObject());
     }
 
