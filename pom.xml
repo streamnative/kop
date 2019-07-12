@@ -1,4 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -11,7 +26,7 @@
 
   <properties>
     <redirectTestOutputToFile>true</redirectTestOutputToFile>
-    <pulsar.version>2.4.0-kop</pulsar.version>
+    <pulsar.version>2.4.0</pulsar.version>
     <netty.version>4.1.32.Final</netty.version>
     <guava.version>21.0</guava.version>
     <grpc.version>1.18.0</grpc.version>
@@ -26,6 +41,8 @@
     <lombok.version>1.18.4</lombok.version>
     <dockerfile-maven.version>1.4.9</dockerfile-maven.version>
     <testcontainers.version>1.11.2</testcontainers.version>
+    <!-- plugin dependencies -->
+    <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
   </properties>
 
   <dependencies>
@@ -173,7 +190,39 @@
           <trimStackTrace>false</trimStackTrace>
         </configuration>
       </plugin>
+      <plugin>
+        <groupId>com.mycila</groupId>
+        <artifactId>license-maven-plugin</artifactId>
+        <version>${license-maven-plugin.version}</version>
+        <configuration>
+          <header>src/resources/license.template</header>
 
+          <excludes>
+            <exclude>LICENSE</exclude>
+            <exclude>NOTICE</exclude>
+            <exclude>src/resources/license.template</exclude>
+            <exclude>**/build/**</exclude>
+            <exclude>**/ahc.properties</exclude>
+          </excludes>
+          <mapping>
+            <proto>JAVADOC_STYLE</proto>
+            <go>DOUBLESLASH_STYLE</go>
+            <conf>SCRIPT_STYLE</conf>
+            <ini>SCRIPT_STYLE</ini>
+            <yaml>SCRIPT_STYLE</yaml>
+            <tf>SCRIPT_STYLE</tf>
+            <cfg>SCRIPT_STYLE</cfg>
+            <Makefile>SCRIPT_STYLE</Makefile>
+            <service>SCRIPT_STYLE</service>
+            <cc>JAVADOC_STYLE</cc>
+            <md>XML_STYLE</md>
+            <txt>SCRIPT_STYLE</txt>
+            <scss>JAVADOC_STYLE</scss>
+            <Doxyfile>SCRIPT_STYLE</Doxyfile>
+            <tfvars>SCRIPT_STYLE</tfvars>
+          </mapping>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
 
