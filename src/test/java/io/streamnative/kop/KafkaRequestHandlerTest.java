@@ -39,6 +39,9 @@ import org.apache.kafka.common.requests.ResponseHeader;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
+/**
+ * Unit test for {@link KafkaRequestHandler}.
+ */
 public class KafkaRequestHandlerTest {
 
     private KafkaService kafkaService;

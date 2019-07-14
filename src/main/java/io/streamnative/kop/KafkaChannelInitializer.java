@@ -18,12 +18,16 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 
+/**
+ * A channel initializer that initialize channels for kafka protocol.
+ */
 public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
+
+    static final int MAX_FRAME_LENGTH = 100 * 1024 * 1024; // 100MB
 
     private final KafkaService kafkaService;
     // TODO: handle TLS -- https://github.com/streamnative/kop/issues/2
     private final boolean enableTls;
-    final static int MAX_FRAME_LENGTH = 100 * 1024 * 1024; // 100MB
 
     public KafkaChannelInitializer(KafkaService kafkaService, boolean enableTLS) throws Exception {
         super();
@@ -34,7 +38,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     @Override
     protected void initChannel(SocketChannel ch) throws Exception {
         ch.pipeline().addLast(new LengthFieldPrepender(4));
-        ch.pipeline().addLast("frameDecoder", new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
+        ch.pipeline().addLast("frameDecoder",
+            new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler", new KafkaRequestHandler(kafkaService));
     }
 }

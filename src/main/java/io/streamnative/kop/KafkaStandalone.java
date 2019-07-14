@@ -27,6 +27,9 @@ import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.apache.pulsar.zookeeper.LocalBookkeeperEnsemble;
 
+/**
+ * A standalone instance includes all the components for running Kafka-on-Pulsar.
+ */
 @Slf4j
 public class KafkaStandalone implements AutoCloseable {
     KafkaService kafkaBroker;
@@ -58,7 +61,9 @@ public class KafkaStandalone implements AutoCloseable {
         this.advertisedAddress = advertisedAddress;
     }
 
-    public void setConfig(KafkaServiceConfiguration config) { this.config = config; }
+    public void setConfig(KafkaServiceConfiguration config) {
+        this.config = config;
+    }
 
     public void setConfigFile(String configFile) {
         this.configFile = configFile;
@@ -198,7 +203,7 @@ public class KafkaStandalone implements AutoCloseable {
     public void start() throws Exception {
 
         if (config == null) {
-            System.exit(1);
+            throw new IllegalArgumentException("Null configuration is provided");
         }
 
         log.info("--- setup KafkaStandaloneStarter ---");
@@ -256,7 +261,8 @@ public class KafkaStandalone implements AutoCloseable {
             }
             if (!admin.namespaces().getNamespaces(publicTenant).contains(defaultNamespace)) {
                 admin.namespaces().createNamespace(defaultNamespace);
-                admin.namespaces().setNamespaceReplicationClusters(defaultNamespace, Sets.newHashSet(config.getClusterName()));
+                admin.namespaces().setNamespaceReplicationClusters(
+                    defaultNamespace, Sets.newHashSet(config.getClusterName()));
             }
         } catch (PulsarAdminException e) {
             log.info("error while create default namespace: {}", e.getMessage());

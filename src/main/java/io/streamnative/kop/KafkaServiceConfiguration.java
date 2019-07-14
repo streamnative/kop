@@ -32,7 +32,10 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private static final String CATEGORY_KOP = "Kafka on Pulsar";
 
 
-    /***** --- Kafka on Pulsar Broker configuration --- ****/
+    //
+    // --- Kafka on Pulsar Broker configuration ---
+    //
+
     @FieldContext(
         category = CATEGORY_KOP,
         required = true,

@@ -27,9 +27,8 @@ import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.util.netty.EventLoopUtil;
 
 /**
- * Main class for Pulsar kafkaBroker service
+ * Main class for Pulsar kafkaBroker service.
  */
-
 @Slf4j
 public class KafkaBrokerService extends BrokerService {
 

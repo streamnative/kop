@@ -25,27 +25,56 @@
 
 
   <properties>
+    <javac.target>1.8</javac.target>
     <redirectTestOutputToFile>true</redirectTestOutputToFile>
-    <pulsar.version>2.4.0</pulsar.version>
-    <netty.version>4.1.32.Final</netty.version>
+
+    <!-- dependencies -->
+    <commons-lang3.version>3.4</commons-lang3.version>
     <guava.version>21.0</guava.version>
     <grpc.version>1.18.0</grpc.version>
-    <slf4j.version>1.7.25</slf4j.version>
-    <kafka.version>2.0.0</kafka.version>
-    <testng.version>6.14.3</testng.version>
-    <log4j2.version>2.10.0</log4j2.version>
     <jackson.version>2.9.8</jackson.version>
     <jcommander.version>1.48</jcommander.version>
-    <commons-lang3.version>3.4</commons-lang3.version>
-    <mockito.version>2.22.0</mockito.version>
+    <kafka.version>2.0.0</kafka.version>
+    <log4j2.version>2.10.0</log4j2.version>
     <lombok.version>1.18.4</lombok.version>
-    <dockerfile-maven.version>1.4.9</dockerfile-maven.version>
+    <mockito.version>2.22.0</mockito.version>
+    <netty.version>4.1.32.Final</netty.version>
+    <pulsar.version>2.4.0</pulsar.version>
+    <slf4j.version>1.7.25</slf4j.version>
+    <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
     <testcontainers.version>1.11.2</testcontainers.version>
+    <testng.version>6.14.3</testng.version>
     <!-- plugin dependencies -->
+    <dockerfile-maven.version>1.4.9</dockerfile-maven.version>
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
+    <maven-checkstyle-plugin.version>3.0.0</maven-checkstyle-plugin.version>
+    <maven-compiler-plugin.version>3.8.0</maven-compiler-plugin.version>
+    <maven-surefire-plugin.version>3.0.0-M1</maven-surefire-plugin.version>
+    <os-maven-plugin.version>1.4.1.Final</os-maven-plugin.version>
+    <puppycrawl.checkstyle.version>6.19</puppycrawl.checkstyle.version>
+    <spotbugs-maven-plugin.version>3.1.8</spotbugs-maven-plugin.version>
   </properties>
 
+  <!-- dependency definitions -->
+  <dependencyManagement>
+    <dependencies>
+      <!-- provided dependencies -->
+      <dependency>
+        <groupId>com.github.spotbugs</groupId>
+        <artifactId>spotbugs-annotations</artifactId>
+        <version>${spotbugs-annotations.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
   <dependencies>
+    <!-- provided dependencies (available at compilation and test classpths and *NOT* packaged) -->
+    <dependency>
+      <groupId>com.github.spotbugs</groupId>
+      <artifactId>spotbugs-annotations</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
     <dependency>
       <groupId>io.grpc</groupId>
       <artifactId>grpc-core</artifactId>
@@ -170,19 +199,68 @@
   </dependencies>
 
   <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-checkstyle-plugin</artifactId>
+          <version>${maven-checkstyle-plugin.version}</version>
+          <dependencies>
+            <dependency>
+              <groupId>com.puppycrawl.tools</groupId>
+              <artifactId>checkstyle</artifactId>
+              <version>${puppycrawl.checkstyle.version}</version>
+            </dependency>
+          </dependencies>
+          <configuration>
+            <configLocation>src/resources/streamnative/checkstyle.xml</configLocation>
+            <suppressionsLocation>src/resources/streamnative/suppressions.xml</suppressionsLocation>
+            <encoding>UTF-8</encoding>
+            <consoleOutput>true</consoleOutput>
+            <failOnViolation>true</failOnViolation>
+            <includeResources>false</includeResources>
+            <includeTestSourceDirectory>true</includeTestSourceDirectory>
+          </configuration>
+          <executions>
+            <execution>
+              <id>checkstyle</id>
+              <phase>validate</phase>
+              <goals>
+                <goal>check</goal>
+              </goals>
+            </execution>
+          </executions>
+        </plugin>
+      </plugins>
+    </pluginManagement>
     <plugins>
       <plugin>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.8.0</version>
+        <groupId>com.github.spotbugs</groupId>
+        <artifactId>spotbugs-maven-plugin</artifactId>
+        <version>${spotbugs-maven-plugin.version}</version>
         <configuration>
-          <source>1.8</source>
-          <target>1.8</target>
+          <excludeFilterFile>${session.executionRootDirectory}/src/resources/streamnative/findbugsExclude.xml</excludeFilterFile>
+        </configuration>
+      </plugin>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>${maven-compiler-plugin.version}</version>
+        <configuration>
+          <source>${javac.target}</source>
+          <target>${javac.target}</target>
+          <compilerArgs>
+            <compilerArg>-Werror</compilerArg>
+            <compilerArg>-Xlint:deprecation</compilerArg>
+            <compilerArg>-Xlint:unchecked</compilerArg>
+            <!-- https://issues.apache.org/jira/browse/MCOMPILER-205 -->
+            <compilerArg>-Xpkginfo:always</compilerArg>
+          </compilerArgs>
         </configuration>
       </plugin>
 
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.0.0-M1</version>
+        <version>${maven-surefire-plugin.version}</version>
         <configuration>
           <reuseForks>false</reuseForks>
           <forkCount>1</forkCount>

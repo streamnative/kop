@@ -14,12 +14,12 @@
 package org.apache.pulsar.broker.service;
 
 /**
- * Util class to access {@link BrokerService}
+ * Util class to access {@link BrokerService}.
  */
 public final class BrokerServiceUtil {
 
     /**
-     * Start the stats updater for the given broker service
+     * Start the stats updater for the given broker service.
      *
      * @param service the broker service
      * @param statsUpdateInitailDelayInSecs initial delay in seconds
