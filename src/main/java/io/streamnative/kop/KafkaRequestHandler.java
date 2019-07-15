@@ -22,6 +22,9 @@ import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 
+/**
+ * A request handler to handle kafka requests.
+ */
 @Slf4j
 public class KafkaRequestHandler extends KafkaCommandDecoder {
 

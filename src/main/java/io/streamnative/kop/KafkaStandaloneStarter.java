@@ -20,10 +20,12 @@ import com.beust.jcommander.JCommander;
 import java.io.FileInputStream;
 import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 
+/**
+ * Starter to start kafka-on-pulsar broker.
+ */
 @Slf4j
 public class KafkaStandaloneStarter extends KafkaStandalone {
 
@@ -49,7 +51,9 @@ public class KafkaStandaloneStarter extends KafkaStandalone {
             return;
         }
 
-        this.config = PulsarConfigurationLoader.create((new FileInputStream(this.getConfigFile())), KafkaServiceConfiguration.class);
+        this.config = PulsarConfigurationLoader.create(
+            new FileInputStream(this.getConfigFile()),
+            KafkaServiceConfiguration.class);
 
         String zkServers = "127.0.0.1";
 
@@ -66,7 +70,7 @@ public class KafkaStandaloneStarter extends KafkaStandalone {
 
         // Set ZK server's host to localhost
         // Priority: args > conf > default
-        if (argsContains(args,"--zookeeper-port")) {
+        if (argsContains(args, "--zookeeper-port")) {
             config.setZookeeperServers(zkServers + ":" + this.getZkPort());
         } else {
             if (config.getZookeeperServers() != null) {

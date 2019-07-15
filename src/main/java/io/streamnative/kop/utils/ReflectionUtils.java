@@ -29,6 +29,7 @@ public final class ReflectionUtils {
      * @param fieldName the private field name
      * @return the value of the private field
      */
+    @SuppressWarnings("unchecked")
     public static <T> T getField(Object privateObject, String fieldName) {
         try {
             Field privateField = privateObject.getClass().getDeclaredField(fieldName);

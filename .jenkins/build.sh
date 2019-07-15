@@ -19,4 +19,4 @@ PRJ_HOME=`cd ${JENKINS_DIR}/..;pwd`
 
 cd ${PRJ_HOME}
 
-mvn clean license:check install
+mvn clean license:check checkstyle:check install spotbugs:check

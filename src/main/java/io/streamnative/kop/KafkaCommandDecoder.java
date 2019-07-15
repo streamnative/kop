@@ -32,6 +32,9 @@ import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
 
+/**
+ * A decoder that decodes kafka requests and responses.
+ */
 @Slf4j
 public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected ChannelHandlerContext ctx;
@@ -69,8 +72,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     }
 
     protected ByteBuf responseToByteBuf(AbstractResponse response, KafkaHeaderAndRequest request) {
-        try(KafkaHeaderAndResponse kafkaHeaderAndResponse
-                = KafkaHeaderAndResponse.responseForRequest(request, response)) {
+        try (KafkaHeaderAndResponse kafkaHeaderAndResponse =
+                 KafkaHeaderAndResponse.responseForRequest(request, response)) {
 
             ByteBuffer serialized = kafkaHeaderAndResponse
                 .getResponse()
@@ -209,7 +212,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         private final AbstractResponse response;
         private final ByteBuf buffer;
 
-        private KafkaHeaderAndResponse(short apiVersion, ResponseHeader header, AbstractResponse response, ByteBuf buffer) {
+        private KafkaHeaderAndResponse(short apiVersion,
+                                       ResponseHeader header,
+                                       AbstractResponse response,
+                                       ByteBuf buffer) {
             this.apiVersion = apiVersion;
             this.header = header;
             this.response = response;
@@ -229,11 +235,16 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
 
         static KafkaHeaderAndResponse responseForRequest(KafkaHeaderAndRequest request, AbstractResponse response) {
-            return new KafkaHeaderAndResponse(request.getHeader().apiVersion(), request.getHeader().toResponseHeader(), response, request.getBuffer());
+            return new KafkaHeaderAndResponse(
+                request.getHeader().apiVersion(),
+                request.getHeader().toResponseHeader(),
+                response,
+                request.getBuffer());
         }
 
         public String toString() {
-            return String.format("KafkaHeaderAndResponse(header=%s,response=%s)", this.header.toStruct().toString(), this.response.toString(this.getApiVersion()));
+            return String.format("KafkaHeaderAndResponse(header=%s,response=%s)",
+                this.header.toStruct().toString(), this.response.toString(this.getApiVersion()));
         }
 
         @Override

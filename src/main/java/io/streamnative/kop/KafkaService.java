@@ -36,9 +36,8 @@ import org.apache.pulsar.zookeeper.LocalZooKeeperConnectionService;
 import org.eclipse.jetty.servlet.ServletHolder;
 
 /**
- * Main class for Pulsar broker service
+ * Main class for Kafka-on-Pulsar broker service.
  */
-
 @Slf4j
 public class KafkaService extends PulsarService {
 
@@ -55,10 +54,12 @@ public class KafkaService extends PulsarService {
         ReentrantLock lock = ReflectionUtils.getField(this, "mutex");
 
         lock.lock();
-        log.info("Starting Pulsar Broker service powered by Pulsar version: '{}'", (getBrokerVersion() != null ? getBrokerVersion() : "unknown" )  );
-        // TODO: add Kafka on Pulsar Verison support -- https://github.com/streamnative/kop/issues/3
 
         try {
+            // TODO: add Kafka on Pulsar Verison support -- https://github.com/streamnative/kop/issues/3
+            log.info("Starting Pulsar Broker service powered by Pulsar version: '{}'",
+                (getBrokerVersion() != null ? getBrokerVersion() : "unknown"));
+
             if (getState() != State.Init) {
                 throw new PulsarServerException("Cannot start the service once it was stopped");
             }
@@ -143,12 +144,18 @@ public class KafkaService extends PulsarService {
                     return getState() == State.Started;
                 }
             });
-            webService.addRestResources("/", VipStatus.class.getPackage().getName(), false, vipAttributeMap);
-            webService.addRestResources("/", "org.apache.pulsar.broker.web", false, attributeMap);
-            webService.addRestResources("/admin", "org.apache.pulsar.broker.admin.v1", true, attributeMap);
-            webService.addRestResources("/admin/v2", "org.apache.pulsar.broker.admin.v2", true, attributeMap);
-            webService.addRestResources("/admin/v3", "org.apache.pulsar.broker.admin.v3", true, attributeMap);
-            webService.addRestResources("/lookup", "org.apache.pulsar.broker.lookup", true, attributeMap);
+            webService.addRestResources("/",
+                VipStatus.class.getPackage().getName(), false, vipAttributeMap);
+            webService.addRestResources("/",
+                "org.apache.pulsar.broker.web", false, attributeMap);
+            webService.addRestResources("/admin",
+                "org.apache.pulsar.broker.admin.v1", true, attributeMap);
+            webService.addRestResources("/admin/v2",
+                "org.apache.pulsar.broker.admin.v2", true, attributeMap);
+            webService.addRestResources("/admin/v3",
+                "org.apache.pulsar.broker.admin.v3", true, attributeMap);
+            webService.addRestResources("/lookup",
+                "org.apache.pulsar.broker.lookup", true, attributeMap);
 
             webService.addServlet("/metrics",
                 new ServletHolder(
@@ -196,10 +203,14 @@ public class KafkaService extends PulsarService {
                 "acquireSLANamespace");
 
             final String bootstrapMessage = "bootstrap service "
-                    + (kafkaConfig.getWebServicePort().isPresent() ? "port = " + kafkaConfig.getWebServicePort().get() : "")
-                    + (kafkaConfig.getWebServicePortTls().isPresent() ? "tls-port = " + kafkaConfig.getWebServicePortTls() : "")
-                    + (kafkaConfig.getKafkaServicePort().isPresent() ? "broker url= " + kafkaConfig.getKafkaServicePort() : "")
-                    + (kafkaConfig.getKafkaServicePortTls().isPresent() ? "broker url= " + kafkaConfig.getKafkaServicePortTls() : "");
+                    + (kafkaConfig.getWebServicePort().isPresent()
+                ? "port = " + kafkaConfig.getWebServicePort().get() : "")
+                    + (kafkaConfig.getWebServicePortTls().isPresent()
+                ? "tls-port = " + kafkaConfig.getWebServicePortTls() : "")
+                    + (kafkaConfig.getKafkaServicePort().isPresent()
+                ? "broker url= " + kafkaConfig.getKafkaServicePort() : "")
+                    + (kafkaConfig.getKafkaServicePortTls().isPresent()
+                ? "broker url= " + kafkaConfig.getKafkaServicePortTls() : "");
 
             log.info("Kafka messaging service is ready, {}, cluster={}, configs={}", bootstrapMessage,
                 kafkaConfig.getClusterName(), ReflectionToStringBuilder.toString(kafkaConfig));

@@ -24,6 +24,7 @@ import static org.apache.pulsar.common.configuration.PulsarConfigurationLoader.i
 import com.beust.jcommander.JCommander;
 import com.beust.jcommander.Parameter;
 import com.google.common.annotations.VisibleForTesting;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.File;
 import java.io.FileInputStream;
 import java.net.MalformedURLException;
@@ -44,6 +45,9 @@ import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.protocol.Commands;
 import org.slf4j.bridge.SLF4JBridgeHandler;
 
+/**
+ * A starter to start Kafka-on-Pulsar broker.
+ */
 @Slf4j
 public class KafkaStarter {
 
@@ -55,7 +59,7 @@ public class KafkaStarter {
         private final StatsProvider bookieStatsProvider;
         private final ServerConfiguration bookieConfig;
 
-        BrokerStarter(String[] args) throws Exception{
+        BrokerStarter(String[] args) throws Exception {
             StarterArguments starterArguments = new StarterArguments();
             JCommander jcommander = new JCommander(starterArguments);
             jcommander.setProgramName("PulsarBrokerStarter");
@@ -64,7 +68,7 @@ public class KafkaStarter {
             jcommander.parse(args);
             if (starterArguments.help) {
                 jcommander.usage();
-                System.exit(-1);
+                Runtime.getRuntime().exit(-1);
             }
 
             // init broker config
@@ -85,12 +89,12 @@ public class KafkaStarter {
 
             // if no argument to run bookie in cmd line, read from pulsar config
             if (!argsContains(args, "-rb") && !argsContains(args, "--run-bookie")) {
-                checkState(starterArguments.runBookie == false,
+                checkState(!starterArguments.runBookie,
                     "runBookie should be false if has no argument specified");
                 starterArguments.runBookie = brokerConfig.isEnableRunBookieTogether();
             }
             if (!argsContains(args, "-ra") && !argsContains(args, "--run-bookie-autorecovery")) {
-                checkState(starterArguments.runBookieAutoRecovery == false,
+                checkState(!starterArguments.runBookieAutoRecovery,
                     "runBookieAutoRecovery should be false if has no argument specified");
                 starterArguments.runBookieAutoRecovery = brokerConfig.isEnableRunBookieAutoRecoveryTogether();
             }
@@ -160,6 +164,7 @@ public class KafkaStarter {
             }
         }
 
+        @SuppressFBWarnings("RU_INVOKE_RUN")
         public void shutdown() {
             kafkaService.getShutdownService().run();
             log.info("Shut down kafkaBroker service successfully.");
@@ -182,7 +187,11 @@ public class KafkaStarter {
     public static void main(String[] args) throws Exception {
         DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss,SSS");
         Thread.setDefaultUncaughtExceptionHandler((thread, exception) -> {
-            System.out.println(String.format("%s [%s] error Uncaught exception in thread %s: %s", dateFormat.format(new Date()), thread.getContextClassLoader(), thread.getName(), exception.getMessage()));
+            System.out.println(String.format("%s [%s] error Uncaught exception in thread %s: %s",
+                dateFormat.format(new Date()),
+                thread.getContextClassLoader(),
+                thread.getName(),
+                exception.getMessage()));
         });
 
         BrokerStarter starter = new BrokerStarter(args);
@@ -209,19 +218,31 @@ public class KafkaStarter {
 
     @VisibleForTesting
     private static class StarterArguments {
-        @Parameter(names = {"-c", "--kop-conf"}, description = "Configuration file for Kafka on Pulsar Broker")
-        private String brokerConfigFile = Paths.get("").toAbsolutePath().normalize().toString() + "/conf/kop.conf";
+        @Parameter(names = {
+            "-c", "--kop-conf"
+        }, description = "Configuration file for Kafka on Pulsar Broker")
+        private String brokerConfigFile =
+            Paths.get("").toAbsolutePath().normalize().toString() + "/conf/kop.conf";
 
-        @Parameter(names = {"-rb", "--run-bookie"}, description = "Run Bookie together with Broker")
+        @Parameter(names = {
+            "-rb", "--run-bookie"
+        }, description = "Run Bookie together with Broker")
         private boolean runBookie = false;
 
-        @Parameter(names = {"-ra", "--run-bookie-autorecovery"}, description = "Run Bookie Autorecovery together with kafkaBroker")
+        @Parameter(names = {
+            "-ra", "--run-bookie-autorecovery"
+        }, description = "Run Bookie Autorecovery together with kafkaBroker")
         private boolean runBookieAutoRecovery = false;
 
-        @Parameter(names = {"-bc", "--bookie-conf"}, description = "Configuration file for Bookie")
-        private String bookieConfigFile = Paths.get("").toAbsolutePath().normalize().toString() + "/conf/bookkeeper.conf";
+        @Parameter(names = {
+            "-bc", "--bookie-conf"
+        }, description = "Configuration file for Bookie")
+        private String bookieConfigFile =
+            Paths.get("").toAbsolutePath().normalize().toString() + "/conf/bookkeeper.conf";
 
-        @Parameter(names = {"-h", "--help"}, description = "Show this help message")
+        @Parameter(names = {
+            "-h", "--help"
+        }, description = "Show this help message")
         private boolean help = false;
     }
 
