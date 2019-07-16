@@ -137,7 +137,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             if (throwable != null) {
                                 // Failed get partitions.
                                 allTopicMetadata.add(
-                                    new TopicMetadata(Errors.INVALID_PARTITIONS, topic, false, Collections.EMPTY_LIST));
+                                    new TopicMetadata(Errors.INVALID_PARTITIONS, topic, false, Collections.emptyList()));
                                 log.warn("[{}] Failed to get partitioned topic metadata: {}",
                                     topicName, throwable.getMessage());
                             } else {
@@ -174,14 +174,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 });
         }
 
-
         // 2. After get all topics, for each topic, get the service Broker for it, and add to response
         AtomicInteger topicsCompleted = new AtomicInteger(0);
         pulsarTopicsFuture.whenComplete((pulsarTopics, e) -> {
             if (e != null) {
                 log.warn("Exception fetching metadata, will return null Response", e);
                 MetadataResponse finalResponse =
-                    new MetadataResponse(Collections.EMPTY_LIST, clusterName, MetadataResponse.NO_CONTROLLER_ID, Collections.EMPTY_LIST);
+                    new MetadataResponse(Collections.emptyList(), clusterName, MetadataResponse.NO_CONTROLLER_ID, Collections.emptyList());
                 ctx.writeAndFlush(responseToByteBuf(finalResponse, metadataHar));
                 return;
             }
@@ -209,6 +208,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                             // whether completed this topic's partitions list.
                             int finishedPartitions = partitionsCompleted.incrementAndGet();
+                            if (log.isDebugEnabled()) {
+                                log.debug("FindBroker for {} partitions of topic {}, total partitions: {}",
+                                    finishedPartitions, topic, partitionsNumber);
+                            }
                             if (finishedPartitions == partitionsNumber) {
                                 // new TopicMetadata for this topic
                                 allTopicMetadata.add(
@@ -216,6 +219,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                                 // whether completed all the topics requests.
                                 int finishedTopics = topicsCompleted.incrementAndGet();
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Completed findBroker for all partitions of topic {}, partitions: {}; " +
+                                            "Finished Topics: {}, total topics: {}",
+                                        topic, partitionsNumber, finishedTopics, topicsNumber);
+                                }
                                 if (finishedTopics == topicsNumber) {
                                     // TODO: confirm right value for controller_id
                                     MetadataResponse finalResponse =
@@ -328,7 +336,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             node,                      // leader
             Lists.newArrayList(node),  // replicas
             Lists.newArrayList(node),  // isr
-            Collections.EMPTY_LIST     // offline replicas
+            Collections.emptyList()     // offline replicas
         );
     }
 
@@ -344,7 +352,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             Node.noNode(),                      // leader
             Lists.newArrayList(Node.noNode()),  // replicas
             Lists.newArrayList(Node.noNode()),  // isr
-            Collections.EMPTY_LIST              // offline replicas
+            Collections.emptyList()             // offline replicas
         );
     }
 

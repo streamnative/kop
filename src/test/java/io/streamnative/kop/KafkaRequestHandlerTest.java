@@ -49,7 +49,7 @@ public class KafkaRequestHandlerTest {
     private KafkaRequestHandler handler;
 
     @BeforeMethod
-    public void setup() {
+    public void setup() throws Exception {
         kafkaService = new KafkaService(new KafkaServiceConfiguration());
         handler = new KafkaRequestHandler(kafkaService);
     }
