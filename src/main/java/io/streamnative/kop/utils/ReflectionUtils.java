@@ -23,7 +23,7 @@ import java.lang.reflect.Method;
 public final class ReflectionUtils {
 
     /**
-     * Get the private field value from an object.
+     * Get the private field value from an object's super class.
      *
      * @param privateObject the object
      * @param fieldName the private field name
@@ -32,7 +32,7 @@ public final class ReflectionUtils {
     @SuppressWarnings("unchecked")
     public static <T> T getField(Object privateObject, String fieldName) {
         try {
-            Field privateField = privateObject.getClass().getDeclaredField(fieldName);
+            Field privateField = privateObject.getClass().getSuperclass().getDeclaredField(fieldName);
             privateField.setAccessible(true);
             return (T) privateField.get(privateObject);
         } catch (NoSuchFieldException | IllegalAccessException e) {
@@ -41,7 +41,7 @@ public final class ReflectionUtils {
     }
 
     /**
-     * Set the private field value for an object.
+     * Set the private field value for an object's super class.
      *
      * @param privateObject the object
      * @param fieldName the private field name
@@ -53,13 +53,13 @@ public final class ReflectionUtils {
                                     String fieldName,
                                     T fieldValue)
             throws IllegalAccessException, NoSuchFieldException {
-        Field privateField = privateObject.getClass().getDeclaredField(fieldName);
+        Field privateField = privateObject.getClass().getSuperclass().getDeclaredField(fieldName);
         privateField.setAccessible(true);
         privateField.set(privateObject, fieldValue);
     }
 
     /**
-     * Call the private method.
+     * Call the private method's super class.
      *
      * @param privateObject the object
      * @param methodName the private method name
@@ -67,7 +67,7 @@ public final class ReflectionUtils {
     public static void callNoArgVoidMethod(Object privateObject,
                                            String methodName) throws Exception {
         try {
-            Method privateStringMethod = privateObject.getClass()
+            Method privateStringMethod = privateObject.getClass().getSuperclass()
                 .getDeclaredMethod(methodName, null);
 
             privateStringMethod.setAccessible(true);
