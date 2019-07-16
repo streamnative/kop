@@ -46,6 +46,9 @@ import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicDomain;
 import org.apache.pulsar.common.naming.TopicName;
 
+/**
+ * This class contains all the request handling methods.
+ */
 @Slf4j
 public class KafkaRequestHandler extends KafkaCommandDecoder {
 
@@ -79,7 +82,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleTopicMetadataRequest(KafkaHeaderAndRequest metadataHar) {
         checkArgument(metadataHar.getRequest() instanceof MetadataRequest);
 
-        MetadataRequest metadataRequest = (MetadataRequest)metadataHar.getRequest();
+        MetadataRequest metadataRequest = (MetadataRequest) metadataHar.getRequest();
 
         // Command response for all topics
         List<TopicMetadata> allTopicMetadata = new ArrayList<>();
@@ -94,7 +97,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (topics == null) {
             executor.execute(() -> {
                 try {
-                    Map<String, List<TopicName>>  pulsarTopics =
+                    Map<String, List<TopicName>> pulsarTopics =
                         kafkaService.getNamespaceService()
                             .getListOfPersistentTopics(kafkaNamespace)
                             .stream()
@@ -135,7 +138,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             if (throwable != null) {
                                 // Failed get partitions.
                                 allTopicMetadata.add(
-                                    new TopicMetadata(Errors.UNKNOWN_SERVER_ERROR, topic, false, Collections.emptyList()));
+                                    new TopicMetadata(
+                                        Errors.UNKNOWN_SERVER_ERROR,
+                                        topic,
+                                        false,
+                                        Collections.emptyList()));
                                 log.warn("[{}] Failed to get partitioned topic metadata: {}",
                                     topicName, throwable.getMessage());
                             } else {
@@ -178,7 +185,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (e != null) {
                 log.warn("Exception fetching metadata, will return null Response", e);
                 MetadataResponse finalResponse =
-                    new MetadataResponse(Collections.emptyList(), clusterName, MetadataResponse.NO_CONTROLLER_ID, Collections.emptyList());
+                    new MetadataResponse(
+                        Collections.emptyList(),
+                        clusterName,
+                        MetadataResponse.NO_CONTROLLER_ID,
+                        Collections.emptyList());
                 ctx.writeAndFlush(responseToByteBuf(finalResponse, metadataHar));
                 return;
             }
@@ -218,14 +229,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 // whether completed all the topics requests.
                                 int finishedTopics = topicsCompleted.incrementAndGet();
                                 if (log.isDebugEnabled()) {
-                                    log.debug("Completed findBroker for all partitions of topic {}, partitions: {}; " +
-                                            "Finished Topics: {}, total topics: {}",
+                                    log.debug("Completed findBroker for all partitions of topic {}, partitions: {}; "
+                                            + "Finished Topics: {}, total topics: {}",
                                         topic, partitionsNumber, finishedTopics, topicsNumber);
                                 }
                                 if (finishedTopics == topicsNumber) {
                                     // TODO: confirm right value for controller_id
                                     MetadataResponse finalResponse =
-                                        new MetadataResponse(allNodes, clusterName, MetadataResponse.NO_CONTROLLER_ID, allTopicMetadata);
+                                        new MetadataResponse(
+                                            allNodes,
+                                            clusterName,
+                                            MetadataResponse.NO_CONTROLLER_ID,
+                                            allTopicMetadata);
                                     ctx.writeAndFlush(responseToByteBuf(finalResponse, metadataHar));
                                 }
                             }
