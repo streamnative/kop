@@ -34,7 +34,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
@@ -43,7 +42,6 @@ import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
 import org.apache.pulsar.broker.admin.impl.PersistentTopicsBase;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicDomain;
 import org.apache.pulsar.common.naming.TopicName;
@@ -137,7 +135,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             if (throwable != null) {
                                 // Failed get partitions.
                                 allTopicMetadata.add(
-                                    new TopicMetadata(Errors.INVALID_PARTITIONS, topic, false, Collections.emptyList()));
+                                    new TopicMetadata(Errors.UNKNOWN_SERVER_ERROR, topic, false, Collections.emptyList()));
                                 log.warn("[{}] Failed to get partitioned topic metadata: {}",
                                     topicName, throwable.getMessage());
                             } else {
@@ -278,6 +276,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     // TODO: use binary proto to find Broker to improve performance.
+    //  - https://github.com/streamnative/kop/issues/8
     private CompletableFuture<PartitionMetadata> findBroker(KafkaService kafkaService, TopicName topic) {
         if (log.isDebugEnabled()) {
             log.debug("Handle Lookup for {}", topic);
@@ -300,29 +299,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return resultFuture;
     }
 
-
-    private static Errors pulsarToKafkaException(AbstractRequest request, Throwable exception) {
-        if (log.isDebugEnabled()) {
-            log.debug("Converting error for request {}", request, exception);
-        }
-        if (exception instanceof PulsarAdminException.NotFoundException) {
-            return Errors.UNKNOWN_TOPIC_OR_PARTITION;
-        } else if (exception.getCause() != null) {
-            return pulsarToKafkaException(request, exception.getCause());
-        } else {
-            return Errors.UNKNOWN_SERVER_ERROR;
-        }
-    }
-
     // TODO: handle Kafka Node.id
-    private static Node newNode(InetSocketAddress address) {
+    //   - https://github.com/streamnative/kop/issues/9
+    static Node newNode(InetSocketAddress address) {
         if (log.isDebugEnabled()) {
             log.debug("Return Broker Node of {}", address);
         }
         return new Node(0, address.getHostString(), address.getPort());
     }
 
-    private static PartitionMetadata newPartitionMetadata(TopicName topicName, Node node) {
+    static PartitionMetadata newPartitionMetadata(TopicName topicName, Node node) {
         int pulsarPartitionIndex = topicName.getPartitionIndex();
         int kafkaPartitionIndex = pulsarPartitionIndex == -1 ? 0 : pulsarPartitionIndex;
 
@@ -340,14 +326,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         );
     }
 
-    private static PartitionMetadata newFailedPartitionMetadata(TopicName topicName) {
+    static PartitionMetadata newFailedPartitionMetadata(TopicName topicName) {
         int pulsarPartitionIndex = topicName.getPartitionIndex();
         int kafkaPartitionIndex = pulsarPartitionIndex == -1 ? 0 : pulsarPartitionIndex;
 
         log.warn("Failed find Broker metadata, create PartitionMetadata with INVALID_PARTITIONS");
 
         return new PartitionMetadata(
-            Errors.INVALID_PARTITIONS,
+            Errors.UNKNOWN_SERVER_ERROR,
             kafkaPartitionIndex,
             Node.noNode(),                      // leader
             Lists.newArrayList(Node.noNode()),  // replicas
@@ -356,7 +342,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         );
     }
 
-    private static String getLocalNameWithoutPartition(TopicName topicName) {
+    static String getLocalNameWithoutPartition(TopicName topicName) {
         String localName = topicName.getLocalName();
         if (localName.contains(PARTITIONED_TOPIC_SUFFIX)) {
             return localName.substring(0, localName.lastIndexOf(PARTITIONED_TOPIC_SUFFIX));

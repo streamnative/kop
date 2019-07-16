@@ -14,6 +14,7 @@
 package io.streamnative.kop;
 
 
+import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.mockito.Matchers.anyObject;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
@@ -29,13 +30,18 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.kop.KafkaCommandDecoder.KafkaHeaderAndResponse;
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import org.apache.kafka.common.Node;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
+import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
+import org.apache.pulsar.common.naming.TopicName;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -151,5 +157,63 @@ public class KafkaRequestHandlerTest {
 
         verify(handler, times(1)).handleApiVersionsRequest(anyObject());
     }
+
+    @Test
+    public void testNewNode() {
+        String host = "192.168.168.168";
+        int port = 7777;
+        InetSocketAddress socketAddress = new InetSocketAddress(host, port);
+        Node node = KafkaRequestHandler.newNode(socketAddress);
+
+        assertEquals(node.host(), host);
+        assertEquals(node.port(), port);
+        assertEquals(node.id(), 0);
+    }
+
+    @Test
+    public void testNewPartitionMetadata() {
+        String host = "192.168.168.168";
+        int port = 7777;
+        int partitionIndex = 7;
+        InetSocketAddress socketAddress = new InetSocketAddress(host, port);
+        Node node = KafkaRequestHandler.newNode(socketAddress);
+        TopicName topicName = TopicName.get("persistent://test-tenants/test-ns/topicName");
+        TopicName topicNamePartition =
+            TopicName.get("persistent://test-tenants/test-ns/topic" + PARTITIONED_TOPIC_SUFFIX + partitionIndex);
+
+        PartitionMetadata metadata = KafkaRequestHandler.newPartitionMetadata(topicName, node);
+        assertEquals(metadata.error(), Errors.NONE);
+        assertEquals(metadata.partition(), 0);
+
+
+        metadata = KafkaRequestHandler.newPartitionMetadata(topicNamePartition, node);
+        assertEquals(metadata.error(), Errors.NONE);
+        assertEquals(metadata.partition(), partitionIndex);
+
+        metadata = KafkaRequestHandler.newFailedPartitionMetadata(topicName);
+        assertEquals(metadata.error(), Errors.UNKNOWN_SERVER_ERROR);
+        assertEquals(metadata.partition(), 0);
+
+
+        metadata = KafkaRequestHandler.newFailedPartitionMetadata(topicNamePartition);
+        assertEquals(metadata.error(), Errors.UNKNOWN_SERVER_ERROR);
+        assertEquals(metadata.partition(), partitionIndex);
+    }
+
+    @Test
+    public void testGetLocalNameWithoutPartition() {
+        String localName = "topicName";
+        String topicString = "persistent://test-tenants/test-ns/" + localName;
+        int partitionIndex = 7;
+
+        TopicName topicName = TopicName.get(topicString);
+        TopicName topicNamePartition =
+            TopicName.get(topicString + PARTITIONED_TOPIC_SUFFIX + partitionIndex);
+
+        assertEquals(localName, KafkaRequestHandler.getLocalNameWithoutPartition(topicName));
+        assertEquals(localName, KafkaRequestHandler.getLocalNameWithoutPartition(topicNamePartition));
+
+    }
+
 
 }
