@@ -80,7 +80,8 @@ public class KafkaServiceConfigurationTest {
         testConfigFile.deleteOnExit();
 
         InputStream stream = new FileInputStream(testConfigFile);
-        final KafkaServiceConfiguration kafkaServiceConfig = ConfigurationUtils.create(stream, KafkaServiceConfiguration.class);
+        final KafkaServiceConfiguration kafkaServiceConfig =
+            ConfigurationUtils.create(stream, KafkaServiceConfiguration.class);
 
         assertNotNull(kafkaServiceConfig);
         assertEquals(kafkaServiceConfig.getKafkaClusterName(), kafkaCluster);

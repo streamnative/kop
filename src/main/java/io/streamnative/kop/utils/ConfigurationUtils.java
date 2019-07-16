@@ -22,7 +22,6 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
-import java.util.Arrays;
 import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Stream;
@@ -41,8 +40,9 @@ public final class ConfigurationUtils {
      * @throws IOException
      * @throws IllegalArgumentException
      */
-    public static <T extends PulsarConfiguration> T create(String configFile,
-                                                           Class<? extends PulsarConfiguration> clazz) throws IOException, IllegalArgumentException {
+    public static <T extends PulsarConfiguration> T create(
+            String configFile,
+            Class<? extends PulsarConfiguration> clazz) throws IOException, IllegalArgumentException {
         checkNotNull(configFile);
         return create(new FileInputStream(configFile), clazz);
     }
@@ -57,8 +57,9 @@ public final class ConfigurationUtils {
      * @throws IllegalArgumentException
      *             if the input stream contains incorrect value type
      */
-    public static <T extends PulsarConfiguration> T create(InputStream inStream,
-                                                           Class<? extends PulsarConfiguration> clazz) throws IOException, IllegalArgumentException {
+    public static <T extends PulsarConfiguration> T create(
+            InputStream inStream,
+            Class<? extends PulsarConfiguration> clazz) throws IOException, IllegalArgumentException {
         try {
             checkNotNull(inStream);
             Properties properties = new Properties();
@@ -79,8 +80,9 @@ public final class ConfigurationUtils {
      * @throws IllegalArgumentException
      */
     @SuppressWarnings({ "rawtypes", "unchecked" })
-    public static <T extends PulsarConfiguration> T create(Properties properties,
-                                                           Class<? extends PulsarConfiguration> clazz) throws IOException, IllegalArgumentException {
+    public static <T extends PulsarConfiguration> T create(
+            Properties properties,
+            Class<? extends PulsarConfiguration> clazz) throws IOException, IllegalArgumentException {
         checkNotNull(properties);
         T configuration = null;
         try {
