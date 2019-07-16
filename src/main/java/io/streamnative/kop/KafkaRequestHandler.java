@@ -21,7 +21,6 @@ import com.google.common.collect.Maps;
 import io.netty.channel.ChannelHandlerContext;
 import java.net.InetSocketAddress;
 import java.net.URI;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +41,7 @@ import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
 import org.apache.pulsar.broker.admin.impl.PersistentTopicsBase;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.common.lookup.data.LookupData;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicDomain;
 import org.apache.pulsar.common.naming.TopicName;
@@ -85,8 +85,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         MetadataRequest metadataRequest = (MetadataRequest) metadataHar.getRequest();
 
         // Command response for all topics
-        List<TopicMetadata> allTopicMetadata = new ArrayList<>();
-        List<Node> allNodes = new ArrayList<>();
+        List<TopicMetadata> allTopicMetadata = Collections.synchronizedList(Lists.newArrayList());
+        List<Node> allNodes = Collections.synchronizedList(Lists.newArrayList());
 
         List<String> topics = metadataRequest.topics();
         // topics in format : persistent://%s/%s/abc-partition-x, will be grouped by as:
@@ -199,7 +199,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             pulsarTopics.forEach((topic, list) -> {
                 final int partitionsNumber = list.size();
                 AtomicInteger partitionsCompleted = new AtomicInteger(0);
-                List<PartitionMetadata> partitionMetadatas = Lists.newArrayListWithExpectedSize(partitionsNumber);
+                List<PartitionMetadata> partitionMetadatas = Collections
+                    .synchronizedList(Lists.newArrayListWithExpectedSize(partitionsNumber));
 
                 list.forEach(topicName ->
                     findBroker(kafkaService, topicName)
@@ -290,8 +291,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         ctx.close();
     }
 
-    // TODO: use binary proto to find Broker to improve performance.
-    //  - https://github.com/streamnative/kop/issues/8
     private CompletableFuture<PartitionMetadata> findBroker(KafkaService kafkaService, TopicName topic) {
         if (log.isDebugEnabled()) {
             log.debug("Handle Lookup for {}", topic);
@@ -299,18 +298,41 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         final CompletableFuture<PartitionMetadata> resultFuture = new CompletableFuture<>();
 
-        executor.execute(() -> {
-            try {
-                String broker = kafkaService.getAdminClient().lookups().lookupTopic(topic.toString());
-                URI uri = new URI(broker);
-                Node node = newNode(new InetSocketAddress(uri.getHost(), uri.getPort()));
+        kafkaService.getNamespaceService()
+            .getBrokerServiceUrlAsync(topic, true)
+            .whenComplete((lookupResult, throwable)-> {
+                if (throwable != null) {
+                    log.error("Caught error while find Broker for topic:{} ", topic, throwable);
+                    resultFuture.completeExceptionally(throwable);
+                    return;
+                }
 
-                resultFuture.complete(newPartitionMetadata(topic, node));
-            } catch (Exception e) {
-                log.error("Caught error while find Broker for topic:{} ", topic, e);
-                resultFuture.completeExceptionally(e);
-            }
-        });
+                try {
+                    if (lookupResult.isPresent()) {
+                        LookupData lookupData = lookupResult.get().getLookupData();
+                        String brokerUrl = lookupData.getBrokerUrl();
+
+                        URI uri = new URI(brokerUrl);
+                        if (log.isDebugEnabled()) {
+                            log.debug("Find broker: {} for topicName: {}", uri, topic);
+                        }
+
+                        Node node = newNode(new InetSocketAddress(uri.getHost(), uri.getPort()));
+                        resultFuture.complete(newPartitionMetadata(topic, node));
+                        return;
+                    } else {
+                        if (log.isDebugEnabled()) {
+                            log.debug("Topic {} not owned by broker.", topic);
+                        }
+                        resultFuture.complete(newFailedPartitionMetadata(topic));
+                        return;
+                    }
+                } catch (Exception e) {
+                    log.error("Caught error while find Broker for topic:{} ", topic, e);
+                    resultFuture.completeExceptionally(e);
+                }
+            });
+
         return resultFuture;
     }
 
