@@ -15,6 +15,7 @@ package io.streamnative.kop;
 
 
 import java.util.Optional;
+import java.util.Properties;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.pulsar.broker.ServiceConfiguration;
@@ -28,9 +29,10 @@ import org.apache.pulsar.common.configuration.FieldContext;
 @Setter
 public class KafkaServiceConfiguration extends ServiceConfiguration {
 
+    private Properties properties = new Properties();
+
     @Category
     private static final String CATEGORY_KOP = "Kafka on Pulsar";
-
 
     //
     // --- Kafka on Pulsar Broker configuration ---

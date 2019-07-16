@@ -17,11 +17,11 @@ package io.streamnative.kop;
 import static org.apache.commons.lang3.StringUtils.isBlank;
 
 import com.beust.jcommander.JCommander;
+import io.streamnative.kop.utils.ConfigurationUtils;
 import java.io.FileInputStream;
 import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
-import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 
 /**
  * Starter to start kafka-on-pulsar broker.
@@ -51,7 +51,7 @@ public class KafkaStandaloneStarter extends KafkaStandalone {
             return;
         }
 
-        this.config = PulsarConfigurationLoader.create(
+        this.config = ConfigurationUtils.create(
             new FileInputStream(this.getConfigFile()),
             KafkaServiceConfiguration.class);
 
