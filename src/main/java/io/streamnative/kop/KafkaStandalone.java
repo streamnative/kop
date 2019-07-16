@@ -17,6 +17,7 @@ import com.beust.jcommander.Parameter;
 import com.google.common.collect.Sets;
 import java.io.File;
 import java.net.URL;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.pulsar.broker.ServiceConfiguration;
@@ -260,9 +261,9 @@ public class KafkaStandalone implements AutoCloseable {
                         new TenantInfo(Sets.newHashSet(config.getSuperUserRoles()), Sets.newHashSet(cluster)));
             }
             if (!admin.namespaces().getNamespaces(publicTenant).contains(defaultNamespace)) {
-                admin.namespaces().createNamespace(defaultNamespace);
-                admin.namespaces().setNamespaceReplicationClusters(
-                    defaultNamespace, Sets.newHashSet(config.getClusterName()));
+                Set<String> clusters = Sets.newHashSet(config.getKafkaClusterName());
+                admin.namespaces().createNamespace(defaultNamespace, clusters);
+                admin.namespaces().setNamespaceReplicationClusters(defaultNamespace, clusters);
             }
         } catch (PulsarAdminException e) {
             log.info("error while create default namespace: {}", e.getMessage());
