@@ -14,6 +14,7 @@
 package io.streamnative.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.collect.Lists;
@@ -39,6 +40,7 @@ import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
+import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.pulsar.broker.admin.impl.PersistentTopicsBase;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.common.lookup.data.LookupData;
@@ -125,7 +127,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             requestTopics.stream()
                 .forEach(topic -> {
-                    TopicName topicName = TopicName.get(TopicDomain.persistent.value(), kafkaNamespace, topic);
+                    TopicName topicName = pulsarTopicName(topic);
                     // get partition numbers for each topic.
                     PersistentTopicsBase
                         .getPartitionedTopicMetadata(
@@ -240,7 +242,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         new MetadataResponse(
                                             allNodes,
                                             clusterName,
-                                            MetadataResponse.NO_CONTROLLER_ID,
+                                            0,
                                             allTopicMetadata);
                                     ctx.writeAndFlush(responseToByteBuf(finalResponse, metadataHar));
                                 }
@@ -250,7 +252,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
-    protected void handleProduceRequest(KafkaHeaderAndRequest produce) {
+    protected void handleProduceRequest(KafkaHeaderAndRequest produceHar) {
+        checkArgument(produceHar.getRequest() instanceof ProduceRequest);
+        
         throw new NotImplementedException("handleProduceRequest");
     }
 
@@ -336,6 +340,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return resultFuture;
     }
 
+
+    private TopicName pulsarTopicName(String topic) {
+        return TopicName.get(TopicDomain.persistent.value(), kafkaNamespace, topic);
+    }
+
+    private TopicName pulsarTopicName(String topic, int partitionIndex) {
+        return TopicName.get(TopicDomain.persistent.value(),
+            kafkaNamespace,
+            topic + PARTITIONED_TOPIC_SUFFIX + partitionIndex);
+    }
+
     // TODO: handle Kafka Node.id
     //   - https://github.com/streamnative/kop/issues/9
     static Node newNode(InetSocketAddress address) {
@@ -386,5 +401,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         } else {
             return localName;
         }
+    }
+
+    static AbstractResponse failedResponse(KafkaHeaderAndRequest requestHar, Throwable e) {
+        if (log.isDebugEnabled()) {
+            log.debug("Request {} get failed response ", requestHar.getHeader().apiKey(), e);
+        }
+        return requestHar.getRequest().getErrorResponse(((Integer)THROTTLE_TIME_MS.defaultValue), e);
     }
 }
