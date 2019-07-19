@@ -45,3 +45,9 @@ Configuration:
         additivity: false
         AppenderRef:
           - ref: Console
+
+      - name: org.apache.pulsar.broker.service
+        level: debug
+        additivity: false
+        AppenderRef:
+          - ref: Console

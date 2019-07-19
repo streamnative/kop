@@ -19,21 +19,35 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.util.Recycler;
+import io.netty.util.Recycler.Handle;
+import io.streamnative.kop.utils.MessageIdUtils;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.time.Clock;
+import java.util.Base64;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.record.Record;
+import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
@@ -41,12 +55,25 @@ import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
 import org.apache.kafka.common.requests.ProduceRequest;
+import org.apache.kafka.common.requests.ProduceResponse;
+import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
 import org.apache.pulsar.broker.admin.impl.PersistentTopicsBase;
+import org.apache.pulsar.broker.service.Topic;
+import org.apache.pulsar.broker.service.Topic.PublishContext;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.api.CompressionType;
+import org.apache.pulsar.client.api.Message;
+import org.apache.pulsar.client.api.Schema;
+import org.apache.pulsar.client.impl.MessageImpl;
+import org.apache.pulsar.client.impl.TypedMessageBuilderImpl;
+import org.apache.pulsar.common.api.proto.PulsarApi.MessageMetadata;
+import org.apache.pulsar.common.compression.CompressionCodecProvider;
 import org.apache.pulsar.common.lookup.data.LookupData;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicDomain;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.protocol.Commands;
+import org.apache.pulsar.common.protocol.Commands.ChecksumType;
 
 /**
  * This class contains all the request handling methods.
@@ -59,6 +86,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final NamespaceName kafkaNamespace;
     private final ExecutorService executor;
     private final PulsarAdmin admin;
+
+    private static final Clock clock = Clock.systemDefaultZone();
+    private static final String producerName = "fake_kop_producer_name";
+
 
     public KafkaRequestHandler(KafkaService kafkaService) throws Exception {
         super();
@@ -254,9 +285,263 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected void handleProduceRequest(KafkaHeaderAndRequest produceHar) {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
-        
-        throw new NotImplementedException("handleProduceRequest");
+
+        ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
+
+        if (produceRequest.transactionalId() != null) {
+            log.warn("[{}] Transactions not supported", ctx.channel());
+
+            ctx.writeAndFlush(responseToByteBuf(
+                failedResponse(produceHar, new UnsupportedOperationException("No transaction support")),
+                produceHar));
+            return;
+        }
+
+        // Ignore request.acks() and request.timeout(), which related to kafka replication in this broker.
+
+        Map<TopicPartition, CompletableFuture<PartitionResponse>> responsesFutures = new HashMap<>();
+
+        final int responsesSize = produceRequest.partitionRecordsOrFail().size();
+
+        for (Map.Entry<TopicPartition, ? extends Records> entry : produceRequest.partitionRecordsOrFail().entrySet()) {
+            // 1. create PersistTopic
+            // 3. tracking each record status.
+            TopicPartition topicPartition = entry.getKey();
+
+            CompletableFuture<PartitionResponse> partitionResponse = new CompletableFuture<>();
+            responsesFutures.put(topicPartition, partitionResponse);
+
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] Produce messages for topic {} partition {}, requestsize: {} ",
+                    ctx.channel(), topicPartition.topic(), topicPartition.partition(), responsesSize);
+            }
+
+            TopicName topicName = pulsarTopicName(topicPartition.topic(), topicPartition.partition());
+
+            kafkaService.getBrokerService().getTopic(topicName.toString(), true)
+                .thenApply(Optional::get)
+                .thenAccept(topic -> {
+                    publishMessages(entry.getValue(), topic, partitionResponse);
+                })
+                .exceptionally(exception -> {
+                    Throwable cause = exception.getCause();
+                    log.error("[{}] Failed to getOrCreateTopic {}", ctx.channel(), topicName, exception);
+                    partitionResponse.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
+
+                    return null;
+                });
+        }
+
+        CompletableFuture.allOf(responsesFutures.values().toArray(new CompletableFuture<?>[responsesSize]))
+            .whenComplete((ignore, ex) -> {
+                // all ex has translated to PartitionResponse with Errors.KAFKA_STORAGE_ERROR
+                Map<TopicPartition, PartitionResponse> responses = new ConcurrentHashMap<>();
+                for (Map.Entry<TopicPartition, CompletableFuture<PartitionResponse>> entry:
+                    responsesFutures.entrySet()) {
+                    responses.put(entry.getKey(), entry.getValue().join());
+                }
+
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Complete handle produce request {}.",
+                        ctx.channel(), produceHar.toString());
+                }
+                ctx.writeAndFlush(responseToByteBuf(new ProduceResponse(responses), produceHar));
+            });
+        return;
     }
+
+    // publish Kafka records to pulsar topic, handle callback in MessagePublishContext.
+    private void publishMessages(Records records,
+                                 Topic topic,
+                                 CompletableFuture<PartitionResponse> future) {
+
+        // get records size.
+        AtomicInteger size = new AtomicInteger(0);
+        records.records().forEach(record -> size.incrementAndGet());
+        int rec = size.get();
+
+        if (log.isDebugEnabled()) {
+            log.debug("[{}] publishMessages for topic partition: {} , records size is {} ",
+                ctx.channel(), topic.getName(), size.get());
+        }
+
+        List<CompletableFuture<Long>> futures = Collections
+            .synchronizedList(Lists.newArrayListWithExpectedSize(size.get()));
+
+        records.records().forEach(record -> {
+            CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
+            futures.add(offsetFuture);
+            ByteBuf headerAndPayload = messageToByteBuf(recordToEntry(record));
+            topic.publishMessage(
+                headerAndPayload,
+                MessagePublishContext.get(
+                    offsetFuture, topic, record.sequence(),
+                    record.sizeInBytes(), System.nanoTime()));
+        });
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture<?>[rec])).whenComplete((ignore, ex) -> {
+            if (ex != null) {
+                log.debug("[{}] publishMessages for topic partition: {} failed when write.",
+                    ctx.channel(), topic.getName(), ex);
+                future.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
+            } else {
+                future.complete(new PartitionResponse(Errors.NONE));
+            }
+        });
+    }
+
+
+    private static final class MessagePublishContext implements PublishContext {
+        private CompletableFuture<Long> offsetFuture;
+        private Topic topic;
+        private long sequenceId;
+        private long ledgerId;
+        private long entryId;
+        private int msgSize;
+        private long startTimeNs;
+
+        public long getSequenceId() {
+            return sequenceId;
+        }
+
+        /**
+         * Executed from managed ledger thread when the message is persisted
+         */
+        @Override
+        public void completed(Exception exception, long ledgerId, long entryId) {
+
+            MessageIdUtils.getOffset(ledgerId, entryId);
+
+            if (exception != null) {
+                log.debug("Failed write entry: {}, entryId: {}, sequenceId: {}. and triggered send callback.",
+                    ledgerId, entryId, sequenceId);
+                offsetFuture.completeExceptionally(exception);
+            } else {
+                if (log.isDebugEnabled()) {
+                    log.debug("Success write topic: {}, ledgerId: {}, entryId: {}, sequenceId: {}," +
+                            "messageSize: {}. And triggered send callback.",
+                        topic.getName(), ledgerId, entryId, sequenceId, msgSize);
+                }
+
+                this.ledgerId = ledgerId;
+                this.entryId = entryId;
+                topic.recordAddLatency(TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - startTimeNs));
+
+                offsetFuture.complete(Long.valueOf(MessageIdUtils.getOffset(ledgerId, entryId)));
+            }
+
+            recycle();
+        }
+
+        // recycler
+        static MessagePublishContext get(CompletableFuture<Long> offsetFuture,
+                                         Topic topic,
+                                         long sequenceId,
+                                         int msgSize,
+                                         long startTimeNs) {
+            MessagePublishContext callback = RECYCLER.get();
+            callback.offsetFuture = offsetFuture;
+            callback.topic = topic;
+            callback.sequenceId = sequenceId;
+            callback.msgSize = msgSize;
+            callback.startTimeNs = startTimeNs;
+            return callback;
+        }
+
+        private final Handle<MessagePublishContext> recyclerHandle;
+
+        private MessagePublishContext(Handle<MessagePublishContext> recyclerHandle) {
+            this.recyclerHandle = recyclerHandle;
+        }
+
+        private static final Recycler<MessagePublishContext> RECYCLER = new Recycler<MessagePublishContext>() {
+            protected MessagePublishContext newObject(Recycler.Handle<MessagePublishContext> handle) {
+                return new MessagePublishContext(handle);
+            }
+        };
+
+        public void recycle() {
+            offsetFuture = null;
+            topic = null;
+            sequenceId = -1;
+            msgSize = 0;
+            ledgerId = -1;
+            entryId = -1;
+            startTimeNs = -1;
+            recyclerHandle.recycle(this);
+        }
+    }
+
+    // convert kafka Record to Pulsar Message.
+    private Message<byte[]> recordToEntry(Record record) {
+        @SuppressWarnings("unchecked")
+        TypedMessageBuilderImpl<byte[]> builder = new TypedMessageBuilderImpl(null, Schema.BYTES);
+
+        // key
+        if (record.hasKey()) {
+            byte[] key = new byte[record.keySize()];
+            builder.keyBytes(key);
+        }
+
+        // value
+        if (record.hasValue()) {
+            byte[] value = new byte[record.valueSize()];
+            record.value().get(value);
+            builder.value(value);
+        } else {
+            builder.value(new byte[0]);
+        }
+
+        // sequence
+        if (record.sequence() >= 0) {
+            builder.sequenceId(record.sequence());
+        }
+
+        // timestamp
+        if (record.timestamp() >= 0) {
+            builder.eventTime(record.timestamp());
+        }
+
+        // header
+        for (Header h : record.headers()) {
+            builder.property(h.key(),
+                Base64.getEncoder().encodeToString(h.value()));
+        }
+
+        return builder.getMessage();
+    }
+
+    // convert message to ByteBuf payload for ledger.addEntry.
+    private ByteBuf messageToByteBuf(Message<byte[]> message) {
+        checkArgument(message instanceof MessageImpl);
+
+        MessageImpl<byte[]> msg = (MessageImpl<byte[]>) message;
+        MessageMetadata.Builder msgMetadataBuilder = msg.getMessageBuilder();
+        ByteBuf payload = msg.getDataBuffer();
+
+        // filled in required fields
+        if (!msgMetadataBuilder.hasSequenceId()) {
+            msgMetadataBuilder.setSequenceId(-1);
+        }
+        if (!msgMetadataBuilder.hasPublishTime()) {
+            msgMetadataBuilder.setPublishTime(clock.millis());
+        }
+        if (!msgMetadataBuilder.hasProducerName()) {
+            msgMetadataBuilder.setProducerName(producerName);
+        }
+        msgMetadataBuilder.setCompression(
+            CompressionCodecProvider.convertToWireProtocol(CompressionType.NONE));
+        msgMetadataBuilder.setUncompressedSize(payload.readableBytes());
+        MessageMetadata msgMetadata = msgMetadataBuilder.build();
+
+        ByteBuf buf = Commands.serializeMetadataAndPayload(ChecksumType.Crc32c, msgMetadata, payload);
+
+        msgMetadataBuilder.recycle();
+        msgMetadata.recycle();
+
+        return buf;
+    }
+
 
     protected void handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator) {
         throw new NotImplementedException("handleFindCoordinatorRequest");
