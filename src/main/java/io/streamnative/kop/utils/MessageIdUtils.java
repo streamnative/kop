@@ -21,6 +21,9 @@ package io.streamnative.kop.utils;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 
+/**
+ * Utils for Pulsar MessageId.
+ */
 public class MessageIdUtils {
 
     public static final long getOffset(long ledgerId, long entryId) {

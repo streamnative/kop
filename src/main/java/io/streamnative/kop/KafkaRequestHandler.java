@@ -405,7 +405,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
 
         /**
-         * Executed from managed ledger thread when the message is persisted
+         * Executed from managed ledger thread when the message is persisted.
          */
         @Override
         public void completed(Exception exception, long ledgerId, long entryId) {
@@ -418,8 +418,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 offsetFuture.completeExceptionally(exception);
             } else {
                 if (log.isDebugEnabled()) {
-                    log.debug("Success write topic: {}, ledgerId: {}, entryId: {}, sequenceId: {}," +
-                            "messageSize: {}. And triggered send callback.",
+                    log.debug("Success write topic: {}, ledgerId: {}, entryId: {}, sequenceId: {},"
+                            + "messageSize: {}. And triggered send callback.",
                         topic.getName(), ledgerId, entryId, sequenceId, msgSize);
                 }
 
@@ -692,6 +692,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (log.isDebugEnabled()) {
             log.debug("Request {} get failed response ", requestHar.getHeader().apiKey(), e);
         }
-        return requestHar.getRequest().getErrorResponse(((Integer)THROTTLE_TIME_MS.defaultValue), e);
+        return requestHar.getRequest().getErrorResponse(((Integer) THROTTLE_TIME_MS.defaultValue), e);
     }
 }
