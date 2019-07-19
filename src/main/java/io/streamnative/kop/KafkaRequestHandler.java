@@ -395,8 +395,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         private CompletableFuture<Long> offsetFuture;
         private Topic topic;
         private long sequenceId;
-        private long ledgerId;
-        private long entryId;
         private int msgSize;
         private long startTimeNs;
 
@@ -410,8 +408,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         @Override
         public void completed(Exception exception, long ledgerId, long entryId) {
 
-            MessageIdUtils.getOffset(ledgerId, entryId);
-
             if (exception != null) {
                 log.debug("Failed write entry: {}, entryId: {}, sequenceId: {}. and triggered send callback.",
                     ledgerId, entryId, sequenceId);
@@ -423,8 +419,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         topic.getName(), ledgerId, entryId, sequenceId, msgSize);
                 }
 
-                this.ledgerId = ledgerId;
-                this.entryId = entryId;
                 topic.recordAddLatency(TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - startTimeNs));
 
                 offsetFuture.complete(Long.valueOf(MessageIdUtils.getOffset(ledgerId, entryId)));
@@ -465,8 +459,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             topic = null;
             sequenceId = -1;
             msgSize = 0;
-            ledgerId = -1;
-            entryId = -1;
             startTimeNs = -1;
             recyclerHandle.recycle(this);
         }
