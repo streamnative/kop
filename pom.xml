@@ -278,9 +278,12 @@
           <excludes>
             <exclude>LICENSE</exclude>
             <exclude>NOTICE</exclude>
+            <exclude>Jenkinsfile</exclude>
             <exclude>src/resources/license.template</exclude>
             <exclude>**/build/**</exclude>
             <exclude>**/ahc.properties</exclude>
+            <exclude>**/.idea/**</exclude>
+            <exclude>**/.github/**</exclude>
           </excludes>
           <mapping>
             <proto>JAVADOC_STYLE</proto>
@@ -298,6 +301,7 @@
             <scss>JAVADOC_STYLE</scss>
             <Doxyfile>SCRIPT_STYLE</Doxyfile>
             <tfvars>SCRIPT_STYLE</tfvars>
+            <kop>SCRIPT_STYLE</kop>
           </mapping>
         </configuration>
       </plugin>
