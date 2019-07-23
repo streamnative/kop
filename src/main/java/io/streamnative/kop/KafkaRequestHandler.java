@@ -274,7 +274,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         new MetadataResponse(
                                             allNodes,
                                             clusterName,
-                                            0,
+                                            MetadataResponse.NO_CONTROLLER_ID,
                                             allTopicMetadata);
                                     ctx.writeAndFlush(responseToByteBuf(finalResponse, metadataHar));
                                 }
