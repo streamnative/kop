@@ -14,11 +14,16 @@
 package io.streamnative.kop;
 
 
+import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNull;
 
 import com.google.common.collect.Sets;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.pulsar.client.api.Consumer;
+import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterMethod;
@@ -42,7 +47,6 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest{
             new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
         admin.namespaces().createNamespace("public/default");
         admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
-
     }
 
     @AfterMethod
@@ -59,13 +63,19 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest{
         // create partitioned topic.
         kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, 1);
 
+        Consumer<byte[]> consumer = pulsarClient.newConsumer()
+            .topic("persistent://public/default/" + topicName + PARTITIONED_TOPIC_SUFFIX + 0)
+            .subscriptionName("test_producer_sub").subscribe();
+
+
+        // 1. produce message with Kafka producer.
         Producer producer = new Producer(topicName, false);
 
-        int messageNo = 1;
-        int produceCount = 10;
+        int messageNo = 0;
+        int totalMsgs = 10;
 
-        while (messageNo < produceCount) {
-            String messageStr = "Message_Kop" + messageNo;
+        while (messageNo < totalMsgs) {
+            String messageStr = "Message_Kop_" + messageNo;
 
             try {
                 producer.getProducer().send(new ProducerRecord<>(topicName,
@@ -78,8 +88,19 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest{
             ++messageNo;
         }
 
-        assertEquals(produceCount, messageNo);
+        assertEquals(totalMsgs, messageNo);
+
+        Message<byte[]> msg = null;
+
+        // 2. Consume messages use Pulsar client Consumer.
+        for (int i = 0; i < totalMsgs; i++) {
+            msg = consumer.receive(100, TimeUnit.MILLISECONDS);
+            log.info("Pulsar consumer get message: {}", new String(msg.getData()));
+            consumer.acknowledge(msg);
+        }
+
+        // verify have received all messages
+        msg = consumer.receive(100, TimeUnit.MILLISECONDS);
+        assertNull(msg);
     }
-
-
 }

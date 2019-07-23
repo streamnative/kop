@@ -600,7 +600,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             log.debug("Find broker: {} for topicName: {}", uri, topic);
                         }
 
-                        Node node = newNode(new InetSocketAddress(uri.getHost(), uri.getPort()));
+                        Node node = newNode(new InetSocketAddress(
+                            uri.getHost(),
+                            kafkaService.getKafkaConfig().getKafkaServicePort().get()));
                         resultFuture.complete(newPartitionMetadata(topic, node));
                         return;
                     } else {

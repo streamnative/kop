@@ -29,6 +29,7 @@ import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import lombok.Getter;
@@ -49,6 +50,8 @@ import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.auth.SameThreadOrderedSafeExecutor;
 import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.api.PulsarClient;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.compaction.Compactor;
 import org.apache.pulsar.zookeeper.ZooKeeperClientFactory;
 import org.apache.pulsar.zookeeper.ZookeeperClientFactoryImpl;
@@ -68,12 +71,14 @@ public abstract class MockKafkaServiceBaseTest {
     protected PulsarAdmin admin;
     protected URL brokerUrl;
     protected URL brokerUrlTls;
-
     protected URI lookupUrl;
+    protected PulsarClient pulsarClient;
 
     protected final int brokerWebservicePort = PortManager.nextFreePort();
     protected final int brokerWebservicePortTls = PortManager.nextFreePort();
     protected final int brokerPort = PortManager.nextFreePort();
+    protected final int kafkaBrokerPort = PortManager.nextFreePort();
+
 
     protected MockZooKeeper mockZookKeeper;
     protected NonClosableMockBookKeeper mockBookKeeper;
@@ -89,8 +94,7 @@ public abstract class MockKafkaServiceBaseTest {
 
     protected void resetConfig() {
         this.conf = new KafkaServiceConfiguration();
-        this.conf.setKafkaServicePort(Optional.ofNullable(brokerPort));
-        //this.conf.setAdvertisedAddress("localhost");
+        this.conf.setKafkaServicePort(Optional.ofNullable(kafkaBrokerPort));
         this.conf.setBrokerServicePort(Optional.ofNullable(brokerPort));
         this.conf.setAdvertisedAddress("localhost");
         this.conf.setWebServicePort(Optional.ofNullable(brokerWebservicePort));
@@ -107,8 +111,13 @@ public abstract class MockKafkaServiceBaseTest {
         init();
         lookupUrl = new URI(brokerUrl.toString());
         if (isTcpLookup) {
-            lookupUrl = new URI("kafkaService://localhost:" + brokerPort);
+            lookupUrl = new URI("broker://localhost:" + brokerPort);
         }
+        pulsarClient = newPulsarClient(lookupUrl.toString(), 0);
+    }
+
+    protected PulsarClient newPulsarClient(String url, int intervalInSecs) throws PulsarClientException {
+        return PulsarClient.builder().serviceUrl(url).statsInterval(intervalInSecs, TimeUnit.SECONDS).build();
     }
 
     protected final void init() throws Exception {
@@ -135,6 +144,9 @@ public abstract class MockKafkaServiceBaseTest {
             // an NPE in shutdown, obscuring the real error
             if (admin != null) {
                 admin.close();
+            }
+            if (pulsarClient != null) {
+                pulsarClient.close();
             }
             if (kafkaService != null) {
                 kafkaService.close();
@@ -299,7 +311,7 @@ public abstract class MockKafkaServiceBaseTest {
 
         public Producer(String topic, Boolean isAsync) {
             Properties props = new Properties();
-            props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + brokerPort);
+            props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + kafkaBrokerPort);
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoProducer");
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
