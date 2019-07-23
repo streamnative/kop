@@ -1,0 +1,265 @@
+package io.streamnative.kop.coordinator.group;
+
+import static com.google.common.base.Preconditions.checkState;
+import static org.apache.kafka.common.protocol.types.Type.BYTES;
+import static org.apache.kafka.common.protocol.types.Type.INT32;
+import static org.apache.kafka.common.protocol.types.Type.INT64;
+import static org.apache.kafka.common.protocol.types.Type.NULLABLE_STRING;
+import static org.apache.kafka.common.protocol.types.Type.STRING;
+
+import com.google.common.collect.Lists;
+import java.nio.ByteBuffer;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import lombok.val;
+import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.protocol.types.ArrayOf;
+import org.apache.kafka.common.protocol.types.BoundField;
+import org.apache.kafka.common.protocol.types.Field;
+import org.apache.kafka.common.protocol.types.Schema;
+import org.apache.kafka.common.protocol.types.Struct;
+import org.apache.pulsar.common.schema.KeyValue;
+
+/**
+ * Messages stored for the group topic has versions for both the key and value fields. Key
+ * version is used to indicate the type of the message (also to differentiate different types
+ * of messages from being compacted together if they have the same field values); and value
+ * version is used to evolve the messages within their data types:
+ *
+ * <p>key version 0:       group consumption offset
+ *    -> value version 0:       [offset, metadata, timestamp]
+ *
+ * <p>key version 1:       group consumption offset
+ *    -> value version 1:       [offset, metadata, commit_timestamp, expire_timestamp]
+ *
+ * <p>key version 2:       group metadata
+ *     -> value version 0:       [protocol_type, generation, protocol, leader, members]
+ */
+final class GroupMetadataConstants {
+
+    static final short CURRENT_OFFSET_KEY_SCHEMA_VERSION = 1;
+    static final short CURRENT_GROUP_KEY_SCHEMA_VERSION = 2;
+
+    static final Schema OFFSET_COMMIT_KEY_SCHEMA = new Schema(
+        new Field("group", STRING),
+        new Field("topic", STRING),
+        new Field("partition", INT32)
+    );
+    static final BoundField OFFSET_KEY_GROUP_FIELD = OFFSET_COMMIT_KEY_SCHEMA.get("group");
+    static final BoundField OFFSET_KEY_TOPIC_FIELD = OFFSET_COMMIT_KEY_SCHEMA.get("topic");
+    static final BoundField OFFSET_KEY_PARTITION_FIELD = OFFSET_COMMIT_KEY_SCHEMA.get("partition");
+
+    static final Schema OFFSET_COMMIT_VALUE_SCHEMA_V0 = new Schema(
+        new Field("offset", INT64),
+        new Field("metadata", STRING, "Associated metadata.", ""),
+        new Field("timestamp", INT64)
+    );
+    static final BoundField OFFSET_VALUE_OFFSET_FIELD_V0 = OFFSET_COMMIT_VALUE_SCHEMA_V0.get("offset");
+    static final BoundField OFFSET_VALUE_METADATA_FIELD_V0 = OFFSET_COMMIT_VALUE_SCHEMA_V0.get("metadata");
+    static final BoundField OFFSET_VALUE_TIMESTAMP_FIELD_V0 = OFFSET_COMMIT_VALUE_SCHEMA_V0.get("timestamp");
+
+    static final Schema OFFSET_COMMIT_VALUE_SCHEMA_V1 = new Schema(
+        new Field("offset", INT64),
+        new Field("metadata", STRING, "Associated metadata.", ""),
+        new Field("commit_timestamp", INT64),
+        new Field("expire_timestamp", INT64)
+    );
+    static final BoundField OFFSET_VALUE_OFFSET_FIELD_V1 = OFFSET_COMMIT_VALUE_SCHEMA_V1.get("offset");
+    static final BoundField OFFSET_VALUE_METADATA_FIELD_V1 = OFFSET_COMMIT_VALUE_SCHEMA_V1.get("metadata");
+    static final BoundField OFFSET_VALUE_COMMIT_TIMESTAMP_FIELD_V1 =
+        OFFSET_COMMIT_VALUE_SCHEMA_V1.get("commit_timestamp");
+    static final BoundField OFFSET_VALUE_EXPIRE_TIMESTAMP_FIELD_V1 =
+        OFFSET_COMMIT_VALUE_SCHEMA_V1.get("expire_timestamp");
+
+    static final Schema GROUP_METADATA_KEY_SCHEMA = new Schema(new Field("group", STRING));
+    static final BoundField GROUP_KEY_GROUP_FIELD = GROUP_METADATA_KEY_SCHEMA.get("group");
+
+    static final String MEMBER_ID_KEY = "member_id";
+    static final String CLIENT_ID_KEY = "client_id";
+    static final String CLIENT_HOST_KEY = "client_host";
+    static final String REBALANCE_TIMEOUT_KEY = "rebalance_timeout";
+    static final String SESSION_TIMEOUT_KEY = "session_timeout";
+    static final String SUBSCRIPTION_KEY = "subscription";
+    static final String ASSIGNMENT_KEY = "assignment";
+
+    static final Schema MEMBER_METADATA_V0 = new Schema(
+        new Field(MEMBER_ID_KEY, STRING),
+        new Field(CLIENT_ID_KEY, STRING),
+        new Field(CLIENT_HOST_KEY, STRING),
+        new Field(SESSION_TIMEOUT_KEY, INT32),
+        new Field(SUBSCRIPTION_KEY, BYTES),
+        new Field(ASSIGNMENT_KEY, BYTES));
+
+    static final Schema MEMBER_METADATA_V1 = new Schema(
+        new Field(MEMBER_ID_KEY, STRING),
+        new Field(CLIENT_ID_KEY, STRING),
+        new Field(CLIENT_HOST_KEY, STRING),
+        new Field(REBALANCE_TIMEOUT_KEY, INT32),
+        new Field(SESSION_TIMEOUT_KEY, INT32),
+        new Field(SUBSCRIPTION_KEY, BYTES),
+        new Field(ASSIGNMENT_KEY, BYTES));
+
+    static final String PROTOCOL_TYPE_KEY = "protocol_type";
+    static final String GENERATION_KEY = "generation";
+    static final String PROTOCOL_KEY = "protocol";
+    static final String LEADER_KEY = "leader";
+    static final String MEMBERS_KEY = "members";
+
+    static final Schema GROUP_METADATA_VALUE_SCHEMA_V0 = new Schema(
+        new Field(PROTOCOL_TYPE_KEY, STRING),
+        new Field(GENERATION_KEY, INT32),
+        new Field(PROTOCOL_KEY, NULLABLE_STRING),
+        new Field(LEADER_KEY, NULLABLE_STRING),
+        new Field(MEMBERS_KEY, new ArrayOf(MEMBER_METADATA_V0)));
+
+    static final Schema GROUP_METADATA_VALUE_SCHEMA_V1 = new Schema(
+        new Field(PROTOCOL_TYPE_KEY, STRING),
+        new Field(GENERATION_KEY, INT32),
+        new Field(PROTOCOL_KEY, NULLABLE_STRING),
+        new Field(LEADER_KEY, NULLABLE_STRING),
+        new Field(MEMBERS_KEY, new ArrayOf(MEMBER_METADATA_V1)));
+
+    // map of versions to key schemas as data types
+    static final Map<Integer, Schema> MESSAGE_TYPE_SCHEMAS = asMap(
+        kv(0, OFFSET_COMMIT_KEY_SCHEMA),
+        kv(1, OFFSET_COMMIT_KEY_SCHEMA),
+        kv(2, GROUP_METADATA_KEY_SCHEMA)
+    );
+
+    // map of version of offset value schemas
+    static final Map<Integer, Schema> OFFSET_VALUE_SCHEMAS = asMap(
+        kv(0, OFFSET_COMMIT_VALUE_SCHEMA_V0),
+        kv(1, OFFSET_COMMIT_VALUE_SCHEMA_V1)
+    );
+    static final short CURRENT_OFFSET_VALUE_SCHEMA_VERSION = 1;
+
+    // map of version of group metadata value schemas
+    static final Map<Integer, Schema> GROUP_VALUE_SCHEMAS = asMap(
+        kv(0, GROUP_METADATA_VALUE_SCHEMA_V0),
+        kv(1, GROUP_METADATA_VALUE_SCHEMA_V1)
+    );
+    static final short CURRENT_GROUP_VALUE_SCHEMA_VERSION = 1;
+
+    static final Schema CURRENT_OFFSET_KEY_SCHEMA = schemaForKey(CURRENT_OFFSET_KEY_SCHEMA_VERSION);
+    static final Schema CURRENT_GROUP_KEY_SCHEMA = schemaForKey(CURRENT_GROUP_KEY_SCHEMA_VERSION);
+
+    static final Schema CURRENT_OFFSET_VALUE_SCHEMA = schemaForOffset(CURRENT_OFFSET_VALUE_SCHEMA_VERSION);
+    static final Schema CURRENT_GROUP_VALUE_SCHEMA = schemaForGroup(CURRENT_GROUP_VALUE_SCHEMA_VERSION);
+
+    private static final Schema schemaForKey(int version) {
+        Schema schema = MESSAGE_TYPE_SCHEMAS.get(version);
+        if (null == schema) {
+            throw new KafkaException("Unknown offset schema version " + version);
+        }
+        return schema;
+    }
+
+    private static final Schema schemaForOffset(int version) {
+        Schema schema = OFFSET_VALUE_SCHEMAS.get(version);
+        if (null == schema) {
+            throw new KafkaException("Unknown offset schema version " + version);
+        }
+        return schema;
+    }
+
+    private static final Schema schemaForGroup(int version) {
+        Schema schema = GROUP_VALUE_SCHEMAS.get(version);
+        if (null == schema) {
+            throw new KafkaException("Unknown group metadata version " + version);
+        }
+        return schema;
+    }
+
+    private static <K, V> KeyValue<K, V> kv(K key, V value) {
+        return new KeyValue<>(key, value);
+    }
+
+    private static <K, V> Map<K, V> asMap(KeyValue<K, V> ...kvs) {
+        return Lists.newArrayList(kvs)
+            .stream()
+            .collect(Collectors.toMap(
+                e -> e.getKey(),
+                e -> e.getValue()
+            ));
+    }
+
+    /**
+     * Generates the key for group metadata message for given group
+     *
+     * @return key bytes for group metadata message
+     */
+    static byte[] groupMetadataKey(String group) {
+        Struct key = new Struct(CURRENT_GROUP_KEY_SCHEMA);
+        key.set(GROUP_KEY_GROUP_FIELD, group);
+        ByteBuffer byteBuffer = ByteBuffer.allocate(2 /* version */ + key.sizeOf());
+        byteBuffer.putShort(CURRENT_GROUP_KEY_SCHEMA_VERSION);
+        key.writeTo(byteBuffer);
+        return byteBuffer.array();
+    }
+
+    /**
+     * Generates the payload for group metadata message from given offset and metadata
+     * assuming the generation id, selected protocol, leader and member assignment are all available
+     *
+     * @param groupMetadata current group metadata
+     * @param assignment the assignment for the rebalancing generation
+     * @param version the version of the value message to use
+     * @return payload for offset commit message
+     */
+    static byte[] groupMetadataValue(GroupMetadata groupMetadata,
+                                     Map<String, byte[]> assignment,
+                                     short version) {
+        Struct value;
+        if (version == 0) {
+            value = new Struct(GROUP_METADATA_VALUE_SCHEMA_V0);
+        } else {
+            value = new Struct(CURRENT_GROUP_VALUE_SCHEMA);
+        }
+
+        value.set(PROTOCOL_TYPE_KEY, groupMetadata.protocolType().orElse(""));
+        value.set(GENERATION_KEY, groupMetadata.generationId());
+        value.set(PROTOCOL_KEY, groupMetadata.protocolOrNull());
+        value.set(LEADER_KEY, groupMetadata.leaderOrNull());
+
+        List<Struct> memberStructs = groupMetadata.allMemberMetadata().stream().map(memberMetadata -> {
+            Struct memberStruct = value.instance(MEMBERS_KEY);
+            memberStruct.set(MEMBER_ID_KEY, memberMetadata.memberId());
+            memberStruct.set(CLIENT_ID_KEY, memberMetadata.clientId());
+            memberStruct.set(CLIENT_HOST_KEY, memberMetadata.clientHost());
+            memberStruct.set(SESSION_TIMEOUT_KEY, memberMetadata.sessionTimeoutMs());
+
+            if (version > 0) {
+                memberStruct.set(REBALANCE_TIMEOUT_KEY, memberMetadata.rebalanceTimeoutMs());
+            }
+
+            // The group is non-empty, so the current protocol must be defined
+            String protocol = groupMetadata.protocolOrNull();
+            if (protocol == null) {
+                throw new IllegalStateException("Attempted to write non-empty group metadata with no defined protocol");
+            }
+
+            byte[] metadata = memberMetadata.metadata(protocol);
+            memberStruct.set(SUBSCRIPTION_KEY, ByteBuffer.wrap(metadata));
+
+            byte[] memberAssignment = assignment.get(memberMetadata.memberId());
+            checkState(
+                memberAssignment != null,
+                "Member assignment is null for member %s", memberMetadata.memberId());
+
+            memberStruct.set(ASSIGNMENT_KEY, ByteBuffer.wrap(memberAssignment));
+
+            return memberStruct;
+        }).collect(Collectors.toList());
+
+        value.set(MEMBERS_KEY, memberStructs.toArray());
+
+        ByteBuffer byteBuffer = ByteBuffer.allocate(2 /* version */ + value.sizeOf());
+        byteBuffer.putShort(version);
+        value.writeTo(byteBuffer);
+        return byteBuffer.array();
+    }
+
+    private GroupMetadataConstants() {}
+
+}

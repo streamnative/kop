@@ -15,11 +15,17 @@ package io.streamnative.kop.coordinator.group;
 
 import lombok.Builder;
 import lombok.Data;
+import lombok.experimental.Accessors;
+import org.apache.kafka.common.record.CompressionType;
 
 /**
  * Offset configuration.
  */
 @Builder
 @Data
+@Accessors(fluent = true)
 public class OffsetConfig {
+
+    private final CompressionType offsetsTopicCompressionType;
+
 }

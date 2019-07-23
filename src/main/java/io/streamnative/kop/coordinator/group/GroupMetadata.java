@@ -18,8 +18,10 @@ import static com.google.common.base.Preconditions.checkState;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.base.MoreObjects.ToStringHelper;
+import com.google.common.base.Supplier;
 import com.google.common.collect.Sets;
 import io.streamnative.kop.coordinator.group.MemberMetadata.MemberSummary;
+import io.streamnative.kop.utils.CoreUtils;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -158,12 +160,28 @@ class GroupMetadata {
         this.state = initialState;
     }
 
+    public <T> T inLock(Supplier<T> supplier) {
+        return CoreUtils.inLock(lock, supplier);
+    }
+
+    public Optional<String> protocolType() {
+        return protocolType;
+    }
+
     public GroupState currentState() {
         return state;
     }
 
+    public String groupId() {
+        return groupId;
+    }
+
     public long generationId() {
         return generationId;
+    }
+
+    public List<MemberMetadata> allMemberMetadata() {
+        return members.values().stream().collect(Collectors.toList());
     }
 
     public boolean is(GroupState groupState) {
