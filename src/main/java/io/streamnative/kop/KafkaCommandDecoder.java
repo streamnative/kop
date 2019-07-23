@@ -135,13 +135,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     log.error(err);
                     handleError(err);
             }
-        } finally {
-            // no need buffer now
-            boolean released = buffer.release();
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] released buffer - {} after handle command. refCnt: {}",
-                    ctx.channel(), released, ((ByteBuf) msg).refCnt());
-            }
         }
     }
 
