@@ -34,7 +34,7 @@ import org.testng.annotations.Test;
  * Unit test for Different kafka request type.
  */
 @Slf4j
-public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest{
+public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
     @BeforeMethod
     @Override
