@@ -536,7 +536,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         return buf;
     }
-    
+
     protected void handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator) {
         throw new NotImplementedException("handleFindCoordinatorRequest");
     }
