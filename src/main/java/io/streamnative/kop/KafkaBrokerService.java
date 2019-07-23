@@ -15,7 +15,6 @@ package io.streamnative.kop;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelOption;
-import io.streamnative.kop.utils.ReflectionUtils;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Optional;
@@ -48,17 +47,18 @@ public class KafkaBrokerService extends BrokerService {
                 kafkaService.getZkClient(),
                 "/counters/producer-name",
                 kafkaService.getConfiguration().getClusterName());
-        ReflectionUtils.setField(this, "producerNameGenerator", producerNameGenerator);
+
+        setProducerNameGenerator(producerNameGenerator);
 
         ServerBootstrap bootstrap = new ServerBootstrap();
         bootstrap.childOption(ChannelOption.ALLOCATOR, PulsarByteBufAllocator.DEFAULT);
         bootstrap.group(
-            ReflectionUtils.getField(this, "acceptorGroup"),
-            ReflectionUtils.getField(this, "workerGroup"));
+            getAcceptorGroup(),
+            getWorkerGroup());
         bootstrap.childOption(ChannelOption.TCP_NODELAY, true);
 
         bootstrap.channel(EventLoopUtil.getServerSocketChannelClass(
-            ReflectionUtils.getField(this, "workerGroup")
+            getWorkerGroup()
         ));
         EventLoopUtil.enableTriggeredMode(bootstrap);
 
@@ -81,17 +81,10 @@ public class KafkaBrokerService extends BrokerService {
             this,
             serviceConfig.getStatsUpdateInitialDelayInSecs(),
             serviceConfig.getStatsUpdateFrequencyInSecs());
-        ReflectionUtils.callNoArgVoidMethod(
-            this, "startInactivityMonitor"
-        );
-        ReflectionUtils.callNoArgVoidMethod(
-            this, "startMessageExpiryMonitor"
-        );
-        ReflectionUtils.callNoArgVoidMethod(
-            this, "startCompactionMonitor"
-        );
-        ReflectionUtils.callNoArgVoidMethod(
-            this, "startBacklogQuotaChecker"
-        );
+
+        startInactivityMonitor();
+        startMessageExpiryMonitor();
+        startCompactionMonitor();
+        startBacklogQuotaChecker();
     }
 }

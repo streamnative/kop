@@ -15,7 +15,7 @@ package io.streamnative.kop;
 
 
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
-import static org.mockito.Matchers.anyObject;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -155,7 +155,7 @@ public class KafkaRequestHandlerTest {
         handler.channelActive(ctx);
         handler.channelRead(mock(ChannelHandlerContext.class), inputBuf);
 
-        verify(handler, times(1)).handleApiVersionsRequest(anyObject());
+        verify(handler, times(1)).handleApiVersionsRequest(any());
     }
 
     @Test
