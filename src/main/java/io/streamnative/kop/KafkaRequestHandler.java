@@ -32,7 +32,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -40,6 +39,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.Node;
@@ -79,6 +79,7 @@ import org.apache.pulsar.common.protocol.Commands.ChecksumType;
  * This class contains all the request handling methods.
  */
 @Slf4j
+@Getter
 public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private final KafkaService kafkaService;
@@ -273,7 +274,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         new MetadataResponse(
                                             allNodes,
                                             clusterName,
-                                            0,
+                                            MetadataResponse.NO_CONTROLLER_ID,
                                             allTopicMetadata);
                                     ctx.writeAndFlush(responseToByteBuf(finalResponse, metadataHar));
                                 }
@@ -285,7 +286,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected void handleProduceRequest(KafkaHeaderAndRequest produceHar) {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
-
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
 
         if (produceRequest.transactionalId() != null) {
@@ -304,31 +304,32 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final int responsesSize = produceRequest.partitionRecordsOrFail().size();
 
         for (Map.Entry<TopicPartition, ? extends Records> entry : produceRequest.partitionRecordsOrFail().entrySet()) {
-            // 1. create PersistTopic
-            // 3. tracking each record status.
             TopicPartition topicPartition = entry.getKey();
 
             CompletableFuture<PartitionResponse> partitionResponse = new CompletableFuture<>();
             responsesFutures.put(topicPartition, partitionResponse);
 
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Produce messages for topic {} partition {}, requestsize: {} ",
+                log.debug("[{}] Produce messages for topic {} partition {}, request size: {} ",
                     ctx.channel(), topicPartition.topic(), topicPartition.partition(), responsesSize);
             }
 
             TopicName topicName = pulsarTopicName(topicPartition.topic(), topicPartition.partition());
 
             kafkaService.getBrokerService().getTopic(topicName.toString(), true)
-                .thenApply(Optional::get)
-                .thenAccept(topic -> {
-                    publishMessages(entry.getValue(), topic, partitionResponse);
-                })
-                .exceptionally(exception -> {
-                    Throwable cause = exception.getCause();
-                    log.error("[{}] Failed to getOrCreateTopic {}", ctx.channel(), topicName, exception);
-                    partitionResponse.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
-
-                    return null;
+                .whenComplete((topicOpt, exception) -> {
+                    if (exception != null) {
+                        log.error("[{}] Failed to getOrCreateTopic {}. exception:",
+                            ctx.channel(), topicName, exception);
+                        partitionResponse.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
+                    } else {
+                        if (topicOpt.isPresent()) {
+                            publishMessages(entry.getValue(), topicOpt.get(), partitionResponse);
+                        } else {
+                            log.error("[{}] getOrCreateTopic get empty topic for name {}", ctx.channel(), topicName);
+                            partitionResponse.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
+                        }
+                    }
                 });
         }
 
@@ -365,6 +366,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ctx.channel(), topic.getName(), size.get());
         }
 
+        // TODO: Handle Records in a batched way:
+        //      https://github.com/streamnative/kop/issues/16
         List<CompletableFuture<Long>> futures = Collections
             .synchronizedList(Lists.newArrayListWithExpectedSize(size.get()));
 
@@ -409,7 +412,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         public void completed(Exception exception, long ledgerId, long entryId) {
 
             if (exception != null) {
-                log.debug("Failed write entry: {}, entryId: {}, sequenceId: {}. and triggered send callback.",
+                log.error("Failed write entry: {}, entryId: {}, sequenceId: {}. and triggered send callback.",
                     ledgerId, entryId, sequenceId);
                 offsetFuture.completeExceptionally(exception);
             } else {

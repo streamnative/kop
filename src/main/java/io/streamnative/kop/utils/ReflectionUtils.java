@@ -68,10 +68,10 @@ public final class ReflectionUtils {
                                            String methodName) throws Exception {
         try {
             Method privateStringMethod = privateObject.getClass().getSuperclass()
-                .getDeclaredMethod(methodName, null);
+                .getDeclaredMethod(methodName, (Class<?>[]) null);
 
             privateStringMethod.setAccessible(true);
-            privateStringMethod.invoke(privateObject, null);
+            privateStringMethod.invoke(privateObject, (Object[]) null);
         } catch (NoSuchMethodException | IllegalAccessException e) {
             throw new RuntimeException("Unable to call method '" + methodName + "'", e);
         } catch (InvocationTargetException e) {
