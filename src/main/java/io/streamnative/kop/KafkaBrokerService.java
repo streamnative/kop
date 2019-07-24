@@ -14,8 +14,9 @@
 package io.streamnative.kop;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.AdaptiveRecvByteBufAllocator;
 import io.netty.channel.ChannelOption;
-import io.streamnative.kop.utils.ReflectionUtils;
+import io.netty.handler.ssl.SslContext;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Optional;
@@ -23,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.BrokerServiceUtil;
 import org.apache.pulsar.broker.service.DistributedIdGenerator;
+import org.apache.pulsar.broker.service.PulsarChannelInitializer;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.util.netty.EventLoopUtil;
 
@@ -48,17 +50,18 @@ public class KafkaBrokerService extends BrokerService {
                 kafkaService.getZkClient(),
                 "/counters/producer-name",
                 kafkaService.getConfiguration().getClusterName());
-        ReflectionUtils.setField(this, "producerNameGenerator", producerNameGenerator);
+
+        setProducerNameGenerator(producerNameGenerator);
 
         ServerBootstrap bootstrap = new ServerBootstrap();
         bootstrap.childOption(ChannelOption.ALLOCATOR, PulsarByteBufAllocator.DEFAULT);
         bootstrap.group(
-            ReflectionUtils.getField(this, "acceptorGroup"),
-            ReflectionUtils.getField(this, "workerGroup"));
+            getAcceptorGroup(),
+            getWorkerGroup());
         bootstrap.childOption(ChannelOption.TCP_NODELAY, true);
 
         bootstrap.channel(EventLoopUtil.getServerSocketChannelClass(
-            ReflectionUtils.getField(this, "workerGroup")
+            getWorkerGroup()
         ));
         EventLoopUtil.enableTriggeredMode(bootstrap);
 
@@ -76,22 +79,52 @@ public class KafkaBrokerService extends BrokerService {
             log.info("Started Kop Broker service on port {}", port.get());
         }
 
+
+        // start original Pulsar Broker service
+        ServerBootstrap pulsarBootstrap = new ServerBootstrap();
+        pulsarBootstrap.childOption(ChannelOption.ALLOCATOR, PulsarByteBufAllocator.DEFAULT);
+        pulsarBootstrap.group(
+            getAcceptorGroup(),
+            getWorkerGroup());
+        pulsarBootstrap.childOption(ChannelOption.TCP_NODELAY, true);
+        pulsarBootstrap.childOption(ChannelOption.RCVBUF_ALLOCATOR,
+            new AdaptiveRecvByteBufAllocator(1024, 16 * 1024, 1 * 1024 * 1024));
+
+        pulsarBootstrap.channel(EventLoopUtil.getServerSocketChannelClass(getWorkerGroup()));
+        EventLoopUtil.enableTriggeredMode(pulsarBootstrap);
+
+        pulsarBootstrap.childHandler(new PulsarChannelInitializer(kafkaService, false));
+
+        Optional<Integer> pulsarPort = serviceConfig.getBrokerServicePort();
+        if (port.isPresent()) {
+            // Bind and start to accept incoming connections.
+            InetSocketAddress addr = new InetSocketAddress(kafkaService.getBindAddress(), pulsarPort.get());
+            try {
+                pulsarBootstrap.bind(addr).sync();
+            } catch (Exception e) {
+                throw new IOException("Failed to bind Pulsar broker on " + addr, e);
+            }
+            log.info("Started Pulsar Broker service on port {}", pulsarPort.get());
+        }
+
+        Optional<Integer> tlsPort = serviceConfig.getBrokerServicePortTls();
+        if (tlsPort.isPresent()) {
+            ServerBootstrap tlsBootstrap = pulsarBootstrap.clone();
+            tlsBootstrap.childHandler(new PulsarChannelInitializer(kafkaService, true));
+            tlsBootstrap.bind(new InetSocketAddress(kafkaService.getBindAddress(), tlsPort.get())).sync();
+            log.info("Started Pulsar Broker TLS service on port {} - TLS provider: {}", tlsPort.get(),
+                SslContext.defaultServerProvider());
+        }
+
         // start other housekeeping functions
         BrokerServiceUtil.startStatsUpdater(
             this,
             serviceConfig.getStatsUpdateInitialDelayInSecs(),
             serviceConfig.getStatsUpdateFrequencyInSecs());
-        ReflectionUtils.callNoArgVoidMethod(
-            this, "startInactivityMonitor"
-        );
-        ReflectionUtils.callNoArgVoidMethod(
-            this, "startMessageExpiryMonitor"
-        );
-        ReflectionUtils.callNoArgVoidMethod(
-            this, "startCompactionMonitor"
-        );
-        ReflectionUtils.callNoArgVoidMethod(
-            this, "startBacklogQuotaChecker"
-        );
+
+        startInactivityMonitor();
+        startMessageExpiryMonitor();
+        startCompactionMonitor();
+        startBacklogQuotaChecker();
     }
 }

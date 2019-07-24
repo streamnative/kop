@@ -39,7 +39,7 @@
     <lombok.version>1.18.4</lombok.version>
     <mockito.version>2.22.0</mockito.version>
     <netty.version>4.1.32.Final</netty.version>
-    <pulsar.version>2.4.0</pulsar.version>
+    <pulsar.version>2.5.0-2cc34afc0</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
     <testcontainers.version>1.11.2</testcontainers.version>
@@ -196,6 +196,30 @@
       <scope>test</scope>
     </dependency>
 
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <version>${mockito.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.pulsar</groupId>
+      <artifactId>pulsar-broker</artifactId>
+      <version>${pulsar.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.pulsar</groupId>
+      <artifactId>managed-ledger-original</artifactId>
+      <version>${pulsar.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+
+
   </dependencies>
 
   <build>
@@ -264,6 +288,11 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <version>${maven-surefire-plugin.version}</version>
         <configuration>
+          <argLine> -Xmx2G
+            -Dpulsar.allocator.pooled=false
+            -Dpulsar.allocator.leak_detection=Advanced
+            -Dlog4j.configurationFile="log4j2.xml"
+          </argLine>
           <reuseForks>false</reuseForks>
           <forkCount>1</forkCount>
           <redirectTestOutputToFile>${redirectTestOutputToFile}</redirectTestOutputToFile>
