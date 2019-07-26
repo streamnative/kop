@@ -41,6 +41,8 @@ public class KafkaService extends PulsarService {
 
     @Getter
     private final KafkaServiceConfiguration kafkaConfig;
+    @Getter
+    private KafkaTopicManager kafkaTopicManager;
 
     public KafkaService(KafkaServiceConfiguration config) {
         super(config);
@@ -166,6 +168,8 @@ public class KafkaService extends PulsarService {
                 ? "broker url= " + kafkaConfig.getKafkaServicePort() : "")
                     + (kafkaConfig.getKafkaServicePortTls().isPresent()
                 ? "broker url= " + kafkaConfig.getKafkaServicePortTls() : "");
+
+            kafkaTopicManager = new KafkaTopicManager(getBrokerService());
 
             log.info("Kafka messaging service is ready, {}, cluster={}, configs={}", bootstrapMessage,
                 kafkaConfig.getClusterName(), ReflectionToStringBuilder.toString(kafkaConfig));
