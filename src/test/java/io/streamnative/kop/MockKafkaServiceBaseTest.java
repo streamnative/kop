@@ -22,7 +22,6 @@ import java.lang.reflect.Field;
 import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -41,14 +40,11 @@ import org.apache.bookkeeper.client.PulsarMockBookKeeper;
 import org.apache.bookkeeper.test.PortManager;
 import org.apache.bookkeeper.util.ZkUtils;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -381,8 +377,10 @@ public abstract class MockKafkaServiceBaseTest {
             props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 
             props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "30000");
-            props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.IntegerDeserializer");
-            props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
+            props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
+                "org.apache.kafka.common.serialization.IntegerDeserializer");
+            props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
+                "org.apache.kafka.common.serialization.StringDeserializer");
 
             this.consumer = new KafkaConsumer<>(props);
             this.topic = topic;
@@ -391,8 +389,10 @@ public abstract class MockKafkaServiceBaseTest {
 
 
     public static Integer kafkaIntDeserialize(byte[] data) {
-        if (data == null)
+        if (data == null) {
             return null;
+        }
+
         if (data.length != 4) {
             throw new SerializationException("Size of data received by IntegerDeserializer is not 4");
         }
@@ -406,8 +406,9 @@ public abstract class MockKafkaServiceBaseTest {
     }
 
     public static byte[] kafkaIntSerialize(Integer data) {
-        if (data == null)
+        if (data == null) {
             return null;
+        }
 
         return new byte[] {
             (byte) (data >>> 24),

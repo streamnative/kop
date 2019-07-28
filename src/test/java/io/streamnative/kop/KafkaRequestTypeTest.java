@@ -83,7 +83,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         int totalMsgs = 10;
         String messageStrPrefix = "Message_Kop_KafkaProducePulsarConsume_";
 
-        for (int i = 0; i < totalMsgs; i ++) {
+        for (int i = 0; i < totalMsgs; i++) {
             String messageStr = messageStrPrefix + i;
             try {
                 kProducer.getProducer()
@@ -92,7 +92,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
                             i,
                             messageStr))
                     .get();
-                log.debug("Sent message: (" + i + ", " + messageStr + ")");
+                log.debug("Sent message: ({}, {})", i, messageStr);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -129,7 +129,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
         KProducer producer = new KProducer(topicName, false);
 
-        for (int i = 0; i < totalMsgs; i ++) {
+        for (int i = 0; i < totalMsgs; i++) {
             String messageStr = messageStrPrefix + i;
             try {
                 producer.getProducer()
@@ -138,7 +138,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
                         i,
                         messageStr))
                     .get();
-                log.debug("Sent message: (" + i + ", " + messageStr + ")");
+                log.debug("Sent message: ({}, {})", i, messageStr);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -148,7 +148,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         KConsumer kConsumer = new KConsumer(topicName);
         kConsumer.getConsumer().assign(Collections.singletonList(new TopicPartition(topicName, 0)));
 
-        for (int i = 0; i < totalMsgs; i ++) {
+        for (int i = 0; i < totalMsgs; i++) {
             log.debug("start poll: {}", i);
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
@@ -196,7 +196,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         KConsumer kConsumer = new KConsumer(topicName);
         kConsumer.getConsumer().assign(Collections.singletonList(new TopicPartition(topicName, 0)));
 
-        for (int i = 0; i < totalMsgs; i ++) {
+        for (int i = 0; i < totalMsgs; i++) {
             log.debug("start poll: {}", i);
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
