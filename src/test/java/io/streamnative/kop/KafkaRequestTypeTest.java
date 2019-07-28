@@ -19,12 +19,21 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNull;
 
 import com.google.common.collect.Sets;
+import java.time.Duration;
+import java.util.Base64;
+import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
+import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -47,6 +56,8 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
             new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
         admin.namespaces().createNamespace("public/default");
         admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
+        admin.namespaces().setRetention("public/default",
+            new RetentionPolicies(20, 100));
     }
 
     @AfterMethod
@@ -55,10 +66,9 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         super.internalCleanup();
     }
 
-
     @Test(timeOut = 20000)
-    public void testProduceRequest() throws Exception {
-        String topicName = "kopTopicProduce";
+    public void testKafkaProducePulsarConsume() throws Exception {
+        String topicName = "kopKafkaProducePulsarConsume";
 
         // create partitioned topic.
         kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, 1);
@@ -67,35 +77,37 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
             .topic("persistent://public/default/" + topicName + PARTITIONED_TOPIC_SUFFIX + 0)
             .subscriptionName("test_producer_sub").subscribe();
 
-
         // 1. produce message with Kafka producer.
-        Producer producer = new Producer(topicName, false);
+        KProducer kProducer = new KProducer(topicName, false);
 
-        int messageNo = 0;
         int totalMsgs = 10;
+        String messageStrPrefix = "Message_Kop_KafkaProducePulsarConsume_";
 
-        while (messageNo < totalMsgs) {
-            String messageStr = "Message_Kop_" + messageNo;
-
+        for (int i = 0; i < totalMsgs; i ++) {
+            String messageStr = messageStrPrefix + i;
             try {
-                producer.getProducer().send(new ProducerRecord<>(topicName,
-                    messageNo,
-                    messageStr)).get();
-                log.info("Sent message: (" + messageNo + ", " + messageStr + ")");
+                kProducer.getProducer()
+                    .send(new ProducerRecord<>(
+                            topicName,
+                            i,
+                            messageStr))
+                    .get();
+                log.debug("Sent message: (" + i + ", " + messageStr + ")");
             } catch (Exception e) {
                 e.printStackTrace();
             }
-            ++messageNo;
         }
 
-        assertEquals(totalMsgs, messageNo);
-
+        // 2. Consume messages use Pulsar client Consumer. verify content and key
         Message<byte[]> msg = null;
-
-        // 2. Consume messages use Pulsar client Consumer.
         for (int i = 0; i < totalMsgs; i++) {
             msg = consumer.receive(100, TimeUnit.MILLISECONDS);
-            log.info("Pulsar consumer get message: {}", new String(msg.getData()));
+
+            assertEquals(messageStrPrefix + i, new String(msg.getValue()));
+            assertEquals(Integer.valueOf(i), kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey())));
+
+            log.debug("Pulsar consumer get message: {}, key: {}",
+                new String(msg.getData()), kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey())).toString());
             consumer.acknowledge(msg);
         }
 
@@ -103,4 +115,98 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         msg = consumer.receive(100, TimeUnit.MILLISECONDS);
         assertNull(msg);
     }
+
+    @Test(timeOut = 20000)
+    public void testKafkaProduceKafkaConsume() throws Exception {
+        String topicName = "kopKafkaProduceKafkaConsume";
+
+        // create partitioned topic.
+        kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, 1);
+
+        // 1. produce message with Kafka producer.
+        int totalMsgs = 10;
+        String messageStrPrefix = "Message_Kop_KafkaProduceKafkaConsume_";
+
+        KProducer producer = new KProducer(topicName, false);
+
+        for (int i = 0; i < totalMsgs; i ++) {
+            String messageStr = messageStrPrefix + i;
+            try {
+                producer.getProducer()
+                    .send(new ProducerRecord<>(
+                        topicName,
+                        i,
+                        messageStr))
+                    .get();
+                log.debug("Sent message: (" + i + ", " + messageStr + ")");
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
+        // 2. use kafka consumer to consume.
+        KConsumer kConsumer = new KConsumer(topicName);
+        kConsumer.getConsumer().assign(Collections.singletonList(new TopicPartition(topicName, 0)));
+
+        for (int i = 0; i < totalMsgs; i ++) {
+            log.debug("start poll: {}", i);
+            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<Integer, String> record : records) {
+                assertEquals(messageStrPrefix + i, record.value());
+                assertEquals(Integer.valueOf(i), record.key());
+
+                log.debug("Received message: {}, {} at offset {}",
+                    record.key(), record.value(), record.offset());
+            }
+        }
+    }
+
+    @Test(timeOut = 20000)
+    public void testPulsarProduceKafkaConsume() throws Exception {
+        String topicName = "kopPulsarProduceKafkaConsume";
+        String pulsarTopicName = "persistent://public/default/" + topicName + PARTITIONED_TOPIC_SUFFIX + 0;
+
+        // create partitioned topic.
+        kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, 1);
+
+        // create a consumer to retention the data?
+        Consumer<byte[]> consumer = pulsarClient.newConsumer()
+            .topic("persistent://public/default/" + topicName + PARTITIONED_TOPIC_SUFFIX + 0)
+            .subscriptionName("test_producer_sub").subscribe();
+
+
+        // 1. use pulsar producer to produce.
+        int totalMsgs = 10;
+        String messageStrPrefix = "Message_Kop_PulsarProduceKafkaConsume_";
+
+        ProducerBuilder<byte[]> producerBuilder = pulsarClient.newProducer()
+            .topic(pulsarTopicName)
+            .enableBatching(false);
+
+        Producer<byte[]> producer = producerBuilder.create();
+        for (int i = 0; i < totalMsgs; i++) {
+            String message = messageStrPrefix + i;
+            producer.newMessage()
+                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
+                .value(message.getBytes())
+                .send();
+        }
+
+        // 2. use kafka consumer to consume.
+        KConsumer kConsumer = new KConsumer(topicName);
+        kConsumer.getConsumer().assign(Collections.singletonList(new TopicPartition(topicName, 0)));
+
+        for (int i = 0; i < totalMsgs; i ++) {
+            log.debug("start poll: {}", i);
+            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<Integer, String> record : records) {
+                assertEquals(messageStrPrefix + i, record.value());
+                assertEquals(Integer.valueOf(i), record.key());
+
+                log.debug("Received message: {}, {} at offset {}",
+                    record.key(), record.value(), record.offset());
+            }
+        }
+    }
+
 }

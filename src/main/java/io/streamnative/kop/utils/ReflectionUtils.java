@@ -30,7 +30,7 @@ public final class ReflectionUtils {
      * @return the value of the private field
      */
     @SuppressWarnings("unchecked")
-    public static <T> T getField(Object privateObject, String fieldName) {
+    public static <T> T getSuperField(Object privateObject, String fieldName) {
         try {
             Field privateField = privateObject.getClass().getSuperclass().getDeclaredField(fieldName);
             privateField.setAccessible(true);
@@ -49,7 +49,7 @@ public final class ReflectionUtils {
      * @throws IllegalAccessException
      * @throws NoSuchFieldException
      */
-    public static <T> void setField(Object privateObject,
+    public static <T> void setSuperField(Object privateObject,
                                     String fieldName,
                                     T fieldValue)
             throws IllegalAccessException, NoSuchFieldException {
@@ -59,12 +59,12 @@ public final class ReflectionUtils {
     }
 
     /**
-     * Call the private method's super class.
+     * Call the private method's super class method.
      *
      * @param privateObject the object
      * @param methodName the private method name
      */
-    public static void callNoArgVoidMethod(Object privateObject,
+    public static void callSuperNoArgVoidMethod(Object privateObject,
                                            String methodName) throws Exception {
         try {
             Method privateStringMethod = privateObject.getClass().getSuperclass()
@@ -81,6 +81,23 @@ public final class ReflectionUtils {
                 throw (Exception) e.getCause();
             }
         }
+    }
+
+    /**
+     * set the private method's accessible.
+     *
+     * @param privateObject the object
+     * @param methodName the private method name
+     * @param parameterTypes the parameter types
+     */
+    public static Method setMethodAccessible(Object privateObject,
+                                             String methodName,
+                                             Class<?>... parameterTypes) throws Exception {
+        Method privateStringMethod = privateObject.getClass().getDeclaredMethod(methodName, parameterTypes);
+
+        privateStringMethod.setAccessible(true);
+
+        return privateStringMethod;
     }
 
     private ReflectionUtils() {}

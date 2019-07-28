@@ -22,19 +22,19 @@ public class KafkaTopicManager {
         topics = new ConcurrentOpenHashMap<>();
     }
 
-    public CompletableFuture<KafkaTopicConsumerManager> getTopic(String topicName) {
+    public CompletableFuture<KafkaTopicConsumerManager> getTopicConsumerManager(String topicName) {
         return topics.computeIfAbsent(
             topicName,
             t -> service
                 .getTopic(topicName, true)
                 .thenApply(t2 -> {
                     if (log.isDebugEnabled()) {
-                        log.debug("Call getTopic for {}, and create KafkaTopicConsumerManager.", topicName);
+                        log.debug("Call getTopicConsumerManager for {}, and create KafkaTopicConsumerManager.", topicName);
                     }
                     return new KafkaTopicConsumerManager((PersistentTopic) t2.get());
                 })
                 .exceptionally(ex -> {
-                    log.error("Failed to getTopic {}. exception:",
+                    log.error("Failed to getTopicConsumerManager {}. exception:",
                         topicName, ex);
                     return null;
                 })

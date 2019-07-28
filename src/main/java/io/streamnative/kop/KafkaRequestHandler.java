@@ -32,6 +32,7 @@ import java.net.URISyntaxException;
 import java.time.Clock;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -500,6 +501,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // key
         if (record.hasKey()) {
             byte[] key = new byte[record.keySize()];
+            record.key().get(key);
             builder.keyBytes(key);
         }
 
@@ -549,6 +551,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (!msgMetadataBuilder.hasProducerName()) {
             msgMetadataBuilder.setProducerName(FAKE_KOP_PRODUCER_NAME);
         }
+
         msgMetadataBuilder.setCompression(
             CompressionCodecProvider.convertToWireProtocol(CompressionType.NONE));
         msgMetadataBuilder.setUncompressedSize(payload.readableBytes());
@@ -583,11 +586,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
                 ByteBuf payload = metadataAndPayload.retain();
 
+                byte[] data = new byte[payload.readableBytes()];
+                payload.readBytes(data);
+
+                String key = new String(Base64.getDecoder().decode(msgMetadata.getPartitionKey()));
+                String value = new String(data);
+
                 builder.appendWithOffset(
                     MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
                     msgMetadata.getEventTime(),
-                    msgMetadata.getPartitionKey().getBytes(),
-                    payload.array());
+                    Base64.getDecoder().decode(msgMetadata.getPartitionKey()),
+                    data);
             }
             return builder.build();
         } catch (IOException ioe) {
@@ -607,7 +616,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             } catch (URISyntaxException e) {
 
             }
-            Node node = newNode(new InetSocketAddress(uri.getHost(), uri.getPort()));
+            Node node = newNode(
+                new InetSocketAddress(
+                    uri.getHost(),
+                    kafkaService.getKafkaConfig().getKafkaServicePort().get()));
 
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Return current broker node as Coordinator: {}.",
@@ -634,6 +646,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         CompletableFuture.allOf(statsList.stream().map(entry -> entry.getValue()).toArray(CompletableFuture<?>[]::new))
             .whenComplete((ignore, ex) -> {
+                if (ex != null) {
+                    log.error("[{}] OffsetFetch {} meet error:", ctx.channel(), offsetFetch.getHeader(), ex);
+                    ctx.writeAndFlush(responseToByteBuf(
+                        new OffsetFetchResponse(Errors.UNKNOWN_TOPIC_OR_PARTITION, null), offsetFetch));
+                    return;
+                }
+
+                // TODO: topics may not exist currently, need createTopic?
                 Map<TopicPartition, OffsetFetchResponse.PartitionData> responses =
                     statsList.stream().map((v) -> {
                         TopicPartition key = v.getKey();
@@ -643,8 +663,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             long offset = MessageIdUtils.getOffset(ledgers.get(0).ledgerId, 0);
 
                             if (log.isDebugEnabled()) {
-                                log.debug("[{}] OffsetFetch Return offset: {}, ledgerId: {}.",
-                                    ctx.channel(), offset, ledgers.get(0).ledgerId);
+                                log.debug("[{}] OffsetFetchRequest for topic: {}  Return offset: {}, ledgerId: {}.",
+                                    ctx.channel(), key, offset, ledgers.get(0).ledgerId);
                             }
                             return Pair.of(key, new OffsetFetchResponse.PartitionData(
                                 offset, OffsetFetchResponse.NO_METADATA, Errors.NONE));
@@ -658,7 +678,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                 ctx.writeAndFlush(responseToByteBuf(new OffsetFetchResponse(Errors.NONE, responses), offsetFetch));
             });
-        //throw new NotImplementedException("handleOffsetFetchRequest");
     }
 
     protected void handleListOffsetRequest(KafkaHeaderAndRequest listOffset) {
@@ -669,6 +688,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         throw new NotImplementedException("handleOffsetCommitRequest");
     }
 
+    // TODO: get max/min/end time from request?
     private void readMessages(KafkaHeaderAndRequest fetch,
                               Map<TopicPartition, CompletableFuture<ManagedCursor>> cursors,
                               int maxBytes,
@@ -676,6 +696,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                               long endTime) {
         AtomicInteger bytesRead = new AtomicInteger(0);
         Map<TopicPartition, List<Entry>> responseValues = new ConcurrentHashMap<>();
+
+        if (log.isDebugEnabled()) {
+            log.debug("[{}] For request:{} readMessages, maxBytes: {}, min Bytes: {}, endTime: {}",
+                ctx.channel(), fetch.getHeader(), maxBytes, minBytes, endTime);
+        }
 
         readMessagesInternal(fetch, cursors, maxBytes, minBytes, endTime, bytesRead, responseValues);
     }
@@ -710,42 +735,61 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     .reduce(0, Integer::sum);
                 int allSize = bytesRead.addAndGet(roundSize);
                 if (log.isDebugEnabled()) {
-                    log.debug("One round read entries number : {}, roundSize: {}, allSize: {}",
-                        readFutures.size(), roundSize, allSize);
+                    log.debug("One round read entries number : {}, roundSize: {}, allSize: {}, maxBytes:{}, minBytes:{}, endTime: {}",
+                        readFutures.size(), roundSize, allSize, maxBytes, minBytes, new Date(endTime));
                 }
 
                 // keep entries
                 readFutures.forEach((topic, readEntry) -> {
                     Entry entry = readEntry.join();
-                    List<Entry> entries1 = responseValues.computeIfAbsent(topic, l -> Lists.newArrayList());
-                    entries1.add(entry);
-                    if (log.isDebugEnabled()) {
-                        log.debug("For topic: {}, entries in list: {}. add new entry ledgerId: {}, entryId: {}",
-                            topic.toString(), entries1.size(),roundSize, entry.getLedgerId(), entry.getEntryId());
+                    List<Entry> entryList = responseValues.computeIfAbsent(topic, l -> Lists.newArrayList());
+                    if (entry != null) {
+                        entryList.add(entry);
+                        if (log.isDebugEnabled()) {
+                            log.debug("For topic: {}, entries in list: {}. add new entry ledgerId: {}, "
+                                    + "entryId: {}, string:{}",
+                                topic.toString(), entryList.size(), roundSize, entry.getLedgerId(),
+                                entry.getEntryId(), new String(entry.getData()));
+                        }
                     }
                 });
 
-                // reach maxBytes, return;
                 // reach maxTime,  return;
                 // reach minBytes if no endTime, return;
-                if (allSize >= maxBytes
-                    || (endTime > 0 && endTime <= System.currentTimeMillis()
-                    || (endTime <= 0 && allSize > minBytes))) {
+                if ((endTime > 0 && endTime <= System.currentTimeMillis())
+                    || allSize > minBytes){
+
+                    if (log.isDebugEnabled()) {
+                        log.debug("Complete read entries number : {}, roundSize: {}, allSize: {}, maxBytes:{}, minBytes:{}, endTime: {}",
+                            readFutures.size(), roundSize, allSize, maxBytes, minBytes, new Date(endTime));
+                    }
 
                     LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData = new LinkedHashMap<>();
 
                     responseValues.forEach((topicPartition, entries) -> {
-                        Entry last = entries.get(entries.size() - 1);
-                        long lastOffset = MessageIdUtils.getOffset(last.getLedgerId(), last.getEntryId());
-                        long highWatermark = lastOffset + cursors.get(topicPartition).join().getNumberOfEntries();
-                        MemoryRecords records = entriesToRecords(entries);
-                        FetchResponse.PartitionData partitionData = new FetchResponse.PartitionData(
-                            Errors.NONE,
-                            highWatermark,
-                            FetchResponse.INVALID_LAST_STABLE_OFFSET,
-                            FetchResponse.INVALID_LOG_START_OFFSET,
-                            null,
-                            records);
+                        FetchResponse.PartitionData partitionData ;
+                        if (entries.isEmpty()) {
+                            partitionData = new FetchResponse.PartitionData(
+                                Errors.OFFSET_OUT_OF_RANGE,
+                                FetchResponse.INVALID_HIGHWATERMARK,
+                                FetchResponse.INVALID_LAST_STABLE_OFFSET,
+                                FetchResponse.INVALID_LOG_START_OFFSET,
+                                null,
+                                MemoryRecords.EMPTY);
+                        } else {
+                            Entry entry = entries.get(entries.size() - 1);
+                            long entryOffset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
+                            long highWatermark = entryOffset + cursors.get(topicPartition).join().getNumberOfEntries();
+
+                            MemoryRecords records = entriesToRecords(entries);
+                            partitionData = new FetchResponse.PartitionData(
+                                Errors.NONE,
+                                highWatermark,
+                                highWatermark,
+                                highWatermark,
+                                null,
+                                records);
+                        }
 
                         responseData.put(topicPartition, partitionData);
                     });
@@ -773,24 +817,27 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             ManagedCursor cursor = pair.getValue().join();
             CompletableFuture<Entry> readFuture = new CompletableFuture<>();
 
+            // only read 1 entry currently. could read more in a batch.
             cursor.asyncReadEntries(1,
                 new ReadEntriesCallback() {
                 @Override
                 public void readEntriesComplete(List<Entry> list, Object o) {
                     TopicName topicName = pulsarTopicName(pair.getKey());
-                    Entry entry = list.get(0);
-                    long offset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
 
-                    if (log.isDebugEnabled()) {
-                        log.debug("Topic {} success read entry: ledgerId: {}, entryId: {}, size: {}",
-                            topicName.toString(), entry.getLedgerId(), entry.getEntryId(), entry.getLength());
+                    Entry entry = null;
+                    if (!list.isEmpty()) {
+                        entry = list.get(0);
+                        long offset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
+
+                        if (log.isDebugEnabled()) {
+                            log.debug("Topic {} success read entry: ledgerId: {}, entryId: {}, size: {}, add offset: {}",
+                                topicName.toString(), entry.getLedgerId(), entry.getEntryId(), entry.getLength(), offset + 1);
+                        }
+
+                        kafkaService.getKafkaTopicManager()
+                            .getTopicConsumerManager(topicName.toString())
+                            .thenAccept(cm -> cm.add(offset + 1, pair.getValue()));
                     }
-
-                    kafkaService.getKafkaTopicManager()
-                        .getTopic(topicName.toString())
-                        .thenAccept(cm -> {
-                            cm.remove(offset);
-                            cm.add(offset + 1, pair.getValue());});
 
                     readFuture.complete(entry);
                 }
@@ -813,7 +860,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(fetch.getRequest() instanceof FetchRequest);
         FetchRequest request = (FetchRequest) fetch.getRequest();
 
-
         int maxBytes = request.maxBytes();
         int minBytes = request.minBytes();
         int waitTime = request.maxWait(); // in ms
@@ -823,15 +869,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // Map of partition and related cursor
         Map<TopicPartition, CompletableFuture<ManagedCursor>> topicsAndCursor = request
             .fetchData().entrySet().stream()
-            .map(entry -> Pair.of(entry.getKey(), entry.getValue().fetchOffset))
-            .map(pair -> {
-                TopicName topicName = pulsarTopicName(pair.getKey());
-                long offset = pair.getValue();
+            .map(entry -> {
+                TopicName topicName = pulsarTopicName(entry.getKey());
+                long offset = entry.getValue().fetchOffset;
+
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Request {} Fetch topic: {}, remove cursor for fetch offset: {}.",
+                        ctx.channel(), fetch.getHeader(), topicName, offset);
+                }
 
                 return Pair.of(
-                    pair.getKey(),
+                    entry.getKey(),
                     kafkaService.getKafkaTopicManager()
-                        .getTopic(topicName.toString())
+                        .getTopicConsumerManager(topicName.toString())
                         .thenCompose(cm -> cm.remove(offset)));
             })
             .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
@@ -840,6 +890,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture
             .allOf(topicsAndCursor.entrySet().stream().map(Map.Entry::getValue).toArray(CompletableFuture<?>[]::new))
             .whenComplete((ignore, ex) -> {
+                // TODO: handle ex
                 readMessages(fetch, topicsAndCursor, maxBytes, minBytes, endTime);
             });
     }
