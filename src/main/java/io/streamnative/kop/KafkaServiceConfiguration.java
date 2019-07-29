@@ -57,7 +57,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         doc = "The port for serving Kafka requests"
     )
 
-    private Optional<Integer> kafkaServicePort = Optional.of(9902);
+    private Optional<Integer> kafkaServicePort = Optional.of(9092);
 
     @FieldContext(
         category = CATEGORY_KOP,
