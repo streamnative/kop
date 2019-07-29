@@ -14,6 +14,7 @@
 package io.streamnative.kop;
 
 import java.util.concurrent.CompletableFuture;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.collections.ConcurrentOpenHashMap;
 import org.apache.pulsar.broker.service.BrokerService;
@@ -27,6 +28,7 @@ import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 public class KafkaTopicManager {
 
     private final BrokerService service;
+    @Getter
     private final ConcurrentOpenHashMap<String, CompletableFuture<KafkaTopicConsumerManager>> topics;
 
     KafkaTopicManager(BrokerService service) {

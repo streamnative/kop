@@ -18,6 +18,7 @@ import io.streamnative.kop.utils.ReflectionUtils;
 import java.lang.reflect.Method;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
@@ -34,6 +35,7 @@ import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 public class KafkaTopicConsumerManager {
 
     private final PersistentTopic topic;
+    @Getter
     private final ConcurrentLongHashMap<CompletableFuture<ManagedCursor>> consumers;
 
     KafkaTopicConsumerManager(PersistentTopic topic) {
@@ -54,6 +56,7 @@ public class KafkaTopicConsumerManager {
         cursor = new CompletableFuture<>();
         CompletableFuture<ManagedCursor> oldCursor = consumers.putIfAbsent(offset, cursor);
         if (oldCursor != null) {
+            // added by other thread while creating.
             return remove(offset);
         }
 
