@@ -14,7 +14,6 @@
 package io.streamnative.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
@@ -167,13 +166,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 .groupingBy(topicName -> getLocalNameWithoutPartition(topicName), Collectors.toList()));
 
                     if (log.isDebugEnabled()) {
-                        log.debug("Get all topics in TopicMetadata request, will get {} topics", pulsarTopics.size());
+                        log.debug("[{}] Request {}: Get all topics, will get {} topics",
+                            ctx.channel(), metadataHar.getHeader(), pulsarTopics.size());
                     }
 
                     pulsarTopicsFuture.complete(pulsarTopics);
                 } catch (Exception e) {
                     // error when getListOfPersistentTopics
-                    log.error("Failed to get all topics list", e);
+                    log.error("[{}] Request {}: Failed to get all topics list",
+                        ctx.channel(), metadataHar.getHeader(), e);
                     pulsarTopicsFuture.completeExceptionally(e);
                 }
             });
@@ -204,8 +205,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         topic,
                                         false,
                                         Collections.emptyList()));
-                                log.warn("[{}] Failed to get partitioned topic metadata: {}",
-                                    topicName, throwable.getMessage());
+                                log.warn("[{}] Request {}: Failed to get partitioned topic {} metadata: {}",
+                                    ctx.channel(), metadataHar.getHeader(), topicName, throwable.getMessage());
                             } else {
                                 List<TopicName> topicNames;
                                 if (partitionedTopicMetadata.partitions > 1) {
@@ -221,7 +222,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                                 } else {
                                     if (log.isDebugEnabled()) {
-                                        log.debug("Topic {} has 1 partitions", topic);
+                                        log.debug("[{}] Request {}: Topic {} has 1 partitions",
+                                            ctx.channel(), metadataHar.getHeader(), topic);
                                     }
                                     topicNames = Lists.newArrayList(topicName);
                                 }
@@ -232,7 +234,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             int completedTopics = topicsCompleted.incrementAndGet();
                             if (completedTopics == topicsNumber) {
                                 if (log.isDebugEnabled()) {
-                                    log.debug("Completed get {} topic's partitions", topicsNumber);
+                                    log.debug("[{}] Request {}: Completed get {} topic's partitions",
+                                        ctx.channel(), metadataHar.getHeader(), topicsNumber);
                                 }
                                 pulsarTopicsFuture.complete(pulsarTopics);
                             }
@@ -244,7 +247,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         AtomicInteger topicsCompleted = new AtomicInteger(0);
         pulsarTopicsFuture.whenComplete((pulsarTopics, e) -> {
             if (e != null) {
-                log.warn("Exception fetching metadata, will return null Response", e);
+                log.warn("[{}] Request {}: Exception fetching metadata, will return null Response",
+                    ctx.channel(), metadataHar.getHeader(), e);
                 MetadataResponse finalResponse =
                     new MetadataResponse(
                         Collections.emptyList(),
@@ -267,7 +271,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     findBroker(kafkaService, topicName)
                         .whenComplete(((partitionMetadata, throwable) -> {
                             if (throwable != null) {
-                                log.warn("Exception while find Broker metadata", throwable);
+                                log.warn("[{}] Request {}: Exception while find Broker metadata",
+                                    ctx.channel(), metadataHar.getHeader(), throwable);
                                 partitionMetadatas.add(newFailedPartitionMetadata(topicName));
                             } else {
                                 Node newNode = partitionMetadata.leader();
@@ -280,7 +285,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             // whether completed this topic's partitions list.
                             int finishedPartitions = partitionsCompleted.incrementAndGet();
                             if (log.isDebugEnabled()) {
-                                log.debug("FindBroker for {} partitions of topic {}, total partitions: {}",
+                                log.debug("[{}] Request {}: FindBroker for topic {}, partitions found/all: {}/{}.",
                                     finishedPartitions, topic, partitionsNumber);
                             }
                             if (finishedPartitions == partitionsNumber) {
@@ -291,9 +296,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 // whether completed all the topics requests.
                                 int finishedTopics = topicsCompleted.incrementAndGet();
                                 if (log.isDebugEnabled()) {
-                                    log.debug("Completed findBroker for all partitions of topic {}, partitions: {}; "
-                                            + "Finished Topics: {}, total topics: {}",
-                                        topic, partitionsNumber, finishedTopics, topicsNumber);
+                                    log.debug("[{}] Request {}: Completed findBroker for topic {}, "
+                                            + "partitions found/all: {}/{}",
+                                        ctx.channel(), metadataHar.getHeader(), topic,
+                                        finishedTopics, topicsNumber);
                                 }
                                 if (finishedTopics == topicsNumber) {
                                     // TODO: confirm right value for controller_id
@@ -337,8 +343,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             responsesFutures.put(topicPartition, partitionResponse);
 
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Produce messages for topic {} partition {}, request size: {} ",
-                    ctx.channel(), topicPartition.topic(), topicPartition.partition(), responsesSize);
+                log.debug("[{}] Request {}: Produce messages for topic {} partition {}, request size: {} ",
+                    ctx.channel(), produceHar.getHeader(),
+                    topicPartition.topic(), topicPartition.partition(), responsesSize);
             }
 
             TopicName topicName = pulsarTopicName(topicPartition);
@@ -346,14 +353,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             kafkaService.getBrokerService().getTopic(topicName.toString(), true)
                 .whenComplete((topicOpt, exception) -> {
                     if (exception != null) {
-                        log.error("[{}] Failed to getOrCreateTopic {}. exception:",
-                            ctx.channel(), topicName, exception);
+                        log.error("[{}] Request {}: Failed to getOrCreateTopic {}. exception:",
+                            ctx.channel(), produceHar.getHeader(), topicName, exception);
                         partitionResponse.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
                     } else {
                         if (topicOpt.isPresent()) {
                             publishMessages(entry.getValue(), topicOpt.get(), partitionResponse);
                         } else {
-                            log.error("[{}] getOrCreateTopic get empty topic for name {}", ctx.channel(), topicName);
+                            log.error("[{}] Request {}: getOrCreateTopic get empty topic for name {}",
+                                ctx.channel(), produceHar.getHeader(), topicName);
                             partitionResponse.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
                         }
                     }
@@ -370,7 +378,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
 
                 if (log.isDebugEnabled()) {
-                    log.debug("[{}] Complete handle produce request {}.",
+                    log.debug("[{}] Request {}: Complete handle produce.",
                         ctx.channel(), produceHar.toString());
                 }
                 ctx.writeAndFlush(responseToByteBuf(new ProduceResponse(responses), produceHar));
@@ -411,7 +419,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture<?>[rec])).whenComplete((ignore, ex) -> {
             if (ex != null) {
-                log.debug("[{}] publishMessages for topic partition: {} failed when write.",
+                log.error("[{}] publishMessages for topic partition: {} failed when write.",
                     ctx.channel(), topic.getName(), ex);
                 future.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
             } else {
@@ -439,7 +447,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         public void completed(Exception exception, long ledgerId, long entryId) {
 
             if (exception != null) {
-                log.error("Failed write entry: {}, entryId: {}, sequenceId: {}. and triggered send callback.",
+                log.error("Failed write entry: ledgerId: {}, entryId: {}, sequenceId: {}. triggered send callback.",
                     ledgerId, entryId, sequenceId);
                 offsetFuture.completeExceptionally(exception);
             } else {
@@ -617,16 +625,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         kafkaService.getKafkaConfig().getKafkaServicePort().get()));
 
                 if (log.isDebugEnabled()) {
-                    log.debug("[{}] Return current broker node as Coordinator: {}.",
-                        ctx.channel(), node);
+                    log.debug("[{}] Request {}: Return current broker node as Coordinator: {}.",
+                        ctx.channel(), findCoordinator.getHeader(), node);
                 }
 
                 response = new FindCoordinatorResponse(
                     Errors.NONE,
                     node);
             } catch (Exception e) {
-                log.error("[{}] Error while find coordinator.",
-                    ctx.channel(), e);
+                log.error("[{}] Request {}: Error while find coordinator.",
+                    ctx.channel(), findCoordinator.getHeader(), e);
                 response = new FindCoordinatorResponse(
                     Errors.COORDINATOR_NOT_AVAILABLE,
                     Node.noNode());
@@ -650,7 +658,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture.allOf(statsList.stream().map(entry -> entry.getValue()).toArray(CompletableFuture<?>[]::new))
             .whenComplete((ignore, ex) -> {
                 if (ex != null) {
-                    log.error("[{}] OffsetFetch {} meet error:", ctx.channel(), offsetFetch.getHeader(), ex);
+                    log.error("[{}] Request {}: OffsetFetch {} meet error:",
+                        ctx.channel(), offsetFetch.getHeader(), offsetFetch.getHeader(), ex);
                     ctx.writeAndFlush(responseToByteBuf(
                         new OffsetFetchResponse(Errors.UNKNOWN_TOPIC_OR_PARTITION, null), offsetFetch));
                     return;
@@ -666,13 +675,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             long offset = MessageIdUtils.getOffset(ledgers.get(0).ledgerId, 0);
 
                             if (log.isDebugEnabled()) {
-                                log.debug("[{}] OffsetFetchRequest for topic: {}  Return offset: {}, ledgerId: {}.",
-                                    ctx.channel(), key, offset, ledgers.get(0).ledgerId);
+                                log.debug("[{}] Request {}:  topic {}  Return offset: {}, ledgerId: {}.",
+                                    ctx.channel(), offsetFetch.getHeader(), key, offset, ledgers.get(0).ledgerId);
                             }
                             return Pair.of(key, new OffsetFetchResponse.PartitionData(
                                 offset, OffsetFetchResponse.NO_METADATA, Errors.NONE));
                         } catch (Exception e) {
-                            log.error("[{}] OffsetFetchRequest for topic {}.", ctx.channel(), key, e);
+                            log.error("[{}] Request {}: topic {} meet error.",
+                                ctx.channel(), offsetFetch.getHeader(), key, e);
                             return Pair.of(key, new OffsetFetchResponse.PartitionData(
                                 OffsetFetchResponse.INVALID_OFFSET,
                                 OffsetFetchResponse.NO_METADATA,
@@ -698,7 +708,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         Map<TopicPartition, List<Entry>> responseValues = new ConcurrentHashMap<>();
 
         if (log.isDebugEnabled()) {
-            log.debug("[{}] Read Messages for request:{}",
+            log.debug("[{}] Request {}: Read Messages for request.",
                 ctx.channel(), fetch.getHeader());
         }
 
@@ -722,15 +732,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             entryList.add(entry);
                             bytesRead.addAndGet(entry.getLength());
                             if (log.isDebugEnabled()) {
-                                log.debug("For topic: {}, entries in list: {}. add new entry ledgerId: {}, "
-                                        + "entryId: {}, string:{}",
-                                    topic.toString(), entryList.size(), entry.getLedgerId(),
-                                    entry.getEntryId(), new String(entry.getData(), UTF_8));
+                                log.debug("[{}] Request {}: For topic {}, entries in list: {}. add new entry {}:{}",
+                                    ctx.channel(), fetch.getHeader(), topic.toString(), entryList.size(),
+                                    entry.getLedgerId(), entry.getEntryId());
                             }
                         }
                     } catch (Exception e) {
                         // readEntry.join failed. ignore this partition
-                        log.error("Failed readEntry.join for topic: {}. ", topic, e);
+                        log.error("[{}] Request {}: Failed readEntry.join for topic: {}. ",
+                            ctx.channel(), fetch.getHeader(), topic, e);
                         cursors.remove(topic);
                         responseValues.putIfAbsent(topic, Lists.newArrayList());
                     }
@@ -746,8 +756,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 int allSize = bytesRead.get();
 
                 if (log.isDebugEnabled()) {
-                    log.debug("One round read {} entries, maxBytes:{}, minBytes:{}, endTime: {}",
-                        readFutures.size(), allSize, maxBytes, minBytes, new Date(endTime));
+                    log.debug("[{}] Request {}: One round read {} entries, "
+                            + "allSize/maxBytes/minBytes/endTime: {}/{}/{}/{}",
+                        ctx.channel(), fetch.getHeader(), readFutures.size(),
+                        allSize, maxBytes, minBytes, new Date(endTime));
                 }
 
                 // reach maxTime, return;
@@ -756,8 +768,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     || allSize > minBytes
                     || allSize > maxBytes){
                     if (log.isDebugEnabled()) {
-                        log.debug("Complete read {} entries, allSize: {}, maxBytes:{}, minBytes:{}, endTime: {}",
-                            readFutures.size(), allSize, maxBytes, minBytes, new Date(endTime));
+                        log.debug("[{}] Request {}: Complete read {} entries with size {}",
+                            ctx.channel(), fetch.getHeader(), readFutures.size(), allSize);
                     }
 
                     LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData = new LinkedHashMap<>();
@@ -793,7 +805,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     });
 
                     if (allPartitionsFailed.get()) {
-                        log.error("All partitions for request {} failed", fetch.getHeader());
+                        log.error("[{}] Request {}: All partitions for request failed",
+                            ctx.channel(), fetch.getHeader());
                         ctx.writeAndFlush(
                             responseToByteBuf(
                                 new FetchResponse(Errors.UNKNOWN_SERVER_ERROR,
@@ -887,7 +900,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 long offset = entry.getValue().fetchOffset;
 
                 if (log.isDebugEnabled()) {
-                    log.debug("[{}] Request {} Fetch topic: {}, remove cursor for fetch offset: {}.",
+                    log.debug("[{}] Request {}: Fetch topic {}, remove cursor for fetch offset: {}.",
                         ctx.channel(), fetch.getHeader(), topicName, offset);
                 }
 
@@ -947,7 +960,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                         URI uri = new URI(brokerUrl);
                         if (log.isDebugEnabled()) {
-                            log.debug("Find broker: {} for topicName: {}", uri, topic);
+                            log.debug("Found broker: {} for topicName: {}", uri, topic);
                         }
 
                         Node node = newNode(new InetSocketAddress(
