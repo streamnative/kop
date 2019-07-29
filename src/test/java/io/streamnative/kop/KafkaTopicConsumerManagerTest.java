@@ -14,6 +14,7 @@
 package io.streamnative.kop;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
@@ -121,6 +122,7 @@ public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
             .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
             .value((messagePrefix + i).getBytes())
             .send();
+        i++;
 
         // simulate a read complete;
         offset++;
@@ -134,5 +136,25 @@ public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
 
         assertTrue(cursor2 == cursor);
         assertEquals(cursor2.getName(), cursor.getName());
+
+        // simulate a read complete, add back offset.
+        offset++;
+        topicConsumerManager.add(offset, cursorCompletableFuture);
+
+        // produce another 3 message
+        for (; i < 10; i++) {
+            String message = messagePrefix + i;
+            messageId = (MessageIdImpl) producer.newMessage()
+                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
+                .value(message.getBytes())
+                .send();
+        }
+
+        // try read last messages, so read not continuous
+        offset = MessageIdUtils.getOffset(messageId.getLedgerId(), messageId.getEntryId());
+        cursorCompletableFuture = topicConsumerManager.remove(offset);
+        assertEquals(topicConsumerManager.getConsumers().size(), 1);
+        cursor2 = cursorCompletableFuture.get();
+        assertNotEquals(cursor2.getName(), cursor.getName());
     }
 }
