@@ -38,12 +38,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     // --- Kafka on Pulsar Broker configuration ---
     //
 
-    @FieldContext(
-        category = CATEGORY_KOP,
-        required = true,
-        doc = "Name of the cluster to which this Kafka Broker belongs to"
-    )
-    private String kafkaClusterName = "kafka";
 
     @FieldContext(
         category = CATEGORY_KOP,
