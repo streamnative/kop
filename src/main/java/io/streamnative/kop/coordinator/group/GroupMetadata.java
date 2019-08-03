@@ -15,6 +15,8 @@ package io.streamnative.kop.coordinator.group;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.kop.coordinator.group.GroupState.Dead;
+import static io.streamnative.kop.coordinator.group.GroupState.PreparingRebalance;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.base.MoreObjects.ToStringHelper;
@@ -32,6 +34,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import javax.annotation.concurrent.NotThreadSafe;
@@ -62,20 +65,20 @@ class GroupMetadata {
 
     static {
         validPreviousStates.put(
-            GroupState.Dead,
+            Dead,
             Sets.newHashSet(
                 GroupState.Stable,
-                GroupState.PreparingRebalance,
+                PreparingRebalance,
                 GroupState.CompletingRebalance,
                 GroupState.Empty,
-                GroupState.Dead
+                Dead
             )
         );
 
         validPreviousStates.put(
             GroupState.CompletingRebalance,
             Sets.newHashSet(
-                GroupState.PreparingRebalance
+                PreparingRebalance
             )
         );
 
@@ -87,7 +90,7 @@ class GroupMetadata {
         );
 
         validPreviousStates.put(
-            GroupState.PreparingRebalance,
+            PreparingRebalance,
             Sets.newHashSet(
                 GroupState.Stable,
                 GroupState.CompletingRebalance,
@@ -98,7 +101,7 @@ class GroupMetadata {
         validPreviousStates.put(
             GroupState.Empty,
             Sets.newHashSet(
-                GroupState.PreparingRebalance
+                PreparingRebalance
             )
         );
     }
@@ -151,6 +154,7 @@ class GroupMetadata {
     private long generationId = 0L;
     private Optional<String> leaderId = Optional.empty();
     private Optional<String> protocol = Optional.empty();
+    private boolean newMemberAdded = false;
 
     // state management
     private final Map<String, MemberMetadata> members = new HashMap<>();
@@ -158,6 +162,14 @@ class GroupMetadata {
     GroupMetadata(String groupId, GroupState initialState) {
         this.groupId = groupId;
         this.state = initialState;
+    }
+
+    public String generateMemberIdSuffix() {
+        return UUID.randomUUID().toString();
+    }
+
+    public void newMemberAdded(boolean newMemberAdded) {
+        this.newMemberAdded = newMemberAdded;
     }
 
     public <T> T inLock(Supplier<T> supplier) {
@@ -180,6 +192,10 @@ class GroupMetadata {
         return generationId;
     }
 
+    public Set<String> allMembers() {
+        return members.keySet();
+    }
+
     public List<MemberMetadata> allMemberMetadata() {
         return members.values().stream().collect(Collectors.toList());
     }
@@ -194,6 +210,10 @@ class GroupMetadata {
 
     public boolean has(String memberId) {
         return members.containsKey(memberId);
+    }
+
+    public MemberMetadata get(String memberId) {
+        return members.get(memberId);
     }
 
     public boolean isLeader(String memberId) {
@@ -272,7 +292,7 @@ class GroupMetadata {
     }
 
     public boolean canReblance() {
-        return validPreviousStates.get(GroupState.PreparingRebalance).contains(state);
+        return validPreviousStates.get(PreparingRebalance).contains(state);
     }
 
     public void transitionTo(GroupState groupState) {
@@ -307,6 +327,17 @@ class GroupMetadata {
             .max(Comparator.comparingInt(o -> o.getValue().size()))
             .map(Entry::getKey)
             .orElse(null);
+    }
+
+    public Map<String, byte[]> currentMemberMetadata() {
+        if (is(Dead) || is(PreparingRebalance)) {
+            throw new IllegalStateException("Cannot obtain member metadata for group in state " + state);
+        }
+        return members.entrySet().stream()
+            .collect(Collectors.toMap(
+                e -> e.getKey(),
+                e -> e.getValue().metadata(protocol.get())
+            ));
     }
 
     public GroupSummary summary() {

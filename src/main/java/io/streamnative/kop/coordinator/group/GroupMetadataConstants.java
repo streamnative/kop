@@ -8,10 +8,14 @@ import static org.apache.kafka.common.protocol.types.Type.NULLABLE_STRING;
 import static org.apache.kafka.common.protocol.types.Type.STRING;
 
 import com.google.common.collect.Lists;
+import io.streamnative.kop.coordinator.group.GroupMetadataManager.BaseKey;
+import io.streamnative.kop.coordinator.group.GroupMetadataManager.GroupMetadataKey;
 import java.nio.ByteBuffer;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.val;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.protocol.types.ArrayOf;
@@ -19,6 +23,7 @@ import org.apache.kafka.common.protocol.types.BoundField;
 import org.apache.kafka.common.protocol.types.Field;
 import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
+import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.common.schema.KeyValue;
 
 /**
@@ -258,6 +263,95 @@ final class GroupMetadataConstants {
         byteBuffer.putShort(version);
         value.writeTo(byteBuffer);
         return byteBuffer.array();
+    }
+
+    /**
+     * Decodes the offset messages' key
+     */
+    static BaseKey readMessageKey(ByteBuffer buffer) {
+        short version = buffer.getShort();
+        Schema keySchema = schemaForKey(version);
+        Struct key = keySchema.read(buffer);
+
+        if (version <= CURRENT_OFFSET_KEY_SCHEMA_VERSION) {
+            // version 0 and 1 refer to offset
+            throw new UnsupportedOperationException();
+        } else if (version == CURRENT_GROUP_KEY_SCHEMA_VERSION) {
+            // version 2 refers to group
+            String group = key.getString(GROUP_KEY_GROUP_FIELD);
+
+            return new GroupMetadataKey(version, group);
+        } else {
+            throw new IllegalStateException("Unknown version " + version + " for group metadata message");
+        }
+    }
+
+    static GroupMetadata readGroupMessageValue(String groupId,
+                                               ByteBuffer buffer) {
+        if (null == buffer) { // tombstone
+            return null;
+        }
+
+        short version = buffer.getShort();
+        Schema valueSchema = schemaForGroup(version);
+        Struct value = valueSchema.read(buffer);
+
+        if (version == 0 || version == 1) {
+            int generationId = value.getInt(GENERATION_KEY);
+            String protocolType = value.getString(PROTOCOL_TYPE_KEY);
+            String protocol = value.getString(PROTOCOL_KEY);
+            String leaderId = value.getString(LEADER_KEY);
+            Object[] memberMetadataArray = value.getArray(MEMBERS_KEY);
+            GroupState initialState;
+            if (memberMetadataArray.length == 0) {
+                initialState = GroupState.Empty;
+            } else {
+                initialState = GroupState.Stable;
+            }
+
+            List<MemberMetadata> members = Lists.newArrayList(memberMetadataArray)
+                .stream()
+                .map(memberMetadataObj -> {
+                    Struct memberMetadata = (Struct) memberMetadataObj;
+                    String memberId = memberMetadata.getString(MEMBER_ID_KEY);
+                    String clientId = memberMetadata.getString(CLIENT_ID_KEY);
+                    String clientHost = memberMetadata.getString(CLIENT_HOST_KEY);
+                    int sessionTimeout = memberMetadata.getInt(SESSION_TIMEOUT_KEY);
+                    int rebalanceTimeout;
+                    if (version == 0) {
+                        rebalanceTimeout = sessionTimeout;
+                    } else {
+                        rebalanceTimeout = memberMetadata.getInt(REBALANCE_TIMEOUT_KEY);
+                    }
+                    ByteBuffer subscription = memberMetadata.getBytes(SUBSCRIPTION_KEY);
+                    byte[] subscriptionData = new byte[subscription.remaining()];
+                    subscription.get(subscriptionData);
+                    Map<String, byte[]> protocols = new HashMap<>();
+                    protocols.put(protocol, subscriptionData);
+                    return new MemberMetadata(
+                        memberId,
+                        groupId,
+                        clientId,
+                        clientHost,
+                        rebalanceTimeout,
+                        sessionTimeout,
+                        protocolType,
+                        protocols
+                    );
+                }).collect(Collectors.toList());
+
+            return GroupMetadata.loadGroup(
+                groupId,
+                initialState,
+                generationId,
+                protocolType,
+                protocol,
+                leaderId,
+                members
+            );
+        } else {
+            throw new IllegalStateException("Unknown group metadata message version");
+        }
     }
 
     private GroupMetadataConstants() {}

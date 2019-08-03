@@ -39,7 +39,9 @@
     <lombok.version>1.18.4</lombok.version>
     <mockito.version>2.22.0</mockito.version>
     <netty.version>4.1.32.Final</netty.version>
-    <pulsar.version>2.4.0</pulsar.version>
+    <pulsar.version>2.5.0-ef274bbb8</pulsar.version>
+    <scala.binary.version>2.11</scala.binary.version>
+    <scala.version>2.11.12</scala.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
     <testcontainers.version>1.11.2</testcontainers.version>
@@ -52,6 +54,7 @@
     <maven-surefire-plugin.version>3.0.0-M1</maven-surefire-plugin.version>
     <os-maven-plugin.version>1.4.1.Final</os-maven-plugin.version>
     <puppycrawl.checkstyle.version>6.19</puppycrawl.checkstyle.version>
+    <scala-maven-plugin.version>4.0.2</scala-maven-plugin.version>
     <spotbugs-maven-plugin.version>3.1.8</spotbugs-maven-plugin.version>
   </properties>
 
@@ -91,6 +94,12 @@
           <artifactId>grpc-core</artifactId>
         </exclusion>
       </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>org.scala-lang</groupId>
+      <artifactId>scala-library</artifactId>
+      <version>${scala.version}</version>
     </dependency>
 
     <dependency>
@@ -305,6 +314,54 @@
             <tfvars>SCRIPT_STYLE</tfvars>
             <kop>SCRIPT_STYLE</kop>
           </mapping>
+        </configuration>
+      </plugin>
+      <!-- scala plugins -->
+      <plugin>
+        <groupId>net.alchim31.maven</groupId>
+        <artifactId>scala-maven-plugin</artifactId>
+        <version>${scala-maven-plugin.version}</version>
+        <executions>
+          <execution>
+            <id>eclipse-add-source</id>
+            <goals>
+              <goal>add-source</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>scala-compile-first</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>scala-test-compile-first</id>
+            <goals>
+              <goal>testCompile</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <scalaVersion>${scala.binary.version}</scalaVersion>
+          <recompileMode>all</recompileMode>
+          <args>
+            <arg>-unchecked</arg>
+            <arg>-deprecation</arg>
+            <arg>-feature</arg>
+            <arg>-explaintypes</arg>
+            <arg>-Yno-adapted-args</arg>
+          </args>
+          <jvmArgs>
+            <jvmArg>-Xms1024m</jvmArg>
+            <jvmArg>-Xmx1024m</jvmArg>
+          </jvmArgs>
+          <javacArgs>
+            <javacArg>-source</javacArg>
+            <javacArg>${javac.target}</javacArg>
+            <javacArg>-target</javacArg>
+            <javacArg>${javac.target}</javacArg>
+            <javacArg>-Xlint:all,-serial,-path,-try</javacArg>
+          </javacArgs>
         </configuration>
       </plugin>
     </plugins>

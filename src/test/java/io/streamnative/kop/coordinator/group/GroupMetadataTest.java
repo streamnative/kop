@@ -28,6 +28,7 @@ import com.google.common.collect.Sets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import lombok.val;
 import org.junit.Before;
 import org.junit.Test;
@@ -351,7 +352,7 @@ public class GroupMetadataTest {
             protocols);
 
         group.transitionTo(PreparingRebalance);
-        member.awaitingJoinCallback(e -> {});
+        member.awaitingJoinCallback(new CompletableFuture<>());
         group.add(member);
 
         assertEquals(0, group.generationId());
