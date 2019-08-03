@@ -1,3 +1,16 @@
+/**
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.streamnative.kop.coordinator.group;
 
 import static io.streamnative.kop.coordinator.group.GroupMetadataConstants.CURRENT_GROUP_VALUE_SCHEMA_VERSION;
@@ -102,7 +115,7 @@ class GroupMetadataManager {
     private final ReentrantLock partitionLock = new ReentrantLock();
     /**
      * partitions of consumer groups that are being loaded, its lock should
-     * be always called BEFORE the group lock if needed
+     * be always called BEFORE the group lock if needed.
      */
     private final Set<Integer> loadingPartitions = new HashSet<>();
     /* partitions of consumer groups that are assigned, using the same loading partition lock */
@@ -378,9 +391,9 @@ class GroupMetadataManager {
     }
 
     /**
-     * Add the partition into the owned list
+     * Add the partition into the owned list.
      *
-     * NOTE: this is for test only
+     * <p>NOTE: this is for test only
      */
     private void addPartitionOwnership(int partition) {
         inLock(partitionLock, () -> {
@@ -393,7 +406,7 @@ class GroupMetadataManager {
      * Add a partition to the loading partitions set. Return true if the partition was not
      * already loading.
      *
-     * Visible for testing
+     * <p>Visible for testing
      */
     boolean addLoadingPartition(int partition) {
         return inLock(partitionLock, () -> loadingPartitions.add(partition));

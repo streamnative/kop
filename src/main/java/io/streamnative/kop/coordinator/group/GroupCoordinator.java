@@ -20,14 +20,16 @@ import static io.streamnative.kop.coordinator.group.GroupState.Empty;
 import static io.streamnative.kop.coordinator.group.GroupState.PreparingRebalance;
 import static io.streamnative.kop.coordinator.group.GroupState.Stable;
 
+import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.streamnative.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.kop.coordinator.group.GroupMetadata.GroupSummary;
-import io.streamnative.kop.utils.CoreUtils;
+import io.streamnative.kop.utils.delayed.DelayedOperationKey.GroupKey;
+import io.streamnative.kop.utils.delayed.DelayedOperationKey.MemberKey;
+import io.streamnative.kop.utils.delayed.DelayedOperationPurgatory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -39,7 +41,6 @@ import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
-import lombok.val;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
@@ -47,7 +48,6 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
-import scala.Array;
 
 /**
  * Group coordinator.
@@ -90,7 +90,22 @@ public class GroupCoordinator {
     private final AtomicBoolean isActive = new AtomicBoolean(false);
     private final GroupConfig groupConfig;
     private final GroupMetadataManager groupManager;
+    private final DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory;
+    private final DelayedOperationPurgatory<DelayedJoin> joinPurgatory;
     private final Time time;
+
+    public GroupCoordinator(
+        GroupConfig groupConfig,
+        GroupMetadataManager groupManager,
+        DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory,
+        DelayedOperationPurgatory<DelayedJoin> joinPurgatory,
+        Time time) {
+        this.groupConfig = groupConfig;
+        this.groupManager = groupManager;
+        this.heartbeatPurgatory = heartbeatPurgatory;
+        this.joinPurgatory = joinPurgatory;
+        this.time = time;
+    }
 
     public CompletableFuture<JoinGroupResult> handleJoinGroup(
         String groupId,
@@ -108,8 +123,8 @@ public class GroupCoordinator {
                 joinError(memberId, errors.get()));
         }
 
-        if (sessionTimeoutMs < groupConfig.getGroupMinSessionTimeoutMs()
-            || sessionTimeoutMs > groupConfig.getGroupMaxSessionTimeoutMs()) {
+        if (sessionTimeoutMs < groupConfig.groupMinSessionTimeoutMs()
+            || sessionTimeoutMs > groupConfig.groupMaxSessionTimeoutMs()) {
             return CompletableFuture.completedFuture(
                 joinError(memberId, Errors.INVALID_SESSION_TIMEOUT));
         } else {
@@ -123,7 +138,7 @@ public class GroupCoordinator {
                 protocolType,
                 protocols
             )).orElseGet(() -> {
-                if (memberId != JoinGroupRequest.UNKNOWN_MEMBER_ID) {
+                if (!JoinGroupRequest.UNKNOWN_MEMBER_ID.equals(memberId)) {
                     return CompletableFuture.completedFuture(
                         joinError(memberId, Errors.UNKNOWN_MEMBER_ID));
                 } else {
@@ -179,7 +194,7 @@ public class GroupCoordinator {
     ) {
         if (!group.is(Empty) && (
             !group.protocolType().isPresent()
-                || group.protocolType().get() != protocolType
+                || !Objects.equals(group.protocolType().get(), protocolType)
                 || !group.supportsProtocols(protocols.keySet()))) {
             // if the new member does not support the group protocol, reject it
             return CompletableFuture.completedFuture(
@@ -189,7 +204,8 @@ public class GroupCoordinator {
             //reject if first member with empty group protocol or protocolType is empty
             return CompletableFuture.completedFuture(
                 joinError(memberId, Errors.INCONSISTENT_GROUP_PROTOCOL));
-        } else if (memberId != JoinGroupRequest.UNKNOWN_MEMBER_ID && !group.has(memberId)) {
+        } else if (!JoinGroupRequest.UNKNOWN_MEMBER_ID.equals(memberId)
+            && !group.has(memberId)) {
             // if the member trying to register with a un-recognized id, send the response to let
             // it reset its member id and retry
             return CompletableFuture.completedFuture(
@@ -206,7 +222,7 @@ public class GroupCoordinator {
                         joinError(memberId, Errors.UNKNOWN_MEMBER_ID));
                     break;
                 case PreparingRebalance:
-                    if (memberId == JoinGroupRequest.UNKNOWN_MEMBER_ID) {
+                    if (JoinGroupRequest.UNKNOWN_MEMBER_ID.equals(memberId)) {
                         resultFuture = addMemberAndRebalance(
                             rebalanceTimeoutMs,
                             sessionTimeoutMs,
@@ -222,7 +238,7 @@ public class GroupCoordinator {
                     }
                     break;
                 case CompletingRebalance:
-                    if (JoinGroupRequest.UNKNOWN_MEMBER_ID == memberId) {
+                    if (JoinGroupRequest.UNKNOWN_MEMBER_ID.equals(memberId)) {
                         resultFuture = addMemberAndRebalance(
                             rebalanceTimeoutMs,
                             sessionTimeoutMs,
@@ -265,7 +281,7 @@ public class GroupCoordinator {
                     break;
                 case Empty:
                 case Stable:
-                    if (JoinGroupRequest.UNKNOWN_MEMBER_ID == memberId) {
+                    if (JoinGroupRequest.UNKNOWN_MEMBER_ID.equals(memberId)) {
                         // if the member id is unknown, register the member to the group
                         resultFuture = addMemberAndRebalance(
                             rebalanceTimeoutMs,
@@ -494,8 +510,8 @@ public class GroupCoordinator {
             // TODO:
             /// val offsetsRemoved = groupManager.cleanupGroupMetadata(groupsEligibleForDeletion, _.removeAllOffsets())
             /// groupErrors ++= groupsEligibleForDeletion.map(_.groupId -> Errors.NONE).toMap
-            /// info(s"The following groups were deleted: ${groupsEligibleForDeletion.map(_.groupId).mkString(", ")}. " +
-            ///     s"A total of $offsetsRemoved offsets were removed.")
+            /// info(s"The following groups were deleted: ${groupsEligibleForDeletion.map(_.groupId).mkString(", ")}. "
+            // + s"A total of $offsetsRemoved offsets were removed.")
         }
 
         return groupErrors;
@@ -632,7 +648,7 @@ public class GroupCoordinator {
                 // This is because if any member's session expired while we were still awaiting either
                 // the leader sync group or the storage callback, its expiration will be ignored and no
                 // future heartbeat expectations will not be scheduled.
-                completeAndScheduleNextHeartbeatExpiration(group, member)
+                completeAndScheduleNextHeartbeatExpiration(group, member);
             }
         }
     }
@@ -648,24 +664,30 @@ public class GroupCoordinator {
     }
 
     /**
-     * Complete existing DelayedHeartbeats for the given member and schedule the next one
+     * Complete existing DelayedHeartbeats for the given member and schedule the next one.
      */
     private void completeAndScheduleNextHeartbeatExpiration(GroupMetadata group, MemberMetadata member) {
         // complete current heartbeat expectation
         member.latestHeartbeat(time.milliseconds());
-        val memberKey = MemberKey(member.groupId, member.memberId)
-        heartbeatPurgatory.checkAndComplete(memberKey)
+        MemberKey memberKey = new MemberKey(member.groupId(), member.memberId());
+        heartbeatPurgatory.checkAndComplete(memberKey);
 
         // reschedule the next heartbeat expiration deadline
         long newHeartbeatDeadline = member.latestHeartbeat() + member.sessionTimeoutMs();
-        val delayedHeartbeat = new DelayedHeartbeat(this, group, member, newHeartbeatDeadline, member.sessionTimeoutMs());
-        heartbeatPurgatory.tryCompleteElseWatch(delayedHeartbeat, Seq(memberKey))
+        DelayedHeartbeat delayedHeartbeat = new DelayedHeartbeat(
+            this,
+            group,
+            member,
+            newHeartbeatDeadline,
+            member.sessionTimeoutMs());
+        heartbeatPurgatory.tryCompleteElseWatch(
+            delayedHeartbeat, Lists.newArrayList(memberKey));
     }
 
     private void removeHeartbeatForLeavingMember(GroupMetadata group,
                                                  MemberMetadata member) {
         member.isLeaving(true);
-        val memberKey = MemberKey(member.groupId, member.memberId)
+        MemberKey memberKey = new MemberKey(member.groupId(), member.memberId());
         heartbeatPurgatory.checkAndComplete(memberKey);
     }
 
@@ -721,30 +743,35 @@ public class GroupCoordinator {
         });
     }
 
-
-
     private void prepareRebalance(GroupMetadata group) {
         // if any members are awaiting sync, cancel their request and have them rejoin
-        if (group.is(CompletingRebalance))
-            resetAndPropagateAssignmentError(group, Errors.REBALANCE_IN_PROGRESS)
+        if (group.is(CompletingRebalance)) {
+            resetAndPropagateAssignmentError(group, Errors.REBALANCE_IN_PROGRESS);
+        }
 
-        val delayedRebalance = if (group.is(Empty))
-            new InitialDelayedJoin(this,
+        DelayedJoin delayedRebalance;
+
+        if (group.is(Empty)) {
+            delayedRebalance = new InitialDelayedJoin(this,
                 joinPurgatory,
                 group,
-                groupConfig.groupInitialRebalanceDelayMs,
-                groupConfig.groupInitialRebalanceDelayMs,
-                max(group.rebalanceTimeoutMs - groupConfig.groupInitialRebalanceDelayMs, 0))
-        else
-            new DelayedJoin(this, group, group.rebalanceTimeoutMs)
+                groupConfig.groupInitialRebalanceDelayMs(),
+                groupConfig.groupInitialRebalanceDelayMs(),
+                Math.max(group.rebalanceTimeoutMs() - groupConfig.groupInitialRebalanceDelayMs(), 0));
+        } else {
+            delayedRebalance = new DelayedJoin(this, group, group.rebalanceTimeoutMs());
+        }
 
-        group.transitionTo(PreparingRebalance)
+        group.transitionTo(PreparingRebalance);
 
-        info(s"Preparing to rebalance group ${group.groupId} with old generation ${group.generationId} " +
-            s"(${Topic.GROUP_METADATA_TOPIC_NAME}-${partitionFor(group.groupId)})")
+        log.info("Preparing to rebalance group {} with old generation {} ({}-{})",
+            group.groupId(),
+            group.generationId(),
+            Topic.GROUP_METADATA_TOPIC_NAME,
+            groupManager.partitionFor(group.groupId()));
 
-        val groupKey = GroupKey(group.groupId)
-        joinPurgatory.tryCompleteElseWatch(delayedRebalance, Seq(groupKey))
+        GroupKey groupKey = new GroupKey(group.groupId());
+        joinPurgatory.tryCompleteElseWatch(delayedRebalance, Lists.newArrayList(groupKey));
     }
 
     private void removeMemberAndUpdateGroup(GroupMetadata group,
@@ -785,7 +812,7 @@ public class GroupCoordinator {
         group.inLock(() -> {
             // remove any members who haven't joined the group yet
             group.notYetRejoinedMembers().forEach(failedMember -> {
-                removeHeartbeatForLeavingMember(group, failedMember)
+                removeHeartbeatForLeavingMember(group, failedMember);
                 group.remove(failedMember.memberId());
                 // TODO: cut the socket connection to the client
             });
@@ -797,49 +824,46 @@ public class GroupCoordinator {
                         group.groupId(), group.generationId(),
                         Topic.GROUP_METADATA_TOPIC_NAME, groupManager.partitionFor(group.groupId()));
 
-                    groupManager.storeGroup(group, Collections.emptyMap(), error => {
+                    groupManager.storeGroup(group, Collections.emptyMap()).thenAccept(error -> {
                         if (error != Errors.NONE) {
-                            // we failed to write the empty group metadata. If the broker fails before another rebalance,
-                            // the previous generation written to the log will become active again (and most likely timeout).
-                            // This should be safe since there are no active members in an empty generation, so we just warn.
-                            warn(s"Failed to write empty metadata for group ${group.groupId}: ${error.message}")
+                            // we failed to write the empty group metadata. If the broker fails before another
+                            // rebalance, the previous generation written to the log will become active again
+                            // (and most likely timeout). This should be safe since there are no active members
+                            // in an empty generation, so we just warn.
+                            log.warn("Failed to write empty metadata for group {}: {}",
+                                group.groupId(), error.message());
                         }
-              })
+                    });
                 } else {
-                    info(s"Stabilized group ${group.groupId} generation ${group.generationId} " +
-                        s"(${Topic.GROUP_METADATA_TOPIC_NAME}-${partitionFor(group.groupId)})")
+                    log.info("Stabilized group {} generation {} ({}-{})",
+                        group.groupId(), group.generationId(),
+                        Topic.GROUP_METADATA_TOPIC_NAME,
+                        groupManager.partitionFor(group.groupId()));
 
                     // trigger the awaiting join group response callback for all the members after rebalancing
                     for (MemberMetadata member : group.allMemberMetadata()) {
                         Objects.requireNonNull(member.awaitingJoinCallback());
-                        JoinGroupRequest joinResult;
+                        Map<String, byte[]> members;
                         if (group.isLeader(member.memberId())) {
-                            joinResult = new JoinGroupResult(
-                                group.currentMemberMetadata
-                            );
+                            members = group.currentMemberMetadata();
                         } else {
-                            joinResult = new JoinGroupResult(
-                                Collections.emptyMap()
-                            );
+                            members = Collections.emptyMap();
                         }
-                        = JoinGroupResult(
-                            members = if (group.isLeader(member.memberId)) {
-                            group.currentMemberMetadata
-                        } else {
-                            Map.empty
-                        },
-                        memberId = member.memberId,
-                            generationId = group.generationId,
-                            subProtocol = group.protocolOrNull,
-                            leaderId = group.leaderOrNull,
-                            error = Errors.NONE)
+                        JoinGroupResult joinResult = new JoinGroupResult(
+                            members,
+                            member.memberId(),
+                            group.generationId(),
+                            group.protocolOrNull(),
+                            group.leaderOrNull(),
+                            Errors.NONE);
 
-                        member.awaitingJoinCallback(joinResult)
-                        member.awaitingJoinCallback = null
-                        completeAndScheduleNextHeartbeatExpiration(group, member)
+                        member.awaitingJoinCallback().complete(joinResult);
+                        member.awaitingJoinCallback(null);
+                        completeAndScheduleNextHeartbeatExpiration(group, member);
                     }
                 }
             }
+            return null;
         });
     }
 
@@ -876,9 +900,9 @@ public class GroupCoordinator {
 
     private boolean shouldKeepMemberAlive(MemberMetadata member,
                                           long heartbeatDeadline) {
-        return member.awaitingJoinCallback() != null ||
-            member.awaitingSyncCallback() != null ||
-            member.latestHeartbeat() + member.sessionTimeoutMs() > heartbeatDeadline;
+        return member.awaitingJoinCallback() != null
+            || member.awaitingSyncCallback() != null
+            || member.latestHeartbeat() + member.sessionTimeoutMs() > heartbeatDeadline;
     }
 
 }

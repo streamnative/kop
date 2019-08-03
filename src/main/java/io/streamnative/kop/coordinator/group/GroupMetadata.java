@@ -39,6 +39,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import javax.annotation.concurrent.NotThreadSafe;
 import lombok.Data;
+import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import org.apache.commons.lang3.StringUtils;
@@ -147,13 +148,15 @@ class GroupMetadata {
     }
 
     private final String groupId;
+    @Getter
     private final ReentrantLock lock = new ReentrantLock();
     private GroupState state;
 
     private Optional<String> protocolType = Optional.empty();
-    private long generationId = 0L;
+    private int generationId = 0;
     private Optional<String> leaderId = Optional.empty();
     private Optional<String> protocol = Optional.empty();
+    @Getter
     private boolean newMemberAdded = false;
 
     // state management
@@ -188,7 +191,7 @@ class GroupMetadata {
         return groupId;
     }
 
-    public long generationId() {
+    public int generationId() {
         return generationId;
     }
 
@@ -198,6 +201,12 @@ class GroupMetadata {
 
     public List<MemberMetadata> allMemberMetadata() {
         return members.values().stream().collect(Collectors.toList());
+    }
+
+    public int rebalanceTimeoutMs() {
+        return members.values().stream().mapToInt(member ->
+            member.rebalanceTimeoutMs()
+        ).max().getAsInt();
     }
 
     public boolean is(GroupState groupState) {

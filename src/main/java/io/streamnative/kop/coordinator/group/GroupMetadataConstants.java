@@ -1,3 +1,16 @@
+/**
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.streamnative.kop.coordinator.group;
 
 import static com.google.common.base.Preconditions.checkState;
@@ -15,15 +28,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import lombok.val;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.protocol.types.ArrayOf;
 import org.apache.kafka.common.protocol.types.BoundField;
 import org.apache.kafka.common.protocol.types.Field;
 import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
-import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.common.schema.KeyValue;
 
 /**
@@ -152,7 +162,7 @@ final class GroupMetadataConstants {
     static final Schema CURRENT_OFFSET_VALUE_SCHEMA = schemaForOffset(CURRENT_OFFSET_VALUE_SCHEMA_VERSION);
     static final Schema CURRENT_GROUP_VALUE_SCHEMA = schemaForGroup(CURRENT_GROUP_VALUE_SCHEMA_VERSION);
 
-    private static final Schema schemaForKey(int version) {
+    private static Schema schemaForKey(int version) {
         Schema schema = MESSAGE_TYPE_SCHEMAS.get(version);
         if (null == schema) {
             throw new KafkaException("Unknown offset schema version " + version);
@@ -160,7 +170,7 @@ final class GroupMetadataConstants {
         return schema;
     }
 
-    private static final Schema schemaForOffset(int version) {
+    private static Schema schemaForOffset(int version) {
         Schema schema = OFFSET_VALUE_SCHEMAS.get(version);
         if (null == schema) {
             throw new KafkaException("Unknown offset schema version " + version);
@@ -168,7 +178,7 @@ final class GroupMetadataConstants {
         return schema;
     }
 
-    private static final Schema schemaForGroup(int version) {
+    private static Schema schemaForGroup(int version) {
         Schema schema = GROUP_VALUE_SCHEMAS.get(version);
         if (null == schema) {
             throw new KafkaException("Unknown group metadata version " + version);
@@ -190,7 +200,7 @@ final class GroupMetadataConstants {
     }
 
     /**
-     * Generates the key for group metadata message for given group
+     * Generates the key for group metadata message for given group.
      *
      * @return key bytes for group metadata message
      */
@@ -205,7 +215,7 @@ final class GroupMetadataConstants {
 
     /**
      * Generates the payload for group metadata message from given offset and metadata
-     * assuming the generation id, selected protocol, leader and member assignment are all available
+     * assuming the generation id, selected protocol, leader and member assignment are all available.
      *
      * @param groupMetadata current group metadata
      * @param assignment the assignment for the rebalancing generation
@@ -266,7 +276,7 @@ final class GroupMetadataConstants {
     }
 
     /**
-     * Decodes the offset messages' key
+     * Decodes the offset messages' key.
      */
     static BaseKey readMessageKey(ByteBuffer buffer) {
         short version = buffer.getShort();

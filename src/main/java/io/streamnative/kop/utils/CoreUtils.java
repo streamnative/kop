@@ -41,5 +41,4 @@ public final class CoreUtils {
         return inLock(lock.writeLock(), supplier);
     }
 
-    private CoreUtils() {}
 }
