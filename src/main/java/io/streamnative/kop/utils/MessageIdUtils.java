@@ -13,6 +13,7 @@
  */
 package io.streamnative.kop.utils;
 
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 
@@ -30,10 +31,18 @@ public class MessageIdUtils {
     }
 
     public static final MessageId getMessageId(long offset) {
-        // Demultiplex ledgerId and entryId from offset
+        // De-multiplex ledgerId and entryId from offset
         long ledgerId = offset >>> 28;
         long entryId = offset & 0x0F_FF_FF_FFL;
 
         return new MessageIdImpl(ledgerId, entryId, -1);
+    }
+
+    public static final PositionImpl getPosition(long offset) {
+        // De-multiplex ledgerId and entryId from offset
+        long ledgerId = offset >>> 28;
+        long entryId = offset & 0x0F_FF_FF_FFL;
+
+        return new PositionImpl(ledgerId, entryId);
     }
 }

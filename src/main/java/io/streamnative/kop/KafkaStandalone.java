@@ -25,6 +25,7 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.apache.pulsar.zookeeper.LocalBookkeeperEnsemble;
 
@@ -264,6 +265,8 @@ public class KafkaStandalone implements AutoCloseable {
                 Set<String> clusters = Sets.newHashSet(config.getKafkaClusterName());
                 admin.namespaces().createNamespace(defaultNamespace, clusters);
                 admin.namespaces().setNamespaceReplicationClusters(defaultNamespace, clusters);
+                admin.namespaces().setRetention(defaultNamespace,
+                    new RetentionPolicies(20, 100));
             }
         } catch (PulsarAdminException e) {
             log.info("error while create default namespace: {}", e.getMessage());

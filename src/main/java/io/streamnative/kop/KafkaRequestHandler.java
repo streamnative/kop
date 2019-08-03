@@ -24,39 +24,61 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.kop.utils.MessageIdUtils;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.time.Clock;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
+import org.apache.bookkeeper.mledger.Entry;
+import org.apache.bookkeeper.mledger.ManagedCursor;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.commons.lang3.NotImplementedException;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.Record;
+import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
+import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
+import org.apache.kafka.common.requests.FetchRequest;
+import org.apache.kafka.common.requests.FetchResponse;
+import org.apache.kafka.common.requests.FetchResponse.PartitionData;
+import org.apache.kafka.common.requests.FindCoordinatorRequest;
+import org.apache.kafka.common.requests.FindCoordinatorResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
+import org.apache.kafka.common.requests.OffsetFetchRequest;
+import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
+import org.apache.kafka.common.utils.ByteBufferOutputStream;
 import org.apache.pulsar.broker.admin.impl.PersistentTopicsBase;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.Topic.PublishContext;
@@ -72,6 +94,7 @@ import org.apache.pulsar.common.lookup.data.LookupData;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicDomain;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.policies.data.PersistentTopicInternalStats;
 import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.protocol.Commands.ChecksumType;
 
@@ -89,7 +112,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final PulsarAdmin admin;
 
     private static final Clock clock = Clock.systemDefaultZone();
-    private static final String producerName = "fake_kop_producer_name";
+    private static final String FAKE_KOP_PRODUCER_NAME = "fake_kop_producer_name";
+
+    private static final int DEFAULT_FETCH_BUFFER_SIZE = 1024 * 1024;
+    private static final int MAX_RECORDS_BUFFER_SIZE = 100 * 1024 * 1024;
 
 
     public KafkaRequestHandler(KafkaService kafkaService) throws Exception {
@@ -140,13 +166,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 .groupingBy(topicName -> getLocalNameWithoutPartition(topicName), Collectors.toList()));
 
                     if (log.isDebugEnabled()) {
-                        log.debug("Get all topics in TopicMetadata request, will get {} topics", pulsarTopics.size());
+                        log.debug("[{}] Request {}: Get all topics, will get {} topics",
+                            ctx.channel(), metadataHar.getHeader(), pulsarTopics.size());
                     }
 
                     pulsarTopicsFuture.complete(pulsarTopics);
                 } catch (Exception e) {
                     // error when getListOfPersistentTopics
-                    log.error("Failed to get all topics list", e);
+                    log.error("[{}] Request {}: Failed to get all topics list",
+                        ctx.channel(), metadataHar.getHeader(), e);
                     pulsarTopicsFuture.completeExceptionally(e);
                 }
             });
@@ -177,8 +205,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         topic,
                                         false,
                                         Collections.emptyList()));
-                                log.warn("[{}] Failed to get partitioned topic metadata: {}",
-                                    topicName, throwable.getMessage());
+                                log.warn("[{}] Request {}: Failed to get partitioned topic {} metadata: {}",
+                                    ctx.channel(), metadataHar.getHeader(), topicName, throwable.getMessage());
                             } else {
                                 List<TopicName> topicNames;
                                 if (partitionedTopicMetadata.partitions > 1) {
@@ -194,7 +222,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                                 } else {
                                     if (log.isDebugEnabled()) {
-                                        log.debug("Topic {} has 1 partitions", topic);
+                                        log.debug("[{}] Request {}: Topic {} has 1 partitions",
+                                            ctx.channel(), metadataHar.getHeader(), topic);
                                     }
                                     topicNames = Lists.newArrayList(topicName);
                                 }
@@ -205,7 +234,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             int completedTopics = topicsCompleted.incrementAndGet();
                             if (completedTopics == topicsNumber) {
                                 if (log.isDebugEnabled()) {
-                                    log.debug("Completed get {} topic's partitions", topicsNumber);
+                                    log.debug("[{}] Request {}: Completed get {} topic's partitions",
+                                        ctx.channel(), metadataHar.getHeader(), topicsNumber);
                                 }
                                 pulsarTopicsFuture.complete(pulsarTopics);
                             }
@@ -217,7 +247,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         AtomicInteger topicsCompleted = new AtomicInteger(0);
         pulsarTopicsFuture.whenComplete((pulsarTopics, e) -> {
             if (e != null) {
-                log.warn("Exception fetching metadata, will return null Response", e);
+                log.warn("[{}] Request {}: Exception fetching metadata, will return null Response",
+                    ctx.channel(), metadataHar.getHeader(), e);
                 MetadataResponse finalResponse =
                     new MetadataResponse(
                         Collections.emptyList(),
@@ -240,7 +271,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     findBroker(kafkaService, topicName)
                         .whenComplete(((partitionMetadata, throwable) -> {
                             if (throwable != null) {
-                                log.warn("Exception while find Broker metadata", throwable);
+                                log.warn("[{}] Request {}: Exception while find Broker metadata",
+                                    ctx.channel(), metadataHar.getHeader(), throwable);
                                 partitionMetadatas.add(newFailedPartitionMetadata(topicName));
                             } else {
                                 Node newNode = partitionMetadata.leader();
@@ -253,7 +285,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             // whether completed this topic's partitions list.
                             int finishedPartitions = partitionsCompleted.incrementAndGet();
                             if (log.isDebugEnabled()) {
-                                log.debug("FindBroker for {} partitions of topic {}, total partitions: {}",
+                                log.debug("[{}] Request {}: FindBroker for topic {}, partitions found/all: {}/{}.",
                                     finishedPartitions, topic, partitionsNumber);
                             }
                             if (finishedPartitions == partitionsNumber) {
@@ -264,9 +296,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 // whether completed all the topics requests.
                                 int finishedTopics = topicsCompleted.incrementAndGet();
                                 if (log.isDebugEnabled()) {
-                                    log.debug("Completed findBroker for all partitions of topic {}, partitions: {}; "
-                                            + "Finished Topics: {}, total topics: {}",
-                                        topic, partitionsNumber, finishedTopics, topicsNumber);
+                                    log.debug("[{}] Request {}: Completed findBroker for topic {}, "
+                                            + "partitions found/all: {}/{}",
+                                        ctx.channel(), metadataHar.getHeader(), topic,
+                                        finishedTopics, topicsNumber);
                                 }
                                 if (finishedTopics == topicsNumber) {
                                     // TODO: confirm right value for controller_id
@@ -310,23 +343,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             responsesFutures.put(topicPartition, partitionResponse);
 
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Produce messages for topic {} partition {}, request size: {} ",
-                    ctx.channel(), topicPartition.topic(), topicPartition.partition(), responsesSize);
+                log.debug("[{}] Request {}: Produce messages for topic {} partition {}, request size: {} ",
+                    ctx.channel(), produceHar.getHeader(),
+                    topicPartition.topic(), topicPartition.partition(), responsesSize);
             }
 
-            TopicName topicName = pulsarTopicName(topicPartition.topic(), topicPartition.partition());
+            TopicName topicName = pulsarTopicName(topicPartition);
 
             kafkaService.getBrokerService().getTopic(topicName.toString(), true)
                 .whenComplete((topicOpt, exception) -> {
                     if (exception != null) {
-                        log.error("[{}] Failed to getOrCreateTopic {}. exception:",
-                            ctx.channel(), topicName, exception);
+                        log.error("[{}] Request {}: Failed to getOrCreateTopic {}. exception:",
+                            ctx.channel(), produceHar.getHeader(), topicName, exception);
                         partitionResponse.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
                     } else {
                         if (topicOpt.isPresent()) {
                             publishMessages(entry.getValue(), topicOpt.get(), partitionResponse);
                         } else {
-                            log.error("[{}] getOrCreateTopic get empty topic for name {}", ctx.channel(), topicName);
+                            log.error("[{}] Request {}: getOrCreateTopic get empty topic for name {}",
+                                ctx.channel(), produceHar.getHeader(), topicName);
                             partitionResponse.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
                         }
                     }
@@ -343,7 +378,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
 
                 if (log.isDebugEnabled()) {
-                    log.debug("[{}] Complete handle produce request {}.",
+                    log.debug("[{}] Request {}: Complete handle produce.",
                         ctx.channel(), produceHar.toString());
                 }
                 ctx.writeAndFlush(responseToByteBuf(new ProduceResponse(responses), produceHar));
@@ -384,7 +419,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture<?>[rec])).whenComplete((ignore, ex) -> {
             if (ex != null) {
-                log.debug("[{}] publishMessages for topic partition: {} failed when write.",
+                log.error("[{}] publishMessages for topic partition: {} failed when write.",
                     ctx.channel(), topic.getName(), ex);
                 future.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
             } else {
@@ -412,7 +447,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         public void completed(Exception exception, long ledgerId, long entryId) {
 
             if (exception != null) {
-                log.error("Failed write entry: {}, entryId: {}, sequenceId: {}. and triggered send callback.",
+                log.error("Failed write entry: ledgerId: {}, entryId: {}, sequenceId: {}. triggered send callback.",
                     ledgerId, entryId, sequenceId);
                 offsetFuture.completeExceptionally(exception);
             } else {
@@ -475,6 +510,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // key
         if (record.hasKey()) {
             byte[] key = new byte[record.keySize()];
+            record.key().get(key);
             builder.keyBytes(key);
         }
 
@@ -522,8 +558,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             msgMetadataBuilder.setPublishTime(clock.millis());
         }
         if (!msgMetadataBuilder.hasProducerName()) {
-            msgMetadataBuilder.setProducerName(producerName);
+            msgMetadataBuilder.setProducerName(FAKE_KOP_PRODUCER_NAME);
         }
+
         msgMetadataBuilder.setCompression(
             CompressionCodecProvider.convertToWireProtocol(CompressionType.NONE));
         msgMetadataBuilder.setUncompressedSize(payload.readableBytes());
@@ -538,28 +575,353 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
 
+    // convert entries read from BookKeeper into Kafka Records
+    private static MemoryRecords entriesToRecords(List<Entry> entries) {
+        try (ByteBufferOutputStream outputStream = new ByteBufferOutputStream(DEFAULT_FETCH_BUFFER_SIZE)) {
+            MemoryRecordsBuilder builder = new MemoryRecordsBuilder(outputStream, RecordBatch.CURRENT_MAGIC_VALUE,
+                org.apache.kafka.common.record.CompressionType.NONE,
+                TimestampType.CREATE_TIME,
+                0,
+                RecordBatch.NO_TIMESTAMP,
+                RecordBatch.NO_PRODUCER_ID,
+                RecordBatch.NO_PRODUCER_EPOCH,
+                RecordBatch.NO_SEQUENCE,
+                false, false,
+                RecordBatch.NO_PARTITION_LEADER_EPOCH,
+                MAX_RECORDS_BUFFER_SIZE);
+
+            for (Entry entry : entries) {
+                ByteBuf metadataAndPayload = entry.getDataBuffer();
+                MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
+                ByteBuf payload = metadataAndPayload.retain();
+
+                byte[] data = new byte[payload.readableBytes()];
+                payload.readBytes(data);
+
+                builder.appendWithOffset(
+                    MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
+                    msgMetadata.getEventTime(),
+                    Base64.getDecoder().decode(msgMetadata.getPartitionKey()),
+                    data);
+            }
+            return builder.build();
+        } catch (IOException ioe) {
+            throw new UncheckedIOException(ioe);
+        }
+    }
+
+    // A simple implementation, returns this broker node.
     protected void handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator) {
-        throw new NotImplementedException("handleFindCoordinatorRequest");
+        checkArgument(findCoordinator.getRequest() instanceof FindCoordinatorRequest);
+        FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
+
+        if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
+            AbstractResponse response;
+            try {
+                URI uri = new URI(kafkaService.getBrokerServiceUrl());
+                Node node = newNode(
+                    new InetSocketAddress(
+                        uri.getHost(),
+                        kafkaService.getKafkaConfig().getKafkaServicePort().get()));
+
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Request {}: Return current broker node as Coordinator: {}.",
+                        ctx.channel(), findCoordinator.getHeader(), node);
+                }
+
+                response = new FindCoordinatorResponse(
+                    Errors.NONE,
+                    node);
+            } catch (Exception e) {
+                log.error("[{}] Request {}: Error while find coordinator.",
+                    ctx.channel(), findCoordinator.getHeader(), e);
+                response = new FindCoordinatorResponse(
+                    Errors.COORDINATOR_NOT_AVAILABLE,
+                    Node.noNode());
+            }
+
+            ctx.writeAndFlush(responseToByteBuf(response, findCoordinator));
+        } else {
+            throw new NotImplementedException("FindCoordinatorRequest not support TRANSACTION type");
+        }
+    }
+
+    protected void handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch) {
+        checkArgument(offsetFetch.getRequest() instanceof OffsetFetchRequest);
+        OffsetFetchRequest request = (OffsetFetchRequest) offsetFetch.getRequest();
+
+        List<Pair<TopicPartition, CompletableFuture<PersistentTopicInternalStats>>> statsList =
+            request.partitions().stream().map((topicPartition) -> Pair.of(topicPartition, admin.topics()
+                .getInternalStatsAsync(pulsarTopicName(topicPartition).toString())))
+                .collect(Collectors.toList());
+
+        CompletableFuture.allOf(statsList.stream().map(entry -> entry.getValue()).toArray(CompletableFuture<?>[]::new))
+            .whenComplete((ignore, ex) -> {
+                if (ex != null) {
+                    log.error("[{}] Request {}: OffsetFetch {} meet error:",
+                        ctx.channel(), offsetFetch.getHeader(), offsetFetch.getHeader(), ex);
+                    ctx.writeAndFlush(responseToByteBuf(
+                        new OffsetFetchResponse(Errors.UNKNOWN_TOPIC_OR_PARTITION, null), offsetFetch));
+                    return;
+                }
+
+                // TODO: topics may not exist currently, need createTopic?
+                Map<TopicPartition, OffsetFetchResponse.PartitionData> responses =
+                    statsList.stream().map((v) -> {
+                        TopicPartition key = v.getKey();
+                        try {
+                            List<PersistentTopicInternalStats.LedgerInfo> ledgers = v.getValue().join().ledgers;
+                            // return first ledger.
+                            long offset = MessageIdUtils.getOffset(ledgers.get(0).ledgerId, 0);
+
+                            if (log.isDebugEnabled()) {
+                                log.debug("[{}] Request {}:  topic {}  Return offset: {}, ledgerId: {}.",
+                                    ctx.channel(), offsetFetch.getHeader(), key, offset, ledgers.get(0).ledgerId);
+                            }
+                            return Pair.of(key, new OffsetFetchResponse.PartitionData(
+                                offset, OffsetFetchResponse.NO_METADATA, Errors.NONE));
+                        } catch (Exception e) {
+                            log.error("[{}] Request {}: topic {} meet error.",
+                                ctx.channel(), offsetFetch.getHeader(), key, e);
+                            return Pair.of(key, new OffsetFetchResponse.PartitionData(
+                                OffsetFetchResponse.INVALID_OFFSET,
+                                OffsetFetchResponse.NO_METADATA,
+                                Errors.UNKNOWN_SERVER_ERROR));
+                        }
+                    }).collect(Collectors.toMap(Pair::getKey, Pair::getValue));
+
+                ctx.writeAndFlush(responseToByteBuf(new OffsetFetchResponse(Errors.NONE, responses), offsetFetch));
+            });
     }
 
     protected void handleListOffsetRequest(KafkaHeaderAndRequest listOffset) {
         throw new NotImplementedException("handleListOffsetRequest");
     }
 
-    protected void handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch) {
-        throw new NotImplementedException("handleOffsetFetchRequest");
-    }
-
     protected void handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit) {
         throw new NotImplementedException("handleOffsetCommitRequest");
     }
 
+    private void readMessages(KafkaHeaderAndRequest fetch,
+                              Map<TopicPartition, CompletableFuture<ManagedCursor>> cursors) {
+        AtomicInteger bytesRead = new AtomicInteger(0);
+        Map<TopicPartition, List<Entry>> responseValues = new ConcurrentHashMap<>();
+
+        if (log.isDebugEnabled()) {
+            log.debug("[{}] Request {}: Read Messages for request.",
+                ctx.channel(), fetch.getHeader());
+        }
+
+        readMessagesInternal(fetch, cursors, bytesRead, responseValues);
+    }
+
+    private void readMessagesInternal(KafkaHeaderAndRequest fetch,
+                                      Map<TopicPartition, CompletableFuture<ManagedCursor>> cursors,
+                                      AtomicInteger bytesRead,
+                                      Map<TopicPartition, List<Entry>> responseValues) {
+
+        Map<TopicPartition, CompletableFuture<Entry>> readFutures = readAllCursorOnce(cursors);
+        CompletableFuture.allOf(readFutures.values().stream().toArray(CompletableFuture<?>[]::new))
+            .whenComplete((ignore, ex) -> {
+                // keep entries since all read completed.
+                readFutures.forEach((topic, readEntry) -> {
+                    try {
+                        Entry entry = readEntry.join();
+                        if (entry != null) {
+                            List<Entry> entryList = responseValues.computeIfAbsent(topic, l -> Lists.newArrayList());
+                            entryList.add(entry);
+                            bytesRead.addAndGet(entry.getLength());
+                            if (log.isDebugEnabled()) {
+                                log.debug("[{}] Request {}: For topic {}, entries in list: {}. add new entry {}:{}",
+                                    ctx.channel(), fetch.getHeader(), topic.toString(), entryList.size(),
+                                    entry.getLedgerId(), entry.getEntryId());
+                            }
+                        }
+                    } catch (Exception e) {
+                        // readEntry.join failed. ignore this partition
+                        log.error("[{}] Request {}: Failed readEntry.join for topic: {}. ",
+                            ctx.channel(), fetch.getHeader(), topic, e);
+                        cursors.remove(topic);
+                        responseValues.putIfAbsent(topic, Lists.newArrayList());
+                    }
+                });
+
+                FetchRequest request = (FetchRequest) fetch.getRequest();
+                int maxBytes = request.maxBytes();
+                int minBytes = request.minBytes();
+                int waitTime = request.maxWait(); // in ms
+                // if endTime <= 0, then no time wait, wait for minBytes.
+                long endTime = waitTime > 0 ? System.currentTimeMillis() + waitTime : waitTime;
+
+                int allSize = bytesRead.get();
+
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Request {}: One round read {} entries, "
+                            + "allSize/maxBytes/minBytes/endTime: {}/{}/{}/{}",
+                        ctx.channel(), fetch.getHeader(), readFutures.size(),
+                        allSize, maxBytes, minBytes, new Date(endTime));
+                }
+
+                // reach maxTime, return;
+                // reach minBytes if no endTime, return;
+                if ((endTime > 0 && endTime <= System.currentTimeMillis())
+                    || allSize > minBytes
+                    || allSize > maxBytes){
+                    if (log.isDebugEnabled()) {
+                        log.debug("[{}] Request {}: Complete read {} entries with size {}",
+                            ctx.channel(), fetch.getHeader(), readFutures.size(), allSize);
+                    }
+
+                    LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData = new LinkedHashMap<>();
+
+                    AtomicBoolean allPartitionsFailed = new AtomicBoolean(true);
+                    responseValues.forEach((topicPartition, entries) -> {
+                        FetchResponse.PartitionData partitionData;
+                        if (entries.isEmpty()) {
+                            partitionData = new FetchResponse.PartitionData(
+                                Errors.OFFSET_OUT_OF_RANGE,
+                                FetchResponse.INVALID_HIGHWATERMARK,
+                                FetchResponse.INVALID_LAST_STABLE_OFFSET,
+                                FetchResponse.INVALID_LOG_START_OFFSET,
+                                null,
+                                MemoryRecords.EMPTY);
+                        } else {
+                            allPartitionsFailed.set(false);
+                            Entry entry = entries.get(entries.size() - 1);
+                            long entryOffset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
+                            long highWatermark = entryOffset + cursors.get(topicPartition).join().getNumberOfEntries();
+
+                            MemoryRecords records = entriesToRecords(entries);
+                            partitionData = new FetchResponse.PartitionData(
+                                Errors.NONE,
+                                highWatermark,
+                                highWatermark,
+                                highWatermark,
+                                null,
+                                records);
+                        }
+
+                        responseData.put(topicPartition, partitionData);
+                    });
+
+                    if (allPartitionsFailed.get()) {
+                        log.error("[{}] Request {}: All partitions for request failed",
+                            ctx.channel(), fetch.getHeader());
+                        ctx.writeAndFlush(
+                            responseToByteBuf(
+                                new FetchResponse(Errors.UNKNOWN_SERVER_ERROR,
+                                    responseData,
+                                    ((Integer) THROTTLE_TIME_MS.defaultValue),
+                                    ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
+                                fetch));
+                    } else {
+                        ctx.writeAndFlush(
+                            responseToByteBuf(
+                                new FetchResponse(
+                                    Errors.NONE,
+                                    responseData,
+                                    ((Integer) THROTTLE_TIME_MS.defaultValue),
+                                    ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
+                                fetch));
+                    }
+                } else {
+                    //need do another round read
+                    readMessagesInternal(fetch, cursors, bytesRead, responseValues);
+                }
+            });
+    }
+
+    private Map<TopicPartition, CompletableFuture<Entry>> readAllCursorOnce(
+            Map<TopicPartition, CompletableFuture<ManagedCursor>> cursors) {
+        Map<TopicPartition, CompletableFuture<Entry>> readFutures = new ConcurrentHashMap<>();
+
+        cursors.entrySet().forEach(pair -> {
+            // non durable cursor create is a sync method.
+            ManagedCursor cursor;
+            CompletableFuture<Entry> readFuture = new CompletableFuture<>();
+
+            try {
+                cursor = pair.getValue().join();
+
+                // only read 1 entry currently. could read more in a batch.
+                cursor.asyncReadEntries(1,
+                    new ReadEntriesCallback() {
+                        @Override
+                        public void readEntriesComplete(List<Entry> list, Object o) {
+                            TopicName topicName = pulsarTopicName(pair.getKey());
+
+                            Entry entry = null;
+                            if (!list.isEmpty()) {
+                                entry = list.get(0);
+                                long offset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
+
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Topic {} success read entry: ledgerId: {}, entryId: {}, size: {},"
+                                            + " ConsumerManager add offset: {}",
+                                        topicName.toString(), entry.getLedgerId(), entry.getEntryId(),
+                                        entry.getLength(), offset + 1);
+                                }
+
+                                kafkaService.getKafkaTopicManager()
+                                    .getTopicConsumerManager(topicName.toString())
+                                    .thenAccept(cm -> cm.add(offset + 1, pair.getValue()));
+                            }
+
+                            readFuture.complete(entry);
+                        }
+
+                        @Override
+                        public void readEntriesFailed(ManagedLedgerException e, Object o) {
+                            log.error("Error read entry for topic: {}", pulsarTopicName(pair.getKey()));
+                            readFuture.completeExceptionally(e);
+                        }
+                    }, null);
+            } catch (Exception e) {
+                log.error("Error for cursor to read entry for topic: {}. ", pulsarTopicName(pair.getKey()), e);
+                readFuture.completeExceptionally(e);
+            }
+
+            readFutures.putIfAbsent(pair.getKey(), readFuture);
+        });
+
+        return readFutures;
+    }
+
+
     protected void handleFetchRequest(KafkaHeaderAndRequest fetch) {
-        throw new NotImplementedException("handleFetchRequest");
+        checkArgument(fetch.getRequest() instanceof FetchRequest);
+        FetchRequest request = (FetchRequest) fetch.getRequest();
+
+        // Map of partition and related cursor
+        Map<TopicPartition, CompletableFuture<ManagedCursor>> topicsAndCursor = request
+            .fetchData().entrySet().stream()
+            .map(entry -> {
+                TopicName topicName = pulsarTopicName(entry.getKey());
+                long offset = entry.getValue().fetchOffset;
+
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Request {}: Fetch topic {}, remove cursor for fetch offset: {}.",
+                        ctx.channel(), fetch.getHeader(), topicName, offset);
+                }
+
+                return Pair.of(
+                    entry.getKey(),
+                    kafkaService.getKafkaTopicManager()
+                        .getTopicConsumerManager(topicName.toString())
+                        .thenCompose(cm -> cm.remove(offset)));
+            })
+            .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
+
+        // wait to get all the cursor, then readMessages
+        CompletableFuture
+            .allOf(topicsAndCursor.entrySet().stream().map(Map.Entry::getValue).toArray(CompletableFuture<?>[]::new))
+            .whenComplete((ignore, ex) -> {
+                readMessages(fetch, topicsAndCursor);
+            });
     }
 
     protected void handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup) {
-        throw new NotImplementedException("handleFetchRequest");
+        throw new NotImplementedException("handleJoinGroupRequest");
     }
 
     protected void handleSyncGroupRequest(KafkaHeaderAndRequest syncGroup) {
@@ -598,10 +960,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                         URI uri = new URI(brokerUrl);
                         if (log.isDebugEnabled()) {
-                            log.debug("Find broker: {} for topicName: {}", uri, topic);
+                            log.debug("Found broker: {} for topicName: {}", uri, topic);
                         }
 
-                        Node node = newNode(new InetSocketAddress(uri.getHost(), uri.getPort()));
+                        Node node = newNode(new InetSocketAddress(
+                            uri.getHost(),
+                            kafkaService.getKafkaConfig().getKafkaServicePort().get()));
                         resultFuture.complete(newPartitionMetadata(topic, node));
                         return;
                     } else {
@@ -620,6 +984,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return resultFuture;
     }
 
+
+    private TopicName pulsarTopicName(TopicPartition topicPartition) {
+        return pulsarTopicName(topicPartition.topic(), topicPartition.partition());
+    }
 
     private TopicName pulsarTopicName(String topic) {
         return TopicName.get(TopicDomain.persistent.value(), kafkaNamespace, topic);

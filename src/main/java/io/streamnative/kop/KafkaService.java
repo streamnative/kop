@@ -14,7 +14,6 @@
 package io.streamnative.kop;
 
 import com.google.common.collect.Maps;
-import io.streamnative.kop.utils.ReflectionUtils;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
@@ -26,7 +25,6 @@ import org.apache.pulsar.broker.ManagedLedgerClientFactory;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
-import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.broker.service.schema.SchemaRegistryService;
 import org.apache.pulsar.broker.stats.MetricsGenerator;
 import org.apache.pulsar.broker.stats.prometheus.PrometheusMetricsServlet;
@@ -43,6 +41,8 @@ public class KafkaService extends PulsarService {
 
     @Getter
     private final KafkaServiceConfiguration kafkaConfig;
+    @Getter
+    private KafkaTopicManager kafkaTopicManager;
 
     public KafkaService(KafkaServiceConfiguration config) {
         super(config);
@@ -51,7 +51,7 @@ public class KafkaService extends PulsarService {
 
     @Override
     public void start() throws PulsarServerException {
-        ReentrantLock lock = ReflectionUtils.getField(this, "mutex");
+        ReentrantLock lock = getMutex();
 
         lock.lock();
 
@@ -77,62 +77,33 @@ public class KafkaService extends PulsarService {
                 new LocalZooKeeperConnectionService(getZooKeeperClientFactory(),
                     kafkaConfig.getZookeeperServers(), kafkaConfig.getZooKeeperSessionTimeoutMillis());
 
-            ReflectionUtils.setField(
-                this,
-                "localZooKeeperConnectionProvider",
-                localZooKeeperConnectionService
-            );
+            setLocalZooKeeperConnectionProvider(localZooKeeperConnectionService);
             localZooKeeperConnectionService.start(getShutdownService());
 
-
             // Initialize and start service to access configuration repository.
-            ReflectionUtils.callNoArgVoidMethod(
-                this,
-                "startZkCacheService"
-            );
+            startZkCacheService();
 
             BookKeeperClientFactory bkClientFactory = newBookKeeperClientFactory();
-            ReflectionUtils.setField(
-                this,
-                "bkClientFactory",
-                bkClientFactory
-            );
-            ReflectionUtils.setField(
-                this,
-                "managedLedgerClientFactory",
-                new ManagedLedgerClientFactory(kafkaConfig, getZkClient(), bkClientFactory)
-            );
-            ReflectionUtils.setField(
-                this,
-                "brokerService",
-                new KafkaBrokerService(this)
-            );
+            setBkClientFactory(bkClientFactory);
+            setManagedLedgerClientFactory(
+                new ManagedLedgerClientFactory(kafkaConfig, getZkClient(), bkClientFactory));
+            setBrokerService(new KafkaBrokerService(this));
 
             // Start load management service (even if load balancing is disabled)
             getLoadManager().set(LoadManager.create(this));
 
             // Start the leader election service
-            ReflectionUtils.callNoArgVoidMethod(
-                this,
-                "startLeaderElectionService"
-            );
+            startLeaderElectionService();
 
             // needs load management service
-            ReflectionUtils.callNoArgVoidMethod(
-                this,
-                "startNamespaceService"
-            );
+            startNamespaceService();
 
-            ReflectionUtils.setField(
-                this,
-                "offloader",
-                createManagedLedgerOffloader(kafkaConfig)
-            );
+            setOffloader(createManagedLedgerOffloader(kafkaConfig));
 
             getBrokerService().start();
 
             WebService webService = new WebService(this);
-            ReflectionUtils.setField(this, "webService", webService);
+            setWebService(webService);
             Map<String, Object> attributeMap = Maps.newHashMap();
             attributeMap.put(WebService.ATTRIBUTE_PULSAR_NAME, this);
             Map<String, Object> vipAttributeMap = Maps.newHashMap();
@@ -171,36 +142,22 @@ public class KafkaService extends PulsarService {
             webService.addStaticResources("/static", "/static");
 
             // Register heartbeat and bootstrap namespaces.
-            ReflectionUtils.<NamespaceService>getField(
-                this, "nsService"
-            ).registerBootstrapNamespaces();
+            getNsService().registerBootstrapNamespaces();
 
-            ReflectionUtils.setField(
-                this,
-                "schemaRegistryService",
-                SchemaRegistryService.create(this)
-            );
+            setSchemaRegistryService(SchemaRegistryService.create(this));
 
             webService.start();
 
-            ReflectionUtils.setField(
-                this,
-                "metricsGenerator",
-                new MetricsGenerator(this)
-            );
+            setMetricsGenerator(new MetricsGenerator(this));
 
             // By starting the Load manager service, the broker will also become visible
             // to the rest of the broker by creating the registration z-node. This needs
             // to be done only when the broker is fully operative.
-            ReflectionUtils.callNoArgVoidMethod(
-                this,
-                "startLoadManagementService");
+            startLoadManagementService();
 
-            reflectSetState(State.Started);
+            setState(State.Started);
 
-            ReflectionUtils.callNoArgVoidMethod(
-                this,
-                "acquireSLANamespace");
+            acquireSLANamespace();
 
             final String bootstrapMessage = "bootstrap service "
                     + (kafkaConfig.getWebServicePort().isPresent()
@@ -212,6 +169,8 @@ public class KafkaService extends PulsarService {
                     + (kafkaConfig.getKafkaServicePortTls().isPresent()
                 ? "broker url= " + kafkaConfig.getKafkaServicePortTls() : "");
 
+            kafkaTopicManager = new KafkaTopicManager(getBrokerService());
+
             log.info("Kafka messaging service is ready, {}, cluster={}, configs={}", bootstrapMessage,
                 kafkaConfig.getClusterName(), ReflectionToStringBuilder.toString(kafkaConfig));
         } catch (Exception e) {
@@ -221,17 +180,4 @@ public class KafkaService extends PulsarService {
             lock.unlock();
         }
     }
-
-    protected void reflectSetState(State state) {
-        try {
-            ReflectionUtils.setField(
-                this,
-                "state",
-                state
-            );
-        } catch (IllegalAccessException | NoSuchFieldException e) {
-            throw new RuntimeException("Unable to set broker set to " + state, e);
-        }
-    }
-
 }
