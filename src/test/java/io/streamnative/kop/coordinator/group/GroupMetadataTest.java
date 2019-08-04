@@ -25,11 +25,16 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import com.google.common.collect.Sets;
+import io.streamnative.kop.coordinator.group.GroupMetadata.CommitRecordMetadataAndOffset;
+import io.streamnative.kop.offset.OffsetAndMetadata;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import lombok.val;
+import org.apache.kafka.common.TopicPartition;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -377,6 +382,216 @@ public class GroupMetadataTest {
         assertNull(group.protocolOrNull());
     }
 
+    @Test
+    public void testOffsetCommit() {
+        TopicPartition partition = new TopicPartition("foo", 0);
+        OffsetAndMetadata offset = OffsetAndMetadata.apply(37);
+        long commitRecordOffset = 3;
+
+        Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
+        offsets.put(partition, offset);
+        group.prepareOffsetCommit(offsets);
+        assertTrue(group.hasOffsets());
+        assertEquals(Optional.empty(), group.offset(partition));
+
+        group.onOffsetCommitAppend(
+            partition,
+            new CommitRecordMetadataAndOffset(Optional.of(commitRecordOffset), offset));
+        assertTrue(group.hasOffsets());
+        assertEquals(Optional.of(offset), group.offset(partition));
+    }
+
+    @Test
+    public void testOffsetCommitFailure() {
+        TopicPartition partition = new TopicPartition("foo", 0);
+        OffsetAndMetadata offset = OffsetAndMetadata.apply(37);
+
+        Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
+        offsets.put(partition, offset);
+        group.prepareOffsetCommit(offsets);
+        assertTrue(group.hasOffsets());
+        assertEquals(Optional.empty(), group.offset(partition));
+
+        group.failPendingOffsetWrite(partition, offset);
+        assertFalse(group.hasOffsets());
+        assertEquals(Optional.empty(), group.offset(partition));
+    }
+
+    @Test
+    public void testOffsetCommitFailureWithAnotherPending() {
+        TopicPartition partition = new TopicPartition("foo", 0);
+        OffsetAndMetadata firstOffset = OffsetAndMetadata.apply(37);
+        OffsetAndMetadata secondOffset = OffsetAndMetadata.apply(57);
+
+        Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
+        offsets.put(partition, firstOffset);
+        group.prepareOffsetCommit(offsets);
+        assertTrue(group.hasOffsets());
+        assertEquals(Optional.empty(), group.offset(partition));
+
+        offsets = new HashMap<>();
+        offsets.put(partition, secondOffset);
+        group.prepareOffsetCommit(offsets);
+        assertTrue(group.hasOffsets());
+
+        group.failPendingOffsetWrite(partition, firstOffset);
+        assertTrue(group.hasOffsets());
+        assertEquals(Optional.empty(), group.offset(partition));
+
+        group.onOffsetCommitAppend(partition, new CommitRecordMetadataAndOffset(Optional.of(3L), secondOffset));
+        assertTrue(group.hasOffsets());
+        assertEquals(Optional.of(secondOffset), group.offset(partition));
+    }
+
+    @Test
+    public void testOffsetCommitWithAnotherPending() {
+        TopicPartition partition = new TopicPartition("foo", 0);
+        OffsetAndMetadata firstOffset = OffsetAndMetadata.apply(37);
+        OffsetAndMetadata secondOffset = OffsetAndMetadata.apply(57);
+
+        Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
+        offsets.put(partition, firstOffset);
+        group.prepareOffsetCommit(offsets);
+        assertTrue(group.hasOffsets());
+        assertEquals(Optional.empty(), group.offset(partition));
+
+        offsets = new HashMap<>();
+        offsets.put(partition, secondOffset);
+        group.prepareOffsetCommit(offsets);
+        assertTrue(group.hasOffsets());
+
+        group.onOffsetCommitAppend(partition, new CommitRecordMetadataAndOffset(Optional.of(4L), firstOffset));
+        assertTrue(group.hasOffsets());
+        assertEquals(Optional.of(firstOffset), group.offset(partition));
+
+        group.onOffsetCommitAppend(partition, new CommitRecordMetadataAndOffset(Optional.of(5L), secondOffset));
+        assertTrue(group.hasOffsets());
+        assertEquals(Optional.of(secondOffset), group.offset(partition));
+    }
+
+    @Test
+    public void testConsumerBeatsTransactionalOffsetCommit() {
+        TopicPartition partition = new TopicPartition("foo", 0);
+        long producerId = 13232L;
+        OffsetAndMetadata txnOffsetCommit = OffsetAndMetadata.apply(37);
+        OffsetAndMetadata consumerOffsetCommit = OffsetAndMetadata.apply(57);
+
+        Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
+        offsets.put(partition, txnOffsetCommit);
+        group.prepareTxnOffsetCommit(producerId, offsets);
+        assertTrue(group.hasOffsets());
+        assertEquals(Optional.empty(), group.offset(partition));
+
+        offsets = new HashMap<>();
+        offsets.put(partition, consumerOffsetCommit);
+        group.prepareOffsetCommit(offsets);
+        assertTrue(group.hasOffsets());
+
+        group.onTxnOffsetCommitAppend(producerId, partition,
+            new CommitRecordMetadataAndOffset(Optional.of(3L), txnOffsetCommit));
+        group.onOffsetCommitAppend(partition,
+            new CommitRecordMetadataAndOffset(Optional.of(4L), consumerOffsetCommit));
+        assertTrue(group.hasOffsets());
+        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition));
+
+        group.completePendingTxnOffsetCommit(producerId, true);
+        assertTrue(group.hasOffsets());
+        // This is the crucial assertion which validates that we materialize offsets in offset order,
+        // not transactional order.
+        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition));
+    }
+
+    @Test
+    public void testTransactionBeatsConsumerOffsetCommit() {
+        TopicPartition partition = new TopicPartition("foo", 0);
+        long producerId = 13232L;
+        OffsetAndMetadata txnOffsetCommit = OffsetAndMetadata.apply(37);
+        OffsetAndMetadata consumerOffsetCommit = OffsetAndMetadata.apply(57);
+
+        Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
+        offsets.put(partition, txnOffsetCommit);
+        group.prepareTxnOffsetCommit(producerId, offsets);
+        assertTrue(group.hasOffsets());
+        assertEquals(Optional.empty(), group.offset(partition));
+
+        offsets = new HashMap<>();
+        offsets.put(partition, consumerOffsetCommit);
+        group.prepareOffsetCommit(offsets);
+        assertTrue(group.hasOffsets());
+
+        group.onOffsetCommitAppend(
+            partition, new CommitRecordMetadataAndOffset(Optional.of(3L), consumerOffsetCommit));
+        group.onTxnOffsetCommitAppend(producerId, partition,
+            new CommitRecordMetadataAndOffset(Optional.of(4L), txnOffsetCommit));
+        assertTrue(group.hasOffsets());
+        // The transactional offset commit hasn't been committed yet, so we should materialize
+        // the consumer offset commit.
+        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition));
+
+        group.completePendingTxnOffsetCommit(producerId, true);
+        assertTrue(group.hasOffsets());
+        // The transactional offset commit has been materialized and the transactional commit record
+        // is later in the log, so it should be materialized.
+        assertEquals(Optional.of(txnOffsetCommit), group.offset(partition));
+    }
+
+    @Test
+    public void testTransactionalCommitIsAbortedAndConsumerCommitWins() {
+        TopicPartition partition = new TopicPartition("foo", 0);
+        long producerId = 13232L;
+        OffsetAndMetadata txnOffsetCommit = OffsetAndMetadata.apply(37);
+        OffsetAndMetadata consumerOffsetCommit = OffsetAndMetadata.apply(57);
+
+        Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
+        offsets.put(partition, txnOffsetCommit);
+        group.prepareTxnOffsetCommit(producerId, offsets);
+        assertTrue(group.hasOffsets());
+        assertEquals(Optional.empty(), group.offset(partition));
+
+        offsets = new HashMap<>();
+        offsets.put(partition, consumerOffsetCommit);
+        group.prepareOffsetCommit(offsets);
+        assertTrue(group.hasOffsets());
+
+        group.onOffsetCommitAppend(partition,
+            new CommitRecordMetadataAndOffset(Optional.of(3L), consumerOffsetCommit));
+        group.onTxnOffsetCommitAppend(producerId, partition,
+            new CommitRecordMetadataAndOffset(Optional.of(4L), txnOffsetCommit));
+        assertTrue(group.hasOffsets());
+        // The transactional offset commit hasn't been committed yet, so we should materialize the consumer
+        // offset commit.
+        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition));
+
+        group.completePendingTxnOffsetCommit(producerId, false);
+        assertTrue(group.hasOffsets());
+        // The transactional offset commit should be discarded and the consumer offset commit should continue to be
+        // materialized.
+        assertFalse(group.hasPendingOffsetCommitsFromProducer(producerId));
+        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition));
+    }
+
+    @Test
+    public void testFailedTxnOffsetCommitLeavesNoPendingState() {
+        TopicPartition partition = new TopicPartition("foo", 0);
+        long producerId = 13232L;
+        OffsetAndMetadata txnOffsetCommit = OffsetAndMetadata.apply(37);
+
+        Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
+        offsets.put(partition, txnOffsetCommit);
+        group.prepareTxnOffsetCommit(producerId, offsets);
+        assertTrue(group.hasPendingOffsetCommitsFromProducer(producerId));
+        assertTrue(group.hasOffsets());
+        assertEquals(Optional.empty(), group.offset(partition));
+        group.failPendingTxnOffsetCommit(producerId, partition);
+        assertFalse(group.hasOffsets());
+        assertFalse(group.hasPendingOffsetCommitsFromProducer(producerId));
+
+        // The commit marker should now have no effect.
+        group.completePendingTxnOffsetCommit(producerId, true);
+        assertFalse(group.hasOffsets());
+        assertFalse(group.hasPendingOffsetCommitsFromProducer(producerId));
+    }
+
     private void assertState(GroupMetadata group, GroupState targetState) {
         Set<GroupState> states = Sets.newHashSet(
             Stable, PreparingRebalance, CompletingRebalance, Dead
@@ -386,6 +601,5 @@ public class GroupMetadataTest {
         otherStates.forEach(otherState -> assertFalse(group.is(otherState)));
         assertTrue(group.is(targetState));
     }
-
 
 }

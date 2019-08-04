@@ -64,6 +64,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
     GroupMetadataManager groupMetadataManager = null;
     Producer<byte[]> producer = null;
     Reader<byte[]> consumer = null;
+    OffsetConfig offsetConfig = OffsetConfig.builder().build();
 
     @Before
     @Override
@@ -83,6 +84,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         time = new MockTime();
         groupMetadataManager = new GroupMetadataManager(
             1,
+            offsetConfig,
             producer,
             consumer,
             time
@@ -154,6 +156,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
             .create();
         groupMetadataManager = new GroupMetadataManager(
             1,
+            offsetConfig,
             producer,
             reader,
             time

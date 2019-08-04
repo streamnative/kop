@@ -22,7 +22,9 @@ import static io.streamnative.kop.utils.CoreUtils.inLock;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 
+import io.streamnative.kop.offset.OffsetAndMetadata;
 import java.nio.ByteBuffer;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -41,6 +43,7 @@ import org.apache.bookkeeper.common.hash.Murmur3;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
@@ -104,6 +107,7 @@ class GroupMetadataManager {
 
     }
 
+    private final OffsetConfig config;
     private final ConcurrentMap<String, GroupMetadata> groupMetadataCache;
     /* lock protecting access to loading and owned partition sets */
     private final ReentrantLock partitionLock = new ReentrantLock();
@@ -117,14 +121,25 @@ class GroupMetadataManager {
     /* shutting down flag */
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
     private final int groupMetadataTopicPartitionCount;
+
+    /**
+     * The groups with open transactional offsets commits per producer. We need this because when the commit or abort
+     * marker comes in for a transaction, it is for a particular partition on the offsets topic and a particular
+     * producerId. We use this structure to quickly find the groups which need to be updated by the commit/abort
+     * marker.
+     */
+    private final Map<Long, Set<String>> openGroupsForProducer = new HashMap<>();
+
     private final Producer<byte[]> metadataTopicProducer;
     private final Reader<byte[]> metadataTopicReader;
     private final Time time;
 
     GroupMetadataManager(int groupMetadataTopicPartitionCount,
+                         OffsetConfig config,
                          Producer<byte[]> metadataTopicProducer,
                          Reader<byte[]> metadataTopicConsumer,
                          Time time) {
+        this.config = config;
         this.groupMetadataCache = new ConcurrentHashMap<>();
         this.groupMetadataTopicPartitionCount = groupMetadataTopicPartitionCount;
         this.metadataTopicProducer = metadataTopicProducer;
@@ -183,6 +198,13 @@ class GroupMetadataManager {
         );
     }
 
+    boolean isGroupOpenForProducer(long producerId,
+                                   String groupId) {
+        return openGroupsForProducer.getOrDefault(
+            producerId, Collections.emptySet()
+        ).contains(groupId);
+    }
+
     public Optional<GroupMetadata> getGroup(String groupId) {
         return Optional.ofNullable(groupMetadataCache.getOrDefault(groupId, null));
     }
@@ -210,6 +232,46 @@ class GroupMetadataManager {
             .sendAsync()
             .thenApply(msgId -> Errors.NONE)
             .exceptionally(cause -> Errors.COORDINATOR_NOT_AVAILABLE);
+    }
+
+    public CompletableFuture<Map<TopicPartition, Errors>> storeOffsets(
+        GroupMetadata group,
+        String consumerId,
+        Map<TopicPartition, OffsetAndMetadata> offsetMetadata
+    ) {
+        return storeOffsets(
+            group,
+            consumerId,
+            offsetMetadata,
+            RecordBatch.NO_PRODUCER_ID,
+            RecordBatch.NO_PRODUCER_EPOCH
+        );
+    }
+
+    public CompletableFuture<Map<TopicPartition, Errors>> storeOffsets(
+        GroupMetadata group,
+        String consumerId,
+        Map<TopicPartition, OffsetAndMetadata> offsetMetadata,
+        long producerId,
+        short producerEpoch
+    ) {
+        // first filter out partitions with offset metadata size exceeding limit
+        // Map<TopicPartition, OffsetAndMetadata> filteredOffsetMetadata =
+        //     offsetMetadata.entrySet().stream()
+        //         .filter(entry -> validateOffsetMetadataLength(entry.getValue().metadata()))
+        //         .collect(Collectors.toMap(
+        //             e -> e.getKey(),
+        //             e -> e.getValue()
+        //         ));
+
+        throw new UnsupportedOperationException();
+    }
+
+    /*
+     * Check if the offset metadata length is valid
+     */
+    private boolean validateOffsetMetadataLength(String metadata) {
+        return metadata == null || metadata.length() <= config.maxMetadataSize();
     }
 
     public CompletableFuture<Void> scheduleLoadGroupAndOffsets(int offsetsPartition,
