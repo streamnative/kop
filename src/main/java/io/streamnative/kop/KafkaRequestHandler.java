@@ -211,7 +211,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     ctx.channel(), metadataHar.getHeader(), topicName, throwable.getMessage());
                             } else {
                                 List<TopicName> topicNames;
-                                if (partitionedTopicMetadata.partitions > 1) {
+                                if (partitionedTopicMetadata.partitions > 0) {
                                     if (log.isDebugEnabled()) {
                                         log.debug("Topic {} has {} partitions",
                                             topic, partitionedTopicMetadata.partitions);
@@ -221,7 +221,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         .mapToObj(i ->
                                             TopicName.get(topicName.toString() + PARTITIONED_TOPIC_SUFFIX + i))
                                         .collect(Collectors.toList());
-
                                 } else {
                                     if (log.isDebugEnabled()) {
                                         log.debug("[{}] Request {}: Topic {} has 1 partitions",
