@@ -18,21 +18,29 @@ import static io.streamnative.kop.coordinator.group.GroupMetadataConstants.group
 import static io.streamnative.kop.coordinator.group.GroupMetadataConstants.offsetCommitKey;
 import static io.streamnative.kop.coordinator.group.GroupMetadataConstants.offsetCommitValue;
 import static io.streamnative.kop.coordinator.group.GroupState.Empty;
+import static io.streamnative.kop.coordinator.group.GroupState.PreparingRebalance;
 import static io.streamnative.kop.coordinator.group.GroupState.Stable;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import io.netty.buffer.ByteBuf;
 import io.streamnative.kop.MockKafkaServiceBaseTest;
 import io.streamnative.kop.coordinator.group.GroupMetadata.CommitRecordMetadataAndOffset;
 import io.streamnative.kop.coordinator.group.GroupMetadataManager.BaseKey;
 import io.streamnative.kop.coordinator.group.GroupMetadataManager.GroupMetadataKey;
+import io.streamnative.kop.coordinator.group.GroupMetadataManager.GroupTopicPartition;
+import io.streamnative.kop.coordinator.group.GroupMetadataManager.OffsetKey;
 import io.streamnative.kop.offset.OffsetAndMetadata;
 import io.streamnative.kop.utils.MockTime;
 import java.nio.ByteBuffer;
@@ -44,10 +52,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import lombok.val;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
@@ -62,6 +71,8 @@ import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.record.TimestampType;
+import org.apache.kafka.common.requests.OffsetFetchResponse;
+import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
@@ -154,7 +165,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
             protocol,
             memberId,
             0
-        ) ;
+        );
     }
 
     private SimpleRecord buildStableGroupRecordWithMember(int generation,
@@ -584,8 +595,10 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
                 assertSame(group, groupInCache);
                 assertEquals(groupId, group.groupId());
                 assertEquals(Empty, group.currentState());
-                // Ensure that only the committed offsets are materialized, and that there are no pending commits for the producer.
-                // This allows us to be certain that the aborted offset commits are truly discarded.
+                // Ensure that only the committed offsets are materialized, and that there are no pending
+                // commits for the producer. This allows us to be certain that the aborted offset commits
+                //
+                // are truly discarded.
                 assertEquals(committedOffsets.size(), group.allOffsets().size());
                 committedOffsets.forEach((tp, offset) ->
                     assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset)));
@@ -656,8 +669,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
                 assertEquals(groupId, group.groupId());
                 assertEquals(Empty, group.currentState());
 
-                // Ensure that only the committed offsets are materialized, and that there are no pending commits for the producer.
-                // This allows us to be certain that the aborted offset commits are truly discarded.
+                // Ensure that only the committed offsets are materialized, and that there are no pending commits
+                // for the producer. This allows us to be certain that the aborted offset commits are truly discarded.
                 assertEquals(committedOffsets.size(), group.allOffsets().size());
                 committedOffsets.forEach((tp, offset) ->
                     assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset)));
@@ -742,8 +755,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
                 assertEquals(groupId, group.groupId());
                 assertEquals(Empty, group.currentState());
 
-                // Ensure that only the committed offsets are materialized, and that there are no pending commits for the producer.
-                // This allows us to be certain that the aborted offset commits are truly discarded.
+                // Ensure that only the committed offsets are materialized, and that there are no pending commits
+                // for the producer. This allows us to be certain that the aborted offset commits are truly discarded.
                 assertEquals(committedOffsetsFirstProducer.size() + committedOffsetsSecondProducer.size(),
                     group.allOffsets().size());
                 committedOffsetsFirstProducer.forEach((tp, offset) -> {
@@ -1343,6 +1356,516 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         });
     }
 
+    @Test
+    public void testCommitOffset() throws Exception {
+        runGroupMetadataManagerConsumerTester("test-commit-offset", (groupMetadataManager, consumer) -> {
+            String memberId = "";
+            TopicPartition topicPartition = new TopicPartition("foo", 0);
+            groupMetadataManager.addPartitionOwnership(groupPartitionId);
+            long offset = 37L;
+
+            GroupMetadata group = new GroupMetadata(groupId, Empty);
+            groupMetadataManager.addGroup(group);
+
+            Map<TopicPartition, OffsetAndMetadata> offsets = ImmutableMap.<TopicPartition, OffsetAndMetadata>builder()
+                .put(topicPartition, OffsetAndMetadata.apply(offset))
+                .build();
+
+            Map<TopicPartition, Errors> commitErrors = groupMetadataManager.storeOffsets(
+                group, memberId, offsets
+            ).get();
+
+            assertTrue(group.hasOffsets());
+            assertFalse(commitErrors.isEmpty());
+            Errors maybeError = commitErrors.get(topicPartition);
+            assertEquals(Errors.NONE, maybeError);
+            assertTrue(group.hasOffsets());
+
+            Map<TopicPartition, PartitionData> cachedOffsets = groupMetadataManager.getOffsets(
+                groupId,
+                Optional.of(Lists.newArrayList(topicPartition))
+            );
+            PartitionData maybePartitionResponse = cachedOffsets.get(topicPartition);
+            assertNotNull(maybePartitionResponse);
+
+            assertEquals(Errors.NONE, maybePartitionResponse.error);
+            assertEquals(offset, maybePartitionResponse.offset);
+
+            Message<ByteBuffer> message = consumer.receive();
+            assertTrue(message.getEventTime() > 0L);
+            assertTrue(message.hasKey());
+            byte[] key = message.getKeyBytes();
+            BaseKey groupKey = GroupMetadataConstants.readMessageKey(ByteBuffer.wrap(key));
+            assertTrue(groupKey instanceof OffsetKey);
+
+            ByteBuffer value = message.getValue();
+            MemoryRecords memRecords = MemoryRecords.readableRecords(value);
+            AtomicBoolean verified = new AtomicBoolean(false);
+            memRecords.batches().forEach(batch -> {
+                for (Record record : batch) {
+                    assertFalse(verified.get());
+                    BaseKey bk = GroupMetadataConstants.readMessageKey(record.key());
+                    assertTrue(bk instanceof OffsetKey);
+                    OffsetKey ok = (OffsetKey) bk;
+                    GroupTopicPartition gtp = ok.key();
+                    assertEquals(groupId, gtp.group());
+                    assertEquals(topicPartition, gtp.topicPartition());
+
+                    OffsetAndMetadata gm = GroupMetadataConstants.readOffsetMessageValue(
+                        record.value()
+                    );
+                    assertEquals(offset, gm.offset());
+                    verified.set(true);
+                }
+            });
+            assertTrue(verified.get());
+        });
+    }
+
+    @Test
+    public void testTransactionalCommitOffsetCommitted() throws Exception {
+        runGroupMetadataManagerConsumerTester("test-commit-offset", (groupMetadataManager, consumer) -> {
+            String memberId = "";
+            TopicPartition topicPartition = new TopicPartition("foo", 0);
+            long offset = 37L;
+            long producerId = 232L;
+            short producerEpoch = 0;
+
+            groupMetadataManager.addPartitionOwnership(groupPartitionId);
+
+            GroupMetadata group = new GroupMetadata(groupId, Empty);
+            groupMetadataManager.addGroup(group);
+
+            Map<TopicPartition, OffsetAndMetadata> offsets = ImmutableMap.<TopicPartition, OffsetAndMetadata>builder()
+                .put(topicPartition, OffsetAndMetadata.apply(offset))
+                .build();
+
+            CompletableFuture<MessageId> writeOffsetMessageFuture = new CompletableFuture<>();
+            AtomicReference<CompletableFuture<MessageId>> realWriteFutureRef = new AtomicReference<>();
+            doAnswer(invocationOnMock -> {
+                CompletableFuture<MessageId> realWriteFuture =
+                    (CompletableFuture<MessageId>) invocationOnMock.callRealMethod();
+                realWriteFutureRef.set(realWriteFuture);
+                return writeOffsetMessageFuture;
+            }).when(groupMetadataManager).storeOffsetMessage(
+                any(byte[].class), any(ByteBuffer.class), anyLong()
+            );
+
+            CompletableFuture<Map<TopicPartition, Errors>> storeFuture = groupMetadataManager.storeOffsets(
+                group, memberId, offsets, producerId, producerEpoch
+            );
+
+            assertTrue(group.hasOffsets());
+            assertTrue(group.allOffsets().isEmpty());
+
+            // complete the write message
+            writeOffsetMessageFuture.complete(realWriteFutureRef.get().get());
+            Map<TopicPartition, Errors> commitErrors = storeFuture.get();
+
+            assertFalse(commitErrors.isEmpty());
+            Errors maybeError = commitErrors.get(topicPartition);
+            assertEquals(Errors.NONE, maybeError);
+            assertTrue(group.hasOffsets());
+            assertTrue(group.allOffsets().isEmpty());
+
+            group.completePendingTxnOffsetCommit(producerId, true);
+            assertTrue(group.hasOffsets());
+            assertFalse(group.allOffsets().isEmpty());
+
+            assertEquals(
+                Optional.of(OffsetAndMetadata.apply(offset)),
+                group.offset(topicPartition)
+            );
+        });
+    }
+
+    @Test
+    public void testTransactionalCommitOffsetAppendFailure() throws Exception {
+        runGroupMetadataManagerConsumerTester("test-commit-offset", (groupMetadataManager, consumer) -> {
+            String memberId = "";
+            TopicPartition topicPartition = new TopicPartition("foo", 0);
+            long offset = 37L;
+            long producerId = 232L;
+            short producerEpoch = 0;
+
+            groupMetadataManager.addPartitionOwnership(groupPartitionId);
+
+            GroupMetadata group = new GroupMetadata(groupId, Empty);
+            groupMetadataManager.addGroup(group);
+
+            Map<TopicPartition, OffsetAndMetadata> offsets = ImmutableMap.<TopicPartition, OffsetAndMetadata>builder()
+                .put(topicPartition, OffsetAndMetadata.apply(offset))
+                .build();
+
+            CompletableFuture<MessageId> writeOffsetMessageFuture = new CompletableFuture<>();
+            AtomicReference<CompletableFuture<MessageId>> realWriteFutureRef = new AtomicReference<>();
+            doAnswer(invocationOnMock -> {
+                CompletableFuture<MessageId> realWriteFuture =
+                    (CompletableFuture<MessageId>) invocationOnMock.callRealMethod();
+                realWriteFutureRef.set(realWriteFuture);
+                return writeOffsetMessageFuture;
+            }).when(groupMetadataManager).storeOffsetMessage(
+                any(byte[].class), any(ByteBuffer.class), anyLong()
+            );
+
+            CompletableFuture<Map<TopicPartition, Errors>> storeFuture = groupMetadataManager.storeOffsets(
+                group, memberId, offsets, producerId, producerEpoch
+            );
+
+            assertTrue(group.hasOffsets());
+            assertTrue(group.allOffsets().isEmpty());
+
+            // complete the write message
+            writeOffsetMessageFuture.completeExceptionally(
+                new Exception("Not enought replicas")
+            );
+            Map<TopicPartition, Errors> commitErrors = storeFuture.get();
+
+            assertFalse(commitErrors.isEmpty());
+            Errors maybeError = commitErrors.get(topicPartition);
+            assertEquals(Errors.UNKNOWN_SERVER_ERROR, maybeError);
+            assertFalse(group.hasOffsets());
+            assertTrue(group.allOffsets().isEmpty());
+
+            group.completePendingTxnOffsetCommit(producerId, false);
+            assertFalse(group.hasOffsets());
+            assertTrue(group.allOffsets().isEmpty());
+        });
+    }
+
+    @Test
+    public void testTransactionalCommitOffsetAborted() throws Exception {
+        runGroupMetadataManagerConsumerTester("test-commit-offset", (groupMetadataManager, consumer) -> {
+            String memberId = "";
+            TopicPartition topicPartition = new TopicPartition("foo", 0);
+            long offset = 37L;
+            long producerId = 232L;
+            short producerEpoch = 0;
+
+            groupMetadataManager.addPartitionOwnership(groupPartitionId);
+
+            GroupMetadata group = new GroupMetadata(groupId, Empty);
+            groupMetadataManager.addGroup(group);
+
+            Map<TopicPartition, OffsetAndMetadata> offsets = ImmutableMap.<TopicPartition, OffsetAndMetadata>builder()
+                .put(topicPartition, OffsetAndMetadata.apply(offset))
+                .build();
+
+            CompletableFuture<MessageId> writeOffsetMessageFuture = new CompletableFuture<>();
+            AtomicReference<CompletableFuture<MessageId>> realWriteFutureRef = new AtomicReference<>();
+            doAnswer(invocationOnMock -> {
+                CompletableFuture<MessageId> realWriteFuture =
+                    (CompletableFuture<MessageId>) invocationOnMock.callRealMethod();
+                realWriteFutureRef.set(realWriteFuture);
+                return writeOffsetMessageFuture;
+            }).when(groupMetadataManager).storeOffsetMessage(
+                any(byte[].class), any(ByteBuffer.class), anyLong()
+            );
+
+            CompletableFuture<Map<TopicPartition, Errors>> storeFuture = groupMetadataManager.storeOffsets(
+                group, memberId, offsets, producerId, producerEpoch
+            );
+
+            assertTrue(group.hasOffsets());
+            assertTrue(group.allOffsets().isEmpty());
+
+            // complete the write message
+            writeOffsetMessageFuture.complete(realWriteFutureRef.get().get());
+            Map<TopicPartition, Errors> commitErrors = storeFuture.get();
+
+            assertFalse(commitErrors.isEmpty());
+            Errors maybeError = commitErrors.get(topicPartition);
+            assertEquals(Errors.NONE, maybeError);
+            assertTrue(group.hasOffsets());
+            assertTrue(group.allOffsets().isEmpty());
+
+            group.completePendingTxnOffsetCommit(producerId, false);
+            assertFalse(group.hasOffsets());
+            assertTrue(group.allOffsets().isEmpty());
+        });
+    }
+
+    @Test
+    public void testExpiredOffset() throws Exception {
+        runGroupMetadataManagerConsumerTester("test-commit-offset", (groupMetadataManager, consumer) -> {
+            String memberId = "";
+            TopicPartition topicPartition1 = new TopicPartition("foo", 0);
+            TopicPartition topicPartition2 = new TopicPartition("foo", 1);
+            groupMetadataManager.addPartitionOwnership(groupPartitionId);
+            long offset = 37L;
+
+            GroupMetadata group = new GroupMetadata(groupId, Empty);
+            groupMetadataManager.addGroup(group);
+
+            long startMs = time.milliseconds();
+            Map<TopicPartition, OffsetAndMetadata> offsets = ImmutableMap.<TopicPartition, OffsetAndMetadata>builder()
+                .put(topicPartition1, OffsetAndMetadata.apply(
+                    offset, "", startMs, startMs + 1))
+                .put(topicPartition2, OffsetAndMetadata.apply(
+                    offset, "", startMs, startMs + 3))
+                .build();
+
+            Map<TopicPartition, Errors> commitErrors = groupMetadataManager.storeOffsets(
+                group, memberId, offsets
+            ).get();
+            assertTrue(group.hasOffsets());
+
+            assertFalse(commitErrors.isEmpty());
+            Errors maybeError = commitErrors.get(topicPartition1);
+            assertEquals(Errors.NONE, maybeError);
+
+            // expire only one of the offsets
+            time.sleep(2);
+
+            groupMetadataManager.cleanupGroupMetadata();
+
+            assertEquals(Optional.of(group), groupMetadataManager.getGroup(groupId));
+            assertEquals(Optional.empty(), group.offset(topicPartition1));
+            assertEquals(Optional.of(offset), group.offset(topicPartition2).map(OffsetAndMetadata::offset));
+
+            Map<TopicPartition, PartitionData> cachedOffsets = groupMetadataManager.getOffsets(
+                groupId,
+                Optional.of(Lists.newArrayList(
+                    topicPartition1,
+                    topicPartition2
+                ))
+            );
+            assertEquals(
+                OffsetFetchResponse.INVALID_OFFSET,
+                cachedOffsets.get(topicPartition1).offset);
+            assertEquals(
+                offset,
+                cachedOffsets.get(topicPartition2).offset);
+        });
+    }
+
+    @Test
+    public void testGroupMetadataRemoval() throws Exception {
+        runGroupMetadataManagerConsumerTester("test-commit-offset", (groupMetadataManager, consumer) -> {
+            TopicPartition topicPartition1 = new TopicPartition("foo", 0);
+            TopicPartition topicPartition2 = new TopicPartition("foo", 1);
+
+            groupMetadataManager.addPartitionOwnership(groupPartitionId);
+
+            GroupMetadata group = new GroupMetadata(groupId, Empty);
+            groupMetadataManager.addGroup(group);
+            group.generationId(5);
+
+            groupMetadataManager.cleanupGroupMetadata().get();
+
+            Message<ByteBuffer> message = consumer.receive();
+            assertTrue(message.getEventTime() > 0L);
+            assertTrue(message.hasKey());
+            byte[] key = message.getKeyBytes();
+
+            BaseKey groupKey = GroupMetadataConstants.readMessageKey(ByteBuffer.wrap(key));
+            assertTrue(groupKey instanceof GroupMetadataKey);
+            GroupMetadataKey groupMetadataKey = (GroupMetadataKey) groupKey;
+            assertEquals(groupId, groupMetadataKey.key());
+
+            ByteBuffer value = message.getValue();
+            MemoryRecords memRecords = MemoryRecords.readableRecords(value);
+            AtomicBoolean verified = new AtomicBoolean(false);
+            memRecords.batches().forEach(batch -> {
+                assertEquals(RecordBatch.CURRENT_MAGIC_VALUE, batch.magic());
+                assertEquals(TimestampType.CREATE_TIME, batch.timestampType());
+                for (Record record : batch) {
+                    assertFalse(verified.get());
+                    assertTrue(record.hasKey());
+                    assertFalse(record.hasValue());
+                    assertTrue(record.timestamp() > 0);
+                    BaseKey bk = GroupMetadataConstants.readMessageKey(record.key());
+                    assertTrue(bk instanceof GroupMetadataKey);
+                    GroupMetadataKey gmk = (GroupMetadataKey) bk;
+                    assertEquals(groupId, gmk.key());
+                    verified.set(true);
+                }
+            });
+            assertTrue(verified.get());
+            assertEquals(Optional.empty(), groupMetadataManager.getGroup(groupId));
+            Map<TopicPartition, PartitionData> cachedOffsets = groupMetadataManager.getOffsets(
+                groupId,
+                Optional.of(Lists.newArrayList(
+                    topicPartition1,
+                    topicPartition2
+                ))
+            );
+            assertEquals(
+                OffsetFetchResponse.INVALID_OFFSET,
+                cachedOffsets.get(topicPartition1).offset);
+            assertEquals(
+                OffsetFetchResponse.INVALID_OFFSET,
+                cachedOffsets.get(topicPartition2).offset);
+        });
+    }
+
+    @Test
+    public void testExpireGroupWithOffsetsOnly() throws Exception {
+        runGroupMetadataManagerConsumerTester("test-commit-offset", (groupMetadataManager, consumer) -> {
+            // verify that the group is removed properly, but no tombstone is written if
+            // this is a group which is only using kafka for offset storage
+
+            String memberId = "";
+            TopicPartition topicPartition1 = new TopicPartition("foo", 0);
+            TopicPartition topicPartition2 = new TopicPartition("foo", 1);
+            long offset = 37;
+
+            groupMetadataManager.addPartitionOwnership(groupPartitionId);
+
+            GroupMetadata group = new GroupMetadata(groupId, Empty);
+            groupMetadataManager.addGroup(group);
+
+            long startMs = time.milliseconds();
+            Map<TopicPartition, OffsetAndMetadata> offsets = ImmutableMap.<TopicPartition, OffsetAndMetadata>builder()
+                .put(topicPartition1, OffsetAndMetadata.apply(offset, "", startMs, startMs + 1))
+                .put(topicPartition2, OffsetAndMetadata.apply(offset, "", startMs, startMs + 3))
+                .build();
+
+            Map<TopicPartition, Errors> commitErrors =
+                groupMetadataManager.storeOffsets(group, memberId, offsets).get();
+            assertTrue(group.hasOffsets());
+
+            assertFalse(commitErrors.isEmpty());
+            assertEquals(
+                Errors.NONE,
+                commitErrors.get(topicPartition1)
+            );
+
+            // expire all of the offsets
+            time.sleep(4);
+
+            groupMetadataManager.cleanupGroupMetadata().get();
+
+            // skip `storeOffsets` op
+            consumer.receive();
+
+            Message<ByteBuffer> message = consumer.receive();
+            assertTrue(message.getEventTime() > 0L);
+            assertTrue(message.hasKey());
+            byte[] key = message.getKeyBytes();
+
+            BaseKey groupKey = GroupMetadataConstants.readMessageKey(ByteBuffer.wrap(key));
+            assertTrue(groupKey instanceof GroupMetadataKey);
+            GroupMetadataKey gmk = (GroupMetadataKey) groupKey;
+            assertEquals(groupId, gmk.key());
+
+            ByteBuffer value = message.getValue();
+            MemoryRecords memRecords = MemoryRecords.readableRecords(value);
+            AtomicInteger verified = new AtomicInteger(2);
+            memRecords.batches().forEach(batch -> {
+                assertEquals(RecordBatch.CURRENT_MAGIC_VALUE, batch.magic());
+                assertEquals(TimestampType.CREATE_TIME, batch.timestampType());
+                for (Record record : batch) {
+                    verified.decrementAndGet();
+                    assertTrue(record.hasKey());
+                    assertFalse(record.hasValue());
+                    assertTrue(record.timestamp() > 0);
+                    BaseKey bk = GroupMetadataConstants.readMessageKey(record.key());
+                    assertTrue(bk instanceof OffsetKey);
+                    OffsetKey ok = (OffsetKey) bk;
+                    assertEquals(groupId, ok.key().group());
+                    assertEquals("foo", ok.key().topicPartition().topic());
+                }
+            });
+            assertEquals(0, verified.get());
+            assertEquals(Optional.empty(), groupMetadataManager.getGroup(groupId));
+            Map<TopicPartition, PartitionData> cachedOffsets = groupMetadataManager.getOffsets(
+                groupId,
+                Optional.of(Lists.newArrayList(
+                    topicPartition1,
+                    topicPartition2
+                ))
+            );
+            assertEquals(
+                OffsetFetchResponse.INVALID_OFFSET,
+                cachedOffsets.get(topicPartition1).offset);
+            assertEquals(
+                OffsetFetchResponse.INVALID_OFFSET,
+                cachedOffsets.get(topicPartition2).offset);
+        });
+    }
+
+    @Test
+    public void testExpireOffsetsWithActiveGroup() throws Exception {
+        runGroupMetadataManagerConsumerTester("test-commit-offset", (groupMetadataManager, consumer) -> {
+            String memberId = "memberId";
+            String clientId = "clientId";
+            String clientHost = "localhost";
+            TopicPartition topicPartition1 = new TopicPartition("foo", 0);
+            TopicPartition topicPartition2 = new TopicPartition("foo", 1);
+            long offset = 37;
+
+            groupMetadataManager.addPartitionOwnership(groupPartitionId);
+
+            GroupMetadata group = new GroupMetadata(groupId, Empty);
+            groupMetadataManager.addGroup(group);
+
+            MemberMetadata member = new MemberMetadata(
+                memberId, groupId, clientId, clientHost,
+                rebalanceTimeout,
+                sessionTimeout,
+                protocolType,
+                ImmutableMap.<String, byte[]>builder()
+                    .put("protocol", new byte[0])
+                    .build()
+            );
+            CompletableFuture<JoinGroupResult> memberJoinFuture = new CompletableFuture<>();
+            member.awaitingJoinCallback(memberJoinFuture);
+            group.add(member);
+            group.transitionTo(PreparingRebalance);
+            group.initNextGeneration();
+
+            long startMs = time.milliseconds();
+            Map<TopicPartition, OffsetAndMetadata> offsets = ImmutableMap.<TopicPartition, OffsetAndMetadata>builder()
+                .put(topicPartition1, OffsetAndMetadata.apply(offset, "", startMs, startMs + 1))
+                .put(topicPartition2, OffsetAndMetadata.apply(offset, "", startMs, startMs + 3))
+                .build();
+
+            Map<TopicPartition, Errors> commitErrors =
+                groupMetadataManager.storeOffsets(group, memberId, offsets).get();
+            assertTrue(group.hasOffsets());
+
+            assertFalse(commitErrors.isEmpty());
+            assertEquals(
+                Errors.NONE,
+                commitErrors.get(topicPartition1)
+            );
+
+            // expire all of the offsets
+            time.sleep(4);
+
+            groupMetadataManager.cleanupGroupMetadata().get();
+
+            // group should still be there, but the offsets should be gone
+            assertEquals(
+                Optional.of(group),
+                groupMetadataManager.getGroup(groupId)
+            );
+            assertEquals(
+                Optional.empty(),
+                group.offset(topicPartition1)
+            );
+            assertEquals(
+                Optional.empty(),
+                group.offset(topicPartition2)
+            );
+
+            Map<TopicPartition, PartitionData> cachedOffsets = groupMetadataManager.getOffsets(
+                groupId,
+                Optional.of(Lists.newArrayList(
+                    topicPartition1,
+                    topicPartition2
+                ))
+            );
+            assertEquals(
+                OffsetFetchResponse.INVALID_OFFSET,
+                cachedOffsets.get(topicPartition1).offset);
+            assertEquals(
+                OffsetFetchResponse.INVALID_OFFSET,
+                cachedOffsets.get(topicPartition2).offset);
+        });
+    }
+
     /**
      * A group metadata manager test runner.
      */
@@ -1382,14 +1905,14 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
             .topic(topicName)
             .startMessageId(MessageId.earliest)
             .create();
-        groupMetadataManager = new GroupMetadataManager(
+        groupMetadataManager = spy(new GroupMetadataManager(
             1,
             offsetConfig,
             producer,
             reader,
             scheduler,
             time
-        );
+        ));
         tester.test(groupMetadataManager, producer);
     }
 
@@ -1410,14 +1933,14 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
             .topic(topicName)
             .startMessageId(MessageId.earliest)
             .create();
-        groupMetadataManager = new GroupMetadataManager(
+        groupMetadataManager = spy(new GroupMetadataManager(
             1,
             offsetConfig,
             producer,
             reader,
             scheduler,
             time
-        );
+        ));
         tester.test(groupMetadataManager, consumer);
     }
 

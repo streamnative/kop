@@ -34,7 +34,6 @@ import io.streamnative.kop.utils.CoreUtils;
 import io.streamnative.kop.utils.MessageIdUtils;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -83,7 +82,6 @@ import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.Reader;
 import org.apache.pulsar.client.impl.MessageIdImpl;
-import org.apache.pulsar.functions.utils.Exceptions;
 
 /**
  * Manager to manage a coordination group.
@@ -330,6 +328,18 @@ class GroupMetadataManager {
             .exceptionally(cause -> Errors.COORDINATOR_NOT_AVAILABLE);
     }
 
+    // visible for mock
+    CompletableFuture<MessageId> storeOffsetMessage(byte[] key,
+                                                    ByteBuffer buffer,
+                                                    long timestamp) {
+        return metadataTopicProducer
+            .newMessage()
+            .keyBytes(key)
+            .value(buffer)
+            .eventTime(timestamp)
+            .sendAsync();
+    }
+
     public CompletableFuture<Map<TopicPartition, Errors>> storeOffsets(
         GroupMetadata group,
         String consumerId,
@@ -427,12 +437,7 @@ class GroupMetadataManager {
 
         // dummy offset commit key
         byte[] key = offsetCommitKey(group.groupId(), new TopicPartition("", -1));
-        return metadataTopicProducer
-            .newMessage()
-            .keyBytes(key)
-            .value(entries.buffer())
-            .eventTime(timestamp)
-            .sendAsync()
+        return storeOffsetMessage(key, entries.buffer(), timestamp)
             .thenApply(messageId -> {
                 if (!group.is(GroupState.Dead)) {
                     MessageIdImpl lastMessageId = (MessageIdImpl) messageId;
@@ -1076,9 +1081,9 @@ class GroupMetadataManager {
         });
     }
 
-    void cleanupGroupMetadata() {
+    CompletableFuture<Void> cleanupGroupMetadata() {
         final long startMs = time.milliseconds();
-        cleanGroupMetadata(groupMetadataCache.values().stream(),
+        return cleanGroupMetadata(groupMetadataCache.values().stream(),
             group -> group.removeExpiredOffsets(time.milliseconds())
         ).thenAccept(offsetsRemoved ->
             log.info("Removed {} expired offsets in {} milliseconds.",
