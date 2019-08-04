@@ -41,8 +41,6 @@ import org.apache.bookkeeper.common.hash.Murmur3;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.record.CompressionType;
-import org.apache.kafka.common.requests.ApiVersionsResponse.ApiVersion;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
@@ -106,10 +104,6 @@ class GroupMetadataManager {
 
     }
 
-    private final int brokerId;
-    private final ApiVersion interBrokerProtocolVersion;
-    private final OffsetConfig config;
-    private final CompressionType compressionType;
     private final ConcurrentMap<String, GroupMetadata> groupMetadataCache;
     /* lock protecting access to loading and owned partition sets */
     private final ReentrantLock partitionLock = new ReentrantLock();
@@ -122,25 +116,16 @@ class GroupMetadataManager {
     private final Set<Integer> ownedPartitions = new HashSet<>();
     /* shutting down flag */
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
-    private final String logIdent;
     private final int groupMetadataTopicPartitionCount;
     private final Producer<byte[]> metadataTopicProducer;
     private final Reader<byte[]> metadataTopicReader;
     private final Time time;
 
-    GroupMetadataManager(int brokerId,
-                         ApiVersion interBrokerProtocolVersion,
-                         OffsetConfig config,
-                         int groupMetadataTopicPartitionCount,
+    GroupMetadataManager(int groupMetadataTopicPartitionCount,
                          Producer<byte[]> metadataTopicProducer,
                          Reader<byte[]> metadataTopicConsumer,
                          Time time) {
-        this.brokerId = brokerId;
-        this.interBrokerProtocolVersion = interBrokerProtocolVersion;
-        this.config = config;
-        this.compressionType = config.offsetsTopicCompressionType();
         this.groupMetadataCache = new ConcurrentHashMap<>();
-        this.logIdent = String.format("[GroupMetadataManager brokerId=%d]", brokerId);
         this.groupMetadataTopicPartitionCount = groupMetadataTopicPartitionCount;
         this.metadataTopicProducer = metadataTopicProducer;
         this.metadataTopicReader = metadataTopicConsumer;
@@ -191,15 +176,10 @@ class GroupMetadataManager {
     public boolean groupNotExists(String groupId) {
         return inLock(
             partitionLock,
-            () -> {
-                if (isGroupLocal(groupId)) {
-                    return true;
-                } else {
-                    return getGroup(groupId)
-                        .map(metadata -> metadata.inLock(() -> metadata.is(GroupState.Dead)))
-                        .orElse(false);
-                }
-            }
+            () -> isGroupLocal(groupId)
+                && getGroup(groupId)
+                    .map(group -> group.inLock(() -> group.is(GroupState.Dead)))
+                    .orElse(true)
         );
     }
 
@@ -395,7 +375,7 @@ class GroupMetadataManager {
      *
      * <p>NOTE: this is for test only
      */
-    private void addPartitionOwnership(int partition) {
+    void addPartitionOwnership(int partition) {
         inLock(partitionLock, () -> {
             ownedPartitions.add(partition);
             return null;
@@ -411,8 +391,5 @@ class GroupMetadataManager {
     boolean addLoadingPartition(int partition) {
         return inLock(partitionLock, () -> loadingPartitions.add(partition));
     }
-
-
-
 
 }
