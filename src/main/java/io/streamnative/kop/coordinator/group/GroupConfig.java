@@ -14,11 +14,15 @@
 package io.streamnative.kop.coordinator.group;
 
 import lombok.Data;
+import lombok.Getter;
+import lombok.experimental.Accessors;
 
 /**
  * Group configuration.
  */
 @Data
+@Accessors(fluent = true)
+@Getter
 public class GroupConfig {
 
     private final int groupMinSessionTimeoutMs;

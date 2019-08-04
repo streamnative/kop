@@ -22,8 +22,8 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import javax.annotation.concurrent.NotThreadSafe;
 import lombok.Data;
 import lombok.Getter;
@@ -89,14 +89,18 @@ public class MemberMetadata {
     private final Map<String, byte[]> supportedProtocols;
 
     private byte[] assignment = new byte[0];
-    private Consumer<JoinGroupResult> awaitingJoinCallback = null;
+    private CompletableFuture<JoinGroupResult> awaitingJoinCallback = null;
     private BiConsumer<byte[], Errors> awaitingSyncCallback = null;
     private long latestHeartbeat = -1L;
     private boolean isLeaving = false;
 
     public Set<String> protocols() {
         return supportedProtocols.keySet();
+    }
 
+    public void supportedProtocols(Map<String, byte[]> supportedProtocols) {
+        this.supportedProtocols.clear();
+        this.supportedProtocols.putAll(supportedProtocols);
     }
 
     public byte[] metadata(String protocol) {
