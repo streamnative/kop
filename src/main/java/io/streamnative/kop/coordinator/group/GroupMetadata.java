@@ -23,6 +23,7 @@ import com.google.common.base.MoreObjects.ToStringHelper;
 import com.google.common.base.Supplier;
 import com.google.common.collect.Sets;
 import io.streamnative.kop.coordinator.group.MemberMetadata.MemberSummary;
+import io.streamnative.kop.offset.OffsetAndMetadata;
 import io.streamnative.kop.utils.CoreUtils;
 import java.util.Collections;
 import java.util.Comparator;
@@ -37,12 +38,16 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.annotation.concurrent.NotThreadSafe;
 import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.pulsar.common.schema.KeyValue;
 
 /**
  * Group contains the following metadata:
@@ -60,6 +65,7 @@ import org.apache.commons.lang3.StringUtils;
 @NotThreadSafe
 @Setter
 @Accessors(fluent = true)
+@Slf4j
 class GroupMetadata {
 
     private static final Map<GroupState, Set<GroupState>> validPreviousStates = new HashMap<>();
@@ -147,6 +153,22 @@ class GroupMetadata {
         private final List<MemberSummary> members;
     }
 
+    /**
+     * We cache offset commits along with their commit record offset. This enables us to ensure that the latest offset
+     * commit is always materialized when we have a mix of transactional and regular offset commits. Without preserving
+     * information of the commit record offset, compaction of the offsets topic it self may result in the wrong offset
+     * commit being materialized.
+     */
+    @Data
+    static class CommitRecordMetadataAndOffset {
+        private final Optional<Long> appendedBatchOffset;
+        private final OffsetAndMetadata offsetAndMetadata;
+
+        public boolean olderThan(CommitRecordMetadataAndOffset that) {
+            return appendedBatchOffset.get() < that.appendedBatchOffset.get();
+        }
+    }
+
     private final String groupId;
     @Getter
     private final ReentrantLock lock = new ReentrantLock();
@@ -161,6 +183,12 @@ class GroupMetadata {
 
     // state management
     private final Map<String, MemberMetadata> members = new HashMap<>();
+    private final Map<TopicPartition, CommitRecordMetadataAndOffset> offsets = new HashMap<>();
+    private final Map<TopicPartition, OffsetAndMetadata> pendingOffsetCommits = new HashMap<>();
+    private final Map<Long, Map<TopicPartition, CommitRecordMetadataAndOffset>> pendingTransactionalOffsetCommits =
+        new HashMap<>();
+    private boolean receivedTransactionalOffsetCommits = false;
+    private boolean receivedConsumerOffsetCommits = false;
 
     GroupMetadata(String groupId, GroupState initialState) {
         this.groupId = groupId;
@@ -387,6 +415,223 @@ class GroupMetadata {
             groupId,
             protocolType.orElse("")
         );
+    }
+
+    public void initializeOffsets(Map<TopicPartition, CommitRecordMetadataAndOffset> offsets,
+                                  Map<Long, Map<TopicPartition, CommitRecordMetadataAndOffset>> pendingTxnOffsets) {
+        this.offsets.putAll(offsets);
+        this.pendingTransactionalOffsetCommits.putAll(pendingTxnOffsets);
+    }
+
+    public void onOffsetCommitAppend(TopicPartition topicPartition,
+                                     CommitRecordMetadataAndOffset offsetWithCommitRecordMetadata) {
+        if (pendingOffsetCommits.containsKey(topicPartition)) {
+            if (!offsetWithCommitRecordMetadata.appendedBatchOffset.isPresent()) {
+                throw new IllegalStateException("Cannot complete offset commit write without providing the metadata"
+                    + " of the record in the log.");
+            }
+            if (!offsets.containsKey(topicPartition)
+                || offsets.get(topicPartition).olderThan(offsetWithCommitRecordMetadata)) {
+                offsets.put(topicPartition, offsetWithCommitRecordMetadata);
+            }
+        }
+
+        OffsetAndMetadata stagedOffset = pendingOffsetCommits.get(topicPartition);
+        if (null != stagedOffset && offsetWithCommitRecordMetadata.offsetAndMetadata == stagedOffset) {
+            pendingOffsetCommits.remove(topicPartition);
+        } else {
+            // The pendingOffsetCommits for this partition could be empty if the topic was deleted, in which case
+            // its entries would be removed from the cache by the `removeOffsets` method.
+        }
+    }
+
+    public void failPendingOffsetWrite(TopicPartition topicPartition,
+                                       OffsetAndMetadata offset) {
+        OffsetAndMetadata pendingOffset = pendingOffsetCommits.get(topicPartition);
+        if (pendingOffset != null && offset == pendingOffset) {
+            pendingOffsetCommits.remove(topicPartition);
+        }
+    }
+
+    public void prepareOffsetCommit(Map<TopicPartition, OffsetAndMetadata> offsets) {
+        receivedConsumerOffsetCommits = true;
+        pendingOffsetCommits.putAll(offsets);
+    }
+
+    public void prepareTxnOffsetCommit(long producerId,
+                                       Map<TopicPartition, OffsetAndMetadata> offsets) {
+        if (log.isTraceEnabled()) {
+            log.trace("TxnOffsetCommit for producer {} and group {} with offsets {} is pending",
+                producerId, groupId, offsets);
+        }
+        receivedTransactionalOffsetCommits = true;
+        Map<TopicPartition, CommitRecordMetadataAndOffset> producerOffsets =
+            pendingTransactionalOffsetCommits.computeIfAbsent(producerId, pid -> new HashMap<>());
+        offsets.forEach((tp, offsetsAndMetadata) -> producerOffsets.put(tp, new CommitRecordMetadataAndOffset(
+            Optional.empty(),
+            offsetsAndMetadata
+        )));
+    }
+
+    public boolean hasReceivedConsistentOffsetCommits() {
+        return !receivedConsumerOffsetCommits || !receivedTransactionalOffsetCommits;
+    }
+
+    /**
+     * Remove a pending transactional offset commit if the actual offset commit record was not written to the log.
+     * We will return an error and the client will retry the request, potentially to a different coordinator.
+     */
+    public void failPendingTxnOffsetCommit(long producerId,
+                                           TopicPartition topicPartition) {
+        Map<TopicPartition, CommitRecordMetadataAndOffset> pendingOffsets =
+            pendingTransactionalOffsetCommits.get(producerId);
+        if (null != pendingOffsets) {
+            CommitRecordMetadataAndOffset pendingOffsetCommit = pendingOffsets.remove(topicPartition);
+            if (log.isTraceEnabled()) {
+                log.trace("TxnOffsetCommit for producer {} and group {} with offsets {} failed to be appended"
+                        + " to the log",
+                    producerId, groupId, pendingOffsetCommit);
+            }
+            if (pendingOffsets.isEmpty()) {
+                pendingTransactionalOffsetCommits.remove(producerId);
+            }
+        } else {
+            // We may hit this case if the partition in question has emigrated already.
+        }
+    }
+
+    public void onTxnOffsetCommitAppend(long producerId,
+                                        TopicPartition topicPartition,
+                                        CommitRecordMetadataAndOffset commitRecordMetadataAndOffset) {
+        Map<TopicPartition, CommitRecordMetadataAndOffset> pendingOffsets =
+            pendingTransactionalOffsetCommits.get(producerId);
+        if (null != pendingOffsets) {
+            if (pendingOffsets.containsKey(topicPartition)
+                && pendingOffsets.get(topicPartition).offsetAndMetadata()
+                    == commitRecordMetadataAndOffset.offsetAndMetadata) {
+                pendingOffsets.put(topicPartition, commitRecordMetadataAndOffset);
+            }
+        } else {
+            // We may hit this case if the partition in question has emigrated.
+        }
+    }
+
+    /**
+     * Complete a pending transactional offset commit. This is called after a commit or abort marker is fully written
+     * to the log.
+     */
+    public void completePendingTxnOffsetCommit(long producerId,
+                                               boolean isCommit) {
+        Map<TopicPartition, CommitRecordMetadataAndOffset> pendingOffsets =
+            pendingTransactionalOffsetCommits.remove(producerId);
+        if (isCommit) {
+            if (null != pendingOffsets) {
+                pendingOffsets.entrySet().forEach(e -> {
+                    TopicPartition topicPartition = e.getKey();
+                    CommitRecordMetadataAndOffset commitRecordMetadataAndOffset = e.getValue();
+                    if (!commitRecordMetadataAndOffset.appendedBatchOffset.isPresent()) {
+                        throw new IllegalStateException(String.format("Trying to complete a transactional offset"
+                                + " commit for producerId %s and groupId %s even though the offset commit record"
+                                + " itself hasn't been appended to the log.", producerId, groupId));
+                    }
+
+                    CommitRecordMetadataAndOffset currentOffsetOpt = offsets.get(topicPartition);
+                    if (currentOffsetOpt == null || currentOffsetOpt.olderThan(commitRecordMetadataAndOffset)) {
+                        if (log.isTraceEnabled()) {
+                            log.trace("TxnOffsetCommit for producer {} and group {} with offset {} "
+                                + "committed and loaded into the cache.",
+                                producerId, groupId, commitRecordMetadataAndOffset);
+                        }
+                        offsets.put(topicPartition, commitRecordMetadataAndOffset);
+                    } else {
+                        if (log.isTraceEnabled()) {
+                            log.trace("TxnOffsetCommit for producer {} and group {} with offset {} "
+                                    + "committed, but not loaded since its offset is older than current offset"
+                                    + " {}.",
+                                producerId, groupId, commitRecordMetadataAndOffset, currentOffsetOpt);
+                        }
+                    }
+                });
+            }
+        } else {
+            if (log.isTraceEnabled()) {
+                log.trace("TxnOffsetCommit for producer {} and group {} with offsets {} aborted",
+                    producerId, groupId, pendingOffsets);
+            }
+        }
+    }
+
+    public Set<Long> activeProducers() {
+        return pendingTransactionalOffsetCommits.keySet();
+    }
+
+    public boolean hasPendingOffsetCommitsFromProducer(long producerId) {
+        return pendingTransactionalOffsetCommits.containsKey(producerId);
+    }
+
+    public Map<TopicPartition, OffsetAndMetadata> removeAllOffsets() {
+        return removeOffsets(offsets.keySet().stream());
+    }
+
+    public Map<TopicPartition, OffsetAndMetadata> removeOffsets(Stream<TopicPartition> topicPartitions) {
+        return topicPartitions.map(topicPartition -> {
+            pendingOffsetCommits.remove(topicPartition);
+            pendingTransactionalOffsetCommits.forEach((pid, pendingOffsets) -> {
+                pendingOffsets.remove(topicPartition);
+            });
+            CommitRecordMetadataAndOffset removedOffset = offsets.remove(topicPartition);
+            return new KeyValue<>(
+                topicPartition,
+                removedOffset.offsetAndMetadata()
+            );
+        }).collect(Collectors.toMap(
+            e -> e.getKey(),
+            e -> e.getValue()
+        ));
+    }
+
+    public Map<TopicPartition, OffsetAndMetadata> removeExpiredOffsets(long startMs) {
+        Map<TopicPartition, OffsetAndMetadata> expiredOffsets = offsets.entrySet().stream()
+            .filter(e ->
+                e.getValue().offsetAndMetadata().expireTimestamp() < startMs
+                    && !pendingOffsetCommits.containsKey(e.getKey()))
+            .map(e -> new KeyValue<>(
+                e.getKey(),
+                e.getValue().offsetAndMetadata()
+            ))
+            .collect(Collectors.toMap(
+                kv -> kv.getKey(),
+                kv -> kv.getValue()
+            ));
+
+        expiredOffsets.keySet().forEach(tp -> offsets.remove(tp));
+        return expiredOffsets;
+    }
+
+    public Map<TopicPartition, OffsetAndMetadata> allOffsets() {
+        return offsets.entrySet().stream().collect(Collectors.toMap(
+            e -> e.getKey(),
+            e -> e.getValue().offsetAndMetadata()
+        ));
+    }
+
+    public Optional<OffsetAndMetadata> offset(TopicPartition topicPartition) {
+        return Optional.ofNullable(offsets.get(topicPartition)).map(e -> e.offsetAndMetadata);
+    }
+
+    // visible for testing
+    Optional<CommitRecordMetadataAndOffset> offsetWithRecordMetadata(TopicPartition topicPartition) {
+        return Optional.ofNullable(offsets.get(topicPartition));
+    }
+
+    public int numOffsets() {
+        return offsets.size();
+    }
+
+    public boolean hasOffsets() {
+        return !offsets.isEmpty()
+            || !pendingOffsetCommits.isEmpty()
+            || !pendingTransactionalOffsetCommits.isEmpty();
     }
 
     @Override

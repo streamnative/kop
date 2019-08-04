@@ -11,27 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.kop.coordinator.group;
-
-import lombok.Builder;
-import lombok.Builder.Default;
-import lombok.Data;
-import lombok.experimental.Accessors;
-import org.apache.kafka.common.record.CompressionType;
-
 /**
- * Offset configuration.
+ * Kafka Offset related classes.
  */
-@Builder
-@Data
-@Accessors(fluent = true)
-public class OffsetConfig {
-
-    private static final int DefaultMaxMetadataSize = 4096;
-
-    @Default
-    private int maxMetadataSize = DefaultMaxMetadataSize;
-    @Default
-    private CompressionType offsetsTopicCompressionType = CompressionType.NONE;
-
-}
+package io.streamnative.kop.offset;
