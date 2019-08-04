@@ -127,7 +127,7 @@ OPTS="$OPTS $KOP_EXTRA_OPTS"
 #Change to KOP_HOME to support relative paths
 cd "$KOP_HOME"
 if [ $COMMAND == "kafka-broker" ]; then
-    exec $JAVA $OPTS io.streamnative.kop.KafkaStarter --kop-conf $KOP_CONF $@
+    exec $JAVA $OPTS io.streamnative.kop.KafkaBrokerStarter --kop-conf $KOP_CONF $@
 elif [ $COMMAND == "standalone" ]; then
     exec $JAVA $OPTS io.streamnative.kop.KafkaStandaloneStarter --config $KOP_STANDALONE_CONF $@
 elif [ $COMMAND == "help" ]; then

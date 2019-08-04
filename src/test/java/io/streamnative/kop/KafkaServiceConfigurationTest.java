@@ -32,15 +32,6 @@ import org.testng.annotations.Test;
  * Pulsar service configuration object.
  */
 public class KafkaServiceConfigurationTest {
-
-    @Test
-    public void testClusterName() {
-        String clusterName = "kopCluster";
-        KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
-        configuration.setKafkaClusterName(clusterName);
-        assertEquals(clusterName, configuration.getKafkaClusterName());
-    }
-
     @Test
     public void testKopNamespace() {
         String name = "koptenant/kopns";
@@ -56,7 +47,6 @@ public class KafkaServiceConfigurationTest {
             testConfigFile.delete();
         }
         final String zkServer = "z1.example.com,z2.example.com,z3.example.com";
-        final String kafkaCluster = "kafkaClusterName";
         PrintWriter printWriter = new PrintWriter(new OutputStreamWriter(new FileOutputStream(testConfigFile)));
         printWriter.println("zookeeperServers=" + zkServer);
         printWriter.println("configurationStoreServers=gz1.example.com,gz2.example.com,gz3.example.com/foo");
@@ -74,7 +64,6 @@ public class KafkaServiceConfigurationTest {
         printWriter.println("webServicePortTls=");
         printWriter.println("managedLedgerDefaultMarkDeleteRateLimit=5.0");
         printWriter.println("managedLedgerDigestType=CRC32C");
-        printWriter.println("kafkaClusterName=" + kafkaCluster);
 
         printWriter.close();
         testConfigFile.deleteOnExit();
@@ -84,7 +73,6 @@ public class KafkaServiceConfigurationTest {
             ConfigurationUtils.create(stream, KafkaServiceConfiguration.class);
 
         assertNotNull(kafkaServiceConfig);
-        assertEquals(kafkaServiceConfig.getKafkaClusterName(), kafkaCluster);
         assertEquals(kafkaServiceConfig.getZookeeperServers(), zkServer);
         assertEquals(kafkaServiceConfig.isBrokerDeleteInactiveTopicsEnabled(), true);
         assertEquals(kafkaServiceConfig.getBacklogQuotaDefaultLimitGB(), 18);

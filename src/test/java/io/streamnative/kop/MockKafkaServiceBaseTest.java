@@ -18,6 +18,7 @@ import static org.mockito.Mockito.spy;
 
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import java.io.Closeable;
 import java.lang.reflect.Field;
 import java.net.URI;
 import java.net.URL;
@@ -67,6 +68,7 @@ import org.apache.zookeeper.data.ACL;
  * A test base to start a KafkaService.
  */
 @Slf4j
+@Getter
 public abstract class MockKafkaServiceBaseTest {
 
     protected KafkaServiceConfiguration conf;
@@ -307,20 +309,29 @@ public abstract class MockKafkaServiceBaseTest {
      * A producer wrapper.
      */
     @Getter
-    public class KProducer {
+    public static class KProducer implements Closeable {
         private final KafkaProducer<Integer, String> producer;
         private final String topic;
         private final Boolean isAsync;
 
-        public KProducer(String topic, Boolean isAsync) {
+        public KProducer(String topic, Boolean isAsync, String host, int port) {
             Properties props = new Properties();
-            props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + kafkaBrokerPort);
+            props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducer");
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
             producer = new KafkaProducer<>(props);
             this.topic = topic;
             this.isAsync = isAsync;
+        }
+
+        public KProducer(String topic, Boolean isAsync, int port) {
+            this(topic, isAsync, "localhost", port);
+        }
+
+        @Override
+        public void close() {
+            this.producer.close();
         }
     }
 
@@ -365,13 +376,13 @@ public abstract class MockKafkaServiceBaseTest {
      * A consumer wrapper.
      */
     @Getter
-    public class KConsumer {
+    public static class KConsumer implements Closeable {
         private final KafkaConsumer<Integer, String> consumer;
         private final String topic;
 
-        public KConsumer(String topic) {
+        public KConsumer(String topic, String host, int port) {
             Properties props = new Properties();
-            props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + kafkaBrokerPort);
+            props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             props.put(ConsumerConfig.GROUP_ID_CONFIG, "DemoKafkaOnPulsarConsumer");
             props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
             props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
@@ -384,6 +395,15 @@ public abstract class MockKafkaServiceBaseTest {
 
             this.consumer = new KafkaConsumer<>(props);
             this.topic = topic;
+        }
+
+        public KConsumer(String topic, int port) {
+            this(topic, "localhost", port);
+        }
+
+        @Override
+        public void close() {
+            this.consumer.close();
         }
     }
 

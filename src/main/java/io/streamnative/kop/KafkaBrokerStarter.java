@@ -18,13 +18,13 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
-import static org.apache.pulsar.common.configuration.PulsarConfigurationLoader.create;
 import static org.apache.pulsar.common.configuration.PulsarConfigurationLoader.isComplete;
 
 import com.beust.jcommander.JCommander;
 import com.beust.jcommander.Parameter;
 import com.google.common.annotations.VisibleForTesting;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import io.streamnative.kop.utils.ConfigurationUtils;
 import java.io.File;
 import java.io.FileInputStream;
 import java.net.MalformedURLException;
@@ -49,7 +49,7 @@ import org.slf4j.bridge.SLF4JBridgeHandler;
  * A starter to start Kafka-on-Pulsar broker.
  */
 @Slf4j
-public class KafkaStarter {
+public class KafkaBrokerStarter {
 
     private static class BrokerStarter {
         private final KafkaServiceConfiguration brokerConfig;
@@ -62,7 +62,7 @@ public class KafkaStarter {
         BrokerStarter(String[] args) throws Exception {
             StarterArguments starterArguments = new StarterArguments();
             JCommander jcommander = new JCommander(starterArguments);
-            jcommander.setProgramName("PulsarBrokerStarter");
+            jcommander.setProgramName("KafkaBrokerStarter");
 
             // parse args by JCommander
             jcommander.parse(args);
@@ -84,7 +84,7 @@ public class KafkaStarter {
                 throw new IllegalArgumentException("Max message size need smaller than jvm directMemory");
             }
 
-            // init pulsar service
+            // init kafka broker service
             kafkaService = new KafkaService(brokerConfig);
 
             // if no argument to run bookie in cmd line, read from pulsar config
@@ -253,7 +253,9 @@ public class KafkaStarter {
     private static KafkaServiceConfiguration loadConfig(String configFile) throws Exception {
         SLF4JBridgeHandler.removeHandlersForRootLogger();
         SLF4JBridgeHandler.install();
-        KafkaServiceConfiguration config = create((new FileInputStream(configFile)), KafkaServiceConfiguration.class);
+        KafkaServiceConfiguration config = ConfigurationUtils.create(
+            new FileInputStream(configFile),
+            KafkaServiceConfiguration.class);
         // it validates provided configuration is completed
         isComplete(config);
         return config;

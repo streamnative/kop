@@ -336,6 +336,26 @@
           </mapping>
         </configuration>
       </plugin>
+
+      <plugin>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>distro-assembly</id>
+            <phase>package</phase>
+            <goals>
+              <goal>single</goal>
+            </goals>
+            <configuration>
+              <attach>true</attach>
+              <finalName>kop-${project.version}</finalName>
+              <descriptors>
+                <descriptor>src/assemble/bin.xml</descriptor>
+              </descriptors>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 
@@ -361,6 +381,5 @@
       <url>https://yahoo.bintray.com/maven</url>
     </repository>
   </repositories>
-
 
 </project>
