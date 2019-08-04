@@ -13,9 +13,14 @@
  */
 package io.streamnative.kop.utils;
 
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import lombok.experimental.UtilityClass;
 
 /**
@@ -39,6 +44,26 @@ public final class CoreUtils {
 
     public static <T> T inWriteLock(ReadWriteLock lock, Supplier<T> supplier) {
         return inLock(lock.writeLock(), supplier);
+    }
+
+    public static <K, V> Map<Boolean, Map<K, V>> partition(Map<K, V> map,
+                                                           Predicate<K> predicate) {
+         return map.entrySet()
+            .stream()
+            .collect(Collectors.partitioningBy(
+                e -> predicate.test(e.getKey()),
+                Collectors.toMap(Entry::getKey, Entry::getValue)
+            ));
+    }
+
+    public static <K, V1, V2> Map<K, V2> mapValue(Map<K, V1> map,
+                                                  Function<V1, V2> func) {
+        return map.entrySet()
+            .stream()
+            .collect(Collectors.toMap(
+                e -> e.getKey(),
+                e -> func.apply(e.getValue())
+            ));
     }
 
 }

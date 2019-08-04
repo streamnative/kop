@@ -28,10 +28,16 @@ import org.apache.kafka.common.record.CompressionType;
 public class OffsetConfig {
 
     private static final int DefaultMaxMetadataSize = 4096;
+    private static final long DefaultOffsetsRetentionMs = 24 * 60 * 60 * 1000L;
+    private static final long DefaultOffsetsRetentionCheckIntervalMs = 600000L;
 
     @Default
     private int maxMetadataSize = DefaultMaxMetadataSize;
     @Default
     private CompressionType offsetsTopicCompressionType = CompressionType.NONE;
+    @Default
+    private long offsetsRetentionMs = DefaultOffsetsRetentionMs;
+    @Default
+    private long offsetsRetentionCheckIntervalMs = DefaultOffsetsRetentionCheckIntervalMs;
 
 }
