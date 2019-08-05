@@ -12,7 +12,7 @@ This provides a step-by-step example how to use this broker to serve requests fr
 
 
 
-### Build pulsar-io-kafka connector
+### Build KOP broker.
 
 1. Git clone `kop`. Assume *KOP_HOME* is the home directory for your
    cloned `kop` repo for the remaining steps.
