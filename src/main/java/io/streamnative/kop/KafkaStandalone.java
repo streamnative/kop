@@ -237,7 +237,7 @@ public class KafkaStandalone implements AutoCloseable {
         admin = PulsarAdmin.builder().serviceHttpUrl(webServiceUrl.toString()).authentication(
                 config.getBrokerClientAuthenticationPlugin(), config.getBrokerClientAuthenticationParameters()).build();
 
-        final String cluster = config.getKafkaClusterName();
+        final String cluster = config.getClusterName();
 
         createDefaultNameSpace(webServiceUrl, brokerServiceUrl, cluster);
 
@@ -262,7 +262,7 @@ public class KafkaStandalone implements AutoCloseable {
                         new TenantInfo(Sets.newHashSet(config.getSuperUserRoles()), Sets.newHashSet(cluster)));
             }
             if (!admin.namespaces().getNamespaces(publicTenant).contains(defaultNamespace)) {
-                Set<String> clusters = Sets.newHashSet(config.getKafkaClusterName());
+                Set<String> clusters = Sets.newHashSet(config.getClusterName());
                 admin.namespaces().createNamespace(defaultNamespace, clusters);
                 admin.namespaces().setNamespaceReplicationClusters(defaultNamespace, clusters);
                 admin.namespaces().setRetention(defaultNamespace,

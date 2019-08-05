@@ -167,7 +167,6 @@ public class KafkaRequestHandlerTest {
 
         assertEquals(node.host(), host);
         assertEquals(node.port(), port);
-        assertEquals(node.id(), 0);
     }
 
     @Test

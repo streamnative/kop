@@ -14,6 +14,7 @@
 package io.streamnative.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
@@ -97,6 +98,7 @@ import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.PersistentTopicInternalStats;
 import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.protocol.Commands.ChecksumType;
+import org.apache.pulsar.common.util.Murmur3_32Hash;
 
 /**
  * This class contains all the request handling methods.
@@ -209,7 +211,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     ctx.channel(), metadataHar.getHeader(), topicName, throwable.getMessage());
                             } else {
                                 List<TopicName> topicNames;
-                                if (partitionedTopicMetadata.partitions > 1) {
+                                if (partitionedTopicMetadata.partitions > 0) {
                                     if (log.isDebugEnabled()) {
                                         log.debug("Topic {} has {} partitions",
                                             topic, partitionedTopicMetadata.partitions);
@@ -219,7 +221,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         .mapToObj(i ->
                                             TopicName.get(topicName.toString() + PARTITIONED_TOPIC_SUFFIX + i))
                                         .collect(Collectors.toList());
-
                                 } else {
                                     if (log.isDebugEnabled()) {
                                         log.debug("[{}] Request {}: Topic {} has 1 partitions",
@@ -286,7 +287,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             int finishedPartitions = partitionsCompleted.incrementAndGet();
                             if (log.isDebugEnabled()) {
                                 log.debug("[{}] Request {}: FindBroker for topic {}, partitions found/all: {}/{}.",
-                                    finishedPartitions, topic, partitionsNumber);
+                                    ctx.channel(), metadataHar.getHeader(),
+                                    topic, finishedPartitions, partitionsNumber);
                             }
                             if (finishedPartitions == partitionsNumber) {
                                 // new TopicMetadata for this topic
@@ -581,7 +583,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             MemoryRecordsBuilder builder = new MemoryRecordsBuilder(outputStream, RecordBatch.CURRENT_MAGIC_VALUE,
                 org.apache.kafka.common.record.CompressionType.NONE,
                 TimestampType.CREATE_TIME,
-                0,
+                MessageIdUtils.getOffset(entries.get(0).getLedgerId(), 0),
                 RecordBatch.NO_TIMESTAMP,
                 RecordBatch.NO_PRODUCER_ID,
                 RecordBatch.NO_PRODUCER_EPOCH,
@@ -606,7 +608,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
             return builder.build();
         } catch (IOException ioe) {
+            log.error("Meet IOException: {}", ioe);
             throw new UncheckedIOException(ioe);
+        } catch (Exception e) {
+            log.error("Meet exception: {}", e);
+            throw e;
         }
     }
 
@@ -719,7 +725,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                       Map<TopicPartition, CompletableFuture<ManagedCursor>> cursors,
                                       AtomicInteger bytesRead,
                                       Map<TopicPartition, List<Entry>> responseValues) {
-
+        AtomicInteger entriesRead = new AtomicInteger(0);
         Map<TopicPartition, CompletableFuture<Entry>> readFutures = readAllCursorOnce(cursors);
         CompletableFuture.allOf(readFutures.values().stream().toArray(CompletableFuture<?>[]::new))
             .whenComplete((ignore, ex) -> {
@@ -727,9 +733,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 readFutures.forEach((topic, readEntry) -> {
                     try {
                         Entry entry = readEntry.join();
+                        List<Entry> entryList = responseValues.computeIfAbsent(topic, l -> Lists.newArrayList());
+
                         if (entry != null) {
-                            List<Entry> entryList = responseValues.computeIfAbsent(topic, l -> Lists.newArrayList());
                             entryList.add(entry);
+                            entriesRead.incrementAndGet();
                             bytesRead.addAndGet(entry.getLength());
                             if (log.isDebugEnabled()) {
                                 log.debug("[{}] Request {}: For topic {}, entries in list: {}. add new entry {}:{}",
@@ -758,8 +766,22 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 if (log.isDebugEnabled()) {
                     log.debug("[{}] Request {}: One round read {} entries, "
                             + "allSize/maxBytes/minBytes/endTime: {}/{}/{}/{}",
-                        ctx.channel(), fetch.getHeader(), readFutures.size(),
+                        ctx.channel(), fetch.getHeader(), entriesRead.get(),
                         allSize, maxBytes, minBytes, new Date(endTime));
+                }
+
+                // No entries get from all topics. return earlier.
+                if (allSize == 0 && entriesRead.get() == 0) {
+                    log.error("[{}] Request {}: All partitions for request failed",
+                        ctx.channel(), fetch.getHeader());
+                    ctx.writeAndFlush(
+                        responseToByteBuf(
+                            new FetchResponse(Errors.NONE,
+                                new LinkedHashMap<TopicPartition, PartitionData>(),
+                                ((Integer) THROTTLE_TIME_MS.defaultValue),
+                                ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
+                            fetch));
+                    return;
                 }
 
                 // reach maxTime, return;
@@ -769,17 +791,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     || allSize > maxBytes){
                     if (log.isDebugEnabled()) {
                         log.debug("[{}] Request {}: Complete read {} entries with size {}",
-                            ctx.channel(), fetch.getHeader(), readFutures.size(), allSize);
+                            ctx.channel(), fetch.getHeader(), entriesRead.get(), allSize);
                     }
 
                     LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData = new LinkedHashMap<>();
 
                     AtomicBoolean allPartitionsFailed = new AtomicBoolean(true);
                     responseValues.forEach((topicPartition, entries) -> {
-                        FetchResponse.PartitionData partitionData;
+                        final FetchResponse.PartitionData partitionData;
                         if (entries.isEmpty()) {
                             partitionData = new FetchResponse.PartitionData(
-                                Errors.OFFSET_OUT_OF_RANGE,
+                                Errors.NONE,
                                 FetchResponse.INVALID_HIGHWATERMARK,
                                 FetchResponse.INVALID_LAST_STABLE_OFFSET,
                                 FetchResponse.INVALID_LOG_START_OFFSET,
@@ -800,7 +822,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 null,
                                 records);
                         }
-
                         responseData.put(topicPartition, partitionData);
                     });
 
@@ -892,6 +913,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(fetch.getRequest() instanceof FetchRequest);
         FetchRequest request = (FetchRequest) fetch.getRequest();
 
+        if (log.isDebugEnabled()) {
+            log.debug("[{}] Request {} Fetch request. Size: {}. Each item: ",
+                ctx.channel(), fetch.getHeader(), request.fetchData().size());
+
+            request.fetchData().forEach((topic, data) -> {
+                log.debug("  Fetch request topic:{} data:{}.",
+                    topic, data.toString());
+            });
+        }
+
         // Map of partition and related cursor
         Map<TopicPartition, CompletableFuture<ManagedCursor>> topicsAndCursor = request
             .fetchData().entrySet().stream()
@@ -966,6 +997,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         Node node = newNode(new InetSocketAddress(
                             uri.getHost(),
                             kafkaService.getKafkaConfig().getKafkaServicePort().get()));
+
                         resultFuture.complete(newPartitionMetadata(topic, node));
                         return;
                     } else {
@@ -983,7 +1015,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         return resultFuture;
     }
-
 
     private TopicName pulsarTopicName(TopicPartition topicPartition) {
         return pulsarTopicName(topicPartition.topic(), topicPartition.partition());
@@ -1005,7 +1036,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (log.isDebugEnabled()) {
             log.debug("Return Broker Node of {}", address);
         }
-        return new Node(0, address.getHostString(), address.getPort());
+        return new Node(
+            Murmur3_32Hash.getInstance().makeHash((address.getHostString() + address.getPort()).getBytes(UTF_8)),
+            address.getHostString(),
+            address.getPort());
     }
 
     static PartitionMetadata newPartitionMetadata(TopicName topicName, Node node) {
