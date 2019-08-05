@@ -226,6 +226,9 @@ class GroupMetadataManager {
         return groupMetadataCache.values();
     }
 
+    public Stream<GroupMetadata> currentGroupsStream() {
+        return groupMetadataCache.values().stream();
+    }
 
     public boolean isPartitionOwned(int partition) {
         return inLock(
