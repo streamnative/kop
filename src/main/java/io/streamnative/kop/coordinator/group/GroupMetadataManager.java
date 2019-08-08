@@ -45,6 +45,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -189,6 +190,7 @@ class GroupMetadataManager {
     private final Producer<ByteBuffer> metadataTopicProducer;
     private final Reader<ByteBuffer> metadataTopicReader;
     private final Time time;
+    private final Function<String, Integer> partitioner;
 
     GroupMetadataManager(int groupMetadataTopicPartitionCount,
                          OffsetConfig config,
@@ -196,6 +198,27 @@ class GroupMetadataManager {
                          Reader<ByteBuffer> metadataTopicConsumer,
                          ScheduledExecutorService scheduler,
                          Time time) {
+        this(
+            groupMetadataTopicPartitionCount,
+            config,
+            metadataTopicProducer,
+            metadataTopicConsumer,
+            scheduler,
+            time,
+            groupId -> MathUtils.signSafeMod(
+                Murmur3.hash32(groupId.getBytes(UTF_8)),
+                groupMetadataTopicPartitionCount
+            )
+        );
+    }
+
+    GroupMetadataManager(int groupMetadataTopicPartitionCount,
+                         OffsetConfig config,
+                         Producer<ByteBuffer> metadataTopicProducer,
+                         Reader<ByteBuffer> metadataTopicConsumer,
+                         ScheduledExecutorService scheduler,
+                         Time time,
+                         Function<String, Integer> partitioner) {
         this.config = config;
         this.compressionType = config.offsetsTopicCompressionType();
         this.groupMetadataCache = new ConcurrentHashMap<>();
@@ -204,6 +227,7 @@ class GroupMetadataManager {
         this.metadataTopicReader = metadataTopicConsumer;
         this.scheduler = scheduler;
         this.time = time;
+        this.partitioner = partitioner;
     }
 
     public void startup(boolean enableMetadataExpiration) {
@@ -226,6 +250,9 @@ class GroupMetadataManager {
         return groupMetadataCache.values();
     }
 
+    public Stream<GroupMetadata> currentGroupsStream() {
+        return groupMetadataCache.values().stream();
+    }
 
     public boolean isPartitionOwned(int partition) {
         return inLock(
@@ -241,10 +268,7 @@ class GroupMetadataManager {
     }
 
     public int partitionFor(String groupId) {
-        return MathUtils.signSafeMod(
-            Murmur3.hash32(groupId.getBytes(UTF_8)),
-            groupMetadataTopicPartitionCount
-        );
+        return partitioner.apply(groupId);
     }
 
     public boolean isGroupLocal(String groupId) {
@@ -1097,7 +1121,8 @@ class GroupMetadataManager {
         List<CompletableFuture<Integer>> cleanFutures = groups.map(group -> {
             String groupId = group.groupId();
             Triple<Map<TopicPartition, OffsetAndMetadata>, Boolean, Integer> result = group.inLock(() -> {
-                Map<TopicPartition, OffsetAndMetadata> removedOffsets = selector.apply(group);
+                Map<TopicPartition, OffsetAndMetadata> removedOffsets =
+                    Collections.synchronizedMap(selector.apply(group));
                 if (group.is(GroupState.Empty) && !group.hasOffsets()) {
                     log.info("Group {} transitioned to Dead in generation {}",
                         groupId, group.generationId());
@@ -1173,10 +1198,10 @@ class GroupMetadataManager {
      * more group metadata locks to handle transaction completion, this operation is scheduled on
      * the scheduler thread to avoid deadlocks.
      */
-    public void scheduleHandleTxnCompletion(long producerId,
-                                            Set<Integer> completedPartitions,
-                                            boolean isCommit) {
-        scheduler.submit(() -> handleTxnCompletion(producerId, completedPartitions, isCommit));
+    public Future<?> scheduleHandleTxnCompletion(long producerId,
+                                                 Set<Integer> completedPartitions,
+                                                 boolean isCommit) {
+        return scheduler.submit(() -> handleTxnCompletion(producerId, completedPartitions, isCommit));
     }
 
     void handleTxnCompletion(long producerId, Set<Integer> completedPartitions, boolean isCommit) {
@@ -1220,6 +1245,15 @@ class GroupMetadataManager {
      */
     boolean addLoadingPartition(int partition) {
         return inLock(partitionLock, () -> loadingPartitions.add(partition));
+    }
+
+    /**
+     * Remove a partition to the loading partitions set. Return true if the partition is removed.
+     *
+     * <p>Visible for testing
+     */
+    boolean removeLoadingPartition(int partition) {
+        return inLock(partitionLock, () -> loadingPartitions.remove(partition));
     }
 
 }

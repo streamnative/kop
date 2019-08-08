@@ -17,12 +17,16 @@ import io.streamnative.kop.utils.MockTime;
 import io.streamnative.kop.utils.timer.TimerTaskList.TimerTaskEntry;
 import java.util.Comparator;
 import java.util.PriorityQueue;
+import lombok.Getter;
+import lombok.experimental.Accessors;
 
 /**
  * A mock implementation of {@link Timer}.
  */
+@Accessors(fluent = true)
 public class MockTimer implements Timer {
 
+    @Getter
     private final MockTime time = new MockTime();
     private final PriorityQueue<TimerTaskEntry> taskQueue = new PriorityQueue<>(Comparator.reverseOrder());
 

@@ -13,17 +13,22 @@
  */
 package io.streamnative.kop.coordinator.group;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.kop.coordinator.group.GroupState.CompletingRebalance;
 import static io.streamnative.kop.coordinator.group.GroupState.Dead;
 import static io.streamnative.kop.coordinator.group.GroupState.Empty;
 import static io.streamnative.kop.coordinator.group.GroupState.PreparingRebalance;
 import static io.streamnative.kop.coordinator.group.GroupState.Stable;
+import static org.apache.kafka.common.record.RecordBatch.NO_PRODUCER_EPOCH;
+import static org.apache.kafka.common.record.RecordBatch.NO_PRODUCER_ID;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.streamnative.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.kop.coordinator.group.GroupMetadata.GroupSummary;
+import io.streamnative.kop.offset.OffsetAndMetadata;
+import io.streamnative.kop.utils.CoreUtils;
 import io.streamnative.kop.utils.delayed.DelayedOperationKey.GroupKey;
 import io.streamnative.kop.utils.delayed.DelayedOperationKey.MemberKey;
 import io.streamnative.kop.utils.delayed.DelayedOperationPurgatory;
@@ -36,15 +41,20 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.JoinGroupRequest;
+import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
+import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
@@ -74,19 +84,6 @@ public class GroupCoordinator {
         Collections.emptyList()
     );
 
-    private static boolean isValidGroupId(String groupId,
-                                          ApiKeys api) {
-        switch (api) {
-            case OFFSET_COMMIT:
-            case OFFSET_FETCH:
-            case DESCRIBE_GROUPS:
-            case DELETE_GROUPS:
-                return null != groupId;
-            default:
-                return null != groupId && !groupId.isEmpty();
-        }
-    }
-
     private final AtomicBoolean isActive = new AtomicBoolean(false);
     private final GroupConfig groupConfig;
     private final GroupMetadataManager groupManager;
@@ -106,6 +103,30 @@ public class GroupCoordinator {
         this.joinPurgatory = joinPurgatory;
         this.time = time;
     }
+
+    /**
+     * Startup logic executed at the same time when the server starts up.
+     */
+    public void startup(boolean enableMetadataExpiration) {
+        log.info("Starting up group coordinator.");
+        groupManager.startup(enableMetadataExpiration);
+        isActive.set(true);
+        log.info("Group coordinator started.");
+    }
+
+    /**
+     * Shutdown logic executed at the same time when server shuts down.
+     * Ordering of actions should be reversed from the startup process.
+     */
+    public void shutdown() {
+        log.info("Shutting down group coordinator ...");
+        isActive.set(false);
+        groupManager.shutdown();
+        heartbeatPurgatory.shutdown();
+        joinPurgatory.shutdown();
+        log.info("Shutdown group coordinator completely.");
+    }
+
 
     public CompletableFuture<JoinGroupResult> handleJoinGroup(
         String groupId,
@@ -128,6 +149,9 @@ public class GroupCoordinator {
             return CompletableFuture.completedFuture(
                 joinError(memberId, Errors.INVALID_SESSION_TIMEOUT));
         } else {
+            // only try to create the group if the group is not unknown AND
+            // the member id is UNKNOWN, if member is specified but group does not
+            // exist we should reject the request
             return groupManager.getGroup(groupId).map(group -> doJoinGroup(
                 group,
                 memberId,
@@ -201,7 +225,7 @@ public class GroupCoordinator {
                 joinError(memberId, Errors.INCONSISTENT_GROUP_PROTOCOL));
         } else if (group.is(Empty)
             && (protocols.isEmpty() || protocolType.isEmpty())) {
-            //reject if first member with empty group protocol or protocolType is empty
+            // reject if first member with empty group protocol or protocolType is empty
             return CompletableFuture.completedFuture(
                 joinError(memberId, Errors.INCONSISTENT_GROUP_PROTOCOL));
         } else if (!JoinGroupRequest.UNKNOWN_MEMBER_ID.equals(memberId)
@@ -264,7 +288,7 @@ public class GroupCoordinator {
                                 new JoinGroupResult(
                                     members,
                                     memberId,
-                                    (int) group.generationId(),
+                                    group.generationId(),
                                     group.protocolOrNull(),
                                     group.leaderOrNull(),
                                     Errors.NONE
@@ -305,7 +329,7 @@ public class GroupCoordinator {
                             resultFuture = CompletableFuture.completedFuture(new JoinGroupResult(
                                 Collections.emptyMap(),
                                 memberId,
-                                (int) group.generationId(),
+                                group.generationId(),
                                 group.protocolOrNull(),
                                 group.leaderOrNull(),
                                 Errors.NONE));
@@ -318,11 +342,30 @@ public class GroupCoordinator {
                     break;
             }
             if (group.is(PreparingRebalance)) {
-                // TODO: check and trigger rebalance
+                joinPurgatory.checkAndComplete(new GroupKey(group.groupId()));
             }
             return resultFuture;
         }
 
+    }
+
+
+    public CompletableFuture<KeyValue<Errors, byte[]>> handleSyncGroup(
+        String groupId,
+        int generation,
+        String memberId,
+        Map<String, byte[]> groupAssignment
+    ) {
+        CompletableFuture<KeyValue<Errors, byte[]>> resultFuture = new CompletableFuture<>();
+        handleSyncGroup(
+            groupId,
+            generation,
+            memberId,
+            groupAssignment,
+            (assignment, errors) -> resultFuture.complete(
+                new KeyValue<>(errors, assignment))
+        );
+        return resultFuture;
     }
 
     public void handleSyncGroup(String groupId,
@@ -468,50 +511,67 @@ public class GroupCoordinator {
     }
 
     public Map<String, Errors> handleDeleteGroups(Set<String> groupIds) {
-        Map<String, Errors> groupErrors = new HashMap<>();
+        Map<String, Errors> groupErrors = Collections.synchronizedMap(new HashMap<>());
         List<GroupMetadata> groupsEligibleForDeletion = new ArrayList<>();
 
         groupIds.forEach(groupId -> {
-            validateGroupStatus(groupId, ApiKeys.DELETE_GROUPS).map(error ->
-                groupErrors.put(groupId, error)
-            ).orElseGet(() -> groupManager.getGroup(groupId).map(group -> {
-                return group.inLock(() -> {
-                    switch(group.currentState()) {
-                        case Dead:
-                            if (groupManager.groupNotExists(groupId)) {
-                                groupErrors.put(groupId, Errors.GROUP_ID_NOT_FOUND);
-                            } else {
-                                groupErrors.put(groupId, Errors.NOT_COORDINATOR);
-                            }
-                            break;
-                        case Empty:
-                            group.transitionTo(Dead);
-                            groupsEligibleForDeletion.add(group);
-                            break;
-                        default:
-                            groupErrors.put(groupId, Errors.NON_EMPTY_GROUP);
-                            break;
+            Optional<Errors> validateErrorsOpt = validateGroupStatus(groupId, ApiKeys.DELETE_GROUPS);
+            validateErrorsOpt.map(error -> {
+                groupErrors.put(groupId, error);
+                return error;
+            }).orElseGet(() -> {
+                return groupManager.getGroup(groupId).map(group -> {
+                    return group.inLock(() -> {
+                        switch(group.currentState()) {
+                            case Dead:
+                                if (groupManager.groupNotExists(groupId)) {
+                                    groupErrors.put(groupId, Errors.GROUP_ID_NOT_FOUND);
+                                } else {
+                                    groupErrors.put(groupId, Errors.NOT_COORDINATOR);
+                                }
+                                break;
+                            case Empty:
+                                group.transitionTo(Dead);
+                                groupsEligibleForDeletion.add(group);
+                                break;
+                            default:
+                                groupErrors.put(groupId, Errors.NON_EMPTY_GROUP);
+                                break;
+                        }
+                        return Errors.NONE;
+                    });
+                }).orElseGet(() -> {
+                    Errors error;
+                    if (groupManager.groupNotExists(groupId)) {
+                        error = Errors.GROUP_ID_NOT_FOUND;
+                    } else {
+                        error = Errors.NOT_COORDINATOR;
                     }
+                    groupErrors.put(groupId, error);
                     return Errors.NONE;
                 });
-            }).orElseGet(() -> {
-                Errors error;
-                if (groupManager.groupNotExists(groupId)) {
-                    error = Errors.GROUP_ID_NOT_FOUND;
-                } else {
-                    error = Errors.NOT_COORDINATOR;
-                }
-                groupErrors.put(groupId, error);
-                return Errors.NONE;
-            }));
+            });
         });
 
         if (!groupsEligibleForDeletion.isEmpty()) {
-            // TODO:
-            /// val offsetsRemoved = groupManager.cleanupGroupMetadata(groupsEligibleForDeletion, _.removeAllOffsets())
-            /// groupErrors ++= groupsEligibleForDeletion.map(_.groupId -> Errors.NONE).toMap
-            /// info(s"The following groups were deleted: ${groupsEligibleForDeletion.map(_.groupId).mkString(", ")}. "
-            // + s"A total of $offsetsRemoved offsets were removed.")
+            groupManager.cleanGroupMetadata(
+                groupsEligibleForDeletion.stream(),
+                g -> g.removeAllOffsets()
+            ).thenAccept(offsetsRemoved -> {
+                log.info("The following groups were deleted {}. A total of {} offsets were removed.",
+                    groupsEligibleForDeletion.stream()
+                        .map(GroupMetadata::groupId)
+                        .collect(Collectors.joining(",")),
+                    offsetsRemoved
+                );
+            });
+            groupErrors.putAll(
+                groupsEligibleForDeletion.stream()
+                    .collect(Collectors.toMap(
+                        GroupMetadata::groupId,
+                        ignored -> Errors.NONE
+                    ))
+            );
         }
 
         return groupErrors;
@@ -578,7 +638,148 @@ public class GroupCoordinator {
         ));
     }
 
-    KeyValue<Errors, List<GroupOverview>> handleListGroups() {
+    public CompletableFuture<Map<TopicPartition, Errors>> handleTxnCommitOffsets(
+        String groupId,
+        long producerId,
+        short producerEpoch,
+        Map<TopicPartition, OffsetAndMetadata> offsetMetadata
+    ) {
+        return validateGroupStatus(groupId, ApiKeys.TXN_OFFSET_COMMIT).map(error ->
+            CompletableFuture.completedFuture(
+                CoreUtils.mapValue(
+                    offsetMetadata,
+                    ignored -> error
+                )
+            )
+        ).orElseGet(() -> {
+            GroupMetadata group = groupManager.getGroup(groupId).orElseGet(() ->
+                groupManager.addGroup(new GroupMetadata(groupId, Empty))
+            );
+            return doCommitOffsets(
+                group,
+                NoMemberId,
+                NoGeneration,
+                producerId,
+                producerEpoch,
+                offsetMetadata
+            );
+        });
+    }
+
+    public CompletableFuture<Map<TopicPartition, Errors>> handleCommitOffsets(
+        String groupId,
+        String memberId,
+        int generationId,
+        Map<TopicPartition, OffsetAndMetadata> offsetMetadata
+    ) {
+        return validateGroupStatus(groupId, ApiKeys.OFFSET_COMMIT).map(error ->
+            CompletableFuture.completedFuture(
+                CoreUtils.mapValue(
+                    offsetMetadata,
+                    ignored -> error
+                )
+            )
+        ).orElseGet(() -> {
+            return groupManager.getGroup(groupId).map(group ->
+                doCommitOffsets(
+                    group, memberId, generationId, NO_PRODUCER_ID, NO_PRODUCER_EPOCH,
+                    offsetMetadata
+                )
+            ).orElseGet(() -> {
+                if (generationId < 0) {
+                    // the group is not relying on Kafka for group management, so allow the commit
+                    GroupMetadata group = groupManager.addGroup(new GroupMetadata(groupId, Empty));
+                    return doCommitOffsets(group, memberId, generationId, NO_PRODUCER_ID, NO_PRODUCER_EPOCH,
+                        offsetMetadata);
+                } else {
+                    return CompletableFuture.completedFuture(
+                        CoreUtils.mapValue(
+                            offsetMetadata,
+                            ignored -> Errors.ILLEGAL_GENERATION
+                        )
+                    );
+                }
+            });
+        });
+    }
+
+    public Future<?> scheduleHandleTxnCompletion(
+        long producerId,
+        Stream<TopicPartition> offsetsPartitions,
+        TransactionResult transactionResult
+    ) {
+        Stream<TopicPartition> validatedOffsetsPartitions =
+            offsetsPartitions.map(tp -> {
+                checkArgument(tp.topic().equals(Topic.GROUP_METADATA_TOPIC_NAME));
+                return tp;
+            });
+        boolean isCommit = TransactionResult.COMMIT == transactionResult;
+        return groupManager.scheduleHandleTxnCompletion(
+            producerId,
+            validatedOffsetsPartitions.map(TopicPartition::partition)
+                .collect(Collectors.toSet()),
+            isCommit
+        );
+    }
+
+    private CompletableFuture<Map<TopicPartition, Errors>> doCommitOffsets(
+        GroupMetadata group,
+        String memberId,
+        int generationId,
+        long producerId,
+        short producerEpoch,
+        Map<TopicPartition, OffsetAndMetadata> offsetMetadata
+    ) {
+        return group.inLock(() -> {
+            if (group.is(Dead)) {
+                return CompletableFuture.completedFuture(
+                    CoreUtils.mapValue(offsetMetadata, ignored ->
+                        Errors.UNKNOWN_MEMBER_ID));
+            } else if ((generationId < 0 && group.is(Empty)) || (producerId != NO_PRODUCER_ID)) {
+                // The group is only using Kafka to store offsets.
+                // Also, for transactional offset commits we don't need to validate group membership
+                // and the generation.
+                return groupManager.storeOffsets(group, memberId, offsetMetadata, producerId, producerEpoch);
+            } else if (group.is(CompletingRebalance)) {
+                return CompletableFuture.completedFuture(
+                    CoreUtils.mapValue(offsetMetadata, ignored ->
+                        Errors.REBALANCE_IN_PROGRESS));
+            } else if (!group.has(memberId)) {
+                return CompletableFuture.completedFuture(
+                    CoreUtils.mapValue(offsetMetadata, ignored ->
+                        Errors.UNKNOWN_MEMBER_ID));
+            } else if (generationId != group.generationId()) {
+                return CompletableFuture.completedFuture(
+                    CoreUtils.mapValue(offsetMetadata, ignored ->
+                        Errors.ILLEGAL_GENERATION));
+            } else {
+                MemberMetadata member = group.get(memberId);
+                completeAndScheduleNextHeartbeatExpiration(group, member);
+                return groupManager.storeOffsets(
+                    group, memberId, offsetMetadata
+                );
+            }
+        });
+    }
+
+    public KeyValue<Errors, Map<TopicPartition, PartitionData>> handleFetchOffsets(
+        String groupId,
+        Optional<List<TopicPartition>> partitions
+    ) {
+        return validateGroupStatus(groupId, ApiKeys.OFFSET_FETCH).map(errors ->
+            new KeyValue<Errors, Map<TopicPartition, PartitionData>>(
+                errors,
+                new HashMap<>()
+            )
+        ).orElseGet(() ->
+            new KeyValue<>(
+                Errors.NONE,
+                groupManager.getOffsets(groupId, partitions)
+            )
+        );
+    }
+
+    public KeyValue<Errors, List<GroupOverview>> handleListGroups() {
         if (!isActive.get()) {
             return new KeyValue<>(Errors.COORDINATOR_NOT_AVAILABLE, new ArrayList<>());
         } else {
@@ -597,7 +798,7 @@ public class GroupCoordinator {
         }
     }
 
-    KeyValue<Errors, GroupSummary> handleDescribeGroup(String groupId) {
+    public KeyValue<Errors, GroupSummary> handleDescribeGroup(String groupId) {
         return validateGroupStatus(groupId, ApiKeys.DESCRIBE_GROUPS).map(error ->
             new KeyValue<>(error, GroupCoordinator.EmptyGroup)
         ).orElseGet(() ->
@@ -609,19 +810,113 @@ public class GroupCoordinator {
         );
     }
 
+    public CompletableFuture<Integer> handleDeletedPartitions(List<TopicPartition> topicPartitions) {
+        return groupManager.cleanGroupMetadata(groupManager.currentGroupsStream(), group ->
+            group.removeOffsets(topicPartitions.stream())
+        ).thenApply(offsetsRemoved -> {
+            log.info("Removed {} offsets associated with deleted partitions: {}",
+                offsetsRemoved,
+                topicPartitions.stream()
+                    .map(TopicPartition::toString)
+                    .collect(Collectors.joining(",")));
+            return offsetsRemoved;
+        });
+    }
+
+    private boolean isValidGroupId(String groupId,
+                                   ApiKeys api) {
+        switch (api) {
+            case OFFSET_COMMIT:
+            case OFFSET_FETCH:
+            case DESCRIBE_GROUPS:
+            case DELETE_GROUPS:
+                // For backwards compatibility, we support the offset commit APIs for the empty groupId, and also
+                // in DescribeGroups and DeleteGroups so that users can view and delete state of all groups.
+                return groupId != null;
+            default:
+                return groupId != null && !groupId.isEmpty();
+
+        }
+    }
+
     private Optional<Errors> validateGroupStatus(String groupId,
                                                  ApiKeys api) {
-        if (isValidGroupId(groupId, api)) {
+        if (!isValidGroupId(groupId, api)) {
             return Optional.of(Errors.INVALID_GROUP_ID);
-        } else if (isActive.get()) {
+        } else if (!isActive.get()) {
             return Optional.of(Errors.COORDINATOR_NOT_AVAILABLE);
         } else if (groupManager.isGroupLoading(groupId)) {
             return Optional.of(Errors.COORDINATOR_LOAD_IN_PROGRESS);
-        } else if (groupManager.isGroupLocal(groupId)) {
+        } else if (!groupManager.isGroupLocal(groupId)) {
             return Optional.of(Errors.NOT_COORDINATOR);
         } else {
             return Optional.empty();
         }
+    }
+
+    private void onGroupUnloaded(GroupMetadata group) {
+        group.inLock(() -> {
+            log.info("Unloading group metadata for {} with generation {}",
+                group.groupId(), group.generationId());
+            GroupState previousState = group.currentState();
+            group.transitionTo(Dead);
+
+            switch (previousState) {
+                case Empty:
+                case Dead:
+                case PreparingRebalance:
+                    for (MemberMetadata member : group.allMemberMetadata()) {
+                        if (member.awaitingJoinCallback() != null) {
+                            member.awaitingJoinCallback().complete(
+                                joinError(member.memberId(), Errors.NOT_COORDINATOR)
+                            );
+                            member.awaitingJoinCallback(null);
+                        }
+                    }
+                    joinPurgatory.checkAndComplete(new GroupKey(group.groupId()));
+                    break;
+                case Stable:
+                case CompletingRebalance:
+                    for (MemberMetadata member : group.allMemberMetadata()) {
+                        if (member.awaitingSyncCallback() != null) {
+                            member.awaitingSyncCallback().accept(
+                                new byte[0], Errors.NOT_COORDINATOR
+                            );
+                            member.awaitingSyncCallback(null);
+                        }
+                        heartbeatPurgatory.checkAndComplete(
+                            new MemberKey(member.groupId(), member.memberId())
+                        );
+                    }
+                    break;
+                default:
+                    break;
+            }
+            return null;
+        });
+    }
+
+    private void onGroupLoaded(GroupMetadata group) {
+        group.inLock(() -> {
+            log.info("Loading group metadata for {} with generation {}",
+                group.groupId(), group.generationId());
+            checkArgument(
+                group.is(Stable) || group.is(Empty));
+            group.allMemberMetadata().forEach(member ->
+                completeAndScheduleNextHeartbeatExpiration(group, member));
+            return null;
+        });
+    }
+
+    public CompletableFuture<Void> handleGroupImmigration(int offsetTopicPartitionId) {
+        return groupManager.scheduleLoadGroupAndOffsets(
+            offsetTopicPartitionId,
+            this::onGroupLoaded
+        );
+    }
+
+    public void handleGroupEmigration(int offsetTopicPartition) {
+        groupManager.removeGroupsForPartition(offsetTopicPartition, this::onGroupUnloaded);
     }
 
     private void setAndPropagateAssignment(GroupMetadata group,
@@ -903,6 +1198,14 @@ public class GroupCoordinator {
         return member.awaitingJoinCallback() != null
             || member.awaitingSyncCallback() != null
             || member.latestHeartbeat() + member.sessionTimeoutMs() > heartbeatDeadline;
+    }
+
+    private boolean isCoordinatorForGroup(String groupId) {
+        return groupManager.isGroupLocal(groupId);
+    }
+
+    private boolean isCoordinatorLoadInProgress(String groupId) {
+        return groupManager.isGroupLoading(groupId);
     }
 
 }
