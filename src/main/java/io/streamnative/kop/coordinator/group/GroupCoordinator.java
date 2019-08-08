@@ -41,6 +41,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
@@ -348,6 +349,25 @@ public class GroupCoordinator {
 
     }
 
+
+    public CompletableFuture<KeyValue<Errors, byte[]>> handleSyncGroup(
+        String groupId,
+        int generation,
+        String memberId,
+        Map<String, byte[]> groupAssignment
+    ) {
+        CompletableFuture<KeyValue<Errors, byte[]>> resultFuture = new CompletableFuture<>();
+        handleSyncGroup(
+            groupId,
+            generation,
+            memberId,
+            groupAssignment,
+            (assignment, errors) -> resultFuture.complete(
+                new KeyValue<>(errors, assignment))
+        );
+        return resultFuture;
+    }
+
     public void handleSyncGroup(String groupId,
                                 int generation,
                                 String memberId,
@@ -491,42 +511,46 @@ public class GroupCoordinator {
     }
 
     public Map<String, Errors> handleDeleteGroups(Set<String> groupIds) {
-        Map<String, Errors> groupErrors = new HashMap<>();
+        Map<String, Errors> groupErrors = Collections.synchronizedMap(new HashMap<>());
         List<GroupMetadata> groupsEligibleForDeletion = new ArrayList<>();
 
         groupIds.forEach(groupId -> {
-            validateGroupStatus(groupId, ApiKeys.DELETE_GROUPS).map(error ->
-                groupErrors.put(groupId, error)
-            ).orElseGet(() -> groupManager.getGroup(groupId).map(group -> {
-                return group.inLock(() -> {
-                    switch(group.currentState()) {
-                        case Dead:
-                            if (groupManager.groupNotExists(groupId)) {
-                                groupErrors.put(groupId, Errors.GROUP_ID_NOT_FOUND);
-                            } else {
-                                groupErrors.put(groupId, Errors.NOT_COORDINATOR);
-                            }
-                            break;
-                        case Empty:
-                            group.transitionTo(Dead);
-                            groupsEligibleForDeletion.add(group);
-                            break;
-                        default:
-                            groupErrors.put(groupId, Errors.NON_EMPTY_GROUP);
-                            break;
+            Optional<Errors> validateErrorsOpt = validateGroupStatus(groupId, ApiKeys.DELETE_GROUPS);
+            validateErrorsOpt.map(error -> {
+                groupErrors.put(groupId, error);
+                return error;
+            }).orElseGet(() -> {
+                return groupManager.getGroup(groupId).map(group -> {
+                    return group.inLock(() -> {
+                        switch(group.currentState()) {
+                            case Dead:
+                                if (groupManager.groupNotExists(groupId)) {
+                                    groupErrors.put(groupId, Errors.GROUP_ID_NOT_FOUND);
+                                } else {
+                                    groupErrors.put(groupId, Errors.NOT_COORDINATOR);
+                                }
+                                break;
+                            case Empty:
+                                group.transitionTo(Dead);
+                                groupsEligibleForDeletion.add(group);
+                                break;
+                            default:
+                                groupErrors.put(groupId, Errors.NON_EMPTY_GROUP);
+                                break;
+                        }
+                        return Errors.NONE;
+                    });
+                }).orElseGet(() -> {
+                    Errors error;
+                    if (groupManager.groupNotExists(groupId)) {
+                        error = Errors.GROUP_ID_NOT_FOUND;
+                    } else {
+                        error = Errors.NOT_COORDINATOR;
                     }
+                    groupErrors.put(groupId, error);
                     return Errors.NONE;
                 });
-            }).orElseGet(() -> {
-                Errors error;
-                if (groupManager.groupNotExists(groupId)) {
-                    error = Errors.GROUP_ID_NOT_FOUND;
-                } else {
-                    error = Errors.NOT_COORDINATOR;
-                }
-                groupErrors.put(groupId, error);
-                return Errors.NONE;
-            }));
+            });
         });
 
         if (!groupsEligibleForDeletion.isEmpty()) {
@@ -679,16 +703,21 @@ public class GroupCoordinator {
         });
     }
 
-    public void scheduleHandleTxnCompletion(
+    public Future<?> scheduleHandleTxnCompletion(
         long producerId,
         Stream<TopicPartition> offsetsPartitions,
         TransactionResult transactionResult
     ) {
-        offsetsPartitions.forEach(tp -> checkArgument(tp.topic().equals(Topic.GROUP_METADATA_TOPIC_NAME)));
+        Stream<TopicPartition> validatedOffsetsPartitions =
+            offsetsPartitions.map(tp -> {
+                checkArgument(tp.topic().equals(Topic.GROUP_METADATA_TOPIC_NAME));
+                return tp;
+            });
         boolean isCommit = TransactionResult.COMMIT == transactionResult;
-        groupManager.scheduleHandleTxnCompletion(
+        return groupManager.scheduleHandleTxnCompletion(
             producerId,
-            offsetsPartitions.map(TopicPartition::partition).collect(Collectors.toSet()),
+            validatedOffsetsPartitions.map(TopicPartition::partition)
+                .collect(Collectors.toSet()),
             isCommit
         );
     }
@@ -812,13 +841,13 @@ public class GroupCoordinator {
 
     private Optional<Errors> validateGroupStatus(String groupId,
                                                  ApiKeys api) {
-        if (isValidGroupId(groupId, api)) {
+        if (!isValidGroupId(groupId, api)) {
             return Optional.of(Errors.INVALID_GROUP_ID);
-        } else if (isActive.get()) {
+        } else if (!isActive.get()) {
             return Optional.of(Errors.COORDINATOR_NOT_AVAILABLE);
         } else if (groupManager.isGroupLoading(groupId)) {
             return Optional.of(Errors.COORDINATOR_LOAD_IN_PROGRESS);
-        } else if (groupManager.isGroupLocal(groupId)) {
+        } else if (!groupManager.isGroupLocal(groupId)) {
             return Optional.of(Errors.NOT_COORDINATOR);
         } else {
             return Optional.empty();

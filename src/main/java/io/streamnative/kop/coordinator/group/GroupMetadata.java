@@ -182,11 +182,14 @@ class GroupMetadata {
     private boolean newMemberAdded = false;
 
     // state management
-    private final Map<String, MemberMetadata> members = new HashMap<>();
-    private final Map<TopicPartition, CommitRecordMetadataAndOffset> offsets = new HashMap<>();
-    private final Map<TopicPartition, OffsetAndMetadata> pendingOffsetCommits = new HashMap<>();
+    private final Map<String, MemberMetadata> members =
+        Collections.synchronizedMap(new HashMap<>());
+    private final Map<TopicPartition, CommitRecordMetadataAndOffset> offsets =
+        Collections.synchronizedMap(new HashMap<>());
+    private final Map<TopicPartition, OffsetAndMetadata> pendingOffsetCommits =
+        Collections.synchronizedMap(new HashMap<>());
     private final Map<Long, Map<TopicPartition, CommitRecordMetadataAndOffset>> pendingTransactionalOffsetCommits =
-        new HashMap<>();
+        Collections.synchronizedMap(new HashMap<>());
     private boolean receivedTransactionalOffsetCommits = false;
     private boolean receivedConsumerOffsetCommits = false;
 
@@ -232,6 +235,9 @@ class GroupMetadata {
     }
 
     public int rebalanceTimeoutMs() {
+        if (members.isEmpty()) {
+            return 0;
+        }
         return members.values().stream().mapToInt(member ->
             member.rebalanceTimeoutMs()
         ).max().getAsInt();
@@ -570,7 +576,7 @@ class GroupMetadata {
     }
 
     public Map<TopicPartition, OffsetAndMetadata> removeAllOffsets() {
-        return removeOffsets(offsets.keySet().stream());
+        return removeOffsets(new HashSet<>(offsets.keySet()).stream());
     }
 
     public Map<TopicPartition, OffsetAndMetadata> removeOffsets(Stream<TopicPartition> topicPartitions) {
