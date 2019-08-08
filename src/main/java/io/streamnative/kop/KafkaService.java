@@ -14,6 +14,7 @@
 package io.streamnative.kop;
 
 import com.google.common.collect.Maps;
+import io.streamnative.kop.coordinator.group.GroupCoordinator;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
@@ -43,10 +44,16 @@ public class KafkaService extends PulsarService {
     private final KafkaServiceConfiguration kafkaConfig;
     @Getter
     private KafkaTopicManager kafkaTopicManager;
+    @Getter
+    private GroupCoordinator groupCoordinator;
 
     public KafkaService(KafkaServiceConfiguration config) {
         super(config);
         kafkaConfig = config;
+    }
+
+    public GroupCoordinator groupCoordinator(String groupId) {
+
     }
 
     @Override

@@ -56,18 +56,23 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     // turn input ByteBuf msg, which send from client side, into KafkaHeaderAndRequest
     protected KafkaHeaderAndRequest byteBufToRequest(ByteBuf msg) {
+        return byteBufToRequest(msg, null);
+    }
+
+    protected KafkaHeaderAndRequest byteBufToRequest(ByteBuf msg,
+                                                     SocketAddress remoteAddress) {
         checkArgument(msg.readableBytes() > 0);
         ByteBuffer nio = msg.nioBuffer();
         RequestHeader header = RequestHeader.parse(nio);
         if (isUnsupportedApiVersionsRequest(header)) {
             ApiVersionsRequest apiVersionsRequest = new ApiVersionsRequest((short) 0, header.apiVersion());
-            return new KafkaHeaderAndRequest(header, apiVersionsRequest, msg);
+            return new KafkaHeaderAndRequest(header, apiVersionsRequest, msg, remoteAddress);
         } else {
             ApiKeys apiKey = header.apiKey();
             short apiVersion = header.apiVersion();
             Struct struct = apiKey.parseRequest(apiVersion, nio);
             AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
-            return new KafkaHeaderAndRequest(header, body, msg);
+            return new KafkaHeaderAndRequest(header, body, msg, remoteAddress);
         }
     }
 
@@ -88,7 +93,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         // Get a buffer that contains the full frame
         ByteBuf buffer = (ByteBuf) msg;
 
-        try (KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer)){
+        SocketAddress remoteAddress = ctx.channel().remoteAddress();
+        try (KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress)){
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Received kafka cmd {}",
                     ctx.channel() != null ? ctx.channel().remoteAddress() : "Null channel",
@@ -129,6 +135,18 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 case HEARTBEAT:
                     handleHeartbeatRequest(kafkaHeaderAndRequest);
                     break;
+                case LEAVE_GROUP:
+                    handleLeaveGroupRequest(kafkaHeaderAndRequest);
+                    break;
+                case DESCRIBE_GROUPS:
+                    handleDescribeGroupRequest(kafkaHeaderAndRequest);
+                    break;
+                case LIST_GROUPS:
+                    handleListGroupsRequest(kafkaHeaderAndRequest);
+                    break;
+                case DELETE_GROUPS:
+                    handleDeleteGroupsRequest(kafkaHeaderAndRequest);
+                    break;
                 default:
                     String err = String.format("Kafka API (%s) Not supported by kop server.",
                         kafkaHeaderAndRequest.getHeader().apiKey());
@@ -162,15 +180,31 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected abstract void handleHeartbeatRequest(KafkaHeaderAndRequest heartbeat);
 
+    protected abstract void handleLeaveGroupRequest(KafkaHeaderAndRequest leaveGroup);
+
+    protected abstract void handleDescribeGroupRequest(KafkaHeaderAndRequest describeGroup);
+
+    protected abstract void handleListGroupsRequest(KafkaHeaderAndRequest listGroups);
+
+    protected abstract void handleDeleteGroupsRequest(KafkaHeaderAndRequest deleteGroups);
+
     static class KafkaHeaderAndRequest implements Closeable {
+
+        private static final String DEFAULT_CLIENT_HOST = "";
+
         private final RequestHeader header;
         private final AbstractRequest request;
         private final ByteBuf buffer;
+        private final SocketAddress remoteAddress;
 
-        KafkaHeaderAndRequest(RequestHeader header, AbstractRequest request, ByteBuf buffer) {
+        KafkaHeaderAndRequest(RequestHeader header,
+                              AbstractRequest request,
+                              ByteBuf buffer,
+                              SocketAddress remoteAddress) {
             this.header = header;
             this.request = request;
             this.buffer = buffer.retain();
+            this.remoteAddress = remoteAddress;
         }
 
         public RequestHeader getHeader() {
@@ -181,12 +215,25 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             return this.request;
         }
 
+        public SocketAddress getRemoteAddress() {
+            return this.remoteAddress;
+        }
+
+        public String getClientHost() {
+            if (remoteAddress == null) {
+                return DEFAULT_CLIENT_HOST;
+            } else {
+                return remoteAddress.toString();
+            }
+        }
+
         ByteBuf getBuffer() {
             return this.buffer;
         }
 
         public String toString() {
-            return String.format("KafkaHeaderAndRequest(header=%s,request=%s)", this.header, this.request);
+            return String.format("KafkaHeaderAndRequest(header=%s, request=%s, remoteAddress=%s)",
+                this.header, this.request, this.remoteAddress);
         }
 
         @Override
