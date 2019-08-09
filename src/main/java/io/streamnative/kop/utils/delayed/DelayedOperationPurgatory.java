@@ -81,12 +81,17 @@ public class DelayedOperationPurgatory<T extends DelayedOperation> {
         }
 
         public DelayedOperationPurgatory<T> build() {
+            boolean ownTimer;
             if (null == timer) {
+                ownTimer = true;
                 timer = SystemTimer.builder().executorName(purgatoryName).build();
+            } else {
+                ownTimer = false;
             }
             return new DelayedOperationPurgatory<>(
                 purgatoryName,
                 timer,
+                ownTimer,
                 purgeInterval,
                 reaperEnabled,
                 timerEnabled
@@ -95,6 +100,7 @@ public class DelayedOperationPurgatory<T extends DelayedOperation> {
     }
 
     private final String purgatoryName;
+    private final boolean ownTimer;
     private final Timer timeoutTimer;
     private final int purgeInterval;
     private final boolean reaperEnabled;
@@ -114,12 +120,14 @@ public class DelayedOperationPurgatory<T extends DelayedOperation> {
     public DelayedOperationPurgatory(
         String purgatoryName,
         Timer timeoutTimer,
+        boolean ownTimer,
         int purgeInterval,
         boolean reaperEnabled,
         boolean timerEnabled
     ) {
         this.purgatoryName = purgatoryName;
         this.timeoutTimer = timeoutTimer;
+        this.ownTimer = ownTimer;
         this.purgeInterval = purgeInterval;
         this.reaperEnabled = reaperEnabled;
         this.timerEnabled = timerEnabled;
@@ -300,7 +308,9 @@ public class DelayedOperationPurgatory<T extends DelayedOperation> {
                 log.error("Interrupted at shutting down expiration reaper for {}", purgatoryName);
             }
         }
-        timeoutTimer.shutdown();
+        if (ownTimer) {
+            timeoutTimer.shutdown();
+        }
     }
 
     /**

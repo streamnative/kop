@@ -18,6 +18,7 @@ import static org.apache.kafka.common.protocol.ApiKeys.API_VERSIONS;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import java.io.Closeable;
@@ -93,7 +94,11 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         // Get a buffer that contains the full frame
         ByteBuf buffer = (ByteBuf) msg;
 
-        SocketAddress remoteAddress = ctx.channel().remoteAddress();
+        Channel channel = ctx.channel();
+        SocketAddress remoteAddress = null;
+        if (null != channel) {
+            remoteAddress = channel.remoteAddress();
+        }
         try (KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress)){
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Received kafka cmd {}",

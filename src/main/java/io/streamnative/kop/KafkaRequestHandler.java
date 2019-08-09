@@ -20,7 +20,6 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.Recycler;
@@ -979,7 +978,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         request.groupProtocols()
             .stream()
             .forEach(protocol -> protocols.put(protocol.name(), Utils.toArray(protocol.metadata())));
-        kafkaService.groupCoordinator(request.groupId()).handleJoinGroup(
+        kafkaService.getGroupCoordinator().handleJoinGroup(
             request.groupId(),
             request.memberId(),
             joinGroup.getHeader().clientId(),
@@ -1016,7 +1015,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(syncGroup.getRequest() instanceof HeartbeatRequest);
         SyncGroupRequest request = (SyncGroupRequest) syncGroup.getRequest();
 
-        kafkaService.groupCoordinator(request.groupId()).handleSyncGroup(
+        kafkaService.getGroupCoordinator().handleSyncGroup(
             request.groupId(),
             request.generationId(),
             request.memberId(),
@@ -1038,7 +1037,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         HeartbeatRequest request = (HeartbeatRequest) heartbeat.getRequest();
 
         // let the coordinator to handle heartbeat
-        kafkaService.groupCoordinator(request.groupId()).handleHeartbeat(
+        kafkaService.getGroupCoordinator().handleHeartbeat(
             request.groupId(),
             request.memberId(),
             request.groupGenerationId()
@@ -1060,7 +1059,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         LeaveGroupRequest request = (LeaveGroupRequest) leaveGroup.getRequest();
 
         // let the coordinator to handle heartbeat
-        kafkaService.groupCoordinator(request.groupId()).handleLeaveGroup(
+        kafkaService.getGroupCoordinator().handleLeaveGroup(
             request.groupId(),
             request.memberId()
         ).thenAccept(errors -> {
@@ -1078,7 +1077,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // let the coordinator to handle heartbeat
         Map<String, GroupMetadata> groups = request.groupIds().stream()
             .map(groupId -> {
-                KeyValue<Errors, GroupSummary> describeResult = kafkaService.groupCoordinator(groupId)
+                KeyValue<Errors, GroupSummary> describeResult = kafkaService.getGroupCoordinator()
                     .handleDescribeGroup(groupId);
                 GroupSummary summary = describeResult.getValue();
                 List<GroupMember> members = summary.members().stream()
@@ -1125,13 +1124,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(deleteGroups.getRequest() instanceof DescribeGroupsRequest);
         DeleteGroupsRequest request = (DeleteGroupsRequest) deleteGroups.getRequest();
 
-        Map<String, Errors> deleteResult = new HashMap<>();
-        request.groups().forEach(group -> {
-            deleteResult.putAll(kafkaService.groupCoordinator(group).handleDeleteGroups(
-                Sets.newHashSet(group)
-            ));
-        });
-
+        Map<String, Errors> deleteResult = kafkaService.getGroupCoordinator().handleDeleteGroups(request.groups());
         DeleteGroupsResponse response = new DeleteGroupsResponse(
             deleteResult
         );

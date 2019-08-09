@@ -88,7 +88,7 @@ import org.apache.pulsar.client.impl.MessageIdImpl;
  * Manager to manage a coordination group.
  */
 @Slf4j
-class GroupMetadataManager {
+public class GroupMetadataManager {
 
     /**
      * The key interface.
@@ -192,12 +192,12 @@ class GroupMetadataManager {
     private final Time time;
     private final Function<String, Integer> partitioner;
 
-    GroupMetadataManager(int groupMetadataTopicPartitionCount,
-                         OffsetConfig config,
-                         Producer<ByteBuffer> metadataTopicProducer,
-                         Reader<ByteBuffer> metadataTopicConsumer,
-                         ScheduledExecutorService scheduler,
-                         Time time) {
+    public GroupMetadataManager(int groupMetadataTopicPartitionCount,
+                                OffsetConfig config,
+                                Producer<ByteBuffer> metadataTopicProducer,
+                                Reader<ByteBuffer> metadataTopicConsumer,
+                                ScheduledExecutorService scheduler,
+                                Time time) {
         this(
             groupMetadataTopicPartitionCount,
             config,
