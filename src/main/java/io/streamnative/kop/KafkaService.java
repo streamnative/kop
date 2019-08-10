@@ -14,17 +14,17 @@
 package io.streamnative.kop;
 
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import io.streamnative.kop.coordinator.group.GroupConfig;
 import io.streamnative.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.kop.coordinator.group.OffsetConfig;
 import io.streamnative.kop.utils.timer.SystemTimer;
 import java.nio.ByteBuffer;
-import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
-import javax.ws.rs.core.Response;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
@@ -48,8 +48,9 @@ import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.common.configuration.VipStatus;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
-import org.apache.pulsar.common.policies.data.Policies;
+import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
+import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.apache.pulsar.zookeeper.LocalZooKeeperConnectionService;
 import org.eclipse.jetty.servlet.ServletHolder;
 
@@ -254,45 +255,40 @@ public class KafkaService extends PulsarService {
     }
 
     private void createKafkaMetadataNamespaceIfNeeded() throws PulsarServerException, PulsarAdminException {
-        String kafkaMetadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
+        String cluster = kafkaConfig.getClusterName();
+        String kafkaMetadataTenant = kafkaConfig.getKafkaMetadataTenant();
+        String kafkaMetadataNamespace = kafkaMetadataTenant + "/" + kafkaConfig.getKafkaMetadataNamespace();
+
         try {
-            getAdminClient().namespaces().getPolicies(kafkaMetadataNamespace);
-        } catch (PulsarAdminException e) {
-            if (e.getStatusCode() == Response.Status.NOT_FOUND.getStatusCode()) {
-                log.info("Kafka metadata namespace {} doesn't. Creating it ...",
-                    kafkaMetadataNamespace);
-                // if not found than create
-                try {
-                    Policies policies = new Policies();
-                    policies.retention_policies = new RetentionPolicies(-1, -1);
-                    policies.replication_clusters = new HashSet<>();
-                    policies.replication_clusters.add(kafkaConfig.getClusterName());
-                    getAdminClient().namespaces().createNamespace(
-                        kafkaMetadataNamespace,
-                        policies);
-                    log.info("Successfully created kafka metadata namespace {}.",
-                        kafkaMetadataNamespace);
-                } catch (PulsarAdminException e1) {
-                    // prevent race condition with other workers starting up
-                    if (e1.getStatusCode() != Response.Status.CONFLICT.getStatusCode()) {
-                        log.error("Failed to create kafka metadata namespace {}",
-                            kafkaMetadataNamespace, e1);
-                        throw e1;
-                    } else {
-                        log.info("Some other broker just already created kafka metadata namespace {}.",
-                            kafkaMetadataNamespace);
-                    }
-                }
+            ClusterData clusterData = new ClusterData(getWebServiceAddress(), null /* serviceUrlTls */,
+                getBrokerServiceUrl(), null /* brokerServiceUrlTls */);
+            if (!getAdminClient().clusters().getClusters().contains(cluster)) {
+                getAdminClient().clusters().createCluster(cluster, clusterData);
             } else {
-                log.error("Failed to get retention policy for kafka metadata namespace {}",
-                    kafkaMetadataNamespace, e);
-                throw e;
+                getAdminClient().clusters().updateCluster(cluster, clusterData);
             }
+
+            if (!getAdminClient().tenants().getTenants().contains(kafkaMetadataTenant)) {
+                getAdminClient().tenants().createTenant(kafkaMetadataTenant,
+                    new TenantInfo(Sets.newHashSet(kafkaConfig.getSuperUserRoles()), Sets.newHashSet(cluster)));
+            }
+            if (!getAdminClient().namespaces().getNamespaces(kafkaMetadataTenant).contains(kafkaMetadataNamespace)) {
+                Set<String> clusters = Sets.newHashSet(kafkaConfig.getClusterName());
+                getAdminClient().namespaces().createNamespace(kafkaMetadataNamespace, clusters);
+                getAdminClient().namespaces().setNamespaceReplicationClusters(kafkaMetadataNamespace, clusters);
+                getAdminClient().namespaces().setRetention(kafkaMetadataNamespace,
+                    new RetentionPolicies(-1, -1));
+            }
+        } catch (PulsarAdminException e) {
+            log.error("Failed to get retention policy for kafka metadata namespace {}",
+                kafkaMetadataNamespace, e);
+            throw e;
         }
     }
 
     private String createKafkaOffsetsTopic() throws PulsarServerException, PulsarAdminException {
-        String offsetsTopic = kafkaConfig.getKafkaMetadataNamespace() + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
+        String offsetsTopic = kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaMetadataNamespace()
+            + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
 
         PartitionedTopicMetadata offsetsTopicMetadata =
             getAdminClient().topics().getPartitionedTopicMetadata(offsetsTopic);

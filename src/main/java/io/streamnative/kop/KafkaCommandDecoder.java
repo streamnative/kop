@@ -89,6 +89,13 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
+    protected void writeAndFlushResponseToClient(AbstractResponse apiResponse, KafkaHeaderAndRequest request) {
+        if (log.isDebugEnabled()) {
+            log.debug("Write kafka cmd response back to client. request: {}", request.getHeader());
+        }
+        ctx.writeAndFlush(responseToByteBuf(apiResponse, request));
+    }
+
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         // Get a buffer that contains the full frame
@@ -99,11 +106,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         if (null != channel) {
             remoteAddress = channel.remoteAddress();
         }
+
         try (KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress)){
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Received kafka cmd {}",
                     ctx.channel() != null ? ctx.channel().remoteAddress() : "Null channel",
-                    kafkaHeaderAndRequest.getHeader().apiKey().name);
+                    kafkaHeaderAndRequest.getHeader());
             }
 
             switch (kafkaHeaderAndRequest.getHeader().apiKey()) {

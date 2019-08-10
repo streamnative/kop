@@ -47,20 +47,33 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     // --- Kafka on Pulsar Broker configuration ---
     //
 
+    @FieldContext(
+        category = CATEGORY_KOP,
+        required = true,
+        doc = "Kafka on Pulsar Broker tenant"
+    )
+    private String kafkaTenant = "public";
 
     @FieldContext(
         category = CATEGORY_KOP,
         required = true,
         doc = "Kafka on Pulsar Broker namespace"
     )
-    private String kafkaNamespace = "public/default";
+    private String kafkaNamespace = "default";
+
+    @FieldContext(
+        category = CATEGORY_KOP,
+        required = true,
+        doc = "The tenant used for storing Kafka metadata topics"
+    )
+    private String kafkaMetadataTenant = "public";
 
     @FieldContext(
         category = CATEGORY_KOP,
         required = true,
         doc = "The namespace used for storing Kafka metadata topics"
     )
-    private String kafkaMetadataNamespace = "pulsar/__kafka";
+    private String kafkaMetadataNamespace = "__kafka";
 
     @FieldContext(
         category = CATEGORY_KOP,
