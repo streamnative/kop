@@ -25,6 +25,7 @@ import static org.apache.kafka.common.record.RecordBatch.NO_PRODUCER_ID;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import io.streamnative.kop.KafkaServiceConfiguration;
 import io.streamnative.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.kop.offset.OffsetAndMetadata;
@@ -32,6 +33,8 @@ import io.streamnative.kop.utils.CoreUtils;
 import io.streamnative.kop.utils.delayed.DelayedOperationKey.GroupKey;
 import io.streamnative.kop.utils.delayed.DelayedOperationKey.MemberKey;
 import io.streamnative.kop.utils.delayed.DelayedOperationPurgatory;
+import io.streamnative.kop.utils.timer.Timer;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -42,12 +45,14 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -56,6 +61,8 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.client.api.Reader;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 
@@ -64,6 +71,48 @@ import org.apache.pulsar.common.util.FutureUtil;
  */
 @Slf4j
 public class GroupCoordinator {
+
+    public static GroupCoordinator of(
+        Producer<ByteBuffer> producer,
+        Reader<ByteBuffer> reader,
+        GroupConfig groupConfig,
+        OffsetConfig offsetConfig,
+        Timer timer,
+        Time time
+    ) {
+        ScheduledExecutorService coordinatorExecutor = OrderedScheduler.newSchedulerBuilder()
+            .name("group-coordinator-executor")
+            .build();
+
+        GroupMetadataManager metadataManager = new GroupMetadataManager(
+            KafkaServiceConfiguration.DefaultOffsetsTopicNumPartitions,
+            offsetConfig,
+            producer,
+            reader,
+            coordinatorExecutor,
+            time
+        );
+
+        DelayedOperationPurgatory<DelayedJoin> joinPurgatory = DelayedOperationPurgatory.<DelayedJoin>builder()
+            .purgatoryName("group-coordinator-delayed-join")
+            .timeoutTimer(timer)
+            .build();
+
+        DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory =
+            DelayedOperationPurgatory.<DelayedHeartbeat>builder()
+                .purgatoryName("group-coordinator-delayed-heartbeat")
+                .timeoutTimer(timer)
+                .build();
+
+        return new GroupCoordinator(
+            groupConfig,
+            metadataManager,
+            heartbeatPurgatory,
+            joinPurgatory,
+            time
+        );
+    }
+
 
     static final String NoState = "";
     static final String NoProtocolType = "";
@@ -804,7 +853,7 @@ public class GroupCoordinator {
         ).orElseGet(() ->
             groupManager.getGroup(groupId)
                 .map(group ->
-                    group.inLock(() -> new KeyValue(Errors.NONE, group.summary())
+                    group.inLock(() -> new KeyValue<>(Errors.NONE, group.summary())
                     ))
                 .orElseGet(() -> new KeyValue<>(Errors.NONE, GroupCoordinator.DeadGroup))
         );

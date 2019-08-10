@@ -24,11 +24,14 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
+import io.streamnative.kop.coordinator.group.GroupMetadata.GroupSummary;
+import io.streamnative.kop.utils.CoreUtils;
 import io.streamnative.kop.utils.MessageIdUtils;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.time.Clock;
 import java.util.Base64;
 import java.util.Collections;
@@ -65,11 +68,23 @@ import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
+import org.apache.kafka.common.requests.DeleteGroupsRequest;
+import org.apache.kafka.common.requests.DeleteGroupsResponse;
+import org.apache.kafka.common.requests.DescribeGroupsRequest;
+import org.apache.kafka.common.requests.DescribeGroupsResponse;
+import org.apache.kafka.common.requests.DescribeGroupsResponse.GroupMember;
+import org.apache.kafka.common.requests.DescribeGroupsResponse.GroupMetadata;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.FetchResponse.PartitionData;
 import org.apache.kafka.common.requests.FindCoordinatorRequest;
 import org.apache.kafka.common.requests.FindCoordinatorResponse;
+import org.apache.kafka.common.requests.HeartbeatRequest;
+import org.apache.kafka.common.requests.HeartbeatResponse;
+import org.apache.kafka.common.requests.JoinGroupRequest;
+import org.apache.kafka.common.requests.JoinGroupResponse;
+import org.apache.kafka.common.requests.LeaveGroupRequest;
+import org.apache.kafka.common.requests.LeaveGroupResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
@@ -79,7 +94,10 @@ import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
+import org.apache.kafka.common.requests.SyncGroupRequest;
+import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
+import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.admin.impl.PersistentTopicsBase;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.Topic.PublishContext;
@@ -98,6 +116,7 @@ import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.PersistentTopicInternalStats;
 import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.protocol.Commands.ChecksumType;
+import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
 
 /**
@@ -952,15 +971,164 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     protected void handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup) {
-        throw new NotImplementedException("handleJoinGroupRequest");
+        checkArgument(joinGroup.getRequest() instanceof JoinGroupRequest);
+        JoinGroupRequest request = (JoinGroupRequest) joinGroup.getRequest();
+
+        Map<String, byte[]> protocols = new HashMap<>();
+        request.groupProtocols()
+            .stream()
+            .forEach(protocol -> protocols.put(protocol.name(), Utils.toArray(protocol.metadata())));
+        kafkaService.getGroupCoordinator().handleJoinGroup(
+            request.groupId(),
+            request.memberId(),
+            joinGroup.getHeader().clientId(),
+            joinGroup.getClientHost(),
+            request.rebalanceTimeout(),
+            request.sessionTimeout(),
+            request.protocolType(),
+            protocols
+        ).thenAccept(joinGroupResult -> {
+
+            Map<String, ByteBuffer> members = new HashMap<>();
+            joinGroupResult.getMembers().forEach((memberId, protocol) ->
+                members.put(memberId, ByteBuffer.wrap(protocol)));
+
+            JoinGroupResponse response = new JoinGroupResponse(
+                joinGroupResult.getError(),
+                joinGroupResult.getGenerationId(),
+                joinGroupResult.getSubProtocol(),
+                joinGroupResult.getMemberId(),
+                joinGroupResult.getLeaderId(),
+                members
+            );
+
+            if (log.isTraceEnabled()) {
+                log.trace("Sending join group response %s for correlation id %d to client %s.",
+                    response, joinGroup.getHeader().correlationId(), joinGroup.getHeader().clientId());
+            }
+
+            ctx.writeAndFlush(responseToByteBuf(response, joinGroup));
+        });
     }
 
     protected void handleSyncGroupRequest(KafkaHeaderAndRequest syncGroup) {
-        throw new NotImplementedException("handleSyncGroupRequest");
+        checkArgument(syncGroup.getRequest() instanceof HeartbeatRequest);
+        SyncGroupRequest request = (SyncGroupRequest) syncGroup.getRequest();
+
+        kafkaService.getGroupCoordinator().handleSyncGroup(
+            request.groupId(),
+            request.generationId(),
+            request.memberId(),
+            CoreUtils.mapValue(
+                request.groupAssignment(), Utils::toArray
+            )
+        ).thenAccept(syncGroupResult -> {
+            SyncGroupResponse response = new SyncGroupResponse(
+                syncGroupResult.getKey(),
+                ByteBuffer.wrap(syncGroupResult.getValue())
+            );
+
+            ctx.writeAndFlush(responseToByteBuf(response, syncGroup));
+        });
     }
 
     protected void handleHeartbeatRequest(KafkaHeaderAndRequest heartbeat) {
-        throw new NotImplementedException("handleHeartbeatRequest");
+        checkArgument(heartbeat.getRequest() instanceof HeartbeatRequest);
+        HeartbeatRequest request = (HeartbeatRequest) heartbeat.getRequest();
+
+        // let the coordinator to handle heartbeat
+        kafkaService.getGroupCoordinator().handleHeartbeat(
+            request.groupId(),
+            request.memberId(),
+            request.groupGenerationId()
+        ).thenAccept(errors -> {
+            HeartbeatResponse response = new HeartbeatResponse(errors);
+
+            if (log.isTraceEnabled()) {
+                log.trace("Sending heartbeat response %s for correlation id %d to client %s.",
+                    response, heartbeat.getHeader().correlationId(), heartbeat.getHeader().clientId());
+            }
+
+            ctx.writeAndFlush(responseToByteBuf(response, heartbeat));
+        });
+    }
+
+    @Override
+    protected void handleLeaveGroupRequest(KafkaHeaderAndRequest leaveGroup) {
+        checkArgument(leaveGroup.getRequest() instanceof LeaveGroupRequest);
+        LeaveGroupRequest request = (LeaveGroupRequest) leaveGroup.getRequest();
+
+        // let the coordinator to handle heartbeat
+        kafkaService.getGroupCoordinator().handleLeaveGroup(
+            request.groupId(),
+            request.memberId()
+        ).thenAccept(errors -> {
+            LeaveGroupResponse response = new LeaveGroupResponse(errors);
+
+            ctx.writeAndFlush(responseToByteBuf(response, leaveGroup));
+        });
+    }
+
+    @Override
+    protected void handleDescribeGroupRequest(KafkaHeaderAndRequest describeGroup) {
+        checkArgument(describeGroup.getRequest() instanceof DescribeGroupsRequest);
+        DescribeGroupsRequest request = (DescribeGroupsRequest) describeGroup.getRequest();
+
+        // let the coordinator to handle heartbeat
+        Map<String, GroupMetadata> groups = request.groupIds().stream()
+            .map(groupId -> {
+                KeyValue<Errors, GroupSummary> describeResult = kafkaService.getGroupCoordinator()
+                    .handleDescribeGroup(groupId);
+                GroupSummary summary = describeResult.getValue();
+                List<GroupMember> members = summary.members().stream()
+                    .map(member -> {
+                        ByteBuffer metadata = ByteBuffer.wrap(member.metadata());
+                        ByteBuffer assignment = ByteBuffer.wrap(member.assignment());
+                        return new GroupMember(
+                            member.memberId(),
+                            member.clientId(),
+                            member.clientHost(),
+                            metadata,
+                            assignment
+                        );
+                    })
+                    .collect(Collectors.toList());
+                return new KeyValue<>(
+                    groupId,
+                    new GroupMetadata(
+                        describeResult.getKey(),
+                        summary.state(),
+                        summary.protocolType(),
+                        summary.protocol(),
+                        members
+                    )
+                );
+            })
+            .collect(Collectors.toMap(
+                kv -> kv.getKey(),
+                kv -> kv.getValue()
+            ));
+        DescribeGroupsResponse response = new DescribeGroupsResponse(
+            groups
+        );
+        ctx.writeAndFlush(responseToByteBuf(response, describeGroup));
+    }
+
+    @Override
+    protected void handleListGroupsRequest(KafkaHeaderAndRequest listGroups) {
+        throw new NotImplementedException("Not implemented yet");
+    }
+
+    @Override
+    protected void handleDeleteGroupsRequest(KafkaHeaderAndRequest deleteGroups) {
+        checkArgument(deleteGroups.getRequest() instanceof DescribeGroupsRequest);
+        DeleteGroupsRequest request = (DeleteGroupsRequest) deleteGroups.getRequest();
+
+        Map<String, Errors> deleteResult = kafkaService.getGroupCoordinator().handleDeleteGroups(request.groups());
+        DeleteGroupsResponse response = new DeleteGroupsResponse(
+            deleteResult
+        );
+        ctx.writeAndFlush(responseToByteBuf(response, deleteGroups));
     }
 
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {

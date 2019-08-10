@@ -66,7 +66,7 @@ import org.apache.pulsar.common.schema.KeyValue;
 @Setter
 @Accessors(fluent = true)
 @Slf4j
-class GroupMetadata {
+public class GroupMetadata {
 
     private static final Map<GroupState, Set<GroupState>> validPreviousStates = new HashMap<>();
 
@@ -146,7 +146,7 @@ class GroupMetadata {
      * Class used to represent group metadata for the DescribeGroup API.
      */
     @Data
-    static class GroupSummary {
+    public static class GroupSummary {
         private final String state;
         private final String protocolType;
         private final String protocol;

@@ -14,12 +14,23 @@
 package io.streamnative.kop;
 
 import com.google.common.collect.Maps;
+import io.streamnative.kop.coordinator.group.GroupConfig;
+import io.streamnative.kop.coordinator.group.GroupCoordinator;
+import io.streamnative.kop.coordinator.group.OffsetConfig;
+import io.streamnative.kop.utils.timer.SystemTimer;
+import java.nio.ByteBuffer;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
+import javax.ws.rs.core.Response;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
+import org.apache.kafka.common.internals.Topic;
+import org.apache.kafka.common.record.CompressionType;
+import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.BookKeeperClientFactory;
 import org.apache.pulsar.broker.ManagedLedgerClientFactory;
 import org.apache.pulsar.broker.PulsarServerException;
@@ -29,7 +40,16 @@ import org.apache.pulsar.broker.service.schema.SchemaRegistryService;
 import org.apache.pulsar.broker.stats.MetricsGenerator;
 import org.apache.pulsar.broker.stats.prometheus.PrometheusMetricsServlet;
 import org.apache.pulsar.broker.web.WebService;
+import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.MessageId;
+import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.common.configuration.VipStatus;
+import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
+import org.apache.pulsar.common.policies.data.Policies;
+import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.zookeeper.LocalZooKeeperConnectionService;
 import org.eclipse.jetty.servlet.ServletHolder;
 
@@ -43,6 +63,10 @@ public class KafkaService extends PulsarService {
     private final KafkaServiceConfiguration kafkaConfig;
     @Getter
     private KafkaTopicManager kafkaTopicManager;
+    @Getter
+    private GroupCoordinator groupCoordinator;
+    private Producer<ByteBuffer> groupCoordinatorTopicProducer;
+    private Reader<ByteBuffer> groupCoordinatorTopicReader;
 
     public KafkaService(KafkaServiceConfiguration config) {
         super(config);
@@ -171,6 +195,11 @@ public class KafkaService extends PulsarService {
 
             kafkaTopicManager = new KafkaTopicManager(getBrokerService());
 
+            // start group coordinator
+            if (kafkaConfig.isEnableGroupCoordinator()) {
+                startGroupCoordinator();
+            }
+
             log.info("Kafka messaging service is ready, {}, cluster={}, configs={}", bootstrapMessage,
                 kafkaConfig.getClusterName(), ReflectionToStringBuilder.toString(kafkaConfig));
         } catch (Exception e) {
@@ -179,5 +208,104 @@ public class KafkaService extends PulsarService {
         } finally {
             lock.unlock();
         }
+    }
+
+    // TODO: make group coordinator running in a distributed mode
+    private void startGroupCoordinator() throws Exception {
+        GroupConfig groupConfig = new GroupConfig(
+            kafkaConfig.getGroupMinSessionTimeoutMs(),
+            kafkaConfig.getGroupMaxSessionTimeoutMs(),
+            kafkaConfig.getGroupInitialRebalanceDelayMs()
+        );
+
+        OffsetConfig offsetConfig = OffsetConfig.builder()
+            .offsetsTopicCompressionType(CompressionType.valueOf(kafkaConfig.getOffsetsTopicCompressionCodec()))
+            .maxMetadataSize(kafkaConfig.getOffsetMetadataMaxSize())
+            .offsetsRetentionCheckIntervalMs(kafkaConfig.getOffsetsRetentionCheckIntervalMs())
+            .offsetsRetentionMs(TimeUnit.MINUTES.toMillis(kafkaConfig.getOffsetsRetentionMinutes()))
+            .build();
+
+        createKafkaMetadataNamespaceIfNeeded();
+        String offsetsTopic = createKafkaOffsetsTopic();
+
+
+        TopicName offsetsTopicName = TopicName.get(offsetsTopic);
+        String offsetsTopicPtn0 = offsetsTopicName.getPartition(0).toString();
+
+        this.groupCoordinatorTopicProducer = getClient().newProducer(Schema.BYTEBUFFER)
+            .topic(offsetsTopicPtn0)
+            // TODO: make it configurable
+            .maxPendingMessages(100000)
+            .create();
+        this.groupCoordinatorTopicReader = getClient().newReader(Schema.BYTEBUFFER)
+            .topic(offsetsTopicPtn0)
+            .startMessageId(MessageId.earliest)
+            .create();
+        this.groupCoordinator = GroupCoordinator.of(
+            this.groupCoordinatorTopicProducer,
+            this.groupCoordinatorTopicReader,
+            groupConfig,
+            offsetConfig,
+            SystemTimer.builder()
+                .executorName("group-coordinator-timer")
+                .build(),
+            Time.SYSTEM
+        );
+    }
+
+    private void createKafkaMetadataNamespaceIfNeeded() throws PulsarServerException, PulsarAdminException {
+        String kafkaMetadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
+        try {
+            getAdminClient().namespaces().getPolicies(kafkaMetadataNamespace);
+        } catch (PulsarAdminException e) {
+            if (e.getStatusCode() == Response.Status.NOT_FOUND.getStatusCode()) {
+                log.info("Kafka metadata namespace {} doesn't. Creating it ...",
+                    kafkaMetadataNamespace);
+                // if not found than create
+                try {
+                    Policies policies = new Policies();
+                    policies.retention_policies = new RetentionPolicies(-1, -1);
+                    policies.replication_clusters = new HashSet<>();
+                    policies.replication_clusters.add(kafkaConfig.getClusterName());
+                    getAdminClient().namespaces().createNamespace(
+                        kafkaMetadataNamespace,
+                        policies);
+                    log.info("Successfully created kafka metadata namespace {}.",
+                        kafkaMetadataNamespace);
+                } catch (PulsarAdminException e1) {
+                    // prevent race condition with other workers starting up
+                    if (e1.getStatusCode() != Response.Status.CONFLICT.getStatusCode()) {
+                        log.error("Failed to create kafka metadata namespace {}",
+                            kafkaMetadataNamespace, e1);
+                        throw e1;
+                    } else {
+                        log.info("Some other broker just already created kafka metadata namespace {}.",
+                            kafkaMetadataNamespace);
+                    }
+                }
+            } else {
+                log.error("Failed to get retention policy for kafka metadata namespace {}",
+                    kafkaMetadataNamespace, e);
+                throw e;
+            }
+        }
+    }
+
+    private String createKafkaOffsetsTopic() throws PulsarServerException, PulsarAdminException {
+        String offsetsTopic = kafkaConfig.getKafkaMetadataNamespace() + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
+
+        PartitionedTopicMetadata offsetsTopicMetadata =
+            getAdminClient().topics().getPartitionedTopicMetadata(offsetsTopic);
+        if (offsetsTopicMetadata.partitions <= 0) {
+            log.info("Kafka group metadata topic {} doesn't exist. Creating it ...",
+                offsetsTopic);
+            getAdminClient().topics().createPartitionedTopic(
+                offsetsTopic,
+                KafkaServiceConfiguration.DefaultOffsetsTopicNumPartitions
+            );
+            log.info("Successfully created group metadata topic {}.", offsetsTopic);
+        }
+
+        return offsetsTopic;
     }
 }

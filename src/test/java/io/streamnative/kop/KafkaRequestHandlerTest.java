@@ -72,11 +72,6 @@ public class KafkaRequestHandlerTest {
             clientId,
             correlationId);
 
-        KafkaHeaderAndRequest kopRequest = new KafkaHeaderAndRequest(
-            header,
-            apiVersionsRequest,
-            Unpooled.buffer(20));
-
         // 1. serialize request into ByteBuf
         ByteBuffer serializedRequest = apiVersionsRequest.serialize(header);
         int size = serializedRequest.remaining();
@@ -107,7 +102,8 @@ public class KafkaRequestHandlerTest {
         KafkaHeaderAndRequest kopRequest = new KafkaHeaderAndRequest(
             requestHeader,
             apiVersionsRequest,
-            Unpooled.buffer(20));
+            Unpooled.buffer(20),
+            null);
 
         ApiVersionsResponse apiVersionsResponse = ApiVersionsResponse.defaultApiVersionsResponse();
         KafkaHeaderAndResponse kopResponse = KafkaHeaderAndResponse.responseForRequest(
