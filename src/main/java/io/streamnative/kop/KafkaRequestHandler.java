@@ -154,21 +154,33 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.admin = kafkaService.getAdminClient();
     }
 
-    protected void handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest) {
+    protected CompletableFuture<ByteBuf> handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest) {
         AbstractResponse apiResponse = ApiVersionsResponse.defaultApiVersionsResponse();
-        writeAndFlushResponseToClient(apiResponse, apiVersionRequest);
-        return;
+        CompletableFuture<ByteBuf> resultFuture = new CompletableFuture<>();
+
+        resultFuture.complete(responseToByteBuf(apiResponse, apiVersionRequest));
+
+        return resultFuture;
     }
 
+    protected CompletableFuture<ByteBuf> handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest) {
+        CompletableFuture<ByteBuf> resultFuture = new CompletableFuture<>();
+        String err = String.format("Kafka API (%s) Not supported by kop server.",
+            kafkaHeaderAndRequest.getHeader().apiKey());
+        log.error(err);
 
-    protected void handleError(String error) {
-        throw new NotImplementedException("handleError");
+        AbstractResponse apiResponse = kafkaHeaderAndRequest.getRequest()
+            .getErrorResponse(new UnsupportedOperationException(err));
+        resultFuture.complete(responseToByteBuf(apiResponse, kafkaHeaderAndRequest));
+
+        return resultFuture;
     }
 
-    protected void handleTopicMetadataRequest(KafkaHeaderAndRequest metadataHar) {
+    protected CompletableFuture<ByteBuf> handleTopicMetadataRequest(KafkaHeaderAndRequest metadataHar) {
         checkArgument(metadataHar.getRequest() instanceof MetadataRequest);
 
         MetadataRequest metadataRequest = (MetadataRequest) metadataHar.getRequest();
+        CompletableFuture<ByteBuf> resultFuture = new CompletableFuture<>();
 
         // Command response for all topics
         List<TopicMetadata> allTopicMetadata = Collections.synchronizedList(Lists.newArrayList());
@@ -308,7 +320,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         clusterName,
                         MetadataResponse.NO_CONTROLLER_ID,
                         Collections.emptyList());
-                writeAndFlushResponseToClient(finalResponse, metadataHar);
+                resultFuture.complete(responseToByteBuf(finalResponse, metadataHar));
                 return;
             }
 
@@ -323,7 +335,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         clusterName,
                         MetadataResponse.NO_CONTROLLER_ID,
                         allTopicMetadata);
-                writeAndFlushResponseToClient(finalResponse, metadataHar);
+                resultFuture.complete(responseToByteBuf(finalResponse, metadataHar));
                 return;
             }
 
@@ -376,25 +388,28 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             clusterName,
                                             MetadataResponse.NO_CONTROLLER_ID,
                                             allTopicMetadata);
-                                    writeAndFlushResponseToClient(finalResponse, metadataHar);
+                                    resultFuture.complete(responseToByteBuf(finalResponse, metadataHar));
                                 }
                             }
                         })));
             });
         });
+
+        return resultFuture;
     }
 
-    protected void handleProduceRequest(KafkaHeaderAndRequest produceHar) {
+    protected CompletableFuture<ByteBuf> handleProduceRequest(KafkaHeaderAndRequest produceHar) {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
+        CompletableFuture<ByteBuf> resultFuture = new CompletableFuture<>();
 
         if (produceRequest.transactionalId() != null) {
             log.warn("[{}] Transactions not supported", ctx.channel());
 
-            writeAndFlushResponseToClient(
+            resultFuture.complete(responseToByteBuf(
                 failedResponse(produceHar, new UnsupportedOperationException("No transaction support")),
-                produceHar);
-            return;
+                produceHar));
+            return resultFuture;
         }
 
         // Ignore request.acks() and request.timeout(), which related to kafka replication in this broker.
@@ -448,9 +463,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     log.debug("[{}] Request {}: Complete handle produce.",
                         ctx.channel(), produceHar.toString());
                 }
-                writeAndFlushResponseToClient(new ProduceResponse(responses), produceHar);
+                resultFuture.complete(responseToByteBuf(new ProduceResponse(responses), produceHar));
             });
-        return;
+        return resultFuture;
     }
 
     // publish Kafka records to pulsar topic, handle callback in MessagePublishContext.
@@ -682,9 +697,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     // A simple implementation, returns this broker node.
-    protected void handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator) {
+    protected CompletableFuture<ByteBuf> handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator) {
         checkArgument(findCoordinator.getRequest() instanceof FindCoordinatorRequest);
         FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
+        CompletableFuture<ByteBuf> resultFuture = new CompletableFuture<>();
 
         if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
             AbstractResponse response;
@@ -711,15 +727,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     Node.noNode());
             }
 
-            writeAndFlushResponseToClient(response, findCoordinator);
+            resultFuture.complete(responseToByteBuf(response, findCoordinator));
         } else {
             throw new NotImplementedException("FindCoordinatorRequest not support TRANSACTION type");
         }
+
+        return resultFuture;
     }
 
-    protected void handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch) {
+    protected CompletableFuture<ByteBuf> handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch) {
         checkArgument(offsetFetch.getRequest() instanceof OffsetFetchRequest);
         OffsetFetchRequest request = (OffsetFetchRequest) offsetFetch.getRequest();
+        CompletableFuture<ByteBuf> resultFuture = new CompletableFuture<>();
 
         List<Pair<TopicPartition, CompletableFuture<PersistentTopicInternalStats>>> statsList =
             request.partitions().stream().map((topicPartition) -> Pair.of(topicPartition, admin.topics()
@@ -752,20 +771,23 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         }
                     }).collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
-                writeAndFlushResponseToClient(new OffsetFetchResponse(Errors.NONE, responses), offsetFetch);
+                resultFuture.complete(responseToByteBuf(new OffsetFetchResponse(Errors.NONE, responses), offsetFetch));
             });
+
+        return resultFuture;
     }
 
-    protected void handleListOffsetRequest(KafkaHeaderAndRequest listOffset) {
+    protected CompletableFuture<ByteBuf> handleListOffsetRequest(KafkaHeaderAndRequest listOffset) {
         throw new NotImplementedException("handleListOffsetRequest");
     }
 
-    protected void handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit) {
+    protected CompletableFuture<ByteBuf> handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit) {
         throw new NotImplementedException("handleOffsetCommitRequest");
     }
 
     private void readMessages(KafkaHeaderAndRequest fetch,
-                              Map<TopicPartition, CompletableFuture<ManagedCursor>> cursors) {
+                              Map<TopicPartition, CompletableFuture<ManagedCursor>> cursors,
+                              CompletableFuture<ByteBuf> resultFuture) {
         AtomicInteger bytesRead = new AtomicInteger(0);
         Map<TopicPartition, List<Entry>> responseValues = new ConcurrentHashMap<>();
 
@@ -774,13 +796,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ctx.channel(), fetch.getHeader());
         }
 
-        readMessagesInternal(fetch, cursors, bytesRead, responseValues);
+        readMessagesInternal(fetch, cursors, bytesRead, responseValues, resultFuture);
     }
 
     private void readMessagesInternal(KafkaHeaderAndRequest fetch,
                                       Map<TopicPartition, CompletableFuture<ManagedCursor>> cursors,
                                       AtomicInteger bytesRead,
-                                      Map<TopicPartition, List<Entry>> responseValues) {
+                                      Map<TopicPartition, List<Entry>> responseValues,
+                                      CompletableFuture<ByteBuf> resultFuture) {
         AtomicInteger entriesRead = new AtomicInteger(0);
         Map<TopicPartition, CompletableFuture<Entry>> readFutures = readAllCursorOnce(cursors);
         CompletableFuture.allOf(readFutures.values().stream().toArray(CompletableFuture<?>[]::new))
@@ -830,13 +853,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 if (allSize == 0 && entriesRead.get() == 0) {
                     log.error("[{}] Request {}: All partitions for request failed",
                         ctx.channel(), fetch.getHeader());
-                    ctx.writeAndFlush(
-                        responseToByteBuf(
-                            new FetchResponse(Errors.NONE,
-                                new LinkedHashMap<TopicPartition, PartitionData>(),
-                                ((Integer) THROTTLE_TIME_MS.defaultValue),
-                                ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
-                            fetch));
+                    resultFuture.complete(responseToByteBuf(
+                        new FetchResponse(Errors.NONE,
+                            new LinkedHashMap<TopicPartition, PartitionData>(),
+                            ((Integer) THROTTLE_TIME_MS.defaultValue),
+                            ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
+                        fetch));
                     return;
                 }
 
@@ -884,26 +906,24 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     if (allPartitionsFailed.get()) {
                         log.error("[{}] Request {}: All partitions for request failed",
                             ctx.channel(), fetch.getHeader());
-                        ctx.writeAndFlush(
-                            responseToByteBuf(
-                                new FetchResponse(Errors.UNKNOWN_SERVER_ERROR,
-                                    responseData,
-                                    ((Integer) THROTTLE_TIME_MS.defaultValue),
-                                    ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
-                                fetch));
+                        resultFuture.complete(responseToByteBuf(
+                            new FetchResponse(Errors.UNKNOWN_SERVER_ERROR,
+                                responseData,
+                                ((Integer) THROTTLE_TIME_MS.defaultValue),
+                                ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
+                            fetch));
                     } else {
-                        ctx.writeAndFlush(
-                            responseToByteBuf(
-                                new FetchResponse(
-                                    Errors.NONE,
-                                    responseData,
-                                    ((Integer) THROTTLE_TIME_MS.defaultValue),
-                                    ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
-                                fetch));
+                        resultFuture.complete(responseToByteBuf(
+                            new FetchResponse(
+                                Errors.NONE,
+                                responseData,
+                                ((Integer) THROTTLE_TIME_MS.defaultValue),
+                                ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
+                            fetch));
                     }
                 } else {
                     //need do another round read
-                    readMessagesInternal(fetch, cursors, bytesRead, responseValues);
+                    readMessagesInternal(fetch, cursors, bytesRead, responseValues, resultFuture);
                 }
             });
     }
@@ -965,9 +985,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
 
-    protected void handleFetchRequest(KafkaHeaderAndRequest fetch) {
+    protected CompletableFuture<ByteBuf> handleFetchRequest(KafkaHeaderAndRequest fetch) {
         checkArgument(fetch.getRequest() instanceof FetchRequest);
         FetchRequest request = (FetchRequest) fetch.getRequest();
+        CompletableFuture<ByteBuf> resultFuture = new CompletableFuture<>();
 
         if (log.isDebugEnabled()) {
             log.debug("[{}] Request {} Fetch request. Size: {}. Each item: ",
@@ -1003,15 +1024,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture
             .allOf(topicsAndCursor.entrySet().stream().map(Map.Entry::getValue).toArray(CompletableFuture<?>[]::new))
             .whenComplete((ignore, ex) -> {
-                readMessages(fetch, topicsAndCursor);
+                readMessages(fetch, topicsAndCursor, resultFuture);
             });
+
+        return resultFuture;
     }
 
-    protected void handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup) {
+    protected CompletableFuture<ByteBuf> handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup) {
         checkArgument(joinGroup.getRequest() instanceof JoinGroupRequest);
         checkState(kafkaService.getGroupCoordinator() != null, "");
 
         JoinGroupRequest request = (JoinGroupRequest) joinGroup.getRequest();
+        CompletableFuture<ByteBuf> resultFuture = new CompletableFuture<>();
 
         Map<String, byte[]> protocols = new HashMap<>();
         request.groupProtocols()
@@ -1046,13 +1070,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     response, joinGroup.getHeader().correlationId(), joinGroup.getHeader().clientId());
             }
 
-            writeAndFlushResponseToClient(response, joinGroup);
+            resultFuture.complete(responseToByteBuf(response, joinGroup));
         });
+
+        return resultFuture;
     }
 
-    protected void handleSyncGroupRequest(KafkaHeaderAndRequest syncGroup) {
+    protected CompletableFuture<ByteBuf> handleSyncGroupRequest(KafkaHeaderAndRequest syncGroup) {
         checkArgument(syncGroup.getRequest() instanceof HeartbeatRequest);
         SyncGroupRequest request = (SyncGroupRequest) syncGroup.getRequest();
+        CompletableFuture<ByteBuf> resultFuture = new CompletableFuture<>();
 
         kafkaService.getGroupCoordinator().handleSyncGroup(
             request.groupId(),
@@ -1067,13 +1094,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ByteBuffer.wrap(syncGroupResult.getValue())
             );
 
-            writeAndFlushResponseToClient(response, syncGroup);
+            resultFuture.complete(responseToByteBuf(response, syncGroup));
         });
+
+        return resultFuture;
     }
 
-    protected void handleHeartbeatRequest(KafkaHeaderAndRequest heartbeat) {
+    protected CompletableFuture<ByteBuf> handleHeartbeatRequest(KafkaHeaderAndRequest heartbeat) {
         checkArgument(heartbeat.getRequest() instanceof HeartbeatRequest);
         HeartbeatRequest request = (HeartbeatRequest) heartbeat.getRequest();
+
+        CompletableFuture<ByteBuf> resultFuture = new CompletableFuture<>();
 
         // let the coordinator to handle heartbeat
         kafkaService.getGroupCoordinator().handleHeartbeat(
@@ -1088,14 +1119,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     response, heartbeat.getHeader().correlationId(), heartbeat.getHeader().clientId());
             }
 
-            writeAndFlushResponseToClient(response, heartbeat);
+            resultFuture.complete(responseToByteBuf(response, heartbeat));
         });
+        return resultFuture;
     }
 
     @Override
-    protected void handleLeaveGroupRequest(KafkaHeaderAndRequest leaveGroup) {
+    protected CompletableFuture<ByteBuf> handleLeaveGroupRequest(KafkaHeaderAndRequest leaveGroup) {
         checkArgument(leaveGroup.getRequest() instanceof LeaveGroupRequest);
         LeaveGroupRequest request = (LeaveGroupRequest) leaveGroup.getRequest();
+        CompletableFuture<ByteBuf> resultFuture = new CompletableFuture<>();
 
         // let the coordinator to handle heartbeat
         kafkaService.getGroupCoordinator().handleLeaveGroup(
@@ -1104,14 +1137,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         ).thenAccept(errors -> {
             LeaveGroupResponse response = new LeaveGroupResponse(errors);
 
-            writeAndFlushResponseToClient(response, leaveGroup);
+            resultFuture.complete(responseToByteBuf(response, leaveGroup));
         });
+
+        return resultFuture;
     }
 
     @Override
-    protected void handleDescribeGroupRequest(KafkaHeaderAndRequest describeGroup) {
+    protected CompletableFuture<ByteBuf> handleDescribeGroupRequest(KafkaHeaderAndRequest describeGroup) {
         checkArgument(describeGroup.getRequest() instanceof DescribeGroupsRequest);
         DescribeGroupsRequest request = (DescribeGroupsRequest) describeGroup.getRequest();
+        CompletableFuture<ByteBuf> resultFuture = new CompletableFuture<>();
 
         // let the coordinator to handle heartbeat
         Map<String, GroupMetadata> groups = request.groupIds().stream()
@@ -1150,24 +1186,28 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         DescribeGroupsResponse response = new DescribeGroupsResponse(
             groups
         );
-        writeAndFlushResponseToClient(response, describeGroup);
+        resultFuture.complete(responseToByteBuf(response, describeGroup));
+
+        return resultFuture;
     }
 
     @Override
-    protected void handleListGroupsRequest(KafkaHeaderAndRequest listGroups) {
+    protected CompletableFuture<ByteBuf> handleListGroupsRequest(KafkaHeaderAndRequest listGroups) {
         throw new NotImplementedException("Not implemented yet");
     }
 
     @Override
-    protected void handleDeleteGroupsRequest(KafkaHeaderAndRequest deleteGroups) {
+    protected CompletableFuture<ByteBuf> handleDeleteGroupsRequest(KafkaHeaderAndRequest deleteGroups) {
         checkArgument(deleteGroups.getRequest() instanceof DescribeGroupsRequest);
         DeleteGroupsRequest request = (DeleteGroupsRequest) deleteGroups.getRequest();
+        CompletableFuture<ByteBuf> resultFuture = new CompletableFuture<>();
 
         Map<String, Errors> deleteResult = kafkaService.getGroupCoordinator().handleDeleteGroups(request.groups());
         DeleteGroupsResponse response = new DeleteGroupsResponse(
             deleteResult
         );
-        writeAndFlushResponseToClient(response, deleteGroups);
+        resultFuture.complete(responseToByteBuf(response, deleteGroups));
+        return resultFuture;
     }
 
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {

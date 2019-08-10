@@ -16,6 +16,7 @@ package io.streamnative.kop;
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.kafka.common.protocol.ApiKeys.API_VERSIONS;
 
+import com.google.common.collect.Queues;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -24,6 +25,9 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import java.io.Closeable;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.types.Struct;
@@ -40,6 +44,11 @@ import org.apache.kafka.common.requests.ResponseHeader;
 public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected ChannelHandlerContext ctx;
     protected SocketAddress remoteAddress;
+
+    // Queue to make request get response in order.
+    private final ConcurrentHashMap<Channel, Queue<CompletableFuture<ByteBuf>>> responsesQueue
+        = new ConcurrentHashMap();
+
     // TODO: do we need keep alive? if need, messageReceived() before every command is need?
 
     public KafkaCommandDecoder() {
@@ -89,13 +98,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    protected void writeAndFlushResponseToClient(AbstractResponse apiResponse, KafkaHeaderAndRequest request) {
-        if (log.isDebugEnabled()) {
-            log.debug("Write kafka cmd response back to client. request: {}", request.getHeader());
-        }
-        ctx.writeAndFlush(responseToByteBuf(apiResponse, request));
-    }
-
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         // Get a buffer that contains the full frame
@@ -107,6 +109,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             remoteAddress = channel.remoteAddress();
         }
 
+        CompletableFuture<ByteBuf> responseFuture;
+
+
         try (KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress)){
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Received kafka cmd {}",
@@ -116,90 +121,125 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
             switch (kafkaHeaderAndRequest.getHeader().apiKey()) {
                 case API_VERSIONS:
-                    handleApiVersionsRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleApiVersionsRequest(kafkaHeaderAndRequest);
                     break;
                 case METADATA:
-                    handleTopicMetadataRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleTopicMetadataRequest(kafkaHeaderAndRequest);
                     break;
                 case PRODUCE:
-                    handleProduceRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleProduceRequest(kafkaHeaderAndRequest);
                     break;
                 case FIND_COORDINATOR:
-                    handleFindCoordinatorRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleFindCoordinatorRequest(kafkaHeaderAndRequest);
                     break;
                 case LIST_OFFSETS:
-                    handleListOffsetRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleListOffsetRequest(kafkaHeaderAndRequest);
                     break;
                 case OFFSET_FETCH:
-                    handleOffsetFetchRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleOffsetFetchRequest(kafkaHeaderAndRequest);
                     break;
                 case OFFSET_COMMIT:
-                    handleOffsetCommitRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleOffsetCommitRequest(kafkaHeaderAndRequest);
                     break;
                 case FETCH:
-                    handleFetchRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleFetchRequest(kafkaHeaderAndRequest);
                     break;
                 case JOIN_GROUP:
-                    handleJoinGroupRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleJoinGroupRequest(kafkaHeaderAndRequest);
                     break;
                 case SYNC_GROUP:
-                    handleSyncGroupRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleSyncGroupRequest(kafkaHeaderAndRequest);
                     break;
                 case HEARTBEAT:
-                    handleHeartbeatRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleHeartbeatRequest(kafkaHeaderAndRequest);
                     break;
                 case LEAVE_GROUP:
-                    handleLeaveGroupRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleLeaveGroupRequest(kafkaHeaderAndRequest);
                     break;
                 case DESCRIBE_GROUPS:
-                    handleDescribeGroupRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleDescribeGroupRequest(kafkaHeaderAndRequest);
                     break;
                 case LIST_GROUPS:
-                    handleListGroupsRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleListGroupsRequest(kafkaHeaderAndRequest);
                     break;
                 case DELETE_GROUPS:
-                    handleDeleteGroupsRequest(kafkaHeaderAndRequest);
+                    responseFuture = handleDeleteGroupsRequest(kafkaHeaderAndRequest);
                     break;
                 default:
-                    String err = String.format("Kafka API (%s) Not supported by kop server.",
-                        kafkaHeaderAndRequest.getHeader().apiKey());
-                    log.error(err);
-                    handleError(err);
+                    responseFuture = handleError(kafkaHeaderAndRequest);
+            }
+
+            responsesQueue.compute(channel, (key, queue) -> {
+                if (queue == null) {
+                    Queue<CompletableFuture<ByteBuf>> newQueue = Queues.newConcurrentLinkedQueue();;
+                    newQueue.add(responseFuture);
+                    return newQueue;
+                } else {
+                    queue.add(responseFuture);
+                    return queue;
+                }
+            });
+
+            responseFuture.whenComplete((response, e) -> {
+                writeAndFlushResponseToClient(channel);
+            });
+        }
+    }
+
+    // Write and flush continuously completed request back through channel.
+    // This is to make sure request get response in the same order.
+    protected void writeAndFlushResponseToClient(Channel channel) {
+        Queue<CompletableFuture<ByteBuf>> responseQueue = responsesQueue.get(channel);
+
+        // loop from first response.
+        while (responseQueue != null && responseQueue.peek() != null && responseQueue.peek().isDone()) {
+            CompletableFuture<ByteBuf> response = responseQueue.remove();
+            try {
+                ByteBuf result = response.join();
+//                if (log.isDebugEnabled()) {
+//                    log.debug("Write kafka cmd response back to client. request: {}", request.getHeader());
+//                }
+
+                channel.writeAndFlush(result);
+            } catch (Exception e) {
+                // should not comes here.
+                log.error("error to get Response ByteBuf:", e);
+                throw e;
             }
         }
     }
 
-    protected abstract void handleError(String error);
+    protected abstract CompletableFuture<ByteBuf> handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest);
 
-    protected abstract void handleApiVersionsRequest(KafkaHeaderAndRequest apiVersion);
+    protected abstract CompletableFuture<ByteBuf> handleApiVersionsRequest(KafkaHeaderAndRequest apiVersion);
 
-    protected abstract void handleTopicMetadataRequest(KafkaHeaderAndRequest metadata);
+    protected abstract CompletableFuture<ByteBuf> handleTopicMetadataRequest(KafkaHeaderAndRequest metadata);
 
-    protected abstract void handleProduceRequest(KafkaHeaderAndRequest produce);
+    protected abstract CompletableFuture<ByteBuf> handleProduceRequest(KafkaHeaderAndRequest produce);
 
-    protected abstract void handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator);
+    protected abstract CompletableFuture<ByteBuf> handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator);
 
-    protected abstract void handleListOffsetRequest(KafkaHeaderAndRequest listOffset);
+    protected abstract CompletableFuture<ByteBuf> handleListOffsetRequest(KafkaHeaderAndRequest listOffset);
 
-    protected abstract void handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch);
+    protected abstract CompletableFuture<ByteBuf> handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch);
 
-    protected abstract void handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit);
+    protected abstract CompletableFuture<ByteBuf> handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit);
 
-    protected abstract void handleFetchRequest(KafkaHeaderAndRequest fetch);
+    protected abstract CompletableFuture<ByteBuf> handleFetchRequest(KafkaHeaderAndRequest fetch);
 
-    protected abstract void handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup);
+    protected abstract CompletableFuture<ByteBuf> handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup);
 
-    protected abstract void handleSyncGroupRequest(KafkaHeaderAndRequest syncGroup);
+    protected abstract CompletableFuture<ByteBuf> handleSyncGroupRequest(KafkaHeaderAndRequest syncGroup);
 
-    protected abstract void handleHeartbeatRequest(KafkaHeaderAndRequest heartbeat);
+    protected abstract CompletableFuture<ByteBuf> handleHeartbeatRequest(KafkaHeaderAndRequest heartbeat);
 
-    protected abstract void handleLeaveGroupRequest(KafkaHeaderAndRequest leaveGroup);
+    protected abstract CompletableFuture<ByteBuf> handleLeaveGroupRequest(KafkaHeaderAndRequest leaveGroup);
 
-    protected abstract void handleDescribeGroupRequest(KafkaHeaderAndRequest describeGroup);
+    protected abstract CompletableFuture<ByteBuf> handleDescribeGroupRequest(KafkaHeaderAndRequest describeGroup);
 
-    protected abstract void handleListGroupsRequest(KafkaHeaderAndRequest listGroups);
+    protected abstract CompletableFuture<ByteBuf> handleListGroupsRequest(KafkaHeaderAndRequest listGroups);
 
-    protected abstract void handleDeleteGroupsRequest(KafkaHeaderAndRequest deleteGroups);
+    protected abstract CompletableFuture<ByteBuf> handleDeleteGroupsRequest(KafkaHeaderAndRequest deleteGroups);
 
     static class KafkaHeaderAndRequest implements Closeable {
 
