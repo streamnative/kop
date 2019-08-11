@@ -35,7 +35,7 @@ Configuration:
 
     Logger:
       - name: io.streamnative.kop
-        level: debug
+        level: trace
         additivity: false
         AppenderRef:
           - ref: Console

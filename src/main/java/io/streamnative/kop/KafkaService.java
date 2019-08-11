@@ -229,7 +229,6 @@ public class KafkaService extends PulsarService {
         createKafkaMetadataNamespaceIfNeeded();
         String offsetsTopic = createKafkaOffsetsTopic();
 
-
         TopicName offsetsTopicName = TopicName.get(offsetsTopic);
         String offsetsTopicPtn0 = offsetsTopicName.getPartition(0).toString();
 
@@ -252,6 +251,8 @@ public class KafkaService extends PulsarService {
                 .build(),
             Time.SYSTEM
         );
+
+        this.groupCoordinator.startup(false);
     }
 
     private void createKafkaMetadataNamespaceIfNeeded() throws PulsarServerException, PulsarAdminException {

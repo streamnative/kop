@@ -782,6 +782,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected CompletableFuture<ResponseAndRequest> handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit) {
         throw new NotImplementedException("handleOffsetCommitRequest");
+
     }
 
     private void readMessages(KafkaHeaderAndRequest fetch,
@@ -1031,7 +1032,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected CompletableFuture<ResponseAndRequest> handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup) {
         checkArgument(joinGroup.getRequest() instanceof JoinGroupRequest);
-        checkState(kafkaService.getGroupCoordinator() != null, "");
+        checkState(kafkaService.getGroupCoordinator() != null,
+            "Group Coordinator not started");
 
         JoinGroupRequest request = (JoinGroupRequest) joinGroup.getRequest();
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
@@ -1065,7 +1067,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             );
 
             if (log.isTraceEnabled()) {
-                log.trace("Sending join group response %s for correlation id %d to client %s.",
+                log.trace("Sending join group response {} for correlation id {} to client {}.",
                     response, joinGroup.getHeader().correlationId(), joinGroup.getHeader().clientId());
             }
 
@@ -1076,7 +1078,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     protected CompletableFuture<ResponseAndRequest> handleSyncGroupRequest(KafkaHeaderAndRequest syncGroup) {
-        checkArgument(syncGroup.getRequest() instanceof HeartbeatRequest);
+        checkArgument(syncGroup.getRequest() instanceof SyncGroupRequest);
         SyncGroupRequest request = (SyncGroupRequest) syncGroup.getRequest();
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
 

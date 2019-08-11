@@ -896,7 +896,8 @@ public class GroupCoordinator {
             return Optional.of(Errors.COORDINATOR_NOT_AVAILABLE);
         } else if (groupManager.isGroupLoading(groupId)) {
             return Optional.of(Errors.COORDINATOR_LOAD_IN_PROGRESS);
-        } else if (!groupManager.isGroupLocal(groupId)) {
+        } else if (!groupManager.isGroupLocal(groupId)
+            && api != ApiKeys.JOIN_GROUP && api != ApiKeys.SYNC_GROUP) {
             return Optional.of(Errors.NOT_COORDINATOR);
         } else {
             return Optional.empty();
