@@ -696,7 +696,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     // A simple implementation, returns this broker node.
-    protected CompletableFuture<ResponseAndRequest> handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator) {
+    protected CompletableFuture<ResponseAndRequest>
+    handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator) {
         checkArgument(findCoordinator.getRequest() instanceof FindCoordinatorRequest);
         FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
@@ -770,7 +771,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         }
                     }).collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
-                resultFuture.complete(ResponseAndRequest.of(new OffsetFetchResponse(Errors.NONE, responses), offsetFetch));
+                resultFuture.complete(ResponseAndRequest
+                    .of(new OffsetFetchResponse(Errors.NONE, responses), offsetFetch));
             });
 
         return resultFuture;

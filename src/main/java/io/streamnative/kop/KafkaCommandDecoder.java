@@ -47,7 +47,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected SocketAddress remoteAddress;
 
     // Queue to make request get response in order.
-    private final ConcurrentHashMap<Channel, Queue<CompletableFuture<ResponseAndRequest>>> responsesQueue = new ConcurrentHashMap();
+    private final ConcurrentHashMap<Channel, Queue<CompletableFuture<ResponseAndRequest>>> responsesQueue =
+        new ConcurrentHashMap();
 
     // TODO: do we need keep alive? if need, messageReceived() before every command is need?
 
@@ -171,7 +172,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
             responsesQueue.compute(channel, (key, queue) -> {
                 if (queue == null) {
-                    Queue<CompletableFuture<ResponseAndRequest>> newQueue = Queues.newConcurrentLinkedQueue();;
+                    Queue<CompletableFuture<ResponseAndRequest>> newQueue = Queues.newConcurrentLinkedQueue();
                     newQueue.add(responseFuture);
                     return newQueue;
                 } else {
@@ -212,37 +213,53 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleApiVersionsRequest(KafkaHeaderAndRequest apiVersion);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleApiVersionsRequest(KafkaHeaderAndRequest apiVersion);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleTopicMetadataRequest(KafkaHeaderAndRequest metadata);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleTopicMetadataRequest(KafkaHeaderAndRequest metadata);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleProduceRequest(KafkaHeaderAndRequest produce);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleProduceRequest(KafkaHeaderAndRequest produce);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleListOffsetRequest(KafkaHeaderAndRequest listOffset);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleListOffsetRequest(KafkaHeaderAndRequest listOffset);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleFetchRequest(KafkaHeaderAndRequest fetch);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleFetchRequest(KafkaHeaderAndRequest fetch);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleSyncGroupRequest(KafkaHeaderAndRequest syncGroup);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleSyncGroupRequest(KafkaHeaderAndRequest syncGroup);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleHeartbeatRequest(KafkaHeaderAndRequest heartbeat);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleHeartbeatRequest(KafkaHeaderAndRequest heartbeat);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleLeaveGroupRequest(KafkaHeaderAndRequest leaveGroup);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleLeaveGroupRequest(KafkaHeaderAndRequest leaveGroup);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleDescribeGroupRequest(KafkaHeaderAndRequest describeGroup);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleDescribeGroupRequest(KafkaHeaderAndRequest describeGroup);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleListGroupsRequest(KafkaHeaderAndRequest listGroups);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleListGroupsRequest(KafkaHeaderAndRequest listGroups);
 
-    protected abstract CompletableFuture<ResponseAndRequest> handleDeleteGroupsRequest(KafkaHeaderAndRequest deleteGroups);
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleDeleteGroupsRequest(KafkaHeaderAndRequest deleteGroups);
 
     static class KafkaHeaderAndRequest implements Closeable {
 
@@ -349,7 +366,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    protected static class ResponseAndRequest {
+    /**
+     * A class that stores Kafka request and its related response.
+     */
+    static class ResponseAndRequest {
         @Getter
         private AbstractResponse response;
         @Getter

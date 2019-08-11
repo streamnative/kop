@@ -14,7 +14,6 @@
 package io.streamnative.kop;
 
 
-import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
@@ -23,7 +22,6 @@ import static org.testng.Assert.assertTrue;
 import com.google.common.collect.Sets;
 import java.time.Duration;
 import java.util.Base64;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -239,59 +237,6 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         // no more records
         ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
         assertTrue(records.isEmpty());
-    }
-
-    @Test(timeOut = 10000)
-    public void testKafkaConsume() throws Exception {
-        int partitionNumber = 1;
-        String topicName = "testKafkaConsume" + partitionNumber;
-
-        // TODO: without this, it will get created internal, and will cause response order change, and will fail.
-        kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, partitionNumber);
-
-        // 1. use pulsar producer to produce.
-        int totalMsgs = 10;
-        String messageStrPrefix = "Message_Kop_PulsarProduceKafkaConsume_" + partitionNumber + "_";
-
-        ProducerBuilder<byte[]> producerBuilder = pulsarClient.newProducer()
-            .topic(topicName + PARTITIONED_TOPIC_SUFFIX + 0)
-            .enableBatching(false);
-
-        @Cleanup
-        Producer<byte[]> producer = producerBuilder.create();
-        for (int i = 0; i < totalMsgs; i++) {
-            String message = messageStrPrefix + i;
-            producer.newMessage()
-                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
-                .value(message.getBytes())
-                .send();
-        }
-
-        log.info("Created producer: {}", producer.getTopic());
-
-
-        // 2. use kafka consumer to consume.
-        @Cleanup
-        KConsumer kConsumer = new KConsumer(topicName, getKafkaBrokerPort());
-        List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
-            .mapToObj(i -> new TopicPartition(topicName, i)).collect(Collectors.toList());
-        log.info("Partition size: {}", topicPartitions.size());
-//        kConsumer.getConsumer().assign(topicPartitions);
-
-        kConsumer.getConsumer().subscribe(Collections.singletonList(topicName));
-
-        int i = 0;
-        for (; i < totalMsgs;) {
-            log.debug("start poll message: {}", i);
-            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
-            for (ConsumerRecord<Integer, String> record : records) {
-                Integer key = record.key();
-                assertEquals(messageStrPrefix + key.toString(), record.value());
-                log.debug("Kafka consumer get message: {}, key: {} at offset {}",
-                    record.key(), record.value(), record.offset());
-                i++;
-            }
-        }
     }
 
 }
