@@ -348,7 +348,16 @@ public class GroupMetadataManager {
             .value(records.buffer())
             .eventTime(timestamp)
             .sendAsync()
-            .thenApply(msgId -> Errors.NONE)
+            .thenApply(msgId -> {
+                if (!isGroupLocal(group.groupId())) {
+                    if (log.isDebugEnabled()) {
+                        log.warn("add partition ownership for group {}",
+                            group.groupId());
+                    }
+                    addPartitionOwnership(partitionFor(group.groupId()));
+                }
+                return Errors.NONE;
+            })
             .exceptionally(cause -> Errors.COORDINATOR_NOT_AVAILABLE);
     }
 

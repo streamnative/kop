@@ -212,6 +212,7 @@ public class KafkaService extends PulsarService {
     }
 
     // TODO: make group coordinator running in a distributed mode
+    //      https://github.com/streamnative/kop/issues/32
     private void startGroupCoordinator() throws Exception {
         GroupConfig groupConfig = new GroupConfig(
             kafkaConfig.getGroupMinSessionTimeoutMs(),

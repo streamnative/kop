@@ -47,7 +47,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected SocketAddress remoteAddress;
 
     // Queue to make request get response in order.
-    private final ConcurrentHashMap<Channel, Queue<CompletableFuture<ResponseAndRequest>>> responsesQueue =
+    protected final ConcurrentHashMap<Channel, Queue<CompletableFuture<ResponseAndRequest>>> responsesQueue =
         new ConcurrentHashMap();
 
     // TODO: do we need keep alive? if need, messageReceived() before every command is need?
