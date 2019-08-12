@@ -105,7 +105,7 @@ bin/kop kafka-broker
 
 KOP uses log4j2 to handle logs, the config file is [log4j2.yaml](https://github.com/streamnative/kop/blob/master/conf/log4j2.yaml).
 
-#### Run Kafka client examples to verify
+#### Verify with Kafka client examples
 
 1. Build Kafka client example.
 
