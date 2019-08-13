@@ -26,6 +26,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.kop.coordinator.group.GroupMetadata.GroupSummary;
+import io.streamnative.kop.offset.OffsetAndMetadata;
 import io.streamnative.kop.utils.CoreUtils;
 import io.streamnative.kop.utils.MessageIdUtils;
 import java.io.IOException;
@@ -90,6 +91,8 @@ import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
+import org.apache.kafka.common.requests.OffsetCommitRequest;
+import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetFetchRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
@@ -783,8 +786,28 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     protected CompletableFuture<ResponseAndRequest> handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit) {
-        throw new NotImplementedException("handleOffsetCommitRequest");
+        checkArgument(offsetCommit.getRequest() instanceof OffsetCommitRequest);
+        checkState(kafkaService.getGroupCoordinator() != null,
+            "Group Coordinator not started");
 
+        OffsetCommitRequest request = (OffsetCommitRequest) offsetCommit.getRequest();
+        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+
+        kafkaService.getGroupCoordinator().handleCommitOffsets(
+            request.groupId(),
+            request.memberId(),
+            request.generationId(),
+            CoreUtils.mapValue(
+                request.offsetData(),
+                (partitionData) ->
+                    OffsetAndMetadata.apply(partitionData.offset, partitionData.metadata, partitionData.timestamp)
+            )
+        ).thenAccept(offsetCommitResult -> {
+            OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
+            resultFuture.complete(ResponseAndRequest.of(response, offsetCommit));
+        });
+
+        return resultFuture;
     }
 
     private void readMessages(KafkaHeaderAndRequest fetch,
