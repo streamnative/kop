@@ -34,10 +34,13 @@ import org.testng.annotations.Test;
 public class KafkaServiceConfigurationTest {
     @Test
     public void testKopNamespace() {
-        String name = "koptenant/kopns";
+        String ts = "koptenant";
+        String ns = "kopns";
         KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
-        configuration.setKafkaNamespace(name);
-        assertEquals(name, configuration.getKafkaNamespace());
+        configuration.setKafkaTenant(ts);
+        configuration.setKafkaNamespace(ns);
+        assertEquals(ts, configuration.getKafkaTenant());
+        assertEquals(ns, configuration.getKafkaNamespace());
     }
 
     @Test
