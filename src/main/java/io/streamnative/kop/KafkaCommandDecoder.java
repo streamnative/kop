@@ -95,6 +95,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 .getResponse()
                 .serialize(kafkaHeaderAndResponse.getApiVersion(), kafkaHeaderAndResponse.getHeader());
 
+            // Already converted the ByteBuf into ByteBuffer now, release ByteBuf
+            kafkaHeaderAndResponse.buffer.release();
             return Unpooled.wrappedBuffer(serialized);
         }
     }
