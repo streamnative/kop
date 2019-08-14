@@ -171,7 +171,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected CompletableFuture<ResponseAndRequest> handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest) {
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
-        String err = String.format("Kafka API (%s) Not supported by kop server.",
+        String err = String.format("Kafka API ({}) Not supported by kop server.",
             kafkaHeaderAndRequest.getHeader().apiKey());
         log.error(err);
 
@@ -1185,7 +1185,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             HeartbeatResponse response = new HeartbeatResponse(errors);
 
             if (log.isTraceEnabled()) {
-                log.trace("Sending heartbeat response %s for correlation id %d to client %s.",
+                log.trace("Sending heartbeat response {} for correlation id {} to client {}.",
                     response, heartbeat.getHeader().correlationId(), heartbeat.getHeader().clientId());
             }
 

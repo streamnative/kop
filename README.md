@@ -117,11 +117,11 @@ mvn clean package
 2. Run a unlimited consumer.
 
 ```
-bin/java-consumer-demo.sh`
+bin/java-consumer-demo.sh
 ```
 
 3. Run a unlimited producer.
 
 ```
-bin/java-producer-demo.sh`
+bin/java-producer-demo.sh
 ```
