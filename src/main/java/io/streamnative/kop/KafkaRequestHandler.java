@@ -893,30 +893,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         allSize, maxBytes, minBytes, new Date(endTime));
                 }
 
-                // No entries get from all topics. return earlier.
-                if (allSize == 0 && entriesRead.get() == 0) {
-                    log.warn("[{}] Request {}: All partitions for request get 0 entry",
-                        ctx.channel(), fetch.getHeader());
-
-                    try {
-                        Thread.sleep(waitTime);
-                    } catch (Exception e) {
-                        log.error("[{}] Request {}: error while sleep.",
-                            ctx.channel(), fetch.getHeader(), e);
-                    }
-
-                    resultFuture.complete(ResponseAndRequest.of(
-                        new FetchResponse(Errors.NONE,
-                            new LinkedHashMap<TopicPartition, PartitionData>(),
-                            ((Integer) THROTTLE_TIME_MS.defaultValue),
-                            ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
-                        fetch));
-                    return;
-                }
-
+                // all partitions read no entry, return earlier;
                 // reach maxTime, return;
                 // reach minBytes if no endTime, return;
-                if ((endTime > 0 && endTime <= System.currentTimeMillis())
+                if ((allSize == 0 && entriesRead.get() == 0)
+                    || (endTime > 0 && endTime <= System.currentTimeMillis())
                     || allSize > minBytes
                     || allSize > maxBytes){
                     if (log.isDebugEnabled()) {
@@ -926,7 +907,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                     LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData = new LinkedHashMap<>();
 
-                    AtomicBoolean allPartitionsFailed = new AtomicBoolean(true);
+                    AtomicBoolean allPartitionsNoEntry = new AtomicBoolean(true);
                     responseValues.forEach((topicPartition, entries) -> {
                         final FetchResponse.PartitionData partitionData;
                         if (entries.isEmpty()) {
@@ -938,7 +919,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 null,
                                 MemoryRecords.EMPTY);
                         } else {
-                            allPartitionsFailed.set(false);
+                            allPartitionsNoEntry.set(false);
                             Entry entry = entries.get(entries.size() - 1);
                             long entryOffset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
                             long highWatermark = entryOffset + cursors.get(topicPartition).join().getNumberOfEntries();
@@ -955,11 +936,20 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         responseData.put(topicPartition, partitionData);
                     });
 
-                    if (allPartitionsFailed.get()) {
-                        log.error("[{}] Request {}: All partitions for request failed",
+                    if (allPartitionsNoEntry.get()) {
+                        log.error("[{}] Request {}: All partitions for request read 0 entry",
                             ctx.channel(), fetch.getHeader());
+
+                        // returned earlier, sleep for waitTime
+                        try {
+                            Thread.sleep(waitTime);
+                        } catch (Exception e) {
+                            log.error("[{}] Request {}: error while sleep.",
+                                ctx.channel(), fetch.getHeader(), e);
+                        }
+
                         resultFuture.complete(ResponseAndRequest.of(
-                            new FetchResponse(Errors.UNKNOWN_SERVER_ERROR,
+                            new FetchResponse(Errors.NONE,
                                 responseData,
                                 ((Integer) THROTTLE_TIME_MS.defaultValue),
                                 ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
