@@ -42,6 +42,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -88,6 +89,8 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
 import org.apache.kafka.common.requests.LeaveGroupResponse;
+import org.apache.kafka.common.requests.ListOffsetRequest;
+import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
@@ -745,16 +748,37 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected CompletableFuture<ResponseAndRequest> handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch) {
         checkArgument(offsetFetch.getRequest() instanceof OffsetFetchRequest);
         OffsetFetchRequest request = (OffsetFetchRequest) offsetFetch.getRequest();
+        checkState(kafkaService.getGroupCoordinator() != null,
+            "Group Coordinator not started");
+        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+
+        KeyValue<Errors, Map<TopicPartition, OffsetFetchResponse.PartitionData>> keyValue =
+            kafkaService.getGroupCoordinator().handleFetchOffsets(
+                request.groupId(),
+                Optional.of(request.partitions())
+            );
+
+        resultFuture.complete(ResponseAndRequest
+            .of(new OffsetFetchResponse(keyValue.getKey(), keyValue.getValue()), offsetFetch));
+
+        return resultFuture;
+    }
+
+    protected CompletableFuture<ResponseAndRequest> handleListOffsetRequest(KafkaHeaderAndRequest listOffset) {
+        checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
+        ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
+
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
 
         List<Pair<TopicPartition, CompletableFuture<PersistentTopicInternalStats>>> statsList =
-            request.partitions().stream().map((topicPartition) -> Pair.of(topicPartition, admin.topics()
-                .getInternalStatsAsync(pulsarTopicName(topicPartition).toString())))
+            request.partitionTimestamps().entrySet().stream()
+                .map((topicPartition) -> Pair.of(topicPartition.getKey(), admin.topics()
+                    .getInternalStatsAsync(pulsarTopicName(topicPartition.getKey()).toString())))
                 .collect(Collectors.toList());
 
         CompletableFuture.allOf(statsList.stream().map(entry -> entry.getValue()).toArray(CompletableFuture<?>[]::new))
             .whenComplete((ignore, ex) -> {
-                Map<TopicPartition, OffsetFetchResponse.PartitionData> responses =
+                Map<TopicPartition, ListOffsetResponse.PartitionData> responses =
                     statsList.stream().map((v) -> {
                         TopicPartition key = v.getKey();
                         try {
@@ -764,29 +788,23 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                             if (log.isDebugEnabled()) {
                                 log.debug("[{}] Request {}:  topic {}  Return offset: {}, ledgerId: {}.",
-                                    ctx.channel(), offsetFetch.getHeader(), key, offset, ledgers.get(0).ledgerId);
+                                    ctx.channel(), listOffset.getHeader(), key, offset, ledgers.get(0).ledgerId);
                             }
-                            return Pair.of(key, new OffsetFetchResponse.PartitionData(
-                                offset, OffsetFetchResponse.NO_METADATA, Errors.NONE));
+                            return Pair.of(key, new ListOffsetResponse.PartitionData(
+                                Errors.NONE, -1L, offset));
                         } catch (Exception e) {
                             log.error("[{}] Request {}: topic {} meet error of getInternalStats.",
-                                ctx.channel(), offsetFetch.getHeader(), key, e);
-                            return Pair.of(key, new OffsetFetchResponse.PartitionData(
-                                OffsetFetchResponse.INVALID_OFFSET,
-                                OffsetFetchResponse.NO_METADATA,
-                                Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                                ctx.channel(), listOffset.getHeader(), key, e);
+                            return Pair.of(key, new ListOffsetResponse.PartitionData(
+                                Errors.UNKNOWN_TOPIC_OR_PARTITION, -1L, -1L));
                         }
                     }).collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
                 resultFuture.complete(ResponseAndRequest
-                    .of(new OffsetFetchResponse(Errors.NONE, responses), offsetFetch));
+                    .of(new ListOffsetResponse(responses), listOffset));
             });
 
         return resultFuture;
-    }
-
-    protected CompletableFuture<ResponseAndRequest> handleListOffsetRequest(KafkaHeaderAndRequest listOffset) {
-        throw new NotImplementedException("handleListOffsetRequest");
     }
 
     protected CompletableFuture<ResponseAndRequest> handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit) {

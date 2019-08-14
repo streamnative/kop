@@ -188,7 +188,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         kConsumer.getConsumer().assign(topicPartitions);
 
         int i = 0;
-        for (; i < totalMsgs;) {
+        while (i < totalMsgs) {
             log.debug("start poll message: {}", i);
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
@@ -241,7 +241,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         kConsumer.getConsumer().assign(topicPartitions);
 
         int i = 0;
-        for (; i < totalMsgs;) {
+        while (i < totalMsgs) {
             log.debug("start poll message: {}", i);
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
@@ -260,12 +260,8 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
     }
 
 
-    //        @Test(timeOut = 20000, dataProvider = "partitions")
-    //    public void testPulsarProduceKafkaConsume2(int partitionNumber) throws Exception {
-    @Test(timeOut = 20000)
-    public void testPulsarProduceKafkaConsume2() throws Exception {
-        int partitionNumber = 1;
-
+    @Test(timeOut = 20000, dataProvider = "partitions")
+    public void testPulsarProduceKafkaConsume2(int partitionNumber) throws Exception {
         String topicName = "kopPulsarProduceKafkaConsume2" + partitionNumber;
         String pulsarTopicName = "persistent://public/default/" + topicName;
 
@@ -290,18 +286,13 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
                 .send();
         }
 
-        // 2. use kafka consumer to consume.
+        // 2. use kafka consumer to consume, use consumer group, offset auto-commit
         @Cleanup
         KConsumer kConsumer = new KConsumer(topicName, getKafkaBrokerPort(), true);
-//        List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
-//            .mapToObj(i -> new TopicPartition(topicName, i)).collect(Collectors.toList());
-//        log.info("Partition size: {}", topicPartitions.size());
-//        kConsumer.getConsumer().assign(topicPartitions);
-
         kConsumer.getConsumer().subscribe(Collections.singletonList(topicName));
 
         int i = 0;
-        for (; i < totalMsgs/2;) {
+        while (i < totalMsgs / 2) {
             log.debug("start poll message: {}", i);
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
@@ -314,23 +305,20 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         }
         kConsumer.close();
 
-        log.info("++++ start another consumer");
+        // wait for offset commit complete
+        Thread.sleep(1000);
+
+        log.info("start another consumer, will consume from the left place of first consumer");
         KConsumer kConsumer2 = new KConsumer(topicName, getKafkaBrokerPort(), true);
-//        List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
-//            .mapToObj(i -> new TopicPartition(topicName, i)).collect(Collectors.toList());
-//        log.info("Partition size: {}", topicPartitions.size());
-//        kConsumer.getConsumer().assign(topicPartitions);
 
         kConsumer2.getConsumer().subscribe(Collections.singletonList(topicName));
-
-//        int i = 0;
-        while(i < 20) {
-            log.debug("++++ start poll message: {}", i);
+        while (i < totalMsgs) {
+            log.debug("start poll message 2: {}", i);
             ConsumerRecords<Integer, String> records = kConsumer2.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
                 Integer key = record.key();
                 assertEquals(messageStrPrefix + key.toString(), record.value());
-                log.debug("++++ Kafka Consumer Received message: {}, {} at offset {}",
+                log.debug("Kafka Consumer Received message 2: {}, {} at offset {}",
                     record.key(), record.value(), record.offset());
                 i++;
             }
@@ -339,7 +327,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         assertEquals(i, totalMsgs);
 
         // no more records
-        ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+        ConsumerRecords<Integer, String> records = kConsumer2.getConsumer().poll(Duration.ofSeconds(1));
         assertTrue(records.isEmpty());
     }
 

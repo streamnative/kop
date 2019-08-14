@@ -108,6 +108,13 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
     OffsetConfig offsetConfig = OffsetConfig.builder().build();
     OrderedScheduler scheduler;
 
+    @Override
+    protected void resetConfig() {
+        super.resetConfig();
+        // since this test mock all Group Coordinator, we disable the one in Kafka broker.
+        this.conf.setEnableGroupCoordinator(false);
+    }
+
     @Before
     @Override
     public void setup() throws Exception {
