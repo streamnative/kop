@@ -171,7 +171,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected CompletableFuture<ResponseAndRequest> handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest) {
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
-        String err = String.format("Kafka API ({}) Not supported by kop server.",
+        String err = String.format("Kafka API (%s) Not supported by kop server.",
             kafkaHeaderAndRequest.getHeader().apiKey());
         log.error(err);
 
@@ -359,9 +359,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     ctx.channel(), metadataHar.getHeader(), throwable);
                                 partitionMetadatas.add(newFailedPartitionMetadata(topicName));
                             } else {
-                                // TODO: for the target broker to auto create topic?
-//                                kafkaService.getBrokerService().getTopic(topicName.toString(), true).join();
-
                                 Node newNode = partitionMetadata.leader();
                                 if (!allNodes.stream().anyMatch(node1 -> node1.equals(newNode))) {
                                     allNodes.add(newNode);
