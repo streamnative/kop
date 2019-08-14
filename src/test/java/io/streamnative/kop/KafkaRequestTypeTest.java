@@ -260,6 +260,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
     }
 
 
+    // Test kafka consumer to consume, use consumer group and offset auto-commit
     @Test(timeOut = 20000, dataProvider = "partitions")
     public void testPulsarProduceKafkaConsume2(int partitionNumber) throws Exception {
         String topicName = "kopPulsarProduceKafkaConsume2" + partitionNumber;
