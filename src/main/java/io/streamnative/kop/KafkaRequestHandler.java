@@ -56,6 +56,7 @@ import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
@@ -355,6 +356,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     ctx.channel(), metadataHar.getHeader(), throwable);
                                 partitionMetadatas.add(newFailedPartitionMetadata(topicName));
                             } else {
+                                // TODO: for the target broker to auto create topic?
+//                                kafkaService.getBrokerService().getTopic(topicName.toString(), true).join();
+
                                 Node newNode = partitionMetadata.leader();
                                 if (!allNodes.stream().anyMatch(node1 -> node1.equals(newNode))) {
                                     allNodes.add(newNode);
@@ -876,8 +880,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                 // No entries get from all topics. return earlier.
                 if (allSize == 0 && entriesRead.get() == 0) {
-                    log.error("[{}] Request {}: All partitions for request failed",
+                    log.warn("[{}] Request {}: All partitions for request get 0 entry",
                         ctx.channel(), fetch.getHeader());
+
+                    try {
+                        Thread.sleep(waitTime);
+                    } catch (Exception e) {
+                        log.error("[{}] Request {}: error while sleep.",
+                            ctx.channel(), fetch.getHeader(), e);
+                    }
+
                     resultFuture.complete(ResponseAndRequest.of(
                         new FetchResponse(Errors.NONE,
                             new LinkedHashMap<TopicPartition, PartitionData>(),
@@ -987,6 +999,20 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 kafkaService.getKafkaTopicManager()
                                     .getTopicConsumerManager(topicName.toString())
                                     .thenAccept(cm -> cm.add(offset + 1, pair.getValue()));
+                            } else {
+                                // since no read entry, add the original offset back.
+                                PositionImpl position = (PositionImpl) cursor.getFirstPosition();
+                                long offset = MessageIdUtils.getOffset(position.getLedgerId(), position.getEntryId());
+
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Read no entry, add offset back:  {}",
+                                        offset);
+                                }
+
+                                kafkaService.getKafkaTopicManager()
+                                    .getTopicConsumerManager(topicName.toString())
+                                    .thenAccept(cm ->
+                                        cm.add(offset, pair.getValue()));
                             }
 
                             readFuture.complete(entry);
