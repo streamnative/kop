@@ -42,6 +42,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -56,6 +57,7 @@ import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
@@ -87,6 +89,8 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
 import org.apache.kafka.common.requests.LeaveGroupResponse;
+import org.apache.kafka.common.requests.ListOffsetRequest;
+import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
@@ -741,16 +745,37 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected CompletableFuture<ResponseAndRequest> handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch) {
         checkArgument(offsetFetch.getRequest() instanceof OffsetFetchRequest);
         OffsetFetchRequest request = (OffsetFetchRequest) offsetFetch.getRequest();
+        checkState(kafkaService.getGroupCoordinator() != null,
+            "Group Coordinator not started");
+        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+
+        KeyValue<Errors, Map<TopicPartition, OffsetFetchResponse.PartitionData>> keyValue =
+            kafkaService.getGroupCoordinator().handleFetchOffsets(
+                request.groupId(),
+                Optional.of(request.partitions())
+            );
+
+        resultFuture.complete(ResponseAndRequest
+            .of(new OffsetFetchResponse(keyValue.getKey(), keyValue.getValue()), offsetFetch));
+
+        return resultFuture;
+    }
+
+    protected CompletableFuture<ResponseAndRequest> handleListOffsetRequest(KafkaHeaderAndRequest listOffset) {
+        checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
+        ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
+
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
 
         List<Pair<TopicPartition, CompletableFuture<PersistentTopicInternalStats>>> statsList =
-            request.partitions().stream().map((topicPartition) -> Pair.of(topicPartition, admin.topics()
-                .getInternalStatsAsync(pulsarTopicName(topicPartition).toString())))
+            request.partitionTimestamps().entrySet().stream()
+                .map((topicPartition) -> Pair.of(topicPartition.getKey(), admin.topics()
+                    .getInternalStatsAsync(pulsarTopicName(topicPartition.getKey()).toString())))
                 .collect(Collectors.toList());
 
         CompletableFuture.allOf(statsList.stream().map(entry -> entry.getValue()).toArray(CompletableFuture<?>[]::new))
             .whenComplete((ignore, ex) -> {
-                Map<TopicPartition, OffsetFetchResponse.PartitionData> responses =
+                Map<TopicPartition, ListOffsetResponse.PartitionData> responses =
                     statsList.stream().map((v) -> {
                         TopicPartition key = v.getKey();
                         try {
@@ -760,29 +785,23 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                             if (log.isDebugEnabled()) {
                                 log.debug("[{}] Request {}:  topic {}  Return offset: {}, ledgerId: {}.",
-                                    ctx.channel(), offsetFetch.getHeader(), key, offset, ledgers.get(0).ledgerId);
+                                    ctx.channel(), listOffset.getHeader(), key, offset, ledgers.get(0).ledgerId);
                             }
-                            return Pair.of(key, new OffsetFetchResponse.PartitionData(
-                                offset, OffsetFetchResponse.NO_METADATA, Errors.NONE));
+                            return Pair.of(key, new ListOffsetResponse.PartitionData(
+                                Errors.NONE, -1L, offset));
                         } catch (Exception e) {
                             log.error("[{}] Request {}: topic {} meet error of getInternalStats.",
-                                ctx.channel(), offsetFetch.getHeader(), key, e);
-                            return Pair.of(key, new OffsetFetchResponse.PartitionData(
-                                OffsetFetchResponse.INVALID_OFFSET,
-                                OffsetFetchResponse.NO_METADATA,
-                                Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                                ctx.channel(), listOffset.getHeader(), key, e);
+                            return Pair.of(key, new ListOffsetResponse.PartitionData(
+                                Errors.UNKNOWN_TOPIC_OR_PARTITION, -1L, -1L));
                         }
                     }).collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
                 resultFuture.complete(ResponseAndRequest
-                    .of(new OffsetFetchResponse(Errors.NONE, responses), offsetFetch));
+                    .of(new ListOffsetResponse(responses), listOffset));
             });
 
         return resultFuture;
-    }
-
-    protected CompletableFuture<ResponseAndRequest> handleListOffsetRequest(KafkaHeaderAndRequest listOffset) {
-        throw new NotImplementedException("handleListOffsetRequest");
     }
 
     protected CompletableFuture<ResponseAndRequest> handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit) {
@@ -874,22 +893,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         allSize, maxBytes, minBytes, new Date(endTime));
                 }
 
-                // No entries get from all topics. return earlier.
-                if (allSize == 0 && entriesRead.get() == 0) {
-                    log.error("[{}] Request {}: All partitions for request failed",
-                        ctx.channel(), fetch.getHeader());
-                    resultFuture.complete(ResponseAndRequest.of(
-                        new FetchResponse(Errors.NONE,
-                            new LinkedHashMap<TopicPartition, PartitionData>(),
-                            ((Integer) THROTTLE_TIME_MS.defaultValue),
-                            ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
-                        fetch));
-                    return;
-                }
-
+                // all partitions read no entry, return earlier;
                 // reach maxTime, return;
                 // reach minBytes if no endTime, return;
-                if ((endTime > 0 && endTime <= System.currentTimeMillis())
+                if ((allSize == 0 && entriesRead.get() == 0)
+                    || (endTime > 0 && endTime <= System.currentTimeMillis())
                     || allSize > minBytes
                     || allSize > maxBytes){
                     if (log.isDebugEnabled()) {
@@ -899,7 +907,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                     LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData = new LinkedHashMap<>();
 
-                    AtomicBoolean allPartitionsFailed = new AtomicBoolean(true);
+                    AtomicBoolean allPartitionsNoEntry = new AtomicBoolean(true);
                     responseValues.forEach((topicPartition, entries) -> {
                         final FetchResponse.PartitionData partitionData;
                         if (entries.isEmpty()) {
@@ -911,7 +919,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 null,
                                 MemoryRecords.EMPTY);
                         } else {
-                            allPartitionsFailed.set(false);
+                            allPartitionsNoEntry.set(false);
                             Entry entry = entries.get(entries.size() - 1);
                             long entryOffset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
                             long highWatermark = entryOffset + cursors.get(topicPartition).join().getNumberOfEntries();
@@ -928,11 +936,20 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         responseData.put(topicPartition, partitionData);
                     });
 
-                    if (allPartitionsFailed.get()) {
-                        log.error("[{}] Request {}: All partitions for request failed",
+                    if (allPartitionsNoEntry.get()) {
+                        log.error("[{}] Request {}: All partitions for request read 0 entry",
                             ctx.channel(), fetch.getHeader());
+
+                        // returned earlier, sleep for waitTime
+                        try {
+                            Thread.sleep(waitTime);
+                        } catch (Exception e) {
+                            log.error("[{}] Request {}: error while sleep.",
+                                ctx.channel(), fetch.getHeader(), e);
+                        }
+
                         resultFuture.complete(ResponseAndRequest.of(
-                            new FetchResponse(Errors.UNKNOWN_SERVER_ERROR,
+                            new FetchResponse(Errors.NONE,
                                 responseData,
                                 ((Integer) THROTTLE_TIME_MS.defaultValue),
                                 ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
@@ -987,6 +1004,20 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 kafkaService.getKafkaTopicManager()
                                     .getTopicConsumerManager(topicName.toString())
                                     .thenAccept(cm -> cm.add(offset + 1, pair.getValue()));
+                            } else {
+                                // since no read entry, add the original offset back.
+                                PositionImpl position = (PositionImpl) cursor.getFirstPosition();
+                                long offset = MessageIdUtils.getOffset(position.getLedgerId(), position.getEntryId());
+
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Read no entry, add offset back:  {}",
+                                        offset);
+                                }
+
+                                kafkaService.getKafkaTopicManager()
+                                    .getTopicConsumerManager(topicName.toString())
+                                    .thenAccept(cm ->
+                                        cm.add(offset, pair.getValue()));
                             }
 
                             readFuture.complete(entry);
@@ -1141,7 +1172,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             HeartbeatResponse response = new HeartbeatResponse(errors);
 
             if (log.isTraceEnabled()) {
-                log.trace("Sending heartbeat response %s for correlation id %d to client %s.",
+                log.trace("Sending heartbeat response {} for correlation id {} to client {}.",
                     response, heartbeat.getHeader().correlationId(), heartbeat.getHeader().clientId());
             }
 

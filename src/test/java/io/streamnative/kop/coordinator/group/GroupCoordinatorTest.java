@@ -93,6 +93,13 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
     private int otherGroupPartitionId;
     private Map<String, byte[]> protocols;
 
+    @Override
+    protected void resetConfig() {
+        super.resetConfig();
+        // since this test mock all Group Coordinator, we disable the one in Kafka broker.
+        this.conf.setEnableGroupCoordinator(false);
+    }
+
     @BeforeMethod
     @Override
     public void setup() throws Exception {
@@ -1535,7 +1542,8 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
         assertEquals(OffsetFetchResponse.INVALID_OFFSET, fetchOffsetsResult.getValue().get(tp).offset);
     }
 
-    @Test
+    @Test(enabled = false)
+    // TODO: https://github.com/streamnative/kop/issues/32
     public void testFetchOffsetNotCoordinatorForGroup() {
         TopicPartition tp = new TopicPartition("topic", 0);
         KeyValue<Errors, Map<TopicPartition, PartitionData>> fetchOffsetsResult =

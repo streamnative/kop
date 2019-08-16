@@ -24,9 +24,7 @@ import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.impl.MessageIdImpl;
-import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
-import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
@@ -42,12 +40,7 @@ public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
-        // so that clients can test short names
-        admin.clusters().createCluster("test",
-            new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
-
-        admin.tenants().createTenant("public",
-            new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
+        // super class already created clusters and tenants
         admin.namespaces().createNamespace("public/default");
         admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
         admin.namespaces().setRetention("public/default",

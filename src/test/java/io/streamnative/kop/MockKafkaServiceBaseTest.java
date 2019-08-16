@@ -110,6 +110,9 @@ public abstract class MockKafkaServiceBaseTest {
         this.conf.setDefaultNumberOfNamespaceBundles(1);
         this.conf.setZookeeperServers("localhost:2181");
         this.conf.setConfigurationStoreServers("localhost:3181");
+        this.conf.setEnableGroupCoordinator(true);
+        this.conf.setAuthenticationEnabled(false);
+        this.conf.setAuthorizationEnabled(false);
     }
 
     protected final void internalSetup() throws Exception {
@@ -195,11 +198,7 @@ public abstract class MockKafkaServiceBaseTest {
         KafkaService kafkaService = spy(new KafkaService(conf));
 
         setupBrokerMocks(kafkaService);
-        boolean isAuthorizationEnabled = conf.isAuthorizationEnabled();
-        // enable authorization to initialize authorization service which is used by grant-permission
-        conf.setAuthorizationEnabled(true);
         kafkaService.start();
-        conf.setAuthorizationEnabled(isAuthorizationEnabled);
 
         Compactor spiedCompactor = spy(kafkaService.getCompactor());
         doReturn(spiedCompactor).when(kafkaService).getCompactor();
@@ -380,12 +379,17 @@ public abstract class MockKafkaServiceBaseTest {
         private final KafkaConsumer<Integer, String> consumer;
         private final String topic;
 
-        public KConsumer(String topic, String host, int port) {
+        public KConsumer(String topic, String host, int port, boolean autoCommit) {
             Properties props = new Properties();
             props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             props.put(ConsumerConfig.GROUP_ID_CONFIG, "DemoKafkaOnPulsarConsumer");
-            props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-            props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+            if (autoCommit) {
+                props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
+                props.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, "1000");
+            } else {
+                props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+                props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+            }
 
             props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "30000");
             props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
@@ -395,6 +399,14 @@ public abstract class MockKafkaServiceBaseTest {
 
             this.consumer = new KafkaConsumer<>(props);
             this.topic = topic;
+        }
+
+        public KConsumer(String topic, int port, boolean autoCommit) {
+            this(topic, "localhost", port, autoCommit);
+        }
+
+        public KConsumer(String topic, String host, int port) {
+            this(topic, "localhost", port, false);
         }
 
         public KConsumer(String topic, int port) {

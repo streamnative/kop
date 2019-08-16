@@ -22,6 +22,7 @@ import static org.testng.Assert.assertTrue;
 import com.google.common.collect.Sets;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -50,26 +51,45 @@ import org.testng.annotations.Test;
 @Slf4j
 public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
-    // TODO:  This try to test 1 partition and several partitions.
-    //      After PR https://github.com/apache/pulsar/pull/4883 merged, change to 1/7.
     @DataProvider(name = "partitions")
     public static Object[][] partitions() {
-        return new Object[][] { { 2 }, { 7 } };
+        return new Object[][] { { 1 }, { 7 } };
     }
 
     @BeforeMethod
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
-        // so that clients can test short names
-        admin.clusters().createCluster("test", new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
+        log.info("success internal setup");
 
-        admin.tenants().createTenant("public",
-            new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
-        admin.namespaces().createNamespace("public/default");
-        admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
-        admin.namespaces().setRetention("public/default",
-            new RetentionPolicies(20, 100));
+        if (!admin.clusters().getClusters().contains(configClusterName)) {
+            // so that clients can test short names
+            admin.clusters().createCluster(configClusterName,
+                new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
+        } else {
+            admin.clusters().updateCluster(configClusterName,
+                new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
+        }
+
+        if (!admin.tenants().getTenants().contains("public")) {
+            admin.tenants().createTenant("public",
+                new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
+        } else {
+            admin.tenants().updateTenant("public",
+                new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
+        }
+        if (!admin.namespaces().getNamespaces("public").contains("public/default")) {
+            admin.namespaces().createNamespace("public/default");
+            admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
+            admin.namespaces().setRetention("public/default",
+                new RetentionPolicies(60, 1000));
+        }
+        if (!admin.namespaces().getNamespaces("public").contains("public/__kafka")) {
+            admin.namespaces().createNamespace("public/__kafka");
+            admin.namespaces().setNamespaceReplicationClusters("public/__kafka", Sets.newHashSet("test"));
+            admin.namespaces().setRetention("public/__kafka",
+                new RetentionPolicies(-1, -1));
+        }
     }
 
     @AfterMethod
@@ -168,7 +188,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         kConsumer.getConsumer().assign(topicPartitions);
 
         int i = 0;
-        for (; i < totalMsgs;) {
+        while (i < totalMsgs) {
             log.debug("start poll message: {}", i);
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
@@ -221,7 +241,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         kConsumer.getConsumer().assign(topicPartitions);
 
         int i = 0;
-        for (; i < totalMsgs;) {
+        while (i < totalMsgs) {
             log.debug("start poll message: {}", i);
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
@@ -236,6 +256,79 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
         // no more records
         ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+        assertTrue(records.isEmpty());
+    }
+
+
+    // Test kafka consumer to consume, use consumer group and offset auto-commit
+    @Test(timeOut = 20000, dataProvider = "partitions")
+    public void testPulsarProduceKafkaConsume2(int partitionNumber) throws Exception {
+        String topicName = "kopPulsarProduceKafkaConsume2" + partitionNumber;
+        String pulsarTopicName = "persistent://public/default/" + topicName;
+
+        // create partitioned topic.
+        kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, partitionNumber);
+
+        // 1. use pulsar producer to produce.
+        int totalMsgs = 10;
+        String messageStrPrefix = "Message_Kop_PulsarProduceKafkaConsume_" + partitionNumber + "_";
+
+        ProducerBuilder<byte[]> producerBuilder = pulsarClient.newProducer()
+            .topic(pulsarTopicName)
+            .enableBatching(false);
+
+        @Cleanup
+        Producer<byte[]> producer = producerBuilder.create();
+        for (int i = 0; i < totalMsgs; i++) {
+            String message = messageStrPrefix + i;
+            producer.newMessage()
+                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
+                .value(message.getBytes())
+                .send();
+        }
+
+        // 2. use kafka consumer to consume, use consumer group, offset auto-commit
+        @Cleanup
+        KConsumer kConsumer = new KConsumer(topicName, getKafkaBrokerPort(), true);
+        kConsumer.getConsumer().subscribe(Collections.singletonList(topicName));
+
+        int i = 0;
+        while (i < totalMsgs / 2) {
+            log.debug("start poll message: {}", i);
+            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<Integer, String> record : records) {
+                Integer key = record.key();
+                assertEquals(messageStrPrefix + key.toString(), record.value());
+                log.debug("Kafka Consumer Received message: {}, {} at offset {}",
+                    record.key(), record.value(), record.offset());
+                i++;
+            }
+        }
+        kConsumer.close();
+
+        // wait for offset commit complete
+        Thread.sleep(1000);
+
+        log.info("start another consumer, will consume from the left place of first consumer");
+        KConsumer kConsumer2 = new KConsumer(topicName, getKafkaBrokerPort(), true);
+
+        kConsumer2.getConsumer().subscribe(Collections.singletonList(topicName));
+        while (i < totalMsgs) {
+            log.debug("start poll message 2: {}", i);
+            ConsumerRecords<Integer, String> records = kConsumer2.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<Integer, String> record : records) {
+                Integer key = record.key();
+                assertEquals(messageStrPrefix + key.toString(), record.value());
+                log.debug("Kafka Consumer Received message 2: {}, {} at offset {}",
+                    record.key(), record.value(), record.offset());
+                i++;
+            }
+        }
+
+        assertEquals(i, totalMsgs);
+
+        // no more records
+        ConsumerRecords<Integer, String> records = kConsumer2.getConsumer().poll(Duration.ofSeconds(1));
         assertTrue(records.isEmpty());
     }
 
