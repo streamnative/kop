@@ -21,6 +21,7 @@ import com.google.common.collect.Sets;
 import io.streamnative.kop.utils.MessageIdUtils;
 import java.util.concurrent.CompletableFuture;
 import org.apache.bookkeeper.mledger.ManagedCursor;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.impl.MessageIdImpl;
@@ -106,9 +107,10 @@ public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
         long offset = MessageIdUtils.getOffset(messageId.getLedgerId(), messageId.getEntryId());
 
         // before a read, first get cursor of offset.
-        CompletableFuture<ManagedCursor> cursorCompletableFuture = topicConsumerManager.remove(offset);
+        CompletableFuture<Pair<ManagedCursor, Long>> cursorCompletableFuture = topicConsumerManager.remove(offset);
         assertEquals(topicConsumerManager.getConsumers().size(), 0);
-        ManagedCursor cursor = cursorCompletableFuture.get();
+        ManagedCursor cursor = cursorCompletableFuture.get().getLeft();
+        assertEquals(cursorCompletableFuture.get().getRight(), Long.valueOf(offset));
 
         // another write.
         producer.newMessage()
@@ -119,20 +121,21 @@ public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
 
         // simulate a read complete;
         offset++;
-        topicConsumerManager.add(offset, cursorCompletableFuture);
+        topicConsumerManager.add(offset, Pair.of(cursor, offset));
         assertEquals(topicConsumerManager.getConsumers().size(), 1);
 
         // another read, cache hit.
         cursorCompletableFuture = topicConsumerManager.remove(offset);
         assertEquals(topicConsumerManager.getConsumers().size(), 0);
-        ManagedCursor cursor2 = cursorCompletableFuture.get();
+        ManagedCursor cursor2 = cursorCompletableFuture.get().getLeft();
 
         assertTrue(cursor2 == cursor);
         assertEquals(cursor2.getName(), cursor.getName());
+        assertEquals(cursorCompletableFuture.get().getRight(), Long.valueOf(offset));
 
         // simulate a read complete, add back offset.
         offset++;
-        topicConsumerManager.add(offset, cursorCompletableFuture);
+        topicConsumerManager.add(offset, Pair.of(cursor2, offset));
 
         // produce another 3 message
         for (; i < 10; i++) {
@@ -146,8 +149,10 @@ public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
         // try read last messages, so read not continuous
         offset = MessageIdUtils.getOffset(messageId.getLedgerId(), messageId.getEntryId());
         cursorCompletableFuture = topicConsumerManager.remove(offset);
+        // since above remove will use a new cursor. there should be one in the map.
         assertEquals(topicConsumerManager.getConsumers().size(), 1);
-        cursor2 = cursorCompletableFuture.get();
+        cursor2 = cursorCompletableFuture.get().getLeft();
         assertNotEquals(cursor2.getName(), cursor.getName());
+        assertEquals(cursorCompletableFuture.get().getRight(), Long.valueOf(offset));
     }
 }
