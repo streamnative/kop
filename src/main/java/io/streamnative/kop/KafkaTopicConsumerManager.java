@@ -13,6 +13,8 @@
  */
 package io.streamnative.kop;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 import io.streamnative.kop.utils.MessageIdUtils;
 import io.streamnative.kop.utils.ReflectionUtils;
 import java.lang.reflect.Method;
@@ -25,6 +27,7 @@ import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
 import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 
 /**
@@ -35,16 +38,18 @@ import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 public class KafkaTopicConsumerManager {
 
     private final PersistentTopic topic;
+
+    // keep fetch offset and related cursor. keep cursor and its last offset in Pair
     @Getter
-    private final ConcurrentLongHashMap<CompletableFuture<ManagedCursor>> consumers;
+    private final ConcurrentLongHashMap<CompletableFuture<Pair<ManagedCursor, Long>>> consumers;
 
     KafkaTopicConsumerManager(PersistentTopic topic) {
         this.topic = topic;
         this.consumers = new ConcurrentLongHashMap<>();
     }
 
-    public CompletableFuture<ManagedCursor> remove(long offset) {
-        CompletableFuture<ManagedCursor> cursor = consumers.remove(offset);
+    public CompletableFuture<Pair<ManagedCursor, Long>> remove(long offset) {
+        CompletableFuture<Pair<ManagedCursor, Long>> cursor = consumers.remove(offset);
         if (cursor != null) {
             if (log.isDebugEnabled()) {
                 log.debug("Get cursor for offset: {} in cache", offset);
@@ -54,7 +59,7 @@ public class KafkaTopicConsumerManager {
 
         // handle null remove.
         cursor = new CompletableFuture<>();
-        CompletableFuture<ManagedCursor> oldCursor = consumers.putIfAbsent(offset, cursor);
+        CompletableFuture<Pair<ManagedCursor, Long>> oldCursor = consumers.putIfAbsent(offset, cursor);
         if (oldCursor != null) {
             // added by other thread while creating.
             return remove(offset);
@@ -77,7 +82,9 @@ public class KafkaTopicConsumerManager {
                     cursorName, offset, position, previous);
             }
 
-            cursor.complete(topic.getManagedLedger().newNonDurableCursor(previous, cursorName));
+            cursor.complete(Pair
+                .of(topic.getManagedLedger().newNonDurableCursor(previous, cursorName),
+                    offset));
         } catch (Exception e) {
             log.error("Failed create nonDurable cursor for topic {} position: {}.", topic, position, e);
             cursor.completeExceptionally(e);
@@ -86,13 +93,18 @@ public class KafkaTopicConsumerManager {
         return remove(offset);
     }
 
-
     // once entry read complete, add new offset back.
-    public void add(long offset, CompletableFuture<ManagedCursor> cursor) {
-        CompletableFuture<ManagedCursor> oldCursor = consumers.putIfAbsent(offset, cursor);
+    public void add(long offset, Pair<ManagedCursor, Long> cursor) {
+        checkArgument(offset == cursor.getRight(),
+            "offset not equal. key: " + offset + " value: " + cursor.getRight());
+
+        CompletableFuture<Pair<ManagedCursor, Long>> cursorOffsetPair = new CompletableFuture<>();
+
+        cursorOffsetPair.complete(cursor);
+        consumers.putIfAbsent(offset, cursorOffsetPair);
 
         if (log.isDebugEnabled()) {
-            log.debug("Add cursor {} for offset: {}. oldCursor: {}", cursor.join().getName(), offset, oldCursor);
+            log.debug("Add cursor back {} for offset: {}", cursor.getLeft().getName(), offset);
         }
     }
 

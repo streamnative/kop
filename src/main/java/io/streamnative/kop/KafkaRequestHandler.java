@@ -57,7 +57,6 @@ import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
@@ -830,7 +829,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private void readMessages(KafkaHeaderAndRequest fetch,
-                              Map<TopicPartition, CompletableFuture<ManagedCursor>> cursors,
+                              Map<TopicPartition, CompletableFuture<Pair<ManagedCursor, Long>>> cursors,
                               CompletableFuture<ResponseAndRequest> resultFuture) {
         AtomicInteger bytesRead = new AtomicInteger(0);
         Map<TopicPartition, List<Entry>> responseValues = new ConcurrentHashMap<>();
@@ -844,7 +843,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private void readMessagesInternal(KafkaHeaderAndRequest fetch,
-                                      Map<TopicPartition, CompletableFuture<ManagedCursor>> cursors,
+                                      Map<TopicPartition, CompletableFuture<Pair<ManagedCursor, Long>>> cursors,
                                       AtomicInteger bytesRead,
                                       Map<TopicPartition, List<Entry>> responseValues,
                                       CompletableFuture<ResponseAndRequest> resultFuture) {
@@ -922,7 +921,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             allPartitionsNoEntry.set(false);
                             Entry entry = entries.get(entries.size() - 1);
                             long entryOffset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
-                            long highWatermark = entryOffset + cursors.get(topicPartition).join().getNumberOfEntries();
+                            long highWatermark = entryOffset
+                                + cursors.get(topicPartition).join().getLeft().getNumberOfEntries();
 
                             MemoryRecords records = entriesToRecords(entries);
                             partitionData = new FetchResponse.PartitionData(
@@ -971,7 +971,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private Map<TopicPartition, CompletableFuture<Entry>> readAllCursorOnce(
-            Map<TopicPartition, CompletableFuture<ManagedCursor>> cursors) {
+            Map<TopicPartition, CompletableFuture<Pair<ManagedCursor, Long>>> cursors) {
         Map<TopicPartition, CompletableFuture<Entry>> readFutures = new ConcurrentHashMap<>();
 
         cursors.entrySet().forEach(pair -> {
@@ -980,7 +980,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             CompletableFuture<Entry> readFuture = new CompletableFuture<>();
 
             try {
-                cursor = pair.getValue().join();
+                Pair<ManagedCursor, Long> cursorOffsetPair = pair.getValue().join();
+                cursor = cursorOffsetPair.getLeft();
+                long keptOffset = cursorOffsetPair.getRight();
 
                 // only read 1 entry currently. could read more in a batch.
                 cursor.asyncReadEntries(1,
@@ -996,28 +998,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                                 if (log.isDebugEnabled()) {
                                     log.debug("Topic {} success read entry: ledgerId: {}, entryId: {}, size: {},"
-                                            + " ConsumerManager add offset: {}",
+                                            + " ConsumerManager original offset: {}, entryOffset: {}",
                                         topicName.toString(), entry.getLedgerId(), entry.getEntryId(),
-                                        entry.getLength(), offset + 1);
+                                        entry.getLength(), keptOffset, offset);
                                 }
 
                                 kafkaService.getKafkaTopicManager()
                                     .getTopicConsumerManager(topicName.toString())
-                                    .thenAccept(cm -> cm.add(offset + 1, pair.getValue()));
+                                    .thenAccept(cm -> cm.add(offset + 1, Pair.of(cursor, offset + 1)));
                             } else {
                                 // since no read entry, add the original offset back.
-                                PositionImpl position = (PositionImpl) cursor.getFirstPosition();
-                                long offset = MessageIdUtils.getOffset(position.getLedgerId(), position.getEntryId());
-
                                 if (log.isDebugEnabled()) {
                                     log.debug("Read no entry, add offset back:  {}",
-                                        offset);
+                                        keptOffset);
                                 }
 
                                 kafkaService.getKafkaTopicManager()
                                     .getTopicConsumerManager(topicName.toString())
                                     .thenAccept(cm ->
-                                        cm.add(offset, pair.getValue()));
+                                        cm.add(keptOffset, Pair.of(cursor, keptOffset)));
                             }
 
                             readFuture.complete(entry);
@@ -1057,7 +1056,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
 
         // Map of partition and related cursor
-        Map<TopicPartition, CompletableFuture<ManagedCursor>> topicsAndCursor = request
+        Map<TopicPartition, CompletableFuture<Pair<ManagedCursor, Long>>> topicsAndCursor = request
             .fetchData().entrySet().stream()
             .map(entry -> {
                 TopicName topicName = pulsarTopicName(entry.getKey());
@@ -1079,9 +1078,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // wait to get all the cursor, then readMessages
         CompletableFuture
             .allOf(topicsAndCursor.entrySet().stream().map(Map.Entry::getValue).toArray(CompletableFuture<?>[]::new))
-            .whenComplete((ignore, ex) -> {
-                readMessages(fetch, topicsAndCursor, resultFuture);
-            });
+            .whenComplete((ignore, ex) -> readMessages(fetch, topicsAndCursor, resultFuture));
 
         return resultFuture;
     }
