@@ -36,7 +36,6 @@ public class KafkaTopicManager {
         topics = new ConcurrentOpenHashMap<>();
     }
 
-
     // topicName is in pulsar format. e.g. persistent://public/default/topic-partition-0
     public CompletableFuture<KafkaTopicConsumerManager> getTopicConsumerManager(String topicName) {
         return topics.computeIfAbsent(
@@ -57,4 +56,10 @@ public class KafkaTopicManager {
                 })
         );
     }
+
+    // whether topic exists or not
+    public boolean topicExists(String topicName) {
+        return topics.containsKey(topicName);
+    }
+
 }

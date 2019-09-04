@@ -803,6 +803,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return resultFuture;
     }
 
+    // For non exist topics handleOffsetCommitRequest return UNKNOWN_TOPIC_OR_PARTITION
+    private Map<TopicPartition, Errors> nonExistingTopicErrors(OffsetCommitRequest request) {
+        return request.offsetData().entrySet().stream()
+                .filter(entry ->
+                    // filter not exist topics
+                    !kafkaService.getKafkaTopicManager()
+                        .topicExists(pulsarTopicName(entry.getKey()).toString()))
+                .collect(Collectors.toMap(
+                    e -> e.getKey(),
+                    e -> Errors.UNKNOWN_TOPIC_OR_PARTITION
+                ));
+    }
+
     protected CompletableFuture<ResponseAndRequest> handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit) {
         checkArgument(offsetCommit.getRequest() instanceof OffsetCommitRequest);
         checkState(kafkaService.getGroupCoordinator() != null,
@@ -810,6 +823,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         OffsetCommitRequest request = (OffsetCommitRequest) offsetCommit.getRequest();
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+
+        Map<TopicPartition, Errors> nonExistingTopic = nonExistingTopicErrors(request);
 
         kafkaService.getGroupCoordinator().handleCommitOffsets(
             request.groupId(),
@@ -821,6 +836,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     OffsetAndMetadata.apply(partitionData.offset, partitionData.metadata, partitionData.timestamp)
             )
         ).thenAccept(offsetCommitResult -> {
+            if (nonExistingTopic != null) {
+                offsetCommitResult.putAll(nonExistingTopic);
+            }
             OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
             resultFuture.complete(ResponseAndRequest.of(response, offsetCommit));
         });

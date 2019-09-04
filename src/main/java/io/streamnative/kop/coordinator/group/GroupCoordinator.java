@@ -721,35 +721,37 @@ public class GroupCoordinator {
         int generationId,
         Map<TopicPartition, OffsetAndMetadata> offsetMetadata
     ) {
-        return validateGroupStatus(groupId, ApiKeys.OFFSET_COMMIT).map(error ->
-            CompletableFuture.completedFuture(
-                CoreUtils.mapValue(
-                    offsetMetadata,
-                    ignored -> error
-                )
-            )
-        ).orElseGet(() -> {
-            return groupManager.getGroup(groupId).map(group ->
-                doCommitOffsets(
-                    group, memberId, generationId, NO_PRODUCER_ID, NO_PRODUCER_EPOCH,
-                    offsetMetadata
+        return validateGroupStatus(groupId, ApiKeys.OFFSET_COMMIT)
+            .map(error ->
+                CompletableFuture.completedFuture(
+                    CoreUtils.mapValue(
+                        offsetMetadata,
+                        ignored -> error
+                    )
                 )
             ).orElseGet(() -> {
-                if (generationId < 0) {
-                    // the group is not relying on Kafka for group management, so allow the commit
-                    GroupMetadata group = groupManager.addGroup(new GroupMetadata(groupId, Empty));
-                    return doCommitOffsets(group, memberId, generationId, NO_PRODUCER_ID, NO_PRODUCER_EPOCH,
-                        offsetMetadata);
-                } else {
-                    return CompletableFuture.completedFuture(
-                        CoreUtils.mapValue(
-                            offsetMetadata,
-                            ignored -> Errors.ILLEGAL_GENERATION
+                return groupManager.getGroup(groupId)
+                    .map(group ->
+                        doCommitOffsets(
+                            group, memberId, generationId, NO_PRODUCER_ID, NO_PRODUCER_EPOCH,
+                            offsetMetadata
                         )
-                    );
-                }
+                    ).orElseGet(() -> {
+                        if (generationId < 0) {
+                            // the group is not relying on Kafka for group management, so allow the commit
+                            GroupMetadata group = groupManager.addGroup(new GroupMetadata(groupId, Empty));
+                            return doCommitOffsets(group, memberId, generationId, NO_PRODUCER_ID, NO_PRODUCER_EPOCH,
+                                offsetMetadata);
+                        } else {
+                            return CompletableFuture.completedFuture(
+                                CoreUtils.mapValue(
+                                    offsetMetadata,
+                                    ignored -> Errors.ILLEGAL_GENERATION
+                                )
+                            );
+                        }
+                    });
             });
-        });
     }
 
     public Future<?> scheduleHandleTxnCompletion(
@@ -896,11 +898,14 @@ public class GroupCoordinator {
             return Optional.of(Errors.COORDINATOR_NOT_AVAILABLE);
         } else if (groupManager.isGroupLoading(groupId)) {
             return Optional.of(Errors.COORDINATOR_LOAD_IN_PROGRESS);
-        } else if (!groupManager.isGroupLocal(groupId)
-            && api != ApiKeys.JOIN_GROUP // first time join, group may not persisted.
-            && api != ApiKeys.SYNC_GROUP
-            && api != ApiKeys.OFFSET_FETCH) {
-            return Optional.of(Errors.NOT_COORDINATOR);
+        // TODO: make group coordinator running in distributed mode.
+        // https://github.com/streamnative/kop/issues/32
+        //        } else if (!groupManager.isGroupLocal(groupId)
+        //            && api != ApiKeys.JOIN_GROUP // first time join, group may not persisted.
+        //            && api != ApiKeys.SYNC_GROUP
+        //            && api != ApiKeys.OFFSET_FETCH) {
+        //            return Optional.of(Errors.NOT_COORDINATOR);
+        //        }
         } else {
             return Optional.empty();
         }
