@@ -53,10 +53,16 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImplWrapper;
+import org.apache.bookkeeper.mledger.impl.OffsetFinder;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
@@ -109,6 +115,7 @@ import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.admin.impl.PersistentTopicsBase;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.Topic.PublishContext;
+import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.CompressionType;
@@ -122,7 +129,6 @@ import org.apache.pulsar.common.lookup.data.LookupData;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicDomain;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.policies.data.PersistentTopicInternalStats;
 import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.protocol.Commands.ChecksumType;
 import org.apache.pulsar.common.schema.KeyValue;
@@ -140,6 +146,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final NamespaceName kafkaNamespace;
     private final ExecutorService executor;
     private final PulsarAdmin admin;
+    private final KafkaTopicManager topicManager;
 
     private static final Clock clock = Clock.systemDefaultZone();
     private static final String FAKE_KOP_PRODUCER_NAME = "fake_kop_producer_name";
@@ -158,6 +165,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 kafkaService.getKafkaConfig().getKafkaNamespace());
         this.executor = kafkaService.getExecutor();
         this.admin = kafkaService.getAdminClient();
+        this.topicManager = kafkaService.getKafkaTopicManager();
     }
 
     protected CompletableFuture<ResponseAndRequest> handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest) {
@@ -445,6 +453,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         partitionResponse.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
                     } else {
                         if (topicOpt.isPresent()) {
+                            topicManager.addTopic(topicName.toString(), (PersistentTopic) topicOpt.get());
                             publishMessages(entry.getValue(), topicOpt.get(), partitionResponse);
                         } else {
                             log.error("[{}] Request {}: getOrCreateTopic get empty topic for name {}",
@@ -760,47 +769,172 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return resultFuture;
     }
 
-    protected CompletableFuture<ResponseAndRequest> handleListOffsetRequest(KafkaHeaderAndRequest listOffset) {
-        checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
+    private CompletableFuture<ListOffsetResponse.PartitionData>
+    fetchOffsetForTimestamp(PersistentTopic persistentTopic, Long timestamp) {
+        ManagedLedgerImplWrapper managedLedger = new ManagedLedgerImplWrapper(
+            (ManagedLedgerImpl) persistentTopic.getManagedLedger());
+
+        CompletableFuture<ListOffsetResponse.PartitionData> partitionData = new CompletableFuture<>();
+
+        try {
+            if (timestamp == ListOffsetRequest.LATEST_TIMESTAMP) {
+                // TODO: here could be (last, -1)
+                PositionImpl position = managedLedger.getLastConfirmedEntry();
+                if (log.isDebugEnabled()) {
+                    log.debug("Get latest position for topic {} time {}. result: {}",
+                        persistentTopic.getName(), timestamp, position);
+                }
+
+                // no entry in ledger, then entry id could be -1
+                long entryId = position.getEntryId();
+
+                partitionData.complete(new ListOffsetResponse.PartitionData(
+                    Errors.NONE,
+                    RecordBatch.NO_TIMESTAMP,
+                    MessageIdUtils
+                        .getOffset(position.getLedgerId(), entryId == -1 ? 0 : entryId)));
+
+                return partitionData;
+            } else if (timestamp == ListOffsetRequest.EARLIEST_TIMESTAMP) {
+                PositionImpl position = managedLedger.getFirstValidPosition();
+
+                if (log.isDebugEnabled()) {
+                    log.debug("Get earliest position for topic {} time {}. result: {}",
+                        persistentTopic.getName(), timestamp, position);
+                }
+
+                partitionData.complete(new ListOffsetResponse.PartitionData(
+                    Errors.NONE,
+                    RecordBatch.NO_TIMESTAMP,
+                    MessageIdUtils.getOffset(position.getLedgerId(), position.getEntryId())));
+                return partitionData;
+            } else {
+                // find with real wanted timestamp
+                OffsetFinder offsetFinder = new OffsetFinder(managedLedger.getManagedLedger());
+
+                offsetFinder.findMessages(timestamp, new AsyncCallbacks.FindEntryCallback() {
+                    @Override
+                    public void findEntryComplete(Position position, Object ctx) {
+                        PositionImpl finalPosition;
+                        if (position == null) {
+                            finalPosition = managedLedger.getFirstValidPosition();
+                            if (finalPosition == null) {
+                                log.warn("Unable to find position for topic {} time {}. get NULL position",
+                                    persistentTopic.getName(), timestamp);
+
+                                partitionData.complete(new ListOffsetResponse
+                                    .PartitionData(
+                                    Errors.UNKNOWN_SERVER_ERROR,
+                                    ListOffsetResponse.UNKNOWN_TIMESTAMP,
+                                    ListOffsetResponse.UNKNOWN_OFFSET));
+                                return;
+                            }
+                        } else {
+                            finalPosition = (PositionImpl) position;
+                        }
+
+                        if (log.isDebugEnabled()) {
+                            log.debug("Find position for topic {} time {}. position: {}",
+                                persistentTopic.getName(), timestamp, finalPosition);
+                        }
+                        partitionData.complete(new ListOffsetResponse.PartitionData(
+                            Errors.NONE,
+                            RecordBatch.NO_TIMESTAMP,
+                            MessageIdUtils.getOffset(finalPosition.getLedgerId(), finalPosition.getEntryId())));
+                    }
+
+                    @Override
+                    public void findEntryFailed(ManagedLedgerException exception, Object ctx) {
+                        log.warn("Unable to find position for topic {} time {}. Exception:",
+                            persistentTopic.getName(), timestamp, exception);
+                        partitionData.complete(new ListOffsetResponse
+                            .PartitionData(
+                            Errors.UNKNOWN_SERVER_ERROR,
+                            ListOffsetResponse.UNKNOWN_TIMESTAMP,
+                            ListOffsetResponse.UNKNOWN_OFFSET));
+                        return;
+                    }
+                });
+
+            }
+        } catch (Exception e) {
+            log.error("Failed while get position for topic: {} ts: {}.",
+                persistentTopic.getName(), timestamp, e);
+
+            new ListOffsetResponse
+                .PartitionData(
+                Errors.UNKNOWN_SERVER_ERROR,
+                ListOffsetResponse.UNKNOWN_TIMESTAMP,
+                ListOffsetResponse.UNKNOWN_OFFSET);
+        }
+
+        return null;
+    }
+
+    private CompletableFuture<ResponseAndRequest> handleListOffsetRequestV1AndAbove(KafkaHeaderAndRequest listOffset) {
         ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
 
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        Map<TopicPartition, CompletableFuture<ListOffsetResponse.PartitionData>> responseData = Maps.newHashMap();
 
-        List<Pair<TopicPartition, CompletableFuture<PersistentTopicInternalStats>>> statsList =
-            request.partitionTimestamps().entrySet().stream()
-                .map((topicPartition) -> Pair.of(topicPartition.getKey(), admin.topics()
-                    .getInternalStatsAsync(pulsarTopicName(topicPartition.getKey()).toString())))
-                .collect(Collectors.toList());
+        request.partitionTimestamps().entrySet().stream().forEach(tms -> {
+            TopicPartition topic = tms.getKey();
+            Long times = tms.getValue();
+            String pulsarTopic = pulsarTopicName(topic).toString();
+            CompletableFuture<ListOffsetResponse.PartitionData> partitionData;
 
-        CompletableFuture.allOf(statsList.stream().map(entry -> entry.getValue()).toArray(CompletableFuture<?>[]::new))
+
+            // topic not exist, return UNKNOWN_TOPIC_OR_PARTITION
+            if (!topicManager.topicExists(pulsarTopic)) {
+                partitionData = new CompletableFuture<>();
+                partitionData.complete(new ListOffsetResponse
+                    .PartitionData(
+                        Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                        ListOffsetResponse.UNKNOWN_TIMESTAMP,
+                        ListOffsetResponse.UNKNOWN_OFFSET));
+            } else {
+                PersistentTopic persistentTopic = topicManager.getTopic(pulsarTopic);
+                partitionData = fetchOffsetForTimestamp(persistentTopic, times);
+            }
+
+            responseData.put(topic, partitionData);
+        });
+
+        CompletableFuture
+            .allOf(responseData.values().stream().toArray(CompletableFuture<?>[]::new))
             .whenComplete((ignore, ex) -> {
-                Map<TopicPartition, ListOffsetResponse.PartitionData> responses =
-                    statsList.stream().map((v) -> {
-                        TopicPartition key = v.getKey();
-                        try {
-                            List<PersistentTopicInternalStats.LedgerInfo> ledgers = v.getValue().join().ledgers;
-                            // return first ledger.
-                            long offset = MessageIdUtils.getOffset(ledgers.get(0).ledgerId, 0);
-
-                            if (log.isDebugEnabled()) {
-                                log.debug("[{}] Request {}:  topic {}  Return offset: {}, ledgerId: {}.",
-                                    ctx.channel(), listOffset.getHeader(), key, offset, ledgers.get(0).ledgerId);
-                            }
-                            return Pair.of(key, new ListOffsetResponse.PartitionData(
-                                Errors.NONE, -1L, offset));
-                        } catch (Exception e) {
-                            log.error("[{}] Request {}: topic {} meet error of getInternalStats.",
-                                ctx.channel(), listOffset.getHeader(), key, e);
-                            return Pair.of(key, new ListOffsetResponse.PartitionData(
-                                Errors.UNKNOWN_TOPIC_OR_PARTITION, -1L, -1L));
-                        }
-                    }).collect(Collectors.toMap(Pair::getKey, Pair::getValue));
+                ListOffsetResponse response =
+                    new ListOffsetResponse(CoreUtils.mapValue(responseData, future -> future.join()));
 
                 resultFuture.complete(ResponseAndRequest
-                    .of(new ListOffsetResponse(responses), listOffset));
+                    .of(response, listOffset));
             });
 
         return resultFuture;
+    }
+
+    // get offset from underline managedLedger
+    protected CompletableFuture<ResponseAndRequest> handleListOffsetRequest(KafkaHeaderAndRequest listOffset) {
+        checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
+
+        // not support version 0
+        if (listOffset.getHeader().apiVersion() == 0) {
+            CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+            ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
+
+            log.error("ListOffset not support V0 format request");
+
+            ListOffsetResponse response = new ListOffsetResponse(CoreUtils.mapValue(request.partitionTimestamps(),
+                ignored -> new ListOffsetResponse
+                    .PartitionData(Errors.UNSUPPORTED_FOR_MESSAGE_FORMAT, Lists.newArrayList())));
+
+            resultFuture.complete(ResponseAndRequest
+                .of(response, listOffset));
+
+            return resultFuture;
+        }
+
+        return handleListOffsetRequestV1AndAbove(listOffset);
     }
 
     // For non exist topics handleOffsetCommitRequest return UNKNOWN_TOPIC_OR_PARTITION
@@ -808,8 +942,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return request.offsetData().entrySet().stream()
                 .filter(entry ->
                     // filter not exist topics
-                    !kafkaService.getKafkaTopicManager()
-                        .topicExists(pulsarTopicName(entry.getKey()).toString()))
+                    !topicManager.topicExists(pulsarTopicName(entry.getKey()).toString()))
                 .collect(Collectors.toMap(
                     e -> e.getKey(),
                     e -> Errors.UNKNOWN_TOPIC_OR_PARTITION
@@ -1021,7 +1154,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         entry.getLength(), keptOffset, offset);
                                 }
 
-                                kafkaService.getKafkaTopicManager()
+                                topicManager
                                     .getTopicConsumerManager(topicName.toString())
                                     .thenAccept(cm -> cm.add(offset + 1, Pair.of(cursor, offset + 1)));
                             } else {
@@ -1031,7 +1164,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         keptOffset);
                                 }
 
-                                kafkaService.getKafkaTopicManager()
+                                topicManager
                                     .getTopicConsumerManager(topicName.toString())
                                     .thenAccept(cm ->
                                         cm.add(keptOffset, Pair.of(cursor, keptOffset)));
@@ -1087,8 +1220,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                 return Pair.of(
                     entry.getKey(),
-                    kafkaService.getKafkaTopicManager()
-                        .getTopicConsumerManager(topicName.toString())
+                    topicManager.getTopicConsumerManager(topicName.toString())
                         .thenCompose(cm -> cm.remove(offset)));
             })
             .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
@@ -1311,6 +1443,26 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         URI uri = new URI(brokerUrl);
                         if (log.isDebugEnabled()) {
                             log.debug("Found broker: {} for topicName: {}", uri, topic);
+                        }
+
+                        // auto create topic.
+                        String hostname = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(
+                            kafkaService.getKafkaConfig().getAdvertisedAddress());
+                        if (!topicManager.topicExists(topic.toString()) && hostname.equals(uri.getHost())) {
+                            kafkaService.getBrokerService().getTopic(topic.toString(), true)
+                                .whenComplete((topicOpt, exception) -> {
+                                    if (exception != null) {
+                                        log.error("[{}] findBroker: Failed to getOrCreateTopic {}. exception:",
+                                            ctx.channel(), topic.toString(), exception);
+                                    } else {
+                                        if (topicOpt.isPresent()) {
+                                            topicManager.addTopic(topic.toString(), (PersistentTopic) topicOpt.get());
+                                        } else {
+                                            log.error("[{}] findBroker: getOrCreateTopic get empty topic for name {}",
+                                                ctx.channel(), topic.toString());
+                                        }
+                                    }
+                                });
                         }
 
                         Node node = newNode(new InetSocketAddress(

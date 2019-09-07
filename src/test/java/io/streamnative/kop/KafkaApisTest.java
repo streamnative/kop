@@ -14,15 +14,10 @@
 package io.streamnative.kop;
 
 
-import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
+import static org.apache.kafka.common.record.RecordBatch.NO_TIMESTAMP;
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertNotNull;
-import static org.testng.Assert.assertNull;
-import static org.testng.Assert.assertTrue;
-import static org.testng.Assert.fail;
 
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
@@ -33,23 +28,14 @@ import io.streamnative.kop.utils.MessageIdUtils;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
-import java.time.Duration;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
-import org.apache.commons.lang3.tuple.Pair;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
@@ -67,13 +53,14 @@ import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
+import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.MessageIdImpl;
+import org.apache.pulsar.client.impl.TopicMessageIdImpl;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 /**
@@ -132,7 +119,7 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
         super.internalCleanup();
     }
 
-    private KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
+    KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
         AbstractRequest request = builder.build();
         builder.apiKey();
 
@@ -150,7 +137,7 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
         return new KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
     }
 
-    private CompletableFuture<ResponseAndRequest> checkInvalidPartition(String topic,
+    CompletableFuture<ResponseAndRequest> checkInvalidPartition(String topic,
                                                                         int invalidPartitionId) {
         TopicPartition invalidTopicPartition = new TopicPartition(topic, invalidPartitionId);
         PartitionData partitionOffsetCommitData = new OffsetCommitRequest.PartitionData(15L, "");
@@ -195,27 +182,141 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
     // shouldRespondWithUnknownTopicOrPartitionForBadPartitionAndNoErrorsForGoodPartition
     // shouldAppendToLogOnWriteTxnMarkersWhenCorrectMagicVersion
 
+    // these 2 test cases test HighWatermark and LastStableOffset. they are the same for Pulsar,
+    // so combine it in one test case.
+    // Test ListOffset for earliest get the earliest message in topic.
+    // testReadUncommittedConsumerListOffsetEarliestOffsetEqualsHighWatermark
+    // testReadCommittedConsumerListOffsetEarliestOffsetEqualsLastStableOffset
     @Test(timeOut = 20000)
-    public void testReadUncommittedConsumerListOffsetEarliestOffsetEqualsHighWatermark() throws Exception {
-        String topicName = "testReadUncommittedConsumerListOffsetEarliestOffsetEqualsHighWatermark";
-        long limitOffset = 15L;
-        long nowMs = System.currentTimeMillis();
-
+    public void testReadUncommittedConsumerListOffsetEarliestOffsetEquals() throws Exception {
+        String topicName = "testReadUncommittedConsumerListOffsetEarliest";
         TopicPartition tp = new TopicPartition(topicName, 0);
+
+        // use producer to create some message to get Limit Offset.
+        String pulsarTopicName = "persistent://public/default/" + topicName;
+
+        // create partitioned topic.
+        kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, 1);
+
+        // 1. prepare topic:
+        //    use kafka producer to produce 10 messages.
+        //    use pulsar consumer to get message offset.
+        @Cleanup
+        KProducer kProducer = new KProducer(topicName, false, getKafkaBrokerPort());
+        int totalMsgs = 10;
+        String messageStrPrefix = topicName + "_message_";
+
+        for (int i = 0; i < totalMsgs; i++) {
+            String messageStr = messageStrPrefix + i;
+            kProducer.getProducer()
+                .send(new ProducerRecord<>(
+                    topicName,
+                    i,
+                    messageStr))
+                .get();
+            log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+        }
+
+        @Cleanup
+        Consumer<byte[]> consumer = pulsarClient.newConsumer()
+            .topic(pulsarTopicName)
+            .subscriptionName(topicName + "_sub")
+            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+            .subscribe();
+        Message<byte[]> msg = consumer.receive(100, TimeUnit.MILLISECONDS);
+        assertNotNull(msg);
+        MessageIdImpl messageId = (MessageIdImpl)((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId();
+        // first entry should be the limit offset.
+        long limitOffset = MessageIdUtils.getOffset(messageId.getLedgerId(), 0);
+        log.info("After create {} messages, get messageId: {} expected earliest limit: {}",
+            totalMsgs, messageId, limitOffset);
+
+        // 2. real test, for ListOffset request verify Earliest get earliest
         Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
         targetTimes.put(tp, ListOffsetRequest.EARLIEST_TIMESTAMP);
+
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
             .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
             .setTargetTimes(targetTimes);
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<ResponseAndRequest> responseFuture = kafkaRequestHandler
-            .handleOffsetCommitRequest(request);
+            .handleListOffsetRequest(request);
 
         ResponseAndRequest response = responseFuture.get();
         ListOffsetResponse listOffsetResponse = (ListOffsetResponse)response.getResponse();
-        assertEquals(response.getRequest().getHeader().apiKey(), ApiKeys.OFFSET_COMMIT);
+        assertEquals(response.getRequest().getHeader().apiKey(), ApiKeys.LIST_OFFSETS);
+        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(listOffsetResponse.responseData().get(tp).offset, Long.valueOf(limitOffset));
+        assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(NO_TIMESTAMP));
+    }
 
+    // these 2 test cases test Read Commit / UnCommit. they are the same for Pulsar,
+    // so combine it in one test case.
+    // Test ListOffset for latest get the earliest message in topic.
+    // testReadUncommittedConsumerListOffsetLatest
+    // testReadCommittedConsumerListOffsetLatest
+    @Test(timeOut = 20000)
+    public void testConsumerListOffsetLatest() throws Exception {
+        String topicName = "testConsumerListOffsetLatest";
+        TopicPartition tp = new TopicPartition(topicName, 0);
 
+        // use producer to create some message to get Limit Offset.
+        String pulsarTopicName = "persistent://public/default/" + topicName;
+
+        // create partitioned topic.
+        kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, 1);
+
+        // 1. prepare topic:
+        //    use kafka producer to produce 10 messages.
+        //    use pulsar consumer to get message offset.
+        @Cleanup
+        KProducer kProducer = new KProducer(topicName, false, getKafkaBrokerPort());
+        int totalMsgs = 10;
+        String messageStrPrefix = topicName + "_message_";
+
+        for (int i = 0; i < totalMsgs; i++) {
+            String messageStr = messageStrPrefix + i;
+            kProducer.getProducer()
+                .send(new ProducerRecord<>(
+                    topicName,
+                    i,
+                    messageStr))
+                .get();
+            log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+        }
+
+        @Cleanup
+        Consumer<byte[]> consumer = pulsarClient.newConsumer()
+            .topic(pulsarTopicName)
+            .subscriptionName(topicName + "_sub")
+            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+            .subscribe();
+        Message<byte[]> msg = consumer.receive(100, TimeUnit.MILLISECONDS);
+        assertNotNull(msg);
+        MessageIdImpl messageId = (MessageIdImpl)((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId();
+        // LAC entry should be the limit offset.
+        long limitOffset = MessageIdUtils.getOffset(messageId.getLedgerId(), totalMsgs - 1);
+        log.info("After create {} messages, get messageId: {} expected latest limit: {}",
+            totalMsgs, messageId, limitOffset);
+
+        // 2. real test, for ListOffset request verify Earliest get earliest
+        Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
+        targetTimes.put(tp, ListOffsetRequest.LATEST_TIMESTAMP);
+
+        ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
+            .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
+            .setTargetTimes(targetTimes);
+
+        KafkaHeaderAndRequest request = buildRequest(builder);
+        CompletableFuture<ResponseAndRequest> responseFuture = kafkaRequestHandler
+            .handleListOffsetRequest(request);
+
+        ResponseAndRequest response = responseFuture.get();
+        ListOffsetResponse listOffsetResponse = (ListOffsetResponse)response.getResponse();
+        assertEquals(response.getRequest().getHeader().apiKey(), ApiKeys.LIST_OFFSETS);
+        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(listOffsetResponse.responseData().get(tp).offset, Long.valueOf(limitOffset));
+        assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(NO_TIMESTAMP));
     }
 }

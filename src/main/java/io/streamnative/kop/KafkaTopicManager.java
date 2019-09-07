@@ -28,17 +28,23 @@ import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 public class KafkaTopicManager {
 
     private final BrokerService service;
+
+    // consumerTopics for consumers cache.
     @Getter
-    private final ConcurrentOpenHashMap<String, CompletableFuture<KafkaTopicConsumerManager>> topics;
+    private final ConcurrentOpenHashMap<String, CompletableFuture<KafkaTopicConsumerManager>> consumerTopics;
+
+    // todo: add consumerTopics map as cache?
+    private final ConcurrentOpenHashMap<String, PersistentTopic> topics;
 
     KafkaTopicManager(BrokerService service) {
         this.service = service;
+        consumerTopics = new ConcurrentOpenHashMap<>();
         topics = new ConcurrentOpenHashMap<>();
     }
 
     // topicName is in pulsar format. e.g. persistent://public/default/topic-partition-0
     public CompletableFuture<KafkaTopicConsumerManager> getTopicConsumerManager(String topicName) {
-        return topics.computeIfAbsent(
+        return consumerTopics.computeIfAbsent(
             topicName,
             t -> service
                 .getTopic(topicName, true)
@@ -47,6 +53,7 @@ public class KafkaTopicManager {
                         log.debug("Call getTopicConsumerManager for {}, and create KafkaTopicConsumerManager.",
                             topicName);
                     }
+                    topics.putIfAbsent(topicName, (PersistentTopic) t2.get());
                     return new KafkaTopicConsumerManager((PersistentTopic) t2.get());
                 })
                 .exceptionally(ex -> {
@@ -61,5 +68,14 @@ public class KafkaTopicManager {
     public boolean topicExists(String topicName) {
         return topics.containsKey(topicName);
     }
+
+    public PersistentTopic addTopic(String topicName, PersistentTopic persistentTopic) {
+        return topics.putIfAbsent(topicName, persistentTopic);
+    }
+
+    public PersistentTopic getTopic(String topicName) {
+        return topics.get(topicName);
+    }
+
 
 }
