@@ -16,7 +16,7 @@ package org.apache.bookkeeper.mledger.impl;
 import lombok.Getter;
 
 /**
- * A wrapper to make ManagedLedgerImpl accessable.
+ * A wrapper to make ManagedLedgerImpl accessible.
  */
 public class ManagedLedgerImplWrapper {
     @Getter
@@ -35,7 +35,6 @@ public class ManagedLedgerImplWrapper {
         return managedLedger.getFirstPosition();
     }
 
-    // TODO: add test.
     // combine getFirstPosition and getNextValidPosition together.
     public PositionImpl getFirstValidPosition() {
         PositionImpl firstPosition = managedLedger.getFirstPosition();
@@ -51,8 +50,7 @@ public class ManagedLedgerImplWrapper {
     }
 
     public PositionImpl getLastConfirmedEntry() {
-        return (PositionImpl)managedLedger.getLastConfirmedEntry();
+        return (PositionImpl) managedLedger.getLastConfirmedEntry();
     }
-
 
 }

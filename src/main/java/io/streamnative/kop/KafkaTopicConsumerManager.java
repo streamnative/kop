@@ -16,8 +16,6 @@ package io.streamnative.kop;
 import static com.google.common.base.Preconditions.checkArgument;
 
 import io.streamnative.kop.utils.MessageIdUtils;
-import io.streamnative.kop.utils.ReflectionUtils;
-import java.lang.reflect.Method;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import lombok.Getter;
@@ -73,7 +71,8 @@ public class KafkaTopicConsumerManager {
 
         try {
             // get previous position, because NonDurableCursor is read from next position.
-            ManagedLedgerImplWrapper ledger = new ManagedLedgerImplWrapper((ManagedLedgerImpl) topic.getManagedLedger());
+            ManagedLedgerImplWrapper ledger =
+                new ManagedLedgerImplWrapper((ManagedLedgerImpl) topic.getManagedLedger());
             PositionImpl previous = ledger.getPreviousPosition(position);
             if (log.isDebugEnabled()) {
                 log.debug("Create cursor {} for offset: {}. position: {}, previousPosition: {}",

@@ -48,12 +48,10 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.testng.annotations.Test;
 
 /**
- * Validate KafkaApisTest
+ * Validate KafkaApisTest.
  */
 @Slf4j
 public class FetchRequestTest extends KafkaApisTest {
-
-
     private void checkFetchResponse(List<TopicPartition> expectedPartitions,
                                     FetchResponse<MemoryRecords> fetchResponse,
                                     int maxPartitionBytes,
@@ -227,7 +225,8 @@ public class FetchRequestTest extends KafkaApisTest {
         FetchResponse<MemoryRecords> fetchResponse1 =
             (FetchResponse<MemoryRecords>) responseFuture1.get().getResponse();
 
-        checkFetchResponse(shuffledTopicPartitions1, fetchResponse1, maxPartitionBytes, maxResponseBytes, messagesPerPartition);
+        checkFetchResponse(shuffledTopicPartitions1, fetchResponse1,
+            maxPartitionBytes, maxResponseBytes, messagesPerPartition);
 
         // 2. Same as 1, but shuffled again
         Collections.shuffle(partitionsWithoutLargeMessages);
@@ -244,7 +243,8 @@ public class FetchRequestTest extends KafkaApisTest {
         FetchResponse<MemoryRecords> fetchResponse2 =
             (FetchResponse<MemoryRecords>) responseFuture2.get().getResponse();
 
-        checkFetchResponse(shuffledTopicPartitions2, fetchResponse2, maxPartitionBytes, maxResponseBytes, messagesPerPartition);
+        checkFetchResponse(shuffledTopicPartitions2, fetchResponse2,
+            maxPartitionBytes, maxResponseBytes, messagesPerPartition);
 
         // 3. Partition with message larger than the partition limit at the start of the list
         Collections.shuffle(partitionsWithoutLargeMessages);
@@ -264,6 +264,7 @@ public class FetchRequestTest extends KafkaApisTest {
         FetchResponse<MemoryRecords> fetchResponse3 =
             (FetchResponse<MemoryRecords>) responseFuture3.get().getResponse();
 
-        checkFetchResponse(shuffledTopicPartitions3, fetchResponse3, maxPartitionBytes, maxResponseBytes, messagesPerPartition);
+        checkFetchResponse(shuffledTopicPartitions3, fetchResponse3,
+            maxPartitionBytes, maxResponseBytes, messagesPerPartition);
     }
 }

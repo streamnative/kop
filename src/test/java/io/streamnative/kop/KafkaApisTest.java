@@ -62,7 +62,7 @@ import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 /**
- * Validate KafkaApisTest
+ * Validate KafkaApisTest.
  */
 @Slf4j
 public class KafkaApisTest extends MockKafkaServiceBaseTest {
@@ -159,7 +159,7 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
         ResponseAndRequest response1 = invalidResponse1.get();
         assertEquals(response1.getRequest().getHeader().apiKey(), ApiKeys.OFFSET_COMMIT);
         TopicPartition topicPartition1 = new TopicPartition(topicName, -1);
-        assertEquals(((OffsetCommitResponse)response1.getResponse()).responseData().get(topicPartition1),
+        assertEquals(((OffsetCommitResponse) response1.getResponse()).responseData().get(topicPartition1),
             Errors.UNKNOWN_TOPIC_OR_PARTITION);
 
         // invalid partition id 1.
@@ -167,7 +167,7 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
         TopicPartition topicPartition2 = new TopicPartition(topicName, 1);
         ResponseAndRequest response2 = invalidResponse2.get();
         assertEquals(response2.getRequest().getHeader().apiKey(), ApiKeys.OFFSET_COMMIT);
-        assertEquals(((OffsetCommitResponse)response2.getResponse()).responseData().get(topicPartition2),
+        assertEquals(((OffsetCommitResponse) response2.getResponse()).responseData().get(topicPartition2),
             Errors.UNKNOWN_TOPIC_OR_PARTITION);
     }
 
@@ -228,7 +228,7 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
             .subscribe();
         Message<byte[]> msg = consumer.receive(100, TimeUnit.MILLISECONDS);
         assertNotNull(msg);
-        MessageIdImpl messageId = (MessageIdImpl)((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId();
+        MessageIdImpl messageId = (MessageIdImpl) ((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId();
         // first entry should be the limit offset.
         long limitOffset = MessageIdUtils.getOffset(messageId.getLedgerId(), 0);
         log.info("After create {} messages, get messageId: {} expected earliest limit: {}",
@@ -247,7 +247,7 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
             .handleListOffsetRequest(request);
 
         ResponseAndRequest response = responseFuture.get();
-        ListOffsetResponse listOffsetResponse = (ListOffsetResponse)response.getResponse();
+        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response.getResponse();
         assertEquals(response.getRequest().getHeader().apiKey(), ApiKeys.LIST_OFFSETS);
         assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
         assertEquals(listOffsetResponse.responseData().get(tp).offset, Long.valueOf(limitOffset));
@@ -297,7 +297,7 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
             .subscribe();
         Message<byte[]> msg = consumer.receive(100, TimeUnit.MILLISECONDS);
         assertNotNull(msg);
-        MessageIdImpl messageId = (MessageIdImpl)((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId();
+        MessageIdImpl messageId = (MessageIdImpl) ((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId();
         // LAC entry should be the limit offset.
         long limitOffset = MessageIdUtils.getOffset(messageId.getLedgerId(), totalMsgs - 1);
         log.info("After create {} messages, get messageId: {} expected latest limit: {}",
@@ -316,7 +316,7 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
             .handleListOffsetRequest(request);
 
         ResponseAndRequest response = responseFuture.get();
-        ListOffsetResponse listOffsetResponse = (ListOffsetResponse)response.getResponse();
+        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response.getResponse();
         assertEquals(response.getRequest().getHeader().apiKey(), ApiKeys.LIST_OFFSETS);
         assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
         assertEquals(listOffsetResponse.responseData().get(tp).offset, Long.valueOf(limitOffset));

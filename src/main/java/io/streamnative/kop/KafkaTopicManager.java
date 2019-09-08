@@ -33,7 +33,7 @@ public class KafkaTopicManager {
     @Getter
     private final ConcurrentOpenHashMap<String, CompletableFuture<KafkaTopicConsumerManager>> consumerTopics;
 
-    // todo: add consumerTopics map as cache?
+    // cache for topics
     private final ConcurrentOpenHashMap<String, PersistentTopic> topics;
 
     KafkaTopicManager(BrokerService service) {

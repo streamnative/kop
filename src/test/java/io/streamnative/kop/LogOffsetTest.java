@@ -30,7 +30,7 @@ import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.testng.annotations.Test;
 
 /**
- * Validate KafkaApisTest
+ * Validate LogOffset.
  */
 @Slf4j
 public class LogOffsetTest extends KafkaApisTest {
@@ -52,10 +52,9 @@ public class LogOffsetTest extends KafkaApisTest {
             .handleListOffsetRequest(request);
 
         ResponseAndRequest response = responseFuture.get();
-        ListOffsetResponse listOffsetResponse = (ListOffsetResponse)response.getResponse();
+        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response.getResponse();
         assertEquals(response.getRequest().getHeader().apiKey(), ApiKeys.LIST_OFFSETS);
         assertEquals(listOffsetResponse.responseData().get(tp).error,
             Errors.UNKNOWN_TOPIC_OR_PARTITION);
     }
-
 }

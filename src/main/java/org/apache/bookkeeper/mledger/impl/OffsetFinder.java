@@ -12,7 +12,12 @@
  * limitations under the License.
  */
 package org.apache.bookkeeper.mledger.impl;
+
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.base.Predicate;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.FindEntryCallback;
@@ -23,13 +28,9 @@ import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.pulsar.client.impl.MessageImpl;
 
-import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkState;
-
 /**
- * given a timestamp find the first message (position) (published) at or before the timestamp
+ * given a timestamp find the first message (position) (published) at or before the timestamp.
+ * Most of the code is similar to Pulsar class `PersistentMessageFinder`.
  */
 @Slf4j
 public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
@@ -40,8 +41,8 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
     private static final int TRUE = 1;
     @SuppressWarnings("unused")
     private volatile int messageFindInProgress = FALSE;
-    private static final AtomicIntegerFieldUpdater<OffsetFinder> messageFindInProgressUpdater = AtomicIntegerFieldUpdater
-        .newUpdater(OffsetFinder.class, "messageFindInProgress");
+    private static final AtomicIntegerFieldUpdater<OffsetFinder> messageFindInProgressUpdater =
+        AtomicIntegerFieldUpdater.newUpdater(OffsetFinder.class, "messageFindInProgress");
 
     public OffsetFinder(ManagedLedgerImpl managedLedger) {
         this.managedLedger = managedLedger;

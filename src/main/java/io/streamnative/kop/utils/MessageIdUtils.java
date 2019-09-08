@@ -13,7 +13,7 @@
  */
 package io.streamnative.kop.utils;
 
-import static avro.shaded.com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkArgument;
 
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.client.api.MessageId;

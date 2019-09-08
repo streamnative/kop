@@ -778,7 +778,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         try {
             if (timestamp == ListOffsetRequest.LATEST_TIMESTAMP) {
-                // TODO: here could be (last, -1)
                 PositionImpl position = managedLedger.getLastConfirmedEntry();
                 if (log.isDebugEnabled()) {
                     log.debug("Get latest position for topic {} time {}. result: {}",
@@ -793,8 +792,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     RecordBatch.NO_TIMESTAMP,
                     MessageIdUtils
                         .getOffset(position.getLedgerId(), entryId == -1 ? 0 : entryId)));
-
-                return partitionData;
             } else if (timestamp == ListOffsetRequest.EARLIEST_TIMESTAMP) {
                 PositionImpl position = managedLedger.getFirstValidPosition();
 
@@ -807,7 +804,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     Errors.NONE,
                     RecordBatch.NO_TIMESTAMP,
                     MessageIdUtils.getOffset(position.getLedgerId(), position.getEntryId())));
-                return partitionData;
             } else {
                 // find with real wanted timestamp
                 OffsetFinder offsetFinder = new OffsetFinder(managedLedger.getManagedLedger());
@@ -855,20 +851,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         return;
                     }
                 });
-
             }
         } catch (Exception e) {
             log.error("Failed while get position for topic: {} ts: {}.",
                 persistentTopic.getName(), timestamp, e);
 
-            new ListOffsetResponse
-                .PartitionData(
+            partitionData.complete(new ListOffsetResponse.PartitionData(
                 Errors.UNKNOWN_SERVER_ERROR,
                 ListOffsetResponse.UNKNOWN_TIMESTAMP,
-                ListOffsetResponse.UNKNOWN_OFFSET);
+                ListOffsetResponse.UNKNOWN_OFFSET));
         }
 
-        return null;
+        return partitionData;
     }
 
     private CompletableFuture<ResponseAndRequest> handleListOffsetRequestV1AndAbove(KafkaHeaderAndRequest listOffset) {
