@@ -66,4 +66,14 @@ public final class CoreUtils {
             ));
     }
 
+    public static <K, V1, V2> Map<K, V2> mapKeyValue(Map<K, V1> map,
+                                                     Function<Map.Entry<K, V1>, V2> func) {
+        return map.entrySet()
+            .stream()
+            .collect(Collectors.toMap(
+                e -> e.getKey(),
+                e -> func.apply(e)
+            ));
+    }
+
 }

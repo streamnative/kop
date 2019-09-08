@@ -13,8 +13,9 @@
  */
 package io.streamnative.kop;
 
-
 import static org.apache.kafka.common.record.RecordBatch.NO_TIMESTAMP;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
 
@@ -22,6 +23,8 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.kop.KafkaCommandDecoder.ResponseAndRequest;
 import io.streamnative.kop.utils.MessageIdUtils;
@@ -33,9 +36,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
@@ -50,9 +51,6 @@ import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
-import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.TopicMessageIdImpl;
@@ -110,6 +108,11 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
         log.info("created namespaces, init handler");
 
         kafkaRequestHandler = new KafkaRequestHandler(kafkaService);
+        ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
+        Channel mockChannel = mock(Channel.class);
+        doReturn(mockChannel).when(mockCtx).channel();
+        kafkaRequestHandler.ctx = mockCtx;
+
         serviceAddress = new InetSocketAddress(kafkaService.getBindAddress(), kafkaBrokerPort);
     }
 
