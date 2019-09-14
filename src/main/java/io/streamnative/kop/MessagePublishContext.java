@@ -43,7 +43,7 @@ public final class MessagePublishContext implements PublishContext {
     private CompletableFuture<Long> offsetFuture;
     private Topic topic;
     private long startTimeNs;
-    private static boolean BATCHED = true;
+    public static boolean BATCHED = true;
 
     /**
      * Executed from managed ledger thread when the message is persisted.
