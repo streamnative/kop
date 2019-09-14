@@ -15,6 +15,10 @@ package io.streamnative.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.kop.MessagePublishContext.publishMessages;
+import static io.streamnative.kop.utils.MessageRecordUtils.entriesToRecords;
+import static io.streamnative.kop.utils.MessageRecordUtils.messageToByteBuf;
+import static io.streamnative.kop.utils.MessageRecordUtils.recordToEntry;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
@@ -23,19 +27,13 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.util.Recycler;
-import io.netty.util.Recycler.Handle;
 import io.streamnative.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.kop.offset.OffsetAndMetadata;
 import io.streamnative.kop.utils.CoreUtils;
 import io.streamnative.kop.utils.MessageIdUtils;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.ByteBuffer;
-import java.time.Clock;
-import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -46,7 +44,6 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -67,14 +64,10 @@ import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.record.MemoryRecordsBuilder;
-import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
-import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.DeleteGroupsRequest;
@@ -109,28 +102,17 @@ import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.SyncGroupResponse;
-import org.apache.kafka.common.utils.ByteBufferOutputStream;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.admin.impl.PersistentTopicsBase;
 import org.apache.pulsar.broker.service.Topic;
-import org.apache.pulsar.broker.service.Topic.PublishContext;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.client.api.CompressionType;
-import org.apache.pulsar.client.api.Message;
-import org.apache.pulsar.client.api.Schema;
-import org.apache.pulsar.client.impl.MessageImpl;
-import org.apache.pulsar.client.impl.TypedMessageBuilderImpl;
-import org.apache.pulsar.common.api.proto.PulsarApi.MessageMetadata;
-import org.apache.pulsar.common.compression.CompressionCodecProvider;
 import org.apache.pulsar.common.lookup.data.LookupData;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicDomain;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.protocol.Commands;
-import org.apache.pulsar.common.protocol.Commands.ChecksumType;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
 
@@ -147,12 +129,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final ExecutorService executor;
     private final PulsarAdmin admin;
     private final KafkaTopicManager topicManager;
-
-    private static final Clock clock = Clock.systemDefaultZone();
-    private static final String FAKE_KOP_PRODUCER_NAME = "fake_kop_producer_name";
-
-    private static final int DEFAULT_FETCH_BUFFER_SIZE = 1024 * 1024;
-    private static final int MAX_RECORDS_BUFFER_SIZE = 100 * 1024 * 1024;
 
 
     public KafkaRequestHandler(KafkaService kafkaService) throws Exception {
@@ -431,6 +407,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         final int responsesSize = produceRequest.partitionRecordsOrFail().size();
 
+        // TODO: handle un-exist topic:
+        //     nonExistingTopicResponses += topicPartition -> new PartitionResponse(Errors.UNKNOWN_TOPIC_OR_PARTITION)
         for (Map.Entry<TopicPartition, ? extends Records> entry : produceRequest.partitionRecordsOrFail().entrySet()) {
             TopicPartition topicPartition = entry.getKey();
 
@@ -453,8 +431,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         partitionResponse.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
                     } else {
                         if (topicOpt.isPresent()) {
+                            // TODO: need to add a produce Manager
                             topicManager.addTopic(topicName.toString(), (PersistentTopic) topicOpt.get());
-                            publishMessages(entry.getValue(), topicOpt.get(), partitionResponse);
+                            publishMessages((MemoryRecords) entry.getValue(), topicOpt.get(), partitionResponse);
                         } else {
                             log.error("[{}] Request {}: getOrCreateTopic get empty topic for name {}",
                                 ctx.channel(), produceHar.getHeader(), topicName);
@@ -483,232 +462,46 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     // publish Kafka records to pulsar topic, handle callback in MessagePublishContext.
-    private void publishMessages(Records records,
-                                 Topic topic,
-                                 CompletableFuture<PartitionResponse> future) {
-
-        // get records size.
-        AtomicInteger size = new AtomicInteger(0);
-        records.records().forEach(record -> size.incrementAndGet());
-        int rec = size.get();
-
-        if (log.isDebugEnabled()) {
-            log.debug("[{}] publishMessages for topic partition: {} , records size is {} ",
-                ctx.channel(), topic.getName(), size.get());
-        }
-
-        // TODO: Handle Records in a batched way:
-        //      https://github.com/streamnative/kop/issues/16
-        List<CompletableFuture<Long>> futures = Collections
-            .synchronizedList(Lists.newArrayListWithExpectedSize(size.get()));
-
-        records.records().forEach(record -> {
-            CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
-            futures.add(offsetFuture);
-            ByteBuf headerAndPayload = messageToByteBuf(recordToEntry(record));
-            topic.publishMessage(
-                headerAndPayload,
-                MessagePublishContext.get(
-                    offsetFuture, topic, record.sequence(),
-                    record.sizeInBytes(), System.nanoTime()));
-        });
-
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture<?>[rec])).whenComplete((ignore, ex) -> {
-            if (ex != null) {
-                log.error("[{}] publishMessages for topic partition: {} failed when write.",
-                    ctx.channel(), topic.getName(), ex);
-                future.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
-            } else {
-                future.complete(new PartitionResponse(Errors.NONE));
-            }
-        });
-    }
-
-
-    private static final class MessagePublishContext implements PublishContext {
-        private CompletableFuture<Long> offsetFuture;
-        private Topic topic;
-        private long sequenceId;
-        private int msgSize;
-        private long startTimeNs;
-
-        public long getSequenceId() {
-            return sequenceId;
-        }
-
-        /**
-         * Executed from managed ledger thread when the message is persisted.
-         */
-        @Override
-        public void completed(Exception exception, long ledgerId, long entryId) {
-
-            if (exception != null) {
-                log.error("Failed write entry: ledgerId: {}, entryId: {}, sequenceId: {}. triggered send callback.",
-                    ledgerId, entryId, sequenceId);
-                offsetFuture.completeExceptionally(exception);
-            } else {
-                if (log.isDebugEnabled()) {
-                    log.debug("Success write topic: {}, ledgerId: {}, entryId: {}, sequenceId: {},"
-                            + "messageSize: {}. And triggered send callback.",
-                        topic.getName(), ledgerId, entryId, sequenceId, msgSize);
-                }
-
-                topic.recordAddLatency(TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - startTimeNs));
-
-                offsetFuture.complete(Long.valueOf(MessageIdUtils.getOffset(ledgerId, entryId)));
-            }
-
-            recycle();
-        }
-
-        // recycler
-        static MessagePublishContext get(CompletableFuture<Long> offsetFuture,
-                                         Topic topic,
-                                         long sequenceId,
-                                         int msgSize,
-                                         long startTimeNs) {
-            MessagePublishContext callback = RECYCLER.get();
-            callback.offsetFuture = offsetFuture;
-            callback.topic = topic;
-            callback.sequenceId = sequenceId;
-            callback.msgSize = msgSize;
-            callback.startTimeNs = startTimeNs;
-            return callback;
-        }
-
-        private final Handle<MessagePublishContext> recyclerHandle;
-
-        private MessagePublishContext(Handle<MessagePublishContext> recyclerHandle) {
-            this.recyclerHandle = recyclerHandle;
-        }
-
-        private static final Recycler<MessagePublishContext> RECYCLER = new Recycler<MessagePublishContext>() {
-            protected MessagePublishContext newObject(Recycler.Handle<MessagePublishContext> handle) {
-                return new MessagePublishContext(handle);
-            }
-        };
-
-        public void recycle() {
-            offsetFuture = null;
-            topic = null;
-            sequenceId = -1;
-            msgSize = 0;
-            startTimeNs = -1;
-            recyclerHandle.recycle(this);
-        }
-    }
-
-    // convert kafka Record to Pulsar Message.
-    private Message<byte[]> recordToEntry(Record record) {
-        @SuppressWarnings("unchecked")
-        TypedMessageBuilderImpl<byte[]> builder = new TypedMessageBuilderImpl(null, Schema.BYTES);
-
-        // key
-        if (record.hasKey()) {
-            byte[] key = new byte[record.keySize()];
-            record.key().get(key);
-            builder.keyBytes(key);
-        }
-
-        // value
-        if (record.hasValue()) {
-            byte[] value = new byte[record.valueSize()];
-            record.value().get(value);
-            builder.value(value);
-        } else {
-            builder.value(new byte[0]);
-        }
-
-        // sequence
-        if (record.sequence() >= 0) {
-            builder.sequenceId(record.sequence());
-        }
-
-        // timestamp
-        if (record.timestamp() >= 0) {
-            builder.eventTime(record.timestamp());
-        }
-
-        // header
-        for (Header h : record.headers()) {
-            builder.property(h.key(),
-                Base64.getEncoder().encodeToString(h.value()));
-        }
-
-        return builder.getMessage();
-    }
-
-    // convert message to ByteBuf payload for ledger.addEntry.
-    private ByteBuf messageToByteBuf(Message<byte[]> message) {
-        checkArgument(message instanceof MessageImpl);
-
-        MessageImpl<byte[]> msg = (MessageImpl<byte[]>) message;
-        MessageMetadata.Builder msgMetadataBuilder = msg.getMessageBuilder();
-        ByteBuf payload = msg.getDataBuffer();
-
-        // filled in required fields
-        if (!msgMetadataBuilder.hasSequenceId()) {
-            msgMetadataBuilder.setSequenceId(-1);
-        }
-        if (!msgMetadataBuilder.hasPublishTime()) {
-            msgMetadataBuilder.setPublishTime(clock.millis());
-        }
-        if (!msgMetadataBuilder.hasProducerName()) {
-            msgMetadataBuilder.setProducerName(FAKE_KOP_PRODUCER_NAME);
-        }
-
-        msgMetadataBuilder.setCompression(
-            CompressionCodecProvider.convertToWireProtocol(CompressionType.NONE));
-        msgMetadataBuilder.setUncompressedSize(payload.readableBytes());
-        MessageMetadata msgMetadata = msgMetadataBuilder.build();
-
-        ByteBuf buf = Commands.serializeMetadataAndPayload(ChecksumType.Crc32c, msgMetadata, payload);
-
-        msgMetadataBuilder.recycle();
-        msgMetadata.recycle();
-
-        return buf;
-    }
-
-
-    // convert entries read from BookKeeper into Kafka Records
-    private static MemoryRecords entriesToRecords(List<Entry> entries) {
-        try (ByteBufferOutputStream outputStream = new ByteBufferOutputStream(DEFAULT_FETCH_BUFFER_SIZE)) {
-            MemoryRecordsBuilder builder = new MemoryRecordsBuilder(outputStream, RecordBatch.CURRENT_MAGIC_VALUE,
-                org.apache.kafka.common.record.CompressionType.NONE,
-                TimestampType.CREATE_TIME,
-                MessageIdUtils.getOffset(entries.get(0).getLedgerId(), 0),
-                RecordBatch.NO_TIMESTAMP,
-                RecordBatch.NO_PRODUCER_ID,
-                RecordBatch.NO_PRODUCER_EPOCH,
-                RecordBatch.NO_SEQUENCE,
-                false, false,
-                RecordBatch.NO_PARTITION_LEADER_EPOCH,
-                MAX_RECORDS_BUFFER_SIZE);
-
-            for (Entry entry : entries) {
-                ByteBuf metadataAndPayload = entry.getDataBuffer();
-                MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
-                ByteBuf payload = metadataAndPayload.retain();
-
-                byte[] data = new byte[payload.readableBytes()];
-                payload.readBytes(data);
-
-                builder.appendWithOffset(
-                    MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
-                    msgMetadata.getEventTime(),
-                    Base64.getDecoder().decode(msgMetadata.getPartitionKey()),
-                    data);
-            }
-            return builder.build();
-        } catch (IOException ioe) {
-            log.error("Meet IOException: {}", ioe);
-            throw new UncheckedIOException(ioe);
-        } catch (Exception e) {
-            log.error("Meet exception: {}", e);
-            throw e;
-        }
-    }
+//    private void publishMessages(Records records,
+//                                 Topic topic,
+//                                 CompletableFuture<PartitionResponse> future) {
+//
+//        // get records size.
+//        AtomicInteger size = new AtomicInteger(0);
+//        records.records().forEach(record -> size.incrementAndGet());
+//        int rec = size.get();
+//
+//        if (log.isDebugEnabled()) {
+//            log.debug("[{}] publishMessages for topic partition: {} , records size is {} ",
+//                ctx.channel(), topic.getName(), size.get());
+//        }
+//
+//        // TODO: Handle Records in a batched way:
+//        //      https://github.com/streamnative/kop/issues/16
+//        List<CompletableFuture<Long>> futures = Collections
+//            .synchronizedList(Lists.newArrayListWithExpectedSize(size.get()));
+//
+//        records.records().forEach(record -> {
+//            CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
+//            futures.add(offsetFuture);
+//            ByteBuf headerAndPayload = messageToByteBuf(recordToEntry(record));
+//            topic.publishMessage(
+//                headerAndPayload,
+//                MessagePublishContext.get(
+//                    offsetFuture, topic, record.sequence(),
+//                    record.sizeInBytes(), System.nanoTime()));
+//        });
+//
+//        CompletableFuture.allOf(futures.toArray(new CompletableFuture<?>[rec])).whenComplete((ignore, ex) -> {
+//            if (ex != null) {
+//                log.error("[{}] publishMessages for topic partition: {} failed when write.",
+//                    ctx.channel(), topic.getName(), ex);
+//                future.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
+//            } else {
+//                future.complete(new PartitionResponse(Errors.NONE));
+//            }
+//        });
+//    }
 
     // A simple implementation, returns this broker node.
     protected CompletableFuture<ResponseAndRequest>
