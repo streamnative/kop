@@ -42,6 +42,7 @@ import org.apache.pulsar.client.impl.TypedMessageBuilderImpl;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.PulsarApi;
 import org.apache.pulsar.common.api.proto.PulsarApi.MessageMetadata;
+import org.apache.pulsar.common.api.proto.PulsarApi.SingleMessageMetadata;
 import org.apache.pulsar.common.compression.CompressionCodecProvider;
 import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.protocol.Commands.ChecksumType;
@@ -131,48 +132,6 @@ public final class MessageRecordUtils {
         return buf;
     }
 
-
-    // convert entries read from BookKeeper into Kafka Records
-    public static MemoryRecords entriesToRecords(List<org.apache.bookkeeper.mledger.Entry> entries) {
-        try (ByteBufferOutputStream outputStream = new ByteBufferOutputStream(DEFAULT_FETCH_BUFFER_SIZE)) {
-            MemoryRecordsBuilder builder = new MemoryRecordsBuilder(outputStream, RecordBatch.CURRENT_MAGIC_VALUE,
-                org.apache.kafka.common.record.CompressionType.NONE,
-                TimestampType.CREATE_TIME,
-                MessageIdUtils.getOffset(entries.get(0).getLedgerId(), 0),
-                RecordBatch.NO_TIMESTAMP,
-                RecordBatch.NO_PRODUCER_ID,
-                RecordBatch.NO_PRODUCER_EPOCH,
-                RecordBatch.NO_SEQUENCE,
-                false, false,
-                RecordBatch.NO_PARTITION_LEADER_EPOCH,
-                MAX_RECORDS_BUFFER_SIZE);
-
-            for (Entry entry : entries) {
-                ByteBuf metadataAndPayload = entry.getDataBuffer();
-                MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
-                ByteBuf payload = metadataAndPayload.retain();
-
-                byte[] data = new byte[payload.readableBytes()];
-                payload.readBytes(data);
-
-                // TODO: add headers
-                builder.appendWithOffset(
-                    MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
-                    msgMetadata.getEventTime(),
-                    Base64.getDecoder().decode(msgMetadata.getPartitionKey()),
-                    data);
-            }
-            return builder.build();
-        } catch (IOException ioe) {
-            log.error("Meet IOException: {}", ioe);
-            throw new UncheckedIOException(ioe);
-        } catch (Exception e) {
-            log.error("Meet exception: {}", e);
-            throw e;
-        }
-    }
-
-
     //// for Batch messages
     protected static final int INITIAL_BATCH_BUFFER_SIZE = 1024;
     protected static final int MAX_MESSAGE_BATCH_SIZE_BYTES = 128 * 1024;
@@ -222,7 +181,9 @@ public final class MessageRecordUtils {
 
         MessageMetadata msgMetadata = messageMetaBuilder.build();
 
-        ByteBuf buf = Commands.serializeMetadataAndPayload(ChecksumType.Crc32c, msgMetadata, batchedMessageMetadataAndPayload);
+        ByteBuf buf = Commands.serializeMetadataAndPayload(ChecksumType.Crc32c,
+            msgMetadata,
+            batchedMessageMetadataAndPayload);
 
         messageMetaBuilder.recycle();
         msgMetadata.recycle();
@@ -230,8 +191,9 @@ public final class MessageRecordUtils {
         return buf;
     }
 
-    // convert entries read from BookKeeper into Kafka Records
-    public static MemoryRecords batchedEntriesToRecords(List<org.apache.bookkeeper.mledger.Entry> entries) {
+    // Convert entries read from BookKeeper into Kafka Records
+    // Entries can be batched messages, may need un-batch.
+    public static MemoryRecords entriesToRecords(List<org.apache.bookkeeper.mledger.Entry> entries) {
         try (ByteBufferOutputStream outputStream = new ByteBufferOutputStream(DEFAULT_FETCH_BUFFER_SIZE)) {
             MemoryRecordsBuilder builder = new MemoryRecordsBuilder(outputStream, RecordBatch.CURRENT_MAGIC_VALUE,
                 org.apache.kafka.common.record.CompressionType.NONE,
@@ -250,47 +212,60 @@ public final class MessageRecordUtils {
                 ByteBuf metadataAndPayload = entry.getDataBuffer();
                 MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
                 int batchSize = msgMetadata.getNumMessagesInBatch();
+                boolean isBatchMessage = msgMetadata.hasNumMessagesInBatch();
                 ByteBuf payload = metadataAndPayload.retain();
 
                 if (log.isDebugEnabled()) {
-                    log.debug("batchedEntriesToRecords.  NumMessagesInBatch {}: entries in list: {}. new entryId {}:{}",
+                    log.debug("entriesToRecords.  NumMessagesInBatch {}: entries in list: {}. new entryId {}:{}",
                         batchSize, entries.size(), entry.getLedgerId(), entry.getEntryId());
-                    log.debug("batchedEntriesToRecords. readerIndex:{} writerIndex:{}",
+                    log.debug("entriesToRecords. readerIndex:{} writerIndex:{}",
                         payload.readerIndex(), payload.writerIndex());
                 }
 
+                // need handle encryption
                 checkState(msgMetadata.getEncryptionKeysCount() == 0);
 
-                for (int i = 0; i < batchSize; ++i) {
-                    if (log.isDebugEnabled()) {
-                        log.debug(" processing message num - {} in batch", i);
+                if (isBatchMessage) {
+                    for (int i = 0; i < batchSize; ++i) {
+                        if (log.isDebugEnabled()) {
+                            log.debug(" processing message num - {} in batch", i);
+                        }
+
+                        SingleMessageMetadata.Builder singleMessageMetadataBuilder = SingleMessageMetadata
+                            .newBuilder();
+                        ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(metadataAndPayload,
+                            singleMessageMetadataBuilder, i, batchSize);
+
+                        SingleMessageMetadata singleMessageMetadata = singleMessageMetadataBuilder.build();
+
+                        byte[] data = new byte[singleMessagePayload.readableBytes()];
+                        singleMessagePayload.readBytes(data);
+
+                        // TODO: add headers? will offset be an issue?
+                        builder.appendWithOffset(
+                            MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
+                            msgMetadata.getEventTime(),
+                            Base64.getDecoder().decode(singleMessageMetadata.getPartitionKey()),
+                            data);
+                        singleMessageMetadataBuilder.recycle();
                     }
+                } else {
+                    byte[] data = new byte[payload.readableBytes()];
+                    payload.readBytes(data);
 
-                    PulsarApi.SingleMessageMetadata.Builder singleMessageMetadataBuilder = PulsarApi.SingleMessageMetadata
-                        .newBuilder();
-                    ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(metadataAndPayload,
-                        singleMessageMetadataBuilder, i, batchSize);
-
-                    PulsarApi.SingleMessageMetadata singleMessageMetadata = singleMessageMetadataBuilder.build();
-
-                    byte[] data = new byte[singleMessagePayload.readableBytes()];
-                    singleMessagePayload.readBytes(data);
-
-                    // TODO: will offset be an issue?
                     builder.appendWithOffset(
                         MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
                         msgMetadata.getEventTime(),
-                        Base64.getDecoder().decode(singleMessageMetadata.getPartitionKey()),
+                        Base64.getDecoder().decode(msgMetadata.getPartitionKey()),
                         data);
-                    singleMessageMetadataBuilder.recycle();
                 }
             }
 
             return builder.build();
-        } catch(IOException ioe){
+        } catch (IOException ioe){
             log.error("Meet IOException: {}", ioe);
             throw new UncheckedIOException(ioe);
-        } catch(Exception e){
+        } catch (Exception e){
             log.error("Meet exception: {}", e);
             throw e;
         }

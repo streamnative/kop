@@ -13,11 +13,9 @@
  */
 package io.streamnative.kop;
 
-import static io.streamnative.kop.utils.MessageRecordUtils.batchedEntriesToRecords;
 import static io.streamnative.kop.utils.MessageRecordUtils.entriesToRecords;
 import static io.streamnative.kop.utils.TopicNameUtils.pulsarTopicName;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
-import static com.google.common.base.Preconditions.checkState;
 
 import com.google.common.collect.Lists;
 import io.netty.util.Recycler;
@@ -218,11 +216,7 @@ public final class MessageFetchContext {
 
                             // by default kafka is produced message in batched mode.
                             MemoryRecords records;
-                            if (MessagePublishContext.BATCHED) {
-                                records = batchedEntriesToRecords(entries);
-                            } else {
-                                records = entriesToRecords(entries);
-                            }
+                            records = entriesToRecords(entries);
 
                             partitionData = new FetchResponse.PartitionData(
                                 Errors.NONE,
@@ -236,7 +230,7 @@ public final class MessageFetchContext {
                     });
 
                     if (allPartitionsNoEntry.get()) {
-                        log.error("Request {}: All partitions for request read 0 entry",
+                        log.warn("Request {}: All partitions for request read 0 entry",
                             fetch.getHeader());
 
                         // returned earlier, sleep for waitTime

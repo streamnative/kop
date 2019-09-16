@@ -23,8 +23,6 @@ import org.apache.pulsar.common.naming.TopicName;
 /**
  * Utils for Pulsar TopicName.
  */
-
-// TODO: add test for this class.
 public class TopicNameUtils {
 
     public static TopicName pulsarTopicName(TopicPartition topicPartition, NamespaceName namespace) {

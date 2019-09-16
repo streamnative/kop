@@ -43,7 +43,7 @@ public final class MessagePublishContext implements PublishContext {
     private CompletableFuture<Long> offsetFuture;
     private Topic topic;
     private long startTimeNs;
-    public static boolean BATCHED = true;
+    public static final boolean MESSAGE_BATCHED = true;
 
     /**
      * Executed from managed ledger thread when the message is persisted.
@@ -115,7 +115,7 @@ public final class MessagePublishContext implements PublishContext {
             log.debug("publishMessages for topic partition: {} , records size is {} ", topic.getName(), size.get());
         }
 
-        if (BATCHED) {
+        if (MESSAGE_BATCHED) {
             CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
 
             ByteBuf headerAndPayload = recordsToByteBuf(records, rec);
