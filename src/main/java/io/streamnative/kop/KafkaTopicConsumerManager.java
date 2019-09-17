@@ -16,14 +16,13 @@ package io.streamnative.kop;
 import static com.google.common.base.Preconditions.checkArgument;
 
 import io.streamnative.kop.utils.MessageIdUtils;
-import io.streamnative.kop.utils.ReflectionUtils;
-import java.lang.reflect.Method;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImplWrapper;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
 import org.apache.commons.codec.digest.DigestUtils;
@@ -72,11 +71,9 @@ public class KafkaTopicConsumerManager {
 
         try {
             // get previous position, because NonDurableCursor is read from next position.
-            ManagedLedgerImpl ledger = (ManagedLedgerImpl) topic.getManagedLedger();
-            Method getPreviousPosition = ReflectionUtils
-                .setMethodAccessible(ledger, "getPreviousPosition", PositionImpl.class);
-            PositionImpl previous = (PositionImpl) getPreviousPosition.invoke(ledger, position);
-
+            ManagedLedgerImplWrapper ledger =
+                new ManagedLedgerImplWrapper((ManagedLedgerImpl) topic.getManagedLedger());
+            PositionImpl previous = ledger.getPreviousPosition(position);
             if (log.isDebugEnabled()) {
                 log.debug("Create cursor {} for offset: {}. position: {}, previousPosition: {}",
                     cursorName, offset, position, previous);

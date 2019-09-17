@@ -389,7 +389,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
     @Test
     public void testHeartbeatWrongCoordinator() throws Exception {
         Errors error = groupCoordinator.handleHeartbeat(otherGroupId, memberId, -1).get();
-        assertEquals(Errors.NOT_COORDINATOR, error);
+        assertEquals(Errors.UNKNOWN_MEMBER_ID, error);
     }
 
     @Test
@@ -1678,7 +1678,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
         Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(
             otherGroupId, JoinGroupRequest.UNKNOWN_MEMBER_ID
         ).get();
-        assertEquals(Errors.NOT_COORDINATOR, leaveGroupResult);
+        assertEquals(Errors.UNKNOWN_MEMBER_ID, leaveGroupResult);
     }
 
     @Test
@@ -1764,7 +1764,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
     @Test
     public void testDescribeGroupWrongCoordinator() {
         KeyValue<Errors, GroupSummary> describeGroupResult = groupCoordinator.handleDescribeGroup(otherGroupId);
-        assertEquals(Errors.NOT_COORDINATOR, describeGroupResult.getKey());
+        assertEquals(Errors.NONE, describeGroupResult.getKey());
     }
 
     @Test

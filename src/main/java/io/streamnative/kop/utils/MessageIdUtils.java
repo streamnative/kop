@@ -13,6 +13,8 @@
  */
 package io.streamnative.kop.utils;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.impl.MessageIdImpl;
@@ -26,12 +28,17 @@ public class MessageIdUtils {
         // Combine ledger id and entry id to form offset
         // Use less than 32 bits to represent entry id since it will get
         // rolled over way before overflowing the max int range
+        checkArgument(ledgerId > 0, "Expected ledgerId > 0, but get " + ledgerId);
+        checkArgument(entryId >= 0, "Expected entryId >= 0, but get " + entryId);
+
         long offset = (ledgerId << 28) | entryId;
         return offset;
     }
 
     public static final MessageId getMessageId(long offset) {
         // De-multiplex ledgerId and entryId from offset
+        checkArgument(offset > 0, "Expected Offset > 0, but get " + offset);
+
         long ledgerId = offset >>> 28;
         long entryId = offset & 0x0F_FF_FF_FFL;
 
@@ -40,6 +47,8 @@ public class MessageIdUtils {
 
     public static final PositionImpl getPosition(long offset) {
         // De-multiplex ledgerId and entryId from offset
+        checkArgument(offset >= 0, "Expected Offset >= 0, but get " + offset);
+
         long ledgerId = offset >>> 28;
         long entryId = offset & 0x0F_FF_FF_FFL;
 

@@ -68,7 +68,7 @@ public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
         KafkaTopicConsumerManager topicConsumerManager2 = tcm.get();
 
         assertTrue(topicConsumerManager == topicConsumerManager2);
-        assertEquals(kafkaTopicManager.getTopics().size(), 1);
+        assertEquals(kafkaTopicManager.getConsumerTopics().size(), 1);
 
         // 2. verify another get with different topic will return different tcm
         String topicName2 = "persistent://public/default/testGetTopicConsumerManager2";
@@ -76,7 +76,7 @@ public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
         tcm = kafkaTopicManager.getTopicConsumerManager(topicName2);
         topicConsumerManager2 = tcm.get();
         assertTrue(topicConsumerManager != topicConsumerManager2);
-        assertEquals(kafkaTopicManager.getTopics().size(), 2);
+        assertEquals(kafkaTopicManager.getConsumerTopics().size(), 2);
     }
 
 
