@@ -23,6 +23,9 @@ import org.apache.pulsar.client.impl.MessageIdImpl;
  * Utils for Pulsar MessageId.
  */
 public class MessageIdUtils {
+    public static final int LEDGER_BITS = 20;
+    public static final int ENTRY_BITS = 32;
+    public static final int BATCH_BITS = 12;
 
     public static final long getOffset(long ledgerId, long entryId) {
         // Combine ledger id and entry id to form offset
@@ -31,7 +34,7 @@ public class MessageIdUtils {
         checkArgument(ledgerId > 0, "Expected ledgerId > 0, but get " + ledgerId);
         checkArgument(entryId >= 0, "Expected entryId >= 0, but get " + entryId);
 
-        long offset = (ledgerId << 28) | entryId;
+        long offset = (ledgerId << (ENTRY_BITS + BATCH_BITS) | (entryId << BATCH_BITS));
         return offset;
     }
 

@@ -15,6 +15,7 @@ package io.streamnative.kop.utils;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
@@ -28,6 +29,7 @@ import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.header.Header;
+import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.Record;
@@ -41,6 +43,7 @@ import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.client.impl.TypedMessageBuilderImpl;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.PulsarApi;
+import org.apache.pulsar.common.api.proto.PulsarApi.KeyValue;
 import org.apache.pulsar.common.api.proto.PulsarApi.MessageMetadata;
 import org.apache.pulsar.common.api.proto.PulsarApi.SingleMessageMetadata;
 import org.apache.pulsar.common.compression.CompressionCodecProvider;
@@ -61,6 +64,7 @@ public final class MessageRecordUtils {
     private static final Clock clock = Clock.systemDefaultZone();
 
     // convert kafka Record to Pulsar Message.
+    // called when publish received Kafka Record into Pulsar.
     public static MessageImpl<byte[]> recordToEntry(Record record) {
         @SuppressWarnings("unchecked")
         TypedMessageBuilderImpl<byte[]> builder = new TypedMessageBuilderImpl(null, Schema.BYTES);
@@ -94,13 +98,15 @@ public final class MessageRecordUtils {
         // header
         for (Header h : record.headers()) {
             builder.property(h.key(),
-                Base64.getEncoder().encodeToString(h.value()));
+                new String(h.value(), UTF_8));
         }
 
         return (MessageImpl<byte[]>) builder.getMessage();
     }
 
     // convert message to ByteBuf payload for ledger.addEntry.
+    // parameter message is converted from passed in Kafka record.
+    // called when publish received Kafka Record into Pulsar.
     public static ByteBuf messageToByteBuf(Message<byte[]> message) {
         checkArgument(message instanceof MessageImpl);
 
@@ -136,6 +142,7 @@ public final class MessageRecordUtils {
     protected static final int INITIAL_BATCH_BUFFER_SIZE = 1024;
     protected static final int MAX_MESSAGE_BATCH_SIZE_BYTES = 128 * 1024;
 
+    // If records stored in a batched way, turn MemoryRecords into a pulsar batched message.
     public static ByteBuf recordsToByteBuf(MemoryRecords records, int size) {
         long currentBatchSizeBytes = 0;
         int numMessagesInBatch = 0;
@@ -191,6 +198,28 @@ public final class MessageRecordUtils {
         return buf;
     }
 
+    private static Header[] getHeadersFromMetadata(List<KeyValue> properties) {
+        Header[] headers = new Header[properties.size()];
+
+        if (log.isDebugEnabled()) {
+            log.debug("getHeadersFromMetadata. Header size: {}",
+                properties.size());
+        }
+
+        int index = 0;
+        for (KeyValue kv: properties) {
+            headers[index] = new RecordHeader(kv.getKey(), kv.getValue().getBytes(UTF_8));
+
+            if (log.isDebugEnabled()) {
+                log.debug("index: {} kv.getKey: {}. kv.getValue: {}",
+                    index, kv.getKey(), kv.getValue().getBytes(UTF_8));
+            }
+            index ++;
+        }
+
+        return headers;
+    }
+
     // Convert entries read from BookKeeper into Kafka Records
     // Entries can be batched messages, may need un-batch.
     public static MemoryRecords entriesToRecords(List<org.apache.bookkeeper.mledger.Entry> entries) {
@@ -240,27 +269,29 @@ public final class MessageRecordUtils {
 
                         byte[] data = new byte[singleMessagePayload.readableBytes()];
                         singleMessagePayload.readBytes(data);
+                        Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
 
-                        // TODO: add headers? will offset be an issue?
                         builder.appendWithOffset(
                             MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
                             msgMetadata.getEventTime(),
                             Base64.getDecoder().decode(singleMessageMetadata.getPartitionKey()),
-                            data);
+                            data,
+                            headers);
                         singleMessageMetadataBuilder.recycle();
                     }
                 } else {
                     byte[] data = new byte[payload.readableBytes()];
                     payload.readBytes(data);
+                    Header[] headers = getHeadersFromMetadata(msgMetadata.getPropertiesList());
 
                     builder.appendWithOffset(
                         MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
                         msgMetadata.getEventTime(),
                         Base64.getDecoder().decode(msgMetadata.getPartitionKey()),
-                        data);
+                        data,
+                        headers);
                 }
             }
-
             return builder.build();
         } catch (IOException ioe){
             log.error("Meet IOException: {}", ioe);
@@ -269,7 +300,8 @@ public final class MessageRecordUtils {
             log.error("Meet exception: {}", e);
             throw e;
         }
-
     }
+
+
 
 }
