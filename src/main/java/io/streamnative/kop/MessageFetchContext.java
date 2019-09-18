@@ -298,9 +298,10 @@ public final class MessageFetchContext {
                                         entry.getLength(), keptOffset, offset);
                                 }
 
+                                long nextOffset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId() + 1);
                                 requestHandler.getTopicManager()
                                     .getTopicConsumerManager(topicName.toString())
-                                    .thenAccept(cm -> cm.add(offset + 1, Pair.of(cursor, offset + 1)));
+                                    .thenAccept(cm -> cm.add(nextOffset, Pair.of(cursor, nextOffset)));
                             } else {
                                 // since no read entry, add the original offset back.
                                 if (log.isDebugEnabled()) {

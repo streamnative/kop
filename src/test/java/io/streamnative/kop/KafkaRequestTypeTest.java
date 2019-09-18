@@ -60,8 +60,18 @@ import org.testng.annotations.Test;
 
 /**
  * Unit test for Different kafka request type.
- *
- * Test
+ * Test:
+ * KafkaProducePulsarConsume
+ * KafkaProduceKafkaConsume
+ * PulsarProduceKafkaConsume
+ * with
+ * different partitions
+ * batch enabled/disabled.
+ * This test will involved test for class:
+ * KafkaRequestHandler
+ * MessageRecordUtils
+ * MessagePublishContext
+ * MessageConsumeContext
  */
 @Slf4j
 public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
@@ -267,7 +277,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
                 assertEquals(messageStrPrefix + key.toString(), record.value());
 
                 Header[] headers = record.headers().toArray();
-                for (int j = 1; j <=2; j++) {
+                for (int j = 1; j <= 2; j++) {
                     String k = headers[j - 1].key();
                     String v = new String(headers[j - 1].value(), UTF_8);
 
@@ -341,7 +351,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
                 Integer key = record.key();
                 assertEquals(messageStrPrefix + key.toString(), record.value());
                 Header[] headers = record.headers().toArray();
-                for (int j = 1; j <=2; j++) {
+                for (int j = 1; j <= 2; j++) {
                     String k = headers[j - 1].key();
                     String v = new String(headers[j - 1].value(), UTF_8);
 

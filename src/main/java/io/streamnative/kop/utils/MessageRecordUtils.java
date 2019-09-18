@@ -53,7 +53,6 @@ import org.apache.pulsar.common.protocol.Commands.ChecksumType;
 /**
  * Pulsar Message and Kafka Record utils.
  */
-// TODO: add test for this class
 @UtilityClass
 @Slf4j
 public final class MessageRecordUtils {
@@ -214,7 +213,7 @@ public final class MessageRecordUtils {
                 log.debug("index: {} kv.getKey: {}. kv.getValue: {}",
                     index, kv.getKey(), kv.getValue().getBytes(UTF_8));
             }
-            index ++;
+            index++;
         }
 
         return headers;
@@ -272,7 +271,7 @@ public final class MessageRecordUtils {
                         Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
 
                         builder.appendWithOffset(
-                            MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
+                            MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId(), i),
                             msgMetadata.getEventTime(),
                             Base64.getDecoder().decode(singleMessageMetadata.getPartitionKey()),
                             data,

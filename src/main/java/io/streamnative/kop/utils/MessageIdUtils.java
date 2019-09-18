@@ -23,14 +23,15 @@ import org.apache.pulsar.client.impl.MessageIdImpl;
  * Utils for Pulsar MessageId.
  */
 public class MessageIdUtils {
+    // use 28 bits for ledgerId,
+    // 32 bits for entryId,
+    // 12 bits for batchIndex.
     public static final int LEDGER_BITS = 20;
     public static final int ENTRY_BITS = 32;
     public static final int BATCH_BITS = 12;
 
     public static final long getOffset(long ledgerId, long entryId) {
         // Combine ledger id and entry id to form offset
-        // Use less than 32 bits to represent entry id since it will get
-        // rolled over way before overflowing the max int range
         checkArgument(ledgerId > 0, "Expected ledgerId > 0, but get " + ledgerId);
         checkArgument(entryId >= 0, "Expected entryId >= 0, but get " + entryId);
 
@@ -38,12 +39,23 @@ public class MessageIdUtils {
         return offset;
     }
 
+    public static final long getOffset(long ledgerId, long entryId, int batchIndex) {
+        checkArgument(ledgerId > 0, "Expected ledgerId > 0, but get " + ledgerId);
+        checkArgument(entryId >= 0, "Expected entryId >= 0, but get " + entryId);
+        checkArgument(batchIndex >= 0, "Expected batchIndex >= 0, but get " + batchIndex);
+        checkArgument(batchIndex < (1 << BATCH_BITS),
+            "Expected batchIndex only take " + BATCH_BITS + " bits, but it is " + batchIndex);
+
+        long offset = (ledgerId << (ENTRY_BITS + BATCH_BITS) | (entryId << BATCH_BITS)) + batchIndex;
+        return offset;
+    }
+
     public static final MessageId getMessageId(long offset) {
         // De-multiplex ledgerId and entryId from offset
         checkArgument(offset > 0, "Expected Offset > 0, but get " + offset);
 
-        long ledgerId = offset >>> 28;
-        long entryId = offset & 0x0F_FF_FF_FFL;
+        long ledgerId = offset >>> (ENTRY_BITS + BATCH_BITS);
+        long entryId = (offset & (1 << (ENTRY_BITS + BATCH_BITS) - 1)) >>> BATCH_BITS;
 
         return new MessageIdImpl(ledgerId, entryId, -1);
     }
@@ -52,8 +64,8 @@ public class MessageIdUtils {
         // De-multiplex ledgerId and entryId from offset
         checkArgument(offset >= 0, "Expected Offset >= 0, but get " + offset);
 
-        long ledgerId = offset >>> 28;
-        long entryId = offset & 0x0F_FF_FF_FFL;
+        long ledgerId = offset >>> (ENTRY_BITS + BATCH_BITS);
+        long entryId = (offset & 0x0F_FF_FF_FF_FF_FFL) >>> BATCH_BITS;
 
         return new PositionImpl(ledgerId, entryId);
     }
