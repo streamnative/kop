@@ -211,7 +211,7 @@ public final class MessageRecordUtils {
 
             if (log.isDebugEnabled()) {
                 log.debug("index: {} kv.getKey: {}. kv.getValue: {}",
-                    index, kv.getKey(), kv.getValue().getBytes(UTF_8));
+                    index, kv.getKey(), kv.getValue());
             }
             index++;
         }

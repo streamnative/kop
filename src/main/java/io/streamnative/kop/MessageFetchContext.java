@@ -37,6 +37,8 @@ import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.impl.NonDurableCursorImpl;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
@@ -290,15 +292,20 @@ public final class MessageFetchContext {
                             if (!list.isEmpty()) {
                                 entry = list.get(0);
                                 long offset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
+                                // get next offset
+                                PositionImpl nextPosition = ((NonDurableCursorImpl ) cursor)
+                                    .getNextAvailablePosition(PositionImpl
+                                        .get(entry.getLedgerId(), entry.getEntryId()));
+                                long nextOffset = MessageIdUtils
+                                    .getOffset(nextPosition.getLedgerId(), nextPosition.getEntryId());
 
                                 if (log.isDebugEnabled()) {
                                     log.debug("Topic {} success read entry: ledgerId: {}, entryId: {}, size: {},"
-                                            + " ConsumerManager original offset: {}, entryOffset: {}",
+                                            + " ConsumerManager original offset: {}, entryOffset: {}, nextOffset: {}",
                                         topicName.toString(), entry.getLedgerId(), entry.getEntryId(),
-                                        entry.getLength(), keptOffset, offset);
+                                        entry.getLength(), keptOffset, offset, nextOffset);
                                 }
 
-                                long nextOffset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId() + 1);
                                 requestHandler.getTopicManager()
                                     .getTopicConsumerManager(topicName.toString())
                                     .thenAccept(cm -> cm.add(nextOffset, Pair.of(cursor, nextOffset)));

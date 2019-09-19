@@ -55,7 +55,7 @@ public class MessageIdUtils {
         checkArgument(offset > 0, "Expected Offset > 0, but get " + offset);
 
         long ledgerId = offset >>> (ENTRY_BITS + BATCH_BITS);
-        long entryId = (offset & (1 << (ENTRY_BITS + BATCH_BITS) - 1)) >>> BATCH_BITS;
+        long entryId = (offset & 0x0F_FF_FF_FF_FF_FFL) >>> BATCH_BITS;
 
         return new MessageIdImpl(ledgerId, entryId, -1);
     }
@@ -68,5 +68,27 @@ public class MessageIdUtils {
         long entryId = (offset & 0x0F_FF_FF_FF_FF_FFL) >>> BATCH_BITS;
 
         return new PositionImpl(ledgerId, entryId);
+    }
+
+    // get the batchIndex contained in offset.
+    public static final int getBatchIndex(long offset) {
+        checkArgument(offset >= 0, "Expected Offset >= 0, but get " + offset);
+
+        return (int) (offset & 0x0F_FF);
+    }
+
+    // get next offset that after batch Index.
+    // In TopicConsumereManager, next read offset is updated after each entry reads,
+    // if it read a batched message previously, the next offset waiting read is next entry.
+    public static final long offsetAfterBatchIndex(long offset) {
+        // De-multiplex ledgerId and entryId from offset
+        checkArgument(offset >= 0, "Expected Offset >= 0, but get " + offset);
+
+        int batchIndex = getBatchIndex(offset);
+        // this is a for
+        if (batchIndex != 0) {
+            return (offset - batchIndex) + (1 << BATCH_BITS);
+        }
+        return offset;
     }
 }

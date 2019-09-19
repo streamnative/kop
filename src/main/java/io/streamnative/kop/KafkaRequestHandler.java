@@ -447,48 +447,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return resultFuture;
     }
 
-    // publish Kafka records to pulsar topic, handle callback in MessagePublishContext.
-//    private void publishMessages(Records records,
-//                                 Topic topic,
-//                                 CompletableFuture<PartitionResponse> future) {
-//
-//        // get records size.
-//        AtomicInteger size = new AtomicInteger(0);
-//        records.records().forEach(record -> size.incrementAndGet());
-//        int rec = size.get();
-//
-//        if (log.isDebugEnabled()) {
-//            log.debug("[{}] publishMessages for topic partition: {} , records size is {} ",
-//                ctx.channel(), topic.getName(), size.get());
-//        }
-//
-//        // TODO: Handle Records in a batched way:
-//        //      https://github.com/streamnative/kop/issues/16
-//        List<CompletableFuture<Long>> futures = Collections
-//            .synchronizedList(Lists.newArrayListWithExpectedSize(size.get()));
-//
-//        records.records().forEach(record -> {
-//            CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
-//            futures.add(offsetFuture);
-//            ByteBuf headerAndPayload = messageToByteBuf(recordToEntry(record));
-//            topic.publishMessage(
-//                headerAndPayload,
-//                MessagePublishContext.get(
-//                    offsetFuture, topic, record.sequence(),
-//                    record.sizeInBytes(), System.nanoTime()));
-//        });
-//
-//        CompletableFuture.allOf(futures.toArray(new CompletableFuture<?>[rec])).whenComplete((ignore, ex) -> {
-//            if (ex != null) {
-//                log.error("[{}] publishMessages for topic partition: {} failed when write.",
-//                    ctx.channel(), topic.getName(), ex);
-//                future.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
-//            } else {
-//                future.complete(new PartitionResponse(Errors.NONE));
-//            }
-//        });
-//    }
-
     // A simple implementation, returns this broker node.
     protected CompletableFuture<ResponseAndRequest>
     handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator) {

@@ -14,6 +14,7 @@
 package io.streamnative.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static io.streamnative.kop.utils.MessageIdUtils.offsetAfterBatchIndex;
 
 import io.streamnative.kop.utils.MessageIdUtils;
 import java.util.UUID;
@@ -48,6 +49,9 @@ public class KafkaTopicConsumerManager {
     }
 
     public CompletableFuture<Pair<ManagedCursor, Long>> remove(long offset) {
+        // This is for read a new entry, first check if offset is from a batched message request.
+        offset = offsetAfterBatchIndex(offset);
+
         CompletableFuture<Pair<ManagedCursor, Long>> cursor = consumers.remove(offset);
         if (cursor != null) {
             if (log.isDebugEnabled()) {
