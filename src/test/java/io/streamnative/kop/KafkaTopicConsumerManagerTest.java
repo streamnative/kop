@@ -120,7 +120,7 @@ public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
         i++;
 
         // simulate a read complete;
-        offset++;
+        offset += 1 << MessageIdUtils.BATCH_BITS;
         topicConsumerManager.add(offset, Pair.of(cursor, offset));
         assertEquals(topicConsumerManager.getConsumers().size(), 1);
 
@@ -134,7 +134,7 @@ public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
         assertEquals(cursorCompletableFuture.get().getRight(), Long.valueOf(offset));
 
         // simulate a read complete, add back offset.
-        offset++;
+        offset += 1 << MessageIdUtils.BATCH_BITS;
         topicConsumerManager.add(offset, Pair.of(cursor2, offset));
 
         // produce another 3 message

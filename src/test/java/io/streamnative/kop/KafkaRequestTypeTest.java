@@ -14,6 +14,7 @@
 package io.streamnative.kop;
 
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
@@ -28,6 +29,7 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -41,6 +43,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.header.Header;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
@@ -57,6 +60,18 @@ import org.testng.annotations.Test;
 
 /**
  * Unit test for Different kafka request type.
+ * Test:
+ * KafkaProducePulsarConsume
+ * KafkaProduceKafkaConsume
+ * PulsarProduceKafkaConsume
+ * with
+ * different partitions
+ * batch enabled/disabled.
+ * This test will involved test for class:
+ * KafkaRequestHandler
+ * MessageRecordUtils
+ * MessagePublishContext
+ * MessageConsumeContext
  */
 @Slf4j
 public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
@@ -64,6 +79,16 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
     @DataProvider(name = "partitions")
     public static Object[][] partitions() {
         return new Object[][] { { 1 }, { 7 } };
+    }
+
+    @DataProvider(name = "partitionsAndBatch")
+    public static Object[][] partitionsAndBatch() {
+        return new Object[][] {
+            { 1, true },
+            { 1, false },
+            { 7, true },
+            { 7, false }
+        };
     }
 
     @BeforeMethod
@@ -108,10 +133,14 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         super.internalCleanup();
     }
 
-    @Test(timeOut = 20000, dataProvider = "partitions")
-    public void testKafkaProducePulsarConsume(int partitionNumber) throws Exception {
+    @Test(timeOut = 20000, dataProvider = "partitionsAndBatch")
+    public void testKafkaProducePulsarConsume(int partitionNumber, boolean isBatch) throws Exception {
         String topicName = "kopKafkaProducePulsarConsume" + partitionNumber;
         String pulsarTopicName = "persistent://public/default/" + topicName;
+        String key1 = "header_key1_";
+        String key2 = "header_key2_";
+        String value1 = "header_value1_";
+        String value2 = "header_value2_";
 
         // create partitioned topic.
         kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, partitionNumber);
@@ -131,16 +160,29 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
         for (int i = 0; i < totalMsgs; i++) {
             String messageStr = messageStrPrefix + i;
-            kProducer.getProducer()
-                .send(new ProducerRecord<>(
-                    topicName,
-                    i,
-                    messageStr))
-                .get();
-            log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+            ProducerRecord record = new ProducerRecord<>(
+                topicName,
+                i,
+                messageStr);
+
+            record.headers()
+                .add(key1 + i, (value1 + i).getBytes(UTF_8))
+                .add(key2 + i, (value2 + i).getBytes(UTF_8));
+
+            if (isBatch) {
+                kProducer.getProducer()
+                    .send(record);
+            } else {
+                kProducer.getProducer()
+                    .send(record)
+                    .get();
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("Kafka Producer Sent message with header: ({}, {})", i, messageStr);
+            }
         }
 
-        // 2. Consume messages use Pulsar client Consumer. verify content and key
+        // 2. Consume messages use Pulsar client Consumer. verify content and key and headers
         Message<byte[]> msg = null;
         for (int i = 0; i < totalMsgs; i++) {
             msg = consumer.receive(100, TimeUnit.MILLISECONDS);
@@ -148,8 +190,25 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
             Integer key = kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey()));
             assertEquals(messageStrPrefix + key.toString(), new String(msg.getValue()));
 
-            log.debug("Pulsar consumer get message: {}, key: {}",
-                new String(msg.getData()), kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey())).toString());
+            // verify added 2 key-value pair
+            Map<String, String> properties = msg.getProperties();
+            assertEquals(properties.size(), 2);
+            for (Map.Entry<String, String> kv: properties.entrySet()) {
+                String k = kv.getKey();
+                String v = kv.getValue();
+
+                if (log.isDebugEnabled()) {
+                    log.debug("headers key: {}, value:{}", k, v);
+                }
+
+                assertTrue(k.contains(key1) || k.contains(key2));
+                assertTrue(v.contains(value1) || v.contains(value2));
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("Pulsar consumer get message: {}, key: {}",
+                    new String(msg.getData()),
+                    kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey())).toString());
+            }
             consumer.acknowledge(msg);
         }
 
@@ -158,35 +217,45 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         assertNull(msg);
     }
 
-    @Test(timeOut = 20000, dataProvider = "partitions")
-    public void testKafkaProduceKafkaConsume(int partitionNumber) throws Exception {
+    @Test(timeOut = 20000, dataProvider = "partitionsAndBatch")
+    public void testKafkaProduceKafkaConsume(int partitionNumber, boolean isBatch) throws Exception {
         String topicName = "kopKafkaProduceKafkaConsume" + partitionNumber;
+        String key1 = "header_key1_";
+        String key2 = "header_key2_";
+        String value1 = "header_value1_";
+        String value2 = "header_value2_";
 
         // create partitioned topic.
         kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, partitionNumber);
-
-        @Cleanup
-        Consumer<byte[]> consumer = pulsarClient.newConsumer()
-            .topic(topicName)
-            .subscriptionName("test_k_producer_k_consumer_sub")
-            .subscribe();
 
         // 1. produce message with Kafka producer.
         int totalMsgs = 10;
         String messageStrPrefix = "Message_Kop_KafkaProduceKafkaConsume_" + partitionNumber + "_";
 
         @Cleanup
-        KProducer producer = new KProducer(topicName, false, getKafkaBrokerPort());
+        KProducer kProducer = new KProducer(topicName, false, getKafkaBrokerPort());
 
         for (int i = 0; i < totalMsgs; i++) {
             String messageStr = messageStrPrefix + i;
-            producer.getProducer()
-                .send(new ProducerRecord<>(
-                    topicName,
-                    i,
-                    messageStr))
-                .get();
-            log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+            ProducerRecord record = new ProducerRecord<>(
+                topicName,
+                i,
+                messageStr);
+            record.headers()
+                .add(key1 + i, (value1 + i).getBytes(UTF_8))
+                .add(key2 + i, (value2 + i).getBytes(UTF_8));
+
+            if (isBatch) {
+                kProducer.getProducer()
+                    .send(record);
+            } else {
+                kProducer.getProducer()
+                    .send(record)
+                    .get();
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("Kafka Producer Sent message with header: ({}, {})", i, messageStr);
+            }
         }
 
         // 2. use kafka consumer to consume.
@@ -199,13 +268,29 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
         int i = 0;
         while (i < totalMsgs) {
-            log.debug("start poll message: {}", i);
+            if (log.isDebugEnabled()) {
+                log.debug("start poll message: {}", i);
+            }
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
                 Integer key = record.key();
                 assertEquals(messageStrPrefix + key.toString(), record.value());
-                log.debug("Kafka consumer get message: {}, key: {} at offset {}",
-                    record.key(), record.value(), record.offset());
+
+                Header[] headers = record.headers().toArray();
+                for (int j = 1; j <= 2; j++) {
+                    String k = headers[j - 1].key();
+                    String v = new String(headers[j - 1].value(), UTF_8);
+
+                    if (log.isDebugEnabled()) {
+                        log.debug("headers key: {}, value:{}", k, v);
+                    }
+                    assertTrue(k.contains(key1) || k.contains(key2));
+                    assertTrue(v.contains(value1) || v.contains(value2));
+                }
+                if (log.isDebugEnabled()) {
+                    log.debug("Kafka consumer get message: {}, key: {} at offset {}",
+                        record.key(), record.value(), record.offset());
+                }
                 i++;
             }
         }
@@ -216,10 +301,14 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         assertTrue(records.isEmpty());
     }
 
-    @Test(timeOut = 20000, dataProvider = "partitions")
-    public void testPulsarProduceKafkaConsume(int partitionNumber) throws Exception {
+    @Test(timeOut = 20000, dataProvider = "partitionsAndBatch")
+    public void testPulsarProduceKafkaConsume(int partitionNumber, boolean isBatch) throws Exception {
         String topicName = "kopPulsarProduceKafkaConsume" + partitionNumber;
         String pulsarTopicName = "persistent://public/default/" + topicName;
+        String key1 = "header_key1_";
+        String key2 = "header_key2_";
+        String value1 = "header_value1_";
+        String value2 = "header_value2_";
 
         // create partitioned topic.
         kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, partitionNumber);
@@ -230,7 +319,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
         ProducerBuilder<byte[]> producerBuilder = pulsarClient.newProducer()
             .topic(pulsarTopicName)
-            .enableBatching(false);
+            .enableBatching(isBatch);
 
         @Cleanup
         Producer<byte[]> producer = producerBuilder.create();
@@ -239,6 +328,8 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
             producer.newMessage()
                 .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
                 .value(message.getBytes())
+                .property(key1 + i, value1 + i)
+                .property(key2 + i, value2 + i)
                 .send();
         }
 
@@ -252,13 +343,29 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
         int i = 0;
         while (i < totalMsgs) {
-            log.debug("start poll message: {}", i);
+            if (log.isDebugEnabled()) {
+                log.debug("start poll message: {}", i);
+            }
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
                 Integer key = record.key();
                 assertEquals(messageStrPrefix + key.toString(), record.value());
-                log.debug("Kafka Consumer Received message: {}, {} at offset {}",
-                    record.key(), record.value(), record.offset());
+                Header[] headers = record.headers().toArray();
+                for (int j = 1; j <= 2; j++) {
+                    String k = headers[j - 1].key();
+                    String v = new String(headers[j - 1].value(), UTF_8);
+
+                    if (log.isDebugEnabled()) {
+                        log.debug("headers key: {}, value:{}", k, v);
+                    }
+
+                    assertTrue(k.contains(key1) || k.contains(key2));
+                    assertTrue(v.contains(value1) || v.contains(value2));
+                }
+                if (log.isDebugEnabled()) {
+                    log.debug("Kafka consumer get message: {}, key: {} at offset {}",
+                        record.key(), record.value(), record.offset());
+                }
                 i++;
             }
         }
@@ -304,7 +411,9 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
         int i = 0;
         while (i < totalMsgs / 2) {
-            log.debug("start poll message: {}", i);
+            if (log.isDebugEnabled()) {
+                log.debug("start poll message: {}", i);
+            }
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
                 Integer key = record.key();
@@ -324,13 +433,17 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
         kConsumer2.getConsumer().subscribe(Collections.singletonList(topicName));
         while (i < totalMsgs) {
-            log.debug("start poll message 2: {}", i);
+            if (log.isDebugEnabled()) {
+                log.debug("start poll message 2: {}", i);
+            }
             ConsumerRecords<Integer, String> records = kConsumer2.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
                 Integer key = record.key();
                 assertEquals(messageStrPrefix + key.toString(), record.value());
-                log.debug("Kafka Consumer Received message 2: {}, {} at offset {}",
-                    record.key(), record.value(), record.offset());
+                if (log.isDebugEnabled()) {
+                    log.debug("Kafka Consumer Received message 2: {}, {} at offset {}",
+                        record.key(), record.value(), record.offset());
+                }
                 i++;
             }
         }
@@ -378,13 +491,17 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         // read empty entry will remove and add cursor each time.
         int i = 0;
         while (i < 7) {
-            log.debug("start poll empty entry: {}", i);
+            if (log.isDebugEnabled()) {
+                log.debug("start poll empty entry: {}", i);
+            }
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
                 Integer key = record.key();
                 assertEquals(messageStrPrefix + key.toString(), record.value());
-                log.debug("Kafka Consumer Received message: {}, {} at offset {}",
-                    record.key(), record.value(), record.offset());
+                if (log.isDebugEnabled()) {
+                    log.debug("Kafka Consumer Received message: {}, {} at offset {}",
+                        record.key(), record.value(), record.offset());
+                }
             }
             i++;
         }
@@ -417,13 +534,17 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         i = 0;
         // receive all message.
         while (i < totalMsgs) {
-            log.debug("start poll message: {}", i);
+            if (log.isDebugEnabled()) {
+                log.debug("start poll message: {}", i);
+            }
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
                 Integer key = record.key();
                 assertEquals(messageStrPrefix + key.toString(), record.value());
-                log.debug("Kafka Consumer Received message: {}, {} at offset {}",
-                    record.key(), record.value(), record.offset());
+                if (log.isDebugEnabled()) {
+                    log.debug("Kafka Consumer Received message: {}, {} at offset {}",
+                        record.key(), record.value(), record.offset());
+                }
                 i++;
             }
         }
@@ -444,13 +565,17 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         // After read all entry, read no entry again, this will remove and add cursor each time.
         i = 0;
         while (i < 7) {
-            log.debug("start poll empty entry again: {}", i);
+            if (log.isDebugEnabled()) {
+                log.debug("start poll empty entry again: {}", i);
+            }
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
                 Integer key = record.key();
                 assertEquals(messageStrPrefix + key.toString(), record.value());
-                log.debug("Kafka Consumer Received message: {}, {} at offset {}",
-                    record.key(), record.value(), record.offset());
+                if (log.isDebugEnabled()) {
+                    log.debug("Kafka Consumer Received message: {}, {} at offset {}",
+                        record.key(), record.value(), record.offset());
+                }
             }
             i++;
         }
