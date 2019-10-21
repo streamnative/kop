@@ -15,7 +15,7 @@
 # First create a stage with just the Pulsar tarball and scripts
 FROM busybox as kop
 
-ARG PULSAR_VERSION=2.4.0
+ARG PULSAR_VERSION=2.4.1
 
 ADD target/kop-0.0.1-SNAPSHOT-bin.tar.gz /
 
