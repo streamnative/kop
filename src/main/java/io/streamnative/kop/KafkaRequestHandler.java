@@ -24,6 +24,7 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.netty.channel.ChannelHandlerContext;
+import io.streamnative.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.kop.offset.OffsetAndMetadata;
 import io.streamnative.kop.utils.CoreUtils;
@@ -91,6 +92,7 @@ import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.admin.impl.PersistentTopicsBase;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
@@ -109,25 +111,32 @@ import org.apache.pulsar.common.util.Murmur3_32Hash;
 @Getter
 public class KafkaRequestHandler extends KafkaCommandDecoder {
 
-    private final KafkaService kafkaService;
+    private final PulsarService pulsarService;
+    private final KafkaServiceConfiguration kafkaConfig;
+    private final KafkaTopicManager topicManager;
+    private final GroupCoordinator groupCoordinator;
+
     private final String clusterName;
     private final NamespaceName kafkaNamespace;
     private final ExecutorService executor;
     private final PulsarAdmin admin;
-    private final KafkaTopicManager topicManager;
 
-
-    public KafkaRequestHandler(KafkaService kafkaService) throws Exception {
+    public KafkaRequestHandler(PulsarService pulsarService,
+                               KafkaServiceConfiguration kafkaConfig,
+                               KafkaTopicManager kafkaTopicManager,
+                               GroupCoordinator groupCoordinator) throws Exception {
         super();
-        this.kafkaService = kafkaService;
+        this.pulsarService = pulsarService;
+        this.kafkaConfig = kafkaConfig;
+        this.topicManager = kafkaTopicManager;
+        this.groupCoordinator = groupCoordinator;
 
-        this.clusterName = kafkaService.getKafkaConfig().getClusterName();
+        this.clusterName = kafkaConfig.getClusterName();
         this.kafkaNamespace = NamespaceName
-            .get(kafkaService.getKafkaConfig().getKafkaTenant(),
-                kafkaService.getKafkaConfig().getKafkaNamespace());
-        this.executor = kafkaService.getExecutor();
-        this.admin = kafkaService.getAdminClient();
-        this.topicManager = kafkaService.getKafkaTopicManager();
+            .get(kafkaConfig.getKafkaTenant(),
+                kafkaConfig.getKafkaNamespace());
+        this.executor = pulsarService.getExecutor();
+        this.admin = pulsarService.getAdminClient();
     }
 
     protected CompletableFuture<ResponseAndRequest> handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest) {
@@ -164,32 +173,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         List<String> topics = metadataRequest.topics();
         // topics in format : persistent://%s/%s/abc-partition-x, will be grouped by as:
         //      Entry<abc, List[TopicName]>
-        CompletableFuture<Map<String, List<TopicName>>> pulsarTopicsFuture = new CompletableFuture<>();
-
-        // 1. get list of pulsarTopics
-        if (topics == null || topics.isEmpty()) {
-            try {
-                Map<String, List<TopicName>> pulsarTopics =
-                    kafkaService.getNamespaceService()
-                        .getListOfPersistentTopics(kafkaNamespace)
-                        .stream()
+        //CompletableFuture<Map<String, List<TopicName>>> pulsarTopicsFuture = new CompletableFuture<>();
+        CompletableFuture<Map<String, List<TopicName>>> pulsarTopicsFuture =
+            (topics == null || topics.isEmpty()) ?
+                pulsarService.getNamespaceService().getListOfPersistentTopics(kafkaNamespace)
+                    .thenApply(list -> list.stream()
                         .map(topicString -> TopicName.get(topicString))
                         .collect(Collectors
-                            .groupingBy(topicName -> getLocalNameWithoutPartition(topicName), Collectors.toList()));
+                            .groupingBy(topicName ->
+                                getLocalNameWithoutPartition(topicName), Collectors.toList()))
+                    ) :
+                new CompletableFuture<>();
 
-                if (log.isDebugEnabled()) {
-                    log.debug("[{}] Request {}: Get all topics, will get {} topics",
-                        ctx.channel(), metadataHar.getHeader(), pulsarTopics.size());
-                }
-
-                pulsarTopicsFuture.complete(pulsarTopics);
-            } catch (Exception e) {
-                // error when getListOfPersistentTopics
-                log.error("[{}] Request {}: Failed to get all topics list",
-                    ctx.channel(), metadataHar.getHeader(), e);
-                pulsarTopicsFuture.completeExceptionally(e);
-            }
-        } else {
+        if (!(topics == null || topics.isEmpty())) {
             Map<String, List<TopicName>> pulsarTopics = Maps.newHashMap();
 
             List<String> requestTopics = metadataRequest.topics();
@@ -202,7 +198,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     // get partition numbers for each topic.
                     PersistentTopicsBase
                         .getPartitionedTopicMetadata(
-                            kafkaService,
+                            pulsarService,
                             null,
                             null,
                             null,
@@ -232,7 +228,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         .collect(Collectors.toList());
                                     pulsarTopics.put(topic, topicNames);
                                 } else {
-                                    if (kafkaService.getConfiguration().isAllowAutoTopicCreation()) {
+                                    if (kafkaConfig.isAllowAutoTopicCreation()) {
                                         try {
                                             if (log.isDebugEnabled()) {
                                                 log.debug("[{}] Request {}: Topic {} has single partition, "
@@ -321,7 +317,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     .synchronizedList(Lists.newArrayListWithExpectedSize(partitionsNumber));
 
                 list.forEach(topicName ->
-                    findBroker(kafkaService, topicName)
+                    findBroker(pulsarService, topicName)
                         .whenComplete(((partitionMetadata, throwable) -> {
                             if (throwable != null) {
                                 log.warn("[{}] Request {}: Exception while find Broker metadata",
@@ -409,7 +405,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             TopicName topicName = pulsarTopicName(topicPartition, kafkaNamespace);
 
-            kafkaService.getBrokerService().getTopic(topicName.toString(), true)
+            pulsarService.getBrokerService().getTopic(topicName.toString(), true)
                 .whenComplete((topicOpt, exception) -> {
                     if (exception != null) {
                         log.error("[{}] Request {}: Failed to getOrCreateTopic {}. exception:",
@@ -457,11 +453,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
             AbstractResponse response;
             try {
-                URI uri = new URI(kafkaService.getBrokerServiceUrl());
+                URI uri = new URI(pulsarService.getBrokerServiceUrl());
                 Node node = newNode(
                     new InetSocketAddress(
                         uri.getHost(),
-                        kafkaService.getKafkaConfig().getKafkaServicePort().get()));
+                        kafkaConfig.getKafkaServicePort().get()));
 
                 if (log.isDebugEnabled()) {
                     log.debug("[{}] Request {}: Return current broker node as Coordinator: {}.",
@@ -490,12 +486,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected CompletableFuture<ResponseAndRequest> handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch) {
         checkArgument(offsetFetch.getRequest() instanceof OffsetFetchRequest);
         OffsetFetchRequest request = (OffsetFetchRequest) offsetFetch.getRequest();
-        checkState(kafkaService.getGroupCoordinator() != null,
+        checkState(groupCoordinator != null,
             "Group Coordinator not started");
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
 
         KeyValue<Errors, Map<TopicPartition, OffsetFetchResponse.PartitionData>> keyValue =
-            kafkaService.getGroupCoordinator().handleFetchOffsets(
+            groupCoordinator.handleFetchOffsets(
                 request.groupId(),
                 Optional.of(request.partitions())
             );
@@ -577,7 +573,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     }
 
                     @Override
-                    public void findEntryFailed(ManagedLedgerException exception, Object ctx) {
+                    public void findEntryFailed(ManagedLedgerException exception,
+                                                Optional<Position> position, Object ctx) {
                         log.warn("Unable to find position for topic {} time {}. Exception:",
                             persistentTopic.getName(), timestamp, exception);
                         partitionData.complete(new ListOffsetResponse
@@ -682,7 +679,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected CompletableFuture<ResponseAndRequest> handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit) {
         checkArgument(offsetCommit.getRequest() instanceof OffsetCommitRequest);
-        checkState(kafkaService.getGroupCoordinator() != null,
+        checkState(groupCoordinator != null,
             "Group Coordinator not started");
 
         OffsetCommitRequest request = (OffsetCommitRequest) offsetCommit.getRequest();
@@ -690,7 +687,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         Map<TopicPartition, Errors> nonExistingTopic = nonExistingTopicErrors(request);
 
-        kafkaService.getGroupCoordinator().handleCommitOffsets(
+        groupCoordinator.handleCommitOffsets(
             request.groupId(),
             request.memberId(),
             request.generationId(),
@@ -733,7 +730,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected CompletableFuture<ResponseAndRequest> handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup) {
         checkArgument(joinGroup.getRequest() instanceof JoinGroupRequest);
-        checkState(kafkaService.getGroupCoordinator() != null,
+        checkState(groupCoordinator != null,
             "Group Coordinator not started");
 
         JoinGroupRequest request = (JoinGroupRequest) joinGroup.getRequest();
@@ -743,7 +740,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         request.groupProtocols()
             .stream()
             .forEach(protocol -> protocols.put(protocol.name(), Utils.toArray(protocol.metadata())));
-        kafkaService.getGroupCoordinator().handleJoinGroup(
+        groupCoordinator.handleJoinGroup(
             request.groupId(),
             request.memberId(),
             joinGroup.getHeader().clientId(),
@@ -783,7 +780,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         SyncGroupRequest request = (SyncGroupRequest) syncGroup.getRequest();
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
 
-        kafkaService.getGroupCoordinator().handleSyncGroup(
+        groupCoordinator.handleSyncGroup(
             request.groupId(),
             request.generationId(),
             request.memberId(),
@@ -809,7 +806,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
 
         // let the coordinator to handle heartbeat
-        kafkaService.getGroupCoordinator().handleHeartbeat(
+        groupCoordinator.handleHeartbeat(
             request.groupId(),
             request.memberId(),
             request.groupGenerationId()
@@ -833,7 +830,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
 
         // let the coordinator to handle heartbeat
-        kafkaService.getGroupCoordinator().handleLeaveGroup(
+        groupCoordinator.handleLeaveGroup(
             request.groupId(),
             request.memberId()
         ).thenAccept(errors -> {
@@ -854,7 +851,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // let the coordinator to handle heartbeat
         Map<String, GroupMetadata> groups = request.groupIds().stream()
             .map(groupId -> {
-                KeyValue<Errors, GroupSummary> describeResult = kafkaService.getGroupCoordinator()
+                KeyValue<Errors, GroupSummary> describeResult = groupCoordinator
                     .handleDescribeGroup(groupId);
                 GroupSummary summary = describeResult.getValue();
                 List<GroupMember> members = summary.members().stream()
@@ -904,7 +901,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         DeleteGroupsRequest request = (DeleteGroupsRequest) deleteGroups.getRequest();
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
 
-        Map<String, Errors> deleteResult = kafkaService.getGroupCoordinator().handleDeleteGroups(request.groups());
+        Map<String, Errors> deleteResult = groupCoordinator.handleDeleteGroups(request.groups());
         DeleteGroupsResponse response = new DeleteGroupsResponse(
             deleteResult
         );
@@ -917,14 +914,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         ctx.close();
     }
 
-    private CompletableFuture<PartitionMetadata> findBroker(KafkaService kafkaService, TopicName topic) {
+    private CompletableFuture<PartitionMetadata> findBroker(PulsarService pulsarService, TopicName topic) {
         if (log.isDebugEnabled()) {
             log.debug("Handle Lookup for {}", topic);
         }
 
         final CompletableFuture<PartitionMetadata> resultFuture = new CompletableFuture<>();
 
-        kafkaService.getNamespaceService()
+        pulsarService.getNamespaceService()
             .getBrokerServiceUrlAsync(topic, true)
             .whenComplete((lookupResult, throwable)-> {
                 if (throwable != null) {
@@ -945,9 +942,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                         // auto create topic.
                         String hostname = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(
-                            kafkaService.getKafkaConfig().getAdvertisedAddress());
+                            kafkaConfig.getAdvertisedAddress());
                         if (!topicManager.topicExists(topic.toString()) && hostname.equals(uri.getHost())) {
-                            kafkaService.getBrokerService().getTopic(topic.toString(), true)
+                            pulsarService.getBrokerService().getTopic(topic.toString(), true)
                                 .whenComplete((topicOpt, exception) -> {
                                     if (exception != null) {
                                         log.error("[{}] findBroker: Failed to getOrCreateTopic {}. exception:",
@@ -965,7 +962,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                         Node node = newNode(new InetSocketAddress(
                             uri.getHost(),
-                            kafkaService.getKafkaConfig().getKafkaServicePort().get()));
+                            kafkaConfig.getKafkaServicePort().get()));
 
                         resultFuture.complete(newPartitionMetadata(topic, node));
                         return;
@@ -999,8 +996,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     Node newSelfNode() {
         String hostname = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(
-            kafkaService.getKafkaConfig().getAdvertisedAddress());
-        int port = kafkaService.getKafkaConfig().getKafkaServicePort().get();
+            kafkaConfig.getAdvertisedAddress());
+        int port = kafkaConfig.getKafkaServicePort().get();
 
         if (log.isDebugEnabled()) {
             log.debug("Return Broker Node of Self: {}:{}", hostname, port);

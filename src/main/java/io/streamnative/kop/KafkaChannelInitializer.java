@@ -17,6 +17,9 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
+import io.streamnative.kop.coordinator.group.GroupCoordinator;
+import lombok.Getter;
+import org.apache.pulsar.broker.PulsarService;
 
 /**
  * A channel initializer that initialize channels for kafka protocol.
@@ -25,13 +28,28 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
 
     static final int MAX_FRAME_LENGTH = 100 * 1024 * 1024; // 100MB
 
-    private final KafkaService kafkaService;
+    @Getter
+    private final PulsarService pulsarService;
+    @Getter
+    private final KafkaServiceConfiguration kafkaConfig;
+    @Getter
+    private final KafkaTopicManager kafkaTopicManager;
+    @Getter
+    private final GroupCoordinator groupCoordinator;
     // TODO: handle TLS -- https://github.com/streamnative/kop/issues/2
+    //      can turn into get this config from kafkaConfig.
     private final boolean enableTls;
 
-    public KafkaChannelInitializer(KafkaService kafkaService, boolean enableTLS) throws Exception {
+    public KafkaChannelInitializer(PulsarService pulsarService,
+                                   KafkaServiceConfiguration kafkaConfig,
+                                   KafkaTopicManager kafkaTopicManager,
+                                   GroupCoordinator groupCoordinator,
+                                   boolean enableTLS) throws Exception {
         super();
-        this.kafkaService = kafkaService;
+        this.pulsarService = pulsarService;
+        this.kafkaConfig = kafkaConfig;
+        this.kafkaTopicManager = kafkaTopicManager;
+        this.groupCoordinator = groupCoordinator;
         this.enableTls = enableTLS;
     }
 
@@ -40,6 +58,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         ch.pipeline().addLast(new LengthFieldPrepender(4));
         ch.pipeline().addLast("frameDecoder",
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
-        ch.pipeline().addLast("handler", new KafkaRequestHandler(kafkaService));
+        ch.pipeline().addLast("handler",
+            new KafkaRequestHandler(pulsarService, kafkaConfig, kafkaTopicManager, groupCoordinator));
     }
 }

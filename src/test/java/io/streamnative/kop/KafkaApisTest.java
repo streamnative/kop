@@ -107,7 +107,11 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
 
         log.info("created namespaces, init handler");
 
-        kafkaRequestHandler = new KafkaRequestHandler(kafkaService);
+        kafkaRequestHandler = new KafkaRequestHandler(
+            kafkaService,
+            kafkaService.getKafkaConfig(),
+            kafkaService.getKafkaTopicManager(),
+            kafkaService.getGroupCoordinator());
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
@@ -254,8 +258,8 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
         assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(NO_TIMESTAMP));
     }
 
-    // these 2 test cases test Read Commit / UnCommit. they are the same for Pulsar,
-    // so combine it in one test case.
+    // these 2 test cases test Read Commit / UnCommit.
+    // they are the same for Pulsar, so combine it in one test case.
     // Test ListOffset for latest get the earliest message in topic.
     // testReadUncommittedConsumerListOffsetLatest
     // testReadCommittedConsumerListOffsetLatest

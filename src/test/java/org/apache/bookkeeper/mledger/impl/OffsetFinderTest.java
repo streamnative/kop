@@ -22,6 +22,7 @@ import io.netty.buffer.UnpooledByteBufAllocator;
 
 import java.lang.reflect.Field;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -88,7 +89,7 @@ public class OffsetFinderTest extends MockedBookKeeperTestCase {
             }
 
             @Override
-            public void findEntryFailed(ManagedLedgerException exception, Object ctx) {
+            public void findEntryFailed(ManagedLedgerException exception, Optional<Position> var2, Object ctx) {
                 result.exception = exception;
                 future.completeExceptionally(exception);
             }
@@ -157,20 +158,20 @@ public class OffsetFinderTest extends MockedBookKeeperTestCase {
 
         OffsetFinder messageFinder = new OffsetFinder((ManagedLedgerImpl) ledger);
         final AtomicBoolean ex = new AtomicBoolean(false);
-        messageFinder.findEntryFailed(new ManagedLedgerException("failed"), new AsyncCallbacks.FindEntryCallback() {
+        messageFinder.findEntryFailed(new ManagedLedgerException("failed"), Optional.empty(), new AsyncCallbacks.FindEntryCallback() {
             @Override
             public void findEntryComplete(Position position, Object ctx) {
             }
 
             @Override
-            public void findEntryFailed(ManagedLedgerException exception, Object ctx) {
+            public void findEntryFailed(ManagedLedgerException exception, Optional<Position> pos, Object ctx) {
                 ex.set(true);
             }
         });
         assertTrue(ex.get());
 
         PersistentMessageExpiryMonitor monitor = new PersistentMessageExpiryMonitor("topicname", c1.getName(), c1);
-        monitor.findEntryFailed(new ManagedLedgerException.ConcurrentFindCursorPositionException("failed"), null);
+        monitor.findEntryFailed(new ManagedLedgerException.ConcurrentFindCursorPositionException("failed"), Optional.empty(),null);
         Field field = monitor.getClass().getDeclaredField("expirationCheckInProgress");
         field.setAccessible(true);
         assertEquals(0, field.get(monitor));

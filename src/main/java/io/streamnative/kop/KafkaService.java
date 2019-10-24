@@ -13,12 +13,16 @@
  */
 package io.streamnative.kop;
 
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.socket.SocketChannel;
 import io.streamnative.kop.coordinator.group.GroupConfig;
 import io.streamnative.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.kop.coordinator.group.OffsetConfig;
 import io.streamnative.kop.utils.timer.SystemTimer;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.Set;
@@ -36,6 +40,7 @@ import org.apache.pulsar.broker.ManagedLedgerClientFactory;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
+import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.schema.SchemaRegistryService;
 import org.apache.pulsar.broker.stats.MetricsGenerator;
 import org.apache.pulsar.broker.stats.prometheus.PrometheusMetricsServlet;
@@ -66,8 +71,6 @@ public class KafkaService extends PulsarService {
     private KafkaTopicManager kafkaTopicManager;
     @Getter
     private GroupCoordinator groupCoordinator;
-    private Producer<ByteBuffer> groupCoordinatorTopicProducer;
-    private Reader<ByteBuffer> groupCoordinatorTopicReader;
 
     public KafkaService(KafkaServiceConfiguration config) {
         super(config);
@@ -81,7 +84,7 @@ public class KafkaService extends PulsarService {
         lock.lock();
 
         try {
-            // TODO: add Kafka on Pulsar Verison support -- https://github.com/streamnative/kop/issues/3
+            // TODO: add Kafka on Pulsar Version support -- https://github.com/streamnative/kop/issues/3
             log.info("Starting Pulsar Broker service powered by Pulsar version: '{}'",
                 (getBrokerVersion() != null ? getBrokerVersion() : "unknown"));
 
@@ -96,6 +99,11 @@ public class KafkaService extends PulsarService {
             if (!kafkaConfig.getKafkaServicePort().isPresent() && !kafkaConfig.getKafkaServicePortTls().isPresent()) {
                 throw new IllegalArgumentException("brokerServicePort/brokerServicePortTls must be present");
             }
+
+
+            // init KafkaProtocolHandler
+            KafkaProtocolHandler kafkaProtocolHandler = new KafkaProtocolHandler();
+            kafkaProtocolHandler.initialize(kafkaConfig);
 
             // Now we are ready to start services
             LocalZooKeeperConnectionService localZooKeeperConnectionService =
@@ -112,7 +120,7 @@ public class KafkaService extends PulsarService {
             setBkClientFactory(bkClientFactory);
             setManagedLedgerClientFactory(
                 new ManagedLedgerClientFactory(kafkaConfig, getZkClient(), bkClientFactory));
-            setBrokerService(new KafkaBrokerService(this));
+            setBrokerService(new BrokerService(this));
 
             // Start load management service (even if load balancing is disabled)
             getLoadManager().set(LoadManager.create(this));
@@ -180,8 +188,6 @@ public class KafkaService extends PulsarService {
             // to be done only when the broker is fully operative.
             startLoadManagementService();
 
-            setState(State.Started);
-
             acquireSLANamespace();
 
             final String bootstrapMessage = "bootstrap service "
@@ -194,15 +200,25 @@ public class KafkaService extends PulsarService {
                     + (kafkaConfig.getKafkaServicePortTls().isPresent()
                 ? "broker url= " + kafkaConfig.getKafkaServicePortTls() : "");
 
-            kafkaTopicManager = new KafkaTopicManager(getBrokerService());
 
-            // start group coordinator
-            if (kafkaConfig.isEnableGroupCoordinator()) {
-                startGroupCoordinator();
-            }
+            // start Kafka protocol handler.
+            // put after load manager for the use of existing broker service to create internal topics.
+            kafkaProtocolHandler.start(this.getBrokerService());
+            Map<InetSocketAddress, ChannelInitializer<SocketChannel>> channelInitializer =
+                kafkaProtocolHandler.newChannelInitializers();
+            Map<String, Map<InetSocketAddress, ChannelInitializer<SocketChannel>>> protocolHandlers = ImmutableMap
+                .<String, Map<InetSocketAddress, ChannelInitializer<SocketChannel>>>builder()
+                .put("kafka", channelInitializer)
+                .build();
+            getBrokerService().startProtocolHandlers(protocolHandlers);
+            this.kafkaTopicManager = kafkaProtocolHandler.getKafkaTopicManager();
+            this.groupCoordinator = kafkaProtocolHandler.getGroupCoordinator();
 
-            log.info("Kafka messaging service is ready, {}, cluster={}, configs={}", bootstrapMessage,
-                kafkaConfig.getClusterName(), ReflectionToStringBuilder.toString(kafkaConfig));
+            setState(State.Started);
+
+            log.info("Kafka messaging service is ready, {}, cluster={}, configs={}",
+                bootstrapMessage, kafkaConfig.getClusterName(),
+                ReflectionToStringBuilder.toString(kafkaConfig));
         } catch (Exception e) {
             log.error(e.getMessage(), e);
             throw new PulsarServerException(e);
@@ -213,7 +229,7 @@ public class KafkaService extends PulsarService {
 
     // TODO: make group coordinator running in a distributed mode
     //      https://github.com/streamnative/kop/issues/32
-    private void startGroupCoordinator() throws Exception {
+    public void startGroupCoordinator() throws Exception {
         GroupConfig groupConfig = new GroupConfig(
             kafkaConfig.getGroupMinSessionTimeoutMs(),
             kafkaConfig.getGroupMaxSessionTimeoutMs(),
@@ -233,18 +249,18 @@ public class KafkaService extends PulsarService {
         TopicName offsetsTopicName = TopicName.get(offsetsTopic);
         String offsetsTopicPtn0 = offsetsTopicName.getPartition(0).toString();
 
-        this.groupCoordinatorTopicProducer = getClient().newProducer(Schema.BYTEBUFFER)
+        Producer<ByteBuffer> groupCoordinatorTopicProducer = getClient().newProducer(Schema.BYTEBUFFER)
             .topic(offsetsTopicPtn0)
             // TODO: make it configurable
             .maxPendingMessages(100000)
             .create();
-        this.groupCoordinatorTopicReader = getClient().newReader(Schema.BYTEBUFFER)
+        Reader<ByteBuffer> groupCoordinatorTopicReader = getClient().newReader(Schema.BYTEBUFFER)
             .topic(offsetsTopicPtn0)
             .startMessageId(MessageId.earliest)
             .create();
         this.groupCoordinator = GroupCoordinator.of(
-            this.groupCoordinatorTopicProducer,
-            this.groupCoordinatorTopicReader,
+            groupCoordinatorTopicProducer,
+            groupCoordinatorTopicReader,
             groupConfig,
             offsetConfig,
             SystemTimer.builder()

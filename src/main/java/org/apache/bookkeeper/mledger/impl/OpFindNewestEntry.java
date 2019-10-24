@@ -14,6 +14,7 @@
 package org.apache.bookkeeper.mledger.impl;
 
 import com.google.common.base.Predicate;
+import java.util.Optional;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.FindEntryCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntryCallback;
 import org.apache.bookkeeper.mledger.Entry;
@@ -107,7 +108,7 @@ class OpFindNewestEntry implements ReadEntryCallback {
 
     @Override
     public void readEntryFailed(ManagedLedgerException exception, Object ctx) {
-        callback.findEntryFailed(exception, this.ctx);
+        callback.findEntryFailed(exception, Optional.empty(), this.ctx);
     }
 
     public void find() {

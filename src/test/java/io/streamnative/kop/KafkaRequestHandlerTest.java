@@ -57,7 +57,11 @@ public class KafkaRequestHandlerTest {
     @BeforeMethod
     public void setup() throws Exception {
         kafkaService = new KafkaService(new KafkaServiceConfiguration());
-        handler = new KafkaRequestHandler(kafkaService);
+        handler = new KafkaRequestHandler(
+            kafkaService,
+            kafkaService.getKafkaConfig(),
+            kafkaService.getKafkaTopicManager(),
+            kafkaService.getGroupCoordinator());
     }
 
     @Test

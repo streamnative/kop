@@ -113,6 +113,9 @@ public abstract class MockKafkaServiceBaseTest {
         this.conf.setEnableGroupCoordinator(true);
         this.conf.setAuthenticationEnabled(false);
         this.conf.setAuthorizationEnabled(false);
+        this.conf.setAllowAutoTopicCreation(true);
+        this.conf.setAllowAutoTopicCreationType("non-partitioned");
+        this.conf.setBrokerDeleteInactiveTopicsEnabled(false);
     }
 
     protected final void internalSetup() throws Exception {
