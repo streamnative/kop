@@ -100,7 +100,6 @@ public class KafkaService extends PulsarService {
                 throw new IllegalArgumentException("brokerServicePort/brokerServicePortTls must be present");
             }
 
-
             // init KafkaProtocolHandler
             KafkaProtocolHandler kafkaProtocolHandler = new KafkaProtocolHandler();
             kafkaProtocolHandler.initialize(kafkaConfig);
@@ -204,6 +203,7 @@ public class KafkaService extends PulsarService {
             // start Kafka protocol handler.
             // put after load manager for the use of existing broker service to create internal topics.
             kafkaProtocolHandler.start(this.getBrokerService());
+
             Map<InetSocketAddress, ChannelInitializer<SocketChannel>> channelInitializer =
                 kafkaProtocolHandler.newChannelInitializers();
             Map<String, Map<InetSocketAddress, ChannelInitializer<SocketChannel>>> protocolHandlers = ImmutableMap
@@ -211,6 +211,7 @@ public class KafkaService extends PulsarService {
                 .put("kafka", channelInitializer)
                 .build();
             getBrokerService().startProtocolHandlers(protocolHandlers);
+
             this.kafkaTopicManager = kafkaProtocolHandler.getKafkaTopicManager();
             this.groupCoordinator = kafkaProtocolHandler.getGroupCoordinator();
 

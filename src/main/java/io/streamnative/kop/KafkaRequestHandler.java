@@ -29,6 +29,7 @@ import io.streamnative.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.kop.offset.OffsetAndMetadata;
 import io.streamnative.kop.utils.CoreUtils;
 import io.streamnative.kop.utils.MessageIdUtils;
+import io.streamnative.kop.utils.OffsetFinder;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.ByteBuffer;
@@ -49,8 +50,6 @@ import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
-import org.apache.bookkeeper.mledger.impl.ManagedLedgerImplWrapper;
-import org.apache.bookkeeper.mledger.impl.OffsetFinder;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.Node;
@@ -175,15 +174,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         //      Entry<abc, List[TopicName]>
         //CompletableFuture<Map<String, List<TopicName>>> pulsarTopicsFuture = new CompletableFuture<>();
         CompletableFuture<Map<String, List<TopicName>>> pulsarTopicsFuture =
-            (topics == null || topics.isEmpty()) ?
-                pulsarService.getNamespaceService().getListOfPersistentTopics(kafkaNamespace)
+            (topics == null || topics.isEmpty())
+                ? pulsarService.getNamespaceService().getListOfPersistentTopics(kafkaNamespace)
                     .thenApply(list -> list.stream()
                         .map(topicString -> TopicName.get(topicString))
                         .collect(Collectors
                             .groupingBy(topicName ->
                                 getLocalNameWithoutPartition(topicName), Collectors.toList()))
-                    ) :
-                new CompletableFuture<>();
+                    )
+                : new CompletableFuture<>();
 
         if (!(topics == null || topics.isEmpty())) {
             Map<String, List<TopicName>> pulsarTopics = Maps.newHashMap();
@@ -504,14 +503,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private CompletableFuture<ListOffsetResponse.PartitionData>
     fetchOffsetForTimestamp(PersistentTopic persistentTopic, Long timestamp) {
-        ManagedLedgerImplWrapper managedLedger = new ManagedLedgerImplWrapper(
-            (ManagedLedgerImpl) persistentTopic.getManagedLedger());
+        ManagedLedgerImpl managedLedger =
+            (ManagedLedgerImpl) persistentTopic.getManagedLedger();
 
         CompletableFuture<ListOffsetResponse.PartitionData> partitionData = new CompletableFuture<>();
 
         try {
             if (timestamp == ListOffsetRequest.LATEST_TIMESTAMP) {
-                PositionImpl position = managedLedger.getLastConfirmedEntry();
+                PositionImpl position = (PositionImpl) managedLedger.getLastConfirmedEntry();
                 if (log.isDebugEnabled()) {
                     log.debug("Get latest position for topic {} time {}. result: {}",
                         persistentTopic.getName(), timestamp, position);
@@ -526,7 +525,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     MessageIdUtils
                         .getOffset(position.getLedgerId(), entryId == -1 ? 0 : entryId)));
             } else if (timestamp == ListOffsetRequest.EARLIEST_TIMESTAMP) {
-                PositionImpl position = managedLedger.getFirstValidPosition();
+                PositionImpl position = OffsetFinder.getFirstValidPosition(managedLedger);
 
                 if (log.isDebugEnabled()) {
                     log.debug("Get earliest position for topic {} time {}. result: {}",
@@ -539,14 +538,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     MessageIdUtils.getOffset(position.getLedgerId(), position.getEntryId())));
             } else {
                 // find with real wanted timestamp
-                OffsetFinder offsetFinder = new OffsetFinder(managedLedger.getManagedLedger());
+                OffsetFinder offsetFinder = new OffsetFinder(managedLedger);
 
                 offsetFinder.findMessages(timestamp, new AsyncCallbacks.FindEntryCallback() {
                     @Override
                     public void findEntryComplete(Position position, Object ctx) {
                         PositionImpl finalPosition;
                         if (position == null) {
-                            finalPosition = managedLedger.getFirstValidPosition();
+                            finalPosition = OffsetFinder.getFirstValidPosition(managedLedger);
                             if (finalPosition == null) {
                                 log.warn("Unable to find position for topic {} time {}. get NULL position",
                                     persistentTopic.getName(), timestamp);

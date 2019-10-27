@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.bookkeeper.mledger.impl;
+package io.streamnative.kop.utils;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
@@ -19,7 +19,6 @@ import static org.testng.Assert.assertTrue;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.UnpooledByteBufAllocator;
-
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Optional;
@@ -32,6 +31,8 @@ import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.impl.ManagedCursorImpl;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.test.MockedBookKeeperTestCase;
 import org.apache.pulsar.broker.service.persistent.PersistentMessageExpiryMonitor;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
@@ -158,20 +159,25 @@ public class OffsetFinderTest extends MockedBookKeeperTestCase {
 
         OffsetFinder messageFinder = new OffsetFinder((ManagedLedgerImpl) ledger);
         final AtomicBoolean ex = new AtomicBoolean(false);
-        messageFinder.findEntryFailed(new ManagedLedgerException("failed"), Optional.empty(), new AsyncCallbacks.FindEntryCallback() {
-            @Override
-            public void findEntryComplete(Position position, Object ctx) {
-            }
+        messageFinder.findEntryFailed(
+            new ManagedLedgerException("failed"),
+            Optional.empty(),
+            new AsyncCallbacks.FindEntryCallback() {
+                @Override
+                public void findEntryComplete(Position position, Object ctx) {
+                }
 
-            @Override
-            public void findEntryFailed(ManagedLedgerException exception, Optional<Position> pos, Object ctx) {
-                ex.set(true);
-            }
-        });
+                @Override
+                public void findEntryFailed(ManagedLedgerException exception, Optional<Position> pos, Object ctx) {
+                    ex.set(true);
+                }
+            });
         assertTrue(ex.get());
 
-        PersistentMessageExpiryMonitor monitor = new PersistentMessageExpiryMonitor("topicname", c1.getName(), c1);
-        monitor.findEntryFailed(new ManagedLedgerException.ConcurrentFindCursorPositionException("failed"), Optional.empty(),null);
+        PersistentMessageExpiryMonitor monitor =
+            new PersistentMessageExpiryMonitor("topicname", c1.getName(), c1);
+        monitor.findEntryFailed(new ManagedLedgerException
+            .ConcurrentFindCursorPositionException("failed"), Optional.empty(), null);
         Field field = monitor.getClass().getDeclaredField("expirationCheckInProgress");
         field.setAccessible(true);
         assertEquals(0, field.get(monitor));

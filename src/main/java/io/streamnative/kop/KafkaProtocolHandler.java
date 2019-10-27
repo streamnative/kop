@@ -13,6 +13,8 @@
  */
 package io.streamnative.kop;
 
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Sets;
 import io.netty.channel.ChannelInitializer;
@@ -20,19 +22,16 @@ import io.netty.channel.socket.SocketChannel;
 import io.streamnative.kop.coordinator.group.GroupConfig;
 import io.streamnative.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.kop.coordinator.group.OffsetConfig;
-import io.streamnative.kop.offset.OffsetAndMetadata;
+import io.streamnative.kop.utils.ConfigurationUtils;
 import io.streamnative.kop.utils.timer.SystemTimer;
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.utils.Time;
@@ -40,6 +39,7 @@ import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
+import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
@@ -57,7 +57,7 @@ import org.apache.pulsar.common.policies.data.TenantInfo;
 @Slf4j
 public class KafkaProtocolHandler implements ProtocolHandler {
 
-    public static final String PROTOCOL_NAME = "kafka";
+    public static final String PROTOCOL_NAME = "kafka-protocol-handler";
 
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
@@ -80,8 +80,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     @Override
     public void initialize(ServiceConfiguration conf) throws Exception {
-        // no-op
-        kafkaConfig = (KafkaServiceConfiguration) conf;
+        // init config
+        kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
+
     }
 
     @Override
@@ -92,23 +93,28 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     @Override
     public void start(BrokerService service) {
         brokerService = service;
+
         // a topic Manager
         kafkaTopicManager = new KafkaTopicManager(service);
 
-        // start group coordinator
+        // init and start group coordinator
         if (kafkaConfig.isEnableGroupCoordinator()) {
             try {
-                startGroupCoordinator(service);
+                initGroupCoordinator(brokerService);
+                startGroupCoordinator();
             } catch (Exception e) {
-                log.error("KafkaProtocolHandler start failed with", e);
+                log.error("initGroupCoordinator failed with", e);
             }
         }
     }
 
-    // this is called after start, and with kafkaTopicManager, kafkaConfig, brokerService all set.
+    // this is called after init, and with kafkaTopicManager, kafkaConfig, brokerService all set.
     @Override
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
-        //checkstate
+        checkState(kafkaConfig != null);
+        checkState(brokerService != null);
+        checkState(kafkaTopicManager != null);
+        checkState(groupCoordinator != null);
 
         Optional<Integer> port = kafkaConfig.getKafkaServicePort();
         InetSocketAddress addr = new InetSocketAddress(brokerService.pulsar().getBindAddress(), port.get());
@@ -137,9 +143,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
     }
 
-    // TODO: make group coordinator running in a distributed mode
-    //      https://github.com/streamnative/kop/issues/32
-    public void startGroupCoordinator(BrokerService service) throws Exception {
+    public void initGroupCoordinator(BrokerService service) throws Exception {
         GroupConfig groupConfig = new GroupConfig(
             kafkaConfig.getGroupMinSessionTimeoutMs(),
             kafkaConfig.getGroupMaxSessionTimeoutMs(),
@@ -178,35 +182,45 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 .build(),
             Time.SYSTEM
         );
-
-        this.groupCoordinator.startup(false);
     }
 
-    private void createKafkaMetadataNamespaceIfNeeded(BrokerService service) throws PulsarServerException, PulsarAdminException {
+    // TODO: make group coordinator running in a distributed mode
+    //      https://github.com/streamnative/kop/issues/32
+    public void startGroupCoordinator() throws Exception {
+        if (this.groupCoordinator != null) {
+            this.groupCoordinator.startup(false);
+        } else {
+            log.error("Failed to start group coordinator. Need init it first.");
+        }
+    }
+
+    private void createKafkaMetadataNamespaceIfNeeded(BrokerService service)
+        throws PulsarServerException, PulsarAdminException {
         String cluster = kafkaConfig.getClusterName();
         String kafkaMetadataTenant = kafkaConfig.getKafkaMetadataTenant();
         String kafkaMetadataNamespace = kafkaMetadataTenant + "/" + kafkaConfig.getKafkaMetadataNamespace();
+        PulsarAdmin pulsarAdmin = service.pulsar().getAdminClient();
 
         try {
             ClusterData clusterData = new ClusterData(service.pulsar().getWebServiceAddress(),
                 null /* serviceUrlTls */,
                 service.pulsar().getBrokerServiceUrl(),
                 null /* brokerServiceUrlTls */);
-            if (!service.pulsar().getAdminClient().clusters().getClusters().contains(cluster)) {
-                service.pulsar().getAdminClient().clusters().createCluster(cluster, clusterData);
+            if (!pulsarAdmin.clusters().getClusters().contains(cluster)) {
+                pulsarAdmin.clusters().createCluster(cluster, clusterData);
             } else {
-                service.pulsar().getAdminClient().clusters().updateCluster(cluster, clusterData);
+                pulsarAdmin.clusters().updateCluster(cluster, clusterData);
             }
 
-            if (!service.pulsar().getAdminClient().tenants().getTenants().contains(kafkaMetadataTenant)) {
-                service.pulsar().getAdminClient().tenants().createTenant(kafkaMetadataTenant,
+            if (!pulsarAdmin.tenants().getTenants().contains(kafkaMetadataTenant)) {
+                pulsarAdmin.tenants().createTenant(kafkaMetadataTenant,
                     new TenantInfo(Sets.newHashSet(kafkaConfig.getSuperUserRoles()), Sets.newHashSet(cluster)));
             }
-            if (!service.pulsar().getAdminClient().namespaces().getNamespaces(kafkaMetadataTenant).contains(kafkaMetadataNamespace)) {
+            if (!pulsarAdmin.namespaces().getNamespaces(kafkaMetadataTenant).contains(kafkaMetadataNamespace)) {
                 Set<String> clusters = Sets.newHashSet(kafkaConfig.getClusterName());
-                service.pulsar().getAdminClient().namespaces().createNamespace(kafkaMetadataNamespace, clusters);
-                service.pulsar().getAdminClient().namespaces().setNamespaceReplicationClusters(kafkaMetadataNamespace, clusters);
-                service.pulsar().getAdminClient().namespaces().setRetention(kafkaMetadataNamespace,
+                pulsarAdmin.namespaces().createNamespace(kafkaMetadataNamespace, clusters);
+                pulsarAdmin.namespaces().setNamespaceReplicationClusters(kafkaMetadataNamespace, clusters);
+                pulsarAdmin.namespaces().setRetention(kafkaMetadataNamespace,
                     new RetentionPolicies(-1, -1));
             }
         } catch (PulsarAdminException e) {

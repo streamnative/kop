@@ -19,4 +19,4 @@
 
 name: kafka-protocol-handler
 description: Kafka Protocol Handler
-sourceClass: io.streamnative.kop.KafkaProtocolHandler
+handlerClass: io.streamnative.kop.KafkaProtocolHandler
