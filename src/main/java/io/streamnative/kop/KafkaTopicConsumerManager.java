@@ -23,7 +23,6 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
-import org.apache.bookkeeper.mledger.impl.ManagedLedgerImplWrapper;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
 import org.apache.commons.codec.digest.DigestUtils;
@@ -75,8 +74,7 @@ public class KafkaTopicConsumerManager {
 
         try {
             // get previous position, because NonDurableCursor is read from next position.
-            ManagedLedgerImplWrapper ledger =
-                new ManagedLedgerImplWrapper((ManagedLedgerImpl) topic.getManagedLedger());
+            ManagedLedgerImpl ledger = (ManagedLedgerImpl) topic.getManagedLedger();
             PositionImpl previous = ledger.getPreviousPosition(position);
             if (log.isDebugEnabled()) {
                 log.debug("Create cursor {} for offset: {}. position: {}, previousPosition: {}",
@@ -84,7 +82,7 @@ public class KafkaTopicConsumerManager {
             }
 
             cursor.complete(Pair
-                .of(topic.getManagedLedger().newNonDurableCursor(previous, cursorName),
+                .of(ledger.newNonDurableCursor(previous, cursorName),
                     offset));
         } catch (Exception e) {
             log.error("Failed create nonDurable cursor for topic {} position: {}.", topic, position, e);

@@ -11,15 +11,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.bookkeeper.mledger.impl;
+package io.streamnative.kop.utils;
 
 import com.google.common.base.Predicate;
+import java.util.Optional;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.FindEntryCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntryCallback;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl.PositionBound;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 
 /**
  * Used to find Entry/Offset from ManagedLedger.
@@ -107,7 +110,7 @@ class OpFindNewestEntry implements ReadEntryCallback {
 
     @Override
     public void readEntryFailed(ManagedLedgerException exception, Object ctx) {
-        callback.findEntryFailed(exception, this.ctx);
+        callback.findEntryFailed(exception, Optional.empty(), this.ctx);
     }
 
     public void find() {

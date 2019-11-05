@@ -57,6 +57,7 @@ kop_help() {
 Usage: kop <command>
 where command is one of:
 
+    standalone          Run the kop kafka-broker server in standalone mode
     kafka-broker        Run the kop kafka-broker server
     help                This help message
 

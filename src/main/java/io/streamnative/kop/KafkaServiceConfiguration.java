@@ -142,6 +142,4 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         doc = "Frequency at which to check for stale offsets"
     )
     private long offsetsRetentionCheckIntervalMs = OffsetConfig.DefaultOffsetsRetentionCheckIntervalMs;
-
-
 }

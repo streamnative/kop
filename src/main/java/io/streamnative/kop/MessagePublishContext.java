@@ -62,7 +62,7 @@ public final class MessagePublishContext implements PublishContext {
                     topic.getName(), ledgerId, entryId);
             }
 
-            topic.recordAddLatency(TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - startTimeNs));
+            topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.MICROSECONDS);
 
             offsetFuture.complete(Long.valueOf(MessageIdUtils.getOffset(ledgerId, entryId)));
         }

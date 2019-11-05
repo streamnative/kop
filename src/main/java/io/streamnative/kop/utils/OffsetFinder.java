@@ -11,12 +11,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.bookkeeper.mledger.impl;
+package io.streamnative.kop.utils;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 
 import com.google.common.base.Predicate;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
@@ -26,6 +27,8 @@ import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedCursor.FindPositionConstraint;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.client.impl.MessageImpl;
 
 /**
@@ -76,6 +79,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
             }
             callback.findEntryFailed(
                 new ManagedLedgerException.ConcurrentFindCursorPositionException("last find is still running"),
+                Optional.empty(),
                 null);
         }
     }
@@ -97,7 +101,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
     }
 
     @Override
-    public void findEntryFailed(ManagedLedgerException exception, Object ctx) {
+    public void findEntryFailed(ManagedLedgerException exception, Optional<Position> position, Object ctx) {
         checkArgument(ctx instanceof AsyncCallbacks.FindEntryCallback);
         AsyncCallbacks.FindEntryCallback callback = (AsyncCallbacks.FindEntryCallback) ctx;
         if (log.isDebugEnabled()) {
@@ -105,7 +109,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
                 timestamp, exception);
         }
         messageFindInProgress = FALSE;
-        callback.findEntryFailed(exception, null);
+        callback.findEntryFailed(exception, position, null);
     }
 
     public void asyncFindNewestMatching(FindPositionConstraint constraint, Predicate<Entry> condition,
@@ -117,7 +121,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
         long max = managedLedger.getNumberOfEntries() - 1;
 
         if (startPosition == null) {
-            callback.findEntryFailed(new ManagedLedgerException("Couldn't find start position"), ctx);
+            callback.findEntryFailed(new ManagedLedgerException("Couldn't find start position"), Optional.empty(), ctx);
             return;
         } else {
             startPosition = managedLedger.getNextValidPosition(startPosition);
@@ -125,5 +129,14 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
 
         OpFindNewestEntry op = new OpFindNewestEntry(managedLedger, startPosition, condition, max, callback, ctx);
         op.find();
+    }
+
+    public static PositionImpl getFirstValidPosition(ManagedLedgerImpl managedLedger) {
+        PositionImpl firstPosition = managedLedger.getFirstPosition();
+        if (firstPosition == null) {
+            return null;
+        } else {
+            return managedLedger.getNextValidPosition(firstPosition);
+        }
     }
 }

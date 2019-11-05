@@ -56,16 +56,13 @@ public final class MessageFetchContext {
 
     private KafkaRequestHandler requestHandler;
     private KafkaHeaderAndRequest fetchRequest;
-    private CompletableFuture<ResponseAndRequest> fetchResponse;
 
     // recycler and get for this object
     public static MessageFetchContext get(KafkaRequestHandler requestHandler,
-                                          KafkaHeaderAndRequest fetchRequest,
-                                          CompletableFuture<ResponseAndRequest> fetchResponse) {
+                                          KafkaHeaderAndRequest fetchRequest) {
         MessageFetchContext context = RECYCLER.get();
         context.requestHandler = requestHandler;
         context.fetchRequest = fetchRequest;
-        context.fetchResponse = fetchResponse;
         return context;
     }
 
@@ -84,13 +81,12 @@ public final class MessageFetchContext {
     public void recycle() {
         requestHandler = null;
         fetchRequest = null;
-        fetchResponse = null;
         recyclerHandle.recycle(this);
     }
 
 
     // handle request
-    public CompletableFuture<ResponseAndRequest> handleFetch() {
+    public CompletableFuture<ResponseAndRequest> handleFetch(CompletableFuture<ResponseAndRequest> fetchResponse) {
         // Map of partition and related cursor
         Map<TopicPartition, CompletableFuture<Pair<ManagedCursor, Long>>> topicsAndCursor =
             ((FetchRequest) fetchRequest.getRequest())
