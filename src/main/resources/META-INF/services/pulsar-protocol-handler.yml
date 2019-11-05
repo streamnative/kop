@@ -17,6 +17,6 @@
 # under the License.
 #
 
-name: kafka-protocol-handler
+name: kafka
 description: Kafka Protocol Handler
 handlerClass: io.streamnative.kop.KafkaProtocolHandler

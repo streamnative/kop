@@ -57,7 +57,7 @@ import org.apache.pulsar.common.policies.data.TenantInfo;
 @Slf4j
 public class KafkaProtocolHandler implements ProtocolHandler {
 
-    public static final String PROTOCOL_NAME = "kafka-protocol-handler";
+    public static final String PROTOCOL_NAME = "kafka";
 
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
@@ -92,6 +92,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     @Override
     public String getProtocolDataToAdvertise() {
+        // TODO: support data register, when do https://github.com/streamnative/kop/issues/2
         return "mock-data-for-kafka";
     }
 
