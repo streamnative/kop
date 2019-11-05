@@ -39,9 +39,7 @@
     <lombok.version>1.18.4</lombok.version>
     <mockito.version>2.22.0</mockito.version>
     <netty.version>4.1.32.Final</netty.version>
-<!--    TODO: Change this after https://github.com/apache/pulsar/pull/5472 and 5473-->
-<!--    <pulsar.version>2.5.0-3af595150</pulsar.version>-->
-    <pulsar.version>2.5.0-SNAPSHOT</pulsar.version>
+    <pulsar.version>2.5.0-9728d5429</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
     <testcontainers.version>1.11.2</testcontainers.version>
@@ -215,7 +213,7 @@
 
     <dependency>
       <groupId>org.apache.pulsar</groupId>
-      <artifactId>managed-ledger-original</artifactId>
+      <artifactId>managed-ledger</artifactId>
       <version>${pulsar.version}</version>
       <type>test-jar</type>
       <scope>test</scope>

@@ -81,8 +81,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     @Override
     public void initialize(ServiceConfiguration conf) throws Exception {
         // init config
-        kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
-
+        if (conf instanceof KafkaServiceConfiguration) {
+            // in unit test, passed in conf will be KafkaServiceConfiguration
+            kafkaConfig = (KafkaServiceConfiguration) conf;
+        } else {
+            // when loaded with PulsarService as NAR, `conf` will be type of ServiceConfiguration
+            kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
+        }
     }
 
     @Override
@@ -114,7 +119,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         checkState(kafkaConfig != null);
         checkState(brokerService != null);
         checkState(kafkaTopicManager != null);
-        checkState(groupCoordinator != null);
+        if (kafkaConfig.isEnableGroupCoordinator()) {
+            checkState(groupCoordinator != null);
+        }
 
         Optional<Integer> port = kafkaConfig.getKafkaServicePort();
         InetSocketAddress addr = new InetSocketAddress(brokerService.pulsar().getBindAddress(), port.get());

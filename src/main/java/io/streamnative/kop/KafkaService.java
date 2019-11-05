@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
 import org.apache.kafka.common.internals.Topic;
@@ -70,6 +71,7 @@ public class KafkaService extends PulsarService {
     @Getter
     private KafkaTopicManager kafkaTopicManager;
     @Getter
+    @Setter
     private GroupCoordinator groupCoordinator;
 
     public KafkaService(KafkaServiceConfiguration config) {
@@ -124,12 +126,6 @@ public class KafkaService extends PulsarService {
             // Start load management service (even if load balancing is disabled)
             getLoadManager().set(LoadManager.create(this));
 
-            // Start the leader election service
-            startLeaderElectionService();
-
-            // needs load management service
-            startNamespaceService();
-
             setOffloader(createManagedLedgerOffloader(kafkaConfig));
 
             getBrokerService().start();
@@ -173,12 +169,26 @@ public class KafkaService extends PulsarService {
             }
             webService.addStaticResources("/static", "/static");
 
-            // Register heartbeat and bootstrap namespaces.
-            getNsService().registerBootstrapNamespaces();
-
             setSchemaRegistryService(SchemaRegistryService.create(this));
 
             webService.start();
+
+            // Refresh addresses, since the port might have been dynamically assigned
+            setWebServiceAddress(webAddress(kafkaConfig));
+            setWebServiceAddressTls(webAddressTls(kafkaConfig));
+            setBrokerServiceUrl(kafkaConfig.getBrokerServicePort().isPresent()
+                ? brokerUrl(advertisedAddress(kafkaConfig), getBrokerListenPort().get())
+                : null);
+            setBrokerServiceUrlTls(brokerUrlTls(kafkaConfig));
+
+            // needs load management service
+            this.startNamespaceService();
+
+            // Start the leader election service
+            startLeaderElectionService();
+
+            // Register heartbeat and bootstrap namespaces.
+            getNsService().registerBootstrapNamespaces();
 
             setMetricsGenerator(new MetricsGenerator(this));
 
