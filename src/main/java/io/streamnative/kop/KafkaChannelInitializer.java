@@ -13,6 +13,8 @@
  */
 package io.streamnative.kop;
 
+import static io.streamnative.kop.KafkaProtocolHandler.TLS_HANDLER;
+
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
@@ -20,13 +22,14 @@ import io.netty.handler.codec.LengthFieldPrepender;
 import io.streamnative.kop.coordinator.group.GroupCoordinator;
 import lombok.Getter;
 import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.common.util.NettySslContextBuilder;
 
 /**
  * A channel initializer that initialize channels for kafka protocol.
  */
 public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
 
-    static final int MAX_FRAME_LENGTH = 100 * 1024 * 1024; // 100MB
+    public static final int MAX_FRAME_LENGTH = 100 * 1024 * 1024; // 100MB
 
     @Getter
     private final PulsarService pulsarService;
@@ -36,9 +39,11 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final KafkaTopicManager kafkaTopicManager;
     @Getter
     private final GroupCoordinator groupCoordinator;
-    // TODO: handle TLS -- https://github.com/streamnative/kop/issues/2
-    //      can turn into get this config from kafkaConfig.
+    @Getter
     private final boolean enableTls;
+    @Getter
+    private final NettySslContextBuilder sslCtxRefresher;
+
 
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
@@ -51,14 +56,28 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.kafkaTopicManager = kafkaTopicManager;
         this.groupCoordinator = groupCoordinator;
         this.enableTls = enableTLS;
+
+        if (enableTls) {
+            sslCtxRefresher = new NettySslContextBuilder(kafkaConfig.isTlsAllowInsecureConnection(),
+                kafkaConfig.getTlsTrustCertsFilePath(), kafkaConfig.getTlsCertificateFilePath(),
+                kafkaConfig.getTlsKeyFilePath(), kafkaConfig.getTlsCiphers(), kafkaConfig.getTlsProtocols(),
+                kafkaConfig.isTlsRequireTrustedClientCertOnConnect(),
+                kafkaConfig.getTlsCertRefreshCheckDurationSec());
+        } else {
+            sslCtxRefresher = null;
+        }
     }
 
     @Override
     protected void initChannel(SocketChannel ch) throws Exception {
+        if (this.enableTls) {
+            ch.pipeline().addLast(TLS_HANDLER, sslCtxRefresher.get().newHandler(ch.alloc()));
+        }
         ch.pipeline().addLast(new LengthFieldPrepender(4));
         ch.pipeline().addLast("frameDecoder",
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
-            new KafkaRequestHandler(pulsarService, kafkaConfig, kafkaTopicManager, groupCoordinator));
+            new KafkaRequestHandler(pulsarService, kafkaConfig, kafkaTopicManager, groupCoordinator, enableTls));
     }
+
 }

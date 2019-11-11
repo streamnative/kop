@@ -13,6 +13,7 @@
  */
 package io.streamnative.kop;
 
+import static io.streamnative.kop.KafkaProtocolHandler.PLAINTEXT_PREFIX;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
 
@@ -99,12 +100,12 @@ public abstract class MockKafkaServiceBaseTest {
 
     protected void resetConfig() {
         this.conf = new KafkaServiceConfiguration();
-        this.conf.setKafkaServicePort(Optional.ofNullable(kafkaBrokerPort));
         this.conf.setBrokerServicePort(Optional.ofNullable(brokerPort));
         this.conf.setAdvertisedAddress("localhost");
         this.conf.setWebServicePort(Optional.ofNullable(brokerWebservicePort));
         this.conf.setClusterName(configClusterName);
         this.conf.setAdvertisedAddress("localhost");
+        this.conf.setListeners(PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort);
         this.conf.setManagedLedgerCacheSizeMB(8);
         this.conf.setActiveConsumerFailoverDelayTimeMillis(0);
         this.conf.setDefaultNumberOfNamespaceBundles(1);

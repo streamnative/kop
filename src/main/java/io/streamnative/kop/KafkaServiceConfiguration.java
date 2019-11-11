@@ -14,7 +14,6 @@
 package io.streamnative.kop;
 
 import io.streamnative.kop.coordinator.group.OffsetConfig;
-import java.util.Optional;
 import java.util.Properties;
 import lombok.Getter;
 import lombok.Setter;
@@ -77,19 +76,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
         category = CATEGORY_KOP,
-        doc = "The port for serving Kafka requests"
-    )
-
-    private Optional<Integer> kafkaServicePort = Optional.of(9092);
-
-    @FieldContext(
-        category = CATEGORY_KOP,
-        doc = "The port for serving tls secured Kafka requests"
-    )
-    private Optional<Integer> kafkaServicePortTls = Optional.empty();
-
-    @FieldContext(
-        category = CATEGORY_KOP,
         doc = "Flag to enable group coordinator"
     )
     private boolean enableGroupCoordinator = false;
@@ -142,4 +128,11 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         doc = "Frequency at which to check for stale offsets"
     )
     private long offsetsRetentionCheckIntervalMs = OffsetConfig.DefaultOffsetsRetentionCheckIntervalMs;
+
+    @FieldContext(
+        category = CATEGORY_KOP,
+        doc = "ListenersProp for Kafka service(host should follow the advertisedAddress). "
+            + "e.g. PLAINTEXT://localhost:9092,SSL_PREFIX://localhost:9093"
+    )
+    private String listeners = "PLAINTEXT://localhost:9092";
 }

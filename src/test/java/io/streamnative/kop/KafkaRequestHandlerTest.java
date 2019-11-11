@@ -100,7 +100,8 @@ public class KafkaRequestHandlerTest extends MockKafkaServiceBaseTest {
             kafkaService,
             kafkaService.getKafkaConfig(),
             kafkaService.getKafkaTopicManager(),
-            kafkaService.getGroupCoordinator());
+            kafkaService.getGroupCoordinator(),
+            false);
     }
 
     @AfterMethod

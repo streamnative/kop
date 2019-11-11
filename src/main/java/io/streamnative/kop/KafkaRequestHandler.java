@@ -15,6 +15,10 @@ package io.streamnative.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.kop.KafkaProtocolHandler.ListenerType.PLAINTEXT;
+import static io.streamnative.kop.KafkaProtocolHandler.ListenerType.SSL;
+import static io.streamnative.kop.KafkaProtocolHandler.getBrokerUrl;
+import static io.streamnative.kop.KafkaProtocolHandler.getListenerPort;
 import static io.streamnative.kop.MessagePublishContext.publishMessages;
 import static io.streamnative.kop.utils.TopicNameUtils.pulsarTopicName;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -94,6 +98,8 @@ import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.admin.impl.PersistentTopicsBase;
+import org.apache.pulsar.broker.loadbalance.LoadManager;
+import org.apache.pulsar.broker.lookup.LookupResult;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
@@ -102,6 +108,8 @@ import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
+import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
+import org.apache.zookeeper.KeeperException;
 
 /**
  * This class contains all the request handling methods.
@@ -119,11 +127,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final NamespaceName kafkaNamespace;
     private final ExecutorService executor;
     private final PulsarAdmin admin;
+    private final Boolean tlsEnabled;
+    private final int plaintextPort;
+    private final int sslPort;
 
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
                                KafkaTopicManager kafkaTopicManager,
-                               GroupCoordinator groupCoordinator) throws Exception {
+                               GroupCoordinator groupCoordinator,
+                               Boolean tlsEnabled) throws Exception {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -136,6 +148,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 kafkaConfig.getKafkaNamespace());
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
+        this.tlsEnabled = tlsEnabled;
+        this.plaintextPort = getListenerPort(kafkaConfig.getListeners(), PLAINTEXT);
+        this.sslPort = getListenerPort(kafkaConfig.getListeners(), SSL);
     }
 
     protected CompletableFuture<ResponseAndRequest> handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest) {
@@ -452,12 +467,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
             AbstractResponse response;
             try {
-                URI uri = new URI(pulsarService.getBrokerServiceUrl());
-                Node node = newNode(
-                    new InetSocketAddress(
-                        uri.getHost(),
-                        kafkaConfig.getKafkaServicePort().get()));
-
+                Node node  = newSelfNode();
                 if (log.isDebugEnabled()) {
                     log.debug("[{}] Request {}: Return current broker node as Coordinator: {}.",
                         ctx.channel(), findCoordinator.getHeader(), node);
@@ -913,76 +923,110 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         ctx.close();
     }
 
+    private CompletableFuture<Optional<String>> getProtocolDataToAdvertise(Optional<LookupResult> lookupResult,
+                                                                           TopicName topic) {
+        if (log.isDebugEnabled()) {
+            log.debug("Handle getProtocolDataToAdvertise for {}", topic);
+        }
+
+        if (!lookupResult.isPresent()) {
+            log.error("Can't find broker for topic {}", topic);
+            CompletableFuture<Optional<String>> future = new CompletableFuture<>();
+            future.completeExceptionally(new KeeperException.NoNodeException());
+            return future;
+        }
+
+        LookupData lookupData = lookupResult.get().getLookupData();
+        String candidateBroker = lookupData.getBrokerUrl();
+        URI uri;
+
+        try {
+            uri = new URI(candidateBroker);
+        } catch (Exception e) {
+            log.error("Failed to get URI from {} for topic {}", candidateBroker, topic);
+            CompletableFuture<Optional<String>> future = new CompletableFuture<>();
+            future.completeExceptionally(e);
+            return future;
+        }
+
+        // advertised data is write in  /loadbalance/brokers/broker_host:webServicePort
+        int port = kafkaConfig.getWebServicePort().isPresent() ? kafkaConfig.getWebServicePort().get()
+            : kafkaConfig.getWebServicePortTls().get();
+        String path = String.format("%s/%s:%s", LoadManager.LOADBALANCE_BROKERS_ROOT, uri.getHost(),
+            port);
+
+        return pulsarService.getLocalZkCache()
+            .getDataAsync(path, pulsarService.getLoadManager().get().getLoadReportDeserializer())
+            .thenApply(reportData -> {
+                if (reportData.isPresent()) {
+                    ServiceLookupData data = reportData.get();
+                    return data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME);
+                } else {
+                    log.error("No node for broker data: {}", path);
+                    return Optional.empty();
+                }
+            });
+    }
+
     private CompletableFuture<PartitionMetadata> findBroker(PulsarService pulsarService, TopicName topic) {
         if (log.isDebugEnabled()) {
             log.debug("Handle Lookup for {}", topic);
         }
 
-        final CompletableFuture<PartitionMetadata> resultFuture = new CompletableFuture<>();
-
-        pulsarService.getNamespaceService()
+        return pulsarService.getNamespaceService()
             .getBrokerServiceUrlAsync(topic, true)
-            .whenComplete((lookupResult, throwable)-> {
-                if (throwable != null) {
-                    log.error("Caught error while find Broker for topic:{} ", topic, throwable);
-                    resultFuture.completeExceptionally(throwable);
-                    return;
+            .thenCompose(data -> getProtocolDataToAdvertise(data, topic))
+            .thenApply(stringOptional -> {
+                if (!stringOptional.isPresent()) {
+                    log.error("Not get advertise data for Kafka topic:{} ", topic);
+                    return null;
                 }
 
                 try {
-                    if (lookupResult.isPresent()) {
-                        LookupData lookupData = lookupResult.get().getLookupData();
-                        String brokerUrl = lookupData.getBrokerUrl();
+                    String listeners = stringOptional.get();
 
-                        URI uri = new URI(brokerUrl);
-                        if (log.isDebugEnabled()) {
-                            log.debug("Found broker: {} for topicName: {}", uri, topic);
-                        }
-
-                        // auto create topic.
-                        String hostname = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(
-                            kafkaConfig.getAdvertisedAddress());
-                        if (!topicManager.topicExists(topic.toString()) && hostname.equals(uri.getHost())) {
-                            pulsarService.getBrokerService().getTopic(topic.toString(), true)
-                                .whenComplete((topicOpt, exception) -> {
-                                    if (exception != null) {
-                                        log.error("[{}] findBroker: Failed to getOrCreateTopic {}. exception:",
-                                            ctx.channel(), topic.toString(), exception);
-                                    } else {
-                                        if (topicOpt.isPresent()) {
-                                            topicManager.addTopic(topic.toString(), (PersistentTopic) topicOpt.get());
-                                        } else {
-                                            log.error("[{}] findBroker: getOrCreateTopic get empty topic for name {}",
-                                                ctx.channel(), topic.toString());
-                                        }
-                                    }
-                                });
-                        }
-
-                        Node node = newNode(new InetSocketAddress(
-                            uri.getHost(),
-                            kafkaConfig.getKafkaServicePort().get()));
-
-                        resultFuture.complete(newPartitionMetadata(topic, node));
-                        return;
-                    } else {
-                        if (log.isDebugEnabled()) {
-                            log.debug("Topic {} not owned by broker.", topic);
-                        }
-                        resultFuture.complete(newFailedPartitionMetadata(topic));
-                        return;
+                    if (log.isDebugEnabled()) {
+                        log.debug("Found broker: {} for topicName: {}", listeners, topic);
                     }
+
+                    String brokerUrl = getBrokerUrl(listeners, tlsEnabled);
+                    URI uri = new URI(brokerUrl);
+
+                    // auto create topic.
+                    String hostname = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(
+                        kafkaConfig.getAdvertisedAddress());
+                    if (!topicManager.topicExists(topic.toString()) && hostname.equals(uri.getHost())) {
+                        pulsarService.getBrokerService().getTopic(topic.toString(), true)
+                            .whenComplete((topicOpt, exception) -> {
+                                if (exception != null) {
+                                    log.error("[{}] findBroker: Failed to getOrCreateTopic {}. exception:",
+                                        ctx.channel(), topic.toString(), exception);
+                                } else {
+                                    if (topicOpt.isPresent()) {
+                                        topicManager.addTopic(topic.toString(), (PersistentTopic) topicOpt.get());
+                                    } else {
+                                        log.error("[{}] findBroker: getOrCreateTopic get empty topic for name {}",
+                                            ctx.channel(), topic.toString());
+                                    }
+                                }
+                            });
+                    }
+
+                    Node node = newNode(new InetSocketAddress(
+                        uri.getHost(),
+                        uri.getPort()));
+
+                    return newPartitionMetadata(topic, node);
                 } catch (Exception e) {
                     log.error("Caught error while find Broker for topic:{} ", topic, e);
-                    resultFuture.completeExceptionally(e);
+                    return null;
                 }
+            }).exceptionally(ex -> {
+                log.error("Exceptionally while find Broker for topic:{} ", topic, ex);
+                return null;
             });
-
-        return resultFuture;
     }
 
-    // TODO: handle Kafka Node.id
-    //   - https://github.com/streamnative/kop/issues/9
     static Node newNode(InetSocketAddress address) {
         if (log.isDebugEnabled()) {
             log.debug("Return Broker Node of {}", address);
@@ -996,7 +1040,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     Node newSelfNode() {
         String hostname = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(
             kafkaConfig.getAdvertisedAddress());
-        int port = kafkaConfig.getKafkaServicePort().get();
+
+        int port = tlsEnabled ? sslPort : plaintextPort;
 
         if (log.isDebugEnabled()) {
             log.debug("Return Broker Node of Self: {}:{}", hostname, port);

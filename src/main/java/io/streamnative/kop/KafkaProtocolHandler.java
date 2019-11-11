@@ -27,7 +27,6 @@ import io.streamnative.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import lombok.Getter;
@@ -37,6 +36,7 @@ import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -58,6 +58,19 @@ import org.apache.pulsar.common.policies.data.TenantInfo;
 public class KafkaProtocolHandler implements ProtocolHandler {
 
     public static final String PROTOCOL_NAME = "kafka";
+    public static final String SSL_PREFIX = "SSL://";
+    public static final String PLAINTEXT_PREFIX = "PLAINTEXT://";
+    public static final String LISTENER_DEL = ",";
+    public static final String TLS_HANDLER = "tls";
+    public static final String LISTENER_PATTEN = "^(PLAINTEXT?|SSL)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-0-9+]";
+
+    /**
+     * Kafka Listener Type.
+     */
+    public enum ListenerType {
+        PLAINTEXT,
+        SSL
+    }
 
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
@@ -67,6 +80,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     private KafkaTopicManager kafkaTopicManager;
     @Getter
     private GroupCoordinator groupCoordinator;
+    @Getter
+    private String bindAddress;
+
 
     @Override
     public String protocolName() {
@@ -88,12 +104,14 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             // when loaded with PulsarService as NAR, `conf` will be type of ServiceConfiguration
             kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
         }
+        this.bindAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(kafkaConfig.getBindAddress());
     }
 
+    // This method is called after initialize
     @Override
     public String getProtocolDataToAdvertise() {
-        // TODO: support data register, when do https://github.com/streamnative/kop/issues/2
-        return "mock-data-for-kafka";
+        log.debug("Get configured listeners", kafkaConfig.getListeners());
+        return kafkaConfig.getListeners();
     }
 
     @Override
@@ -114,30 +132,48 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
     }
 
-    // this is called after init, and with kafkaTopicManager, kafkaConfig, brokerService all set.
+    // this is called after initialize, and with kafkaTopicManager, kafkaConfig, brokerService all set.
     @Override
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
         checkState(kafkaConfig != null);
+        checkState(kafkaConfig.getListeners() != null);
         checkState(brokerService != null);
         checkState(kafkaTopicManager != null);
         if (kafkaConfig.isEnableGroupCoordinator()) {
             checkState(groupCoordinator != null);
         }
 
-        Optional<Integer> port = kafkaConfig.getKafkaServicePort();
-        InetSocketAddress addr = new InetSocketAddress(brokerService.pulsar().getBindAddress(), port.get());
+        String listeners = kafkaConfig.getListeners();
+        String[] parts = listeners.split(LISTENER_DEL);
 
         try {
-            Map<InetSocketAddress, ChannelInitializer<SocketChannel>> initializerMap =
-                ImmutableMap.<InetSocketAddress, ChannelInitializer<SocketChannel>>builder()
-                    .put(addr,
-                        (new KafkaChannelInitializer(brokerService.pulsar(),
+            ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
+                ImmutableMap.<InetSocketAddress, ChannelInitializer<SocketChannel>>builder();
+
+            for (String listener: parts) {
+                if (listener.startsWith(PLAINTEXT_PREFIX)) {
+                    builder.put(
+                        new InetSocketAddress(brokerService.pulsar().getBindAddress(), getListenerPort(listener)),
+                        new KafkaChannelInitializer(brokerService.pulsar(),
                             kafkaConfig,
                             kafkaTopicManager,
                             groupCoordinator,
-                            false)))
-                    .build();
-            return initializerMap;
+                            false));
+                } else if (listener.startsWith(SSL_PREFIX)) {
+                    builder.put(
+                        new InetSocketAddress(brokerService.pulsar().getBindAddress(), getListenerPort(listener)),
+                        new KafkaChannelInitializer(brokerService.pulsar(),
+                            kafkaConfig,
+                            kafkaTopicManager,
+                            groupCoordinator,
+                            true));
+                } else {
+                    log.error("KafkaProtocolHandler listeners {} not supported. supports {} and {}",
+                        listeners, PLAINTEXT_PREFIX, SSL_PREFIX);
+                }
+            }
+
+            return builder.build();
         } catch (Exception e){
             log.error("KafkaProtocolHandler newChannelInitializers failed with", e);
             return null;
@@ -255,5 +291,45 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
 
         return offsetsTopic;
+    }
+
+    public static int getListenerPort(String listener) {
+        checkState(listener.matches(LISTENER_PATTEN), "listener not match patten");
+
+        int lastIndex = listener.lastIndexOf(':');
+        return Integer.parseInt(listener.substring(lastIndex + 1));
+    }
+
+
+    public static int getListenerPort(String listeners, ListenerType type) {
+        String[] parts = listeners.split(LISTENER_DEL);
+
+        for (String listener: parts) {
+            if (type == ListenerType.PLAINTEXT && listener.startsWith(PLAINTEXT_PREFIX)) {
+                return getListenerPort(listener);
+            }
+            if (type == ListenerType.SSL && listener.startsWith(SSL_PREFIX)) {
+                return getListenerPort(listener);
+            }
+        }
+
+        log.error("KafkaProtocolHandler listeners {} not contains type {}", listeners, type);
+        return -1;
+    }
+
+    public static String getBrokerUrl(String listeners, Boolean tlsEnabled) {
+        String[] parts = listeners.split(LISTENER_DEL);
+
+        for (String listener: parts) {
+            if (tlsEnabled && listener.startsWith(SSL_PREFIX)) {
+                return listener;
+            }
+            if (!tlsEnabled && listener.startsWith(PLAINTEXT_PREFIX)) {
+                return listener;
+            }
+        }
+
+        log.error("listener {} not contains a valid SSL or PLAINTEXT address", listeners);
+        return null;
     }
 }
