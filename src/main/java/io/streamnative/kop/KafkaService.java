@@ -209,8 +209,6 @@ public class KafkaService extends PulsarService {
                     + (kafkaConfig.getWebServicePortTls().isPresent()
                 ? "tls-port = " + kafkaConfig.getWebServicePortTls() : "")
                     + ("kafka listener url= " + kafkaConfig.getListeners());
-            log.info("++++ Kafka bootstrapMessage, {}, cluster={}, configs={}",
-                bootstrapMessage);
 
             // start Kafka protocol handler.
             // put after load manager for the use of existing broker service to create internal topics.

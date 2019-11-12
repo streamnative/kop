@@ -13,8 +13,10 @@
  */
 package io.streamnative.kop;
 
+import com.google.common.collect.Sets;
 import io.streamnative.kop.coordinator.group.OffsetConfig;
 import java.util.Properties;
+import java.util.Set;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.kafka.common.record.CompressionType;
@@ -131,11 +133,96 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private long offsetsRetentionCheckIntervalMs = OffsetConfig.DefaultOffsetsRetentionCheckIntervalMs;
 
-    // Kafka SSL configs
     @FieldContext(
         category = CATEGORY_KOP,
         doc = "ListenersProp for Kafka service(host should follow the advertisedAddress). "
             + "e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093"
     )
     private String listeners = "PLAINTEXT://localhost:9092";
+
+    // Kafka SSL configs
+    @FieldContext(
+        category = CATEGORY_KOP_SSL,
+        doc = "Kafka ssl configuration map with: SSL_PROTOCOL_CONFIG = \"ssl.protocol\""
+    )
+    private String kopSslProtocol = "TLS";
+
+    @FieldContext(
+        category = CATEGORY_KOP_SSL,
+        doc = "Kafka ssl configuration map with: SSL_PROVIDER_CONFIG = \"ssl.provider\""
+    )
+    private String kopSslProvider;
+
+    @FieldContext(
+        category = CATEGORY_KOP_SSL,
+        doc = "Kafka ssl configuration map with: SSL_CIPHER_SUITES_CONFIG = \"ssl.cipher.suites\""
+    )
+    private String kopSslCipherSuites;
+
+    @FieldContext(
+        category = CATEGORY_KOP_SSL,
+        doc = "Kafka ssl configuration map with: SSL_ENABLED_PROTOCOLS_CONFIG = \"ssl.enabled.protocols\""
+    )
+    private Set<String> kopSslEnabledProtocols = Sets.newHashSet("TLSv1.2", "TLSv1.1", "TLSv1");
+
+    @FieldContext(
+        category = CATEGORY_KOP_SSL,
+        doc = "Kafka ssl configuration map with: SSL_KEYSTORE_TYPE_CONFIG = \"ssl.keystore.type\""
+    )
+    private String kopSslKeystoreType = "JKS";
+
+    @FieldContext(
+        category = CATEGORY_KOP_SSL,
+        doc = "Kafka ssl configuration map with: SSL_KEYSTORE_LOCATION_CONFIG = \"ssl.keystore.location\""
+    )
+    private String kopSslKeystoreLocation;
+
+    @FieldContext(
+        category = CATEGORY_KOP_SSL,
+        doc = "Kafka ssl configuration map with: SSL_KEYSTORE_PASSWORD_CONFIG = \"ssl.keystore.password\""
+    )
+    private String kopSslKeystorePassword;
+
+    @FieldContext(
+        category = CATEGORY_KOP_SSL,
+        doc = "Kafka ssl configuration map with: SSL_KEY_PASSWORD_CONFIG = \"ssl.key.password\""
+    )
+    private String kopSslKeyPassword;
+
+    @FieldContext(
+        category = CATEGORY_KOP_SSL,
+        doc = "Kafka ssl configuration map with: SSL_TRUSTSTORE_TYPE_CONFIG = \"ssl.truststore.type\""
+    )
+    private String kopSslTruststoreType = "JKS";
+
+    @FieldContext(
+        category = CATEGORY_KOP_SSL,
+        doc = "Kafka ssl configuration map with: SSL_TRUSTSTORE_LOCATION_CONFIG = \"ssl.truststore.location\""
+    )
+    private String kopSslTruststoreLocation;
+
+    @FieldContext(
+        category = CATEGORY_KOP_SSL,
+        doc = "Kafka ssl configuration map with: SSL_TRUSTSTORE_PASSWORD_CONFIG = \"ssl.truststore.password\""
+    )
+    private String kopSslTruststorePassword;
+
+    @FieldContext(
+        category = CATEGORY_KOP_SSL,
+        doc = "Kafka ssl configuration map with: SSL_KEYMANAGER_ALGORITHM_CONFIG = \"ssl.keymanager.algorithm\""
+    )
+    private String kopSslKeymanagerAlgorithm = "SunX509";
+
+    @FieldContext(
+        category = CATEGORY_KOP_SSL,
+        doc = "Kafka ssl configuration map with: SSL_TRUSTMANAGER_ALGORITHM_CONFIG = \"ssl.trustmanager.algorithm\""
+    )
+    private String kopSslTrustmanagerAlgorithm = "SunX509";
+
+    @FieldContext(
+        category = CATEGORY_KOP_SSL,
+        doc = "Kafka ssl configuration map with: "
+            + "SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG = \"ssl.secure.random.implementation\""
+    )
+    private String kopSslSecureRandomImplementation;
 }

@@ -19,10 +19,12 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
+import io.netty.handler.ssl.SslHandler;
 import io.streamnative.kop.coordinator.group.GroupCoordinator;
+import io.streamnative.kop.utils.ssl.SSLUtils;
 import lombok.Getter;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.common.util.NettySslContextBuilder;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 /**
  * A channel initializer that initialize channels for kafka protocol.
@@ -42,8 +44,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     @Getter
     private final boolean enableTls;
     @Getter
-    private final NettySslContextBuilder sslCtxRefresher;
-
+    private final SslContextFactory sslContextFactory;
 
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
@@ -58,20 +59,16 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.enableTls = enableTLS;
 
         if (enableTls) {
-            sslCtxRefresher = new NettySslContextBuilder(kafkaConfig.isTlsAllowInsecureConnection(),
-                kafkaConfig.getTlsTrustCertsFilePath(), kafkaConfig.getTlsCertificateFilePath(),
-                kafkaConfig.getTlsKeyFilePath(), kafkaConfig.getTlsCiphers(), kafkaConfig.getTlsProtocols(),
-                kafkaConfig.isTlsRequireTrustedClientCertOnConnect(),
-                kafkaConfig.getTlsCertRefreshCheckDurationSec());
+            sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
         } else {
-            sslCtxRefresher = null;
+            sslContextFactory = null;
         }
     }
 
     @Override
     protected void initChannel(SocketChannel ch) throws Exception {
         if (this.enableTls) {
-            ch.pipeline().addLast(TLS_HANDLER, sslCtxRefresher.get().newHandler(ch.alloc()));
+            ch.pipeline().addLast(TLS_HANDLER, new SslHandler(SSLUtils.createSslEngine(sslContextFactory)));
         }
         ch.pipeline().addLast(new LengthFieldPrepender(4));
         ch.pipeline().addLast("frameDecoder",
