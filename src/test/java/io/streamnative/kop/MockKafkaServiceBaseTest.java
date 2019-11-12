@@ -14,6 +14,7 @@
 package io.streamnative.kop;
 
 import static io.streamnative.kop.KafkaProtocolHandler.PLAINTEXT_PREFIX;
+import static io.streamnative.kop.KafkaProtocolHandler.SSL_PREFIX;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
 
@@ -84,7 +85,7 @@ public abstract class MockKafkaServiceBaseTest {
     protected final int brokerWebservicePortTls = PortManager.nextFreePort();
     protected final int brokerPort = PortManager.nextFreePort();
     protected final int kafkaBrokerPort = PortManager.nextFreePort();
-
+    protected final int kafkaBrokerPortTls = PortManager.nextFreePort();
 
     protected MockZooKeeper mockZookKeeper;
     protected NonClosableMockBookKeeper mockBookKeeper;
@@ -105,7 +106,9 @@ public abstract class MockKafkaServiceBaseTest {
         this.conf.setWebServicePort(Optional.ofNullable(brokerWebservicePort));
         this.conf.setClusterName(configClusterName);
         this.conf.setAdvertisedAddress("localhost");
-        this.conf.setListeners(PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort);
+        this.conf.setListeners(
+            PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort + ","
+            + SSL_PREFIX + "localhost:" + kafkaBrokerPortTls);
         this.conf.setManagedLedgerCacheSizeMB(8);
         this.conf.setActiveConsumerFailoverDelayTimeMillis(0);
         this.conf.setDefaultNumberOfNamespaceBundles(1);
@@ -330,6 +333,38 @@ public abstract class MockKafkaServiceBaseTest {
 
         public KProducer(String topic, Boolean isAsync, int port) {
             this(topic, isAsync, "localhost", port);
+        }
+
+        @Override
+        public void close() {
+            this.producer.close();
+        }
+    }
+
+    /**
+     * A producer with ssl connect wrapper.
+     */
+    @Getter
+    public static class SslProducer implements Closeable {
+        private final KafkaProducer<Integer, String> producer;
+        private final String topic;
+
+        public SslProducer(String topic, int port) {
+            Properties props = new Properties();
+            props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + port);
+            props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducerSSL");
+            props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
+            props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+
+            // SSL client config
+            props.put("security.protocol", "SSL");
+            props.put("ssl.truststore.location", "./src/test/resources/ssl/certificate/client.truststore.jks");
+            props.put("ssl.truststore.password", "111111");
+            // default is https, here need to set empty.
+            props.put("ssl.endpoint.identification.algorithm", "");
+
+            producer = new KafkaProducer<>(props);
+            this.topic = topic;
         }
 
         @Override
