@@ -42,6 +42,8 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     @Category
     private static final String CATEGORY_KOP = "Kafka on Pulsar";
 
+    @Category
+    private static final String CATEGORY_KOP_SSL = "Kafka on Pulsar SSL configuration";
     //
     // --- Kafka on Pulsar Broker configuration ---
     //
@@ -129,10 +131,11 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private long offsetsRetentionCheckIntervalMs = OffsetConfig.DefaultOffsetsRetentionCheckIntervalMs;
 
+    // Kafka SSL configs
     @FieldContext(
         category = CATEGORY_KOP,
         doc = "ListenersProp for Kafka service(host should follow the advertisedAddress). "
-            + "e.g. PLAINTEXT://localhost:9092,SSL_PREFIX://localhost:9093"
+            + "e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093"
     )
     private String listeners = "PLAINTEXT://localhost:9092";
 }
