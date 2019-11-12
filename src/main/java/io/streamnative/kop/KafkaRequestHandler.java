@@ -111,7 +111,6 @@ import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
-import org.apache.zookeeper.KeeperException;
 
 /**
  * This class contains all the request handling methods.
