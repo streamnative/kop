@@ -110,7 +110,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     // This method is called after initialize
     @Override
     public String getProtocolDataToAdvertise() {
-        log.debug("Get configured listeners", kafkaConfig.getListeners());
+        if (log.isDebugEnabled()) {
+            log.debug("Get configured listeners", kafkaConfig.getListeners());
+        }
         return kafkaConfig.getListeners();
     }
 
@@ -153,6 +155,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             for (String listener: parts) {
                 if (listener.startsWith(PLAINTEXT_PREFIX)) {
                     builder.put(
+                        // TODO: consider using the address in the listener as the bind address.
+                        //          https://github.com/streamnative/kop/issues/46
                         new InetSocketAddress(brokerService.pulsar().getBindAddress(), getListenerPort(listener)),
                         new KafkaChannelInitializer(brokerService.pulsar(),
                             kafkaConfig,
@@ -168,8 +172,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                             groupCoordinator,
                             true));
                 } else {
-                    log.error("KafkaProtocolHandler listeners {} not supported. supports {} and {}",
-                        listeners, PLAINTEXT_PREFIX, SSL_PREFIX);
+                    log.error("Kafka listener {} not supported. supports {} and {}",
+                        listener, PLAINTEXT_PREFIX, SSL_PREFIX);
                 }
             }
 
@@ -299,7 +303,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         int lastIndex = listener.lastIndexOf(':');
         return Integer.parseInt(listener.substring(lastIndex + 1));
     }
-
 
     public static int getListenerPort(String listeners, ListenerType type) {
         String[] parts = listeners.split(LISTENER_DEL);

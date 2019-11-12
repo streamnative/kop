@@ -95,6 +95,8 @@ import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.pulsar.broker.PulsarServerException;
+import org.apache.pulsar.broker.PulsarServerException.NotFoundException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.admin.impl.PersistentTopicsBase;
@@ -333,7 +335,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 list.forEach(topicName ->
                     findBroker(pulsarService, topicName)
                         .whenComplete(((partitionMetadata, throwable) -> {
-                            if (throwable != null) {
+                            if (throwable != null || partitionMetadata == null) {
                                 log.warn("[{}] Request {}: Exception while find Broker metadata",
                                     ctx.channel(), metadataHar.getHeader(), throwable);
                                 partitionMetadatas.add(newFailedPartitionMetadata(topicName));
@@ -932,7 +934,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (!lookupResult.isPresent()) {
             log.error("Can't find broker for topic {}", topic);
             CompletableFuture<Optional<String>> future = new CompletableFuture<>();
-            future.completeExceptionally(new KeeperException.NoNodeException());
+            future.completeExceptionally(new NotFoundException("Can't find broker for topic " + topic));
             return future;
         }
 
@@ -945,7 +947,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         } catch (Exception e) {
             log.error("Failed to get URI from {} for topic {}", candidateBroker, topic);
             CompletableFuture<Optional<String>> future = new CompletableFuture<>();
-            future.completeExceptionally(e);
+            future.completeExceptionally(new PulsarServerException(e));
             return future;
         }
 
