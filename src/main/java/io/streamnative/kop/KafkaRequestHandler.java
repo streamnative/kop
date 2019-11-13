@@ -34,20 +34,25 @@ import io.streamnative.kop.offset.OffsetAndMetadata;
 import io.streamnative.kop.utils.CoreUtils;
 import io.streamnative.kop.utils.MessageIdUtils;
 import io.streamnative.kop.utils.OffsetFinder;
+import io.streamnative.kop.utils.SaslUtils;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import javax.naming.AuthenticationException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
@@ -92,6 +97,10 @@ import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
+import org.apache.kafka.common.requests.SaslAuthenticateRequest;
+import org.apache.kafka.common.requests.SaslAuthenticateResponse;
+import org.apache.kafka.common.requests.SaslHandshakeRequest;
+import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Utils;
@@ -100,14 +109,22 @@ import org.apache.pulsar.broker.PulsarServerException.NotFoundException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.admin.impl.PersistentTopicsBase;
+import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
+import org.apache.pulsar.broker.authentication.AuthenticationProvider;
+import org.apache.pulsar.broker.authentication.AuthenticationService;
+import org.apache.pulsar.broker.authentication.AuthenticationState;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.broker.lookup.LookupResult;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.api.PulsarClientException.AuthorizationException;
+import org.apache.pulsar.common.api.AuthData;
 import org.apache.pulsar.common.lookup.data.LookupData;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
@@ -125,12 +142,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final GroupCoordinator groupCoordinator;
 
     private final String clusterName;
-    private final NamespaceName kafkaNamespace;
     private final ExecutorService executor;
     private final PulsarAdmin admin;
     private final Boolean tlsEnabled;
     private final int plaintextPort;
     private final int sslPort;
+    private NamespaceName namespace;
+    private String authRole;
+    private AuthenticationState authState;
 
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
@@ -144,9 +163,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.groupCoordinator = groupCoordinator;
 
         this.clusterName = kafkaConfig.getClusterName();
-        this.kafkaNamespace = NamespaceName
-            .get(kafkaConfig.getKafkaTenant(),
-                kafkaConfig.getKafkaNamespace());
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
         this.tlsEnabled = tlsEnabled;
@@ -188,16 +204,22 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         List<String> topics = metadataRequest.topics();
         // topics in format : persistent://%s/%s/abc-partition-x, will be grouped by as:
         //      Entry<abc, List[TopicName]>
-        //CompletableFuture<Map<String, List<TopicName>>> pulsarTopicsFuture = new CompletableFuture<>();
+
+        if (null == namespace) {
+            log.warn("unknown namespace, setting it to default");
+            namespace = NamespaceName.get("public/default");
+        }
+
         CompletableFuture<Map<String, List<TopicName>>> pulsarTopicsFuture =
             (topics == null || topics.isEmpty())
-                ? pulsarService.getNamespaceService().getListOfPersistentTopics(kafkaNamespace)
-                    .thenApply(list -> list.stream()
-                        .map(topicString -> TopicName.get(topicString))
-                        .collect(Collectors
-                            .groupingBy(topicName ->
-                                getLocalNameWithoutPartition(topicName), Collectors.toList()))
-                    )
+                ? pulsarService.getNamespaceService()
+                .getListOfPersistentTopics(namespace)
+                .thenApply(list -> list.stream()
+                    .map(topicString -> TopicName.get(topicString))
+                    .collect(Collectors
+                        .groupingBy(topicName ->
+                            getPartitionedTopicNameWithoutPartitions(topicName), Collectors.toList()))
+                )
                 : new CompletableFuture<>();
 
         if (!(topics == null || topics.isEmpty())) {
@@ -209,14 +231,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             requestTopics.stream()
                 .forEach(topic -> {
-                    TopicName topicName = pulsarTopicName(topic, kafkaNamespace);
+                    TopicName topicName = pulsarTopicName(topic);
+                    AuthenticationDataSource authData =
+                        null != authState ? authState.getAuthDataSource() : null;
                     // get partition numbers for each topic.
                     PersistentTopicsBase
                         .getPartitionedTopicMetadata(
                             pulsarService,
+                            authRole,
                             null,
-                            null,
-                            null,
+                            authData,
                             topicName)
                         .whenComplete((partitionedTopicMetadata, throwable) -> {
                             if (throwable != null) {
@@ -418,7 +442,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     topicPartition.topic(), topicPartition.partition(), responsesSize);
             }
 
-            TopicName topicName = pulsarTopicName(topicPartition, kafkaNamespace);
+            TopicName topicName = pulsarTopicName(topicPartition);
 
             pulsarService.getBrokerService().getTopic(topicName.toString(), true)
                 .whenComplete((topicOpt, exception) -> {
@@ -617,13 +641,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         request.partitionTimestamps().entrySet().stream().forEach(tms -> {
             TopicPartition topic = tms.getKey();
+            TopicName pulsarTopic = pulsarTopicName(topic);
             Long times = tms.getValue();
-            String pulsarTopic = pulsarTopicName(topic, kafkaNamespace).toString();
             CompletableFuture<ListOffsetResponse.PartitionData> partitionData;
 
-
             // topic not exist, return UNKNOWN_TOPIC_OR_PARTITION
-            if (!topicManager.topicExists(pulsarTopic)) {
+            if (!topicManager.topicExists(pulsarTopic.toString())) {
                 partitionData = new CompletableFuture<>();
                 partitionData.complete(new ListOffsetResponse
                     .PartitionData(
@@ -631,7 +654,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         ListOffsetResponse.UNKNOWN_TIMESTAMP,
                         ListOffsetResponse.UNKNOWN_OFFSET));
             } else {
-                PersistentTopic persistentTopic = topicManager.getTopic(pulsarTopic);
+                PersistentTopic persistentTopic = topicManager.getTopic(pulsarTopic.toString());
                 partitionData = fetchOffsetForTimestamp(persistentTopic, times);
             }
 
@@ -680,7 +703,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return request.offsetData().entrySet().stream()
                 .filter(entry ->
                     // filter not exist topics
-                    !topicManager.topicExists(pulsarTopicName(entry.getKey(), kafkaNamespace).toString()))
+                    !topicManager.topicExists(pulsarTopicName(entry.getKey()).toString()))
                 .collect(Collectors.toMap(
                     e -> e.getKey(),
                     e -> Errors.UNKNOWN_TOPIC_OR_PARTITION
@@ -919,6 +942,70 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return resultFuture;
     }
 
+    @Override
+    protected CompletableFuture<ResponseAndRequest> handleSaslAuthenticate(KafkaHeaderAndRequest saslAuthenticate) {
+        checkArgument(saslAuthenticate.getRequest() instanceof SaslAuthenticateRequest);
+        SaslAuthenticateRequest request = (SaslAuthenticateRequest) saslAuthenticate.getRequest();
+        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+
+        SaslAuth saslAuth;
+        try {
+            saslAuth = SaslUtils.parseSaslAuthBytes(Utils.toArray(request.saslAuthBytes()));
+
+            namespace = NamespaceName.get(saslAuth.getUsername());
+            AuthData authData = AuthData.of(saslAuth.getAuthData().getBytes(UTF_8));
+
+            AuthenticationService authenticationService = getPulsarService()
+                .getBrokerService().getAuthenticationService();
+            AuthenticationProvider authenticationProvider = authenticationService
+                .getAuthenticationProvider(saslAuth.getAuthMethod());
+            if (null == authenticationProvider) {
+                throw new PulsarClientException.AuthenticationException("cannot find provider "
+                    + saslAuth.getAuthMethod());
+            }
+
+            authState = authenticationProvider.newAuthState(authData, remoteAddress, null);
+            authRole = authState.getAuthRole();
+
+            Map<String, Set<AuthAction>> permissions = getAdmin()
+                .namespaces().getPermissions(saslAuth.getUsername());
+            if (!permissions.containsKey(authRole)) {
+                throw new AuthorizationException("Not allowed on this namespace");
+            }
+
+            log.debug("successfully authenticate user " + authRole);
+
+            // TODO: what should be answered?
+            SaslAuthenticateResponse response = new SaslAuthenticateResponse(
+                Errors.NONE, "", request.saslAuthBytes());
+            resultFuture.complete(ResponseAndRequest.of(response, saslAuthenticate));
+
+        } catch (IOException | AuthenticationException | PulsarAdminException e) {
+            SaslAuthenticateResponse response = new SaslAuthenticateResponse(
+                Errors.SASL_AUTHENTICATION_FAILED, e.getMessage(), request.saslAuthBytes());
+            resultFuture.complete(ResponseAndRequest.of(response, saslAuthenticate));
+        }
+        return resultFuture;
+    }
+
+    @Override
+    protected CompletableFuture<ResponseAndRequest> handleSaslHandshake(KafkaHeaderAndRequest saslHandshake) {
+        checkArgument(saslHandshake.getRequest() instanceof SaslHandshakeRequest);
+        SaslHandshakeRequest request = (SaslHandshakeRequest) saslHandshake.getRequest();
+        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+
+        SaslHandshakeResponse response = checkSaslMechanism(request.mechanism());
+        resultFuture.complete(ResponseAndRequest.of(response, saslHandshake));
+        return resultFuture;
+    }
+
+    private SaslHandshakeResponse checkSaslMechanism(String mechanism) {
+        if (getKafkaConfig().getSaslAllowedMechanisms().contains(mechanism)) {
+            return new SaslHandshakeResponse(Errors.NONE, getKafkaConfig().getSaslAllowedMechanisms());
+        }
+        return new SaslHandshakeResponse(Errors.UNSUPPORTED_SASL_MECHANISM, new HashSet<>());
+    }
+
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("Caught error in handler, closing channel", cause);
         ctx.close();
@@ -1089,8 +1176,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         );
     }
 
-    static String getLocalNameWithoutPartition(TopicName topicName) {
-        String localName = topicName.getLocalName();
+    static String getPartitionedTopicNameWithoutPartitions(TopicName topicName) {
+        String localName = topicName.getPartitionedTopicName();
         if (localName.contains(PARTITIONED_TOPIC_SUFFIX)) {
             return localName.substring(0, localName.lastIndexOf(PARTITIONED_TOPIC_SUFFIX));
         } else {

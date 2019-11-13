@@ -92,7 +92,7 @@ public final class MessageFetchContext {
             ((FetchRequest) fetchRequest.getRequest())
                 .fetchData().entrySet().stream()
                 .map(entry -> {
-                    TopicName topicName = pulsarTopicName(entry.getKey(), requestHandler.getKafkaNamespace());
+                    TopicName topicName = pulsarTopicName(entry.getKey());
                     long offset = entry.getValue().fetchOffset;
 
                     if (log.isDebugEnabled()) {
@@ -282,7 +282,7 @@ public final class MessageFetchContext {
                     new ReadEntriesCallback() {
                         @Override
                         public void readEntriesComplete(List<Entry> list, Object o) {
-                            TopicName topicName = pulsarTopicName(pair.getKey(), requestHandler.getKafkaNamespace());
+                            TopicName topicName = pulsarTopicName(pair.getKey());
 
                             Entry entry = null;
                             if (!list.isEmpty()) {
@@ -324,13 +324,13 @@ public final class MessageFetchContext {
                         @Override
                         public void readEntriesFailed(ManagedLedgerException e, Object o) {
                             log.error("Error read entry for topic: {}",
-                                pulsarTopicName(pair.getKey(), requestHandler.getKafkaNamespace()));
+                                pulsarTopicName(pair.getKey()));
                             readFuture.completeExceptionally(e);
                         }
                     }, null);
             } catch (Exception e) {
                 log.error("Error for cursor to read entry for topic: {}. ",
-                    pulsarTopicName(pair.getKey(), requestHandler.getKafkaNamespace()), e);
+                    pulsarTopicName(pair.getKey()), e);
                 readFuture.completeExceptionally(e);
             }
 

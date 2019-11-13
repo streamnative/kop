@@ -182,3 +182,33 @@ And verify us console-producer and console-consumer:
 kafka-console-producer.sh --broker-list localhost:9093 --topic test --producer.config client-ssl.properties
 kafka-console-consumer.sh --bootstrap-server localhost:9093 --topic test --consumer.config client-ssl.properties
 ```
+
+# KoP auth
+
+You can enable both authentication and authorization on KoP. It will use the underlying Pulsar auth mechanisms.
+
+To forward your credentials, `SASL-PLAIN` is used on Kafka's side:
+
+* The user must be your fully qualified namespace
+* the password must be your auth params from pulsar, for example `token:xxx`
+
+## Enable Auth on broker
+
+To enable KoP auth, you need to set all the options required by Pulsar to enable auth, and also:
+
+*  `saslAllowedMechanisms`: default value is `PLAIN`
+
+## Enable auth on Kafka client
+
+You can use the following code to enable SASL-PLAIN through jaas:
+```java
+String tenant = "ns1/tenant1";
+String pasword = "token:xxx";
+
+String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"%s\" password=\"%s\";";
+String jaasCfg = String.format(jaasTemplate, tenant, password);
+props.put("sasl.jaas.config", jaasCfg);
+props.put("security.protocol", "SASL_PLAINTEXT");
+props.put("sasl.mechanism", "PLAIN");
+
+```

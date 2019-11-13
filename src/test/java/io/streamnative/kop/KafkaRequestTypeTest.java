@@ -303,7 +303,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
     @Test(timeOut = 20000, dataProvider = "partitionsAndBatch")
     public void testPulsarProduceKafkaConsume(int partitionNumber, boolean isBatch) throws Exception {
-        String topicName = "kopPulsarProduceKafkaConsume" + partitionNumber;
+        String topicName = "kopPulsarProduceKafkaConsume";
         String pulsarTopicName = "persistent://public/default/" + topicName;
         String key1 = "header_key1_";
         String key2 = "header_key2_";
@@ -335,9 +335,9 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
         // 2. use kafka consumer to consume.
         @Cleanup
-        KConsumer kConsumer = new KConsumer(topicName, getKafkaBrokerPort());
+        KConsumer kConsumer = new KConsumer(pulsarTopicName, getKafkaBrokerPort());
         List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
-            .mapToObj(i -> new TopicPartition(topicName, i)).collect(Collectors.toList());
+            .mapToObj(i -> new TopicPartition(pulsarTopicName, i)).collect(Collectors.toList());
         log.info("Partition size: {}", topicPartitions.size());
         kConsumer.getConsumer().assign(topicPartitions);
 
