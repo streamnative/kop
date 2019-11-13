@@ -125,3 +125,60 @@ bin/java-consumer-demo.sh
 ```
 bin/java-producer-demo.sh
 ```
+
+#### SSL Connection
+
+KOP support Kafka listeners config of type "PLAINTEXT" and "SSL". 
+You could set config like `listeners=PLAINTEXT://localhost:9092,SSL://localhost:9093`. 
+Please reference [Kafka SSL document](https://kafka.apache.org/documentation/#security_ssl) for how to config SSL keys.
+Here is some steps that you need to be able to connect KOP through SSL.
+
+1. create SSL related Keys.
+
+Here is an example of a bash script to create related CA and jks files.
+```access transformers
+            #!/bin/bash
+            #Step 1
+            keytool -keystore server.keystore.jks -alias localhost -validity 365 -keyalg RSA -genkey
+            #Step 2
+            openssl req -new -x509 -keyout ca-key -out ca-cert -days 365
+            keytool -keystore server.truststore.jks -alias CARoot -import -file ca-cert
+            keytool -keystore client.truststore.jks -alias CARoot -import -file ca-cert
+            #Step 3
+            keytool -keystore server.keystore.jks -alias localhost -certreq -file cert-file
+            openssl x509 -req -CA ca-cert -CAkey ca-key -in cert-file -out cert-signed -days 365 -CAcreateserial -passin pass:test1234
+            keytool -keystore server.keystore.jks -alias CARoot -import -file ca-cert
+            keytool -keystore server.keystore.jks -alias localhost -import -file cert-signed
+```
+
+2. config KOP Broker.
+
+In configration file, e.g. [`kop_standalone.conf`](https://github.com/streamnative/kop/blob/master/conf/kop_standalone.conf),
+Add related configurations that using the jks configs that create in step1:
+```access transformers
+listeners=PLAINTEXT://localhost:9092,SSL://localhost:9093
+
+kopSslKeystoreLocation=/Users/kop/server.keystore.jks
+kopSslKeystorePassword=test1234
+kopSslKeyPassword=test1234
+kopSslTruststoreLocation=/Users/kop/server.truststore.jks
+kopSslTruststorePassword=test1234
+```
+
+3. config kafka clients
+
+This is similar to [Kafka client config doc](https://kafka.apache.org/documentation/#security_configclients).
+
+Prepare a file named `client-ssl.properties`, which contains:
+```
+security.protocol=SSL
+ssl.truststore.location=client.truststore.jks
+ssl.truststore.password=test1234
+ssl.endpoint.identification.algorithm=
+```
+
+And verify us console-producer and console-consumer:
+```access transformers
+kafka-console-producer.sh --broker-list localhost:9093 --topic test --producer.config client-ssl.properties
+kafka-console-consumer.sh --bootstrap-server localhost:9093 --topic test --consumer.config client-ssl.properties
+```

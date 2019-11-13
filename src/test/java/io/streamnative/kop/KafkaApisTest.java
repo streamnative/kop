@@ -129,7 +129,7 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
             kafkaService,
             kafkaService.getKafkaConfig(),
             kafkaService.getKafkaTopicManager(),
-            kafkaService.getGroupCoordinator());
+            kafkaService.getGroupCoordinator(), false);
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();

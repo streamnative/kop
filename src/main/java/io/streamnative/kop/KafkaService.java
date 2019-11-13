@@ -32,6 +32,7 @@ import java.util.function.Supplier;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
@@ -80,6 +81,13 @@ public class KafkaService extends PulsarService {
     }
 
     @Override
+    public Map<String, String> getProtocolDataToAdvertise() {
+        return ImmutableMap.<String, String>builder()
+            .put("kafka", kafkaConfig.getListeners())
+            .build();
+    }
+
+    @Override
     public void start() throws PulsarServerException {
         ReentrantLock lock = getMutex();
 
@@ -94,25 +102,21 @@ public class KafkaService extends PulsarService {
                 throw new PulsarServerException("Cannot start the service once it was stopped");
             }
 
-            if (!kafkaConfig.getWebServicePort().isPresent() && !kafkaConfig.getWebServicePortTls().isPresent()) {
-                throw new IllegalArgumentException("webServicePort/webServicePortTls must be present");
+            if (kafkaConfig.getListeners() == null || kafkaConfig.getListeners().isEmpty()) {
+                throw new IllegalArgumentException("Kafka Listeners should be provided through brokerConf.listeners");
             }
 
-            if (!kafkaConfig.getKafkaServicePort().isPresent() && !kafkaConfig.getKafkaServicePortTls().isPresent()) {
-                throw new IllegalArgumentException("brokerServicePort/brokerServicePortTls must be present");
-            }
+            setOrderedExecutor(OrderedExecutor.newBuilder().numThreads(8).name("pulsar-ordered")
+                .build());
 
             // init KafkaProtocolHandler
             KafkaProtocolHandler kafkaProtocolHandler = new KafkaProtocolHandler();
             kafkaProtocolHandler.initialize(kafkaConfig);
 
             // Now we are ready to start services
-            LocalZooKeeperConnectionService localZooKeeperConnectionService =
-                new LocalZooKeeperConnectionService(getZooKeeperClientFactory(),
-                    kafkaConfig.getZookeeperServers(), kafkaConfig.getZooKeeperSessionTimeoutMillis());
-
-            setLocalZooKeeperConnectionProvider(localZooKeeperConnectionService);
-            localZooKeeperConnectionService.start(getShutdownService());
+            setLocalZooKeeperConnectionProvider(new LocalZooKeeperConnectionService(getZooKeeperClientFactory(),
+                kafkaConfig.getZookeeperServers(), kafkaConfig.getZooKeeperSessionTimeoutMillis()));
+            getLocalZooKeeperConnectionProvider().start(getShutdownService());
 
             // Initialize and start service to access configuration repository.
             startZkCacheService();
@@ -204,11 +208,7 @@ public class KafkaService extends PulsarService {
                 ? "port = " + kafkaConfig.getWebServicePort().get() : "")
                     + (kafkaConfig.getWebServicePortTls().isPresent()
                 ? "tls-port = " + kafkaConfig.getWebServicePortTls() : "")
-                    + (kafkaConfig.getKafkaServicePort().isPresent()
-                ? "broker url= " + kafkaConfig.getKafkaServicePort() : "")
-                    + (kafkaConfig.getKafkaServicePortTls().isPresent()
-                ? "broker url= " + kafkaConfig.getKafkaServicePortTls() : "");
-
+                    + ("kafka listener url= " + kafkaConfig.getListeners());
 
             // start Kafka protocol handler.
             // put after load manager for the use of existing broker service to create internal topics.
