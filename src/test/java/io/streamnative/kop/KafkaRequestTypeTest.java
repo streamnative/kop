@@ -23,6 +23,7 @@ import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
+import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.streamnative.kop.utils.MessageIdUtils;
 import java.time.Duration;
@@ -31,6 +32,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -53,6 +55,7 @@ import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
+import org.apache.pulsar.common.util.FutureUtil;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
@@ -323,15 +326,22 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
         @Cleanup
         Producer<byte[]> producer = producerBuilder.create();
+        List<CompletableFuture<MessageId>> sendResults = Lists.newArrayListWithExpectedSize(totalMsgs);
+        CountDownLatch latch = new CountDownLatch(1);
         for (int i = 0; i < totalMsgs; i++) {
             String message = messageStrPrefix + i;
-            producer.newMessage()
+            CompletableFuture<MessageId> id = producer.newMessage()
                 .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
                 .value(message.getBytes())
                 .property(key1 + i, value1 + i)
                 .property(key2 + i, value2 + i)
-                .send();
+                .sendAsync();
+            sendResults.add(id);
         }
+        FutureUtil.waitForAll(sendResults).whenCompleteAsync((r, t) -> {
+           latch.countDown();
+        });
+        latch.await();
 
         // 2. use kafka consumer to consume.
         @Cleanup

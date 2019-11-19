@@ -239,22 +239,22 @@ public final class MessageRecordUtils {
                 // each entry is a batched message
                 ByteBuf metadataAndPayload = entry.getDataBuffer();
                 MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
-                int batchSize = msgMetadata.getNumMessagesInBatch();
-                boolean isBatchMessage = msgMetadata.hasNumMessagesInBatch();
+                int numMessages = msgMetadata.getNumMessagesInBatch();
+                boolean notBatchMessage = (numMessages == 1 && !msgMetadata.hasNumMessagesInBatch());
                 ByteBuf payload = metadataAndPayload.retain();
 
                 if (log.isDebugEnabled()) {
-                    log.debug("entriesToRecords.  NumMessagesInBatch {}: entries in list: {}. new entryId {}:{}",
-                        batchSize, entries.size(), entry.getLedgerId(), entry.getEntryId());
-                    log.debug("entriesToRecords. readerIndex:{} writerIndex:{}",
-                        payload.readerIndex(), payload.writerIndex());
+                    log.debug("entriesToRecords.  NumMessagesInBatch: {}, isBatchMessage: {}, entries in list: {}."
+                            + " new entryId {}:{}, readerIndex: {},  writerIndex: {}",
+                        numMessages, !notBatchMessage, entries.size(), entry.getLedgerId(),
+                        entry.getEntryId(), payload.readerIndex(), payload.writerIndex());
                 }
 
                 // need handle encryption
                 checkState(msgMetadata.getEncryptionKeysCount() == 0);
 
-                if (isBatchMessage) {
-                    for (int i = 0; i < batchSize; ++i) {
+                if (!notBatchMessage) {
+                    for (int i = 0; i < numMessages; ++i) {
                         if (log.isDebugEnabled()) {
                             log.debug(" processing message num - {} in batch", i);
                         }
@@ -262,7 +262,7 @@ public final class MessageRecordUtils {
                         SingleMessageMetadata.Builder singleMessageMetadataBuilder = SingleMessageMetadata
                             .newBuilder();
                         ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(metadataAndPayload,
-                            singleMessageMetadataBuilder, i, batchSize);
+                            singleMessageMetadataBuilder, i, numMessages);
 
                         SingleMessageMetadata singleMessageMetadata = singleMessageMetadataBuilder.build();
 
@@ -272,7 +272,7 @@ public final class MessageRecordUtils {
 
                         builder.appendWithOffset(
                             MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId(), i),
-                            msgMetadata.getEventTime(),
+                            msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
                             Base64.getDecoder().decode(singleMessageMetadata.getPartitionKey()),
                             data,
                             headers);
@@ -285,7 +285,7 @@ public final class MessageRecordUtils {
 
                     builder.appendWithOffset(
                         MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
-                        msgMetadata.getEventTime(),
+                        msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
                         Base64.getDecoder().decode(msgMetadata.getPartitionKey()),
                         data,
                         headers);
