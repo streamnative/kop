@@ -321,11 +321,25 @@ public abstract class MockKafkaServiceBaseTest {
         private final Boolean isAsync;
 
         public KProducer(String topic, Boolean isAsync, String host, int port) {
+            this(topic, isAsync, "localhost", port, null, null);
+        }
+
+        public KProducer(String topic, Boolean isAsync, String host, int port, String username, String password) {
             Properties props = new Properties();
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducer");
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+
+            if (null != username && null != password) {
+                String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule "
+                    + "required username=\"%s\" password=\"%s\";";
+                String jaasCfg = String.format(jaasTemplate, username, password);
+                props.put("sasl.jaas.config", jaasCfg);
+                props.put("security.protocol", "SASL_PLAINTEXT");
+                props.put("sasl.mechanism", "PLAIN");
+            }
+
             producer = new KafkaProducer<>(props);
             this.topic = topic;
             this.isAsync = isAsync;
@@ -418,7 +432,9 @@ public abstract class MockKafkaServiceBaseTest {
         private final KafkaConsumer<Integer, String> consumer;
         private final String topic;
 
-        public KConsumer(String topic, String host, int port, boolean autoCommit) {
+        public KConsumer(
+            String topic, String host, int port,
+            boolean autoCommit, String username, String password) {
             Properties props = new Properties();
             props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             props.put(ConsumerConfig.GROUP_ID_CONFIG, "DemoKafkaOnPulsarConsumer");
@@ -429,6 +445,15 @@ public abstract class MockKafkaServiceBaseTest {
             } else {
                 props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
                 props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+            }
+
+            if (null != username && null != password) {
+                String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule "
+                    + "required username=\"%s\" password=\"%s\";";
+                String jaasCfg = String.format(jaasTemplate, username, password);
+                props.put("sasl.jaas.config", jaasCfg);
+                props.put("security.protocol", "SASL_PLAINTEXT");
+                props.put("sasl.mechanism", "PLAIN");
             }
 
             props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "30000");
@@ -442,11 +467,11 @@ public abstract class MockKafkaServiceBaseTest {
         }
 
         public KConsumer(String topic, int port, boolean autoCommit) {
-            this(topic, "localhost", port, autoCommit);
+            this(topic, "localhost", port, autoCommit, null, null);
         }
 
         public KConsumer(String topic, String host, int port) {
-            this(topic, "localhost", port, false);
+            this(topic, "localhost", port, false, null, null);
         }
 
         public KConsumer(String topic, int port) {

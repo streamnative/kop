@@ -15,7 +15,7 @@ package io.streamnative.kop;
 
 import com.google.common.collect.Sets;
 import io.streamnative.kop.coordinator.group.OffsetConfig;
-import java.util.Properties;
+import java.util.HashSet;
 import java.util.Set;
 import lombok.Getter;
 import lombok.Setter;
@@ -38,8 +38,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     // offset configuration
     private static final int OffsetsRetentionMinutes = 7 * 24 * 60;
     public static final int DefaultOffsetsTopicNumPartitions = 1;
-
-    private Properties properties = new Properties();
 
     @Category
     private static final String CATEGORY_KOP = "Kafka on Pulsar";
@@ -225,4 +223,9 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             + "SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG = \"ssl.secure.random.implementation\""
     )
     private String kopSslSecureRandomImplementation;
+    @FieldContext(
+        category = CATEGORY_KOP,
+        doc = "supported SASL mechanisms exposed by broker"
+    )
+    private Set<String> saslAllowedMechanisms = new HashSet<String>();
 }

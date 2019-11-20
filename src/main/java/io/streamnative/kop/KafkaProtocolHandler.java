@@ -279,7 +279,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     }
 
     private String createKafkaOffsetsTopic(BrokerService service) throws PulsarServerException, PulsarAdminException {
-        String offsetsTopic = kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaMetadataNamespace()
+        String offsetsTopic = kafkaConfig.getKafkaMetadataTenant() + "/" + kafkaConfig.getKafkaMetadataNamespace()
             + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
 
         PartitionedTopicMetadata offsetsTopicMetadata =

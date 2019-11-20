@@ -168,6 +168,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 case DELETE_GROUPS:
                     responseFuture = handleDeleteGroupsRequest(kafkaHeaderAndRequest);
                     break;
+                case SASL_HANDSHAKE:
+                    responseFuture = handleSaslHandshake(kafkaHeaderAndRequest);
+                    break;
+                case SASL_AUTHENTICATE:
+                    responseFuture = handleSaslAuthenticate(kafkaHeaderAndRequest);
+                    break;
                 default:
                     responseFuture = handleError(kafkaHeaderAndRequest);
             }
@@ -262,6 +268,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected abstract CompletableFuture<ResponseAndRequest>
     handleDeleteGroupsRequest(KafkaHeaderAndRequest deleteGroups);
+
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleSaslAuthenticate(KafkaHeaderAndRequest kafkaHeaderAndRequest);
+
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleSaslHandshake(KafkaHeaderAndRequest kafkaHeaderAndRequest);
 
     static class KafkaHeaderAndRequest implements Closeable {
 

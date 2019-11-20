@@ -250,7 +250,7 @@ public class KafkaRequestHandlerTest extends MockKafkaServiceBaseTest {
     }
 
     @Test
-    public void testGetLocalNameWithoutPartition() {
+    public void testGetPartitionedNameWithoutPartition() {
         String localName = "topicName";
         String topicString = "persistent://test-tenants/test-ns/" + localName;
         int partitionIndex = 7;
@@ -259,9 +259,7 @@ public class KafkaRequestHandlerTest extends MockKafkaServiceBaseTest {
         TopicName topicNamePartition =
             TopicName.get(topicString + PARTITIONED_TOPIC_SUFFIX + partitionIndex);
 
-        assertEquals(localName, KafkaRequestHandler.getLocalNameWithoutPartition(topicName));
-        assertEquals(localName, KafkaRequestHandler.getLocalNameWithoutPartition(topicNamePartition));
+        assertEquals(topicString, KafkaRequestHandler.getPartitionedTopicNameWithoutPartitions(topicName));
+        assertEquals(topicString, KafkaRequestHandler.getPartitionedTopicNameWithoutPartitions(topicNamePartition));
     }
-
-
 }

@@ -29,8 +29,20 @@ public class TopicNameUtils {
         return pulsarTopicName(topicPartition.topic(), topicPartition.partition(), namespace);
     }
 
+    public static TopicName pulsarTopicName(TopicPartition topicPartition) {
+        return pulsarTopicName(topicPartition.topic(), topicPartition.partition());
+    }
+
+    private static TopicName pulsarTopicName(String topic, int partitionIndex) {
+        return TopicName.get(topic + PARTITIONED_TOPIC_SUFFIX + partitionIndex);
+    }
+
     public static TopicName pulsarTopicName(String topic, NamespaceName namespace) {
         return TopicName.get(TopicDomain.persistent.value(), namespace, topic);
+    }
+
+    public static TopicName pulsarTopicName(String topic) {
+        return TopicName.get(topic);
     }
 
     public static TopicName pulsarTopicName(String topic, int partitionIndex, NamespaceName namespace) {
