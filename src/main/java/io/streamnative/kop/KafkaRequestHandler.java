@@ -275,8 +275,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     ctx.channel(), metadataHar.getHeader(), topic);
                                             }
                                             admin.topics().createPartitionedTopic(topicName.toString(), 1);
-                                            pulsarTopics.put(topic, Lists.newArrayList(
-                                                TopicName.get(topicName.toString() + PARTITIONED_TOPIC_SUFFIX + 0)));
+                                            final TopicName newTopic = TopicName
+                                                .get(topicName.toString() + PARTITIONED_TOPIC_SUFFIX + 0);
+                                            pulsarTopics.put(topic, Lists.newArrayList(newTopic));
                                         } catch (PulsarAdminException e) {
                                             log.error("[{}] Request {}: createPartitionedTopic failed.",
                                                 ctx.channel(), metadataHar.getHeader(), e);
@@ -647,6 +648,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             // topic not exist, return UNKNOWN_TOPIC_OR_PARTITION
             if (!topicManager.topicExists(pulsarTopic.toString())) {
+                log.warn("Topic {} not exist in topic manager while list offset.", pulsarTopic.toString());
                 partitionData = new CompletableFuture<>();
                 partitionData.complete(new ListOffsetResponse
                     .PartitionData(
@@ -1072,18 +1074,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                 try {
                     String listeners = stringOptional.get();
-
-                    if (log.isDebugEnabled()) {
-                        log.debug("Found broker: {} for topicName: {}", listeners, topic);
-                    }
-
                     String brokerUrl = getBrokerUrl(listeners, tlsEnabled);
                     URI uri = new URI(brokerUrl);
 
-                    // auto create topic.
-                    String hostname = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(
-                        kafkaConfig.getAdvertisedAddress());
-                    if (!topicManager.topicExists(topic.toString()) && hostname.equals(uri.getHost())) {
+                    // get local listeners.
+                    String listeners1 = kafkaConfig.getListeners();
+
+                    if (log.isDebugEnabled()) {
+                        log.debug("Found broker: {} for topicName: {}, local address: {}, found brokerUri: {}",
+                            listeners, topic, listeners1, uri);
+                    }
+
+                    if (!topicManager.topicExists(topic.toString()) && listeners1.contains(uri.getHost())) {
                         pulsarService.getBrokerService().getTopic(topic.toString(), true)
                             .whenComplete((topicOpt, exception) -> {
                                 if (exception != null) {
@@ -1091,6 +1093,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         ctx.channel(), topic.toString(), exception);
                                 } else {
                                     if (topicOpt.isPresent()) {
+                                        if (log.isDebugEnabled()) {
+                                            log.debug("Add topic: {} into TopicManager while findBroker.",
+                                                topic.toString());
+                                        }
                                         topicManager.addTopic(topic.toString(), (PersistentTopic) topicOpt.get());
                                     } else {
                                         log.error("[{}] findBroker: getOrCreateTopic get empty topic for name {}",

@@ -191,7 +191,7 @@ public class KafkaStandalone implements AutoCloseable {
     private boolean onlyBroker = false;
 
     @Parameter(names = {"-nss", "--no-stream-storage"}, description = "Disable stream storage")
-    private boolean noStreamStorage = false;
+    private boolean noStreamStorage = true;
 
     @Parameter(names = { "--stream-storage-port" }, description = "Local bookies stream storage port")
     private int streamStoragePort = 4181;
@@ -206,6 +206,13 @@ public class KafkaStandalone implements AutoCloseable {
 
         if (config == null) {
             throw new IllegalArgumentException("Null configuration is provided");
+        }
+
+        if (config.getAdvertisedAddress() != null && !config.getListeners().contains(config.getAdvertisedAddress())) {
+            String err = "Error config: advertisedAddress - " + config.getAdvertisedAddress() + " and listeners - "
+                + config.getListeners() + " not match.";
+            log.error(err);
+            throw new IllegalArgumentException(err);
         }
 
         log.info("--- setup KafkaStandaloneStarter ---");
