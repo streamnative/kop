@@ -228,7 +228,7 @@ public final class MessageFetchContext {
                     });
 
                     if (allPartitionsNoEntry.get()) {
-                        log.warn("Request {}: All partitions for request read 0 entry",
+                        log.debug("Request {}: All partitions for request read 0 entry",
                             fetch.getHeader());
 
                         // returned earlier, sleep for waitTime
