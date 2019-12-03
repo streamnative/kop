@@ -84,6 +84,15 @@ public class KafkaBrokerStarter {
                 throw new IllegalArgumentException("Max message size need smaller than jvm directMemory");
             }
 
+
+            if (brokerConfig.getAdvertisedAddress() != null
+                && !brokerConfig.getListeners().contains(brokerConfig.getAdvertisedAddress())) {
+                String err = "Error config: advertisedAddress - " + brokerConfig.getAdvertisedAddress()
+                    + " and listeners - " + brokerConfig.getListeners() + " not match.";
+                log.error(err);
+                throw new IllegalArgumentException(err);
+            }
+
             // init kafka broker service
             kafkaService = new KafkaService(brokerConfig);
 
