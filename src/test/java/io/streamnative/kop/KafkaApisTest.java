@@ -35,6 +35,7 @@ import io.streamnative.kop.utils.MessageIdUtils;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +63,9 @@ import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
+import org.apache.kafka.common.requests.MetadataRequest;
+import org.apache.kafka.common.requests.MetadataResponse;
+import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetCommitRequest.PartitionData;
 import org.apache.kafka.common.requests.OffsetCommitResponse;
@@ -417,6 +421,7 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
         return buildRequest(builder);
     }
 
+
     private List<TopicPartition> createTopics(String topicName, int numTopics, int numPartitions) throws Exception {
         List<TopicPartition> result = Lists.newArrayListWithExpectedSize(numPartitions * numTopics);
 
@@ -432,6 +437,23 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
         }
 
         return result;
+    }
+
+    // get the existing topics that created by pulsar and return kafka format topicName.
+    private List<String> getCreatedTopics(String topicName, int numTopics) {
+        List<String> result = Lists.newArrayListWithExpectedSize(numTopics);
+
+        for (int topicIndex = 0; topicIndex < numTopics; topicIndex++) {
+            String tName = topicName + "_" + topicIndex;
+            result.add(tName);
+        }
+
+        return result;
+    }
+
+    private KafkaHeaderAndRequest createTopicMetadataRequest(List<String> topics) {
+        AbstractRequest.Builder builder = new MetadataRequest.Builder(topics, true);
+        return buildRequest(builder);
     }
 
     private KafkaProducer<String, String> createKafkaProducer() {
@@ -560,5 +582,45 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
 
         checkFetchResponse(shuffledTopicPartitions3, fetchResponse3,
             maxPartitionBytes, maxResponseBytes, messagesPerPartition);
+    }
+
+
+    // verify Metadata request handling.
+    @Test(timeOut = 20000)
+    public void testBrokerHandleTopicMetadataRequest() throws Exception {
+        String topicName = "kopBrokerHandleTopicMetadataRequest";
+        int numberTopics = 5;
+        int numberPartitions = 6;
+
+        List<TopicPartition> topicPartitions = createTopics(topicName, numberTopics, numberPartitions);
+        List<String> kafkaTopics = getCreatedTopics(topicName, numberTopics);
+        KafkaHeaderAndRequest metadataRequest = createTopicMetadataRequest(kafkaTopics);
+        CompletableFuture<ResponseAndRequest> responseFuture =
+            kafkaRequestHandler.handleTopicMetadataRequest(metadataRequest);
+
+        MetadataResponse metadataResponse = (MetadataResponse) responseFuture.get().getResponse();
+
+        // verify all served by same broker : localhost:port
+        assertEquals(metadataResponse.brokers().size(), 1);
+        assertEquals(metadataResponse.brokers().iterator().next().host(), "localhost");
+
+        // check metadata response
+        Collection<TopicMetadata> topicMetadatas = metadataResponse.topicMetadata();
+
+        log.debug("a. dumpTopicMetadata: ");
+        topicMetadatas.stream().forEach(topicMetadata -> {
+            log.debug("      topicMetadata: {}", topicMetadata);
+            log.debug("b.    dumpPartitionMetadata: ");
+            topicMetadata.partitionMetadata().forEach(partition -> {
+                log.debug("            PartitionMetadata: {}", partition);
+            });
+        });
+
+        assertEquals(topicMetadatas.size(), numberTopics);
+
+        topicMetadatas.stream().forEach(topicMetadata -> {
+            assertTrue(topicMetadata.topic().startsWith(topicName + "_"));
+            assertEquals(topicMetadata.partitionMetadata().size(), numberPartitions);
+        });
     }
 }
