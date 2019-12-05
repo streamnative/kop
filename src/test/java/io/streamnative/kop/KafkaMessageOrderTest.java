@@ -28,7 +28,6 @@ import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.pulsar.broker.service.PublishRateLimiter;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.common.policies.data.ClusterData;
@@ -116,11 +115,6 @@ public class KafkaMessageOrderTest extends MockKafkaServiceBaseTest {
                 topicName,
                 i,
                 messageStr);
-
-            // send in sync mode to keep order.
-//            kProducer.getProducer()
-//                .send(record)
-//                .get();
 
             futures.add(kProducer.getProducer().send(record));
 

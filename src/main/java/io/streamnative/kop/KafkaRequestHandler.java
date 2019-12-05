@@ -386,7 +386,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             if (finishedPartitions == partitionsNumber) {
                                 // new TopicMetadata for this topic
                                 allTopicMetadata.add(
-                                    new TopicMetadata(Errors.NONE, TopicName.get(topic).getLocalName(), false, partitionMetadatas));
+                                    new TopicMetadata(
+                                        Errors.NONE,
+                                        TopicName.get(topic).getLocalName(),
+                                        false,
+                                        partitionMetadatas));
 
                                 // whether completed all the topics requests.
                                 int finishedTopics = topicsCompleted.incrementAndGet();
