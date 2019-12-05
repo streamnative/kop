@@ -35,7 +35,7 @@ Configuration:
 
     Logger:
       - name: io.streamnative.kop
-        level: trace
+        level: info
         additivity: false
         AppenderRef:
           - ref: Console
@@ -47,7 +47,7 @@ Configuration:
           - ref: Console
 
       - name: org.apache.pulsar.broker.service
-        level: debug
+        level: info
         additivity: false
         AppenderRef:
           - ref: Console
