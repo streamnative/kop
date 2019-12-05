@@ -316,7 +316,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             }
         }
 
-        log.error("KafkaProtocolHandler listeners {} not contains type {}", listeners, type);
+        log.info("KafkaProtocolHandler listeners {} not contains type {}", listeners, type);
         return -1;
     }
 
@@ -332,7 +332,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             }
         }
 
-        log.error("listener {} not contains a valid SSL or PLAINTEXT address", listeners);
+        log.info("listener {} not contains a valid SSL or PLAINTEXT address", listeners);
         return null;
     }
 }
