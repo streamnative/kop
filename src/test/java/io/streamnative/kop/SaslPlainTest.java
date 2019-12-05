@@ -52,9 +52,9 @@ public class SaslPlainTest extends MockKafkaServiceBaseTest {
     private static final String ANOTHER_USER = "death_eater_user";
     private static final String ADMIN_USER = "admin_user";
     private static final String NAMESPACE = "ns1";
-    private static final String TOPIC = "topic1";
+    private static final String KAFKA_TOPIC = "topic1";
     private static final String PULSAR_TOPIC_NAME = "persistent://" + SIMPLE_USER
-        + "/" + NAMESPACE + "/" + TOPIC;
+        + "/" + NAMESPACE + "/" + KAFKA_TOPIC;
     private static final String CLUSTER_NAME = "c1";
     private String adminToken;
     private String userToken;
@@ -114,19 +114,19 @@ public class SaslPlainTest extends MockKafkaServiceBaseTest {
 
     @Test(timeOut = 20000)
     void simpleProduceAndConsume() throws Exception {
-        KProducer kProducer = new KProducer(PULSAR_TOPIC_NAME, false, "localhost", getKafkaBrokerPort(),
+        KProducer kProducer = new KProducer(KAFKA_TOPIC, false, "localhost", getKafkaBrokerPort(),
             SIMPLE_USER + "/" + NAMESPACE, "token:" + userToken);
         int totalMsgs = 10;
         String messageStrPrefix = PULSAR_TOPIC_NAME + "_message_";
 
         for (int i = 0; i < totalMsgs; i++) {
             String messageStr = messageStrPrefix + i;
-            kProducer.getProducer().send(new ProducerRecord<>(PULSAR_TOPIC_NAME, i, messageStr)).get();
+            kProducer.getProducer().send(new ProducerRecord<>(KAFKA_TOPIC, i, messageStr)).get();
         }
 
-        KConsumer kConsumer = new KConsumer(PULSAR_TOPIC_NAME, "localhost", getKafkaBrokerPort(), false,
+        KConsumer kConsumer = new KConsumer(KAFKA_TOPIC, "localhost", getKafkaBrokerPort(), false,
             SIMPLE_USER + "/" + NAMESPACE, "token:" + userToken);
-        kConsumer.getConsumer().subscribe(Collections.singleton(PULSAR_TOPIC_NAME));
+        kConsumer.getConsumer().subscribe(Collections.singleton(KAFKA_TOPIC));
 
         int i = 0;
         while (i < totalMsgs) {
@@ -147,17 +147,17 @@ public class SaslPlainTest extends MockKafkaServiceBaseTest {
         Map<String, List<PartitionInfo>> result = kConsumer
             .getConsumer().listTopics(Duration.ofSeconds(1));
         assertEquals(result.size(), 1);
-        assertTrue(result.containsKey(PULSAR_TOPIC_NAME), "list of topics "
-            + result.keySet().toString() + "  does not contains " + PULSAR_TOPIC_NAME);
+        assertTrue(result.containsKey(KAFKA_TOPIC), "list of topics "
+            + result.keySet().toString() + "  does not contains " + KAFKA_TOPIC);
     }
 
     @Test(timeOut = 20000)
     void badCredentialFail() throws Exception {
         try {
             @Cleanup
-            KProducer kProducer = new KProducer(PULSAR_TOPIC_NAME, false, "localhost", getKafkaBrokerPort(),
+            KProducer kProducer = new KProducer(KAFKA_TOPIC, false, "localhost", getKafkaBrokerPort(),
                 SIMPLE_USER + "/" + NAMESPACE, "token:dsa");
-            kProducer.getProducer().send(new ProducerRecord<>(PULSAR_TOPIC_NAME, 0, "")).get();
+            kProducer.getProducer().send(new ProducerRecord<>(KAFKA_TOPIC, 0, "")).get();
             fail("should have failed");
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("SaslAuthenticationException"));
@@ -168,9 +168,9 @@ public class SaslPlainTest extends MockKafkaServiceBaseTest {
     void badUserFail() throws Exception {
         try {
             @Cleanup
-            KProducer kProducer = new KProducer(PULSAR_TOPIC_NAME, false, "localhost", getKafkaBrokerPort(),
+            KProducer kProducer = new KProducer(KAFKA_TOPIC, false, "localhost", getKafkaBrokerPort(),
                 SIMPLE_USER + "/" + NAMESPACE, "token:" + anotherToken);
-            kProducer.getProducer().send(new ProducerRecord<>(PULSAR_TOPIC_NAME, 0, "")).get();
+            kProducer.getProducer().send(new ProducerRecord<>(KAFKA_TOPIC, 0, "")).get();
             fail("should have failed");
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("SaslAuthenticationException"));
@@ -180,9 +180,9 @@ public class SaslPlainTest extends MockKafkaServiceBaseTest {
     @Test(timeOut = 20000)
     void badNamespaceProvided() throws Exception {
         try {
-            KProducer kProducer = new KProducer(PULSAR_TOPIC_NAME, false, "localhost", getKafkaBrokerPort(),
+            KProducer kProducer = new KProducer(KAFKA_TOPIC, false, "localhost", getKafkaBrokerPort(),
                 SIMPLE_USER + "/ns2", "token:" + userToken);
-            kProducer.getProducer().send(new ProducerRecord<>(PULSAR_TOPIC_NAME, 0, "")).get();
+            kProducer.getProducer().send(new ProducerRecord<>(KAFKA_TOPIC, 0, "")).get();
             fail("should have failed");
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("SaslAuthenticationException"));
