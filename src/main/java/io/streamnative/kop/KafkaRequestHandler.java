@@ -20,6 +20,7 @@ import static io.streamnative.kop.KafkaProtocolHandler.ListenerType.SSL;
 import static io.streamnative.kop.KafkaProtocolHandler.getBrokerUrl;
 import static io.streamnative.kop.KafkaProtocolHandler.getListenerPort;
 import static io.streamnative.kop.MessagePublishContext.publishMessages;
+import static io.streamnative.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
 import static io.streamnative.kop.utils.TopicNameUtils.pulsarTopicName;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
@@ -1197,22 +1198,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             Lists.newArrayList(Node.noNode()),  // isr
             Collections.emptyList()             // offline replicas
         );
-    }
-
-    static String getPartitionedTopicNameWithoutPartitions(TopicName topicName) {
-        String localName = topicName.getPartitionedTopicName();
-        if (localName.contains(PARTITIONED_TOPIC_SUFFIX)) {
-            return localName.substring(0, localName.lastIndexOf(PARTITIONED_TOPIC_SUFFIX));
-        } else {
-            return localName;
-        }
-    }
-
-    static String getKafkaTopicNameFromPulsarTopicname(TopicName topicName) {
-        // remove partition part
-        String localName = topicName.getPartitionedTopicName();
-        // remove persistent://tenant/ns
-        return TopicName.get(localName).getLocalName();
     }
 
     static AbstractResponse failedResponse(KafkaHeaderAndRequest requestHar, Throwable e) {
