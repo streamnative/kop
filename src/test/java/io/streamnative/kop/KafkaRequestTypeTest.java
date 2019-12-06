@@ -138,15 +138,15 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
     @Test(timeOut = 20000, dataProvider = "partitionsAndBatch")
     public void testKafkaProducePulsarConsume(int partitionNumber, boolean isBatch) throws Exception {
-        String topicName = "kopKafkaProducePulsarConsume" + partitionNumber;
-        String pulsarTopicName = "persistent://public/default/" + topicName;
+        String kafkaTopicName = "kopKafkaProducePulsarConsume" + partitionNumber;
+        String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
         String key1 = "header_key1_";
         String key2 = "header_key2_";
         String value1 = "header_value1_";
         String value2 = "header_value2_";
 
         // create partitioned topic.
-        kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, partitionNumber);
+        kafkaService.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
 
         @Cleanup
         Consumer<byte[]> consumer = pulsarClient.newConsumer()
@@ -156,7 +156,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
         // 1. produce message with Kafka producer.
         @Cleanup
-        KProducer kProducer = new KProducer(topicName, false, getKafkaBrokerPort());
+        KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort());
 
         int totalMsgs = 10;
         String messageStrPrefix = "Message_Kop_KafkaProducePulsarConsume_"  + partitionNumber + "_";
@@ -164,7 +164,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         for (int i = 0; i < totalMsgs; i++) {
             String messageStr = messageStrPrefix + i;
             ProducerRecord record = new ProducerRecord<>(
-                topicName,
+                kafkaTopicName,
                 i,
                 messageStr);
 
@@ -222,26 +222,26 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
     @Test(timeOut = 20000, dataProvider = "partitionsAndBatch")
     public void testKafkaProduceKafkaConsume(int partitionNumber, boolean isBatch) throws Exception {
-        String topicName = "kopKafkaProduceKafkaConsume" + partitionNumber;
+        String kafkaTopicName = "kopKafkaProduceKafkaConsume" + partitionNumber;
         String key1 = "header_key1_";
         String key2 = "header_key2_";
         String value1 = "header_value1_";
         String value2 = "header_value2_";
 
         // create partitioned topic.
-        kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, partitionNumber);
+        kafkaService.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
 
         // 1. produce message with Kafka producer.
         int totalMsgs = 10;
         String messageStrPrefix = "Message_Kop_KafkaProduceKafkaConsume_" + partitionNumber + "_";
 
         @Cleanup
-        KProducer kProducer = new KProducer(topicName, false, getKafkaBrokerPort());
+        KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort());
 
         for (int i = 0; i < totalMsgs; i++) {
             String messageStr = messageStrPrefix + i;
             ProducerRecord record = new ProducerRecord<>(
-                topicName,
+                kafkaTopicName,
                 i,
                 messageStr);
             record.headers()
@@ -263,9 +263,9 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
         // 2. use kafka consumer to consume.
         @Cleanup
-        KConsumer kConsumer = new KConsumer(topicName, getKafkaBrokerPort());
+        KConsumer kConsumer = new KConsumer(kafkaTopicName, getKafkaBrokerPort());
         List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
-            .mapToObj(i -> new TopicPartition(topicName, i)).collect(Collectors.toList());
+            .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
         log.info("Partition size: {}", topicPartitions.size());
         kConsumer.getConsumer().assign(topicPartitions);
 
@@ -306,15 +306,15 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
     @Test(timeOut = 20000, dataProvider = "partitionsAndBatch")
     public void testPulsarProduceKafkaConsume(int partitionNumber, boolean isBatch) throws Exception {
-        String topicName = "kopPulsarProduceKafkaConsume";
-        String pulsarTopicName = "persistent://public/default/" + topicName;
+        String kafkaTopicName = "kopPulsarProduceKafkaConsume";
+        String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
         String key1 = "header_key1_";
         String key2 = "header_key2_";
         String value1 = "header_value1_";
         String value2 = "header_value2_";
 
         // create partitioned topic.
-        kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, partitionNumber);
+        kafkaService.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
 
         // 1. use pulsar producer to produce.
         int totalMsgs = 10;
@@ -345,11 +345,13 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
         // 2. use kafka consumer to consume.
         @Cleanup
-        KConsumer kConsumer = new KConsumer(pulsarTopicName, getKafkaBrokerPort());
-        List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
-            .mapToObj(i -> new TopicPartition(pulsarTopicName, i)).collect(Collectors.toList());
-        log.info("Partition size: {}", topicPartitions.size());
-        kConsumer.getConsumer().assign(topicPartitions);
+        KConsumer kConsumer = new KConsumer(kafkaTopicName, getKafkaBrokerPort());
+        List<TopicPartition> kafkaTopicPartitions = IntStream.range(0, partitionNumber)
+            .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
+        log.info("Partition size: {}. partitions: {}:",
+            kafkaTopicPartitions.size(), kafkaTopicPartitions);
+        kafkaTopicPartitions.forEach(partition -> log.info("     partition: {}", partition));
+        kConsumer.getConsumer().assign(kafkaTopicPartitions);
 
         int i = 0;
         while (i < totalMsgs) {
@@ -473,11 +475,11 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
     @Test(timeOut = 20000)
     public void testTopicConsumerManager() throws Exception {
         int partitionNumber = 1;
-        String topicName = "testTopicConsumerManager" + partitionNumber;
-        String pulsarTopicName = "persistent://public/default/" + topicName + PARTITIONED_TOPIC_SUFFIX + 0;
+        String kafkaTopicName = "testTopicConsumerManager" + partitionNumber;
+        String pulsarTopicName = "persistent://public/default/" + kafkaTopicName + PARTITIONED_TOPIC_SUFFIX + 0;
 
         // create partitioned topic.
-        kafkaService.getAdminClient().topics().createPartitionedTopic(topicName, partitionNumber);
+        kafkaService.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
 
         int totalMsgs = 10;
         String messageStrPrefix = "Message_Kop_PulsarProduceKafkaConsume_" + partitionNumber + "_";
@@ -490,8 +492,8 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
 
         // above producer only created a topic, but with no data. consumer retry read but read no entry.
         @Cleanup
-        KConsumer kConsumer = new KConsumer(topicName, getKafkaBrokerPort(), true);
-        kConsumer.getConsumer().subscribe(Collections.singletonList(topicName));
+        KConsumer kConsumer = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), true);
+        kConsumer.getConsumer().subscribe(Collections.singletonList(kafkaTopicName));
 
         KafkaTopicConsumerManager tm = kafkaService
             .getKafkaTopicManager()

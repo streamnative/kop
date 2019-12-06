@@ -92,7 +92,7 @@ public final class MessageFetchContext {
             ((FetchRequest) fetchRequest.getRequest())
                 .fetchData().entrySet().stream()
                 .map(entry -> {
-                    TopicName topicName = pulsarTopicName(entry.getKey());
+                    TopicName topicName = pulsarTopicName(entry.getKey(), requestHandler.getNamespace());
                     long offset = entry.getValue().fetchOffset;
 
                     if (log.isDebugEnabled()) {
@@ -282,7 +282,7 @@ public final class MessageFetchContext {
                     new ReadEntriesCallback() {
                         @Override
                         public void readEntriesComplete(List<Entry> list, Object o) {
-                            TopicName topicName = pulsarTopicName(pair.getKey());
+                            TopicName topicName = pulsarTopicName(pair.getKey(), requestHandler.getNamespace());
 
                             Entry entry = null;
                             if (!list.isEmpty()) {
@@ -324,7 +324,7 @@ public final class MessageFetchContext {
                         @Override
                         public void readEntriesFailed(ManagedLedgerException e, Object o) {
                             log.error("Error read entry for topic: {}",
-                                pulsarTopicName(pair.getKey()));
+                                pulsarTopicName(pair.getKey(), requestHandler.getNamespace()));
                             readFuture.completeExceptionally(e);
                         }
                     }, null);

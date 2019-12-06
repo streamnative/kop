@@ -50,4 +50,21 @@ public class TopicNameUtils {
             namespace,
             topic + PARTITIONED_TOPIC_SUFFIX + partitionIndex);
     }
+
+    public static String getPartitionedTopicNameWithoutPartitions(TopicName topicName) {
+        String localName = topicName.getPartitionedTopicName();
+        if (localName.contains(PARTITIONED_TOPIC_SUFFIX)) {
+            return localName.substring(0, localName.lastIndexOf(PARTITIONED_TOPIC_SUFFIX));
+        } else {
+            return localName;
+        }
+    }
+
+    public static String getKafkaTopicNameFromPulsarTopicname(TopicName topicName) {
+        // remove partition part
+        String localName = topicName.getPartitionedTopicName();
+        // remove persistent://tenant/ns
+        return TopicName.get(localName).getLocalName();
+    }
+
 }

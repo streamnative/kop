@@ -14,6 +14,8 @@
 package io.streamnative.kop;
 
 
+import static io.streamnative.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
+import static io.streamnative.kop.utils.TopicNameUtils.getPartitionedTopicNameWithoutPartitions;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
@@ -259,7 +261,21 @@ public class KafkaRequestHandlerTest extends MockKafkaServiceBaseTest {
         TopicName topicNamePartition =
             TopicName.get(topicString + PARTITIONED_TOPIC_SUFFIX + partitionIndex);
 
-        assertEquals(topicString, KafkaRequestHandler.getPartitionedTopicNameWithoutPartitions(topicName));
-        assertEquals(topicString, KafkaRequestHandler.getPartitionedTopicNameWithoutPartitions(topicNamePartition));
+        assertEquals(topicString, getPartitionedTopicNameWithoutPartitions(topicName));
+        assertEquals(topicString, getPartitionedTopicNameWithoutPartitions(topicNamePartition));
+    }
+
+    @Test
+    public void testGetKafkaTopicNameFromPulsarTopicName() {
+        String localName = "localTopicName2";
+        String topicString = "persistent://test-tenants/test-ns/" + localName;
+        int partitionIndex = 77;
+
+        TopicName topicName = TopicName.get(topicString);
+        TopicName topicNamePartition =
+            TopicName.get(topicString + PARTITIONED_TOPIC_SUFFIX + partitionIndex);
+
+        assertEquals(localName, getKafkaTopicNameFromPulsarTopicname(topicName));
+        assertEquals(localName, getKafkaTopicNameFromPulsarTopicname(topicNamePartition));
     }
 }
