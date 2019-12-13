@@ -152,14 +152,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
             new RetentionPolicies(20, 100));
 
         time = new MockTime();
-//        groupMetadataManager = new GroupMetadataManager(
-//            1,
-//            offsetConfig,
-//            producer,
-//            consumer,
-//            scheduler,
-//            time
-//        );
     }
 
     @AfterMethod
@@ -864,6 +856,13 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testGroupNotExits() {
+        groupMetadataManager = new GroupMetadataManager(
+            offsetConfig,
+            producer,
+            consumer,
+            scheduler,
+            time
+        );
         // group is not owned
         assertFalse(groupMetadataManager.groupNotExists(groupId));
 
@@ -1204,6 +1203,13 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testAddGroup() {
+        groupMetadataManager = new GroupMetadataManager(
+            offsetConfig,
+            producer,
+            consumer,
+            scheduler,
+            time
+        );
         GroupMetadata group = new GroupMetadata("foo", Empty);
         assertEquals(group, groupMetadataManager.addGroup(group));
         assertEquals(group, groupMetadataManager.addGroup(
@@ -1920,7 +1926,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
             .startMessageId(MessageId.earliest);
         offsetConfig.offsetsTopicName(kafkaMetaNs + topicName);
         groupMetadataManager = spy(new GroupMetadataManager(
-            1,
             offsetConfig,
             producerBuilder,
             reader,
@@ -1952,7 +1957,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         offsetConfig.offsetsTopicName(kafkaMetaNs + topicName);
         groupMetadataManager = spy(new GroupMetadataManager(
-            1,
             offsetConfig,
             producer,
             reader,

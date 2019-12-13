@@ -507,7 +507,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return resultFuture;
     }
 
-    // A simple implementation, returns this broker node.
     protected CompletableFuture<ResponseAndRequest>
     handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator) {
         checkArgument(findCoordinator.getRequest() instanceof FindCoordinatorRequest);
@@ -515,28 +514,32 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
 
         if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
-            AbstractResponse response;
-            try {
-                Node node  = newSelfNode();
-                if (log.isDebugEnabled()) {
-                    log.debug("[{}] Request {}: Return current broker node as Coordinator: {}.",
-                        ctx.channel(), findCoordinator.getHeader(), node);
-                }
 
-                response = new FindCoordinatorResponse(
-                    Errors.NONE,
-                    node);
-            } catch (Exception e) {
-                log.error("[{}] Request {}: Error while find coordinator.",
-                    ctx.channel(), findCoordinator.getHeader(), e);
-                response = new FindCoordinatorResponse(
-                    Errors.COORDINATOR_NOT_AVAILABLE,
-                    Node.noNode());
-            }
+            int partition = groupCoordinator.partitionFor(request.coordinatorKey());
+            String pulsarTopicName = groupCoordinator.getTopicPartitonName(partition);
 
-            resultFuture.complete(ResponseAndRequest.of(response, findCoordinator));
+            findBroker(pulsarService, TopicName.get(pulsarTopicName))
+                .thenApply(partitionMetadata -> partitionMetadata.leader())
+                .whenComplete((node, t) -> {
+                    if (t != null){
+                        log.error("[{}] Request {}: Error while find coordinator.",
+                            ctx.channel(), findCoordinator.getHeader(), t);
+                        return;
+                    }
+
+                    if (log.isDebugEnabled()) {
+                        log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
+                            ctx.channel(), node, request.coordinatorKey(), partition);
+                    }
+
+                    AbstractResponse response = new FindCoordinatorResponse(
+                        Errors.NONE,
+                        node);
+                    resultFuture.complete(ResponseAndRequest.of(response, findCoordinator));
+                });
         } else {
-            throw new NotImplementedException("FindCoordinatorRequest not support TRANSACTION type");
+            throw new NotImplementedException("FindCoordinatorRequest not support TRANSACTION type "
+                + request.coordinatorType());
         }
 
         return resultFuture;

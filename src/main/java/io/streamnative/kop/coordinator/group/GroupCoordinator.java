@@ -48,10 +48,13 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
@@ -85,7 +88,6 @@ public class GroupCoordinator {
             .build();
 
         GroupMetadataManager metadataManager = new GroupMetadataManager(
-            KafkaServiceConfiguration.DefaultOffsetsTopicNumPartitions,
             offsetConfig,
             producer,
             reader,
@@ -112,7 +114,6 @@ public class GroupCoordinator {
             time
         );
     }
-
 
     static final String NoState = "";
     static final String NoProtocolType = "";
@@ -176,6 +177,13 @@ public class GroupCoordinator {
         log.info("Shutdown group coordinator completely.");
     }
 
+    public int partitionFor(String coordinatorKey) {
+        return groupManager.partitionFor(coordinatorKey);
+    }
+
+    public String getTopicPartitonName(int partition) {
+        return groupManager.getTopicPartitonName(partition);
+    }
 
     public CompletableFuture<JoinGroupResult> handleJoinGroup(
         String groupId,

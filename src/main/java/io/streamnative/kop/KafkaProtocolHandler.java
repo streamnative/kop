@@ -72,38 +72,65 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
         final BrokerService service;
         final NamespaceName kafkaMetaNs;
-        public OffsetTopicListener(BrokerService service, KafkaServiceConfiguration kafkaConfig) {
+        final GroupCoordinator groupCoordinator;
+        public OffsetTopicListener(BrokerService service,
+                                   KafkaServiceConfiguration kafkaConfig,
+                                   GroupCoordinator groupCoordinator) {
             this.service = service;
             this.kafkaMetaNs = NamespaceName.get(kafkaConfig.getKafkaTenant(), kafkaConfig.getKafkaNamespace());
+            this.groupCoordinator = groupCoordinator;
         }
 
         @Override
         public void onLoad(NamespaceBundle bundle) {
-            // 1. get partitions owned by this pulsar service.
-            // 2.
+            // 1. get new partitions owned by this pulsar service.
+            // 2. load partitions by GroupCoordinator.handleGroupImmigration.
             service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
                 .whenComplete((topics, ex) -> {
                     if (ex == null) {
                         for (String topic : topics) {
                             TopicName name = TopicName.get(topic);
                             checkState(name.isPartitioned(),
-                                "OffsetTopic should be partitioned, but get " + name);
+                                "OffsetTopic should be partitioned in onLoad, but get " + name);
 
+                            // already filtered namespace, check the local name without partition
                             if (Topic.GROUP_METADATA_TOPIC_NAME.equals(getKafkaTopicNameFromPulsarTopicname(name))) {
-
+                                if (log.isDebugEnabled()) {
+                                    log.debug("New offset partition load:  ", name);
+                                }
+                                groupCoordinator.handleGroupImmigration(name.getPartitionIndex());
                             }
-
                         }
                     } else {
                         log.error("Failed to get owned topic list for OffsetTopicListener when triggering on-loading bundle {}.", bundle, ex);
                     }
                 });
-
         }
 
         @Override
         public void unLoad(NamespaceBundle bundle) {
+            // 1. get partitions owned by this pulsar service.
+            // 2. remove partitions by groupCoordinator.handleGroupEmigration.
+            service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
+                .whenComplete((topics, ex) -> {
+                    if (ex == null) {
+                        for (String topic : topics) {
+                            TopicName name = TopicName.get(topic);
+                            checkState(name.isPartitioned(),
+                                "OffsetTopic should be partitioned in unLoad, but get " + name);
 
+                            // already filtered namespace, check the local name without partition
+                            if (Topic.GROUP_METADATA_TOPIC_NAME.equals(getKafkaTopicNameFromPulsarTopicname(name))) {
+                                if (log.isDebugEnabled()) {
+                                    log.debug("New offset partition unLoad:  ", name);
+                                }
+                                groupCoordinator.handleGroupEmigration(name.getPartitionIndex());
+                            }
+                        }
+                    } else {
+                        log.error("Failed to get owned topic list for OffsetTopicListener when triggering un-loading bundle {}.", bundle, ex);
+                    }
+                });
         }
 
         // verify that this bundle is served by this broker,
@@ -174,11 +201,15 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         kafkaTopicManager = new KafkaTopicManager(service);
 
         // init and start group coordinator
-        // TODO: init is related with topic and producer/reader, need update at bundle change time.
         if (kafkaConfig.isEnableGroupCoordinator()) {
             try {
                 initGroupCoordinator(brokerService);
                 startGroupCoordinator();
+                // and listener for Offset topics load/unload
+                brokerService.pulsar()
+                    .getNamespaceService()
+                    .addNamespaceBundleOwnershipListener(
+                        new OffsetTopicListener(brokerService, kafkaConfig, groupCoordinator));
             } catch (Exception e) {
                 log.error("initGroupCoordinator failed with", e);
             }
@@ -256,6 +287,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             .offsetsTopicName(kafkaConfig.getKafkaMetadataTenant() + "/"
                 + kafkaConfig.getKafkaMetadataNamespace()
                 + "/" + Topic.GROUP_METADATA_TOPIC_NAME)
+            .offsetsTopicNumPartitions(kafkaConfig.getOffsetsTopicNumPartitions())
             .offsetsTopicCompressionType(CompressionType.valueOf(kafkaConfig.getOffsetsTopicCompressionCodec()))
             .maxMetadataSize(kafkaConfig.getOffsetMetadataMaxSize())
             .offsetsRetentionCheckIntervalMs(kafkaConfig.getOffsetsRetentionCheckIntervalMs())
@@ -266,7 +298,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         // topicName in pulsar format: tenant/ns/topic
         createKafkaOffsetsTopic(service);
 
-        // TODO: Producer & Reader how to connect with the partitions?
         ProducerBuilder<ByteBuffer> groupCoordinatorTopicProducer = service.pulsar().getClient()
             .newProducer(Schema.BYTEBUFFER)
             .maxPendingMessages(100000);
@@ -343,9 +374,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 offsetsTopic);
             service.pulsar().getAdminClient().topics().createPartitionedTopic(
                 offsetsTopic,
-                KafkaServiceConfiguration.DefaultOffsetsTopicNumPartitions  // TODO: read from config file.
+                kafkaConfig.getOffsetsTopicNumPartitions()
             );
-            log.info("Successfully created group metadata topic {}.", offsetsTopic);
+            log.info("Successfully created group metadata topic {} with {} partitions.",
+                offsetsTopic, kafkaConfig.getOffsetsTopicNumPartitions());
         }
 
         return offsetsTopic;

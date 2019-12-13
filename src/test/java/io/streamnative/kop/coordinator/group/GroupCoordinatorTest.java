@@ -151,8 +151,8 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
         groupPartitionId = 0;
         otherGroupPartitionId = 1;
         otherGroupId = "otherGroupId";
+        offsetConfig.offsetsTopicNumPartitions(4);
         groupMetadataManager = spy(new GroupMetadataManager(
-            4,
             offsetConfig,
             producerBuilder,
             readerBuilder,

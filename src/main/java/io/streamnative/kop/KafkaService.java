@@ -262,6 +262,7 @@ public class KafkaService extends PulsarService {
             .offsetsTopicName(kafkaConfig.getKafkaMetadataTenant() + "/"
                 + kafkaConfig.getKafkaMetadataNamespace()
                 + "/" + Topic.GROUP_METADATA_TOPIC_NAME)
+            .offsetsTopicNumPartitions(kafkaConfig.getOffsetsTopicNumPartitions())
             .offsetsTopicCompressionType(CompressionType.valueOf(kafkaConfig.getOffsetsTopicCompressionCodec()))
             .maxMetadataSize(kafkaConfig.getOffsetMetadataMaxSize())
             .offsetsRetentionCheckIntervalMs(kafkaConfig.getOffsetsRetentionCheckIntervalMs())
@@ -335,9 +336,10 @@ public class KafkaService extends PulsarService {
                 offsetsTopic);
             getAdminClient().topics().createPartitionedTopic(
                 offsetsTopic,
-                KafkaServiceConfiguration.DefaultOffsetsTopicNumPartitions // TODO: read from config file.
+                kafkaConfig.getOffsetsTopicNumPartitions()
             );
-            log.info("Successfully created group metadata topic {}.", offsetsTopic);
+            log.info("Successfully created group metadata topic {} with {} partitions.",
+                offsetsTopic, kafkaConfig.getOffsetsTopicNumPartitions());
         }
 
         return offsetsTopic;
