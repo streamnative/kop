@@ -30,7 +30,11 @@ public class OffsetConfig {
     public static final int DefaultMaxMetadataSize = 4096;
     public static final long DefaultOffsetsRetentionMs = 24 * 60 * 60 * 1000L;
     public static final long DefaultOffsetsRetentionCheckIntervalMs = 600000L;
+    public static final String DefaultOffsetsTopicName = "public/default/__consumer_offsets";
 
+
+    @Default
+    private String offsetsTopicName = DefaultOffsetsTopicName;
     @Default
     private int maxMetadataSize = DefaultMaxMetadataSize;
     @Default

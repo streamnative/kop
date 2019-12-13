@@ -61,8 +61,8 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.client.api.ProducerBuilder;
+import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 
@@ -73,8 +73,8 @@ import org.apache.pulsar.common.util.FutureUtil;
 public class GroupCoordinator {
 
     public static GroupCoordinator of(
-        Producer<ByteBuffer> producer,
-        Reader<ByteBuffer> reader,
+        ProducerBuilder<ByteBuffer> producer,
+        ReaderBuilder<ByteBuffer> reader,
         GroupConfig groupConfig,
         OffsetConfig offsetConfig,
         Timer timer,

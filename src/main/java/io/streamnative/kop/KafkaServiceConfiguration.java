@@ -37,6 +37,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private static final int GroupInitialRebalanceDelayMs = 3000;
     // offset configuration
     private static final int OffsetsRetentionMinutes = 7 * 24 * 60;
+    // TODO: make it config
     public static final int DefaultOffsetsTopicNumPartitions = 1;
 
     @Category

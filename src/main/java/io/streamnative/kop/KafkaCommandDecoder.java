@@ -38,6 +38,7 @@ import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
 
+
 /**
  * A decoder that decodes kafka requests and responses.
  */
@@ -62,6 +63,19 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
         if (log.isDebugEnabled()) {
             log.debug("[{}] channel active {}", ctx.channel());
+        }
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        log.error("[{}] Got exception: {}", remoteAddress, cause.getMessage(), cause);
+        ctx.close();
+    }
+
+    @Override
+    public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
+        if (log.isDebugEnabled()) {
+            log.debug("Channel writability has changed to: {}", ctx.channel().isWritable());
         }
     }
 

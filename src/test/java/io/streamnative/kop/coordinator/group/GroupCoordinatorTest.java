@@ -51,8 +51,10 @@ import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.client.api.ProducerBuilder;
+import org.apache.pulsar.client.api.PulsarClient;
+import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.common.policies.data.ClusterData;
@@ -83,8 +85,10 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
     String topicName;
     MockTimer timer = null;
     GroupCoordinator groupCoordinator = null;
-    Producer<ByteBuffer> producer;
-    Reader<ByteBuffer> reader;
+
+    ProducerBuilder<ByteBuffer> producerBuilder;
+    ReaderBuilder<ByteBuffer> readerBuilder;
+
     Consumer<ByteBuffer> consumer;
     OrderedScheduler scheduler;
     GroupMetadataManager groupMetadataManager;
@@ -127,15 +131,13 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
             ConsumerMaxSessionTimeout,
             GroupInitialRebalanceDelay
         );
-        OffsetConfig offsetConfig = OffsetConfig.builder().build();
+
+        topicName = "test-coordinator-" + System.currentTimeMillis();
+        OffsetConfig offsetConfig = OffsetConfig.builder().offsetsTopicName(topicName).build();
 
         timer = new MockTimer();
 
-        topicName = "test-coordinator-" + System.currentTimeMillis();
-
-        producer = pulsarClient.newProducer(Schema.BYTEBUFFER)
-            .topic(topicName)
-            .create();
+        producerBuilder = pulsarClient.newProducer(Schema.BYTEBUFFER);
 
         consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
             .topic(topicName)
@@ -143,10 +145,8 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();
 
-        reader = pulsarClient.newReader(Schema.BYTEBUFFER)
-            .topic(topicName)
-            .startMessageId(MessageId.earliest)
-            .create();
+        readerBuilder = pulsarClient.newReader(Schema.BYTEBUFFER)
+            .startMessageId(MessageId.earliest);
 
         groupPartitionId = 0;
         otherGroupPartitionId = 1;
@@ -154,8 +154,8 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
         groupMetadataManager = spy(new GroupMetadataManager(
             4,
             offsetConfig,
-            producer,
-            reader,
+            producerBuilder,
+            readerBuilder,
             scheduler,
             timer.time(),
             id -> {
@@ -198,13 +198,19 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
         groupMetadataManager.addPartitionOwnership(groupPartitionId);
     }
 
+    @Override
+    protected PulsarClient newPulsarClient(String url, int intervalInSecs) throws PulsarClientException {
+        return PulsarClient.builder().serviceUrl(url).statsInterval(intervalInSecs, TimeUnit.SECONDS)
+            .ioThreads(10)
+            .connectionsPerBroker(10)
+            .build();
+    }
+
     @AfterMethod
     @Override
     public void cleanup() throws Exception {
         groupCoordinator.shutdown();
         groupMetadataManager.shutdown();
-        producer.close();
-        reader.close();
         consumer.close();
         scheduler.shutdown();
         super.internalCleanup();

@@ -14,6 +14,7 @@
 package io.streamnative.kop;
 
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Sets;
@@ -37,14 +38,17 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
+import org.apache.pulsar.broker.namespace.NamespaceBundleOwnershipListener;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.client.api.ProducerBuilder;
+import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
+import org.apache.pulsar.common.naming.NamespaceBundle;
+import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.ClusterData;
@@ -64,6 +68,52 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public static final String TLS_HANDLER = "tls";
     public static final String LISTENER_PATTEN = "^(PLAINTEXT?|SSL)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-0-9+]";
 
+    public static class OffsetTopicListener implements NamespaceBundleOwnershipListener {
+
+        final BrokerService service;
+        final NamespaceName kafkaMetaNs;
+        public OffsetTopicListener(BrokerService service, KafkaServiceConfiguration kafkaConfig) {
+            this.service = service;
+            this.kafkaMetaNs = NamespaceName.get(kafkaConfig.getKafkaTenant(), kafkaConfig.getKafkaNamespace());
+        }
+
+        @Override
+        public void onLoad(NamespaceBundle bundle) {
+            // 1. get partitions owned by this pulsar service.
+            // 2.
+            service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
+                .whenComplete((topics, ex) -> {
+                    if (ex == null) {
+                        for (String topic : topics) {
+                            TopicName name = TopicName.get(topic);
+                            checkState(name.isPartitioned(),
+                                "OffsetTopic should be partitioned, but get " + name);
+
+                            if (Topic.GROUP_METADATA_TOPIC_NAME.equals(getKafkaTopicNameFromPulsarTopicname(name))) {
+
+                            }
+
+                        }
+                    } else {
+                        log.error("Failed to get owned topic list for OffsetTopicListener when triggering on-loading bundle {}.", bundle, ex);
+                    }
+                });
+
+        }
+
+        @Override
+        public void unLoad(NamespaceBundle bundle) {
+
+        }
+
+        // verify that this bundle is served by this broker,
+        // and namespace is related to kafka metadata namespace
+        @Override
+        public boolean test(NamespaceBundle namespaceBundle) {
+            return namespaceBundle.getNamespaceObject().equals(kafkaMetaNs);
+        }
+
+    }
     /**
      * Kafka Listener Type.
      */
@@ -124,6 +174,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         kafkaTopicManager = new KafkaTopicManager(service);
 
         // init and start group coordinator
+        // TODO: init is related with topic and producer/reader, need update at bundle change time.
         if (kafkaConfig.isEnableGroupCoordinator()) {
             try {
                 initGroupCoordinator(brokerService);
@@ -189,6 +240,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         if (groupCoordinator != null) {
             groupCoordinator.shutdown();
         }
+
+        // TODO: kafkaTopicManager.close
+        // close related producer/consumer connections
     }
 
     public void initGroupCoordinator(BrokerService service) throws Exception {
@@ -199,6 +253,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         );
 
         OffsetConfig offsetConfig = OffsetConfig.builder()
+            .offsetsTopicName(kafkaConfig.getKafkaMetadataTenant() + "/"
+                + kafkaConfig.getKafkaMetadataNamespace()
+                + "/" + Topic.GROUP_METADATA_TOPIC_NAME)
             .offsetsTopicCompressionType(CompressionType.valueOf(kafkaConfig.getOffsetsTopicCompressionCodec()))
             .maxMetadataSize(kafkaConfig.getOffsetMetadataMaxSize())
             .offsetsRetentionCheckIntervalMs(kafkaConfig.getOffsetsRetentionCheckIntervalMs())
@@ -206,20 +263,17 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             .build();
 
         createKafkaMetadataNamespaceIfNeeded(service);
-        String offsetsTopic = createKafkaOffsetsTopic(service);
+        // topicName in pulsar format: tenant/ns/topic
+        createKafkaOffsetsTopic(service);
 
-        TopicName offsetsTopicName = TopicName.get(offsetsTopic);
-        String offsetsTopicPtn0 = offsetsTopicName.getPartition(0).toString();
+        // TODO: Producer & Reader how to connect with the partitions?
+        ProducerBuilder<ByteBuffer> groupCoordinatorTopicProducer = service.pulsar().getClient()
+            .newProducer(Schema.BYTEBUFFER)
+            .maxPendingMessages(100000);
+        ReaderBuilder<ByteBuffer> groupCoordinatorTopicReader = service.pulsar().getClient()
+            .newReader(Schema.BYTEBUFFER)
+            .startMessageId(MessageId.earliest);
 
-        Producer<ByteBuffer> groupCoordinatorTopicProducer = service.pulsar().getClient().newProducer(Schema.BYTEBUFFER)
-            .topic(offsetsTopicPtn0)
-            // TODO: make it configurable
-            .maxPendingMessages(100000)
-            .create();
-        Reader<ByteBuffer> groupCoordinatorTopicReader = service.pulsar().getClient().newReader(Schema.BYTEBUFFER)
-            .topic(offsetsTopicPtn0)
-            .startMessageId(MessageId.earliest)
-            .create();
         this.groupCoordinator = GroupCoordinator.of(
             groupCoordinatorTopicProducer,
             groupCoordinatorTopicReader,
@@ -289,7 +343,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 offsetsTopic);
             service.pulsar().getAdminClient().topics().createPartitionedTopic(
                 offsetsTopic,
-                KafkaServiceConfiguration.DefaultOffsetsTopicNumPartitions
+                KafkaServiceConfiguration.DefaultOffsetsTopicNumPartitions  // TODO: read from config file.
             );
             log.info("Successfully created group metadata topic {}.", offsetsTopic);
         }

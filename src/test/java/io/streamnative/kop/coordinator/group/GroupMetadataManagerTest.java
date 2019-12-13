@@ -20,17 +20,18 @@ import static io.streamnative.kop.coordinator.group.GroupMetadataConstants.offse
 import static io.streamnative.kop.coordinator.group.GroupState.Empty;
 import static io.streamnative.kop.coordinator.group.GroupState.PreparingRebalance;
 import static io.streamnative.kop.coordinator.group.GroupState.Stable;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.spy;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertNull;
+import static org.testng.Assert.assertSame;
+import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
@@ -51,6 +52,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -77,15 +79,18 @@ import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.client.api.ProducerBuilder;
+import org.apache.pulsar.client.api.PulsarClient;
+import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
 
 /**
  * Unit test {@link GroupMetadataManager}.
@@ -95,16 +100,18 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     private static final String groupId = "foo";
     private static final int groupPartitionId = 0;
+    // TODO: change?
     private static final TopicPartition groupTopicPartition =
         new TopicPartition(Topic.GROUP_METADATA_TOPIC_NAME, groupPartitionId);
     private static final String protocolType = "protocolType";
     private static final int rebalanceTimeout = 60000;
     private static final int sessionTimeout = 10000;
+    private static final String kafkaMetaNs = "public/default/";
 
     MockTime time = null;
     GroupMetadataManager groupMetadataManager = null;
-    Producer<ByteBuffer> producer = null;
-    Reader<ByteBuffer> consumer = null;
+    ProducerBuilder<ByteBuffer> producer = null;
+    ReaderBuilder<ByteBuffer> consumer = null;
     OffsetConfig offsetConfig = OffsetConfig.builder().build();
     OrderedScheduler scheduler;
 
@@ -115,7 +122,16 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         this.conf.setEnableGroupCoordinator(false);
     }
 
-    @Before
+    @Override
+    protected PulsarClient newPulsarClient(String url, int intervalInSecs) throws PulsarClientException {
+        return PulsarClient.builder().serviceUrl(url).statsInterval(intervalInSecs, TimeUnit.SECONDS)
+            // TODO: why need more ioThread? thread not exit?
+            .ioThreads(16)
+            .connectionsPerBroker(16)
+            .build();
+    }
+
+    @BeforeMethod
     @Override
     public void setup() throws Exception {
         super.internalSetup();
@@ -136,19 +152,23 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
             new RetentionPolicies(20, 100));
 
         time = new MockTime();
-        groupMetadataManager = new GroupMetadataManager(
-            1,
-            offsetConfig,
-            producer,
-            consumer,
-            scheduler,
-            time
-        );
+//        groupMetadataManager = new GroupMetadataManager(
+//            1,
+//            offsetConfig,
+//            producer,
+//            consumer,
+//            scheduler,
+//            time
+//        );
     }
 
-    @After
+    @AfterMethod
     @Override
     public void cleanup() throws Exception {
+        if (groupMetadataManager != null) {
+            groupMetadataManager.shutdown();
+        }
+        scheduler.shutdown();
         super.internalCleanup();
     }
 
@@ -307,8 +327,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testLoadOffsetsWithoutGroup() throws Exception {
-        TopicPartition groupMetadataTopicPartition = groupTopicPartition;
-
         Map<TopicPartition, Long> committedOffsets = new HashMap<>();
         committedOffsets.put(
             new TopicPartition("foo", 0), 23L);
@@ -325,7 +343,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         byte[] key = groupMetadataKey(groupId);
 
         runGroupMetadataManagerProducerTester("test-load-offsets-without-group",
-            (groupMetadataManager, producer) -> {
+            groupMetadataManager -> {
+                Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
                 producer.newMessage()
                     .keyBytes(key)
                     .value(buffer)
@@ -334,7 +353,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
                 CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
                 groupMetadataManager.scheduleLoadGroupAndOffsets(
-                    groupMetadataTopicPartition.partition(),
+                    groupPartitionId,
                     groupMetadata -> onLoadedFuture.complete(groupMetadata)
                 ).get();
                 GroupMetadata group = onLoadedFuture.get();
@@ -354,7 +373,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testLoadEmptyGroupWithOffsets() throws Exception {
-        TopicPartition groupMetadataTopicPartition = groupTopicPartition;
         int generation = 15;
         String protocolType = "consumer";
 
@@ -377,7 +395,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         byte[] key = groupMetadataKey(groupId);
 
         runGroupMetadataManagerProducerTester("test-load-offsets-without-group",
-            (groupMetadataManager, producer) -> {
+            groupMetadataManager -> {
+                Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
                 producer.newMessage()
                     .keyBytes(key)
                     .value(buffer)
@@ -386,7 +405,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
                 CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
                 groupMetadataManager.scheduleLoadGroupAndOffsets(
-                    groupMetadataTopicPartition.partition(),
+                    groupPartitionId,
                     groupMetadata -> onLoadedFuture.complete(groupMetadata)
                 ).get();
                 GroupMetadata group = onLoadedFuture.get();
@@ -410,7 +429,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testLoadTransactionalOffsetsWithoutGroup() throws Exception {
-        TopicPartition groupMetadataTopicPartition = groupTopicPartition;
         long producerId = 1000L;
         short producerEpoch = 2;
 
@@ -434,7 +452,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
         runGroupMetadataManagerProducerTester("test-load-offsets-without-group",
-            (groupMetadataManager, producer) -> {
+            groupMetadataManager -> {
+                Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
                 producer.newMessage()
                     .keyBytes(key)
                     .value(buffer)
@@ -443,7 +462,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
                 CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
                 groupMetadataManager.scheduleLoadGroupAndOffsets(
-                    groupMetadataTopicPartition.partition(),
+                    groupPartitionId,
                     groupMetadata -> onLoadedFuture.complete(groupMetadata)
                 ).get();
                 GroupMetadata group = onLoadedFuture.get();
@@ -463,7 +482,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testDoNotLoadAbortedTransactionalOffsetCommits() throws Exception {
-        TopicPartition groupMetadataTopicPartition = groupTopicPartition;
         long producerId = 1000L;
         short producerEpoch = 2;
 
@@ -484,7 +502,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         byte[] key = groupMetadataKey(groupId);
 
         runGroupMetadataManagerProducerTester("test-load-offsets-without-group",
-            (groupMetadataManager, producer) -> {
+            groupMetadataManager -> {
+                Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
                 producer.newMessage()
                     .keyBytes(key)
                     .value(buffer)
@@ -492,7 +511,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
                     .send();
 
                 groupMetadataManager.scheduleLoadGroupAndOffsets(
-                    groupMetadataTopicPartition.partition(),
+                    groupPartitionId,
                     groupMetadata -> {}
                 ).get();
                 Optional<GroupMetadata> groupInCache = groupMetadataManager.getGroup(groupId);
@@ -502,7 +521,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testGroupLoadedWithPendingCommits() throws Exception {
-        TopicPartition groupMetadataTopicPartition = groupTopicPartition;
         long producerId = 1000L;
         short producerEpoch = 2;
 
@@ -522,7 +540,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         byte[] key = groupMetadataKey(groupId);
 
         runGroupMetadataManagerProducerTester("test-load-offsets-without-group",
-            (groupMetadataManager, producer) -> {
+            groupMetadataManager -> {
+                Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
                 producer.newMessage()
                     .keyBytes(key)
                     .value(buffer)
@@ -531,7 +550,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
                 CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
                 groupMetadataManager.scheduleLoadGroupAndOffsets(
-                    groupMetadataTopicPartition.partition(),
+                    groupPartitionId,
                     groupMetadata -> onLoadedFuture.complete(groupMetadata)
                 ).get();
                 GroupMetadata groupInCache = groupMetadataManager.getGroup(groupId).orElseGet(() -> {
@@ -551,7 +570,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testLoadWithCommitedAndAbortedTransactionOffsetCommits() throws Exception {
-        TopicPartition groupMetadataTopicPartition = groupTopicPartition;
         long producerId = 1000L;
         short producerEpoch = 2;
 
@@ -582,7 +600,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         byte[] key = groupMetadataKey(groupId);
 
         runGroupMetadataManagerProducerTester("test-load-offsets-without-group",
-            (groupMetadataManager, producer) -> {
+            groupMetadataManager -> {
+                Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
                 producer.newMessage()
                     .keyBytes(key)
                     .value(buffer)
@@ -591,7 +610,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
                 CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
                 groupMetadataManager.scheduleLoadGroupAndOffsets(
-                    groupMetadataTopicPartition.partition(),
+                    groupPartitionId,
                     groupMetadata -> onLoadedFuture.complete(groupMetadata)
                 ).get();
                 GroupMetadata groupInCache = groupMetadataManager.getGroup(groupId).orElseGet(() -> {
@@ -615,7 +634,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testLoadWithCommitedAndAbortedAndPendingTransactionOffsetCommits() throws Exception {
-        TopicPartition groupMetadataTopicPartition = groupTopicPartition;
         long producerId = 1000L;
         short producerEpoch = 2;
 
@@ -655,7 +673,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         byte[] key = groupMetadataKey(groupId);
 
         runGroupMetadataManagerProducerTester("test-load-offsets-without-group",
-            (groupMetadataManager, producer) -> {
+            groupMetadataManager -> {
+                Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
                 producer.newMessage()
                     .keyBytes(key)
                     .value(buffer)
@@ -664,7 +683,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
                 CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
                 groupMetadataManager.scheduleLoadGroupAndOffsets(
-                    groupMetadataTopicPartition.partition(),
+                    groupPartitionId,
                     groupMetadata -> onLoadedFuture.complete(groupMetadata)
                 ).get();
                 GroupMetadata groupInCache = groupMetadataManager.getGroup(groupId).orElseGet(() -> {
@@ -688,7 +707,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
                  // The loaded pending commits should materialize after a commit marker comes in.
                 groupMetadataManager.handleTxnCompletion(
                     producerId,
-                    Sets.newHashSet(groupMetadataTopicPartition.partition()),
+                    Sets.newHashSet(groupPartitionId),
                     true);
                 assertFalse(group.hasPendingOffsetCommitsFromProducer(producerId));
                 pendingOffsets.forEach((tp, offset) ->
@@ -698,7 +717,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testLoadTransactionalOffsetCommitsFromMultipleProducers() throws Exception {
-        TopicPartition groupMetadataTopicPartition = groupTopicPartition;
         long firstProducerId = 1000L;
         short firstProducerEpoch = 2;
         long secondProducerId = 1001L;
@@ -740,7 +758,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
         runGroupMetadataManagerProducerTester("test-load-offsets-without-group",
-            (groupMetadataManager, producer) -> {
+            groupMetadataManager -> {
+                Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
                 producer.newMessage()
                     .keyBytes(key)
                     .value(buffer)
@@ -749,7 +768,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
                 CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
                 groupMetadataManager.scheduleLoadGroupAndOffsets(
-                    groupMetadataTopicPartition.partition(),
+                    groupPartitionId,
                     groupMetadata -> onLoadedFuture.complete(groupMetadata)
                 ).get();
                 GroupMetadata group = onLoadedFuture.get();
@@ -783,7 +802,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testGroupLoadWithConsumerAndTransactionalOffsetCommitsTransactionWins() throws Exception {
-        TopicPartition groupMetadataTopicPartition = groupTopicPartition;
         long producerId = 1000L;
         short producerEpoch = 2;
 
@@ -810,7 +828,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
         runGroupMetadataManagerProducerTester("test-load-offsets-without-group",
-            (groupMetadataManager, producer) -> {
+            groupMetadataManager -> {
+                Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
                 producer.newMessage()
                     .keyBytes(key)
                     .value(buffer)
@@ -819,7 +838,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
                 CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
                 groupMetadataManager.scheduleLoadGroupAndOffsets(
-                    groupMetadataTopicPartition.partition(),
+                    groupPartitionId,
                     groupMetadata -> onLoadedFuture.complete(groupMetadata)
                 ).get();
                 GroupMetadata group = onLoadedFuture.get();
@@ -865,7 +884,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testLoadOffsetsWithTombstones() throws Exception {
-        TopicPartition groupMetadataTopicPartition = groupTopicPartition;
         TopicPartition tombstonePartition = new TopicPartition("foo", 1);
 
         Map<TopicPartition, Long> committedOffsets = new HashMap<>();
@@ -887,7 +905,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
         runGroupMetadataManagerProducerTester("test-load-offsets-without-group",
-            (groupMetadataManager, producer) -> {
+            groupMetadataManager -> {
+                Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
                 producer.newMessage()
                     .keyBytes(key)
                     .value(buffer)
@@ -896,7 +915,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
                 CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
                 groupMetadataManager.scheduleLoadGroupAndOffsets(
-                    groupMetadataTopicPartition.partition(),
+                    groupPartitionId,
                     groupMetadata -> onLoadedFuture.complete(groupMetadata)
                 ).get();
                 GroupMetadata group = onLoadedFuture.get();
@@ -923,7 +942,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testLoadOffsetsAndGroup() throws Exception {
-        TopicPartition groupMetadataTopicPartition = groupTopicPartition;
         int generation = 935;
         String protocolType = "consumer";
         String protocol = "range";
@@ -950,7 +968,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
         runGroupMetadataManagerProducerTester("test-load-offsets-without-group",
-            (groupMetadataManager, producer) -> {
+            groupMetadataManager -> {
+                Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
                 producer.newMessage()
                     .keyBytes(key)
                     .value(buffer)
@@ -959,7 +978,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
                 CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
                 groupMetadataManager.scheduleLoadGroupAndOffsets(
-                    groupMetadataTopicPartition.partition(),
+                    groupPartitionId,
                     groupMetadata -> onLoadedFuture.complete(groupMetadata)
                 ).get();
                 GroupMetadata group = onLoadedFuture.get();
@@ -989,7 +1008,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testLoadGroupWithTombstone() throws Exception {
-        TopicPartition groupMetadataTopicPartition = groupTopicPartition;
         int generation = 935;
         String memberId = "98098230493";
         String protocolType = "consumer";
@@ -1012,7 +1030,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
         runGroupMetadataManagerProducerTester("test-load-offsets-without-group",
-            (groupMetadataManager, producer) -> {
+            groupMetadataManager -> {
+                Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
                 producer.newMessage()
                     .keyBytes(key)
                     .value(buffer)
@@ -1020,7 +1039,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
                     .send();
 
                 groupMetadataManager.scheduleLoadGroupAndOffsets(
-                    groupMetadataTopicPartition.partition(),
+                    groupPartitionId,
                     groupMetadata -> {}
                 ).get();
                 assertFalse(groupMetadataManager.getGroup(groupId).isPresent());
@@ -1032,8 +1051,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         // this test case checks the following scenario:
         // 1. the group exists at some point in time, but is later removed (because all members left)
         // 2. a "simple" consumer (i.e. not a consumer group) then uses the same groupId to commit some offsets
-
-        TopicPartition groupMetadataTopicPartition = groupTopicPartition;
         int generation = 293;
         String memberId = "98098230493";
         String protocolType = "consumer";
@@ -1068,7 +1085,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
         runGroupMetadataManagerProducerTester("test-load-offsets-without-group",
-            (groupMetadataManager, producer) -> {
+            groupMetadataManager -> {
+                Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
                 producer.newMessage()
                     .keyBytes(key)
                     .value(buffer)
@@ -1077,7 +1095,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
                 CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
                 groupMetadataManager.scheduleLoadGroupAndOffsets(
-                    groupMetadataTopicPartition.partition(),
+                    groupPartitionId,
                     groupMetadata -> onLoadedFuture.complete(groupMetadata)
                 ).get();
                 GroupMetadata group = onLoadedFuture.get();
@@ -1098,7 +1116,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testLoadGroupAndOffsetsFromDifferentSegments() throws Exception {
-        TopicPartition groupMetadataTopicPartition = groupTopicPartition;
         int generation = 293;
         String protocolType = "consumer";
         String protocol = "range";
@@ -1139,7 +1156,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
         runGroupMetadataManagerProducerTester("test-load-offsets-without-group",
-            (groupMetadataManager, producer) -> {
+            groupMetadataManager -> {
+                Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
                 producer.newMessage()
                     .keyBytes(key)
                     .value(segment1Buffer)
@@ -1154,7 +1172,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
                 CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
                 groupMetadataManager.scheduleLoadGroupAndOffsets(
-                    groupMetadataTopicPartition.partition(),
+                    groupPartitionId,
                     groupMetadata -> onLoadedFuture.complete(groupMetadata)
                 ).get();
                 GroupMetadata group = onLoadedFuture.get();
@@ -1167,11 +1185,11 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
                 assertEquals(groupId, group.groupId());
                 assertEquals(Stable, group.currentState());
 
-                assertEquals("segment2 group record member should be elected",
-                    segment2MemberId, group.leaderOrNull());
-                assertEquals("segment2 group record member should be only member",
-                    Lists.newArrayList(segment2MemberId),
-                    group.allMembers().stream().collect(Collectors.toList()));
+                assertEquals(segment2MemberId, group.leaderOrNull(),
+                    "segment2 group record member should be elected");
+                assertEquals(Lists.newArrayList(segment2MemberId),
+                    group.allMembers().stream().collect(Collectors.toList()),
+                    "segment2 group record member should be only member");
 
                 // offsets of segment1 should be overridden by segment2 offsets of the same topic partitions
                 Map<TopicPartition, Long> committedOffsets = new HashMap<>();
@@ -1455,7 +1473,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
                 realWriteFutureRef.set(realWriteFuture);
                 return writeOffsetMessageFuture;
             }).when(groupMetadataManager).storeOffsetMessage(
-                any(byte[].class), any(ByteBuffer.class), anyLong()
+                any(String.class), any(byte[].class), any(ByteBuffer.class), anyLong()
             );
 
             CompletableFuture<Map<TopicPartition, Errors>> storeFuture = groupMetadataManager.storeOffsets(
@@ -1512,7 +1530,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
                 realWriteFutureRef.set(realWriteFuture);
                 return writeOffsetMessageFuture;
             }).when(groupMetadataManager).storeOffsetMessage(
-                any(byte[].class), any(ByteBuffer.class), anyLong()
+                any(String.class), any(byte[].class), any(ByteBuffer.class), anyLong()
             );
 
             CompletableFuture<Map<TopicPartition, Errors>> storeFuture = groupMetadataManager.storeOffsets(
@@ -1566,7 +1584,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
                 realWriteFutureRef.set(realWriteFuture);
                 return writeOffsetMessageFuture;
             }).when(groupMetadataManager).storeOffsetMessage(
-                any(byte[].class), any(ByteBuffer.class), anyLong()
+                any(String.class), any(byte[].class), any(ByteBuffer.class), anyLong()
             );
 
             CompletableFuture<Map<TopicPartition, Errors>> storeFuture = groupMetadataManager.storeOffsets(
@@ -1879,8 +1897,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
     @FunctionalInterface
     public interface GroupMetadataManagerProducerTester {
 
-        void test(GroupMetadataManager groupMetadataManager,
-                  Producer<ByteBuffer> consumer) throws Exception;
+        void test(GroupMetadataManager groupMetadataManager) throws Exception;
 
     }
 
@@ -1897,49 +1914,43 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     void runGroupMetadataManagerProducerTester(final String topicName,
                                                GroupMetadataManagerProducerTester tester) throws Exception {
-        @Cleanup
-        Producer<ByteBuffer> producer = pulsarClient.newProducer(Schema.BYTEBUFFER)
-            .topic(topicName)
-            .create();
-        @Cleanup
-        Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(topicName)
-            .subscriptionName("test-sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
-        @Cleanup
-        Reader<ByteBuffer> reader = pulsarClient.newReader(Schema.BYTEBUFFER)
-            .topic(topicName)
-            .startMessageId(MessageId.earliest)
-            .create();
+        ProducerBuilder<ByteBuffer> producerBuilder = pulsarClient.newProducer(Schema.BYTEBUFFER);
+
+        ReaderBuilder<ByteBuffer> reader = pulsarClient.newReader(Schema.BYTEBUFFER)
+            .startMessageId(MessageId.earliest);
+        offsetConfig.offsetsTopicName(kafkaMetaNs + topicName);
         groupMetadataManager = spy(new GroupMetadataManager(
             1,
             offsetConfig,
-            producer,
+            producerBuilder,
             reader,
             scheduler,
             time
         ));
-        tester.test(groupMetadataManager, producer);
+
+        tester.test(groupMetadataManager);
+
+        // close readers and producers
+        groupMetadataManager.shutdown();
     }
 
     void runGroupMetadataManagerConsumerTester(final String topicName,
                                                GroupMetadataManagerConsumerTester tester) throws Exception {
-        @Cleanup
-        Producer<ByteBuffer> producer = pulsarClient.newProducer(Schema.BYTEBUFFER)
-            .topic(topicName)
-            .create();
+        ProducerBuilder<ByteBuffer> producer = pulsarClient.newProducer(Schema.BYTEBUFFER);
+
+        // topic name to get consumer offsets
+        String pulsarTopicName = topicName + PARTITIONED_TOPIC_SUFFIX + groupPartitionId;
+
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(topicName)
+            .topic(pulsarTopicName)
             .subscriptionName("test-sub")
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();
-        @Cleanup
-        Reader<ByteBuffer> reader = pulsarClient.newReader(Schema.BYTEBUFFER)
-            .topic(topicName)
-            .startMessageId(MessageId.earliest)
-            .create();
+        ReaderBuilder<ByteBuffer> reader = pulsarClient.newReader(Schema.BYTEBUFFER)
+            .startMessageId(MessageId.earliest);
+
+        offsetConfig.offsetsTopicName(kafkaMetaNs + topicName);
         groupMetadataManager = spy(new GroupMetadataManager(
             1,
             offsetConfig,
@@ -1949,6 +1960,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
             time
         ));
         tester.test(groupMetadataManager, consumer);
+        // close readers and producers
+        groupMetadataManager.shutdown();
     }
 
 }

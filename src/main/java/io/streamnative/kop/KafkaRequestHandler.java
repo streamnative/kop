@@ -195,6 +195,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return resultFuture;
     }
 
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        super.channelInactive(ctx);
+        log.info("Closed connection from {}", remoteAddress);
+    }
+
     protected CompletableFuture<ResponseAndRequest> handleTopicMetadataRequest(KafkaHeaderAndRequest metadataHar) {
         checkArgument(metadataHar.getRequest() instanceof MetadataRequest);
 

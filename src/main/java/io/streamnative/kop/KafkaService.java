@@ -49,11 +49,10 @@ import org.apache.pulsar.broker.stats.prometheus.PrometheusMetricsServlet;
 import org.apache.pulsar.broker.web.WebService;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.client.api.ProducerBuilder;
+import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.common.configuration.VipStatus;
-import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
@@ -238,6 +237,18 @@ public class KafkaService extends PulsarService {
         }
     }
 
+    @Override
+    public void close() throws PulsarServerException {
+        if (groupCoordinator != null) {
+            this.groupCoordinator.shutdown();
+        }
+        if (kafkaTopicManager != null) {
+            this.kafkaTopicManager.close();
+        }
+        super.close();
+    }
+
+
     // TODO: make group coordinator running in a distributed mode
     //      https://github.com/streamnative/kop/issues/32
     public void startGroupCoordinator() throws Exception {
@@ -248,6 +259,9 @@ public class KafkaService extends PulsarService {
         );
 
         OffsetConfig offsetConfig = OffsetConfig.builder()
+            .offsetsTopicName(kafkaConfig.getKafkaMetadataTenant() + "/"
+                + kafkaConfig.getKafkaMetadataNamespace()
+                + "/" + Topic.GROUP_METADATA_TOPIC_NAME)
             .offsetsTopicCompressionType(CompressionType.valueOf(kafkaConfig.getOffsetsTopicCompressionCodec()))
             .maxMetadataSize(kafkaConfig.getOffsetMetadataMaxSize())
             .offsetsRetentionCheckIntervalMs(kafkaConfig.getOffsetsRetentionCheckIntervalMs())
@@ -255,20 +269,15 @@ public class KafkaService extends PulsarService {
             .build();
 
         createKafkaMetadataNamespaceIfNeeded();
-        String offsetsTopic = createKafkaOffsetsTopic();
+        createKafkaOffsetsTopic();
 
-        TopicName offsetsTopicName = TopicName.get(offsetsTopic);
-        String offsetsTopicPtn0 = offsetsTopicName.getPartition(0).toString();
+        ProducerBuilder<ByteBuffer> groupCoordinatorTopicProducer = getClient()
+            .newProducer(Schema.BYTEBUFFER)
+            .maxPendingMessages(100000);
+        ReaderBuilder<ByteBuffer> groupCoordinatorTopicReader = getClient()
+            .newReader(Schema.BYTEBUFFER)
+            .startMessageId(MessageId.earliest);
 
-        Producer<ByteBuffer> groupCoordinatorTopicProducer = getClient().newProducer(Schema.BYTEBUFFER)
-            .topic(offsetsTopicPtn0)
-            // TODO: make it configurable
-            .maxPendingMessages(100000)
-            .create();
-        Reader<ByteBuffer> groupCoordinatorTopicReader = getClient().newReader(Schema.BYTEBUFFER)
-            .topic(offsetsTopicPtn0)
-            .startMessageId(MessageId.earliest)
-            .create();
         this.groupCoordinator = GroupCoordinator.of(
             groupCoordinatorTopicProducer,
             groupCoordinatorTopicReader,
@@ -316,7 +325,7 @@ public class KafkaService extends PulsarService {
     }
 
     private String createKafkaOffsetsTopic() throws PulsarServerException, PulsarAdminException {
-        String offsetsTopic = kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaMetadataNamespace()
+        String offsetsTopic = kafkaConfig.getKafkaMetadataTenant() + "/" + kafkaConfig.getKafkaMetadataNamespace()
             + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
 
         PartitionedTopicMetadata offsetsTopicMetadata =
@@ -326,7 +335,7 @@ public class KafkaService extends PulsarService {
                 offsetsTopic);
             getAdminClient().topics().createPartitionedTopic(
                 offsetsTopic,
-                KafkaServiceConfiguration.DefaultOffsetsTopicNumPartitions
+                KafkaServiceConfiguration.DefaultOffsetsTopicNumPartitions // TODO: read from config file.
             );
             log.info("Successfully created group metadata topic {}.", offsetsTopic);
         }
