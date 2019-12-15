@@ -401,18 +401,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                                 // whether completed all the topics requests.
                                 int finishedTopics = topicsCompleted.incrementAndGet();
-                                if (log.isDebugEnabled()) {
-                                    log.debug("[{}] Request {}: Completed findBroker for topic {}, "
+                                if (log.isTraceEnabled()) {
+                                    log.trace("[{}] Request {}: Completed findBroker for topic {}, "
                                             + "partitions found/all: {}/{}. \n dump All Metadata:",
                                         ctx.channel(), metadataHar.getHeader(), topic,
                                         finishedTopics, topicsNumber);
 
                                     allTopicMetadata.stream()
                                         .forEach(data -> {
-                                            log.debug("topicMetadata: {}", data.toString());
+                                            log.trace("topicMetadata: {}", data.toString());
                                             data.partitionMetadata()
                                                 .forEach(partitionData ->
-                                                    log.debug("    partitionMetadata: {}", data.toString()));
+                                                    log.trace("    partitionMetadata: {}", data.toString()));
                                         });
                                 }
                                 if (finishedTopics == topicsNumber) {
@@ -1042,10 +1042,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private CompletableFuture<Optional<String>> getProtocolDataToAdvertise(Optional<LookupResult> lookupResult,
                                                                            TopicName topic) {
-        if (log.isDebugEnabled()) {
-            log.debug("Handle getProtocolDataToAdvertise for {}", topic);
-        }
-
         if (!lookupResult.isPresent()) {
             log.error("Can't find broker for topic {}", topic);
             CompletableFuture<Optional<String>> future = new CompletableFuture<>();
@@ -1053,8 +1049,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             return future;
         }
 
+        // TODO: ERROR: Handle getProtocolDataToAdvertise for persistent://public/default/topic4-partition-2, lookup result: LookupResult                 [type=RedirectUrl, lookupData=LookupData{brokerUrl=pulsar://zhais-mbp:6651, brokerUrlTls=null, httpUrl=http://zhais-mbp:8081}]
+        // 1. handle redirect requst. here or in findBroker
+        // 2. read Advertised data from lookup result?
         LookupData lookupData = lookupResult.get().getLookupData();
-        String candidateBroker = lookupData.getBrokerUrl();
+
+        // advertised data is write in  /loadbalance/brokers/broker_host:webServicePort
+        // pulsar get it by getBrokerWebServiceUrl
+        String candidateBroker = lookupData.getHttpUrl();
         URI uri;
 
         try {
@@ -1066,17 +1068,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             return future;
         }
 
-        // advertised data is write in  /loadbalance/brokers/broker_host:webServicePort
-        int port = kafkaConfig.getWebServicePort().isPresent() ? kafkaConfig.getWebServicePort().get()
-            : kafkaConfig.getWebServicePortTls().get();
-        String path = String.format("%s/%s:%s", LoadManager.LOADBALANCE_BROKERS_ROOT, uri.getHost(),
-            port);
+        String path = String.format("%s/%s:%s", LoadManager.LOADBALANCE_BROKERS_ROOT, uri.getHost(), uri.getPort());
 
         return pulsarService.getLocalZkCache()
             .getDataAsync(path, pulsarService.getLoadManager().get().getLoadReportDeserializer())
             .thenApply(reportData -> {
                 if (reportData.isPresent()) {
                     ServiceLookupData data = reportData.get();
+                    if (log.isDebugEnabled()) {
+                        log.debug("Handle getProtocolDataToAdvertise for {}, lookupData: {}, kafka: {}",
+                            topic, lookupData,
+                            data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
+                    }
                     return data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME);
                 } else {
                     log.error("No node for broker data: {}", path);

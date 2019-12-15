@@ -317,8 +317,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         );
     }
 
-    // TODO: make group coordinator running in a distributed mode
-    //      https://github.com/streamnative/kop/issues/32
     public void startGroupCoordinator() throws Exception {
         if (this.groupCoordinator != null) {
             this.groupCoordinator.startup(false);
