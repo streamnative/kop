@@ -256,29 +256,25 @@ public class GroupMetadataManager {
             .map(entry -> entry.getValue().closeAsync())
             .collect(Collectors.toList());
 
-        FutureUtil.waitForAll(producerCloses).whenComplete((ignore, t) ->
-            {
-                if (t != null) {
-                    log.error("Error when close all the {} offsetsProducers in GroupMetadataManager",
-                        producerCloses.size(), t);
-                }
-                if (log.isDebugEnabled()) {
-                    log.debug("Closed all the {} offsetsProducers in GroupMetadataManager", producerCloses.size());
-                }
+        FutureUtil.waitForAll(producerCloses).whenComplete((ignore, t) -> {
+            if (t != null) {
+                log.error("Error when close all the {} offsetsProducers in GroupMetadataManager",
+                    producerCloses.size(), t);
             }
-        );
+            if (log.isDebugEnabled()) {
+                log.debug("Closed all the {} offsetsProducers in GroupMetadataManager", producerCloses.size());
+            }
+        });
 
-        FutureUtil.waitForAll(readerCloses).whenComplete((ignore, t) ->
-            {
-                if (t != null) {
-                    log.error("Error when close all the {} offsetsReaders in GroupMetadataManager",
-                        readerCloses.size(), t);
-                }
-                if (log.isDebugEnabled()) {
-                    log.debug("Closed all the {} offsetsReaders in GroupMetadataManager.", readerCloses.size());
-                }
+        FutureUtil.waitForAll(readerCloses).whenComplete((ignore, t) -> {
+            if (t != null) {
+                log.error("Error when close all the {} offsetsReaders in GroupMetadataManager",
+                    readerCloses.size(), t);
             }
-        );
+            if (log.isDebugEnabled()) {
+                log.debug("Closed all the {} offsetsReaders in GroupMetadataManager.", readerCloses.size());
+            }
+        });
     }
 
     public Iterable<GroupMetadata> currentGroups() {
@@ -709,7 +705,8 @@ public class GroupMetadataManager {
                         log.trace("Successfully write a placeholder record into {} @ {}",
                             topicPartition, lastMessageId);
                     }
-                    return doLoadGroupsAndOffsets(getOffsetsTopicReader(offsetsPartition), lastMessageId, onGroupLoaded);
+                    return doLoadGroupsAndOffsets(getOffsetsTopicReader(offsetsPartition),
+                        lastMessageId, onGroupLoaded);
                 })
                 .whenComplete((ignored, cause) -> {
                     if (null == cause) {

@@ -15,18 +15,11 @@ package io.streamnative.kop;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
-import io.streamnative.kop.coordinator.group.GroupConfig;
 import io.streamnative.kop.coordinator.group.GroupCoordinator;
-import io.streamnative.kop.coordinator.group.OffsetConfig;
-import io.streamnative.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import lombok.Getter;
@@ -34,9 +27,6 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
-import org.apache.kafka.common.internals.Topic;
-import org.apache.kafka.common.record.CompressionType;
-import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.BookKeeperClientFactory;
 import org.apache.pulsar.broker.ManagedLedgerClientFactory;
 import org.apache.pulsar.broker.PulsarServerException;
@@ -47,16 +37,7 @@ import org.apache.pulsar.broker.service.schema.SchemaRegistryService;
 import org.apache.pulsar.broker.stats.MetricsGenerator;
 import org.apache.pulsar.broker.stats.prometheus.PrometheusMetricsServlet;
 import org.apache.pulsar.broker.web.WebService;
-import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.ProducerBuilder;
-import org.apache.pulsar.client.api.ReaderBuilder;
-import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.common.configuration.VipStatus;
-import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
-import org.apache.pulsar.common.policies.data.ClusterData;
-import org.apache.pulsar.common.policies.data.RetentionPolicies;
-import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.apache.pulsar.zookeeper.LocalZooKeeperConnectionService;
 import org.eclipse.jetty.servlet.ServletHolder;
 
@@ -105,8 +86,8 @@ public class KafkaService extends PulsarService {
                 throw new IllegalArgumentException("Kafka Listeners should be provided through brokerConf.listeners");
             }
 
-            if (kafkaConfig.getAdvertisedAddress() != null &&
-                !kafkaConfig.getListeners().contains(kafkaConfig.getAdvertisedAddress())) {
+            if (kafkaConfig.getAdvertisedAddress() != null
+                && !kafkaConfig.getListeners().contains(kafkaConfig.getAdvertisedAddress())) {
                 String err = "Error config: advertisedAddress - " + kafkaConfig.getAdvertisedAddress()
                     + " and listeners - " + kafkaConfig.getListeners() + " not match.";
                 log.error(err);

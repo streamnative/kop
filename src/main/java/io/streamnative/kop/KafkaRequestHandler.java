@@ -106,8 +106,6 @@ import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Utils;
-import org.apache.pulsar.broker.PulsarServerException;
-import org.apache.pulsar.broker.PulsarServerException.NotFoundException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.admin.impl.PersistentTopicsBase;
@@ -116,7 +114,6 @@ import org.apache.pulsar.broker.authentication.AuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authentication.AuthenticationState;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
-import org.apache.pulsar.broker.lookup.LookupResult;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
@@ -124,12 +121,10 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.PulsarClientException.AuthorizationException;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.api.AuthData;
-import org.apache.pulsar.common.lookup.data.LookupData;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.schema.KeyValue;
-import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 import org.apache.pulsar.zookeeper.ZooKeeperCache;
@@ -518,7 +513,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
 
         if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
-
             int partition = groupCoordinator.partitionFor(request.coordinatorKey());
             String pulsarTopicName = groupCoordinator.getTopicPartitonName(partition);
 
@@ -733,14 +727,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     // For non exist topics handleOffsetCommitRequest return UNKNOWN_TOPIC_OR_PARTITION
     private Map<TopicPartition, Errors> nonExistingTopicErrors(OffsetCommitRequest request) {
-        return request.offsetData().entrySet().stream()
-                .filter(entry ->
-                    // filter not exist topics
-                    !topicManager.topicExists(pulsarTopicName(entry.getKey(), namespace).toString()))
-                .collect(Collectors.toMap(
-                    e -> e.getKey(),
-                    e -> Errors.UNKNOWN_TOPIC_OR_PARTITION
-                ));
+        // TODO: in Kafka Metadata cache, all topics in the cluster is included, we should support it?
+        //       we could get all the topic info by listTopic?
+        //      https://github.com/streamnative/kop/issues/51
+        return Maps.newHashMap();
+//        return request.offsetData().entrySet().stream()
+//                .filter(entry ->
+//                    // filter not exist topics
+//                    !topicManager.topicExists(pulsarTopicName(entry.getKey(), namespace).toString()))
+//                .collect(Collectors.toMap(
+//                    e -> e.getKey(),
+//                    e -> Errors.UNKNOWN_TOPIC_OR_PARTITION
+//                ));
     }
 
     protected CompletableFuture<ResponseAndRequest> handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit) {
@@ -1145,7 +1143,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         String localListeners = kafkaConfig.getListeners();
 
                         if (log.isDebugEnabled()) {
-                            log.debug("Found broker listeners: {} for topicName: {}, localListeners: {}, found Listeners: {}",
+                            log.debug("Found broker listeners: {} for topicName: {}, "
+                                    + "localListeners: {}, found Listeners: {}",
                                 listeners, topic, localListeners, listeners);
                         }
 

@@ -68,6 +68,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public static final String TLS_HANDLER = "tls";
     public static final String LISTENER_PATTEN = "^(PLAINTEXT?|SSL)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-0-9+]";
 
+    /**
+     * Listener for the changing of topic that stores offsets of consumer group.
+     */
     public static class OffsetTopicListener implements NamespaceBundleOwnershipListener {
 
         final BrokerService service;
@@ -102,7 +105,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                             }
                         }
                     } else {
-                        log.error("Failed to get owned topic list for OffsetTopicListener when triggering on-loading bundle {}.", bundle, ex);
+                        log.error("Failed to get owned topic list for "
+                            + "OffsetTopicListener when triggering on-loading bundle {}.",
+                            bundle, ex);
                     }
                 });
         }
@@ -128,7 +133,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                             }
                         }
                     } else {
-                        log.error("Failed to get owned topic list for OffsetTopicListener when triggering un-loading bundle {}.", bundle, ex);
+                        log.error("Failed to get owned topic list for "
+                            + "OffsetTopicListener when triggering un-loading bundle {}.",
+                            bundle, ex);
                     }
                 });
         }

@@ -86,7 +86,8 @@ public class KafkaTopicManager {
                     } catch (Exception e) {
                         log.error("Failed to close cursor for topic {}. exception:",
                             pair.join().getLeft().getName(), e);
-                    }}));
+                    }
+                }));
     }
 
 }
