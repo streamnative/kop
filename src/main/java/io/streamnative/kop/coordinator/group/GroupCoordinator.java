@@ -43,6 +43,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -60,6 +61,7 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.common.schema.KeyValue;
@@ -179,6 +181,10 @@ public class GroupCoordinator {
 
     public String getTopicPartitonName(int partition) {
         return groupManager.getTopicPartitonName(partition);
+    }
+
+    public ConcurrentMap<Integer, Producer<ByteBuffer>> getOffsetsProducers() {
+        return groupManager.getOffsetsProducers();
     }
 
     public CompletableFuture<JoinGroupResult> handleJoinGroup(

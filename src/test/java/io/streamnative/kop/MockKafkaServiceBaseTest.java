@@ -81,11 +81,11 @@ public abstract class MockKafkaServiceBaseTest {
     protected URI lookupUrl;
     protected PulsarClient pulsarClient;
 
-    protected final int brokerWebservicePort = PortManager.nextFreePort();
-    protected final int brokerWebservicePortTls = PortManager.nextFreePort();
-    protected final int brokerPort = PortManager.nextFreePort();
-    protected final int kafkaBrokerPort = PortManager.nextFreePort();
-    protected final int kafkaBrokerPortTls = PortManager.nextFreePort();
+    protected int brokerWebservicePort = PortManager.nextFreePort();
+    protected int brokerWebservicePortTls = PortManager.nextFreePort();
+    protected int brokerPort = PortManager.nextFreePort();
+    protected int kafkaBrokerPort = PortManager.nextFreePort();
+    protected int kafkaBrokerPortTls = PortManager.nextFreePort();
 
     protected MockZooKeeper mockZookKeeper;
     protected NonClosableMockBookKeeper mockBookKeeper;
@@ -164,7 +164,7 @@ public abstract class MockKafkaServiceBaseTest {
                 pulsarClient.close();
             }
             if (kafkaService != null) {
-                kafkaService.close();
+                stopBroker();
             }
             if (mockBookKeeper != null) {
                 mockBookKeeper.reallyShutdown();
@@ -434,10 +434,10 @@ public abstract class MockKafkaServiceBaseTest {
 
         public KConsumer(
             String topic, String host, int port,
-            boolean autoCommit, String username, String password) {
+            boolean autoCommit, String username, String password, String consumerGroup) {
             Properties props = new Properties();
             props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
-            props.put(ConsumerConfig.GROUP_ID_CONFIG, "DemoKafkaOnPulsarConsumer");
+            props.put(ConsumerConfig.GROUP_ID_CONFIG, consumerGroup);
             if (autoCommit) {
                 props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
                 props.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, "1000");
@@ -467,15 +467,19 @@ public abstract class MockKafkaServiceBaseTest {
         }
 
         public KConsumer(String topic, int port, boolean autoCommit) {
-            this(topic, "localhost", port, autoCommit, null, null);
+            this(topic, "localhost", port, autoCommit, null, null, "DemoKafkaOnPulsarConsumer");
         }
 
         public KConsumer(String topic, String host, int port) {
-            this(topic, "localhost", port, false, null, null);
+            this(topic, "localhost", port, false, null, null, "DemoKafkaOnPulsarConsumer");
         }
 
         public KConsumer(String topic, int port) {
             this(topic, "localhost", port);
+        }
+
+        public KConsumer(String topic, int port, String group) {
+            this(topic, "localhost", port, false, null, null, group);
         }
 
         @Override

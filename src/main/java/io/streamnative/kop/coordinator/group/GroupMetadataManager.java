@@ -277,6 +277,10 @@ public class GroupMetadataManager {
         });
     }
 
+    public ConcurrentMap<Integer, Producer<ByteBuffer>> getOffsetsProducers() {
+        return offsetsProducers;
+    }
+
     public Iterable<GroupMetadata> currentGroups() {
         return groupMetadataCache.values();
     }

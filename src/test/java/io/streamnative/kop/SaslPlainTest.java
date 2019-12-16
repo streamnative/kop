@@ -125,7 +125,7 @@ public class SaslPlainTest extends MockKafkaServiceBaseTest {
         }
 
         KConsumer kConsumer = new KConsumer(KAFKA_TOPIC, "localhost", getKafkaBrokerPort(), false,
-            SIMPLE_USER + "/" + NAMESPACE, "token:" + userToken);
+            SIMPLE_USER + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
         kConsumer.getConsumer().subscribe(Collections.singleton(KAFKA_TOPIC));
 
         int i = 0;
