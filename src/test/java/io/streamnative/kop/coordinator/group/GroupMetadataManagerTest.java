@@ -1203,7 +1203,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitonName())
+            .topic(groupMetadataManager.getTopicPartitionName())
             .subscriptionName("test-sub")
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();
@@ -1263,7 +1263,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitonName())
+            .topic(groupMetadataManager.getTopicPartitionName())
             .subscriptionName("test-sub")
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();
@@ -1313,7 +1313,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitonName())
+            .topic(groupMetadataManager.getTopicPartitionName())
             .subscriptionName("test-sub")
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();
@@ -1385,7 +1385,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
     public void testCommitOffset() throws Exception {
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitonName())
+            .topic(groupMetadataManager.getTopicPartitionName())
             .subscriptionName("test-sub")
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();
@@ -1455,7 +1455,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
     public void testTransactionalCommitOffsetCommitted() throws Exception {
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitonName())
+            .topic(groupMetadataManager.getTopicPartitionName())
             .subscriptionName("test-sub")
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();
@@ -1518,7 +1518,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
     public void testTransactionalCommitOffsetAppendFailure() throws Exception {
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitonName())
+            .topic(groupMetadataManager.getTopicPartitionName())
             .subscriptionName("test-sub")
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();
@@ -1578,7 +1578,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
     public void testTransactionalCommitOffsetAborted() throws Exception {
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitonName())
+            .topic(groupMetadataManager.getTopicPartitionName())
             .subscriptionName("test-sub")
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();
@@ -1635,7 +1635,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
     public void testExpiredOffset() throws Exception {
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitonName())
+            .topic(groupMetadataManager.getTopicPartitionName())
             .subscriptionName("test-sub")
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();
@@ -1691,7 +1691,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
     public void testGroupMetadataRemoval() throws Exception {
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitonName())
+            .topic(groupMetadataManager.getTopicPartitionName())
             .subscriptionName("test-sub")
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();
@@ -1756,7 +1756,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
     public void testExpireGroupWithOffsetsOnly() throws Exception {
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitonName())
+            .topic(groupMetadataManager.getTopicPartitionName())
             .subscriptionName("test-sub")
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();
@@ -1844,7 +1844,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
     public void testExpireOffsetsWithActiveGroup() throws Exception {
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitonName())
+            .topic(groupMetadataManager.getTopicPartitionName())
             .subscriptionName("test-sub")
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();

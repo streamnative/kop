@@ -514,7 +514,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
             int partition = groupCoordinator.partitionFor(request.coordinatorKey());
-            String pulsarTopicName = groupCoordinator.getTopicPartitonName(partition);
+            String pulsarTopicName = groupCoordinator.getTopicPartitionName(partition);
 
             findBroker(pulsarService, TopicName.get(pulsarTopicName))
                 .thenApply(partitionMetadata -> partitionMetadata.leader())

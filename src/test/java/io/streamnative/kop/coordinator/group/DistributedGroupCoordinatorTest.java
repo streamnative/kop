@@ -231,7 +231,7 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
         assertEquals(i, numMessages);
     }
 
-    @Test(timeOut = 40000)
+    @Test(timeOut = 60000)
     public void testMutiCoordinator() throws Exception {
         int partitionNumber = 10;
         String kafkaTopicName = "kopKafkaProduceKafkaConsume" + partitionNumber;

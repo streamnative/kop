@@ -179,8 +179,8 @@ public class GroupCoordinator {
         return groupManager.partitionFor(coordinatorKey);
     }
 
-    public String getTopicPartitonName(int partition) {
-        return groupManager.getTopicPartitonName(partition);
+    public String getTopicPartitionName(int partition) {
+        return groupManager.getTopicPartitionName(partition);
     }
 
     public ConcurrentMap<Integer, Producer<ByteBuffer>> getOffsetsProducers() {

@@ -306,11 +306,11 @@ public class GroupMetadataManager {
         return partitioner.apply(groupId);
     }
 
-    public String getTopicPartitonName() {
+    public String getTopicPartitionName() {
         return offsetConfig.offsetsTopicName();
     }
 
-    public String getTopicPartitonName(int partitionId) {
+    public String getTopicPartitionName(int partitionId) {
         return offsetConfig.offsetsTopicName() + PARTITIONED_TOPIC_SUFFIX + partitionId;
     }
 

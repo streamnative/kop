@@ -93,11 +93,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     if (ex == null) {
                         for (String topic : topics) {
                             TopicName name = TopicName.get(topic);
-                            checkState(name.isPartitioned(),
-                                "OffsetTopic should be partitioned in onLoad, but get " + name);
-
                             // already filtered namespace, check the local name without partition
                             if (Topic.GROUP_METADATA_TOPIC_NAME.equals(getKafkaTopicNameFromPulsarTopicname(name))) {
+                                checkState(name.isPartitioned(),
+                                    "OffsetTopic should be partitioned in onLoad, but get " + name);
                                 if (log.isDebugEnabled()) {
                                     log.debug("New offset partition load:  ", name);
                                 }
@@ -278,9 +277,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         if (groupCoordinator != null) {
             groupCoordinator.shutdown();
         }
-
-        // TODO: kafkaTopicManager.close
-        // close related producer/consumer connections
     }
 
     public void initGroupCoordinator(BrokerService service) throws Exception {
