@@ -198,8 +198,7 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
                 messageStr);
 
             kProducer.getProducer()
-                .send(record)
-                .get();
+                .send(record);
             if (log.isDebugEnabled()) {
                 log.debug("Kafka Producer Sent message with header: ({}, {})", i, messageStr);
             }
@@ -232,7 +231,7 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
         assertEquals(i, numMessages);
     }
 
-    @Test
+    @Test(timeOut = 40000)
     public void testMutiCoordinator() throws Exception {
         int partitionNumber = 10;
         String kafkaTopicName = "kopKafkaProduceKafkaConsume" + partitionNumber;
@@ -242,7 +241,7 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
         kafkaService.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
 
         // 1. produce message with Kafka producer.
-        int totalMsgs = 100;
+        int totalMsgs = 50;
         String messageStrPrefix = "Message_Kop_KafkaProduceKafkaConsume_" + partitionNumber + "_";
         @Cleanup
         KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort());

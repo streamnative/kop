@@ -112,7 +112,7 @@ public class SaslPlainTest extends MockKafkaServiceBaseTest {
         super.internalCleanup();
     }
 
-    @Test(timeOut = 20000)
+    @Test(timeOut = 40000)
     void simpleProduceAndConsume() throws Exception {
         KProducer kProducer = new KProducer(KAFKA_TOPIC, false, "localhost", getKafkaBrokerPort(),
             SIMPLE_USER + "/" + NAMESPACE, "token:" + userToken);
@@ -121,7 +121,7 @@ public class SaslPlainTest extends MockKafkaServiceBaseTest {
 
         for (int i = 0; i < totalMsgs; i++) {
             String messageStr = messageStrPrefix + i;
-            kProducer.getProducer().send(new ProducerRecord<>(KAFKA_TOPIC, i, messageStr)).get();
+            kProducer.getProducer().send(new ProducerRecord<>(KAFKA_TOPIC, i, messageStr));
         }
 
         KConsumer kConsumer = new KConsumer(KAFKA_TOPIC, "localhost", getKafkaBrokerPort(), false,
@@ -147,8 +147,8 @@ public class SaslPlainTest extends MockKafkaServiceBaseTest {
         Map<String, List<PartitionInfo>> result = kConsumer
             .getConsumer().listTopics(Duration.ofSeconds(1));
         assertEquals(result.size(), 1);
-        assertTrue(result.containsKey(KAFKA_TOPIC), "list of topics "
-            + result.keySet().toString() + "  does not contains " + KAFKA_TOPIC);
+        assertTrue(result.containsKey(KAFKA_TOPIC),
+            "list of topics " + result.keySet().toString() + "  does not contains " + KAFKA_TOPIC);
     }
 
     @Test(timeOut = 20000)
