@@ -187,6 +187,10 @@ public class GroupCoordinator {
         return groupManager.getOffsetsProducers();
     }
 
+    public GroupMetadataManager getGroupManager() {
+        return groupManager;
+    }
+
     public CompletableFuture<JoinGroupResult> handleJoinGroup(
         String groupId,
         String memberId,

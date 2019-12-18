@@ -52,8 +52,6 @@ import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.ProducerBuilder;
-import org.apache.pulsar.client.api.PulsarClient;
-import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
@@ -70,8 +68,6 @@ import org.testng.annotations.Test;
  */
 public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
 
-    private static final String ClientId = "consumer-test";
-    private static final String ClientHost = "localhost";
     private static final int ConsumerMinSessionTimeout = 10;
     private static final int ConsumerMaxSessionTimeout = 10000;
     private static final int DefaultRebalanceTimeout = 500;
@@ -196,14 +192,6 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
         // add the partition into the owned partition list
         groupPartitionId = groupMetadataManager.partitionFor(groupId);
         groupMetadataManager.addPartitionOwnership(groupPartitionId);
-    }
-
-    @Override
-    protected PulsarClient newPulsarClient(String url, int intervalInSecs) throws PulsarClientException {
-        return PulsarClient.builder().serviceUrl(url).statsInterval(intervalInSecs, TimeUnit.SECONDS)
-            .ioThreads(10)
-            .connectionsPerBroker(10)
-            .build();
     }
 
     @AfterMethod
