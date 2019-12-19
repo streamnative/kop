@@ -227,7 +227,7 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
                 i++;
             }
         }
-        kConsumer.getConsumer().commitSync();
+        kConsumer.getConsumer().commitAsync();
         assertEquals(i, numMessages);
     }
 
