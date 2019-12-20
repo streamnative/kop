@@ -107,14 +107,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
     OffsetConfig offsetConfig = OffsetConfig.builder().build();
     OrderedScheduler scheduler;
 
-    @Override
-    protected void resetConfig() {
-        super.resetConfig();
-        // since this test mock all Group Coordinator, we disable the one in Kafka broker.
-        this.conf.setOffsetsTopicNumPartitions(1);
-        this.conf.setEnableGroupCoordinator(true);
-    }
-
     @BeforeMethod
     @Override
     public void setup() throws Exception {
@@ -1199,8 +1191,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testStoreEmptyGroup() throws Exception {
-        final String topicName = "test-store-empty-group";
-
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
             .topic(groupMetadataManager.getTopicPartitionName())
@@ -1225,6 +1215,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         assertEquals(Errors.NONE, errors);
 
         Message<ByteBuffer> message = consumer.receive();
+        // bypass above place holder message.
+        message = consumer.receive();
         assertTrue(message.getEventTime() > 0L);
         assertTrue(message.hasKey());
         byte[] key = message.getKeyBytes();
@@ -1259,8 +1251,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testStoreEmptySimpleGroup() throws Exception {
-        final String topicName = "test-store-empty-simple-group";
-
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
             .topic(groupMetadataManager.getTopicPartitionName())
@@ -1274,6 +1264,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         assertEquals(Errors.NONE, errors);
 
         Message<ByteBuffer> message = consumer.receive();
+        // bypass above place holder message.
+        message = consumer.receive();
         assertTrue(message.getEventTime() > 0L);
         assertTrue(message.hasKey());
         byte[] key = message.getKeyBytes();
@@ -1308,9 +1300,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
     @Test
     public void testStoreNoneEmptyGroup() throws Exception {
-        final String topicName = "test-store-non-empty-group";
-
-
         @Cleanup
         Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
             .topic(groupMetadataManager.getTopicPartitionName())
@@ -1348,6 +1337,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         assertEquals(Errors.NONE, errors);
 
         Message<ByteBuffer> message = consumer.receive();
+        // bypass above place holder message.
+        message = consumer.receive();
         assertTrue(message.getEventTime() > 0L);
         assertTrue(message.hasKey());
         byte[] key = message.getKeyBytes();
@@ -1389,7 +1380,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
             .subscriptionName("test-sub")
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();
-        String memberId = "";
+        String memberId = "fakeMemberId";
         TopicPartition topicPartition = new TopicPartition("foo", 0);
         groupMetadataManager.addPartitionOwnership(groupPartitionId);
         long offset = 37L;
@@ -1422,6 +1413,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         assertEquals(offset, maybePartitionResponse.offset);
 
         Message<ByteBuffer> message = consumer.receive();
+        // bypass above place holder message.
+        message = consumer.receive();
         assertTrue(message.getEventTime() > 0L);
         assertTrue(message.hasKey());
         byte[] key = message.getKeyBytes();
@@ -1707,6 +1700,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         groupMetadataManager.cleanupGroupMetadata().get();
 
         Message<ByteBuffer> message = consumer.receive();
+        // bypass above place holder message.
+        message = consumer.receive();
         assertTrue(message.getEventTime() > 0L);
         assertTrue(message.hasKey());
         byte[] key = message.getKeyBytes();
@@ -1795,6 +1790,8 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         consumer.receive();
 
         Message<ByteBuffer> message = consumer.receive();
+        // bypass above place holder message.
+        message = consumer.receive();
         assertTrue(message.getEventTime() > 0L);
         assertTrue(message.hasKey());
         byte[] key = message.getKeyBytes();

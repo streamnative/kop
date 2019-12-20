@@ -63,6 +63,7 @@ import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
+import org.apache.pulsar.client.api.Reader;
 import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
@@ -185,6 +186,10 @@ public class GroupCoordinator {
 
     public ConcurrentMap<Integer, Producer<ByteBuffer>> getOffsetsProducers() {
         return groupManager.getOffsetsProducers();
+    }
+
+    public ConcurrentMap<Integer, Reader<ByteBuffer>> getOffsetsReaders() {
+        return groupManager.getOffsetsReaders();
     }
 
     public GroupMetadataManager getGroupManager() {
@@ -912,14 +917,8 @@ public class GroupCoordinator {
             return Optional.of(Errors.COORDINATOR_NOT_AVAILABLE);
         } else if (groupManager.isGroupLoading(groupId)) {
             return Optional.of(Errors.COORDINATOR_LOAD_IN_PROGRESS);
-        // TODO: make group coordinator running in distributed mode.
-        // https://github.com/streamnative/kop/issues/32
-        //        } else if (!groupManager.isGroupLocal(groupId)
-        //            && api != ApiKeys.JOIN_GROUP // first time join, group may not persisted.
-        //            && api != ApiKeys.SYNC_GROUP
-        //            && api != ApiKeys.OFFSET_FETCH) {
-        //            return Optional.of(Errors.NOT_COORDINATOR);
-        //        }
+        } else if (!groupManager.isGroupLocal(groupId)) {
+            return Optional.of(Errors.NOT_COORDINATOR);
         } else {
             return Optional.empty();
         }
@@ -979,6 +978,7 @@ public class GroupCoordinator {
         });
     }
 
+    // TODO: need create all related partitions fist?
     public CompletableFuture<Void> handleGroupImmigration(int offsetTopicPartitionId) {
         return groupManager.scheduleLoadGroupAndOffsets(
             offsetTopicPartitionId,

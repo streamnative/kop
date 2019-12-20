@@ -274,7 +274,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
         JoinGroupResult joinGroupResult = joinGroup(
             otherGroupId, memberId, protocolType, protocols
         );
-        assertEquals(Errors.NONE, joinGroupResult.getError());
+        assertEquals(Errors.NOT_COORDINATOR, joinGroupResult.getError());
     }
 
     @Test
@@ -383,7 +383,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
     @Test
     public void testHeartbeatWrongCoordinator() throws Exception {
         Errors error = groupCoordinator.handleHeartbeat(otherGroupId, memberId, -1).get();
-        assertEquals(Errors.UNKNOWN_MEMBER_ID, error);
+        assertEquals(Errors.NOT_COORDINATOR, error);
     }
 
     @Test
@@ -731,8 +731,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
         assertEquals(Errors.NONE, heartbeatResult);
     }
 
-    @Test(enabled = false)
-    // TODO: https://github.com/streamnative/kop/issues/32
+    @Test
     public void testSyncGroupOtherGroupId() throws Exception {
         int generation = 1;
         KeyValue<Errors, byte[]> syncGroupResult = groupCoordinator.handleSyncGroup(
@@ -1536,8 +1535,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
         assertEquals(OffsetFetchResponse.INVALID_OFFSET, fetchOffsetsResult.getValue().get(tp).offset);
     }
 
-    @Test(enabled = false)
-    // TODO: https://github.com/streamnative/kop/issues/32
+    @Test
     public void testFetchOffsetNotCoordinatorForGroup() {
         TopicPartition tp = new TopicPartition("topic", 0);
         KeyValue<Errors, Map<TopicPartition, PartitionData>> fetchOffsetsResult =
@@ -1672,7 +1670,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
         Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(
             otherGroupId, JoinGroupRequest.UNKNOWN_MEMBER_ID
         ).get();
-        assertEquals(Errors.UNKNOWN_MEMBER_ID, leaveGroupResult);
+        assertEquals(Errors.NOT_COORDINATOR, leaveGroupResult);
     }
 
     @Test
@@ -1758,7 +1756,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
     @Test
     public void testDescribeGroupWrongCoordinator() {
         KeyValue<Errors, GroupSummary> describeGroupResult = groupCoordinator.handleDescribeGroup(otherGroupId);
-        assertEquals(Errors.NONE, describeGroupResult.getKey());
+        assertEquals(Errors.NOT_COORDINATOR, describeGroupResult.getKey());
     }
 
     @Test

@@ -15,8 +15,10 @@ package io.streamnative.kop;
 
 import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
+import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
@@ -27,8 +29,10 @@ import io.streamnative.kop.utils.ConfigurationUtils;
 import io.streamnative.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +58,7 @@ import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
+import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Kafka Protocol Handler load and run by Pulsar Service.
@@ -80,7 +85,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                    KafkaServiceConfiguration kafkaConfig,
                                    GroupCoordinator groupCoordinator) {
             this.service = service;
-            this.kafkaMetaNs = NamespaceName.get(kafkaConfig.getKafkaTenant(), kafkaConfig.getKafkaNamespace());
+            this.kafkaMetaNs = NamespaceName
+                .get(kafkaConfig.getKafkaMetadataTenant(), kafkaConfig.getKafkaMetadataNamespace());
             this.groupCoordinator = groupCoordinator;
         }
 
@@ -98,7 +104,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                 checkState(name.isPartitioned(),
                                     "OffsetTopic should be partitioned in onLoad, but get " + name);
                                 if (log.isDebugEnabled()) {
-                                    log.debug("New offset partition load:  ", name);
+                                    log.debug("New offset partition load:  {}, broker: {}",
+                                        name, service.pulsar().getBrokerServiceUrl());
                                 }
                                 groupCoordinator.handleGroupImmigration(name.getPartitionIndex());
                             }
@@ -120,13 +127,14 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     if (ex == null) {
                         for (String topic : topics) {
                             TopicName name = TopicName.get(topic);
-                            checkState(name.isPartitioned(),
-                                "OffsetTopic should be partitioned in unLoad, but get " + name);
 
                             // already filtered namespace, check the local name without partition
                             if (Topic.GROUP_METADATA_TOPIC_NAME.equals(getKafkaTopicNameFromPulsarTopicname(name))) {
+                                checkState(name.isPartitioned(),
+                                    "OffsetTopic should be partitioned in unLoad, but get " + name);
                                 if (log.isDebugEnabled()) {
-                                    log.debug("New offset partition unLoad:  ", name);
+                                    log.debug("Offset partition unload:  {}, broker: {}",
+                                        name, service.pulsar().getBrokerServiceUrl());
                                 }
                                 groupCoordinator.handleGroupEmigration(name.getPartitionIndex());
                             }
@@ -318,6 +326,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 .build(),
             Time.SYSTEM
         );
+
+        loadOffsetTopics(groupCoordinator);
     }
 
     public void startGroupCoordinator() throws Exception {
@@ -377,11 +387,37 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 offsetsTopic,
                 kafkaConfig.getOffsetsTopicNumPartitions()
             );
+            for (int i = 0; i < kafkaConfig.getOffsetsTopicNumPartitions(); i++) {
+                service.pulsar().getAdminClient().topics()
+                    .createNonPartitionedTopic(offsetsTopic + PARTITIONED_TOPIC_SUFFIX + i);
+            }
             log.info("Successfully created group metadata topic {} with {} partitions.",
                 offsetsTopic, kafkaConfig.getOffsetsTopicNumPartitions());
         }
 
         return offsetsTopic;
+    }
+
+    private void loadOffsetTopics(GroupCoordinator groupCoordinator) throws Exception {
+        String offsetsTopic = kafkaConfig.getKafkaMetadataTenant() + "/" + kafkaConfig.getKafkaMetadataNamespace()
+            + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
+        int numPartitions = kafkaConfig.getOffsetsTopicNumPartitions();
+        List<CompletableFuture<Void>> lists = Lists.newArrayListWithExpectedSize(numPartitions);
+        for (int i = 0; i < numPartitions; i++) {
+            String partition = offsetsTopic + PARTITIONED_TOPIC_SUFFIX + i;
+            String broker = brokerService.pulsar().getAdminClient().lookups()
+                .lookupTopic(partition);
+
+            if (log.isDebugEnabled()) {
+                log.debug("found broker {} for offset topic partition {}. current broker: {}",
+                    broker, partition, brokerService.pulsar().getBrokerServiceUrl());
+            }
+
+            if (broker.equalsIgnoreCase(brokerService.pulsar().getBrokerServiceUrl())) {
+                lists.add(groupCoordinator.handleGroupImmigration(i));
+            }
+        }
+        FutureUtil.waitForAll(lists).get();
     }
 
     public static int getListenerPort(String listener) {

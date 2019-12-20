@@ -115,6 +115,7 @@ public abstract class MockKafkaServiceBaseTest {
         this.conf.setZookeeperServers("localhost:2181");
         this.conf.setConfigurationStoreServers("localhost:3181");
         this.conf.setEnableGroupCoordinator(true);
+        this.conf.setOffsetsTopicNumPartitions(1);
         this.conf.setAuthenticationEnabled(false);
         this.conf.setAuthorizationEnabled(false);
         this.conf.setAllowAutoTopicCreation(true);
@@ -431,6 +432,7 @@ public abstract class MockKafkaServiceBaseTest {
     public static class KConsumer implements Closeable {
         private final KafkaConsumer<Integer, String> consumer;
         private final String topic;
+        private final String consumerGroup;
 
         public KConsumer(
             String topic, String host, int port,
@@ -438,13 +440,12 @@ public abstract class MockKafkaServiceBaseTest {
             Properties props = new Properties();
             props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             props.put(ConsumerConfig.GROUP_ID_CONFIG, consumerGroup);
+            props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             if (autoCommit) {
                 props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
                 props.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, "1000");
-                props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             } else {
                 props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-                props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
 
             if (null != username && null != password) {
@@ -464,6 +465,7 @@ public abstract class MockKafkaServiceBaseTest {
 
             this.consumer = new KafkaConsumer<>(props);
             this.topic = topic;
+            this.consumerGroup = consumerGroup;
         }
 
         public KConsumer(String topic, int port, boolean autoCommit) {

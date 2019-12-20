@@ -198,9 +198,11 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
                 messageStr);
 
             kProducer.getProducer()
-                .send(record);
+                .send(record)
+                .get();
             if (log.isDebugEnabled()) {
-                log.debug("Kafka Producer Sent message with header: ({}, {})", i, messageStr);
+                log.debug("Kafka Producer {} Sent message with header: ({}, {})",
+                    kProducer.getTopic(), i, messageStr);
             }
         }
     }
@@ -213,10 +215,11 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
         int i = 0;
         while (i < numMessages) {
             if (log.isDebugEnabled()) {
-                log.debug("start poll message: {}", i);
+                log.debug("kConsumer {} start poll message: {}",
+                    kConsumer.getTopic() + kConsumer.getConsumerGroup(), i);
             }
-            ConsumerRecords<Integer, String> records1 = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
-            for (ConsumerRecord<Integer, String> record : records1) {
+            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<Integer, String> record : records) {
                 Integer key = record.key();
                 assertEquals(messageStrPrefix + key.toString(), record.value());
 
@@ -227,15 +230,24 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
                 i++;
             }
         }
-        kConsumer.getConsumer().commitAsync();
+
+        kConsumer.getConsumer().commitSync();
+
+        if (log.isDebugEnabled()) {
+            log.debug("kConsumer {} finished poll and commit message: {}",
+                kConsumer.getTopic() + kConsumer.getConsumerGroup(), i);
+        }
         assertEquals(i, numMessages);
     }
 
-    @Test(timeOut = 60000)
-    public void testMutiCoordinator() throws Exception {
+    @Test(timeOut = 30000)
+    public void testMutiBrokerAndCoordinator() throws Exception {
         int partitionNumber = 10;
         String kafkaTopicName = "kopKafkaProduceKafkaConsume" + partitionNumber;
         String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
+
+        String offsetNs = conf.getKafkaMetadataTenant() + "/" + conf.getKafkaMetadataNamespace();
+        String offsetsTopicName = "persistent://" + offsetNs + "/" + GROUP_METADATA_TOPIC_NAME;
 
         // create partitioned topic.
         kafkaService.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
@@ -247,8 +259,8 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
         KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort());
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
 
-        // 2. create 2 kafka consumer from different consumer group.
-        //    consume data and commit offsets for 2 consumer group.
+        // 2. create 4 kafka consumer from different consumer groups.
+        //    consume data and commit offsets for 4 consumer group.
         @Cleanup
         KConsumer kConsumer1 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-1");
         @Cleanup
@@ -260,14 +272,16 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
 
         List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
             .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
-        log.info("Partition size: {}, will consume and commitOffset for 2 consumers", topicPartitions.size());
+
+        log.info("Partition size: {}, will consume and commitOffset for 2 consumers",
+            topicPartitions.size());
 
         kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
         kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
         kafkaConsumeCommitMessage(kConsumer3, totalMsgs, messageStrPrefix, topicPartitions);
         kafkaConsumeCommitMessage(kConsumer4, totalMsgs, messageStrPrefix, topicPartitions);
 
-        // 3. use a map for serving broker and topics <broker, topics>, verify both broker has messages produced.
+        // 3. use a map for serving broker and topics <broker, topics>, verify both broker has messages served.
         Map<String, List<String>> topicMap = Maps.newHashMap();
         for (int ii = 0; ii < partitionNumber; ii++) {
             String topicName = pulsarTopicName + PARTITIONED_TOPIC_SUFFIX + ii;
@@ -294,10 +308,8 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
             assertTrue(brokerStorageSize.get() > 0L);
         });
 
-        // 4. use a map for serving broker and offset topics <broker, topics>,
-        //    verify both broker has offset topic served.
+
         Map<String, List<String>> offsetTopicMap = Maps.newHashMap();
-        String offsetsTopicName = "persistent://public/default/" + GROUP_METADATA_TOPIC_NAME;
         for (int ii = 0; ii < offsetsTopicNumPartitions; ii++) {
             String offsetsTopic = offsetsTopicName + PARTITIONED_TOPIC_SUFFIX + ii;
             String result = admin.lookups().lookupTopic(offsetsTopic);
@@ -305,15 +317,20 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
             offsetTopicMap.get(result).add(offsetsTopic);
             log.info("serving broker for offset topic {} is {}", offsetsTopic, result);
         }
-        assertTrue(offsetTopicMap.size() == 2);
+        assertTrue(kafkaService1.getGroupCoordinator().getOffsetsProducers().size() ==  offsetsTopicNumPartitions);
 
-        assertTrue(kafkaService1.getGroupCoordinator().getOffsetsProducers().size() > 0);
-        assertTrue(kafkaService2.getGroupCoordinator().getOffsetsProducers().size() > 0);
-        log.info("size1: {}, size2: {}",
+        log.info("producer size1: {}, size2: {}",
             kafkaService1.getGroupCoordinator().getOffsetsProducers().size(),
             kafkaService2.getGroupCoordinator().getOffsetsProducers().size());
+        log.info("reader size1: {}, size2: {}",
+            kafkaService1.getGroupCoordinator().getOffsetsReaders().size(),
+            kafkaService2.getGroupCoordinator().getOffsetsReaders().size());
 
-        // no more records
+        // 4. unload ns, verify consumer group still keep the old offset, and consumers will poll no data.
+        log.info("Unload offest namespace, this will trigger another reload. After reload verify offset.");
+        kafkaService1.getAdminClient().namespaces().unload(offsetNs);
+
+        // verify offset be kept and no more records could read.
         ConsumerRecords<Integer, String> records = kConsumer1.getConsumer().poll(Duration.ofMillis(200));
         assertTrue(records.isEmpty());
         records = kConsumer2.getConsumer().poll(Duration.ofMillis(200));
@@ -322,6 +339,45 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
         assertTrue(records.isEmpty());
         records = kConsumer4.getConsumer().poll(Duration.ofMillis(200));
         assertTrue(records.isEmpty());
-    }
 
+
+        // 5. another round publish and consume after ns unload.
+        kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
+        kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer3, totalMsgs, messageStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer4, totalMsgs, messageStrPrefix, topicPartitions);
+
+        offsetTopicMap = Maps.newHashMap();
+        for (int ii = 0; ii < offsetsTopicNumPartitions; ii++) {
+            String offsetsTopic = offsetsTopicName + PARTITIONED_TOPIC_SUFFIX + ii;
+            String result = admin.lookups().lookupTopic(offsetsTopic);
+            offsetTopicMap.putIfAbsent(result, Lists.newArrayList());
+            offsetTopicMap.get(result).add(offsetsTopic);
+            log.info("serving broker for offset topic {} is {}", offsetsTopic, result);
+        }
+
+        log.info("producer size1: {}, size2: {}",
+            kafkaService1.getGroupCoordinator().getOffsetsProducers().size(),
+            kafkaService2.getGroupCoordinator().getOffsetsProducers().size());
+        log.info("reader size1: {}, size2: {}",
+            kafkaService1.getGroupCoordinator().getOffsetsReaders().size(),
+            kafkaService2.getGroupCoordinator().getOffsetsReaders().size());
+
+        assertTrue(kafkaService2.getGroupCoordinator().getOffsetsProducers().size() > 0);
+
+        // 6. unload ns, verify consumer group still keep the old offset, and consumers will poll no data.
+        log.info("Unload offest namespace, this will trigger another reload");
+        kafkaService1.getAdminClient().namespaces().unload(offsetNs);
+
+        // verify offset be kept and no more records could read.
+        records = kConsumer1.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+        records = kConsumer2.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+        records = kConsumer3.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+        records = kConsumer4.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+    }
 }
