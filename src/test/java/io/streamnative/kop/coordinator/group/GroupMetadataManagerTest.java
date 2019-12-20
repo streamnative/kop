@@ -1215,8 +1215,10 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         assertEquals(Errors.NONE, errors);
 
         Message<ByteBuffer> message = consumer.receive();
-        // bypass above place holder message.
-        message = consumer.receive();
+        while (message.getValue().array().length == 0) {
+            // bypass above place holder message.
+            message = consumer.receive();
+        }
         assertTrue(message.getEventTime() > 0L);
         assertTrue(message.hasKey());
         byte[] key = message.getKeyBytes();
@@ -1264,8 +1266,10 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         assertEquals(Errors.NONE, errors);
 
         Message<ByteBuffer> message = consumer.receive();
-        // bypass above place holder message.
-        message = consumer.receive();
+        while (message.getValue().array().length == 0) {
+            // bypass above place holder message.
+            message = consumer.receive();
+        }
         assertTrue(message.getEventTime() > 0L);
         assertTrue(message.hasKey());
         byte[] key = message.getKeyBytes();
@@ -1337,8 +1341,10 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         assertEquals(Errors.NONE, errors);
 
         Message<ByteBuffer> message = consumer.receive();
-        // bypass above place holder message.
-        message = consumer.receive();
+        while (message.getValue().array().length == 0) {
+            // bypass above place holder message.
+            message = consumer.receive();
+        }
         assertTrue(message.getEventTime() > 0L);
         assertTrue(message.hasKey());
         byte[] key = message.getKeyBytes();
@@ -1413,8 +1419,10 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         assertEquals(offset, maybePartitionResponse.offset);
 
         Message<ByteBuffer> message = consumer.receive();
-        // bypass above place holder message.
-        message = consumer.receive();
+        while (message.getValue().array().length == 0) {
+            // bypass above place holder message.
+            message = consumer.receive();
+        }
         assertTrue(message.getEventTime() > 0L);
         assertTrue(message.hasKey());
         byte[] key = message.getKeyBytes();
@@ -1700,8 +1708,10 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         groupMetadataManager.cleanupGroupMetadata().get();
 
         Message<ByteBuffer> message = consumer.receive();
-        // bypass above place holder message.
-        message = consumer.receive();
+        while (message.getValue().array().length == 0) {
+            // bypass above place holder message.
+            message = consumer.receive();
+        }
         assertTrue(message.getEventTime() > 0L);
         assertTrue(message.hasKey());
         byte[] key = message.getKeyBytes();
@@ -1786,12 +1796,13 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         groupMetadataManager.cleanupGroupMetadata().get();
 
-        // skip `storeOffsets` op
-        consumer.receive();
-
         Message<ByteBuffer> message = consumer.receive();
-        // bypass above place holder message.
-        message = consumer.receive();
+        // skip `storeOffsets` op, bypass place holder message.
+        while (!message.hasKey()
+            || GroupMetadataConstants.readMessageKey(ByteBuffer.wrap(message.getKeyBytes())) instanceof OffsetKey) {
+            message = consumer.receive();
+        }
+
         assertTrue(message.getEventTime() > 0L);
         assertTrue(message.hasKey());
         byte[] key = message.getKeyBytes();
@@ -1834,7 +1845,6 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         assertEquals(
             OffsetFetchResponse.INVALID_OFFSET,
             cachedOffsets.get(topicPartition2).offset);
-
     }
 
     @Test

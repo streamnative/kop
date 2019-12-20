@@ -240,17 +240,36 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
         assertEquals(i, numMessages);
     }
 
-    @Test(timeOut = 30000)
+    @Test(timeOut = 50000)
     public void testMutiBrokerAndCoordinator() throws Exception {
         int partitionNumber = 10;
-        String kafkaTopicName = "kopKafkaProduceKafkaConsume" + partitionNumber;
+        String kafkaTopicName = "kopMutiBrokerAndCoordinator" + partitionNumber;
         String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
 
         String offsetNs = conf.getKafkaMetadataTenant() + "/" + conf.getKafkaMetadataNamespace();
         String offsetsTopicName = "persistent://" + offsetNs + "/" + GROUP_METADATA_TOPIC_NAME;
 
+        // 0.  Preparing:
         // create partitioned topic.
-        kafkaService.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
+        kafkaService1.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
+        // Because kafkaService1 is start firstly. all the offset topics is served in broker1.
+        // In setting, each ns has 2 bundles. unload the first part, and this part will be served by broker2.
+        kafkaService1.getAdminClient().namespaces().unloadNamespaceBundle(offsetNs, "0x00000000_0x80000000");
+
+        // Offsets partitions should be served by 2 brokers now.
+        Map<String, List<String>> offsetTopicMap = Maps.newHashMap();
+        for (int ii = 0; ii < offsetsTopicNumPartitions; ii++) {
+            String offsetsTopic = offsetsTopicName + PARTITIONED_TOPIC_SUFFIX + ii;
+            String result = admin.lookups().lookupTopic(offsetsTopic);
+            offsetTopicMap.putIfAbsent(result, Lists.newArrayList());
+            offsetTopicMap.get(result).add(offsetsTopic);
+            log.info("serving broker for offset topic {} is {}", offsetsTopic, result);
+        }
+        assertEquals(offsetTopicMap.size(), 2);
+
+        final AtomicInteger numberTopic = new AtomicInteger(0);
+        offsetTopicMap.values().stream().forEach(list -> numberTopic.addAndGet(list.size()));
+        assertEquals(numberTopic.get(), offsetsTopicNumPartitions);
 
         // 1. produce message with Kafka producer.
         int totalMsgs = 50;
@@ -292,9 +311,9 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
         }
         assertTrue(topicMap.size() == 2);
 
-        AtomicInteger numberTopic = new AtomicInteger(0);
-        topicMap.values().stream().forEach(list -> numberTopic.addAndGet(list.size()));
-        assertTrue(numberTopic.get() == partitionNumber);
+        final AtomicInteger numberTopic2 = new AtomicInteger(0);
+        topicMap.values().stream().forEach(list -> numberTopic2.addAndGet(list.size()));
+        assertTrue(numberTopic2.get() == partitionNumber);
 
         final PartitionedTopicStats topicStats = admin.topics().getPartitionedStats(pulsarTopicName, true);
         log.info("PartitionedTopicStats for topic {} : {}",  pulsarTopicName, new Gson().toJson(topicStats));
@@ -307,46 +326,6 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
             log.info("get data topics served by broker {}, broker storage size: {}",  broker, brokerStorageSize.get());
             assertTrue(brokerStorageSize.get() > 0L);
         });
-
-
-        Map<String, List<String>> offsetTopicMap = Maps.newHashMap();
-        for (int ii = 0; ii < offsetsTopicNumPartitions; ii++) {
-            String offsetsTopic = offsetsTopicName + PARTITIONED_TOPIC_SUFFIX + ii;
-            String result = admin.lookups().lookupTopic(offsetsTopic);
-            offsetTopicMap.putIfAbsent(result, Lists.newArrayList());
-            offsetTopicMap.get(result).add(offsetsTopic);
-            log.info("serving broker for offset topic {} is {}", offsetsTopic, result);
-        }
-        assertTrue(kafkaService1.getGroupCoordinator().getOffsetsProducers().size() ==  offsetsTopicNumPartitions);
-
-        log.info("producer size1: {}, size2: {}",
-            kafkaService1.getGroupCoordinator().getOffsetsProducers().size(),
-            kafkaService2.getGroupCoordinator().getOffsetsProducers().size());
-        log.info("reader size1: {}, size2: {}",
-            kafkaService1.getGroupCoordinator().getOffsetsReaders().size(),
-            kafkaService2.getGroupCoordinator().getOffsetsReaders().size());
-
-        // 4. unload ns, verify consumer group still keep the old offset, and consumers will poll no data.
-        log.info("Unload offest namespace, this will trigger another reload. After reload verify offset.");
-        kafkaService1.getAdminClient().namespaces().unload(offsetNs);
-
-        // verify offset be kept and no more records could read.
-        ConsumerRecords<Integer, String> records = kConsumer1.getConsumer().poll(Duration.ofMillis(200));
-        assertTrue(records.isEmpty());
-        records = kConsumer2.getConsumer().poll(Duration.ofMillis(200));
-        assertTrue(records.isEmpty());
-        records = kConsumer3.getConsumer().poll(Duration.ofMillis(200));
-        assertTrue(records.isEmpty());
-        records = kConsumer4.getConsumer().poll(Duration.ofMillis(200));
-        assertTrue(records.isEmpty());
-
-
-        // 5. another round publish and consume after ns unload.
-        kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
-        kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
-        kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
-        kafkaConsumeCommitMessage(kConsumer3, totalMsgs, messageStrPrefix, topicPartitions);
-        kafkaConsumeCommitMessage(kConsumer4, totalMsgs, messageStrPrefix, topicPartitions);
 
         offsetTopicMap = Maps.newHashMap();
         for (int ii = 0; ii < offsetsTopicNumPartitions; ii++) {
@@ -364,10 +343,49 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
             kafkaService1.getGroupCoordinator().getOffsetsReaders().size(),
             kafkaService2.getGroupCoordinator().getOffsetsReaders().size());
 
+        // 4. unload ns, coordinator will be on another broker
+        //    verify consumer group still keep the old offset, and consumers will poll no data.
+        log.info("Unload offset namespace, this will trigger another reload. After reload verify offset.");
+        kafkaService1.getAdminClient().namespaces().unload(offsetNs);
+
+        // verify offset be kept and no more records could read.
+        ConsumerRecords<Integer, String> records = kConsumer1.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+        records = kConsumer2.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+        records = kConsumer3.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+        records = kConsumer4.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+
+        // 5. another round publish and consume after ns unload.
+        kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
+        kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer3, totalMsgs, messageStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer4, totalMsgs, messageStrPrefix, topicPartitions);
+
+        offsetTopicMap = Maps.newHashMap();
+        for (int ii = 0; ii < offsetsTopicNumPartitions; ii++) {
+            String offsetsTopic = offsetsTopicName + PARTITIONED_TOPIC_SUFFIX + ii;
+            String result = admin.lookups().lookupTopic(offsetsTopic);
+            offsetTopicMap.putIfAbsent(result, Lists.newArrayList());
+            offsetTopicMap.get(result).add(offsetsTopic);
+            log.info("serving broker for offset topic {} is {}", offsetsTopic, result);
+        }
+
+        log.info("producer broker 1 size : {}, broker 2 : {}",
+            kafkaService1.getGroupCoordinator().getOffsetsProducers().size(),
+            kafkaService2.getGroupCoordinator().getOffsetsProducers().size());
+        log.info("reader broker 1 size : {}, broker 2 : {}",
+            kafkaService1.getGroupCoordinator().getOffsetsReaders().size(),
+            kafkaService2.getGroupCoordinator().getOffsetsReaders().size());
+
         assertTrue(kafkaService2.getGroupCoordinator().getOffsetsProducers().size() > 0);
 
-        // 6. unload ns, verify consumer group still keep the old offset, and consumers will poll no data.
-        log.info("Unload offest namespace, this will trigger another reload");
+        // 6. unload ns, coordinator will be on another broker
+        //    verify consumer group still keep the old offset, and consumers will poll no data.
+        log.info("Unload offset namespace, this will trigger another reload");
         kafkaService1.getAdminClient().namespaces().unload(offsetNs);
 
         // verify offset be kept and no more records could read.

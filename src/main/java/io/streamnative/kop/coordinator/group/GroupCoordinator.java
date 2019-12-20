@@ -978,7 +978,6 @@ public class GroupCoordinator {
         });
     }
 
-    // TODO: need create all related partitions fist?
     public CompletableFuture<Void> handleGroupImmigration(int offsetTopicPartitionId) {
         return groupManager.scheduleLoadGroupAndOffsets(
             offsetTopicPartitionId,
