@@ -102,7 +102,7 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
 
     @Override
     protected void resetConfig() {
-        offsetsTopicNumPartitions = 8;
+        offsetsTopicNumPartitions = 16;
         primaryBrokerWebservicePort = PortManager.nextFreePort();
         secondaryBrokerWebservicePort = PortManager.nextFreePort();
         primaryBrokerPort = PortManager.nextFreePort();
@@ -240,7 +240,7 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
         assertEquals(i, numMessages);
     }
 
-    @Test(timeOut = 50000)
+    @Test(timeOut = 30000)
     public void testMutiBrokerAndCoordinator() throws Exception {
         int partitionNumber = 10;
         String kafkaTopicName = "kopMutiBrokerAndCoordinator" + partitionNumber;
@@ -292,7 +292,7 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
         List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
             .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
 
-        log.info("Partition size: {}, will consume and commitOffset for 2 consumers",
+        log.info("Partition size: {}, will consume and commitOffset for 4 consumers",
             topicPartitions.size());
 
         kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);

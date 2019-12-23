@@ -184,11 +184,11 @@ public class GroupCoordinator {
         return groupManager.getTopicPartitionName(partition);
     }
 
-    public ConcurrentMap<Integer, Producer<ByteBuffer>> getOffsetsProducers() {
+    public ConcurrentMap<Integer, CompletableFuture<Producer<ByteBuffer>>> getOffsetsProducers() {
         return groupManager.getOffsetsProducers();
     }
 
-    public ConcurrentMap<Integer, Reader<ByteBuffer>> getOffsetsReaders() {
+    public ConcurrentMap<Integer, CompletableFuture<Reader<ByteBuffer>>> getOffsetsReaders() {
         return groupManager.getOffsetsReaders();
     }
 

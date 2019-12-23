@@ -330,7 +330,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         ByteBuffer buffer = newMemoryRecordsBuffer(offsetCommitRecords);
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
@@ -380,7 +380,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         ByteBuffer buffer = newMemoryRecordsBuffer(offsetCommitRecords);
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
@@ -434,7 +434,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         buffer.flip();
 
         byte[] key = groupMetadataKey(groupId);
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
@@ -481,7 +481,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
@@ -517,7 +517,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         byte[] key = groupMetadataKey(groupId);
 
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
@@ -575,7 +575,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         byte[] key = groupMetadataKey(groupId);
 
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
@@ -646,7 +646,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
         byte[] key = groupMetadataKey(groupId);
 
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
@@ -730,7 +730,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
@@ -799,7 +799,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
@@ -882,7 +882,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
@@ -944,7 +944,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
@@ -1005,7 +1005,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
@@ -1059,7 +1059,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
@@ -1128,7 +1128,7 @@ public class GroupMetadataManagerTest extends MockKafkaServiceBaseTest {
 
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId);
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(segment1Buffer)
