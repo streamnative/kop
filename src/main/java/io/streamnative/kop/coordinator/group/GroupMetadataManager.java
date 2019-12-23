@@ -719,12 +719,13 @@ public class GroupMetadataManager {
                         lastMessageId, onGroupLoaded);
                 }, scheduler)
                 .whenCompleteAsync((ignored, cause) -> {
-                    if (null == cause) {
-                        log.info("Finished loading offsets and group metadata from {} in {} milliseconds",
-                            topicPartition, time.milliseconds() - startMs);
-                    } else {
+                    if (null != cause) {
                         log.error("Error loading offsets from {}", topicPartition, cause);
+                        removeLoadingPartition(offsetsPartition);
+                        return;
                     }
+                    log.info("Finished loading offsets and group metadata from {} in {} milliseconds",
+                        topicPartition, time.milliseconds() - startMs);
                     inLock(partitionLock, () -> {
                         ownedPartitions.add(offsetsPartition);
                         loadingPartitions.remove(offsetsPartition);

@@ -67,8 +67,19 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     }
 
     @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        super.channelInactive(ctx);
+        log.info("Closed connection from {}", remoteAddress);
+        close();
+    }
+
+    @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("[{}] Got exception: {}", remoteAddress, cause.getMessage(), cause);
+        close();
+    }
+
+    protected void close() {
         ctx.close();
     }
 
