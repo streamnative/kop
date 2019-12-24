@@ -45,12 +45,14 @@ import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.namespace.NamespaceBundleOwnershipListener;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
+import org.apache.pulsar.client.ReaderBuilderImpl2;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
+import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
@@ -312,9 +314,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         ProducerBuilder<ByteBuffer> groupCoordinatorTopicProducer = service.pulsar().getClient()
             .newProducer(Schema.BYTEBUFFER)
             .maxPendingMessages(100000);
-        ReaderBuilder<ByteBuffer> groupCoordinatorTopicReader = service.pulsar().getClient()
-            .newReader(Schema.BYTEBUFFER)
-            .startMessageId(MessageId.earliest);
+
+        // TODO: replace this back to service.pulsar().getClient().newReader after merge pulsar PR:
+        //  https://github.com/apache/pulsar/pull/5923
+        ReaderBuilder<ByteBuffer> groupCoordinatorTopicReader =
+            new ReaderBuilderImpl2<>((PulsarClientImpl) (service.pulsar().getClient()), Schema.BYTEBUFFER);
+        groupCoordinatorTopicReader.startMessageId(MessageId.earliest);
 
         this.groupCoordinator = GroupCoordinator.of(
             groupCoordinatorTopicProducer,
