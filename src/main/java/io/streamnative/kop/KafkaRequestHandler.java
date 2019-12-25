@@ -990,7 +990,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             Map<String, Set<AuthAction>> permissions = getAdmin()
                 .namespaces().getPermissions(saslAuth.getUsername());
             if (!permissions.containsKey(authRole)) {
-                throw new AuthorizationException("Not allowed on this namespace");
+                throw new AuthorizationException("Role: " +  authRole + " Not allowed on this namespace");
             }
 
             log.debug("successfully authenticate user " + authRole);
