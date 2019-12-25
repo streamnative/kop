@@ -80,7 +80,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         category = CATEGORY_KOP,
         doc = "Flag to enable group coordinator"
     )
-    private boolean enableGroupCoordinator = false;
+    private boolean enableGroupCoordinator = true;
 
     @FieldContext(
         category = CATEGORY_KOP,
@@ -115,7 +115,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
         category = CATEGORY_KOP,
-        doc = "The maximum size for a metadata entry associated with an offset commit"
+        doc = "The maximum size in Bytes for a metadata entry associated with an offset commit"
     )
     private int offsetMetadataMaxSize = OffsetConfig.DefaultMaxMetadataSize;
 
