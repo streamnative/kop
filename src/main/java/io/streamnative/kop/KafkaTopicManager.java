@@ -77,5 +77,17 @@ public class KafkaTopicManager {
         return topics.get(topicName);
     }
 
+    public void close() {
+        consumerTopics.values()
+            .forEach(manager -> manager.join().getConsumers().values()
+                .forEach(pair -> {
+                    try {
+                        pair.join().getLeft().close();
+                    } catch (Exception e) {
+                        log.error("Failed to close cursor for topic {}. exception:",
+                            pair.join().getLeft().getName(), e);
+                    }
+                }));
+    }
 
 }

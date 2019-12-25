@@ -51,8 +51,8 @@ import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.client.api.ProducerBuilder;
+import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.common.policies.data.ClusterData;
@@ -68,8 +68,6 @@ import org.testng.annotations.Test;
  */
 public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
 
-    private static final String ClientId = "consumer-test";
-    private static final String ClientHost = "localhost";
     private static final int ConsumerMinSessionTimeout = 10;
     private static final int ConsumerMaxSessionTimeout = 10000;
     private static final int DefaultRebalanceTimeout = 500;
@@ -83,8 +81,10 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
     String topicName;
     MockTimer timer = null;
     GroupCoordinator groupCoordinator = null;
-    Producer<ByteBuffer> producer;
-    Reader<ByteBuffer> reader;
+
+    ProducerBuilder<ByteBuffer> producerBuilder;
+    ReaderBuilder<ByteBuffer> readerBuilder;
+
     Consumer<ByteBuffer> consumer;
     OrderedScheduler scheduler;
     GroupMetadataManager groupMetadataManager;
@@ -127,15 +127,13 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
             ConsumerMaxSessionTimeout,
             GroupInitialRebalanceDelay
         );
-        OffsetConfig offsetConfig = OffsetConfig.builder().build();
+
+        topicName = "test-coordinator-" + System.currentTimeMillis();
+        OffsetConfig offsetConfig = OffsetConfig.builder().offsetsTopicName(topicName).build();
 
         timer = new MockTimer();
 
-        topicName = "test-coordinator-" + System.currentTimeMillis();
-
-        producer = pulsarClient.newProducer(Schema.BYTEBUFFER)
-            .topic(topicName)
-            .create();
+        producerBuilder = pulsarClient.newProducer(Schema.BYTEBUFFER);
 
         consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
             .topic(topicName)
@@ -143,19 +141,17 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .subscribe();
 
-        reader = pulsarClient.newReader(Schema.BYTEBUFFER)
-            .topic(topicName)
-            .startMessageId(MessageId.earliest)
-            .create();
+        readerBuilder = pulsarClient.newReader(Schema.BYTEBUFFER)
+            .startMessageId(MessageId.earliest);
 
         groupPartitionId = 0;
         otherGroupPartitionId = 1;
         otherGroupId = "otherGroupId";
+        offsetConfig.offsetsTopicNumPartitions(4);
         groupMetadataManager = spy(new GroupMetadataManager(
-            4,
             offsetConfig,
-            producer,
-            reader,
+            producerBuilder,
+            readerBuilder,
             scheduler,
             timer.time(),
             id -> {
@@ -203,8 +199,6 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
     public void cleanup() throws Exception {
         groupCoordinator.shutdown();
         groupMetadataManager.shutdown();
-        producer.close();
-        reader.close();
         consumer.close();
         scheduler.shutdown();
         super.internalCleanup();
@@ -280,7 +274,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
         JoinGroupResult joinGroupResult = joinGroup(
             otherGroupId, memberId, protocolType, protocols
         );
-        assertEquals(Errors.NONE, joinGroupResult.getError());
+        assertEquals(Errors.NOT_COORDINATOR, joinGroupResult.getError());
     }
 
     @Test
@@ -389,7 +383,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
     @Test
     public void testHeartbeatWrongCoordinator() throws Exception {
         Errors error = groupCoordinator.handleHeartbeat(otherGroupId, memberId, -1).get();
-        assertEquals(Errors.UNKNOWN_MEMBER_ID, error);
+        assertEquals(Errors.NOT_COORDINATOR, error);
     }
 
     @Test
@@ -737,8 +731,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
         assertEquals(Errors.NONE, heartbeatResult);
     }
 
-    @Test(enabled = false)
-    // TODO: https://github.com/streamnative/kop/issues/32
+    @Test
     public void testSyncGroupOtherGroupId() throws Exception {
         int generation = 1;
         KeyValue<Errors, byte[]> syncGroupResult = groupCoordinator.handleSyncGroup(
@@ -1542,8 +1535,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
         assertEquals(OffsetFetchResponse.INVALID_OFFSET, fetchOffsetsResult.getValue().get(tp).offset);
     }
 
-    @Test(enabled = false)
-    // TODO: https://github.com/streamnative/kop/issues/32
+    @Test
     public void testFetchOffsetNotCoordinatorForGroup() {
         TopicPartition tp = new TopicPartition("topic", 0);
         KeyValue<Errors, Map<TopicPartition, PartitionData>> fetchOffsetsResult =
@@ -1678,7 +1670,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
         Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(
             otherGroupId, JoinGroupRequest.UNKNOWN_MEMBER_ID
         ).get();
-        assertEquals(Errors.UNKNOWN_MEMBER_ID, leaveGroupResult);
+        assertEquals(Errors.NOT_COORDINATOR, leaveGroupResult);
     }
 
     @Test
@@ -1764,7 +1756,7 @@ public class GroupCoordinatorTest extends MockKafkaServiceBaseTest {
     @Test
     public void testDescribeGroupWrongCoordinator() {
         KeyValue<Errors, GroupSummary> describeGroupResult = groupCoordinator.handleDescribeGroup(otherGroupId);
-        assertEquals(Errors.NONE, describeGroupResult.getKey());
+        assertEquals(Errors.NOT_COORDINATOR, describeGroupResult.getKey());
     }
 
     @Test

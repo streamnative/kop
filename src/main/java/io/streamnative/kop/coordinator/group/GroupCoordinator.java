@@ -25,7 +25,6 @@ import static org.apache.kafka.common.record.RecordBatch.NO_PRODUCER_ID;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import io.streamnative.kop.KafkaServiceConfiguration;
 import io.streamnative.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.kop.offset.OffsetAndMetadata;
@@ -44,6 +43,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -62,7 +62,9 @@ import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 
@@ -73,8 +75,8 @@ import org.apache.pulsar.common.util.FutureUtil;
 public class GroupCoordinator {
 
     public static GroupCoordinator of(
-        Producer<ByteBuffer> producer,
-        Reader<ByteBuffer> reader,
+        ProducerBuilder<ByteBuffer> producer,
+        ReaderBuilder<ByteBuffer> reader,
         GroupConfig groupConfig,
         OffsetConfig offsetConfig,
         Timer timer,
@@ -85,7 +87,6 @@ public class GroupCoordinator {
             .build();
 
         GroupMetadataManager metadataManager = new GroupMetadataManager(
-            KafkaServiceConfiguration.DefaultOffsetsTopicNumPartitions,
             offsetConfig,
             producer,
             reader,
@@ -112,7 +113,6 @@ public class GroupCoordinator {
             time
         );
     }
-
 
     static final String NoState = "";
     static final String NoProtocolType = "";
@@ -176,6 +176,25 @@ public class GroupCoordinator {
         log.info("Shutdown group coordinator completely.");
     }
 
+    public int partitionFor(String coordinatorKey) {
+        return groupManager.partitionFor(coordinatorKey);
+    }
+
+    public String getTopicPartitionName(int partition) {
+        return groupManager.getTopicPartitionName(partition);
+    }
+
+    public ConcurrentMap<Integer, CompletableFuture<Producer<ByteBuffer>>> getOffsetsProducers() {
+        return groupManager.getOffsetsProducers();
+    }
+
+    public ConcurrentMap<Integer, CompletableFuture<Reader<ByteBuffer>>> getOffsetsReaders() {
+        return groupManager.getOffsetsReaders();
+    }
+
+    public GroupMetadataManager getGroupManager() {
+        return groupManager;
+    }
 
     public CompletableFuture<JoinGroupResult> handleJoinGroup(
         String groupId,
@@ -898,14 +917,8 @@ public class GroupCoordinator {
             return Optional.of(Errors.COORDINATOR_NOT_AVAILABLE);
         } else if (groupManager.isGroupLoading(groupId)) {
             return Optional.of(Errors.COORDINATOR_LOAD_IN_PROGRESS);
-        // TODO: make group coordinator running in distributed mode.
-        // https://github.com/streamnative/kop/issues/32
-        //        } else if (!groupManager.isGroupLocal(groupId)
-        //            && api != ApiKeys.JOIN_GROUP // first time join, group may not persisted.
-        //            && api != ApiKeys.SYNC_GROUP
-        //            && api != ApiKeys.OFFSET_FETCH) {
-        //            return Optional.of(Errors.NOT_COORDINATOR);
-        //        }
+        } else if (!groupManager.isGroupLocal(groupId)) {
+            return Optional.of(Errors.NOT_COORDINATOR);
         } else {
             return Optional.empty();
         }

@@ -235,7 +235,7 @@ public final class MessageFetchContext {
                         try {
                             Thread.sleep(waitTime);
                         } catch (Exception e) {
-                            log.error("Request {}: error while sleep.",
+                            log.info("Request {}: error while sleep, this is OK.",
                                 fetch.getHeader(), e);
                         }
 

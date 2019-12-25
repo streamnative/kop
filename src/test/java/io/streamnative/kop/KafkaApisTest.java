@@ -176,7 +176,8 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
         return kafkaRequestHandler.handleOffsetCommitRequest(request);
     }
 
-    @Test(timeOut = 20000)
+    @Test(timeOut = 20000, enabled = false)
+    // https://github.com/streamnative/kop/issues/51
     public void testOffsetCommitWithInvalidPartition() throws Exception {
         String topicName = "kopOffsetCommitWithInvalidPartition";
 
