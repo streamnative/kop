@@ -482,7 +482,7 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         kafkaService.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
 
         int totalMsgs = 10;
-        String messageStrPrefix = "Message_Kop_PulsarProduceKafkaConsume_" + partitionNumber + "_";
+        String messageStrPrefix = "Message_Kop_testTopicConsumerManager_" + partitionNumber + "_";
 
         ProducerBuilder<byte[]> producerBuilder = pulsarClient.newProducer()
             .topic(pulsarTopicName)

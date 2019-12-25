@@ -115,6 +115,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
         category = CATEGORY_KOP,
+        doc = "Number of partitions for the offsets topic"
+    )
+    private int offsetsTopicNumPartitions = DefaultOffsetsTopicNumPartitions;
+
+    @FieldContext(
+        category = CATEGORY_KOP,
         doc = "The maximum size in Bytes for a metadata entry associated with an offset commit"
     )
     private int offsetMetadataMaxSize = OffsetConfig.DefaultMaxMetadataSize;

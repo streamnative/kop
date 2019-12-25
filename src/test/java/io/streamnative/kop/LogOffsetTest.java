@@ -35,7 +35,8 @@ import org.testng.annotations.Test;
 @Slf4j
 public class LogOffsetTest extends KafkaApisTest {
 
-    @Test(timeOut = 20000)
+    @Test(timeOut = 20000, enabled = false)
+    // https://github.com/streamnative/kop/issues/51
     public void testGetOffsetsForUnknownTopic() throws Exception {
         String topicName = "kopTestGetOffsetsForUnknownTopic";
 
