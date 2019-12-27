@@ -1,22 +1,19 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package io.streamnative.kop;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -51,9 +48,17 @@ public class KopVersion {
                 int stopMinorVersion = matcher2.end(2);
                 int startReleaseCandidate = matcher2.start(3);
 
-                String prefix = new String(version.getBytes(), startMajorVersion, (stopMinorVersion-startMajorVersion));
+                String prefix = new String(
+                    version.getBytes(UTF_8),
+                    startMajorVersion,
+                    stopMinorVersion - startMajorVersion,
+                    UTF_8);
                 String patchVersion = ".0";
-                String suffix = new String(version.getBytes(), startReleaseCandidate, version.length() - startReleaseCandidate);
+                String suffix = new String(
+                    version.getBytes(UTF_8),
+                    startReleaseCandidate,
+                    version.length() - startReleaseCandidate,
+                    UTF_8);
 
                 return (prefix + patchVersion + suffix);
             } else {
