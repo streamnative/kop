@@ -213,6 +213,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public void start(BrokerService service) {
         brokerService = service;
 
+        log.info("Starting KafkaProtocolHandler, kop version is: '{}'", KopVersion.getVersion());
+        log.info("Git Revision {}", KopVersion.getGitSha());
+        log.info("Built by {} on {} at {}",
+            KopVersion.getBuildUser(),
+            KopVersion.getBuildHost(),
+            KopVersion.getBuildTime());
+
         // a topic Manager
         kafkaTopicManager = new KafkaTopicManager(service);
 
