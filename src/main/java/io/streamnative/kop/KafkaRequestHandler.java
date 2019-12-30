@@ -388,7 +388,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 allTopicMetadata.add(
                                     new TopicMetadata(
                                         Errors.NONE,
-                                        TopicName.get(topic).getLocalName(),
+                                        // we should answer with the right name, either local of full-name,
+                                        // depending on what was asked
+                                        topic.startsWith("persistent://") ?
+                                                TopicName.get(topic).toString(): TopicName.get(topic).getLocalName(),
                                         false,
                                         partitionMetadatas));
 

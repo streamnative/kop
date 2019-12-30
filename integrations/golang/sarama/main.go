@@ -28,12 +28,15 @@ func (h exampleConsumerGroupHandler) ConsumeClaim(sess sarama.ConsumerGroupSessi
 		if h.counter == h.limit {
 			fmt.Println("limit reached, exiting")
 			h.wg.Done()
+			return nil
 		}
 	}
 	return nil
 }
 
 func main() {
+
+	fmt.Println("starting...")
 
 	nbrMessages, err := strconv.Atoi(getEnv("KOP_NBR_MESSAGES", "10"))
 	if err != nil {
@@ -44,11 +47,22 @@ func main() {
 		panic(err)
 	}
 
+	shouldProduce, err := strconv.ParseBool(getEnv("KOP_PRODUCE", "false"))
+	if err != nil {
+		panic(err)
+	}
+
+	shouldConsume, err := strconv.ParseBool(getEnv("KOP_CONSUME", "false"))
+	if err != nil {
+		panic(err)
+	}
+
 	// Init config, specify appropriate version
 	config := sarama.NewConfig()
 	config.Version = sarama.V2_0_0_0
 	config.Metadata.Retry.Max = 0
 	config.Consumer.Return.Errors = true
+	config.Consumer.Offsets.Initial = sarama.OffsetOldest
 	config.Producer.Return.Successes = true
 	brokers := []string{getEnv("KOP_BROKER", "localhost:9092")}
 	topic := getEnv("KOP_TOPIC", "my-sarama-topic")
@@ -65,55 +79,58 @@ func main() {
 	defer func() { _ = client.Close() }()
 
 	var waitgroup sync.WaitGroup
-	waitgroup.Add(1)
+	if shouldConsume {
+		waitgroup.Add(1)
 
-	// Start a new consumer group
-	group, err := sarama.NewConsumerGroupFromClient("sarama-consumer", client)
-	if err != nil {
-		panic(err)
-	}
-	defer func() { _ = group.Close() }()
+		// Start a new consumer group
+		group, err := sarama.NewConsumerGroupFromClient("sarama-consumer", client)
+		if err != nil {
+			panic(err)
+		}
+		defer func() { _ = group.Close() }()
 
-	fmt.Println("ready to consume")
+		fmt.Println("ready to consume")
 
-	// Iterate over consumer sessions.
-	ctx := context.Background()
-	go func() {
+		// Iterate over consumer sessions.
+		ctx := context.Background()
 		handler := exampleConsumerGroupHandler{counter: 0, limit: limit, wg: &waitgroup}
 
-		err := group.Consume(ctx, topics, handler)
+		err = group.Consume(ctx, topics, handler)
 		if err != nil {
 			panic(err)
 		}
 
-	}()
-
-	syncProducer, err := sarama.NewSyncProducerFromClient(client)
-	if err != nil {
-		panic(err)
 	}
-	defer func() { _ = syncProducer.Close() }()
 
-	fmt.Println("starting to produce")
-
-	for i := 0; i < nbrMessages; i++ {
-		msg := &sarama.ProducerMessage{
-			Topic:    topic,
-			Value:    sarama.StringEncoder("hello from sarama"),
-			Metadata: "test",
-		}
-
-		fmt.Println("send a message")
-
-		_, _, err := syncProducer.SendMessage(msg)
+	if shouldProduce {
+		syncProducer, err := sarama.NewSyncProducerFromClient(client)
 		if err != nil {
 			panic(err)
 		}
-	}
-	fmt.Printf("produced %d messages, waiting for consumption...\n", nbrMessages)
+		defer func() { _ = syncProducer.Close() }()
 
+		fmt.Println("starting to produce")
+
+		for i := 0; i < nbrMessages; i++ {
+			msg := &sarama.ProducerMessage{
+				Topic:    topic,
+				Value:    sarama.StringEncoder("hello from sarama"),
+				Metadata: "test",
+			}
+
+			fmt.Println("send a message")
+
+			_, _, err := syncProducer.SendMessage(msg)
+			if err != nil {
+				panic(err)
+			}
+		}
+		fmt.Printf("produced all messages successfully (%d) \n", nbrMessages)
+
+	}
 	waitgroup.Wait()
 	fmt.Println("exiting normally")
+
 }
 
 func getEnv(key, fallback string) string {
