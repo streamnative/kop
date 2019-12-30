@@ -36,8 +36,6 @@ func (h exampleConsumerGroupHandler) ConsumeClaim(sess sarama.ConsumerGroupSessi
 
 func main() {
 
-	fmt.Println("starting...")
-
 	nbrMessages, err := strconv.Atoi(getEnv("KOP_NBR_MESSAGES", "10"))
 	if err != nil {
 		panic(err)
@@ -89,7 +87,7 @@ func main() {
 		}
 		defer func() { _ = group.Close() }()
 
-		fmt.Println("ready to consume")
+		fmt.Println("starting to consume")
 
 		// Iterate over consumer sessions.
 		ctx := context.Background()

@@ -1,4 +1,4 @@
-package io.streamnative.kop.integrations;
+package io.streamnative.kop;
 
 import com.google.common.collect.Sets;
 import io.streamnative.kop.MockKafkaServiceBaseTest;
@@ -26,15 +26,13 @@ import static org.testng.AssertJUnit.assertFalse;
 import static org.testng.AssertJUnit.assertTrue;
 
 @Slf4j
-public class GolangSaramaTest extends MockKafkaServiceBaseTest {
-
-    private static final String SHORT_TOPIC_NAME = "my-sarama-topic";
-    private static final String LONG_TOPIC_NAME = "persistent://public/default/my-sarama-topic-full-name";
+public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
 
     @DataProvider
-    public static Object[][] topics() {
-        return new Object[][]{
-                {SHORT_TOPIC_NAME}, {LONG_TOPIC_NAME}
+    public static Object[][] integrations() {
+        return new Object[][] {
+                {"golang-sarama", "my-sarama-topic"},
+                {"golang-sarama", "persistent://public/default/my-sarama-topic-full-name"},
         };
     }
 
@@ -73,38 +71,32 @@ public class GolangSaramaTest extends MockKafkaServiceBaseTest {
             admin.namespaces().setRetention("public/__kafka",
                     new RetentionPolicies(-1, -1));
         }
-        getAdmin().topics().createPartitionedTopic("persistent://public/default/" + SHORT_TOPIC_NAME, 1);
-        getAdmin().topics().createPartitionedTopic(LONG_TOPIC_NAME, 1);
-
-
         Testcontainers.exposeHostPorts(ImmutableMap.of(super.kafkaBrokerPort, super.kafkaBrokerPort));
     }
 
-    @Test(timeOut = 60_000, dataProvider = "topics")
-    void simpleProduceAndConsume(String topic) throws Exception {
+    @Test(timeOut = 60_000, dataProvider = "integrations")
+    void simpleProduceAndConsume(String integration, String topic) throws Exception {
+
+        getAdmin().topics().createPartitionedTopic(topic, 1);
 
         GenericContainer producer = new GenericContainer<>(
-                new ImageFromDockerfile().withFileFromPath(".", Paths.get("integrations/golang/sarama")));
-
-        GenericContainer consumer = new GenericContainer<>(
-                new ImageFromDockerfile().withFileFromPath(".", Paths.get("integrations/golang/sarama")));
-
-        producer
+                new ImageFromDockerfile().withFileFromPath(".", Paths.get("integrations/" + integration)))
                 .withEnv("KOP_BROKER", "localhost:" + super.kafkaBrokerPort)
                 .withEnv("KOP_PRODUCE", "true")
                 .withEnv("KOP_TOPIC", topic)
-                .waitingFor(
-                        Wait.forLogMessage("starting to produce\\n", 1)
-                )
+                .withEnv("KOP_NBR_MESSAGES", "10")
+                .withEnv("KOP_EXPECT_MESSAGES", "10")
+                .waitingFor(Wait.forLogMessage("starting to produce\\n", 1))
                 .withNetworkMode("host");
 
-        consumer
+        GenericContainer consumer = new GenericContainer<>(
+                new ImageFromDockerfile().withFileFromPath(".", Paths.get("integrations/" + integration)))
                 .withEnv("KOP_BROKER", "localhost:" + super.kafkaBrokerPort)
                 .withEnv("KOP_TOPIC", topic)
                 .withEnv("KOP_CONSUME", "true")
-                .waitingFor(
-                        Wait.forLogMessage("ready to consume\\n", 1)
-                )
+                .withEnv("KOP_NBR_MESSAGES", "10")
+                .withEnv("KOP_EXPECT_MESSAGES", "10")
+                .waitingFor(Wait.forLogMessage("starting to consume\\n", 1))
                 .withNetworkMode("host");
 
         producer.start();
@@ -149,7 +141,7 @@ public class GolangSaramaTest extends MockKafkaServiceBaseTest {
             assertTrue(logs.contains("produced all messages successfully"));
         }
 
-        if (logs.contains("ready to consume")) {
+        if (logs.contains("starting to consume")) {
             assertTrue(logs.contains("received msg"));
             assertTrue(logs.contains("limit reached, exiting"));
         }
