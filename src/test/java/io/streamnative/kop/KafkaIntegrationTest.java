@@ -1,7 +1,6 @@
 package io.streamnative.kop;
 
 import com.google.common.collect.Sets;
-import io.streamnative.kop.MockKafkaServiceBaseTest;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
@@ -31,8 +30,9 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
     @DataProvider
     public static Object[][] integrations() {
         return new Object[][] {
-                {"golang-sarama", "my-sarama-topic"},
-                {"golang-sarama", "persistent://public/default/my-sarama-topic-full-name"},
+                // {"golang-sarama", "my-sarama-topic"},
+                // {"golang-sarama", "persistent://public/default/my-sarama-topic-full-name"},
+                {"golang-confluent-kafka", "confluent-go"}
         };
     }
 
@@ -112,8 +112,8 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
         consumerWaitingConsumer.waitUntil(frame ->
                 frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
 
-        checkForSaramaErrors(producer.getLogs());
-        checkForSaramaErrors(consumer.getLogs());
+        checkForErrorsInLogs(producer.getLogs());
+        checkForErrorsInLogs(consumer.getLogs());
     }
 
     @Override
@@ -132,7 +132,7 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
         return waitingConsumer;
     }
 
-    private void checkForSaramaErrors(String logs) {
+    private void checkForErrorsInLogs(String logs) {
         assertFalse(logs.contains("no available broker to send metadata request to"));
         assertFalse(logs.contains("panic"));
         assertFalse(logs.contains("correlation ID didn't match"));

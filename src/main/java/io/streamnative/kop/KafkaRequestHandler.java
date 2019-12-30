@@ -41,6 +41,7 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -67,6 +68,7 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.internals.Topic;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordBatch;
@@ -201,11 +203,26 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     protected CompletableFuture<AbstractResponse> handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest) {
-        ApiVersionsResponse apiResponse = ApiVersionsResponse.defaultApiVersionsResponse();
+        AbstractResponse apiResponse = overloadDefaultApiVersionsResponse();
         CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
-
         resultFuture.complete(apiResponse);
         return resultFuture;
+    }
+
+    protected ApiVersionsResponse overloadDefaultApiVersionsResponse() {
+        List<ApiVersionsResponse.ApiVersion> versionList = new ArrayList<>();
+        for (ApiKeys apiKey : ApiKeys.values()) {
+            if (apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE) {
+                switch (apiKey) {
+                    case LIST_OFFSETS:
+                        versionList.add(new ApiVersionsResponse.ApiVersion((short) 2, (short) 1, apiKey.latestVersion()));
+                        break;
+                    default:
+                        versionList.add(new ApiVersionsResponse.ApiVersion(apiKey));
+                }
+            }
+        }
+        return new ApiVersionsResponse(0, Errors.NONE, versionList);
     }
 
     protected CompletableFuture<AbstractResponse> handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest) {
