@@ -40,13 +40,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.ByteBuffer;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -65,6 +59,7 @@ import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordBatch;
@@ -174,11 +169,27 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     protected CompletableFuture<ResponseAndRequest> handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest) {
-        AbstractResponse apiResponse = ApiVersionsResponse.defaultApiVersionsResponse();
+        AbstractResponse apiResponse = overloadDefaultApiVersionsResponse();
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
 
         resultFuture.complete(ResponseAndRequest.of(apiResponse, apiVersionRequest));
         return resultFuture;
+    }
+
+    protected ApiVersionsResponse overloadDefaultApiVersionsResponse() {
+        List<ApiVersionsResponse.ApiVersion> versionList = new ArrayList<>();
+        for (ApiKeys apiKey : ApiKeys.values()) {
+            if (apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE) {
+                switch (apiKey) {
+                    case LIST_OFFSETS:
+                        versionList.add(new ApiVersionsResponse.ApiVersion((short) 2, (short) 1, apiKey.latestVersion()));
+                        break;
+                    default:
+                        versionList.add(new ApiVersionsResponse.ApiVersion(apiKey));
+                }
+            }
+        }
+        return new ApiVersionsResponse(0, Errors.NONE, versionList);
     }
 
     protected CompletableFuture<ResponseAndRequest> handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest) {
