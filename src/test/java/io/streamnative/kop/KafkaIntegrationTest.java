@@ -8,7 +8,6 @@ import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.junit.AfterClass;
 import org.testcontainers.Testcontainers;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.containers.output.WaitingConsumer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.images.builder.ImageFromDockerfile;
@@ -20,7 +19,6 @@ import org.testng.annotations.Test;
 import java.nio.file.Paths;
 import java.util.concurrent.TimeUnit;
 
-import static org.testcontainers.containers.output.OutputFrame.OutputType.STDOUT;
 import static org.testng.AssertJUnit.assertFalse;
 import static org.testng.AssertJUnit.assertTrue;
 
@@ -30,9 +28,10 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
     @DataProvider
     public static Object[][] integrations() {
         return new Object[][] {
-                // {"golang-sarama", "my-sarama-topic"},
-                // {"golang-sarama", "persistent://public/default/my-sarama-topic-full-name"},
-                {"golang-confluent-kafka", "confluent-go"}
+                {"golang-sarama", "my-sarama-topic"},
+                {"golang-sarama", "persistent://public/default/my-sarama-topic-full-name"},
+                {"golang-confluent-kafka", "confluent-go"},
+                {"rustlang-rdkafka", "rustlang-topic"},
         };
     }
 
@@ -74,7 +73,7 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
         Testcontainers.exposeHostPorts(ImmutableMap.of(super.kafkaBrokerPort, super.kafkaBrokerPort));
     }
 
-    @Test(timeOut = 60_000, dataProvider = "integrations")
+    @Test(timeOut = 120_000, dataProvider = "integrations")
     void simpleProduceAndConsume(String integration, String topic) throws Exception {
 
         getAdmin().topics().createPartitionedTopic(topic, 1);
@@ -86,6 +85,7 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
                 .withEnv("KOP_TOPIC", topic)
                 .withEnv("KOP_NBR_MESSAGES", "10")
                 .withEnv("KOP_EXPECT_MESSAGES", "10")
+                .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(log))
                 .waitingFor(Wait.forLogMessage("starting to produce\\n", 1))
                 .withNetworkMode("host");
 
@@ -96,6 +96,7 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
                 .withEnv("KOP_CONSUME", "true")
                 .withEnv("KOP_NBR_MESSAGES", "10")
                 .withEnv("KOP_EXPECT_MESSAGES", "10")
+                .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(log))
                 .waitingFor(Wait.forLogMessage("starting to consume\\n", 1))
                 .withNetworkMode("host");
 
@@ -124,11 +125,8 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
 
 
     private WaitingConsumer createLogFollower(GenericContainer container) {
-        Slf4jLogConsumer logConsumer = new Slf4jLogConsumer(log);
-        container.followOutput(logConsumer);
         WaitingConsumer waitingConsumer = new WaitingConsumer();
-        container.followOutput(waitingConsumer, STDOUT);
-
+        container.followOutput(waitingConsumer);
         return waitingConsumer;
     }
 
@@ -136,6 +134,8 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
         assertFalse(logs.contains("no available broker to send metadata request to"));
         assertFalse(logs.contains("panic"));
         assertFalse(logs.contains("correlation ID didn't match"));
+        assertFalse(logs.contains("Required feature not supported by broker"));
+
 
         if (logs.contains("starting to produce")) {
             assertTrue(logs.contains("produced all messages successfully"));
