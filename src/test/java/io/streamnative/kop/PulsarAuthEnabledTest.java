@@ -101,7 +101,8 @@ public class PulsarAuthEnabledTest extends MockKafkaServiceBaseTest {
         getAdmin().tenants().createTenant(TENANT,
             new TenantInfo(Sets.newHashSet(ADMIN_USER), Sets.newHashSet(CLUSTER_NAME)));
         getAdmin().namespaces().createNamespace(TENANT + "/" + NAMESPACE);
-        getAdmin().namespaces().setNamespaceReplicationClusters(TENANT + "/" + NAMESPACE, Sets.newHashSet(CLUSTER_NAME));
+        getAdmin().namespaces()
+            .setNamespaceReplicationClusters(TENANT + "/" + NAMESPACE, Sets.newHashSet(CLUSTER_NAME));
         getAdmin().topics().createPartitionedTopic(PULSAR_TOPIC_NAME, 1);
         getAdmin().namespaces().grantPermissionOnNamespace(TENANT + "/" + NAMESPACE, ADMIN_USER,
             Sets.newHashSet(AuthAction.consume, AuthAction.produce));
