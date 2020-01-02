@@ -92,6 +92,7 @@ func main() {
 		for counter < limit {
 			msg, err := c.ReadMessage(-1)
 			if err == nil {
+				fmt.Println("received msg")
 				fmt.Printf("Message on %s: %s\n", msg.TopicPartition, string(msg.Value))
 				counter++
 			} else {

@@ -42,6 +42,7 @@ fn main() {
     );
 
     if should_produce {
+        println!("starting to produce");
         produce(brokers.as_ref(), topic.as_str(), nbr_messages_produced);
     }
     if should_consume {
@@ -150,14 +151,14 @@ fn consume_and_print(brokers: &str, group_id: &str, topics: Vec<&str>, limit: i8
 
     for message in message_stream.wait() {
         match message {
-            Err(_) => println!("Error while reading from stream."),
-            Ok(Err(e)) => println!("Kafka error: {}", e),
+            Err(_) => panic!("Error while reading from stream."),
+            Ok(Err(e)) => panic!("Kafka error: {}", e),
             Ok(Ok(m)) => {
                 let payload = match m.payload_view::<str>() {
                     None => "",
                     Some(Ok(s)) => s,
                     Some(Err(e)) => {
-                        println!("Error while deserializing message payload: {:?}", e);
+                        panic!("Error while deserializing message payload: {:?}", e);
                         ""
                     }
                 };
@@ -171,7 +172,7 @@ fn consume_and_print(brokers: &str, group_id: &str, topics: Vec<&str>, limit: i8
                 }
                 consumer.commit_message(&m, CommitMode::Sync).unwrap();
                 i += 1;
-                println!("i={}, limit={}", i, limit);
+                println!("received msg");
                 if i == limit {
                     println!("limit reached, exiting");
                     return;
