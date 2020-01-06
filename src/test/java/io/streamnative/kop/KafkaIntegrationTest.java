@@ -17,6 +17,7 @@ import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.nio.file.Paths;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import static org.testng.AssertJUnit.assertFalse;
@@ -28,10 +29,12 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
     @DataProvider
     public static Object[][] integrations() {
         return new Object[][] {
-                {"golang-sarama", "my-sarama-topic"},
-                {"golang-sarama", "persistent://public/default/my-sarama-topic-full-name"},
-                {"golang-confluent-kafka", "confluent-go"},
-                {"rustlang-rdkafka", "rustlang-topic"},
+                {"golang-sarama", Optional.empty(), true, true},
+                {"golang-sarama", Optional.of("persistent://public/default/my-sarama-topic-full-name"), true, true},
+                {"golang-confluent-kafka", Optional.empty(), true, true},
+                {"rustlang-rdkafka", Optional.empty(), true, true},
+                // consumer is broken, see integrations/README.md
+                {"node-kafka-node", Optional.empty(), true, false},
         };
     }
 
@@ -74,15 +77,15 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
     }
 
     @Test(timeOut = 120_000, dataProvider = "integrations")
-    void simpleProduceAndConsume(String integration, String topic) throws Exception {
+    void simpleProduceAndConsume(String integration, Optional<String> topic, boolean shouldProduce, boolean shouldConsume) throws Exception {
 
-        getAdmin().topics().createPartitionedTopic(topic, 1);
+        getAdmin().topics().createPartitionedTopic(topic.orElse(integration), 1);
 
         GenericContainer producer = new GenericContainer<>(
                 new ImageFromDockerfile().withFileFromPath(".", Paths.get("integrations/" + integration)))
                 .withEnv("KOP_BROKER", "localhost:" + super.kafkaBrokerPort)
                 .withEnv("KOP_PRODUCE", "true")
-                .withEnv("KOP_TOPIC", topic)
+                .withEnv("KOP_TOPIC", topic.orElse(integration))
                 .withEnv("KOP_NBR_MESSAGES", "10")
                 .withEnv("KOP_EXPECT_MESSAGES", "10")
                 .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(log))
@@ -92,7 +95,7 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
         GenericContainer consumer = new GenericContainer<>(
                 new ImageFromDockerfile().withFileFromPath(".", Paths.get("integrations/" + integration)))
                 .withEnv("KOP_BROKER", "localhost:" + super.kafkaBrokerPort)
-                .withEnv("KOP_TOPIC", topic)
+                .withEnv("KOP_TOPIC", topic.orElse(integration))
                 .withEnv("KOP_CONSUME", "true")
                 .withEnv("KOP_NBR_MESSAGES", "10")
                 .withEnv("KOP_EXPECT_MESSAGES", "10")
@@ -100,21 +103,31 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
                 .waitingFor(Wait.forLogMessage("starting to consume\\n", 1))
                 .withNetworkMode("host");
 
-        producer.start();
-        WaitingConsumer consumerWaitingConsumer = createLogFollower(producer);
-        System.out.println("producer started");
-        consumer.start();
-        WaitingConsumer producerWaitingConsumer = createLogFollower(consumer);
-        System.out.println("consumer started");
+        WaitingConsumer producerWaitingConsumer = null;
+        WaitingConsumer consumerWaitingConsumer = null;
+        if (shouldProduce) {
+            producer.start();
+            producerWaitingConsumer = createLogFollower(producer);
+            System.out.println("producer started");
+        }
 
+        if (shouldConsume) {
+            consumer.start();
+            consumerWaitingConsumer = createLogFollower(consumer);
+            System.out.println("consumer started");
+        }
 
-        producerWaitingConsumer.waitUntil(frame ->
-                frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
-        consumerWaitingConsumer.waitUntil(frame ->
-                frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
+        if (shouldProduce) {
+            producerWaitingConsumer.waitUntil(frame ->
+                    frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
+            checkForErrorsInLogs(producer.getLogs());
+        }
 
-        checkForErrorsInLogs(producer.getLogs());
-        checkForErrorsInLogs(consumer.getLogs());
+        if (shouldConsume) {
+            consumerWaitingConsumer.waitUntil(frame ->
+                    frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
+            checkForErrorsInLogs(consumer.getLogs());
+        }
     }
 
     @Override
