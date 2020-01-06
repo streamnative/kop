@@ -6,8 +6,7 @@ var HighLevelProducer = kafka.HighLevelProducer;
 var Consumer = kafka.Consumer;
 var broker = process.env.KOP_BROKER || 'localhost:9092';
 var topic = process.env.KOP_TOPIC || 'topic1';
-var limit = process.env.KOP_EXPECT_MESSAGES || 10;
-var to_produced = process.env.KOP_NBR_MESSAGES || 10;
+var limit = parseInt(process.env.KOP_LIMIT || 10, 10);
 var should_produce = process.env.KOP_PRODUCE || false;
 var should_consume = process.env.KOP_CONSUME || false;
 
@@ -61,7 +60,7 @@ function send() {
         }
         counter++;
         if (counter == limit) {
-            console.log("limit reached, exiting");
+            console.log("produced all messages successfully");
             process.exit();
         };
     });

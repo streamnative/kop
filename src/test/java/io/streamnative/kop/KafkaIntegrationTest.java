@@ -35,6 +35,7 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
                 {"rustlang-rdkafka", Optional.empty(), true, true},
                 // consumer is broken, see integrations/README.md
                 {"node-kafka-node", Optional.empty(), true, false},
+                {"node-rdkafka", Optional.empty(), true, true},
         };
     }
 
@@ -76,7 +77,7 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
         Testcontainers.exposeHostPorts(ImmutableMap.of(super.kafkaBrokerPort, super.kafkaBrokerPort));
     }
 
-    @Test(timeOut = 120_000, dataProvider = "integrations")
+    @Test(timeOut = 5 * 60_000, dataProvider = "integrations")
     void simpleProduceAndConsume(String integration, Optional<String> topic, boolean shouldProduce, boolean shouldConsume) throws Exception {
 
         getAdmin().topics().createPartitionedTopic(topic.orElse(integration), 1);
