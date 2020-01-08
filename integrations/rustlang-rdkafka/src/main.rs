@@ -33,11 +33,7 @@ use std::env;
 fn main() {
     let brokers = env::var("KOP_BROKER").unwrap_or_else(|_| String::from("localhost:9092"));
     let topic = env::var("KOP_TOPIC").unwrap_or_else(|_| String::from("rustlang"));
-    let limit: i8 = env::var("KOP_EXPECT_MESSAGES")
-        .unwrap_or_else(|_| String::from("10"))
-        .parse()
-        .unwrap_or(10);
-    let nbr_messages_produced: i8 = env::var("KOP_NBR_MESSAGES")
+    let limit: i8 = env::var("KOP_LIMIT")
         .unwrap_or_else(|_| String::from("10"))
         .parse()
         .unwrap_or(10);
@@ -57,7 +53,7 @@ fn main() {
 
     if should_produce {
         println!("starting to produce");
-        produce(brokers.as_ref(), topic.as_str(), nbr_messages_produced);
+        produce(brokers.as_ref(), topic.as_str(), limit);
     }
     if should_consume {
         println!("starting to consume");
@@ -70,7 +66,7 @@ fn main() {
     }
     println!("exiting normally");
 }
-fn produce(brokers: &str, topic_name: &str, nbr_messages_produced: i8) {
+fn produce(brokers: &str, topic_name: &str, limit: i8) {
     println!("starting to produce");
     let producer: FutureProducer = ClientConfig::new()
         .set("bootstrap.servers", brokers)
@@ -80,7 +76,7 @@ fn produce(brokers: &str, topic_name: &str, nbr_messages_produced: i8) {
 
     // This loop is non blocking: all messages will be sent one after the other, without waiting
     // for the results.
-    let futures = (0..nbr_messages_produced)
+    let futures = (0..limit)
         .map(|i| {
             // The send operation on the topic returns a future, that will be completed once the
             // result or failure from Kafka will be received.
@@ -106,7 +102,7 @@ fn produce(brokers: &str, topic_name: &str, nbr_messages_produced: i8) {
     }
     println!(
         "produced all messages successfully ({})",
-        nbr_messages_produced
+        limit
     )
 }
 

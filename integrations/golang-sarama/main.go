@@ -50,11 +50,7 @@ func (h exampleConsumerGroupHandler) ConsumeClaim(sess sarama.ConsumerGroupSessi
 
 func main() {
 
-	nbrMessages, err := strconv.Atoi(getEnv("KOP_NBR_MESSAGES", "10"))
-	if err != nil {
-		panic(err)
-	}
-	limit, err := strconv.Atoi(getEnv("KOP_EXPECT_MESSAGES", "10"))
+	limit, err := strconv.Atoi(getEnv("KOP_LIMIT", "10"))
 	if err != nil {
 		panic(err)
 	}
@@ -123,7 +119,7 @@ func main() {
 
 		fmt.Println("starting to produce")
 
-		for i := 0; i < nbrMessages; i++ {
+		for i := 0; i < limit; i++ {
 			msg := &sarama.ProducerMessage{
 				Topic:    topic,
 				Value:    sarama.StringEncoder("hello from sarama"),
@@ -137,7 +133,7 @@ func main() {
 				panic(err)
 			}
 		}
-		fmt.Printf("produced all messages successfully (%d) \n", nbrMessages)
+		fmt.Printf("produced all messages successfully (%d) \n", limit)
 
 	}
 	waitgroup.Wait()

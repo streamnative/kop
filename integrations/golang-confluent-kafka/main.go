@@ -25,11 +25,7 @@ import (
 )
 
 func main() {
-	nbrMessages, err := strconv.Atoi(getEnv("KOP_NBR_MESSAGES", "10"))
-	if err != nil {
-		panic(err)
-	}
-	limit, err := strconv.Atoi(getEnv("KOP_EXPECT_MESSAGES", "10"))
+	limit, err := strconv.Atoi(getEnv("KOP_LIMIT", "10"))
 	if err != nil {
 		panic(err)
 	}
@@ -72,7 +68,7 @@ func main() {
 			}
 		}()
 
-		for i := 0; i < nbrMessages; i++ {
+		for i := 0; i < limit; i++ {
 			p.Produce(&kafka.Message{
 				TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 				Value:          []byte("hello from confluent go"),
@@ -80,7 +76,7 @@ func main() {
 			fmt.Println("send a message")
 
 		}
-		fmt.Printf("produced all messages successfully (%d) \n", nbrMessages)
+		fmt.Printf("produced all messages successfully (%d) \n", limit)
 		// Wait for message deliveries before shutting down
 		p.Flush(15 * 1000)
 
