@@ -1,6 +1,25 @@
+/**
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.streamnative.kop;
 
+import static org.testng.AssertJUnit.assertFalse;
+import static org.testng.AssertJUnit.assertTrue;
+
 import com.google.common.collect.Sets;
+import java.nio.file.Paths;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
@@ -16,19 +35,33 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
-import java.nio.file.Paths;
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
-
-import static org.testng.AssertJUnit.assertFalse;
-import static org.testng.AssertJUnit.assertTrue;
-
+/**
+ * This class is running Integration tests for Kafka clients.
+ * It uses testcontainers to spawn containers that will either:
+ * * produce a number of messages
+ * * consume a number of messages
+ *
+ * <p>As testcontainers is not capable of checking exitCode of the app running in the container,
+ * Every container should print the exitCode in stdout.
+ *
+ * <p>This class is waiting for some precise logs to come-up:
+ * * "ready to produce"
+ * * "ready to consume"
+ * * "produced all messages successfully"
+ * * "consumed all messages successfully"
+ *
+ * <p>This class is using environment variables to control the containers, such as:
+ * * broker address,
+ * * topic name,
+ * * produce or consume mode,
+ * * how many message to produce/consume,
+ */
 @Slf4j
 public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
 
     @DataProvider
     public static Object[][] integrations() {
-        return new Object[][] {
+        return new Object[][]{
                 {"golang-sarama", Optional.empty(), true, true},
                 {"golang-sarama", Optional.of("persistent://public/default/my-sarama-topic-full-name"), true, true},
                 {"golang-confluent-kafka", Optional.empty(), true, true},
@@ -39,112 +72,13 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
         };
     }
 
-    @BeforeClass
-    @Override
-    protected void setup() throws Exception {
-
-        super.resetConfig();
-        super.internalSetup();
-
-        if (!admin.clusters().getClusters().contains(configClusterName)) {
-            // so that clients can test short names
-            admin.clusters().createCluster(configClusterName,
-                    new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
-        } else {
-            admin.clusters().updateCluster(configClusterName,
-                    new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
-        }
-
-        if (!admin.tenants().getTenants().contains("public")) {
-            admin.tenants().createTenant("public",
-                    new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
-        } else {
-            admin.tenants().updateTenant("public",
-                    new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
-        }
-        if (!admin.namespaces().getNamespaces("public").contains("public/default")) {
-            admin.namespaces().createNamespace("public/default");
-            admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
-            admin.namespaces().setRetention("public/default",
-                    new RetentionPolicies(60, 1000));
-        }
-        if (!admin.namespaces().getNamespaces("public").contains("public/__kafka")) {
-            admin.namespaces().createNamespace("public/__kafka");
-            admin.namespaces().setNamespaceReplicationClusters("public/__kafka", Sets.newHashSet("test"));
-            admin.namespaces().setRetention("public/__kafka",
-                    new RetentionPolicies(-1, -1));
-        }
-        Testcontainers.exposeHostPorts(ImmutableMap.of(super.kafkaBrokerPort, super.kafkaBrokerPort));
-    }
-
-    @Test(timeOut = 5 * 60_000, dataProvider = "integrations")
-    void simpleProduceAndConsume(String integration, Optional<String> topic, boolean shouldProduce, boolean shouldConsume) throws Exception {
-
-        getAdmin().topics().createPartitionedTopic(topic.orElse(integration), 1);
-
-        GenericContainer producer = new GenericContainer<>(
-                new ImageFromDockerfile().withFileFromPath(".", Paths.get("integrations/" + integration)))
-                .withEnv("KOP_BROKER", "localhost:" + super.kafkaBrokerPort)
-                .withEnv("KOP_PRODUCE", "true")
-                .withEnv("KOP_TOPIC", topic.orElse(integration))
-                .withEnv("KOP_NBR_MESSAGES", "10")
-                .withEnv("KOP_EXPECT_MESSAGES", "10")
-                .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(log))
-                .waitingFor(Wait.forLogMessage("starting to produce\\n", 1))
-                .withNetworkMode("host");
-
-        GenericContainer consumer = new GenericContainer<>(
-                new ImageFromDockerfile().withFileFromPath(".", Paths.get("integrations/" + integration)))
-                .withEnv("KOP_BROKER", "localhost:" + super.kafkaBrokerPort)
-                .withEnv("KOP_TOPIC", topic.orElse(integration))
-                .withEnv("KOP_CONSUME", "true")
-                .withEnv("KOP_NBR_MESSAGES", "10")
-                .withEnv("KOP_EXPECT_MESSAGES", "10")
-                .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(log))
-                .waitingFor(Wait.forLogMessage("starting to consume\\n", 1))
-                .withNetworkMode("host");
-
-        WaitingConsumer producerWaitingConsumer = null;
-        WaitingConsumer consumerWaitingConsumer = null;
-        if (shouldProduce) {
-            producer.start();
-            producerWaitingConsumer = createLogFollower(producer);
-            System.out.println("producer started");
-        }
-
-        if (shouldConsume) {
-            consumer.start();
-            consumerWaitingConsumer = createLogFollower(consumer);
-            System.out.println("consumer started");
-        }
-
-        if (shouldProduce) {
-            producerWaitingConsumer.waitUntil(frame ->
-                    frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
-            checkForErrorsInLogs(producer.getLogs());
-        }
-
-        if (shouldConsume) {
-            consumerWaitingConsumer.waitUntil(frame ->
-                    frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
-            checkForErrorsInLogs(consumer.getLogs());
-        }
-    }
-
-    @Override
-    @AfterClass
-    protected void cleanup() throws Exception {
-        super.internalCleanup();
-    }
-
-
-    private WaitingConsumer createLogFollower(GenericContainer container) {
-        WaitingConsumer waitingConsumer = new WaitingConsumer();
+    private static WaitingConsumer createLogFollower(final GenericContainer container) {
+        final WaitingConsumer waitingConsumer = new WaitingConsumer();
         container.followOutput(waitingConsumer);
         return waitingConsumer;
     }
 
-    private void checkForErrorsInLogs(String logs) {
+    private static void checkForErrorsInLogs(final String logs) {
         assertFalse(logs.contains("no available broker to send metadata request to"));
         assertFalse(logs.contains("panic"));
         assertFalse(logs.contains("correlation ID didn't match"));
@@ -156,9 +90,107 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
         }
 
         if (logs.contains("starting to consume")) {
-            assertTrue(logs.contains("received msg"));
-            assertTrue(logs.contains("limit reached, exiting"));
+            assertTrue(logs.contains("consumed all messages successfully"));
         }
         assertTrue(logs.contains("ExitCode=0"));
+    }
+
+    @BeforeClass
+    @Override
+    protected void setup() throws Exception {
+
+        super.resetConfig();
+        super.internalSetup();
+
+        if (!this.admin.clusters().getClusters().contains(this.configClusterName)) {
+            // so that clients can test short names
+            this.admin.clusters().createCluster(this.configClusterName,
+                    new ClusterData("http://127.0.0.1:" + this.brokerWebservicePort));
+        } else {
+            this.admin.clusters().updateCluster(this.configClusterName,
+                    new ClusterData("http://127.0.0.1:" + this.brokerWebservicePort));
+        }
+
+        if (!this.admin.tenants().getTenants().contains("public")) {
+            this.admin.tenants().createTenant("public",
+                    new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
+        } else {
+            this.admin.tenants().updateTenant("public",
+                    new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
+        }
+        if (!this.admin.namespaces().getNamespaces("public").contains("public/default")) {
+            this.admin.namespaces().createNamespace("public/default");
+            this.admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
+            this.admin.namespaces().setRetention("public/default",
+                    new RetentionPolicies(60, 1000));
+        }
+        if (!this.admin.namespaces().getNamespaces("public").contains("public/__kafka")) {
+            this.admin.namespaces().createNamespace("public/__kafka");
+            this.admin.namespaces().setNamespaceReplicationClusters("public/__kafka", Sets.newHashSet("test"));
+            this.admin.namespaces().setRetention("public/__kafka",
+                    new RetentionPolicies(-1, -1));
+        }
+        Testcontainers.exposeHostPorts(ImmutableMap.of(super.kafkaBrokerPort, super.kafkaBrokerPort));
+    }
+
+    @Test(timeOut = 3 * 60_000, dataProvider = "integrations")
+    void simpleProduceAndConsume(final String integration, final Optional<String> topic,
+                                 final boolean shouldProduce, final boolean shouldConsume) throws Exception {
+
+        this.getAdmin().topics().createPartitionedTopic(topic.orElse(integration), 1);
+
+        final GenericContainer producer = new GenericContainer<>(
+                new ImageFromDockerfile().withFileFromPath(".", Paths.get("integrations/" + integration)))
+                .withEnv("KOP_BROKER", "localhost:" + super.kafkaBrokerPort)
+                .withEnv("KOP_PRODUCE", "true")
+                .withEnv("KOP_TOPIC", topic.orElse(integration))
+                .withEnv("KOP_NBR_MESSAGES", "10")
+                .withEnv("KOP_EXPECT_MESSAGES", "10")
+                .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
+                .waitingFor(Wait.forLogMessage("starting to produce\\n", 1))
+                .withNetworkMode("host");
+
+        final GenericContainer consumer = new GenericContainer<>(
+                new ImageFromDockerfile().withFileFromPath(".", Paths.get("integrations/" + integration)))
+                .withEnv("KOP_BROKER", "localhost:" + super.kafkaBrokerPort)
+                .withEnv("KOP_TOPIC", topic.orElse(integration))
+                .withEnv("KOP_CONSUME", "true")
+                .withEnv("KOP_NBR_MESSAGES", "10")
+                .withEnv("KOP_EXPECT_MESSAGES", "10")
+                .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
+                .waitingFor(Wait.forLogMessage("starting to consume\\n", 1))
+                .withNetworkMode("host");
+
+        WaitingConsumer producerWaitingConsumer = null;
+        WaitingConsumer consumerWaitingConsumer = null;
+        if (shouldProduce) {
+            producer.start();
+            producerWaitingConsumer = KafkaIntegrationTest.createLogFollower(producer);
+            System.out.println("producer started");
+        }
+
+        if (shouldConsume) {
+            consumer.start();
+            consumerWaitingConsumer = KafkaIntegrationTest.createLogFollower(consumer);
+            System.out.println("consumer started");
+        }
+
+        if (shouldProduce) {
+            producerWaitingConsumer.waitUntil(frame ->
+                    frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
+            KafkaIntegrationTest.checkForErrorsInLogs(producer.getLogs());
+        }
+
+        if (shouldConsume) {
+            consumerWaitingConsumer.waitUntil(frame ->
+                    frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
+            KafkaIntegrationTest.checkForErrorsInLogs(consumer.getLogs());
+        }
+    }
+
+    @Override
+    @AfterClass
+    protected void cleanup() throws Exception {
+        super.internalCleanup();
     }
 }
