@@ -144,8 +144,7 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
                 .withEnv("KOP_BROKER", "localhost:" + super.kafkaBrokerPort)
                 .withEnv("KOP_PRODUCE", "true")
                 .withEnv("KOP_TOPIC", topic.orElse(integration))
-                .withEnv("KOP_NBR_MESSAGES", "10")
-                .withEnv("KOP_EXPECT_MESSAGES", "10")
+                .withEnv("KOP_LIMIT", "10")
                 .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
                 .waitingFor(Wait.forLogMessage("starting to produce\\n", 1))
                 .withNetworkMode("host");
@@ -155,8 +154,7 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
                 .withEnv("KOP_BROKER", "localhost:" + super.kafkaBrokerPort)
                 .withEnv("KOP_TOPIC", topic.orElse(integration))
                 .withEnv("KOP_CONSUME", "true")
-                .withEnv("KOP_NBR_MESSAGES", "10")
-                .withEnv("KOP_EXPECT_MESSAGES", "10")
+                .withEnv("KOP_LIMIT", "10")
                 .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
                 .waitingFor(Wait.forLogMessage("starting to consume\\n", 1))
                 .withNetworkMode("host");
