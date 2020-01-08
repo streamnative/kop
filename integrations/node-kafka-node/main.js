@@ -27,7 +27,7 @@ if (should_consume) {
         console.log('received msg ' + message);
         counter++;
         if (counter == limit) {
-            console.log("limit reached, exiting");
+            console.log("consumed all messages successfully");
             process.exit();
         };
     });

@@ -1,10 +1,25 @@
 # Integration tests for KoP
 
-#  not working librairies
+# Produce and Consume support
 
-### Kafka-node
+## Golang
 
-Producing is working, but consuming is failing as the library does not care about API_VERSIONS response and is sending FETCH v0.
+* [https://github.com/Shopify/sarama](https://github.com/Shopify/sarama)
+* [https://github.com/confluentinc/confluent-kafka-go](https://github.com/confluentinc/confluent-kafka-go)
+
+## Rust
+
+* [https://github.com/fede1024/rust-rdkafka](https://github.com/fede1024/rust-rdkafka)
+
+## NodeJS
+
+* [https://github.com/Blizzard/node-rdkafka](https://github.com/Blizzard/node-rdkafka)
+
+# Partial support
+
+### [kafka-node](https://www.npmjs.com/package/kafka-node)
+
+Producing is working, but consuming is failing as the library is sending FETCH v0 regardless of API_VERSIONS responses:
 
 ```
 DEBUG io.streamnative.kop.KafkaCommandDecoder - Write kafka cmd response back to client. request: RequestHeader(apiKey=FETCH, apiVersion=0, clientId=kafka-node-client, correlationId=4)

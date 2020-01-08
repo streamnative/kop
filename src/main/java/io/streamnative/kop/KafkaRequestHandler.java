@@ -40,7 +40,14 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -168,6 +175,57 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             kafkaConfig.getKafkaNamespace());
     }
 
+    static Node newNode(InetSocketAddress address) {
+        if (log.isDebugEnabled()) {
+            log.debug("Return Broker Node of {}. {}:{}", address, address.getHostString(), address.getPort());
+        }
+        return new Node(
+            Murmur3_32Hash.getInstance().makeHash((address.getHostString() + address.getPort()).getBytes(UTF_8)),
+            address.getHostString(),
+            address.getPort());
+    }
+
+    static PartitionMetadata newPartitionMetadata(TopicName topicName, Node node) {
+        int pulsarPartitionIndex = topicName.getPartitionIndex();
+        int kafkaPartitionIndex = pulsarPartitionIndex == -1 ? 0 : pulsarPartitionIndex;
+
+        if (log.isDebugEnabled()) {
+            log.debug("Return PartitionMetadata node: {}, topicName: {}", node, topicName);
+        }
+
+        return new PartitionMetadata(
+            Errors.NONE,
+            kafkaPartitionIndex,
+            node,                      // leader
+            Lists.newArrayList(node),  // replicas
+            Lists.newArrayList(node),  // isr
+            Collections.emptyList()     // offline replicas
+        );
+    }
+
+    static PartitionMetadata newFailedPartitionMetadata(TopicName topicName) {
+        int pulsarPartitionIndex = topicName.getPartitionIndex();
+        int kafkaPartitionIndex = pulsarPartitionIndex == -1 ? 0 : pulsarPartitionIndex;
+
+        log.warn("Failed find Broker metadata, create PartitionMetadata with INVALID_PARTITIONS");
+
+        return new PartitionMetadata(
+            Errors.UNKNOWN_SERVER_ERROR,
+            kafkaPartitionIndex,
+            Node.noNode(),                      // leader
+            Lists.newArrayList(Node.noNode()),  // replicas
+            Lists.newArrayList(Node.noNode()),  // isr
+            Collections.emptyList()             // offline replicas
+        );
+    }
+
+    static AbstractResponse failedResponse(KafkaHeaderAndRequest requestHar, Throwable e) {
+        if (log.isDebugEnabled()) {
+            log.debug("Request {} get failed response ", requestHar.getHeader().apiKey(), e);
+        }
+        return requestHar.getRequest().getErrorResponse(((Integer) THROTTLE_TIME_MS.defaultValue), e);
+    }
+
     protected CompletableFuture<ResponseAndRequest> handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest) {
         AbstractResponse apiResponse = overloadDefaultApiVersionsResponse();
         CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
@@ -183,11 +241,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 switch (apiKey) {
                     case FETCH:
                         // V4 added MessageSets responses. We need to make sure RecordBatch format is not used
-                        versionList.add(new ApiVersionsResponse.ApiVersion((short) 1, (short) 4, apiKey.latestVersion()));
+                        versionList.add(new ApiVersionsResponse.ApiVersion(
+                                (short) 1, (short) 4, apiKey.latestVersion()));
                         break;
                     case LIST_OFFSETS:
                         // V0 is needed for librdkafka
-                        versionList.add(new ApiVersionsResponse.ApiVersion((short) 2, (short) 0, apiKey.latestVersion()));
+                        versionList.add(new ApiVersionsResponse.ApiVersion(
+                                (short) 2, (short) 0, apiKey.latestVersion()));
                         break;
                     default:
                         versionList.add(new ApiVersionsResponse.ApiVersion(apiKey));
@@ -406,8 +466,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         Errors.NONE,
                                         // we should answer with the right name, either local of full-name,
                                         // depending on what was asked
-                                        topic.startsWith("persistent://") ?
-                                                TopicName.get(topic).toString(): TopicName.get(topic).getLocalName(),
+                                        topic.startsWith("persistent://")
+                                                ? TopicName.get(topic).toString() : TopicName.get(topic).getLocalName(),
                                         false,
                                         partitionMetadatas));
 
@@ -618,7 +678,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 if (legacyMode) {
                     partitionData.complete(new ListOffsetResponse.PartitionData(
                             Errors.NONE,
-                            Collections.singletonList(MessageIdUtils.getOffset(position.getLedgerId(), position.getEntryId()))));
+                            Collections.singletonList(MessageIdUtils.getOffset(
+                                    position.getLedgerId(), position.getEntryId()))));
                 } else {
                     partitionData.complete(new ListOffsetResponse.PartitionData(
                             Errors.NONE,
@@ -665,7 +726,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         if (legacyMode) {
                             partitionData.complete(new ListOffsetResponse.PartitionData(
                                     Errors.NONE,
-                                    Collections.singletonList(MessageIdUtils.getOffset(finalPosition.getLedgerId(), finalPosition.getEntryId()))));
+                                    Collections.singletonList(MessageIdUtils.getOffset(
+                                            finalPosition.getLedgerId(), finalPosition.getEntryId()))));
                         } else {
                             partitionData.complete(new ListOffsetResponse.PartitionData(
                                     Errors.NONE,
@@ -714,8 +776,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return partitionData;
     }
 
-
-    // Some info can be found here https://web.archive.org/web/20170309152525/https://cfchou.github.io/blog/2015/04/23/a-closer-look-at-kafka-offsetrequest/
+    // Some info can be found here:
+    // https://cfchou.github.io/blog/2015/04/23/a-closer-look-at-kafka-offsetrequest/
+    // Site is available through https://web.archive.org/
     private CompletableFuture<ResponseAndRequest> handleListOffsetRequestV0(KafkaHeaderAndRequest listOffset) {
         ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
 
@@ -733,7 +796,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             // num_num_offsets > 1 is not handled for now, returning an error
             if (tms.getValue().maxNumOffsets > 1) {
-                log.warn("request is asking for multiples offsets for {}, not supported for now", pulsarTopic.toString());
+                log.warn("request is asking for multiples offsets for {}, not supported for now",
+                        pulsarTopic.toString());
                 partitionData = new CompletableFuture<>();
                 partitionData.complete(new ListOffsetResponse
                         .PartitionData(
@@ -1288,16 +1352,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
-    static Node newNode(InetSocketAddress address) {
-        if (log.isDebugEnabled()) {
-            log.debug("Return Broker Node of {}. {}:{}", address, address.getHostString(), address.getPort());
-        }
-        return new Node(
-            Murmur3_32Hash.getInstance().makeHash((address.getHostString() + address.getPort()).getBytes(UTF_8)),
-            address.getHostString(),
-            address.getPort());
-    }
-
     Node newSelfNode() {
         String hostname = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(
             kafkaConfig.getAdvertisedAddress());
@@ -1312,47 +1366,5 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             Murmur3_32Hash.getInstance().makeHash((hostname + port).getBytes(UTF_8)),
             hostname,
             port);
-    }
-
-
-    static PartitionMetadata newPartitionMetadata(TopicName topicName, Node node) {
-        int pulsarPartitionIndex = topicName.getPartitionIndex();
-        int kafkaPartitionIndex = pulsarPartitionIndex == -1 ? 0 : pulsarPartitionIndex;
-
-        if (log.isDebugEnabled()) {
-            log.debug("Return PartitionMetadata node: {}, topicName: {}", node, topicName);
-        }
-
-        return new PartitionMetadata(
-            Errors.NONE,
-            kafkaPartitionIndex,
-            node,                      // leader
-            Lists.newArrayList(node),  // replicas
-            Lists.newArrayList(node),  // isr
-            Collections.emptyList()     // offline replicas
-        );
-    }
-
-    static PartitionMetadata newFailedPartitionMetadata(TopicName topicName) {
-        int pulsarPartitionIndex = topicName.getPartitionIndex();
-        int kafkaPartitionIndex = pulsarPartitionIndex == -1 ? 0 : pulsarPartitionIndex;
-
-        log.warn("Failed find Broker metadata, create PartitionMetadata with INVALID_PARTITIONS");
-
-        return new PartitionMetadata(
-            Errors.UNKNOWN_SERVER_ERROR,
-            kafkaPartitionIndex,
-            Node.noNode(),                      // leader
-            Lists.newArrayList(Node.noNode()),  // replicas
-            Lists.newArrayList(Node.noNode()),  // isr
-            Collections.emptyList()             // offline replicas
-        );
-    }
-
-    static AbstractResponse failedResponse(KafkaHeaderAndRequest requestHar, Throwable e) {
-        if (log.isDebugEnabled()) {
-            log.debug("Request {} get failed response ", requestHar.getHeader().apiKey(), e);
-        }
-        return requestHar.getRequest().getErrorResponse(((Integer) THROTTLE_TIME_MS.defaultValue), e);
     }
 }
