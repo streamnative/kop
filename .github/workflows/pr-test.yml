@@ -1,4 +1,4 @@
-name: kop pr validation
+name: kop unit test
 
 on:
   pull_request:
@@ -20,11 +20,5 @@ jobs:
       with:
         java-version: 1.8
 
-    - name: License check
-      run: mvn clean license:check
-
-    - name: Style check
-      run: mvn clean checkstyle:check
-
-    - name: Spotbugs check
-      run: mvn clean spotbugs:check
+    - name: Build with Maven
+      run: mvn clean install
