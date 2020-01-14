@@ -2,11 +2,15 @@ name: kop pr validation
 
 on:
   pull_request:
-    branches: 
+    branches:
       - master
+    paths:
+      - 'src/**'
   push:
-    branches: 
+    branches:
       - master
+    paths:
+      - 'src/**'
 
 jobs:
   build:
