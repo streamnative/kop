@@ -21,10 +21,10 @@ jobs:
         java-version: 1.8
 
     - name: License check
-      run: mvn clean license:check
+      run: mvn license:check
 
     - name: Style check
-      run: mvn clean checkstyle:check
+      run: mvn checkstyle:check
 
     - name: Spotbugs check
-      run: mvn clean spotbugs:check
+      run: mvn spotbugs:check
