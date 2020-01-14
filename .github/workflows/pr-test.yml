@@ -5,11 +5,13 @@ on:
     branches: 
       - master
     paths:
+      - '.github/workflows/**'
       - 'src/**'
   push:
     branches: 
       - master
     paths:
+      - '.github/workflows/**'
       - 'src/**'
 
 jobs:
