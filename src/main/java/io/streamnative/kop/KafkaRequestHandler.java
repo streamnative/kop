@@ -110,8 +110,6 @@ import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
-import org.apache.pulsar.broker.admin.impl.PersistentTopicsBase;
-import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authentication.AuthenticationState;
@@ -125,6 +123,7 @@ import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.api.AuthData;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
@@ -270,6 +269,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return resultFuture;
     }
 
+    // Leverage pulsar admin to get partitioned topic metadata
+    private CompletableFuture<PartitionedTopicMetadata> getPartitionedTopicMetadataAsync(String topicName) {
+        return admin.topics().getPartitionedTopicMetadataAsync(topicName);
+    }
+
     protected CompletableFuture<ResponseAndRequest> handleTopicMetadataRequest(KafkaHeaderAndRequest metadataHar) {
         checkArgument(metadataHar.getRequest() instanceof MetadataRequest);
 
@@ -313,16 +317,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             requestTopics.stream()
                 .forEach(topic -> {
                     TopicName pulsarTopicName = pulsarTopicName(topic, namespace);
-                    AuthenticationDataSource authData =
-                        null != authState ? authState.getAuthDataSource() : null;
+
                     // get partition numbers for each topic.
-                    PersistentTopicsBase
-                        .getPartitionedTopicMetadata(
-                            pulsarService,
-                            authRole,
-                            null,
-                            authData,
-                            pulsarTopicName)
+                    getPartitionedTopicMetadataAsync(pulsarTopicName.toString())
                         .whenComplete((partitionedTopicMetadata, throwable) -> {
                             if (throwable != null) {
                                 // Failed get partitions.
@@ -349,26 +346,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     pulsarTopics.put(topic, pulsarTopicNames);
                                 } else {
                                     if (kafkaConfig.isAllowAutoTopicCreation()) {
-                                        try {
-                                            if (log.isDebugEnabled()) {
-                                                log.debug("[{}] Request {}: Topic {} has single partition, "
-                                                        + "auto create partitioned topic",
-                                                    ctx.channel(), metadataHar.getHeader(), topic);
-                                            }
-                                            admin.topics().createPartitionedTopic(pulsarTopicName.toString(), 1);
-                                            final TopicName newTopic = TopicName
-                                                .get(pulsarTopicName.toString() + PARTITIONED_TOPIC_SUFFIX + 0);
-                                            pulsarTopics.put(topic, Lists.newArrayList(newTopic));
-                                        } catch (PulsarAdminException e) {
-                                            log.error("[{}] Request {}: createPartitionedTopic failed.",
-                                                ctx.channel(), metadataHar.getHeader(), e);
-                                            allTopicMetadata.add(
-                                                new TopicMetadata(
-                                                    Errors.UNKNOWN_TOPIC_OR_PARTITION,
-                                                    topic,
-                                                    false,
-                                                    Collections.emptyList()));
+                                        if (log.isDebugEnabled()) {
+                                            log.debug("[{}] Request {}: Topic {} has single partition, "
+                                                    + "auto create partitioned topic",
+                                                ctx.channel(), metadataHar.getHeader(), topic);
                                         }
+                                        admin.topics().createPartitionedTopicAsync(pulsarTopicName.toString(), 1);
+                                        final TopicName newTopic = TopicName
+                                            .get(pulsarTopicName.toString() + PARTITIONED_TOPIC_SUFFIX + 0);
+                                        pulsarTopics.put(topic, Lists.newArrayList(newTopic));
+
                                     } else {
                                         if (log.isDebugEnabled()) {
                                             log.debug("[{}] Request {}: Topic {} has single partition, "
@@ -851,9 +838,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 partitionData = new CompletableFuture<>();
                 partitionData.complete(new ListOffsetResponse
                     .PartitionData(
-                        Errors.UNKNOWN_TOPIC_OR_PARTITION,
-                        ListOffsetResponse.UNKNOWN_TIMESTAMP,
-                        ListOffsetResponse.UNKNOWN_OFFSET));
+                    Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                    ListOffsetResponse.UNKNOWN_TIMESTAMP,
+                    ListOffsetResponse.UNKNOWN_OFFSET));
             } else {
                 PersistentTopic persistentTopic = topicManager.getTopic(pulsarTopic.toString());
                 partitionData = fetchOffsetForTimestamp(persistentTopic, times, false);
@@ -1205,7 +1192,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private CompletableFuture<Optional<String>>
     getProtocolDataToAdvertise(Pair<InetSocketAddress, InetSocketAddress> pulsarAddress,
-                                TopicName topic) {
+                               TopicName topic) {
         if (log.isDebugEnabled()) {
             log.debug("Found broker for topic {} logicalAddress: {} physicalAddress: {}",
                 topic, pulsarAddress.getLeft(), pulsarAddress.getRight());

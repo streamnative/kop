@@ -142,9 +142,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
         try (KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress)){
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Received kafka cmd {}",
+                log.debug("[{}] Received kafka cmd {}, the request content is: {}",
                     ctx.channel() != null ? ctx.channel().remoteAddress() : "Null channel",
-                    kafkaHeaderAndRequest.getHeader());
+                    kafkaHeaderAndRequest.getHeader(), kafkaHeaderAndRequest);
             }
 
             switch (kafkaHeaderAndRequest.getHeader().apiKey()) {
@@ -232,8 +232,11 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             try {
                 ResponseAndRequest pair = response.join();
                 if (log.isDebugEnabled()) {
-                    log.debug("Write kafka cmd response back to client. request: {}",
-                        pair.getRequest().getHeader());
+                    log.debug("Write kafka cmd response back to client. \n"
+                            + "\trequest content: {} \n"
+                            + "\tresponse content: {}",
+                        pair.getRequest().toString(),
+                        pair.getResponse().toString(pair.getRequest().getRequest().version()));
                 }
 
                 ByteBuf result = responseToByteBuf(pair.getResponse(), pair.getRequest());
