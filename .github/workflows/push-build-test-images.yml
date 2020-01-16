@@ -15,6 +15,10 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: build test images
+      env:
+        DOCKER_USER: ${{ secrets.DOCKER_USER }}
+        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        DOCKER_ORG: ${{ secrets.DOCKER_ORG }}
       run: |
         ./integrations/build.sh
         ./integrations/publish.sh
