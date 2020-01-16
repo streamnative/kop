@@ -105,7 +105,7 @@ async fn produce(brokers: &str, topic_name: &str, limit: i8) -> Result<(), std::
 
     // This loop will wait until all delivery statuses have been received received.
     for future in futures {
-        info!("Future completed. Result: {:?}", future.await);
+        println!("Future completed. Result: {:?}", future.await);
     }
     println!(
         "produced all messages successfully ({})",
