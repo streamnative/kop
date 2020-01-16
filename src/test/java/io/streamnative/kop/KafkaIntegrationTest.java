@@ -30,7 +30,6 @@ import static org.testng.AssertJUnit.assertFalse;
 import static org.testng.AssertJUnit.assertTrue;
 
 import com.google.common.collect.Sets;
-import java.nio.file.Paths;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
@@ -42,7 +41,6 @@ import org.testcontainers.Testcontainers;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.output.WaitingConsumer;
 import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.shaded.com.google.common.collect.ImmutableMap;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
@@ -152,8 +150,7 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
 
         this.getAdmin().topics().createPartitionedTopic(topic.orElse(integration), 1);
 
-        final GenericContainer producer = new GenericContainer<>(
-                new ImageFromDockerfile().withFileFromPath(".", Paths.get("integrations/" + integration)))
+        final GenericContainer producer = new GenericContainer<>("streamnative/kop-test-" + integration)
                 .withEnv("KOP_BROKER", "localhost:" + super.kafkaBrokerPort)
                 .withEnv("KOP_PRODUCE", "true")
                 .withEnv("KOP_TOPIC", topic.orElse(integration))
@@ -162,8 +159,7 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
                 .waitingFor(Wait.forLogMessage("starting to produce\\n", 1))
                 .withNetworkMode("host");
 
-        final GenericContainer consumer = new GenericContainer<>(
-                new ImageFromDockerfile().withFileFromPath(".", Paths.get("integrations/" + integration)))
+        final GenericContainer consumer = new GenericContainer<>("streamnative/kop-test-" + integration)
                 .withEnv("KOP_BROKER", "localhost:" + super.kafkaBrokerPort)
                 .withEnv("KOP_TOPIC", topic.orElse(integration))
                 .withEnv("KOP_CONSUME", "true")
