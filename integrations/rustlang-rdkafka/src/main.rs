@@ -1,3 +1,4 @@
+extern crate futures;
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,23 +15,26 @@
 //
 #[macro_use]
 extern crate log;
-extern crate futures;
 extern crate rdkafka;
+extern crate tokio;
 
-use crate::futures::Future;
-use futures::Stream;
-use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
-use rdkafka::consumer::stream_consumer::StreamConsumer;
-use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
-use rdkafka::error::KafkaResult;
-use rdkafka::message::OwnedHeaders;
-use rdkafka::message::{Headers, Message};
-use rdkafka::producer::{FutureProducer, FutureRecord};
-use rdkafka::ClientContext;
-use rdkafka_sys;
 use std::env;
 
-fn main() {
+use futures::StreamExt;
+use rdkafka::ClientContext;
+use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
+use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
+use rdkafka::consumer::stream_consumer::StreamConsumer;
+use rdkafka::error::KafkaResult;
+use rdkafka::message::{Headers, Message};
+use rdkafka::message::OwnedHeaders;
+use rdkafka::producer::{FutureProducer, FutureRecord};
+use rdkafka::topic_partition_list::TopicPartitionList;
+
+use crate::futures::FutureExt;
+
+#[tokio::main]
+async fn main() -> Result<(), std::io::Error> {
     let brokers = env::var("KOP_BROKER").unwrap_or_else(|_| String::from("localhost:9092"));
     let topic = env::var("KOP_TOPIC").unwrap_or_else(|_| String::from("rustlang"));
     let limit: i8 = env::var("KOP_LIMIT")
@@ -53,7 +57,7 @@ fn main() {
 
     if should_produce {
         println!("starting to produce");
-        produce(brokers.as_ref(), topic.as_str(), limit);
+        produce(brokers.as_ref(), topic.as_str(), limit).await?;
     }
     if should_consume {
         println!("starting to consume");
@@ -62,11 +66,14 @@ fn main() {
             "rustlang-librdkafka",
             vec![topic.as_str()],
             limit,
-        );
+        ).await?;
     }
     println!("exiting normally");
+
+    Ok(())
 }
-fn produce(brokers: &str, topic_name: &str, limit: i8) {
+
+async fn produce(brokers: &str, topic_name: &str, limit: i8) -> Result<(), std::io::Error> {
     println!("starting to produce");
     let producer: FutureProducer = ClientConfig::new()
         .set("bootstrap.servers", brokers)
@@ -98,12 +105,13 @@ fn produce(brokers: &str, topic_name: &str, limit: i8) {
 
     // This loop will wait until all delivery statuses have been received received.
     for future in futures {
-        println!("Future completed. Result: {:?}", future.wait());
+        info!("Future completed. Result: {:?}", future.await);
     }
     println!(
         "produced all messages successfully ({})",
         limit
-    )
+    );
+    Ok(())
 }
 
 // A context can be used to change the behavior of producers and consumers by adding callbacks
@@ -122,11 +130,7 @@ impl ConsumerContext for CustomContext {
         println!("Post rebalance {:?}", rebalance);
     }
 
-    fn commit_callback(
-        &self,
-        result: KafkaResult<()>,
-        _offsets: *mut rdkafka_sys::RDKafkaTopicPartitionList,
-    ) {
+    fn commit_callback(&self, result: KafkaResult<()>, _offsets: &TopicPartitionList) {
         info!("Committing offsets: {:?}", result);
     }
 }
@@ -134,7 +138,7 @@ impl ConsumerContext for CustomContext {
 // A type alias with your custom consumer can be created for convenience.
 type LoggingConsumer = StreamConsumer<CustomContext>;
 
-fn consume_and_print(brokers: &str, group_id: &str, topics: Vec<&str>, limit: i8) {
+async fn consume_and_print(brokers: &str, group_id: &str, topics: Vec<&str>, limit: i8) -> Result<(), std::io::Error> {
     let context = CustomContext;
 
     let consumer: LoggingConsumer = ClientConfig::new()
@@ -155,25 +159,23 @@ fn consume_and_print(brokers: &str, group_id: &str, topics: Vec<&str>, limit: i8
 
     // consumer.start() returns a stream. The stream can be used ot chain together expensive steps,
     // such as complex computations on a thread pool or asynchronous IO.
-    let message_stream = consumer.start();
+    let mut message_stream = consumer.start();
 
     let mut i = 0;
 
-    for message in message_stream.wait() {
+    while let Some(message) = message_stream.next().await {
         match message {
-            Err(_) => panic!("Error while reading from stream."),
-            Ok(Err(e)) => panic!("Kafka error: {}", e),
-            Ok(Ok(m)) => {
+            Err(e) => panic!("Kafka error: {}", e),
+            Ok(m) => {
                 let payload = match m.payload_view::<str>() {
                     None => "",
                     Some(Ok(s)) => s,
                     Some(Err(e)) => {
                         panic!("Error while deserializing message payload: {:?}", e);
-                        ""
                     }
                 };
                 println!("key: '{:?}', payload: '{}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
-                      m.key(), payload, m.topic(), m.partition(), m.offset(), m.timestamp());
+                         m.key(), payload, m.topic(), m.partition(), m.offset(), m.timestamp());
                 if let Some(headers) = m.headers() {
                     for i in 0..headers.count() {
                         let header = headers.get(i).unwrap();
@@ -185,9 +187,10 @@ fn consume_and_print(brokers: &str, group_id: &str, topics: Vec<&str>, limit: i8
                 println!("received msg");
                 if i == limit {
                     println!("consumed all messages successfully");
-                    return;
+                    return Ok(());
                 }
             }
         };
     }
+    Ok(())
 }
