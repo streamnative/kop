@@ -1,0 +1,20 @@
+name: kop build test images
+
+on:
+  push:
+    branches: 
+      - master
+    paths:
+      - 'integrations/**'
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: build test images
+      run: |
+        ./integrations/build.sh
+        ./integrations/publish.sh
