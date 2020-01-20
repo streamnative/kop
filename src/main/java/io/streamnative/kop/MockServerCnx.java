@@ -52,10 +52,6 @@ public class MockServerCnx extends ServerCnx {
                 remoteAddress, producer.getTopic().getName(), producer);
         }
 
-        // close will also call dereference.
-        //kafkaRequestHandler.getTopicManager().deReference(producer.getTopic().getName());
-        // TODO: remove this, return an error in produce/consume, to let client close and reconnect?
-        // each handler should have only 1 producer for each topic. but may have server topics.
         kafkaRequestHandler.close();
     }
 

@@ -30,7 +30,6 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
-import io.streamnative.kop.KafkaCommandDecoder.ResponseAndRequest;
 import io.streamnative.kop.utils.MessageIdUtils;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -58,6 +57,7 @@ import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.requests.AbstractRequest;
+import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.IsolationLevel;
@@ -165,8 +165,8 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
         return new KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
     }
 
-    CompletableFuture<ResponseAndRequest> checkInvalidPartition(String topic,
-                                                                        int invalidPartitionId) {
+    CompletableFuture<AbstractResponse> checkInvalidPartition(String topic,
+                                                              int invalidPartitionId) {
         TopicPartition invalidTopicPartition = new TopicPartition(topic, invalidPartitionId);
         PartitionData partitionOffsetCommitData = new OffsetCommitRequest.PartitionData(15L, "");
         Map<TopicPartition, PartitionData> offsetData = Maps.newHashMap();
@@ -181,19 +181,17 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
         String topicName = "kopOffsetCommitWithInvalidPartition";
 
         // invalid partition id -1;
-        CompletableFuture<ResponseAndRequest> invalidResponse1 = checkInvalidPartition(topicName, -1);
-        ResponseAndRequest response1 = invalidResponse1.get();
-        assertEquals(response1.getRequest().getHeader().apiKey(), ApiKeys.OFFSET_COMMIT);
+        CompletableFuture<AbstractResponse> invalidResponse1 = checkInvalidPartition(topicName, -1);
+        AbstractResponse response1 = invalidResponse1.get();
         TopicPartition topicPartition1 = new TopicPartition(topicName, -1);
-        assertEquals(((OffsetCommitResponse) response1.getResponse()).responseData().get(topicPartition1),
+        assertEquals(((OffsetCommitResponse) response1).responseData().get(topicPartition1),
             Errors.UNKNOWN_TOPIC_OR_PARTITION);
 
         // invalid partition id 1.
-        CompletableFuture<ResponseAndRequest> invalidResponse2 = checkInvalidPartition(topicName, 1);
+        CompletableFuture<AbstractResponse> invalidResponse2 = checkInvalidPartition(topicName, 1);
         TopicPartition topicPartition2 = new TopicPartition(topicName, 1);
-        ResponseAndRequest response2 = invalidResponse2.get();
-        assertEquals(response2.getRequest().getHeader().apiKey(), ApiKeys.OFFSET_COMMIT);
-        assertEquals(((OffsetCommitResponse) response2.getResponse()).responseData().get(topicPartition2),
+        AbstractResponse response2 = invalidResponse2.get();
+        assertEquals(((OffsetCommitResponse) response2).responseData().get(topicPartition2),
             Errors.UNKNOWN_TOPIC_OR_PARTITION);
     }
 
@@ -269,12 +267,11 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
             .setTargetTimes(targetTimes);
 
         KafkaHeaderAndRequest request = buildRequest(builder);
-        CompletableFuture<ResponseAndRequest> responseFuture = kafkaRequestHandler
+        CompletableFuture<AbstractResponse> responseFuture = kafkaRequestHandler
             .handleListOffsetRequest(request);
 
-        ResponseAndRequest response = responseFuture.get();
-        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response.getResponse();
-        assertEquals(response.getRequest().getHeader().apiKey(), ApiKeys.LIST_OFFSETS);
+        AbstractResponse response = responseFuture.get();
+        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
         assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
         assertEquals(listOffsetResponse.responseData().get(tp).offset, Long.valueOf(limitOffset));
         assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(NO_TIMESTAMP));
@@ -338,12 +335,11 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
             .setTargetTimes(targetTimes);
 
         KafkaHeaderAndRequest request = buildRequest(builder);
-        CompletableFuture<ResponseAndRequest> responseFuture = kafkaRequestHandler
+        CompletableFuture<AbstractResponse> responseFuture = kafkaRequestHandler
             .handleListOffsetRequest(request);
 
-        ResponseAndRequest response = responseFuture.get();
-        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response.getResponse();
-        assertEquals(response.getRequest().getHeader().apiKey(), ApiKeys.LIST_OFFSETS);
+        AbstractResponse response = responseFuture.get();
+        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
         assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
         assertEquals(listOffsetResponse.responseData().get(tp).offset, Long.valueOf(limitOffset));
         assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(NO_TIMESTAMP));
@@ -537,9 +533,9 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
             maxPartitionBytes,
             shuffledTopicPartitions1,
             Collections.EMPTY_MAP);
-        CompletableFuture<ResponseAndRequest> responseFuture1 = kafkaRequestHandler.handleFetchRequest(fetchRequest1);
+        CompletableFuture<AbstractResponse> responseFuture1 = kafkaRequestHandler.handleFetchRequest(fetchRequest1);
         FetchResponse<MemoryRecords> fetchResponse1 =
-            (FetchResponse<MemoryRecords>) responseFuture1.get().getResponse();
+            (FetchResponse<MemoryRecords>) responseFuture1.get();
 
         checkFetchResponse(shuffledTopicPartitions1, fetchResponse1,
             maxPartitionBytes, maxResponseBytes, messagesPerPartition);
@@ -555,9 +551,9 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
             maxPartitionBytes,
             shuffledTopicPartitions2,
             Collections.EMPTY_MAP);
-        CompletableFuture<ResponseAndRequest> responseFuture2 = kafkaRequestHandler.handleFetchRequest(fetchRequest2);
+        CompletableFuture<AbstractResponse> responseFuture2 = kafkaRequestHandler.handleFetchRequest(fetchRequest2);
         FetchResponse<MemoryRecords> fetchResponse2 =
-            (FetchResponse<MemoryRecords>) responseFuture2.get().getResponse();
+            (FetchResponse<MemoryRecords>) responseFuture2.get();
 
         checkFetchResponse(shuffledTopicPartitions2, fetchResponse2,
             maxPartitionBytes, maxResponseBytes, messagesPerPartition);
@@ -576,14 +572,13 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
             maxPartitionBytes,
             shuffledTopicPartitions3,
             offsetMaps);
-        CompletableFuture<ResponseAndRequest> responseFuture3 = kafkaRequestHandler.handleFetchRequest(fetchRequest3);
+        CompletableFuture<AbstractResponse> responseFuture3 = kafkaRequestHandler.handleFetchRequest(fetchRequest3);
         FetchResponse<MemoryRecords> fetchResponse3 =
-            (FetchResponse<MemoryRecords>) responseFuture3.get().getResponse();
+            (FetchResponse<MemoryRecords>) responseFuture3.get();
 
         checkFetchResponse(shuffledTopicPartitions3, fetchResponse3,
             maxPartitionBytes, maxResponseBytes, messagesPerPartition);
     }
-
 
     // verify Metadata request handling.
     @Test(timeOut = 20000)
@@ -595,10 +590,10 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
         List<TopicPartition> topicPartitions = createTopics(topicName, numberTopics, numberPartitions);
         List<String> kafkaTopics = getCreatedTopics(topicName, numberTopics);
         KafkaHeaderAndRequest metadataRequest = createTopicMetadataRequest(kafkaTopics);
-        CompletableFuture<ResponseAndRequest> responseFuture =
+        CompletableFuture<AbstractResponse> responseFuture =
             kafkaRequestHandler.handleTopicMetadataRequest(metadataRequest);
 
-        MetadataResponse metadataResponse = (MetadataResponse) responseFuture.get().getResponse();
+        MetadataResponse metadataResponse = (MetadataResponse) responseFuture.get();
 
         // verify all served by same broker : localhost:port
         assertEquals(metadataResponse.brokers().size(), 1);
@@ -638,12 +633,11 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
             .setTargetTimes(targetTimes);
 
         KafkaHeaderAndRequest request = buildRequest(builder);
-        CompletableFuture<ResponseAndRequest> responseFuture = kafkaRequestHandler
+        CompletableFuture<AbstractResponse> responseFuture = kafkaRequestHandler
             .handleListOffsetRequest(request);
 
-        ResponseAndRequest response = responseFuture.get();
-        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response.getResponse();
-        assertEquals(response.getRequest().getHeader().apiKey(), ApiKeys.LIST_OFFSETS);
+        AbstractResponse response = responseFuture.get();
+        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
         assertEquals(listOffsetResponse.responseData().get(tp).error,
             Errors.UNKNOWN_TOPIC_OR_PARTITION);
     }

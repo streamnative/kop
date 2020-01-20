@@ -39,6 +39,7 @@ import io.streamnative.kop.utils.SaslUtils;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashMap;
@@ -109,6 +110,7 @@ import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
@@ -155,10 +157,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private String authRole;
     private AuthenticationState authState;
 
-    // TODO: once there is a topic unloaded, close this connection.
-    // for each topic that used in this connection, register a reference in PersistentTopic
-    // once a unload happens, call all topic.remove reference, and close the connection.
-
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
                                GroupCoordinator groupCoordinator,
@@ -199,17 +197,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void close() {
         if (isActive.getAndSet(false)) {
             log.info("close channel {}", ctx.channel());
-            writeAndFlushInactiveResponseToClient(ctx.channel());
+            writeAndFlushWhenInactiveChannel(ctx.channel());
             ctx.close();
             topicManager.close();
         }
     }
 
-    protected CompletableFuture<ResponseAndRequest> handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest) {
+    protected CompletableFuture<AbstractResponse> handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest) {
         ApiVersionsResponse apiResponse = ApiVersionsResponse.defaultApiVersionsResponse();
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
-        resultFuture.complete(ResponseAndRequest.of(apiResponse, apiVersionRequest));
+        resultFuture.complete(apiResponse);
 
         if (log.isDebugEnabled()) {
             log.debug("[{}] Request {}. ApiVersionResponse: ",
@@ -221,28 +219,28 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return resultFuture;
     }
 
-    protected CompletableFuture<ResponseAndRequest> handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest) {
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+    protected CompletableFuture<AbstractResponse> handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest) {
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
         String err = String.format("Kafka API (%s) Not supported by kop server.",
             kafkaHeaderAndRequest.getHeader().apiKey());
         log.error(err);
 
         AbstractResponse apiResponse = kafkaHeaderAndRequest.getRequest()
             .getErrorResponse(new UnsupportedOperationException(err));
-        resultFuture.complete(ResponseAndRequest.of(apiResponse, kafkaHeaderAndRequest));
+        resultFuture.complete(apiResponse);
 
         return resultFuture;
     }
 
-    protected CompletableFuture<ResponseAndRequest> handleInactive(KafkaHeaderAndRequest kafkaHeaderAndRequest) {
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+    protected CompletableFuture<AbstractResponse> handleInactive(KafkaHeaderAndRequest kafkaHeaderAndRequest) {
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         AbstractRequest request = kafkaHeaderAndRequest.getRequest();
         AbstractResponse apiResponse = request.getErrorResponse(new LeaderNotAvailableException("Channel is closing!"));
 
         log.error("Kafka API {} is send to a closing channel", kafkaHeaderAndRequest.getHeader().apiKey());
 
-        resultFuture.complete(ResponseAndRequest.of(apiResponse, kafkaHeaderAndRequest));
+        resultFuture.complete(apiResponse);
         return resultFuture;
     }
 
@@ -251,11 +249,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return admin.topics().getPartitionedTopicMetadataAsync(topicName);
     }
 
-    protected CompletableFuture<ResponseAndRequest> handleTopicMetadataRequest(KafkaHeaderAndRequest metadataHar) {
+    protected CompletableFuture<AbstractResponse> handleTopicMetadataRequest(KafkaHeaderAndRequest metadataHar) {
         checkArgument(metadataHar.getRequest() instanceof MetadataRequest);
 
         MetadataRequest metadataRequest = (MetadataRequest) metadataHar.getRequest();
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         if (log.isDebugEnabled()) {
             log.debug("[{}] Request {}: for topic {} ",
@@ -381,7 +379,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         clusterName,
                         MetadataResponse.NO_CONTROLLER_ID,
                         Collections.emptyList());
-                resultFuture.complete(ResponseAndRequest.of(finalResponse, metadataHar));
+                resultFuture.complete(finalResponse);
                 return;
             }
 
@@ -396,7 +394,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         clusterName,
                         MetadataResponse.NO_CONTROLLER_ID,
                         allTopicMetadata);
-                resultFuture.complete(ResponseAndRequest.of(finalResponse, metadataHar));
+                resultFuture.complete(finalResponse);
                 return;
             }
 
@@ -415,8 +413,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 partitionMetadatas.add(newFailedPartitionMetadata(topicName));
                             } else {
                                 Node newNode = partitionMetadata.leader();
-                                if (!allNodes.stream().anyMatch(node1 -> node1.equals(newNode))) {
-                                    allNodes.add(newNode);
+                                synchronized (allNodes) {
+                                    if (!allNodes.stream().anyMatch(node1 -> node1.equals(newNode))) {
+                                        allNodes.add(newNode);
+                                    }
                                 }
                                 partitionMetadatas.add(partitionMetadata);
                             }
@@ -456,7 +456,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             clusterName,
                                             MetadataResponse.NO_CONTROLLER_ID,
                                             allTopicMetadata);
-                                    resultFuture.complete(ResponseAndRequest.of(finalResponse, metadataHar));
+                                    resultFuture.complete(finalResponse);
                                 }
                             }
                         })));
@@ -466,17 +466,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return resultFuture;
     }
 
-    protected CompletableFuture<ResponseAndRequest> handleProduceRequest(KafkaHeaderAndRequest produceHar) {
+    protected CompletableFuture<AbstractResponse> handleProduceRequest(KafkaHeaderAndRequest produceHar) {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         if (produceRequest.transactionalId() != null) {
             log.warn("[{}] Transactions not supported", ctx.channel());
 
-            resultFuture.complete(ResponseAndRequest.of(
-                failedResponse(produceHar, new UnsupportedOperationException("No transaction support")),
-                produceHar));
+            resultFuture.complete(
+                failedResponse(produceHar, new UnsupportedOperationException("No transaction support")));
             return resultFuture;
         }
 
@@ -502,7 +501,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             TopicName topicName = pulsarTopicName(topicPartition, namespace);
 
-            topicManager.getTopic(topicName.toString()).whenComplete((persistentTopic, exception) -> {
+            topicManager.getTopic(topicName.toString(), true).whenComplete((persistentTopic, exception) -> {
                 if (exception != null || persistentTopic == null) {
                     log.error("[{}] Request {}: Failed to getOrCreateTopic {}. exception:",
                         ctx.channel(), produceHar.getHeader(), topicName, exception);
@@ -528,16 +527,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     log.debug("[{}] Request {}: Complete handle produce.",
                         ctx.channel(), produceHar.toString());
                 }
-                resultFuture.complete(ResponseAndRequest.of(new ProduceResponse(responses), produceHar));
+                resultFuture.complete(new ProduceResponse(responses));
             });
         return resultFuture;
     }
 
-    protected CompletableFuture<ResponseAndRequest>
+    protected CompletableFuture<AbstractResponse>
     handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator) {
         checkArgument(findCoordinator.getRequest() instanceof FindCoordinatorRequest);
         FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
             int partition = groupCoordinator.partitionFor(request.coordinatorKey());
@@ -560,7 +559,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     AbstractResponse response = new FindCoordinatorResponse(
                         Errors.NONE,
                         node);
-                    resultFuture.complete(ResponseAndRequest.of(response, findCoordinator));
+                    resultFuture.complete(response);
                 });
         } else {
             throw new NotImplementedException("FindCoordinatorRequest not support TRANSACTION type "
@@ -570,12 +569,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return resultFuture;
     }
 
-    protected CompletableFuture<ResponseAndRequest> handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch) {
+    protected CompletableFuture<AbstractResponse> handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch) {
         checkArgument(offsetFetch.getRequest() instanceof OffsetFetchRequest);
         OffsetFetchRequest request = (OffsetFetchRequest) offsetFetch.getRequest();
         checkState(groupCoordinator != null,
             "Group Coordinator not started");
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         KeyValue<Errors, Map<TopicPartition, OffsetFetchResponse.PartitionData>> keyValue =
             groupCoordinator.handleFetchOffsets(
@@ -583,8 +582,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 Optional.of(request.partitions())
             );
 
-        resultFuture.complete(ResponseAndRequest
-            .of(new OffsetFetchResponse(keyValue.getKey(), keyValue.getValue()), offsetFetch));
+        resultFuture.complete(new OffsetFetchResponse(keyValue.getKey(), keyValue.getValue()));
 
         return resultFuture;
     }
@@ -687,10 +685,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return partitionData;
     }
 
-    private CompletableFuture<ResponseAndRequest> handleListOffsetRequestV1AndAbove(KafkaHeaderAndRequest listOffset) {
+    private CompletableFuture<AbstractResponse> handleListOffsetRequestV1AndAbove(KafkaHeaderAndRequest listOffset) {
         ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
 
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
         Map<TopicPartition, CompletableFuture<ListOffsetResponse.PartitionData>> responseData = Maps.newHashMap();
 
         request.partitionTimestamps().entrySet().stream().forEach(tms -> {
@@ -711,20 +709,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ListOffsetResponse response =
                     new ListOffsetResponse(CoreUtils.mapValue(responseData, future -> future.join()));
 
-                resultFuture.complete(ResponseAndRequest
-                    .of(response, listOffset));
+                resultFuture.complete(response);
             });
 
         return resultFuture;
     }
 
     // get offset from underline managedLedger
-    protected CompletableFuture<ResponseAndRequest> handleListOffsetRequest(KafkaHeaderAndRequest listOffset) {
+    protected CompletableFuture<AbstractResponse> handleListOffsetRequest(KafkaHeaderAndRequest listOffset) {
         checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
 
         // not support version 0
         if (listOffset.getHeader().apiVersion() == 0) {
-            CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+            CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
             ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
 
             log.error("ListOffset not support V0 format request");
@@ -733,8 +730,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ignored -> new ListOffsetResponse
                     .PartitionData(Errors.UNSUPPORTED_FOR_MESSAGE_FORMAT, Lists.newArrayList())));
 
-            resultFuture.complete(ResponseAndRequest
-                .of(response, listOffset));
+            resultFuture.complete(response);
 
             return resultFuture;
         }
@@ -758,13 +754,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 //                ));
     }
 
-    protected CompletableFuture<ResponseAndRequest> handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit) {
+    protected CompletableFuture<AbstractResponse> handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit) {
         checkArgument(offsetCommit.getRequest() instanceof OffsetCommitRequest);
         checkState(groupCoordinator != null,
             "Group Coordinator not started");
 
         OffsetCommitRequest request = (OffsetCommitRequest) offsetCommit.getRequest();
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         Map<TopicPartition, Errors> nonExistingTopic = nonExistingTopicErrors(request);
 
@@ -784,16 +780,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 offsetCommitResult.putAll(nonExistingTopic);
             }
             OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
-            resultFuture.complete(ResponseAndRequest.of(response, offsetCommit));
+            resultFuture.complete(response);
         });
 
         return resultFuture;
     }
 
-    protected CompletableFuture<ResponseAndRequest> handleFetchRequest(KafkaHeaderAndRequest fetch) {
+    protected CompletableFuture<AbstractResponse> handleFetchRequest(KafkaHeaderAndRequest fetch) {
         checkArgument(fetch.getRequest() instanceof FetchRequest);
         FetchRequest request = (FetchRequest) fetch.getRequest();
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         if (log.isDebugEnabled()) {
             log.debug("[{}] Request {} Fetch request. Size: {}. Each item: ",
@@ -809,13 +805,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return fetchContext.handleFetch(resultFuture);
     }
 
-    protected CompletableFuture<ResponseAndRequest> handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup) {
+    protected CompletableFuture<AbstractResponse> handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup) {
         checkArgument(joinGroup.getRequest() instanceof JoinGroupRequest);
         checkState(groupCoordinator != null,
             "Group Coordinator not started");
 
         JoinGroupRequest request = (JoinGroupRequest) joinGroup.getRequest();
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         Map<String, byte[]> protocols = new HashMap<>();
         request.groupProtocols()
@@ -850,16 +846,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     response, joinGroup.getHeader().correlationId(), joinGroup.getHeader().clientId());
             }
 
-            resultFuture.complete(ResponseAndRequest.of(response, joinGroup));
+            resultFuture.complete(response);
         });
 
         return resultFuture;
     }
 
-    protected CompletableFuture<ResponseAndRequest> handleSyncGroupRequest(KafkaHeaderAndRequest syncGroup) {
+    protected CompletableFuture<AbstractResponse> handleSyncGroupRequest(KafkaHeaderAndRequest syncGroup) {
         checkArgument(syncGroup.getRequest() instanceof SyncGroupRequest);
         SyncGroupRequest request = (SyncGroupRequest) syncGroup.getRequest();
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         groupCoordinator.handleSyncGroup(
             request.groupId(),
@@ -874,17 +870,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ByteBuffer.wrap(syncGroupResult.getValue())
             );
 
-            resultFuture.complete(ResponseAndRequest.of(response, syncGroup));
+            resultFuture.complete(response);
         });
 
         return resultFuture;
     }
 
-    protected CompletableFuture<ResponseAndRequest> handleHeartbeatRequest(KafkaHeaderAndRequest heartbeat) {
+    protected CompletableFuture<AbstractResponse> handleHeartbeatRequest(KafkaHeaderAndRequest heartbeat) {
         checkArgument(heartbeat.getRequest() instanceof HeartbeatRequest);
         HeartbeatRequest request = (HeartbeatRequest) heartbeat.getRequest();
 
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         // let the coordinator to handle heartbeat
         groupCoordinator.handleHeartbeat(
@@ -899,16 +895,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     response, heartbeat.getHeader().correlationId(), heartbeat.getHeader().clientId());
             }
 
-            resultFuture.complete(ResponseAndRequest.of(response, heartbeat));
+            resultFuture.complete(response);
         });
         return resultFuture;
     }
 
     @Override
-    protected CompletableFuture<ResponseAndRequest> handleLeaveGroupRequest(KafkaHeaderAndRequest leaveGroup) {
+    protected CompletableFuture<AbstractResponse> handleLeaveGroupRequest(KafkaHeaderAndRequest leaveGroup) {
         checkArgument(leaveGroup.getRequest() instanceof LeaveGroupRequest);
         LeaveGroupRequest request = (LeaveGroupRequest) leaveGroup.getRequest();
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         // let the coordinator to handle heartbeat
         groupCoordinator.handleLeaveGroup(
@@ -917,17 +913,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         ).thenAccept(errors -> {
             LeaveGroupResponse response = new LeaveGroupResponse(errors);
 
-            resultFuture.complete(ResponseAndRequest.of(response, leaveGroup));
+            resultFuture.complete(response);
         });
 
         return resultFuture;
     }
 
     @Override
-    protected CompletableFuture<ResponseAndRequest> handleDescribeGroupRequest(KafkaHeaderAndRequest describeGroup) {
+    protected CompletableFuture<AbstractResponse> handleDescribeGroupRequest(KafkaHeaderAndRequest describeGroup) {
         checkArgument(describeGroup.getRequest() instanceof DescribeGroupsRequest);
         DescribeGroupsRequest request = (DescribeGroupsRequest) describeGroup.getRequest();
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         // let the coordinator to handle heartbeat
         Map<String, GroupMetadata> groups = request.groupIds().stream()
@@ -966,35 +962,35 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         DescribeGroupsResponse response = new DescribeGroupsResponse(
             groups
         );
-        resultFuture.complete(ResponseAndRequest.of(response, describeGroup));
+        resultFuture.complete(response);
 
         return resultFuture;
     }
 
     @Override
-    protected CompletableFuture<ResponseAndRequest> handleListGroupsRequest(KafkaHeaderAndRequest listGroups) {
+    protected CompletableFuture<AbstractResponse> handleListGroupsRequest(KafkaHeaderAndRequest listGroups) {
         throw new NotImplementedException("Not implemented yet");
     }
 
     @Override
-    protected CompletableFuture<ResponseAndRequest> handleDeleteGroupsRequest(KafkaHeaderAndRequest deleteGroups) {
+    protected CompletableFuture<AbstractResponse> handleDeleteGroupsRequest(KafkaHeaderAndRequest deleteGroups) {
         checkArgument(deleteGroups.getRequest() instanceof DescribeGroupsRequest);
         DeleteGroupsRequest request = (DeleteGroupsRequest) deleteGroups.getRequest();
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         Map<String, Errors> deleteResult = groupCoordinator.handleDeleteGroups(request.groups());
         DeleteGroupsResponse response = new DeleteGroupsResponse(
             deleteResult
         );
-        resultFuture.complete(ResponseAndRequest.of(response, deleteGroups));
+        resultFuture.complete(response);
         return resultFuture;
     }
 
     @Override
-    protected CompletableFuture<ResponseAndRequest> handleSaslAuthenticate(KafkaHeaderAndRequest saslAuthenticate) {
+    protected CompletableFuture<AbstractResponse> handleSaslAuthenticate(KafkaHeaderAndRequest saslAuthenticate) {
         checkArgument(saslAuthenticate.getRequest() instanceof SaslAuthenticateRequest);
         SaslAuthenticateRequest request = (SaslAuthenticateRequest) saslAuthenticate.getRequest();
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         SaslAuth saslAuth;
         try {
@@ -1026,24 +1022,24 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             // TODO: what should be answered?
             SaslAuthenticateResponse response = new SaslAuthenticateResponse(
                 Errors.NONE, "", request.saslAuthBytes());
-            resultFuture.complete(ResponseAndRequest.of(response, saslAuthenticate));
+            resultFuture.complete(response);
 
         } catch (IOException | AuthenticationException | PulsarAdminException e) {
             SaslAuthenticateResponse response = new SaslAuthenticateResponse(
                 Errors.SASL_AUTHENTICATION_FAILED, e.getMessage(), request.saslAuthBytes());
-            resultFuture.complete(ResponseAndRequest.of(response, saslAuthenticate));
+            resultFuture.complete(response);
         }
         return resultFuture;
     }
 
     @Override
-    protected CompletableFuture<ResponseAndRequest> handleSaslHandshake(KafkaHeaderAndRequest saslHandshake) {
+    protected CompletableFuture<AbstractResponse> handleSaslHandshake(KafkaHeaderAndRequest saslHandshake) {
         checkArgument(saslHandshake.getRequest() instanceof SaslHandshakeRequest);
         SaslHandshakeRequest request = (SaslHandshakeRequest) saslHandshake.getRequest();
-        CompletableFuture<ResponseAndRequest> resultFuture = new CompletableFuture<>();
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         SaslHandshakeResponse response = checkSaslMechanism(request.mechanism());
-        resultFuture.complete(ResponseAndRequest.of(response, saslHandshake));
+        resultFuture.complete(response);
         return resultFuture;
     }
 
@@ -1156,70 +1152,77 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private CompletableFuture<PartitionMetadata> findBroker(PulsarService pulsarService, TopicName topic) {
         if (log.isDebugEnabled()) {
-            log.debug("Handle Lookup for {}", topic);
+            log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }
 
+        CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
+        PulsarClientImpl pulsarClient;
         try {
-            PulsarClientImpl pulsarClient = (PulsarClientImpl) pulsarService.getClient();
-            return pulsarClient.getLookup()
-                .getBroker(topic)
-                .thenCompose(pair -> getProtocolDataToAdvertise(pair, topic))
-                .thenApply(stringOptional -> {
-                    if (!stringOptional.isPresent()) {
-                        log.error("Not get advertise data for Kafka topic:{} ", topic);
-                        return null;
-                    }
-
-                    try {
-                        String listeners = stringOptional.get();
-                        String kopBrokerUrl = getKopBrokerUrl(listeners, tlsEnabled);
-
-                        // get local listeners.
-                        String localListeners = kafkaConfig.getListeners();
-
-                        if (log.isDebugEnabled()) {
-                            log.debug("Found broker listeners: {} for topicName: {}, "
-                                    + "localListeners: {}, found Listeners: {}",
-                                listeners, topic, localListeners, listeners);
-                        }
-
-                        // TODO: make this getTopic future complete, then do the return of Node.
-                        if (!topicManager.topicExists(topic.toString())
-                            && !isOffsetTopic(topic.toString())
-                            && localListeners.contains(kopBrokerUrl)) {
-                            topicManager.getTopic(topic.toString()).whenComplete((persistentTopic, exception) -> {
-                                if (exception != null || persistentTopic == null) {
-                                    log.error("[{}] findBroker: Failed to getOrCreateTopic {}. exception:",
-                                        ctx.channel(), topic.toString(), exception);
-                                } else {
-                                    if (log.isDebugEnabled()) {
-                                        log.debug("Add topic: {} into TopicManager while findBroker.",
-                                            topic.toString());
-                                    }
-                                }
-                            });
-                        }
-
-                        URI uri = new URI(kopBrokerUrl);
-                        Node node = newNode(new InetSocketAddress(
-                            uri.getHost(),
-                            uri.getPort()));
-
-                        return newPartitionMetadata(topic, node);
-                    } catch (Exception e) {
-                        log.error("Caught error while find Broker for topic:{} ", topic, e);
-                        return null;
-                    }
-                }).exceptionally(ex -> {
-                    log.error("Exceptionally while find Broker for topic:{} ", topic, ex);
-                    return null;
-                });
-        } catch (Exception e) {
-            log.error("Exceptionally while get pulsar client from Pulsar Broker for topic:{} ", topic, e);
-            CompletableFuture completableFuture = new CompletableFuture();
-            completableFuture.complete(null);
-            return completableFuture;
+            pulsarClient = (PulsarClientImpl) pulsarService.getClient();
+        } catch (PulsarServerException e) {
+            log.error("[{}] findBroker for Kafka topic {} error get pulsar client. throwable: ",
+                topic, topic, e);
+            returnFuture.complete(null);
+            return returnFuture;
         }
+
+        pulsarClient.getLookup()
+            .getBroker(topic)
+            .thenCompose(pair -> getProtocolDataToAdvertise(pair, topic))
+            .whenComplete((stringOptional, throwable) -> {
+                if (!stringOptional.isPresent() || throwable != null) {
+                    log.error("Not get advertise data for Kafka topic:{}. throwable",
+                        topic, throwable);
+                    returnFuture.complete(null);
+                    return;
+                }
+
+                String listeners = stringOptional.get();
+                String kopBrokerUrl = getKopBrokerUrl(listeners, tlsEnabled);
+                URI kopUri;
+                try {
+                    kopUri = new URI(kopBrokerUrl);
+                } catch (URISyntaxException e) {
+                    log.error("[{}] findBroker for topic {}: Failed to translate URI {}. exception:",
+                        ctx.channel(), topic.toString(), kopBrokerUrl, e);
+                    returnFuture.complete(null);
+                    return;
+                }
+
+                Node node = newNode(new InetSocketAddress(
+                    kopUri.getHost(),
+                    kopUri.getPort()));
+
+                // get local listeners.
+                String localListeners = kafkaConfig.getListeners();
+
+                if (log.isDebugEnabled()) {
+                    log.debug("Found broker listeners: {} for topicName: {}, "
+                            + "localListeners: {}, found Listeners: {}",
+                        listeners, topic, localListeners, listeners);
+                }
+
+                if (!topicManager.topicExists(topic.toString())
+                    && !isOffsetTopic(topic.toString())
+                    && localListeners.contains(kopBrokerUrl)) {
+                    topicManager.getTopic(topic.toString()).whenComplete((persistentTopic, exception) -> {
+                        if (exception != null || persistentTopic == null) {
+                            log.error("[{}] findBroker: Failed to getOrCreateTopic {}. exception:",
+                                ctx.channel(), topic.toString(), exception);
+                            returnFuture.complete(null);
+                        } else {
+                            if (log.isDebugEnabled()) {
+                                log.debug("Add topic: {} into TopicManager while findBroker.",
+                                    topic.toString());
+                            }
+                            returnFuture.complete(newPartitionMetadata(topic, node));
+                        }
+                    });
+                } else {
+                    returnFuture.complete(newPartitionMetadata(topic, node));
+                }
+            });
+        return returnFuture;
     }
 
     static Node newNode(InetSocketAddress address) {

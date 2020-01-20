@@ -42,9 +42,7 @@ public class MockProducer extends Producer {
         cnx.getBrokerService().executor().execute(() -> {
             log.info("Disconnecting producer: {}", this);
             getTopic().removeProducer(this);
-            log.info("getTopic().removeProducer producer: {}", this);
             cnx.closeProducer(this);
-            log.info("cnx.closeProducer producer: {}", this);
             future.complete(null);
         });
 

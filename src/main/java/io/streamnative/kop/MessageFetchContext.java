@@ -21,7 +21,6 @@ import com.google.common.collect.Lists;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
-import io.streamnative.kop.KafkaCommandDecoder.ResponseAndRequest;
 import io.streamnative.kop.utils.MessageIdUtils;
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -29,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -43,6 +43,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.FetchResponse.PartitionData;
@@ -86,7 +87,7 @@ public final class MessageFetchContext {
 
 
     // handle request
-    public CompletableFuture<ResponseAndRequest> handleFetch(CompletableFuture<ResponseAndRequest> fetchResponse) {
+    public CompletableFuture<AbstractResponse> handleFetch(CompletableFuture<AbstractResponse> fetchResponse) {
         LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData = new LinkedHashMap<>();
 
         // Map of partition and related cursor
@@ -140,7 +141,7 @@ public final class MessageFetchContext {
 
     private void readMessages(KafkaHeaderAndRequest fetch,
                               Map<TopicPartition, CompletableFuture<Pair<ManagedCursor, Long>>> cursors,
-                              CompletableFuture<ResponseAndRequest> resultFuture,
+                              CompletableFuture<AbstractResponse> resultFuture,
                               LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData) {
         AtomicInteger bytesRead = new AtomicInteger(0);
         Map<TopicPartition, List<Entry>> entryValues = new ConcurrentHashMap<>();
@@ -157,7 +158,7 @@ public final class MessageFetchContext {
                                       Map<TopicPartition, CompletableFuture<Pair<ManagedCursor, Long>>> cursors,
                                       AtomicInteger bytesRead,
                                       Map<TopicPartition, List<Entry>> responseValues,
-                                      CompletableFuture<ResponseAndRequest> resultFuture,
+                                      CompletableFuture<AbstractResponse> resultFuture,
                                       LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData) {
         AtomicInteger entriesRead = new AtomicInteger(0);
         Map<TopicPartition, CompletableFuture<Entry>> readFutures = readAllCursorOnce(cursors);
@@ -261,30 +262,21 @@ public final class MessageFetchContext {
                         log.debug("Request {}: All partitions for request read 0 entry",
                             fetch.getHeader());
 
-                        // returned earlier, sleep for waitTime
-                        // TODO: java future complete after sleep in one method?
-                        try {
-                            Thread.sleep(waitTime);
-                        } catch (Exception e) {
-                            log.info("Request {}: error while sleep, this is OK.",
-                                fetch.getHeader(), e);
-                        }
-
-                        resultFuture.complete(ResponseAndRequest.of(
-                            new FetchResponse(Errors.NONE,
-                                responseData,
-                                ((Integer) THROTTLE_TIME_MS.defaultValue),
-                                ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
-                            fetch));
-                        this.recycle();
+                        requestHandler.getPulsarService().getExecutor().schedule(() -> {
+                            resultFuture.complete(
+                                new FetchResponse(Errors.NONE,
+                                    responseData,
+                                    ((Integer) THROTTLE_TIME_MS.defaultValue),
+                                    ((FetchRequest) fetch.getRequest()).metadata().sessionId()));
+                            this.recycle();
+                        }, waitTime, TimeUnit.MILLISECONDS);
                     } else {
-                        resultFuture.complete(ResponseAndRequest.of(
+                        resultFuture.complete(
                             new FetchResponse(
                                 Errors.NONE,
                                 responseData,
                                 ((Integer) THROTTLE_TIME_MS.defaultValue),
-                                ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
-                            fetch));
+                                ((FetchRequest) fetch.getRequest()).metadata().sessionId()));
                         this.recycle();
                     }
                 } else {

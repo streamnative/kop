@@ -75,7 +75,7 @@ public class KafkaTopicManager {
         return consumerTopicManagers.computeIfAbsent(
             topicName,
             t -> {
-                CompletableFuture<PersistentTopic> topic = getTopic(t);
+                CompletableFuture<PersistentTopic> topic = getTopic(t, true);
                 if (topic == null) {
                     log.warn("Failed to getTopicConsumerManager for topic {}. return null", t);
                     return null;
@@ -122,52 +122,58 @@ public class KafkaTopicManager {
         return getTopic(topicName, false);
     }
 
-    // TODO: some times we need to lookup, to make sure topic served by brokerService,
+    // For Produce/Consume we need to lookup, to make sure topic served by brokerService,
     // or will meet error: "Service unit is not ready when loading the topic".
     // If getTopic is called after lookup, then no needLookup.
     public synchronized CompletableFuture<PersistentTopic> getTopic(String topicName, boolean needLookup) {
         return topics.computeIfAbsent(topicName,
             t -> {
                 try {
-                    CompletableFuture<Pair<InetSocketAddress, InetSocketAddress>> broker =
-                        ((PulsarClientImpl) pulsarService.getClient()).getLookup().getBroker(TopicName.get(t));
+                    CompletableFuture<Pair<InetSocketAddress, InetSocketAddress>> lookupBroker;
+                    if (needLookup) {
+                        lookupBroker = ((PulsarClientImpl) pulsarService.getClient()).getLookup()
+                            .getBroker(TopicName.get(t));
+                    } else {
+                        lookupBroker = new CompletableFuture<>();
+                        lookupBroker.complete(null);
+                    }
 
                     final CompletableFuture<PersistentTopic> topicCompletableFuture = new CompletableFuture<>();
 
-                    // TODO: make it more smooth.
-                    broker.whenCompleteAsync((tt, th) -> {
-                            brokerService
-                                .getTopic(t, true)
-                                .thenApply(t2 -> {
-                                    if (log.isDebugEnabled()) {
-                                        log.debug("GetTopic for {} in KafkaTopicManager", t);
-                                    }
+                    lookupBroker.whenCompleteAsync((ignore, th) -> {
+                        brokerService
+                            .getTopic(t, true)
+                            .thenApply(t2 -> {
+                                if (log.isDebugEnabled()) {
+                                    log.debug("GetTopic for {} in KafkaTopicManager", t);
+                                }
 
-                                    try {
-                                        if (t2.isPresent()) {
-                                            PersistentTopic persistentTopic = (PersistentTopic) t2.get();
-                                            references.putIfAbsent(t, registerInPersistentTopic(persistentTopic));
-                                            topicCompletableFuture.complete(persistentTopic);
-                                        } else {
-                                            log.error("Get empty topic for name {}", t);
-                                            topicCompletableFuture.complete(null);
-                                        }
-                                    } catch (Exception e) {
-                                        log.error("Failed to registerInPersistentTopic {}. exception:",
-                                            t, e);
+                                try {
+                                    if (t2.isPresent()) {
+                                        PersistentTopic persistentTopic = (PersistentTopic) t2.get();
+                                        references.putIfAbsent(t, registerInPersistentTopic(persistentTopic));
+                                        topicCompletableFuture.complete(persistentTopic);
+                                    } else {
+                                        log.error("Get empty topic for name {}", t);
                                         topicCompletableFuture.complete(null);
                                     }
-
-                                    return null;
-                                })
-                                .exceptionally(ex -> {
-                                    log.error("Failed to getTopic {}. exception:",
-                                        t, ex);
+                                } catch (Exception e) {
+                                    log.error("Failed to registerInPersistentTopic {}. exception:",
+                                        t, e);
                                     topicCompletableFuture.complete(null);
-                                    return null;
-                                });
-                        }
-                    );
+                                }
+
+                                return null;
+                            })
+                            .exceptionally(ex -> {
+                                log.error("Failed to getTopic {}. exception:",
+                                    t, ex);
+                                topicCompletableFuture.complete(null);
+                                return null;
+                            });
+
+
+                    });
                     return topicCompletableFuture;
                 } catch (Exception e) {
                     log.error("Caught error while getclient for topic:{} ", t, e);
@@ -177,7 +183,6 @@ public class KafkaTopicManager {
     }
 
     // when channel close, release all the topics reference in persistentTopic
-    // TODO: set channel status?
     public synchronized void close() {
         try {
             for (CompletableFuture<KafkaTopicConsumerManager> manager : consumerTopicManagers.values()) {
@@ -229,7 +234,6 @@ public class KafkaTopicManager {
             if (!topics.containsKey(topicName)) {
                 return;
             }
-
 
             topics.get(topicName).get().removeProducer(references.get(topicName));
             topics.remove(topicName);
