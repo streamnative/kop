@@ -17,24 +17,15 @@ package io.streamnative.kop;
 import static io.streamnative.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
 import static io.streamnative.kop.utils.TopicNameUtils.getPartitionedTopicNameWithoutPartitions;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.CALLS_REAL_METHODS;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.kop.KafkaCommandDecoder.KafkaHeaderAndResponse;
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.Node;
@@ -101,7 +92,6 @@ public class KafkaRequestHandlerTest extends MockKafkaServiceBaseTest {
         handler = new KafkaRequestHandler(
             kafkaService,
             kafkaService.getKafkaConfig(),
-            kafkaService.getKafkaTopicManager(),
             kafkaService.getGroupCoordinator(),
             false);
     }
@@ -173,41 +163,6 @@ public class KafkaRequestHandlerTest extends MockKafkaServiceBaseTest {
             byteBuffer, kopResponse.getApiVersion());
 
         assertEquals(parsedResponse.apiVersions().size(), apiVersionsResponse.apiVersions().size());
-    }
-
-    @Test
-    public void testChannelRead() throws Exception {
-        int correlationId = 7777;
-        String clientId = "KopClientId";
-
-        ApiVersionsRequest apiVersionsRequest = new ApiVersionsRequest.Builder().build();
-        RequestHeader header = new RequestHeader(
-            ApiKeys.API_VERSIONS,
-            ApiKeys.API_VERSIONS.latestVersion(),
-            clientId,
-            correlationId);
-
-        ByteBuffer serializedRequest = apiVersionsRequest.serialize(header);
-        int size = serializedRequest.remaining();
-        ByteBuf inputBuf = Unpooled.buffer(size);
-        inputBuf.writeBytes(serializedRequest);
-
-        ChannelHandlerContext ctx = mock(ChannelHandlerContext.class);
-        Channel channel = mock(Channel.class);
-        SocketAddress address = mock(SocketAddress.class);
-
-        when(ctx.channel()).thenReturn(channel);
-        when(channel.remoteAddress()).thenReturn(address);
-
-        try {
-            handler = mock(KafkaRequestHandler.class, CALLS_REAL_METHODS);
-            handler.channelActive(ctx);
-            handler.channelRead(mock(ChannelHandlerContext.class), inputBuf);
-        } catch (Exception e) {
-            // not mock other module, expect meet exception.
-        }
-
-        verify(handler, times(1)).handleApiVersionsRequest(any());
     }
 
     @Test

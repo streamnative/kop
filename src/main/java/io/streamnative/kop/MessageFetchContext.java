@@ -87,6 +87,8 @@ public final class MessageFetchContext {
 
     // handle request
     public CompletableFuture<ResponseAndRequest> handleFetch(CompletableFuture<ResponseAndRequest> fetchResponse) {
+        LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData = new LinkedHashMap<>();
+
         // Map of partition and related cursor
         Map<TopicPartition, CompletableFuture<Pair<ManagedCursor, Long>>> topicsAndCursor =
             ((FetchRequest) fetchRequest.getRequest())
@@ -100,17 +102,37 @@ public final class MessageFetchContext {
                             fetchRequest.getHeader(), topicName, offset);
                     }
 
+                    CompletableFuture<KafkaTopicConsumerManager> consumerManager =
+                        requestHandler.getTopicManager().getTopicConsumerManager(topicName.toString());
+
+                    // topic not owned by broker
+                    if (consumerManager == null) {
+                        // return UNKNOWN_TOPIC_OR_PARTITION?
+                        responseData.put(entry.getKey(),
+                            new FetchResponse.PartitionData(
+                            Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                            FetchResponse.INVALID_HIGHWATERMARK,
+                            FetchResponse.INVALID_LAST_STABLE_OFFSET,
+                            FetchResponse.INVALID_LOG_START_OFFSET,
+                            null,
+                            MemoryRecords.EMPTY));
+
+                        log.warn("Partition {} not owned by this broker, will not trigger read for this partition",
+                            entry.getKey());
+                        return null;
+                    }
+
                     return Pair.of(
                         entry.getKey(),
-                        requestHandler.getTopicManager().getTopicConsumerManager(topicName.toString())
-                            .thenCompose(cm -> cm.remove(offset)));
+                        consumerManager.thenCompose(cm -> cm.remove(offset)));
                 })
+                .filter(x -> x != null)
                 .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
         // wait to get all the cursor, then readMessages
         CompletableFuture
             .allOf(topicsAndCursor.entrySet().stream().map(Map.Entry::getValue).toArray(CompletableFuture<?>[]::new))
-            .whenComplete((ignore, ex) -> readMessages(fetchRequest, topicsAndCursor, fetchResponse));
+            .whenComplete((ignore, ex) -> readMessages(fetchRequest, topicsAndCursor, fetchResponse, responseData));
 
         return fetchResponse;
     }
@@ -118,23 +140,25 @@ public final class MessageFetchContext {
 
     private void readMessages(KafkaHeaderAndRequest fetch,
                               Map<TopicPartition, CompletableFuture<Pair<ManagedCursor, Long>>> cursors,
-                              CompletableFuture<ResponseAndRequest> resultFuture) {
+                              CompletableFuture<ResponseAndRequest> resultFuture,
+                              LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData) {
         AtomicInteger bytesRead = new AtomicInteger(0);
-        Map<TopicPartition, List<Entry>> responseValues = new ConcurrentHashMap<>();
+        Map<TopicPartition, List<Entry>> entryValues = new ConcurrentHashMap<>();
 
         if (log.isDebugEnabled()) {
             log.debug("Request {}: Read Messages for request.",
                  fetch.getHeader());
         }
 
-        readMessagesInternal(fetch, cursors, bytesRead, responseValues, resultFuture);
+        readMessagesInternal(fetch, cursors, bytesRead, entryValues, resultFuture, responseData);
     }
 
     private void readMessagesInternal(KafkaHeaderAndRequest fetch,
                                       Map<TopicPartition, CompletableFuture<Pair<ManagedCursor, Long>>> cursors,
                                       AtomicInteger bytesRead,
                                       Map<TopicPartition, List<Entry>> responseValues,
-                                      CompletableFuture<ResponseAndRequest> resultFuture) {
+                                      CompletableFuture<ResponseAndRequest> resultFuture,
+                                      LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData) {
         AtomicInteger entriesRead = new AtomicInteger(0);
         Map<TopicPartition, CompletableFuture<Entry>> readFutures = readAllCursorOnce(cursors);
         CompletableFuture.allOf(readFutures.values().stream().toArray(CompletableFuture<?>[]::new))
@@ -142,7 +166,7 @@ public final class MessageFetchContext {
                 // keep entries since all read completed. currently only read 1 entry each time.
                 readFutures.forEach((topic, readEntry) -> {
                     try {
-                        Entry entry = readEntry.join();
+                        Entry entry = readEntry.get();
                         List<Entry> entryList = responseValues.computeIfAbsent(topic, l -> Lists.newArrayList());
 
                         if (entry != null) {
@@ -156,11 +180,19 @@ public final class MessageFetchContext {
                             }
                         }
                     } catch (Exception e) {
-                        // readEntry.join failed. ignore this partition
-                        log.error("Request {}: Failed readEntry.join for topic: {}. ",
+                        // readEntry.get failed. ignore this partition
+                        log.error("Request {}: Failed readEntry.get for topic: {}. ",
                             fetch.getHeader(), topic, e);
                         cursors.remove(topic);
-                        responseValues.putIfAbsent(topic, Lists.newArrayList());
+
+                        responseData.put(topic,
+                            new FetchResponse.PartitionData(
+                            Errors.NONE,
+                            FetchResponse.INVALID_HIGHWATERMARK,
+                            FetchResponse.INVALID_LAST_STABLE_OFFSET,
+                            FetchResponse.INVALID_LOG_START_OFFSET,
+                            null,
+                            MemoryRecords.EMPTY));
                     }
                 });
 
@@ -191,8 +223,6 @@ public final class MessageFetchContext {
                         log.debug(" Request {}: Complete read {} entries with size {}",
                             fetch.getHeader(), entriesRead.get(), allSize);
                     }
-
-                    LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData = new LinkedHashMap<>();
 
                     AtomicBoolean allPartitionsNoEntry = new AtomicBoolean(true);
                     responseValues.forEach((topicPartition, entries) -> {
@@ -232,6 +262,7 @@ public final class MessageFetchContext {
                             fetch.getHeader());
 
                         // returned earlier, sleep for waitTime
+                        // TODO: java future complete after sleep in one method?
                         try {
                             Thread.sleep(waitTime);
                         } catch (Exception e) {
@@ -258,7 +289,7 @@ public final class MessageFetchContext {
                     }
                 } else {
                     //need do another round read
-                    readMessagesInternal(fetch, cursors, bytesRead, responseValues, resultFuture);
+                    readMessagesInternal(fetch, cursors, bytesRead, responseValues, resultFuture, responseData);
                 }
             });
     }
@@ -273,7 +304,11 @@ public final class MessageFetchContext {
             CompletableFuture<Entry> readFuture = new CompletableFuture<>();
 
             try {
-                Pair<ManagedCursor, Long> cursorOffsetPair = pair.getValue().join();
+                if (pair.getValue() == null) {
+                    throw new Exception("Topic not owned " + pair.getKey());
+                }
+
+                Pair<ManagedCursor, Long> cursorOffsetPair = pair.getValue().get();
                 cursor = cursorOffsetPair.getLeft();
                 long keptOffset = cursorOffsetPair.getRight();
 

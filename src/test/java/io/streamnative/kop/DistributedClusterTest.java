@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.kop.coordinator.group;
+package io.streamnative.kop;
 
 import static io.streamnative.kop.KafkaProtocolHandler.PLAINTEXT_PREFIX;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
@@ -23,9 +23,6 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.gson.Gson;
-import io.streamnative.kop.KafkaService;
-import io.streamnative.kop.KafkaServiceConfiguration;
-import io.streamnative.kop.MockKafkaServiceBaseTest;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -52,11 +49,11 @@ import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 
-
 /**
- * Unit test {@link GroupCoordinator}.
+ * Test KoP cluster mode.
+ * Will setup 2 brokers and do the tests.
  */
-public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
+public class DistributedClusterTest extends MockKafkaServiceBaseTest {
 
     protected KafkaServiceConfiguration conf1;
     protected KafkaServiceConfiguration conf2;
@@ -72,7 +69,7 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
 
     protected int offsetsTopicNumPartitions;
 
-    private static final Logger log = LoggerFactory.getLogger(DistributedGroupCoordinatorTest.class);
+    private static final Logger log = LoggerFactory.getLogger(DistributedClusterTest.class);
 
     protected KafkaServiceConfiguration resetConfig(int brokerPort, int webPort, int kafkaPort) {
         KafkaServiceConfiguration kConfig = new KafkaServiceConfiguration();
@@ -240,6 +237,7 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
         assertEquals(i, numMessages);
     }
 
+     // Unit test {@link GroupCoordinator}.
     @Test(timeOut = 30000)
     public void testMutiBrokerAndCoordinator() throws Exception {
         int partitionNumber = 10;
@@ -255,6 +253,8 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
         // Because kafkaService1 is start firstly. all the offset topics is served in broker1.
         // In setting, each ns has 2 bundles. unload the first part, and this part will be served by broker2.
         kafkaService1.getAdminClient().namespaces().unloadNamespaceBundle(offsetNs, "0x00000000_0x80000000");
+
+        log.info("unloaded offset namespace, will call lookup to force reload");
 
         // Offsets partitions should be served by 2 brokers now.
         Map<String, List<String>> offsetTopicMap = Maps.newHashMap();
@@ -397,5 +397,103 @@ public class DistributedGroupCoordinatorTest extends MockKafkaServiceBaseTest {
         assertTrue(records.isEmpty());
         records = kConsumer4.getConsumer().poll(Duration.ofMillis(200));
         assertTrue(records.isEmpty());
+    }
+
+    // Unit test for unload / reload user topic bundle, verify it works well.
+    @Test(timeOut = 30000)
+    public void testMutiBrokerUnloadReload() throws Exception {
+        int partitionNumber = 10;
+        String kafkaTopicName = "kopMutiBrokerUnloadReload" + partitionNumber;
+        String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
+        String kopNamespace = "public/default";
+
+        // 0.  Preparing: create partitioned topic.
+        kafkaService1.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
+
+        // 1. use a map for serving broker and topics <broker, topics>, verify both broker has messages served.
+        Map<String, List<String>> topicMap = Maps.newHashMap();
+        for (int ii = 0; ii < partitionNumber; ii++) {
+            String topicName = pulsarTopicName + PARTITIONED_TOPIC_SUFFIX + ii;
+            String result = admin.lookups().lookupTopic(topicName);
+            topicMap.putIfAbsent(result, Lists.newArrayList());
+            topicMap.get(result).add(topicName);
+            log.info("serving broker for topic {} is {}", topicName, result);
+        }
+        assertTrue(topicMap.size() == 2);
+
+        // 2. produce consume message with Kafka producer.
+        int totalMsgs = 50;
+        String messageStrPrefix = "Message_" + kafkaTopicName + "_";
+        @Cleanup
+        KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort());
+        kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
+
+        List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
+            .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
+        @Cleanup
+        KConsumer kConsumer1 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-1");
+        @Cleanup
+        KConsumer kConsumer2 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-2");
+        log.info("Partition size: {}, will consume and commitOffset for 2 consumers",
+            topicPartitions.size());
+        kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
+
+        // 3. unload
+        log.info("Unload namespace, lookup will trigger another reload.");
+        kafkaService1.getAdminClient().namespaces().unload(kopNamespace);
+
+        // 4. publish consume again
+        log.info("Re Publish / Consume again.");
+        kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
+        kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
+    }
+
+    @Test(timeOut = 30000)
+    public void testOneBrokerShutdown() throws Exception {
+        int partitionNumber = 10;
+        String kafkaTopicName = "kopOneBrokerShutdown" + partitionNumber;
+        String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
+
+        // 0.  Preparing: create partitioned topic.
+        kafkaService1.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
+
+        // 1. use a map for serving broker and topics <broker, topics>, verify both broker has messages served.
+        Map<String, List<String>> topicMap = Maps.newHashMap();
+        for (int ii = 0; ii < partitionNumber; ii++) {
+            String topicName = pulsarTopicName + PARTITIONED_TOPIC_SUFFIX + ii;
+            String result = admin.lookups().lookupTopic(topicName);
+            topicMap.putIfAbsent(result, Lists.newArrayList());
+            topicMap.get(result).add(topicName);
+            log.info("serving broker for topic {} is {}", topicName, result);
+        }
+        assertTrue(topicMap.size() == 2);
+
+        // 2. produce consume message with Kafka producer.
+        int totalMsgs = 50;
+        String messageStrPrefix = "Message_" + kafkaTopicName + "_";
+        @Cleanup
+        KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort());
+        kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
+
+        List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
+            .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
+        @Cleanup
+        KConsumer kConsumer1 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-1");
+        @Cleanup
+        KConsumer kConsumer2 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-2");
+        log.info("Partition size: {}, will consume and commitOffset for 2 consumers",
+            topicPartitions.size());
+        kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
+
+        kafkaService1.close();
+
+        // 4. publish consume again
+        log.info("Re Publish / Consume again.");
+        kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
+        kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
     }
 }

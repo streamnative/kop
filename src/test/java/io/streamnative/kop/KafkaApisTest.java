@@ -132,7 +132,6 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
         kafkaRequestHandler = new KafkaRequestHandler(
             kafkaService,
             kafkaService.getKafkaConfig(),
-            kafkaService.getKafkaTopicManager(),
             kafkaService.getGroupCoordinator(), false);
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
@@ -623,5 +622,29 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
             assertTrue(topicMetadata.topic().startsWith(topicName + "_"));
             assertEquals(topicMetadata.partitionMetadata().size(), numberPartitions);
         });
+    }
+
+    @Test(timeOut = 20000, enabled = false)
+    // https://github.com/streamnative/kop/issues/51
+    public void testGetOffsetsForUnknownTopic() throws Exception {
+        String topicName = "kopTestGetOffsetsForUnknownTopic";
+
+        TopicPartition tp = new TopicPartition(topicName, 0);
+        Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
+        targetTimes.put(tp, ListOffsetRequest.LATEST_TIMESTAMP);
+
+        ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
+            .forConsumer(false, IsolationLevel.READ_UNCOMMITTED)
+            .setTargetTimes(targetTimes);
+
+        KafkaHeaderAndRequest request = buildRequest(builder);
+        CompletableFuture<ResponseAndRequest> responseFuture = kafkaRequestHandler
+            .handleListOffsetRequest(request);
+
+        ResponseAndRequest response = responseFuture.get();
+        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response.getResponse();
+        assertEquals(response.getRequest().getHeader().apiKey(), ApiKeys.LIST_OFFSETS);
+        assertEquals(listOffsetResponse.responseData().get(tp).error,
+            Errors.UNKNOWN_TOPIC_OR_PARTITION);
     }
 }

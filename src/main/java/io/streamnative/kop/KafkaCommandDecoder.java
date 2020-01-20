@@ -28,6 +28,7 @@ import java.nio.ByteBuffer;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -46,6 +47,8 @@ import org.apache.kafka.common.requests.ResponseHeader;
 public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected ChannelHandlerContext ctx;
     protected SocketAddress remoteAddress;
+    @Getter
+    protected AtomicBoolean isActive = new AtomicBoolean(false);
 
     // Queue to make request get response in order.
     protected final ConcurrentHashMap<Channel, Queue<CompletableFuture<ResponseAndRequest>>> responsesQueue =
@@ -58,19 +61,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        super.channelActive(ctx);
         this.remoteAddress = ctx.channel().remoteAddress();
         this.ctx = ctx;
-
-        if (log.isDebugEnabled()) {
-            log.debug("[{}] channel active {}", ctx.channel());
-        }
-    }
-
-    @Override
-    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        super.channelInactive(ctx);
-        log.info("Closed connection from {}", remoteAddress);
-        close();
+        isActive.set(true);
     }
 
     @Override
@@ -139,7 +133,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
         CompletableFuture<ResponseAndRequest> responseFuture;
 
-
         try (KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress)){
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Received kafka cmd {}, the request content is: {}",
@@ -147,60 +140,66 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     kafkaHeaderAndRequest.getHeader(), kafkaHeaderAndRequest);
             }
 
-            switch (kafkaHeaderAndRequest.getHeader().apiKey()) {
-                case API_VERSIONS:
-                    responseFuture = handleApiVersionsRequest(kafkaHeaderAndRequest);
-                    break;
-                case METADATA:
-                    responseFuture = handleTopicMetadataRequest(kafkaHeaderAndRequest);
-                    break;
-                case PRODUCE:
-                    responseFuture = handleProduceRequest(kafkaHeaderAndRequest);
-                    break;
-                case FIND_COORDINATOR:
-                    responseFuture = handleFindCoordinatorRequest(kafkaHeaderAndRequest);
-                    break;
-                case LIST_OFFSETS:
-                    responseFuture = handleListOffsetRequest(kafkaHeaderAndRequest);
-                    break;
-                case OFFSET_FETCH:
-                    responseFuture = handleOffsetFetchRequest(kafkaHeaderAndRequest);
-                    break;
-                case OFFSET_COMMIT:
-                    responseFuture = handleOffsetCommitRequest(kafkaHeaderAndRequest);
-                    break;
-                case FETCH:
-                    responseFuture = handleFetchRequest(kafkaHeaderAndRequest);
-                    break;
-                case JOIN_GROUP:
-                    responseFuture = handleJoinGroupRequest(kafkaHeaderAndRequest);
-                    break;
-                case SYNC_GROUP:
-                    responseFuture = handleSyncGroupRequest(kafkaHeaderAndRequest);
-                    break;
-                case HEARTBEAT:
-                    responseFuture = handleHeartbeatRequest(kafkaHeaderAndRequest);
-                    break;
-                case LEAVE_GROUP:
-                    responseFuture = handleLeaveGroupRequest(kafkaHeaderAndRequest);
-                    break;
-                case DESCRIBE_GROUPS:
-                    responseFuture = handleDescribeGroupRequest(kafkaHeaderAndRequest);
-                    break;
-                case LIST_GROUPS:
-                    responseFuture = handleListGroupsRequest(kafkaHeaderAndRequest);
-                    break;
-                case DELETE_GROUPS:
-                    responseFuture = handleDeleteGroupsRequest(kafkaHeaderAndRequest);
-                    break;
-                case SASL_HANDSHAKE:
-                    responseFuture = handleSaslHandshake(kafkaHeaderAndRequest);
-                    break;
-                case SASL_AUTHENTICATE:
-                    responseFuture = handleSaslAuthenticate(kafkaHeaderAndRequest);
-                    break;
-                default:
-                    responseFuture = handleError(kafkaHeaderAndRequest);
+            if (!isActive.get()) {
+                responseFuture = handleInactive(kafkaHeaderAndRequest);
+            } else {
+                switch (kafkaHeaderAndRequest.getHeader().apiKey()) {
+                    case API_VERSIONS:
+                        responseFuture = handleApiVersionsRequest(kafkaHeaderAndRequest);
+                        break;
+                    case METADATA:
+                        responseFuture = handleTopicMetadataRequest(kafkaHeaderAndRequest);
+                        // this is special, wait Metadata command return, before execute other command.
+                        responseFuture.get();
+                        break;
+                    case PRODUCE:
+                        responseFuture = handleProduceRequest(kafkaHeaderAndRequest);
+                        break;
+                    case FIND_COORDINATOR:
+                        responseFuture = handleFindCoordinatorRequest(kafkaHeaderAndRequest);
+                        break;
+                    case LIST_OFFSETS:
+                        responseFuture = handleListOffsetRequest(kafkaHeaderAndRequest);
+                        break;
+                    case OFFSET_FETCH:
+                        responseFuture = handleOffsetFetchRequest(kafkaHeaderAndRequest);
+                        break;
+                    case OFFSET_COMMIT:
+                        responseFuture = handleOffsetCommitRequest(kafkaHeaderAndRequest);
+                        break;
+                    case FETCH:
+                        responseFuture = handleFetchRequest(kafkaHeaderAndRequest);
+                        break;
+                    case JOIN_GROUP:
+                        responseFuture = handleJoinGroupRequest(kafkaHeaderAndRequest);
+                        break;
+                    case SYNC_GROUP:
+                        responseFuture = handleSyncGroupRequest(kafkaHeaderAndRequest);
+                        break;
+                    case HEARTBEAT:
+                        responseFuture = handleHeartbeatRequest(kafkaHeaderAndRequest);
+                        break;
+                    case LEAVE_GROUP:
+                        responseFuture = handleLeaveGroupRequest(kafkaHeaderAndRequest);
+                        break;
+                    case DESCRIBE_GROUPS:
+                        responseFuture = handleDescribeGroupRequest(kafkaHeaderAndRequest);
+                        break;
+                    case LIST_GROUPS:
+                        responseFuture = handleListGroupsRequest(kafkaHeaderAndRequest);
+                        break;
+                    case DELETE_GROUPS:
+                        responseFuture = handleDeleteGroupsRequest(kafkaHeaderAndRequest);
+                        break;
+                    case SASL_HANDSHAKE:
+                        responseFuture = handleSaslHandshake(kafkaHeaderAndRequest);
+                        break;
+                    case SASL_AUTHENTICATE:
+                        responseFuture = handleSaslAuthenticate(kafkaHeaderAndRequest);
+                        break;
+                    default:
+                        responseFuture = handleError(kafkaHeaderAndRequest);
+                }
             }
 
             responsesQueue.compute(channel, (key, queue) -> {
@@ -249,8 +248,35 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
+    // return all the current command before a channel close.
+    protected void writeAndFlushInactiveResponseToClient(Channel channel) {
+        Queue<CompletableFuture<ResponseAndRequest>> responseQueue =
+            responsesQueue.get(channel);
+
+        // loop from first response, and return them all
+        while (responseQueue != null && responseQueue.peek() != null) {
+            try {
+                ResponseAndRequest pair = responseQueue.remove().join();
+                if (log.isDebugEnabled()) {
+                    log.debug("Write kafka cmd response back to client. request: {}",
+                        pair.getRequest().getHeader());
+                }
+
+                ByteBuf result = responseToByteBuf(pair.getResponse(), pair.getRequest());
+                channel.writeAndFlush(result);
+            } catch (Exception e) {
+                // should not comes here.
+                log.error("error to get Response ByteBuf:", e);
+                throw e;
+            }
+        }
+    }
+
     protected abstract CompletableFuture<ResponseAndRequest>
     handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest);
+
+    protected abstract CompletableFuture<ResponseAndRequest>
+    handleInactive(KafkaHeaderAndRequest kafkaHeaderAndRequest);
 
     protected abstract CompletableFuture<ResponseAndRequest>
     handleApiVersionsRequest(KafkaHeaderAndRequest apiVersion);

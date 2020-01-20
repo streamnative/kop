@@ -15,17 +15,13 @@ package io.streamnative.kop;
 
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
-import static org.testng.Assert.fail;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import io.streamnative.kop.utils.MessageIdUtils;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Collections;
@@ -38,9 +34,6 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.ManagedCursor;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -51,7 +44,6 @@ import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
-import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
@@ -466,138 +458,4 @@ public class KafkaRequestTypeTest extends MockKafkaServiceBaseTest {
         ConsumerRecords<Integer, String> records = kConsumer2.getConsumer().poll(Duration.ofSeconds(1));
         assertTrue(records.isEmpty());
     }
-
-
-    // Test kafka topic consumer manager.
-    // 1. topic has no entry, read no entry, tm has one cursor and target to read the first entry.
-    // 2. produce entry, after read all entry. tm has one cursor, and target to read entry after lastEntry.
-    // 3. has no entry to read again. tm has one cursor, and after each empty read, cursor read offset not changed.
-    @Test(timeOut = 20000)
-    public void testTopicConsumerManager() throws Exception {
-        int partitionNumber = 1;
-        String kafkaTopicName = "testTopicConsumerManager" + partitionNumber;
-        String pulsarTopicName = "persistent://public/default/" + kafkaTopicName + PARTITIONED_TOPIC_SUFFIX + 0;
-
-        // create partitioned topic.
-        kafkaService.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
-
-        int totalMsgs = 10;
-        String messageStrPrefix = "Message_Kop_testTopicConsumerManager_" + partitionNumber + "_";
-
-        ProducerBuilder<byte[]> producerBuilder = pulsarClient.newProducer()
-            .topic(pulsarTopicName)
-            .enableBatching(false);
-        @Cleanup
-        Producer<byte[]> producer = producerBuilder.create();
-
-        // above producer only created a topic, but with no data. consumer retry read but read no entry.
-        @Cleanup
-        KConsumer kConsumer = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), true);
-        kConsumer.getConsumer().subscribe(Collections.singletonList(kafkaTopicName));
-
-        KafkaTopicConsumerManager tm = kafkaService
-            .getKafkaTopicManager()
-            .getTopicConsumerManager(pulsarTopicName)
-            .get();
-
-        // read empty entry will remove and add cursor each time.
-        int i = 0;
-        while (i < 7) {
-            if (log.isDebugEnabled()) {
-                log.debug("start poll empty entry: {}", i);
-            }
-            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
-            for (ConsumerRecord<Integer, String> record : records) {
-                Integer key = record.key();
-                assertEquals(messageStrPrefix + key.toString(), record.value());
-                if (log.isDebugEnabled()) {
-                    log.debug("Kafka Consumer Received message: {}, {} at offset {}",
-                        record.key(), record.value(), record.offset());
-                }
-            }
-            i++;
-        }
-
-        // expected tm only have one item. and entryId should be 0
-        long size = tm.getConsumers().size();
-        assertEquals(size, 1);
-        tm.getConsumers().forEach((offset, cursor) -> {
-            try {
-                PositionImpl position = MessageIdUtils.getPosition(offset);
-                long ledgerId = position.getLedgerId();
-                assertNotEquals(ledgerId, 0);
-                assertEquals(position.getEntryId(), 0);
-                assertEquals(cursor.get().getRight(), Long.valueOf(offset));
-            } catch (Exception e) {
-                fail("should not throw exception");
-            }
-        });
-
-        MessageId messageId = null;
-        // produce some message
-        for (i = 0; i < totalMsgs; i++) {
-            String message = messageStrPrefix + i;
-            messageId = producer.newMessage()
-                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
-                .value(message.getBytes())
-                .send();
-        }
-
-        i = 0;
-        // receive all message.
-        while (i < totalMsgs) {
-            if (log.isDebugEnabled()) {
-                log.debug("start poll message: {}", i);
-            }
-            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
-            for (ConsumerRecord<Integer, String> record : records) {
-                Integer key = record.key();
-                assertEquals(messageStrPrefix + key.toString(), record.value());
-                if (log.isDebugEnabled()) {
-                    log.debug("Kafka Consumer Received message: {}, {} at offset {}",
-                        record.key(), record.value(), record.offset());
-                }
-                i++;
-            }
-        }
-
-        // expect have one item, and offset equals to lastmessageId + 1
-        size = tm.getConsumers().size();
-        assertEquals(size, 1);
-
-        MessageIdImpl lastMessageId = (MessageIdImpl) messageId;
-        long ledgerId = lastMessageId.getLedgerId();
-        long entryId = lastMessageId.getEntryId();
-        long lastOffset = MessageIdUtils.getOffset(ledgerId, entryId + 1);
-        CompletableFuture<Pair<ManagedCursor, Long>> cursor = tm.getConsumers().get(lastOffset);
-        assertNotNull(cursor);
-        assertEquals(cursor.get().getRight(), Long.valueOf(lastOffset));
-
-
-        // After read all entry, read no entry again, this will remove and add cursor each time.
-        i = 0;
-        while (i < 7) {
-            if (log.isDebugEnabled()) {
-                log.debug("start poll empty entry again: {}", i);
-            }
-            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
-            for (ConsumerRecord<Integer, String> record : records) {
-                Integer key = record.key();
-                assertEquals(messageStrPrefix + key.toString(), record.value());
-                if (log.isDebugEnabled()) {
-                    log.debug("Kafka Consumer Received message: {}, {} at offset {}",
-                        record.key(), record.value(), record.offset());
-                }
-            }
-            i++;
-        }
-
-        // expect have one item, and offset equals to lastmessageId + 1
-        size = tm.getConsumers().size();
-        assertEquals(size, 1);
-        cursor = tm.getConsumers().get(lastOffset);
-        assertNotNull(cursor);
-        assertEquals(cursor.get().getRight(), Long.valueOf(lastOffset));
-    }
-
 }
