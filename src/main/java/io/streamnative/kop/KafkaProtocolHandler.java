@@ -170,8 +170,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     @Getter
     private BrokerService brokerService;
     @Getter
-    private KafkaTopicManager kafkaTopicManager;
-    @Getter
     private GroupCoordinator groupCoordinator;
     @Getter
     private String bindAddress;
@@ -220,9 +218,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             KopVersion.getBuildHost(),
             KopVersion.getBuildTime());
 
-        // a topic Manager
-        kafkaTopicManager = new KafkaTopicManager(service);
-
         // init and start group coordinator
         if (kafkaConfig.isEnableGroupCoordinator()) {
             try {
@@ -239,13 +234,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
     }
 
-    // this is called after initialize, and with kafkaTopicManager, kafkaConfig, brokerService all set.
+    // this is called after initialize, and with kafkaConfig, brokerService all set.
     @Override
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
         checkState(kafkaConfig != null);
         checkState(kafkaConfig.getListeners() != null);
         checkState(brokerService != null);
-        checkState(kafkaTopicManager != null);
         if (kafkaConfig.isEnableGroupCoordinator()) {
             checkState(groupCoordinator != null);
         }
@@ -265,7 +259,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                         new InetSocketAddress(brokerService.pulsar().getBindAddress(), getListenerPort(listener)),
                         new KafkaChannelInitializer(brokerService.pulsar(),
                             kafkaConfig,
-                            kafkaTopicManager,
                             groupCoordinator,
                             false));
                 } else if (listener.startsWith(SSL_PREFIX)) {
@@ -273,7 +266,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                         new InetSocketAddress(brokerService.pulsar().getBindAddress(), getListenerPort(listener)),
                         new KafkaChannelInitializer(brokerService.pulsar(),
                             kafkaConfig,
-                            kafkaTopicManager,
                             groupCoordinator,
                             true));
                 } else {
@@ -455,7 +447,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         return -1;
     }
 
-    public static String getBrokerUrl(String listeners, Boolean tlsEnabled) {
+    public static String getKopBrokerUrl(String listeners, Boolean tlsEnabled) {
         String[] parts = listeners.split(LISTENER_DEL);
 
         for (String listener: parts) {

@@ -54,7 +54,8 @@ public class KafkaTopicConsumerManager {
         CompletableFuture<Pair<ManagedCursor, Long>> cursor = consumers.remove(offset);
         if (cursor != null) {
             if (log.isDebugEnabled()) {
-                log.debug("Get cursor for offset: {} in cache", offset);
+                log.debug("Get cursor for offset: {} in cache. cache size: {}",
+                    offset, consumers.size());
             }
             return cursor;
         }

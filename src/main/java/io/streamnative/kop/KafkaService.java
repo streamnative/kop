@@ -50,8 +50,6 @@ public class KafkaService extends PulsarService {
     @Getter
     private final KafkaServiceConfiguration kafkaConfig;
     @Getter
-    private KafkaTopicManager kafkaTopicManager;
-    @Getter
     @Setter
     private GroupCoordinator groupCoordinator;
 
@@ -210,7 +208,6 @@ public class KafkaService extends PulsarService {
                 .build();
             getBrokerService().startProtocolHandlers(protocolHandlers);
 
-            this.kafkaTopicManager = kafkaProtocolHandler.getKafkaTopicManager();
             this.groupCoordinator = kafkaProtocolHandler.getGroupCoordinator();
 
             setState(State.Started);
@@ -230,9 +227,6 @@ public class KafkaService extends PulsarService {
     public void close() throws PulsarServerException {
         if (groupCoordinator != null) {
             this.groupCoordinator.shutdown();
-        }
-        if (kafkaTopicManager != null) {
-            this.kafkaTopicManager.close();
         }
         super.close();
     }

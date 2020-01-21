@@ -13,13 +13,20 @@
  */
 package io.streamnative.kop;
 
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.kop.utils.MessageIdUtils;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.concurrent.CompletableFuture;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.client.api.Producer;
@@ -33,9 +40,12 @@ import org.testng.annotations.Test;
 /**
  * Pulsar service configuration object.
  */
+@Slf4j
 public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
 
     private KafkaTopicManager kafkaTopicManager;
+    private KafkaRequestHandler kafkaRequestHandler;
+    private SocketAddress serviceAddress;
 
     @BeforeMethod
     @Override
@@ -47,7 +57,18 @@ public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
         admin.namespaces().setRetention("public/default",
             new RetentionPolicies(20, 100));
 
-        kafkaTopicManager = new KafkaTopicManager(kafkaService.getBrokerService());
+        kafkaRequestHandler = new KafkaRequestHandler(
+            kafkaService,
+            kafkaService.getKafkaConfig(),
+            kafkaService.getGroupCoordinator(), false);
+        ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
+        Channel mockChannel = mock(Channel.class);
+        doReturn(mockChannel).when(mockCtx).channel();
+        kafkaRequestHandler.ctx = mockCtx;
+
+        serviceAddress = new InetSocketAddress(kafkaService.getBindAddress(), kafkaBrokerPort);
+
+        kafkaTopicManager = new KafkaTopicManager(kafkaRequestHandler);
     }
 
     @AfterMethod
@@ -68,7 +89,7 @@ public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
         KafkaTopicConsumerManager topicConsumerManager2 = tcm.get();
 
         assertTrue(topicConsumerManager == topicConsumerManager2);
-        assertEquals(kafkaTopicManager.getConsumerTopics().size(), 1);
+        assertEquals(kafkaTopicManager.getConsumerTopicManagers().size(), 1);
 
         // 2. verify another get with different topic will return different tcm
         String topicName2 = "persistent://public/default/testGetTopicConsumerManager2";
@@ -76,7 +97,7 @@ public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
         tcm = kafkaTopicManager.getTopicConsumerManager(topicName2);
         topicConsumerManager2 = tcm.get();
         assertTrue(topicConsumerManager != topicConsumerManager2);
-        assertEquals(kafkaTopicManager.getConsumerTopics().size(), 2);
+        assertEquals(kafkaTopicManager.getConsumerTopicManagers().size(), 2);
     }
 
 
@@ -155,4 +176,5 @@ public class KafkaTopicConsumerManagerTest extends MockKafkaServiceBaseTest {
         assertNotEquals(cursor2.getName(), cursor.getName());
         assertEquals(cursorCompletableFuture.get().getRight(), Long.valueOf(offset));
     }
+
 }
