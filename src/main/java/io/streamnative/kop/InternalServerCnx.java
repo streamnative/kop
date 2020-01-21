@@ -20,17 +20,17 @@ import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.ServerCnx;
 
 /**
- * MockServerCnx, this only used to construct internalProducer / internalConsumer.
+ * InternalServerCnx, this only used to construct internalProducer / internalConsumer.
  * So when topic is unload, we could disconnect the connection between kafkaRequestHandler and client,
  * by internalProducer / internalConsumer.close();
  * which means when topic unload happens, we should close the connection.
  */
 @Slf4j
-public class MockServerCnx extends ServerCnx {
+public class InternalServerCnx extends ServerCnx {
     @Getter
     KafkaRequestHandler kafkaRequestHandler;
 
-    public MockServerCnx(KafkaRequestHandler kafkaRequestHandler) {
+    public InternalServerCnx(KafkaRequestHandler kafkaRequestHandler) {
         super(kafkaRequestHandler.getPulsarService());
         this.kafkaRequestHandler = kafkaRequestHandler;
         // this is the client address that connect to this server.

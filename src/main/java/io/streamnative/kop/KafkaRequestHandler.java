@@ -208,14 +208,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
 
         resultFuture.complete(apiResponse);
-
-        if (log.isDebugEnabled()) {
-            log.debug("[{}] Request {}. ApiVersionResponse: ",
-                ctx.channel(), apiVersionRequest.getHeader());
-
-            apiResponse.apiVersions().forEach(apiVersion -> log.debug("  {}", apiVersion.toString()));
-        }
-
         return resultFuture;
     }
 

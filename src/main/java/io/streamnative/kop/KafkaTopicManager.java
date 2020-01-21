@@ -48,13 +48,13 @@ public class KafkaTopicManager {
     // cache for references in PersistentTopic: <topicName, producer>
     private final ConcurrentHashMap<String, Producer> references;
 
-    private MockServerCnx mockServerCnx;
+    private InternalServerCnx internalServerCnx;
 
     KafkaTopicManager(KafkaRequestHandler kafkaRequestHandler) {
         this.requestHandler = kafkaRequestHandler;
         this.pulsarService = kafkaRequestHandler.getPulsarService();
         this.brokerService = pulsarService.getBrokerService();
-        this.mockServerCnx = new MockServerCnx(requestHandler);
+        this.internalServerCnx = new InternalServerCnx(requestHandler);
 
         consumerTopicManagers = new ConcurrentHashMap<>();
         topics = new ConcurrentHashMap<>();
@@ -63,9 +63,9 @@ public class KafkaTopicManager {
 
     // update Ctx information, since at create time there is no ctx passed into kafkaRequestHandler.
     public void updateCtx() {
-        mockServerCnx.updateCtx();
+        internalServerCnx.updateCtx();
         if (log.isDebugEnabled()) {
-            log.debug("mockServerCnx.remoteAddress: {}", mockServerCnx.getRemoteAddress());
+            log.debug("internalServerCnx.remoteAddress: {}", internalServerCnx.getRemoteAddress());
         }
     }
 
@@ -102,7 +102,7 @@ public class KafkaTopicManager {
     }
 
     private Producer registerInPersistentTopic(PersistentTopic persistentTopic) throws Exception {
-        Producer producer = new MockProducer(persistentTopic, mockServerCnx,
+        Producer producer = new InternalProducer(persistentTopic, internalServerCnx,
             ((PulsarClientImpl) (pulsarService.getClient())).newRequestId(),
             brokerService.generateUniqueProducerName());
 
