@@ -216,11 +216,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 switch (apiKey) {
                     case FETCH:
                         // V4 added MessageSets responses. We need to make sure RecordBatch format is not used
-                        versionList.add(new ApiVersionsResponse.ApiVersion((short) 1, (short) 4, apiKey.latestVersion()));
+                        versionList.add(new ApiVersionsResponse.ApiVersion((short) 1, (short) 4,
+                                apiKey.latestVersion()));
                         break;
                     case LIST_OFFSETS:
                         // V0 is needed for librdkafka
-                        versionList.add(new ApiVersionsResponse.ApiVersion((short) 2, (short) 0, apiKey.latestVersion()));
+                        versionList.add(new ApiVersionsResponse.ApiVersion((short) 2, (short) 0,
+                                apiKey.latestVersion()));
                         break;
                     default:
                         versionList.add(new ApiVersionsResponse.ApiVersion(apiKey));
@@ -446,8 +448,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         Errors.NONE,
                                         // we should answer with the right name, either local of full-name,
                                         // depending on what was asked
-                                        topic.startsWith("persistent://") ?
-                                                TopicName.get(topic).toString(): TopicName.get(topic).getLocalName(),
+                                        topic.startsWith("persistent://")
+                                                ? TopicName.get(topic).toString() : TopicName.get(topic).getLocalName(),
                                         false,
                                         partitionMetadatas));
 
@@ -658,7 +660,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 if (legacyMode) {
                     partitionData.complete(new ListOffsetResponse.PartitionData(
                             Errors.NONE,
-                            Collections.singletonList(MessageIdUtils.getOffset(position.getLedgerId(), position.getEntryId()))));
+                            Collections.singletonList(MessageIdUtils.getOffset(position.getLedgerId(),
+                                    position.getEntryId()))));
                 } else {
                     partitionData.complete(new ListOffsetResponse.PartitionData(
                             Errors.NONE,
@@ -705,7 +708,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         if (legacyMode) {
                             partitionData.complete(new ListOffsetResponse.PartitionData(
                                     Errors.NONE,
-                                    Collections.singletonList(MessageIdUtils.getOffset(finalPosition.getLedgerId(), finalPosition.getEntryId()))));
+                                    Collections.singletonList(
+                                            MessageIdUtils.getOffset(
+                                                    finalPosition.getLedgerId(), finalPosition.getEntryId()))));
                         } else {
                             partitionData.complete(new ListOffsetResponse.PartitionData(
                                     Errors.NONE,
@@ -770,7 +775,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return resultFuture;
     }
 
-    // Some info can be found here https://web.archive.org/web/20170309152525/https://cfchou.github.io/blog/2015/04/23/a-closer-look-at-kafka-offsetrequest/
+    // Some info can be found here
+    // https://cfchou.github.io/blog/2015/04/23/a-closer-look-at-kafka-offsetrequest/ through web.archive.org
     private CompletableFuture<AbstractResponse> handleListOffsetRequestV0(KafkaHeaderAndRequest listOffset) {
         ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
 
@@ -788,7 +794,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             // num_num_offsets > 1 is not handled for now, returning an error
             if (tms.getValue().maxNumOffsets > 1) {
-                log.warn("request is asking for multiples offsets for {}, not supported for now", pulsarTopic.toString());
+                log.warn("request is asking for multiples offsets for {}, not supported for now",
+                        pulsarTopic.toString());
                 partitionData = new CompletableFuture<>();
                 partitionData.complete(new ListOffsetResponse
                         .PartitionData(
