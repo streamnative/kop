@@ -87,7 +87,7 @@ public abstract class MockKafkaServiceBaseTest {
     protected int kafkaBrokerPort = PortManager.nextFreePort();
     protected int kafkaBrokerPortTls = PortManager.nextFreePort();
 
-    protected MockZooKeeper mockZookKeeper;
+    protected MockZooKeeper mockZooKeeper;
     protected NonClosableMockBookKeeper mockBookKeeper;
     protected boolean isTcpLookup = false;
     protected final String configClusterName = "test";
@@ -143,8 +143,8 @@ public abstract class MockKafkaServiceBaseTest {
                 .setUncaughtExceptionHandler((thread, ex) -> log.info("Uncaught exception", ex))
                 .build());
 
-        mockZookKeeper = createMockZooKeeper();
-        mockBookKeeper = createMockBookKeeper(mockZookKeeper, bkExecutor);
+        mockZooKeeper = createMockZooKeeper();
+        mockBookKeeper = createMockBookKeeper(mockZooKeeper, bkExecutor);
 
         startBroker();
 
@@ -170,8 +170,8 @@ public abstract class MockKafkaServiceBaseTest {
             if (mockBookKeeper != null) {
                 mockBookKeeper.reallyShutdown();
             }
-            if (mockZookKeeper != null) {
-                mockZookKeeper.shutdown();
+            if (mockZooKeeper != null) {
+                mockZooKeeper.shutdown();
             }
             if (sameThreadOrderedSafeExecutor != null) {
                 sameThreadOrderedSafeExecutor.shutdown();
@@ -275,7 +275,7 @@ public abstract class MockKafkaServiceBaseTest {
                                                    int zkSessionTimeoutMillis) {
             // Always return the same instance
             // (so that we don't loose the mock ZK content on broker restart
-            return CompletableFuture.completedFuture(mockZookKeeper);
+            return CompletableFuture.completedFuture(mockZooKeeper);
         }
     };
 

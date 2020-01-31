@@ -488,6 +488,8 @@ public class DistributedClusterTest extends MockKafkaServiceBaseTest {
         kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
         kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
 
+        // 3. close first broker
+        log.info("will close first kafkaService");
         kafkaService1.close();
 
         // 4. publish consume again

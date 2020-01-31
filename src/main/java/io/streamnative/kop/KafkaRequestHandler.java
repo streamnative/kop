@@ -110,7 +110,6 @@ import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Utils;
-import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
@@ -122,7 +121,6 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.PulsarClientException.AuthorizationException;
-import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.api.AuthData;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
@@ -493,11 +491,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             TopicName topicName = pulsarTopicName(topicPartition, namespace);
 
-            topicManager.getTopic(topicName.toString(), true).whenComplete((persistentTopic, exception) -> {
+            topicManager.getTopic(topicName.toString()).whenComplete((persistentTopic, exception) -> {
                 if (exception != null || persistentTopic == null) {
                     log.error("[{}] Request {}: Failed to getOrCreateTopic {}. exception:",
                         ctx.channel(), produceHar.getHeader(), topicName, exception);
-                    partitionResponse.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
+                    partitionResponse.complete(new PartitionResponse(Errors.REASSIGNMENT_IN_PROGRESS));
                 } else {
                     CompletableFuture<PersistentTopic> topicFuture = new CompletableFuture<>();
                     topicFuture.complete(persistentTopic);
@@ -540,6 +538,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     if (t != null){
                         log.error("[{}] Request {}: Error while find coordinator.",
                             ctx.channel(), findCoordinator.getHeader(), t);
+
+                        AbstractResponse response = new FindCoordinatorResponse(
+                            Errors.REASSIGNMENT_IN_PROGRESS,
+                            Node.noNode());
+                        resultFuture.complete(response);
                         return;
                     }
 
@@ -1050,6 +1053,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private CompletableFuture<Optional<String>>
     getProtocolDataToAdvertise(Pair<InetSocketAddress, InetSocketAddress> pulsarAddress,
                                TopicName topic) {
+
+        CompletableFuture<Optional<String>> returnFuture = new CompletableFuture<>();
+
+        if (pulsarAddress == null) {
+            log.error("[{}] failed get pulsar address, returned null.", topic.toString());
+            returnFuture.complete(Optional.empty());
+            return returnFuture;
+        }
+
         if (log.isDebugEnabled()) {
             log.debug("Found broker for topic {} logicalAddress: {} physicalAddress: {}",
                 topic, pulsarAddress.getLeft(), pulsarAddress.getRight());
@@ -1057,8 +1069,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         checkState(pulsarAddress.getLeft().equals(pulsarAddress.getRight()));
         InetSocketAddress brokerAddress = pulsarAddress.getLeft();
-
-        CompletableFuture<Optional<String>> returnFuture = new CompletableFuture<>();
 
         // advertised data is write in  /loadbalance/brokers/advertisedAddress:webServicePort
         // here we get the broker url, need to find related webServiceUrl.
@@ -1146,20 +1156,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (log.isDebugEnabled()) {
             log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }
-
         CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
-        PulsarClientImpl pulsarClient;
-        try {
-            pulsarClient = (PulsarClientImpl) pulsarService.getClient();
-        } catch (PulsarServerException e) {
-            log.error("[{}] findBroker for Kafka topic {} error get pulsar client. throwable: ",
-                topic, topic, e);
-            returnFuture.complete(null);
-            return returnFuture;
-        }
 
-        pulsarClient.getLookup()
-            .getBroker(topic)
+        // todo: change findBroker parameter from TopicName to String
+        topicManager.getTopicBroker(topic.toString())
             .thenCompose(pair -> getProtocolDataToAdvertise(pair, topic))
             .whenComplete((stringOptional, throwable) -> {
                 if (!stringOptional.isPresent() || throwable != null) {
@@ -1195,7 +1195,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
 
                 if (!topicManager.topicExists(topic.toString())
-                    && !isOffsetTopic(topic.toString())
                     && localListeners.contains(kopBrokerUrl)) {
                     topicManager.getTopic(topic.toString()).whenComplete((persistentTopic, exception) -> {
                         if (exception != null || persistentTopic == null) {
