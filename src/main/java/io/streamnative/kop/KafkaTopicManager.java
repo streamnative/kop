@@ -13,19 +13,22 @@
  */
 package io.streamnative.kop;
 
+import static com.google.common.base.Preconditions.checkState;
+
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.impl.Backoff;
+import org.apache.pulsar.client.impl.BackoffBuilder;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.TopicName;
 
@@ -52,7 +55,7 @@ public class KafkaTopicManager {
 
     private InternalServerCnx internalServerCnx;
 
-    static final ConcurrentHashMap<String, CompletableFuture<Pair<InetSocketAddress, InetSocketAddress>>>
+    public static final ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>
         lookupCache = new ConcurrentHashMap<>();
 
     KafkaTopicManager(KafkaRequestHandler kafkaRequestHandler) {
@@ -101,6 +104,10 @@ public class KafkaTopicManager {
         );
     }
 
+    public void removeLookupCache(String topicName) {
+        lookupCache.remove(topicName);
+    }
+
     // whether topic exists in cache.
     public boolean topicExists(String topicName) {
         return topics.containsKey(topicName);
@@ -121,39 +128,63 @@ public class KafkaTopicManager {
         return producer;
     }
 
-
     // call pulsarclient.lookup.getbroker to get and own a topic
-    public CompletableFuture<Pair<InetSocketAddress, InetSocketAddress>> getTopicBroker(String topicName) {
+    public CompletableFuture<InetSocketAddress> getTopicBroker(String topicName) {
         return lookupCache.computeIfAbsent(topicName, t -> {
-            try {
-                return ((PulsarClientImpl) pulsarService.getClient()).getLookup().getBroker(TopicName.get(t));
-            } catch (PulsarServerException e) {
-                log.error("[{}] getTopicBroker for topic failed get pulsar client, return null. throwable: ",
-                    topicName, e);
-                CompletableFuture<Pair<InetSocketAddress, InetSocketAddress>> returnFuture = new CompletableFuture<>();
-                returnFuture.complete(null);
-                return returnFuture;
-            } catch (Exception ce) {
-                log.error("[{}] getTopicBroker for topic failed, return null. throwable: ",
-                    topicName, ce);
-                CompletableFuture<Pair<InetSocketAddress, InetSocketAddress>> returnFuture = new CompletableFuture<>();
-                returnFuture.complete(null);
-                return returnFuture;
-            }
+            CompletableFuture<InetSocketAddress> returnFuture = new CompletableFuture<>();
+            Backoff backoff = new Backoff(
+                100, TimeUnit.MILLISECONDS,
+                30, TimeUnit.SECONDS,
+                30, TimeUnit.SECONDS
+                );
+            lookupBroker(topicName, backoff, returnFuture);
+            return returnFuture;
         });
+    }
+
+    private void lookupBroker(String topicName,
+                              Backoff backoff,
+                              CompletableFuture<InetSocketAddress> retFuture) {
+        try {
+            ((PulsarClientImpl) pulsarService.getClient()).getLookup()
+                .getBroker(TopicName.get(topicName))
+                .thenAccept(pair -> {
+                    checkState(pair.getLeft().equals(pair.getRight()));
+                    retFuture.complete(pair.getLeft());
+                })
+                .exceptionally(th -> {
+                    long waitTimeMs = backoff.next();
+
+                    if (backoff.isMandatoryStopMade()) {
+                        log.warn("[{}] getBroker for topic failed, retried too many times, return null. throwable: ",
+                            topicName, waitTimeMs, th);
+                        retFuture.complete(null);
+                    } else {
+                        log.warn("[{}] getBroker for topic failed, will retry in {} ms. throwable: ",
+                            topicName, waitTimeMs, th);
+                        requestHandler.getPulsarService().getExecutor()
+                            .schedule(() -> lookupBroker(topicName, backoff, retFuture), waitTimeMs, TimeUnit.MILLISECONDS);
+                    }
+                    return null;
+                });
+        } catch (PulsarServerException e) {
+            log.error("[{}] getTopicBroker for topic failed get pulsar client, return null. throwable: ",
+                topicName, e);
+            retFuture.complete(null);
+        }
     }
 
     // For Produce/Consume we need to lookup, to make sure topic served by brokerService,
     // or will meet error: "Service unit is not ready when loading the topic".
     // If getTopic is called after lookup, then no needLookup.
-    public synchronized CompletableFuture<PersistentTopic> getTopic(String topicName) {
+    public CompletableFuture<PersistentTopic> getTopic(String topicName) {
         return topics.computeIfAbsent(topicName,
             t -> {
                 final CompletableFuture<PersistentTopic> topicCompletableFuture = new CompletableFuture<>();
 
                 getTopicBroker(t).whenCompleteAsync((ignore, th) -> {
                     if (th != null || ignore == null) {
-                        log.error("[{}] failed getTopicBroker, return null PersistentTopic. throwable: ",
+                        log.warn("[{}] failed getTopicBroker, return null PersistentTopic. throwable: ",
                             topicName, th);
                         topicCompletableFuture.complete(null);
                         return;
@@ -161,7 +192,7 @@ public class KafkaTopicManager {
 
                     if (log.isDebugEnabled()) {
                         log.debug("getTopicBroker for {} in KafkaTopicManager. brokerAddress: {}",
-                            t, ignore.getLeft());
+                            t, ignore);
                     }
 
                     brokerService
@@ -224,8 +255,10 @@ public class KafkaTopicManager {
                     log.debug("remove producer {} for topic {} at close()",
                         references.get(topicName), topicName);
                 }
-                topicFuture.get().removeProducer(references.get(topicName));
-                references.remove(topicName);
+                if (references.get(topicName) != null) {
+                    topicFuture.get().removeProducer(references.get(topicName));
+                    references.remove(topicName);
+                }
                 topics.remove(topicName);
             }
             topics.clear();

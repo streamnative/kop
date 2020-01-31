@@ -63,7 +63,6 @@ import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
@@ -493,9 +492,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             topicManager.getTopic(topicName.toString()).whenComplete((persistentTopic, exception) -> {
                 if (exception != null || persistentTopic == null) {
-                    log.error("[{}] Request {}: Failed to getOrCreateTopic {}. exception:",
+                    log.warn("[{}] Request {}: Failed to getOrCreateTopic {}. "
+                            + "Topic is in loading status, return LEADER_NOT_AVAILABLE. exception:",
                         ctx.channel(), produceHar.getHeader(), topicName, exception);
-                    partitionResponse.complete(new PartitionResponse(Errors.REASSIGNMENT_IN_PROGRESS));
+                    partitionResponse.complete(new PartitionResponse(Errors.LEADER_NOT_AVAILABLE));
                 } else {
                     CompletableFuture<PersistentTopic> topicFuture = new CompletableFuture<>();
                     topicFuture.complete(persistentTopic);
@@ -533,14 +533,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             String pulsarTopicName = groupCoordinator.getTopicPartitionName(partition);
 
             findBroker(pulsarService, TopicName.get(pulsarTopicName))
-                .thenApply(partitionMetadata -> partitionMetadata.leader())
                 .whenComplete((node, t) -> {
-                    if (t != null){
-                        log.error("[{}] Request {}: Error while find coordinator.",
+                    if (t != null || node == null){
+                        log.error("[{}] Request {}: Error while find coordinator, .",
                             ctx.channel(), findCoordinator.getHeader(), t);
 
                         AbstractResponse response = new FindCoordinatorResponse(
-                            Errors.REASSIGNMENT_IN_PROGRESS,
+                            Errors.LEADER_NOT_AVAILABLE,
                             Node.noNode());
                         resultFuture.complete(response);
                         return;
@@ -548,12 +547,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                     if (log.isDebugEnabled()) {
                         log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
-                            ctx.channel(), node, request.coordinatorKey(), partition);
+                            ctx.channel(), node.leader(), request.coordinatorKey(), partition);
                     }
 
                     AbstractResponse response = new FindCoordinatorResponse(
                         Errors.NONE,
-                        node);
+                        node.leader());
                     resultFuture.complete(response);
                 });
         } else {
@@ -1051,7 +1050,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private CompletableFuture<Optional<String>>
-    getProtocolDataToAdvertise(Pair<InetSocketAddress, InetSocketAddress> pulsarAddress,
+    getProtocolDataToAdvertise(InetSocketAddress pulsarAddress,
                                TopicName topic) {
 
         CompletableFuture<Optional<String>> returnFuture = new CompletableFuture<>();
@@ -1063,12 +1062,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
 
         if (log.isDebugEnabled()) {
-            log.debug("Found broker for topic {} logicalAddress: {} physicalAddress: {}",
-                topic, pulsarAddress.getLeft(), pulsarAddress.getRight());
+            log.debug("Found broker for topic {} puslarAddress: {}",
+                topic, pulsarAddress);
         }
 
-        checkState(pulsarAddress.getLeft().equals(pulsarAddress.getRight()));
-        InetSocketAddress brokerAddress = pulsarAddress.getLeft();
 
         // advertised data is write in  /loadbalance/brokers/advertisedAddress:webServicePort
         // here we get the broker url, need to find related webServiceUrl.
@@ -1076,22 +1073,22 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         zkCache.getChildrenAsync(LoadManager.LOADBALANCE_BROKERS_ROOT, zkCache)
             .whenComplete((set, throwable) -> {
                 if (throwable != null) {
-                    log.error("Error in getChildrenAsync(zk://loadbalance) for {}", brokerAddress, throwable);
+                    log.error("Error in getChildrenAsync(zk://loadbalance) for {}", pulsarAddress, throwable);
                     returnFuture.complete(Optional.empty());
                     return;
                 }
 
-                String hostAndPort = brokerAddress.getHostName() + ":" + brokerAddress.getPort();
+                String hostAndPort = pulsarAddress.getHostName() + ":" + pulsarAddress.getPort();
                 List<String> matchBrokers = Lists.newArrayList();
                 // match host part of url
                 for (String activeBroker : set) {
-                    if (activeBroker.startsWith(brokerAddress.getHostName() + ":")) {
+                    if (activeBroker.startsWith(pulsarAddress.getHostName() + ":")) {
                         matchBrokers.add(activeBroker);
                     }
                 }
 
                 if (matchBrokers.isEmpty()) {
-                    log.error("No node for broker {} under zk://loadbalance", brokerAddress);
+                    log.error("No node for broker {} under zk://loadbalance", pulsarAddress);
                     returnFuture.complete(Optional.empty());
                     return;
                 }
@@ -1108,7 +1105,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 FutureUtil.waitForAll(list)
                     .whenComplete((ignore, th) -> {
                             if (th != null) {
-                                log.error("Error in getDataAsync() for {}", brokerAddress, th);
+                                log.error("Error in getDataAsync() for {}", pulsarAddress, th);
                                 returnFuture.complete(Optional.empty());
                                 return;
                             }
@@ -1130,13 +1127,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     }
                                 }
                             } catch (Exception e) {
-                                log.error("Error in {} lookupFuture get: ", brokerAddress, e);
+                                log.error("Error in {} lookupFuture get: ", pulsarAddress, e);
                                 returnFuture.complete(Optional.empty());
                                 return;
                             }
 
                             // no matching lookup data in all matchBrokers.
-                            log.error("Not able to search {} in all child of zk://loadbalance", brokerAddress);
+                            log.error("Not able to search {} in all child of zk://loadbalance", pulsarAddress);
                             returnFuture.complete(Optional.empty());
                         }
                     );
@@ -1159,6 +1156,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
 
         // todo: change findBroker parameter from TopicName to String
+        // todo: should only cache topic the served by this broker in lookupcache. or it will not able to be released.
         topicManager.getTopicBroker(topic.toString())
             .thenCompose(pair -> getProtocolDataToAdvertise(pair, topic))
             .whenComplete((stringOptional, throwable) -> {
@@ -1194,11 +1192,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         listeners, topic, localListeners, listeners);
                 }
 
+                // here we found topic broker: broker2, but this is in broker1,
+                // how to clean the lookup cache?
+                if (!localListeners.contains(kopBrokerUrl)) {
+                    topicManager.removeLookupCache(topic.toString());
+                }
+
                 if (!topicManager.topicExists(topic.toString())
                     && localListeners.contains(kopBrokerUrl)) {
                     topicManager.getTopic(topic.toString()).whenComplete((persistentTopic, exception) -> {
                         if (exception != null || persistentTopic == null) {
-                            log.error("[{}] findBroker: Failed to getOrCreateTopic {}. exception:",
+                            log.warn("[{}] findBroker: Failed to getOrCreateTopic {}. exception:",
                                 ctx.channel(), topic.toString(), exception);
                             returnFuture.complete(null);
                         } else {
@@ -1267,8 +1271,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         log.warn("Failed find Broker metadata, create PartitionMetadata with INVALID_PARTITIONS");
 
+        // TODO: return value? UNKNOWN_SERVER_ERROR, NOT_LEADER_FOR_PARTITION,
         return new PartitionMetadata(
-            Errors.UNKNOWN_SERVER_ERROR,
+            Errors.NOT_LEADER_FOR_PARTITION,
             kafkaPartitionIndex,
             Node.noNode(),                      // leader
             Lists.newArrayList(Node.noNode()),  // replicas

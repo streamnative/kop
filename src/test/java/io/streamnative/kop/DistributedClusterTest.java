@@ -186,22 +186,30 @@ public class DistributedClusterTest extends MockKafkaServiceBaseTest {
         super.internalCleanup();
     }
 
-    protected void kafkaPublishMessage(KProducer kProducer, int numMessages, String messageStrPrefix) throws Exception {
-        for (int i = 0; i < numMessages; i++) {
-            String messageStr = messageStrPrefix + i;
-            ProducerRecord record = new ProducerRecord<>(
-                kProducer.getTopic(),
-                i,
-                messageStr);
+    protected int kafkaPublishMessage(KProducer kProducer, int numMessages, String messageStrPrefix) throws Exception {
+        int i = 0;
+        try {
+            for (; i < numMessages; i++) {
+                String messageStr = messageStrPrefix + i;
+                ProducerRecord record = new ProducerRecord<>(
+                    kProducer.getTopic(),
+                    i,
+                    messageStr);
 
-            kProducer.getProducer()
-                .send(record)
-                .get();
-            if (log.isDebugEnabled()) {
-                log.debug("Kafka Producer {} Sent message with header: ({}, {})",
-                    kProducer.getTopic(), i, messageStr);
+                kProducer.getProducer()
+                    .send(record)
+                    .get();
+                if (log.isDebugEnabled()) {
+                    log.debug("Kafka Producer {} Sent message with header: ({}, {})",
+                        kProducer.getTopic(), i, messageStr);
+                }
             }
+        } catch (Exception e) {
+            log.debug("Kafka Producer {} failed after send {} messages. ",
+                kProducer.getTopic(), i, e);
         }
+
+        return i;
     }
 
     protected void kafkaConsumeCommitMessage(KConsumer kConsumer,
@@ -445,9 +453,10 @@ public class DistributedClusterTest extends MockKafkaServiceBaseTest {
 
         // 4. publish consume again
         log.info("Re Publish / Consume again.");
-        kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
-        kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
-        kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
+        int number = 0;
+        number = kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
+        kafkaConsumeCommitMessage(kConsumer1, number, messageStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer2, number, messageStrPrefix, topicPartitions);
     }
 
     @Test(timeOut = 30000)
