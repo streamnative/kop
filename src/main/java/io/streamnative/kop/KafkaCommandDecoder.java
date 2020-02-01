@@ -216,6 +216,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             responseFuture.whenComplete((response, e) -> {
                 writeAndFlushResponseToClient(channel);
             });
+        } catch (Exception e) {
+            log.error("error while handle command:", e);
+            close();
         }
     }
 

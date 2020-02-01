@@ -186,8 +186,9 @@ public class DistributedClusterTest extends MockKafkaServiceBaseTest {
         super.internalCleanup();
     }
 
-    protected void kafkaPublishMessage(KProducer kProducer, int numMessages, String messageStrPrefix) throws Exception {
-        for (int i = 0; i < numMessages; i++) {
+    protected int kafkaPublishMessage(KProducer kProducer, int numMessages, String messageStrPrefix) throws Exception {
+        int i = 0;
+        for (; i < numMessages; i++) {
             String messageStr = messageStrPrefix + i;
             ProducerRecord record = new ProducerRecord<>(
                 kProducer.getTopic(),
@@ -202,6 +203,7 @@ public class DistributedClusterTest extends MockKafkaServiceBaseTest {
                     kProducer.getTopic(), i, messageStr);
             }
         }
+        return i;
     }
 
     protected void kafkaConsumeCommitMessage(KConsumer kConsumer,
@@ -488,6 +490,8 @@ public class DistributedClusterTest extends MockKafkaServiceBaseTest {
         kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
         kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
 
+        // 3. close first broker
+        log.info("will close first kafkaService");
         kafkaService1.close();
 
         // 4. publish consume again

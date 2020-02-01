@@ -603,7 +603,7 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
         Collection<TopicMetadata> topicMetadatas = metadataResponse.topicMetadata();
 
         log.debug("a. dumpTopicMetadata: ");
-        topicMetadatas.stream().forEach(topicMetadata -> {
+        topicMetadatas.forEach(topicMetadata -> {
             log.debug("      topicMetadata: {}", topicMetadata);
             log.debug("b.    dumpPartitionMetadata: ");
             topicMetadata.partitionMetadata().forEach(partition -> {
@@ -613,7 +613,7 @@ public class KafkaApisTest extends MockKafkaServiceBaseTest {
 
         assertEquals(topicMetadatas.size(), numberTopics);
 
-        topicMetadatas.stream().forEach(topicMetadata -> {
+        topicMetadatas.forEach(topicMetadata -> {
             assertTrue(topicMetadata.topic().startsWith(topicName + "_"));
             assertEquals(topicMetadata.partitionMetadata().size(), numberPartitions);
         });

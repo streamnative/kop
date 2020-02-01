@@ -13,17 +13,21 @@
  */
 package io.streamnative.kop;
 
+import static com.google.common.base.Preconditions.checkState;
+
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.tuple.Pair;
+import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
+import org.apache.pulsar.client.impl.Backoff;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.TopicName;
 
@@ -50,6 +54,9 @@ public class KafkaTopicManager {
 
     private InternalServerCnx internalServerCnx;
 
+    public static final ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>
+        LOOKUP_CACHE = new ConcurrentHashMap<>();
+
     KafkaTopicManager(KafkaRequestHandler kafkaRequestHandler) {
         this.requestHandler = kafkaRequestHandler;
         this.pulsarService = kafkaRequestHandler.getPulsarService();
@@ -75,7 +82,7 @@ public class KafkaTopicManager {
         return consumerTopicManagers.computeIfAbsent(
             topicName,
             t -> {
-                CompletableFuture<PersistentTopic> topic = getTopic(t, true);
+                CompletableFuture<PersistentTopic> topic = getTopic(t);
                 if (topic == null) {
                     log.warn("Failed to getTopicConsumerManager for topic {}. return null", t);
                     return null;
@@ -94,6 +101,10 @@ public class KafkaTopicManager {
                 });
             }
         );
+    }
+
+    public void removeLookupCache(String topicName) {
+        LOOKUP_CACHE.remove(topicName);
     }
 
     // whether topic exists in cache.
@@ -116,69 +127,108 @@ public class KafkaTopicManager {
         return producer;
     }
 
-    // this should be the only entrance for getTopic, since we need register topic into PersistentTopic.
-    // return null if not owned by this broker.
-    public CompletableFuture<PersistentTopic> getTopic(String topicName) {
-        return getTopic(topicName, false);
+    // call pulsarclient.lookup.getbroker to get and own a topic
+    public CompletableFuture<InetSocketAddress> getTopicBroker(String topicName) {
+        return LOOKUP_CACHE.computeIfAbsent(topicName, t -> {
+            CompletableFuture<InetSocketAddress> returnFuture = new CompletableFuture<>();
+            Backoff backoff = new Backoff(
+                100, TimeUnit.MILLISECONDS,
+                30, TimeUnit.SECONDS,
+                30, TimeUnit.SECONDS
+                );
+            lookupBroker(topicName, backoff, returnFuture);
+            return returnFuture;
+        });
+    }
+
+    private void lookupBroker(String topicName,
+                              Backoff backoff,
+                              CompletableFuture<InetSocketAddress> retFuture) {
+        try {
+            ((PulsarClientImpl) pulsarService.getClient()).getLookup()
+                .getBroker(TopicName.get(topicName))
+                .thenAccept(pair -> {
+                    checkState(pair.getLeft().equals(pair.getRight()));
+                    retFuture.complete(pair.getLeft());
+                })
+                .exceptionally(th -> {
+                    long waitTimeMs = backoff.next();
+
+                    if (backoff.isMandatoryStopMade()) {
+                        log.warn("[{}] getBroker for topic failed, retried too many times, return null. throwable: ",
+                            topicName, waitTimeMs, th);
+                        retFuture.complete(null);
+                    } else {
+                        log.warn("[{}] getBroker for topic failed, will retry in {} ms. throwable: ",
+                            topicName, waitTimeMs, th);
+                        requestHandler.getPulsarService().getExecutor()
+                            .schedule(() -> lookupBroker(topicName, backoff, retFuture),
+                                waitTimeMs,
+                                TimeUnit.MILLISECONDS);
+                    }
+                    return null;
+                });
+        } catch (PulsarServerException e) {
+            log.error("[{}] getTopicBroker for topic failed get pulsar client, return null. throwable: ",
+                topicName, e);
+            retFuture.complete(null);
+        }
     }
 
     // For Produce/Consume we need to lookup, to make sure topic served by brokerService,
     // or will meet error: "Service unit is not ready when loading the topic".
     // If getTopic is called after lookup, then no needLookup.
-    public synchronized CompletableFuture<PersistentTopic> getTopic(String topicName, boolean needLookup) {
+    public CompletableFuture<PersistentTopic> getTopic(String topicName) {
         return topics.computeIfAbsent(topicName,
             t -> {
-                try {
-                    CompletableFuture<Pair<InetSocketAddress, InetSocketAddress>> lookupBroker;
-                    if (needLookup) {
-                        lookupBroker = ((PulsarClientImpl) pulsarService.getClient()).getLookup()
-                            .getBroker(TopicName.get(t));
-                    } else {
-                        lookupBroker = new CompletableFuture<>();
-                        lookupBroker.complete(null);
+                final CompletableFuture<PersistentTopic> topicCompletableFuture = new CompletableFuture<>();
+
+                getTopicBroker(t).whenCompleteAsync((ignore, th) -> {
+                    if (th != null || ignore == null) {
+                        log.warn("[{}] failed getTopicBroker, return null PersistentTopic. throwable: ",
+                            topicName, th);
+                        topicCompletableFuture.complete(null);
+                        return;
                     }
 
-                    final CompletableFuture<PersistentTopic> topicCompletableFuture = new CompletableFuture<>();
+                    if (log.isDebugEnabled()) {
+                        log.debug("getTopicBroker for {} in KafkaTopicManager. brokerAddress: {}",
+                            t, ignore);
+                    }
 
-                    lookupBroker.whenCompleteAsync((ignore, th) -> {
-                        brokerService
-                            .getTopic(t, true)
-                            .thenApply(t2 -> {
-                                if (log.isDebugEnabled()) {
-                                    log.debug("GetTopic for {} in KafkaTopicManager", t);
-                                }
+                    brokerService
+                        .getTopic(t, true)
+                        .thenApply(t2 -> {
+                            if (log.isDebugEnabled()) {
+                                log.debug("GetTopic for {} in KafkaTopicManager", t);
+                            }
 
-                                try {
-                                    if (t2.isPresent()) {
-                                        PersistentTopic persistentTopic = (PersistentTopic) t2.get();
-                                        references.putIfAbsent(t, registerInPersistentTopic(persistentTopic));
-                                        topicCompletableFuture.complete(persistentTopic);
-                                    } else {
-                                        log.error("Get empty topic for name {}", t);
-                                        topicCompletableFuture.complete(null);
-                                    }
-                                } catch (Exception e) {
-                                    log.error("Failed to registerInPersistentTopic {}. exception:",
-                                        t, e);
+                            try {
+                                if (t2.isPresent()) {
+                                    PersistentTopic persistentTopic = (PersistentTopic) t2.get();
+                                    references.putIfAbsent(t, registerInPersistentTopic(persistentTopic));
+                                    topicCompletableFuture.complete(persistentTopic);
+                                } else {
+                                    log.error("Get empty topic for name {}", t);
                                     topicCompletableFuture.complete(null);
                                 }
-
-                                return null;
-                            })
-                            .exceptionally(ex -> {
-                                log.error("Failed to getTopic {}. exception:",
-                                    t, ex);
+                            } catch (Exception e) {
+                                log.error("Failed to registerInPersistentTopic {}. exception:",
+                                    t, e);
                                 topicCompletableFuture.complete(null);
-                                return null;
-                            });
+                            }
 
+                            return null;
+                        })
+                        .exceptionally(ex -> {
+                            log.error("Failed to getTopic {}. exception:",
+                                t, ex);
+                            topicCompletableFuture.complete(null);
+                            return null;
+                        });
 
-                    });
-                    return topicCompletableFuture;
-                } catch (Exception e) {
-                    log.error("Caught error while getclient for topic:{} ", t, e);
-                    return null;
-                }
+                });
+                return topicCompletableFuture;
             });
     }
 
@@ -200,13 +250,16 @@ public class KafkaTopicManager {
 
             for (Map.Entry<String, CompletableFuture<PersistentTopic>> entry : topics.entrySet()) {
                 String topicName = entry.getKey();
+                LOOKUP_CACHE.remove(topicName);
                 CompletableFuture<PersistentTopic> topicFuture = entry.getValue();
                 if (log.isDebugEnabled()) {
                     log.debug("remove producer {} for topic {} at close()",
                         references.get(topicName), topicName);
                 }
-                topicFuture.get().removeProducer(references.get(topicName));
-                references.remove(topicName);
+                if (references.get(topicName) != null) {
+                    topicFuture.get().removeProducer(references.get(topicName));
+                    references.remove(topicName);
+                }
                 topics.remove(topicName);
             }
             topics.clear();
@@ -217,6 +270,8 @@ public class KafkaTopicManager {
 
     public void deReference(String topicName) {
         try {
+            LOOKUP_CACHE.remove(topicName);
+
             if (!consumerTopicManagers.containsKey(topicName)) {
                 return;
             }

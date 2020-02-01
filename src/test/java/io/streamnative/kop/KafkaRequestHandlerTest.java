@@ -197,12 +197,12 @@ public class KafkaRequestHandlerTest extends MockKafkaServiceBaseTest {
         assertEquals(metadata.partition(), partitionIndex);
 
         metadata = KafkaRequestHandler.newFailedPartitionMetadata(topicName);
-        assertEquals(metadata.error(), Errors.UNKNOWN_SERVER_ERROR);
+        assertEquals(metadata.error(), Errors.NOT_LEADER_FOR_PARTITION);
         assertEquals(metadata.partition(), 0);
 
 
         metadata = KafkaRequestHandler.newFailedPartitionMetadata(topicNamePartition);
-        assertEquals(metadata.error(), Errors.UNKNOWN_SERVER_ERROR);
+        assertEquals(metadata.error(), Errors.NOT_LEADER_FOR_PARTITION);
         assertEquals(metadata.partition(), partitionIndex);
     }
 
