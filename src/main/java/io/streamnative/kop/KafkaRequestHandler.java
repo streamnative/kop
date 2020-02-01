@@ -394,7 +394,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     .synchronizedList(Lists.newArrayListWithExpectedSize(partitionsNumber));
 
                 list.forEach(topicName ->
-                    findBroker(pulsarService, topicName)
+                    findBroker(topicName)
                         .whenComplete(((partitionMetadata, throwable) -> {
                             if (throwable != null || partitionMetadata == null) {
                                 log.warn("[{}] Request {}: Exception while find Broker metadata",
@@ -532,7 +532,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             int partition = groupCoordinator.partitionFor(request.coordinatorKey());
             String pulsarTopicName = groupCoordinator.getTopicPartitionName(partition);
 
-            findBroker(pulsarService, TopicName.get(pulsarTopicName))
+            findBroker(TopicName.get(pulsarTopicName))
                 .whenComplete((node, t) -> {
                     if (t != null || node == null){
                         log.error("[{}] Request {}: Error while find coordinator, .",
@@ -1149,14 +1149,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return topic.contains(offsetsTopic);
     }
 
-    private CompletableFuture<PartitionMetadata> findBroker(PulsarService pulsarService, TopicName topic) {
+    private CompletableFuture<PartitionMetadata> findBroker(TopicName topic) {
         if (log.isDebugEnabled()) {
             log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }
         CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
 
-        // todo: change findBroker parameter from TopicName to String
-        // todo: should only cache topic the served by this broker in lookupcache. or it will not able to be released.
         topicManager.getTopicBroker(topic.toString())
             .thenCompose(pair -> getProtocolDataToAdvertise(pair, topic))
             .whenComplete((stringOptional, throwable) -> {
@@ -1269,9 +1267,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         int pulsarPartitionIndex = topicName.getPartitionIndex();
         int kafkaPartitionIndex = pulsarPartitionIndex == -1 ? 0 : pulsarPartitionIndex;
 
-        log.warn("Failed find Broker metadata, create PartitionMetadata with INVALID_PARTITIONS");
+        log.warn("Failed find Broker metadata, create PartitionMetadata with NOT_LEADER_FOR_PARTITION");
 
-        // TODO: return value? UNKNOWN_SERVER_ERROR, NOT_LEADER_FOR_PARTITION,
+        // most of this error happens when topic is in loading/unloading status,
         return new PartitionMetadata(
             Errors.NOT_LEADER_FOR_PARTITION,
             kafkaPartitionIndex,

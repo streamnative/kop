@@ -28,7 +28,6 @@ import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.impl.Backoff;
-import org.apache.pulsar.client.impl.BackoffBuilder;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.TopicName;
 
@@ -56,7 +55,7 @@ public class KafkaTopicManager {
     private InternalServerCnx internalServerCnx;
 
     public static final ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>
-        lookupCache = new ConcurrentHashMap<>();
+        LOOKUP_CACHE = new ConcurrentHashMap<>();
 
     KafkaTopicManager(KafkaRequestHandler kafkaRequestHandler) {
         this.requestHandler = kafkaRequestHandler;
@@ -105,7 +104,7 @@ public class KafkaTopicManager {
     }
 
     public void removeLookupCache(String topicName) {
-        lookupCache.remove(topicName);
+        LOOKUP_CACHE.remove(topicName);
     }
 
     // whether topic exists in cache.
@@ -130,7 +129,7 @@ public class KafkaTopicManager {
 
     // call pulsarclient.lookup.getbroker to get and own a topic
     public CompletableFuture<InetSocketAddress> getTopicBroker(String topicName) {
-        return lookupCache.computeIfAbsent(topicName, t -> {
+        return LOOKUP_CACHE.computeIfAbsent(topicName, t -> {
             CompletableFuture<InetSocketAddress> returnFuture = new CompletableFuture<>();
             Backoff backoff = new Backoff(
                 100, TimeUnit.MILLISECONDS,
@@ -163,7 +162,9 @@ public class KafkaTopicManager {
                         log.warn("[{}] getBroker for topic failed, will retry in {} ms. throwable: ",
                             topicName, waitTimeMs, th);
                         requestHandler.getPulsarService().getExecutor()
-                            .schedule(() -> lookupBroker(topicName, backoff, retFuture), waitTimeMs, TimeUnit.MILLISECONDS);
+                            .schedule(() -> lookupBroker(topicName, backoff, retFuture),
+                                waitTimeMs,
+                                TimeUnit.MILLISECONDS);
                     }
                     return null;
                 });
@@ -249,7 +250,7 @@ public class KafkaTopicManager {
 
             for (Map.Entry<String, CompletableFuture<PersistentTopic>> entry : topics.entrySet()) {
                 String topicName = entry.getKey();
-                lookupCache.remove(topicName);
+                LOOKUP_CACHE.remove(topicName);
                 CompletableFuture<PersistentTopic> topicFuture = entry.getValue();
                 if (log.isDebugEnabled()) {
                     log.debug("remove producer {} for topic {} at close()",
@@ -269,7 +270,7 @@ public class KafkaTopicManager {
 
     public void deReference(String topicName) {
         try {
-            lookupCache.remove(topicName);
+            LOOKUP_CACHE.remove(topicName);
 
             if (!consumerTopicManagers.containsKey(topicName)) {
                 return;
