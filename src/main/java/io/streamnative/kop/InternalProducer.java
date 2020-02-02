@@ -30,7 +30,7 @@ public class InternalProducer extends Producer {
     public InternalProducer(Topic topic, ServerCnx cnx,
                             long producerId, String producerName) {
         super(topic, cnx, producerId, producerName, null,
-            false, null, null);
+            false, null, null, 0, false);
     }
 
     // this will call back by bundle unload
