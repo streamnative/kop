@@ -185,13 +185,13 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
 
         if (shouldProduce) {
             producerWaitingConsumer.waitUntil(frame ->
-                    frame.getUtf8String().contains("ExitCode"), 120, TimeUnit.SECONDS);
+                    frame.getUtf8String().contains("ExitCode"), 60, TimeUnit.SECONDS);
             KafkaIntegrationTest.checkForErrorsInLogs(producer.getLogs());
         }
 
         if (shouldConsume) {
             consumerWaitingConsumer.waitUntil(frame ->
-                    frame.getUtf8String().contains("ExitCode"), 120, TimeUnit.SECONDS);
+                    frame.getUtf8String().contains("ExitCode"), 60, TimeUnit.SECONDS);
             KafkaIntegrationTest.checkForErrorsInLogs(consumer.getLogs());
         }
     }
