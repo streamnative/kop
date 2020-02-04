@@ -17,12 +17,21 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <parent>
+    <groupId>org.apache</groupId>
+    <artifactId>apache</artifactId>
+    <version>18</version>
+  </parent>
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>io.streamnative</groupId>
-  <artifactId>kop</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <packaging>pom</packaging>
 
+  <groupId>io.streamnative.pulsar.handlers</groupId>
+  <artifactId>pulsar-protocol-handler-kop-parent</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <name>StreamNative :: Pulsar Protocol Handler :: KoP Parent</name>
+  <description>Parent for Kafka on Pulsar implemented using Pulsar Protocol Handler.</description>
 
   <properties>
     <javac.target>1.8</javac.target>
@@ -53,6 +62,20 @@
     <puppycrawl.checkstyle.version>6.19</puppycrawl.checkstyle.version>
     <spotbugs-maven-plugin.version>3.1.8</spotbugs-maven-plugin.version>
   </properties>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <modules>
+    <module>test-framework</module>
+    <module>impl</module>
+    <module>tests</module>
+  </modules>
 
   <!-- dependency definitions -->
   <dependencyManagement>
@@ -230,8 +253,8 @@
             </dependency>
           </dependencies>
           <configuration>
-            <configLocation>src/resources/streamnative/checkstyle.xml</configLocation>
-            <suppressionsLocation>src/resources/streamnative/suppressions.xml</suppressionsLocation>
+            <configLocation>resources/checkstyle.xml</configLocation>
+            <suppressionsLocation>resources/streamnative/suppressions.xml</suppressionsLocation>
             <encoding>UTF-8</encoding>
             <consoleOutput>true</consoleOutput>
             <failOnViolation>true</failOnViolation>
@@ -256,7 +279,7 @@
         <artifactId>spotbugs-maven-plugin</artifactId>
         <version>${spotbugs-maven-plugin.version}</version>
         <configuration>
-          <excludeFilterFile>${session.executionRootDirectory}/src/resources/streamnative/findbugsExclude.xml</excludeFilterFile>
+          <excludeFilterFile>resources/findbugsExclude.xml</excludeFilterFile>
         </configuration>
       </plugin>
 
@@ -299,13 +322,13 @@
         <artifactId>license-maven-plugin</artifactId>
         <version>${license-maven-plugin.version}</version>
         <configuration>
-          <header>src/resources/license.template</header>
+          <header>resources/license.template</header>
 
           <excludes>
             <exclude>LICENSE</exclude>
             <exclude>NOTICE</exclude>
             <exclude>Jenkinsfile</exclude>
-            <exclude>src/resources/license.template</exclude>
+            <exclude>resources/license.template</exclude>
             <exclude>**/build/**</exclude>
             <exclude>**/ahc.properties</exclude>
             <exclude>**/.idea/**</exclude>
@@ -330,26 +353,6 @@
             <kop>SCRIPT_STYLE</kop>
           </mapping>
         </configuration>
-      </plugin>
-
-      <plugin>
-        <artifactId>maven-assembly-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>distro-assembly</id>
-            <phase>package</phase>
-            <goals>
-              <goal>single</goal>
-            </goals>
-            <configuration>
-              <attach>true</attach>
-              <finalName>kop-${project.version}</finalName>
-              <descriptors>
-                <descriptor>src/assemble/bin.xml</descriptor>
-              </descriptors>
-            </configuration>
-          </execution>
-        </executions>
       </plugin>
 
       <plugin>

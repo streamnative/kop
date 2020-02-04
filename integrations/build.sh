@@ -16,6 +16,11 @@
 BINDIR=$(dirname "$0")
 INTR_HOME=`cd ${BINDIR}/..;pwd`
 
+##  TODO: change this home dir, since moved get-project-version.py
+##    from root/dev into integrations/dev
+echo "++++ dir Bindir : ${BINDIR}, INTR_HOME: ${INTR_HOME}"
+
+
 VERSION=$(${INTR_HOME}/dev/get-project-version.py)
 TAG=${VERSION%"-SNAPSHOT"}
 IMAGE_NAME_PREFIX="kop-test-"

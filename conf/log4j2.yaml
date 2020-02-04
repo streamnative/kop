@@ -34,7 +34,7 @@ Configuration:
           level: info
 
     Logger:
-      - name: io.streamnative.kop
+      - name: io.streamnative.pulsar.handlers.kop
         level: info
         additivity: false
         AppenderRef:
