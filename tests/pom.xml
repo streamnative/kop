@@ -32,18 +32,6 @@
 
   <!-- include the dependencies -->
   <dependencies>
-
-    <!-- runtime dependencies -->
-<!--    <dependency>-->
-<!--      <groupId>org.apache.pulsar</groupId>-->
-<!--      <artifactId>pulsar-broker</artifactId>-->
-<!--      <scope>provided</scope>-->
-<!--    </dependency>-->
-<!--    <dependency>-->
-<!--      <groupId>org.eclipse.jetty</groupId>-->
-<!--      <artifactId>jetty-proxy</artifactId>-->
-<!--    </dependency>-->
-
     <!-- test dependencies -->
     <dependency>
       <groupId>io.streamnative.pulsar.handlers</groupId>
@@ -51,18 +39,6 @@
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
-<!--    <dependency>-->
-<!--      <groupId>org.apache.pulsar</groupId>-->
-<!--      <artifactId>managed-ledger</artifactId>-->
-<!--      <type>test-jar</type>-->
-<!--      <scope>test</scope>-->
-<!--    </dependency>-->
-<!--    <dependency>-->
-<!--      <groupId>org.apache.pulsar</groupId>-->
-<!--      <artifactId>pulsar-broker</artifactId>-->
-<!--      <type>test-jar</type>-->
-<!--      <scope>test</scope>-->
-<!--    </dependency>-->
   </dependencies>
 
   <build>
