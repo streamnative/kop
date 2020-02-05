@@ -80,7 +80,7 @@
               <tasks>
                 <echo>copy protocol handler</echo>
                 <copy file="${basedir}/../impl/target/pulsar-protocol-handler-kop-${project.version}.nar"
-                      tofile="${basedir}/src/test/resources/test-protocol-kop.nar"/>
+                      tofile="${basedir}/src/test/resources/test-protocol-handler.nar"/>
               </tasks>
             </configuration>
           </execution>
