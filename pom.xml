@@ -253,7 +253,7 @@
           </dependencies>
           <configuration>
             <configLocation>resources/checkstyle.xml</configLocation>
-            <suppressionsLocation>resources/streamnative/suppressions.xml</suppressionsLocation>
+            <suppressionsLocation>resources/suppressions.xml</suppressionsLocation>
             <encoding>UTF-8</encoding>
             <consoleOutput>true</consoleOutput>
             <failOnViolation>true</failOnViolation>
