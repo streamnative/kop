@@ -72,7 +72,6 @@
   </licenses>
 
   <modules>
-    <module>test-framework</module>
     <module>impl</module>
     <module>tests</module>
   </modules>
