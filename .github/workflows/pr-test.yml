@@ -2,13 +2,13 @@ name: kop unit test
 
 on:
   pull_request:
-    branches: 
+    branches:
       - master
     paths:
       - '.github/workflows/**'
       - 'src/**'
   push:
-    branches: 
+    branches:
       - master
     paths:
       - '.github/workflows/**'
@@ -27,4 +27,7 @@ jobs:
         java-version: 1.8
 
     - name: Build with Maven
-      run: mvn clean install
+      run: mvn clean install -DskipTests
+
+    - name: test after build
+      run: mvn test
