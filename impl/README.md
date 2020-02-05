@@ -35,16 +35,16 @@ Assume *KOP_HOME* is the home directory for your cloned `kop` repository.
 
 ### Run KOP broker
 
-You can run [kop shell script](https://github.com/streamnative/kop/blob/master/bin/kop) in standalone mode or in cluster mode.
+You can run [kop shell script](https://github.com/streamnative/kop/blob/master/impl/bin/kop) in standalone mode or in cluster mode.
 
-- In standalone mode, kop shell script uses the [`kop_standalone.conf`](https://github.com/streamnative/kop/blob/master/conf/kop_standalone.conf) configuration file.
-- In cluster mode, kop shell script uses [`kop.conf`](https://github.com/streamnative/kop/blob/master/conf/kop.conf) configuration file.
+- In standalone mode, kop shell script uses the [`kop_standalone.conf`](https://github.com/streamnative/kop/blob/master/impl/conf/kop_standalone.conf) configuration file.
+- In cluster mode, kop shell script uses [`kop.conf`](https://github.com/streamnative/kop/blob/master/impl/conf/kop.conf) configuration file.
 
 #### Run KOP in standalone mode
 To start KOP in standalone mode, refer to the following command.
 
 ```access transformers
-cd ${KOP_HOME}
+cd ${KOP_HOME}/impl
 bin/kop standalone
 ```
 
@@ -52,7 +52,7 @@ bin/kop standalone
 
 Starting KOP in cluster mode is similar to the [instructions to run a Pulsar Cluster](http://pulsar.apache.org/docs/en/deploy-bare-metal/).
 
-1. Download [Pulsar 2.4.0](http://pulsar.apache.org/en/download/), and copy the package in each node.  
+1. Download [Pulsar 2.5.0](http://pulsar.apache.org/en/download/), and copy the package in each node.  
    Assume *PULSAR_HOME* is the home directory for your Pulsar installation.
 
 2. Start ZooKeeper.  
@@ -99,39 +99,18 @@ bin/bookkeeper bookie
 
 Follow instructions to [deploy a KOP broker cluster](http://pulsar.apache.org/docs/en/deploy-bare-metal/#deploying-pulsar-brokers).
 
-In the [`kop.conf`](https://github.com/streamnative/kop/blob/master/conf/kop.conf) broker configuration file, the `kafkaServicePort` parameter indicates the port for serving Kafka requests, it is `9092` by default. All the other configuration is the same as [original Pulsar Broker configuration](http://pulsar.apache.org/docs/en/deploy-bare-metal/#configuring-brokers).
+In the [`kop.conf`](https://github.com/streamnative/kop/blob/master/impl/conf/kop.conf) broker configuration file, the `kafkaServicePort` parameter indicates the port for serving Kafka requests, it is `9092` by default. All the other configuration is the same as [original Pulsar Broker configuration](http://pulsar.apache.org/docs/en/deploy-bare-metal/#configuring-brokers).
 
 Command example
 
 ```access transformers
-cd ${KOP_HOME}
+cd ${KOP_HOME}/impl
 bin/kop kafka-broker
 ```
 
 #### log level config
 
-KOP uses log4j2 to handle logs, the config file is [log4j2.yaml](https://github.com/streamnative/kop/blob/master/conf/log4j2.yaml).
-
-#### Verify with Kafka client examples
-
-1. Build Kafka client example.
-
-```access transformers
-cd ${KOP_HOME}/kafka-examples
-mvn clean package
-```
-
-2. Run a unlimited consumer.
-
-```
-bin/java-consumer-demo.sh
-```
-
-3. Run a unlimited producer.
-
-```
-bin/java-producer-demo.sh
-```
+KOP uses log4j2 to handle logs, the config file is [log4j2.yaml](https://github.com/streamnative/kop/blob/master/impl/conf/log4j2.yaml).
 
 #### SSL Connection
 
