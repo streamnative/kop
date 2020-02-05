@@ -124,6 +124,7 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.PulsarClientException.AuthorizationException;
 import org.apache.pulsar.common.api.AuthData;
 import org.apache.pulsar.common.naming.NamespaceName;
+import org.apache.pulsar.common.naming.TopicDomain;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.AuthAction;
@@ -309,7 +310,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             requestTopics.stream()
                 .forEach(topic -> {
-                    TopicName pulsarTopicName = pulsarTopicName(topic, namespace);
+
+                    TopicName pulsarTopicName;
+                    if (topic.startsWith(TopicDomain.persistent.value()) && topic.contains(namespace.getLocalName())) {
+                        pulsarTopicName = pulsarTopicName(topic);
+                    } else {
+                        pulsarTopicName = pulsarTopicName(topic, namespace);
+                    }
 
                     // get partition numbers for each topic.
                     getPartitionedTopicMetadataAsync(pulsarTopicName.toString())

@@ -148,8 +148,12 @@ public class KafkaIntegrationTest extends MockKafkaServiceBaseTest {
     @Test(timeOut = 3 * 60_000, dataProvider = "integrations")
     void simpleProduceAndConsume(final String integration, final Optional<String> topic,
                                  final boolean shouldProduce, final boolean shouldConsume) throws Exception {
+        String topicName = topic.orElse(integration);
+        System.out.println("starting integration " + integration + " with topicName " + topicName);
 
-        this.getAdmin().topics().createPartitionedTopic(topic.orElse(integration), 1);
+        this.getAdmin().topics().createPartitionedTopic(topicName, 1);
+
+        System.out.println("topic created");
 
         final GenericContainer producer = new GenericContainer<>("streamnative/kop-test-" + integration)
                 .withEnv("KOP_BROKER", "localhost:" + super.kafkaBrokerPort)
