@@ -105,7 +105,6 @@ public abstract class MockKafkaServiceBaseTest {
         this.conf.setAdvertisedAddress("localhost");
         this.conf.setWebServicePort(Optional.ofNullable(brokerWebservicePort));
         this.conf.setClusterName(configClusterName);
-        this.conf.setAdvertisedAddress("localhost");
         this.conf.setListeners(
             PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort + ","
             + SSL_PREFIX + "localhost:" + kafkaBrokerPortTls);
