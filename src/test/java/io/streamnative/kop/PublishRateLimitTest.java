@@ -102,7 +102,8 @@ public class PublishRateLimitTest extends MockKafkaServiceBaseTest {
             .topic(pulsarTopicName)
             .enableBatching(false)
             .maxPendingMessages(30000).create();
-        PersistentTopic topic = (PersistentTopic) kafkaService.getBrokerService().getTopicIfExists(pulsarTopicName).get().get();
+        PersistentTopic topic = (PersistentTopic) kafkaService.getBrokerService()
+            .getTopicIfExists(pulsarTopicName).get().get();
         // (1) verify byte-rate is -1 disabled
         Assert.assertEquals(topic.getBrokerPublishRateLimiter(), PublishRateLimiter.DISABLED_RATE_LIMITER);
 
