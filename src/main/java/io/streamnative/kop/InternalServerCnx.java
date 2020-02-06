@@ -60,4 +60,10 @@ public class InternalServerCnx extends ServerCnx {
         this.remoteAddress = kafkaRequestHandler.remoteAddress;
     }
 
+    @Override
+    public void enableCnxAutoRead() {
+        // do nothing in this mock.
+        return;
+    }
+
 }
