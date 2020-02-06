@@ -118,6 +118,8 @@ if [ -z "$KOP_LOG_CONF" ]; then
     KOP_LOG_CONF=$DEFAULT_LOG_CONF
 fi
 
+KOP_EXTRA_OPTS=${KOP_EXTRA_OPTS:-" -Xms2g -Xmx2g -XX:MaxDirectMemorySize=4g -XX:+UseG1GC -XX:MaxGCPauseMillis=10 -XX:+ParallelRefProcEnabled -XX:+UnlockExperimentalVMOptions -XX:+AggressiveOpts -XX:+DoEscapeAnalysis -XX:ParallelGCThreads=32 -XX:ConcGCThreads=32 -XX:G1NewSizePercent=50 -XX:+DisableExplicitGC -XX:-ResizePLAB  -Dpulsar.allocator.exit_on_oom=true -Dio.netty.recycler.maxCapacity.default=1000 -Dio.netty.recycler.linkCapacity=1024"}
+
 KOP_CLASSPATH="$KOP_JAR:$KOP_CLASSPATH"
 KOP_CLASSPATH="$(dirname $KOP_LOG_CONF):$KOP_CLASSPATH"
 OPTS="$OPTS -Dlog4j.configurationFile=$(basename $KOP_LOG_CONF)"

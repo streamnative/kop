@@ -15,11 +15,9 @@ package io.streamnative.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.kafka.common.protocol.ApiKeys.API_VERSIONS;
-import static org.apache.kafka.common.protocol.ApiKeys.METADATA;
 
 import com.google.common.collect.Queues;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
@@ -40,6 +38,7 @@ import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
+import org.apache.kafka.common.requests.ResponseUtils;
 
 
 /**
@@ -110,13 +109,14 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         try (KafkaHeaderAndResponse kafkaHeaderAndResponse =
                  KafkaHeaderAndResponse.responseForRequest(request, response)) {
 
-            ByteBuffer serialized = kafkaHeaderAndResponse
-                .getResponse()
-                .serialize(kafkaHeaderAndResponse.getApiVersion(), kafkaHeaderAndResponse.getHeader());
-
-            // Already converted the ByteBuf into ByteBuffer now, release ByteBuf
-            kafkaHeaderAndResponse.buffer.release();
-            return Unpooled.wrappedBuffer(serialized);
+            return ResponseUtils.serializeResponse(
+                kafkaHeaderAndResponse.getApiVersion(),
+                kafkaHeaderAndResponse.getHeader(),
+                kafkaHeaderAndResponse.getResponse()
+            );
+        } finally {
+            // the request is not needed any more.
+            request.close();
         }
     }
 
@@ -133,7 +133,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
         CompletableFuture<AbstractResponse> responseFuture;
 
-        try (KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress)){
+        KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress);
+        try {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Received kafka cmd {}, the request content is: {}",
                     ctx.channel() != null ? ctx.channel().remoteAddress() : "Null channel",
@@ -219,6 +220,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         } catch (Exception e) {
             log.error("error while handle command:", e);
             close();
+        } finally {
+            // the kafkaHeaderAndRequest has already held the reference.
+            buffer.release();
         }
     }
 
@@ -399,16 +403,13 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         private final short apiVersion;
         private final ResponseHeader header;
         private final AbstractResponse response;
-        private final ByteBuf buffer;
 
         private KafkaHeaderAndResponse(short apiVersion,
                                        ResponseHeader header,
-                                       AbstractResponse response,
-                                       ByteBuf buffer) {
+                                       AbstractResponse response) {
             this.apiVersion = apiVersion;
             this.header = header;
             this.response = response;
-            this.buffer = buffer.retain();
         }
 
         public short getApiVersion() {
@@ -427,8 +428,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             return new KafkaHeaderAndResponse(
                 request.getHeader().apiVersion(),
                 request.getHeader().toResponseHeader(),
-                response,
-                request.getBuffer());
+                response);
         }
 
         public String toString() {
@@ -438,7 +438,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
         @Override
         public void close() {
-            this.buffer.release();
         }
     }
 
