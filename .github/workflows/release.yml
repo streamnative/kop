@@ -1,0 +1,27 @@
+name: Pulsarctl Release
+
+on:
+  release:
+
+jobs:
+  upload:
+    name: Upload go build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - uses: actions/setup-go@v1
+        with:
+          go-version: 1.12
+        id: go
+
+      - name: build
+        run: |
+          version=`./dev/get-project-version.py`
+          mvn clean install -DskipTests
+
+      - name: publish
+        uses: skx/github-action-publish-binaries@release-0.11
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: 'kop*'
