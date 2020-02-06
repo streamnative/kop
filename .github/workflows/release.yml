@@ -18,6 +18,9 @@ jobs:
         run: |
           version=`./dev/get-project-version.py`
           mvn clean install -DskipTests
+          cp target/kop-${version}.jar ../
+          cp target/kop-${version}.nar ../
+          cp target/kop-${version}-bin.tar.gz ../
 
       - name: publish
         uses: skx/github-action-publish-binaries@release-0.11
