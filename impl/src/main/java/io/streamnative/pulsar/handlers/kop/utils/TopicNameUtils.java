@@ -46,6 +46,13 @@ public class TopicNameUtils {
     }
 
     public static TopicName pulsarTopicName(String topic, int partitionIndex, NamespaceName namespace) {
+        if (topic.startsWith(TopicDomain.persistent.value())) {
+            topic = topic.replace(TopicDomain.persistent.value() + "://", "");
+        }
+
+        if (topic.contains(namespace.getNamespaceObject().toString())) {
+            topic = topic.replace(namespace.getNamespaceObject().toString() + "/", "");
+        }
         return TopicName.get(TopicDomain.persistent.value(),
             namespace,
             topic + PARTITIONED_TOPIC_SUFFIX + partitionIndex);

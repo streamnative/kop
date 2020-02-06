@@ -26,8 +26,23 @@ jobs:
       with:
         java-version: 1.8
 
-    - name: Build with Maven
+    - name: Build with Maven skipTests
       run: mvn clean install -DskipTests
 
     - name: test after build
       run: mvn test
+
+    - name: package surefire artifacts
+      if: failure()
+      run: |
+        rm -rf artifacts
+        mkdir artifacts
+        find . -type d -name "*surefire*" -exec cp --parents -R {} artifacts/ \;
+        zip -r artifacts.zip artifacts
+
+    - uses: actions/upload-artifact@master
+      name: upload surefire-artifacts
+      if: failure()
+      with:
+        name: surefire-artifacts
+        path: artifacts.zip

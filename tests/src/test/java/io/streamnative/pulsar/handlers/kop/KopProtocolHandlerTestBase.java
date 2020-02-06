@@ -110,7 +110,6 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setAdvertisedAddress("localhost");
         kafkaConfig.setWebServicePort(Optional.ofNullable(brokerWebservicePort));
         kafkaConfig.setClusterName(configClusterName);
-        kafkaConfig.setAdvertisedAddress("localhost");
 
         kafkaConfig.setManagedLedgerCacheSizeMB(8);
         kafkaConfig.setActiveConsumerFailoverDelayTimeMillis(0);

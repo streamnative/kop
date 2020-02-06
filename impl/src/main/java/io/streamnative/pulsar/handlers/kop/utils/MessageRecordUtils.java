@@ -193,6 +193,7 @@ public final class MessageRecordUtils {
 
         messageMetaBuilder.recycle();
         msgMetadata.recycle();
+        batchedMessageMetadataAndPayload.release();
 
         return buf;
     }
@@ -266,8 +267,10 @@ public final class MessageRecordUtils {
 
                         SingleMessageMetadata singleMessageMetadata = singleMessageMetadataBuilder.build();
 
+                        // TODO: optimize this to avoid memory copy
                         byte[] data = new byte[singleMessagePayload.readableBytes()];
                         singleMessagePayload.readBytes(data);
+                        singleMessagePayload.release();
                         Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
 
                         builder.appendWithOffset(
@@ -279,6 +282,7 @@ public final class MessageRecordUtils {
                         singleMessageMetadataBuilder.recycle();
                     }
                 } else {
+                    // TODO: optimize this to avoid memory copy
                     byte[] data = new byte[payload.readableBytes()];
                     payload.readBytes(data);
                     Header[] headers = getHeadersFromMetadata(msgMetadata.getPropertiesList());
@@ -290,6 +294,9 @@ public final class MessageRecordUtils {
                         data,
                         headers);
                 }
+
+                payload.release();
+                entry.release();
             }
             return builder.build();
         } catch (IOException ioe){

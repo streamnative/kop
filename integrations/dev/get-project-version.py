@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 from os.path import dirname, realpath, join
 
 # Derive the POM path from the current script location
-TOP_LEVEL_PATH = dirname(dirname(realpath(__file__)))
+TOP_LEVEL_PATH = dirname(dirname(dirname(realpath(__file__))))
 POM_PATH = join(TOP_LEVEL_PATH, 'pom.xml')
 
 root = ET.XML(open(POM_PATH).read())
