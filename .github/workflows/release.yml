@@ -1,4 +1,4 @@
-name: KOP Release
+name: KoP Release
 
 on:
   release:

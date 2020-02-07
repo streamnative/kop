@@ -22,7 +22,7 @@ be published in this release to the new milestone.
 
 2. Create the release branch
 
-We are going to create a branch from `master` to `branch-vx.y.z`
+We are going to create a branch from `master` to `branch-x.y`
 where the tag will be generated and where new fixes will be
 applied as part of the maintenance for the release. `x.y.z`
 is the version of the release.
@@ -30,9 +30,9 @@ is the version of the release.
 The branch needs only to be created when creating major releases,
 and not for patch releases.
 
-Eg: When creating `v0.1.1` release, will be creating
-the branch `branch-0.1.1`, but for `v0.1.2` we
-would keep using the old `branch-0.1.1`.
+Eg: When creating `v0.1.0` release, will be creating
+the branch `branch-0.1`, but for `v0.1.1` we
+would keep using the old `branch-0.1`.
 
 In these instructions, I'm referring to an fictitious release `x.y.z`.
 Change the release version in the examples accordingly with the real version.
@@ -45,7 +45,7 @@ $ git clone git@github.com:streamnative/kop.git
 $ cd kop
 
 # Create a branch
-$ git checkout -b branch-x.y.z origin/master
+$ git checkout -b branch-x.y origin/master
 
 # Create a tag
 $ git tag -u $USER@streamnative.io vx.y.z -m 'Release vx.y.z'
@@ -57,13 +57,13 @@ In this process the maven version of the project will always be the final one.
 
 ```bash
 # Bump to the release version
-$ ./secrets/set-project-version.sh x.y.z
+$ ./scripts/set-project-version.sh x.y.z
 
 # Commit
 $ git commit -m 'Release x.y.z' -a
 
 # Push both the branch and the tag to Github repo
-$ git push origin branch-x.y.z
+$ git push origin branch-x.y
 $ git push origin vx.y.z
 ```
 
@@ -86,7 +86,7 @@ We need to move master version to next iteration `X + 1`.
 
 ```bash
 $ git checkout master
-$ ./secrets/set-project-version.sh 0.Y.0-SNAPSHOT
+$ ./scripts/set-project-version.sh X.(Y+1).0-SNAPSHOT
 
 $ git commit -m 'Bumped version to 0.Y.0-SNAPSHOT' -a
 ```
