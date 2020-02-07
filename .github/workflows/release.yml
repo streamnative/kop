@@ -1,4 +1,4 @@
-name: Pulsarctl Release
+name: KOP Release
 
 on:
   release:
