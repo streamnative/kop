@@ -30,7 +30,13 @@ jobs:
       run: mvn clean install -DskipTests
 
     - name: test after build
-      run: mvn test
+      run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegrationTest,!DistributedClusterTest'
+
+    - name: KafkaIntegrationTest
+      run: mvn test '-Dtest=KafkaIntegrationTest' -pl tests
+
+    - name: DistributedClusterTest
+      run: mvn test '-Dtest=DistributedClusterTest' -pl tests
 
     - name: package surefire artifacts
       if: failure()
