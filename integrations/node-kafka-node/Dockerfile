@@ -27,12 +27,14 @@
 #
 FROM node:13-alpine
 
-RUN apk add yarn snappy
+RUN apk add yarn snappy-dev python3 make g++
 
 # Create app directory
 WORKDIR /usr/src/app
 
 COPY . .
+
+RUN npm install -g node-gyp
 
 RUN yarn install
 
