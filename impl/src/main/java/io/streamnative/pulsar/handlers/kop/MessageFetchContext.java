@@ -106,12 +106,11 @@ public final class MessageFetchContext {
                     CompletableFuture<KafkaTopicConsumerManager> consumerManager =
                         requestHandler.getTopicManager().getTopicConsumerManager(topicName.toString());
 
-                    // topic not owned by broker
+                    // topic not owned by broker, return NOT_LEADER_FOR_PARTITION
                     if (consumerManager == null) {
-                        // return UNKNOWN_TOPIC_OR_PARTITION?
                         responseData.put(entry.getKey(),
                             new FetchResponse.PartitionData(
-                            Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                            Errors.NOT_LEADER_FOR_PARTITION,
                             FetchResponse.INVALID_HIGHWATERMARK,
                             FetchResponse.INVALID_LAST_STABLE_OFFSET,
                             FetchResponse.INVALID_LOG_START_OFFSET,

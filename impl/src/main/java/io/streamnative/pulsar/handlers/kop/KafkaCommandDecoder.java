@@ -234,7 +234,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
         // loop from first responseFuture.
         while (responseQueue != null && responseQueue.peek() != null
-            && responseQueue.peek().getResponseFuture().isDone()) {
+            && responseQueue.peek().getResponseFuture().isDone() && isActive.get()) {
             ResponseAndRequest response = responseQueue.remove();
             try {
                 if (log.isDebugEnabled()) {

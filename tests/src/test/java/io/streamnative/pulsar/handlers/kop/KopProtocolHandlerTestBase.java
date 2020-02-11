@@ -348,16 +348,19 @@ public abstract class KopProtocolHandlerTestBase {
         private final String topic;
         private final Boolean isAsync;
 
-        public KProducer(String topic, Boolean isAsync, String host, int port) {
-            this(topic, isAsync, "localhost", port, null, null);
-        }
-
-        public KProducer(String topic, Boolean isAsync, String host, int port, String username, String password) {
+        public KProducer(String topic, Boolean isAsync, String host,
+                         int port, String username, String password, Boolean retry) {
             Properties props = new Properties();
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducer");
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+            props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000);
+
+            if (retry) {
+                props.put(ProducerConfig.RETRIES_CONFIG, 3);
+                props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);
+            }
 
             if (null != username && null != password) {
                 String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule "
@@ -373,8 +376,21 @@ public abstract class KopProtocolHandlerTestBase {
             this.isAsync = isAsync;
         }
 
+        public KProducer(String topic, Boolean isAsync, String host,
+                         int port, String username, String password) {
+            this(topic, isAsync, host, port, username, password, false);
+        }
+
+        public KProducer(String topic, Boolean isAsync, String host, int port) {
+            this(topic, isAsync, "localhost", port, null, null, false);
+        }
+
         public KProducer(String topic, Boolean isAsync, int port) {
             this(topic, isAsync, "localhost", port);
+        }
+
+        public KProducer(String topic, Boolean isAsync, int port, Boolean retry) {
+            this(topic, isAsync, "localhost", port, null, null, retry);
         }
 
         @Override

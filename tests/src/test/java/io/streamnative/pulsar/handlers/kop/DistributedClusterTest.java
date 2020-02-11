@@ -250,7 +250,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
             }
         }
 
-        kConsumer.getConsumer().commitSync();
+        kConsumer.getConsumer().commitSync(Duration.ofSeconds(1));
 
         if (log.isDebugEnabled()) {
             log.debug("kConsumer {} finished poll and commit message: {}",
@@ -298,7 +298,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         int totalMsgs = 50;
         String messageStrPrefix = "Message_Kop_KafkaProduceKafkaConsume_" + partitionNumber + "_";
         @Cleanup
-        KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort());
+        KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort(), true);
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
 
         // 2. create 4 kafka consumer from different consumer groups.
@@ -432,7 +432,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         int totalMsgs = 50;
         String messageStrPrefix = "Message_" + kafkaTopicName + "_";
         @Cleanup
-        KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort());
+        KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort(), true);
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
 
         List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
@@ -481,7 +481,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         int totalMsgs = 50;
         String messageStrPrefix = "Message_" + kafkaTopicName + "_";
         @Cleanup
-        KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort());
+        KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort(), true);
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
 
         List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
