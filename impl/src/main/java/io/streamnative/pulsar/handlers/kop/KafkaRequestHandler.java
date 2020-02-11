@@ -810,18 +810,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET)));
             }
 
-            // topic not exist, return UNKNOWN_TOPIC_OR_PARTITION
-            if (!topicManager.topicExists(pulsarTopic.toString())) {
-                log.warn("Topic {} not exist in topic manager while list offset.", pulsarTopic.toString());
-                partitionData = new CompletableFuture<>();
-                partitionData.complete(new ListOffsetResponse
-                        .PartitionData(
-                        Errors.UNKNOWN_TOPIC_OR_PARTITION,
-                        Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET)));
-            } else {
-                CompletableFuture<PersistentTopic> persistentTopic = topicManager.getTopic(pulsarTopic.toString());
-                partitionData = fetchOffsetForTimestamp(persistentTopic, times, true);
-            }
+            CompletableFuture<PersistentTopic> persistentTopic = topicManager.getTopic(pulsarTopic.toString());
+            partitionData = fetchOffsetForTimestamp(persistentTopic, times, true);
+
             responseData.put(topic, partitionData);
         });
 
