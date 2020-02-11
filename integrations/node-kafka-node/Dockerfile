@@ -25,9 +25,14 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-FROM node:13-alpine
+FROM node:12-stretch
 
-RUN apk add yarn snappy-dev python3 make g++
+RUN apt update && apt install -y apt-transport-https ca-certificates
+
+RUN curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add -
+RUN echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list
+
+RUN apt update && apt install -y git build-essential yarn
 
 # Create app directory
 WORKDIR /usr/src/app
