@@ -5,14 +5,14 @@ KoP stands for Kafka on Pulsar. KoP broker supports Kafka protocols, and is back
 KoP is implemented as a Pulsar [ProtocolHandler](https://github.com/apache/pulsar/blob/master/pulsar-broker/src/main/java/org/apache/pulsar/broker/protocol/ProtocolHandler.java) with protocol name "kafka"
 ProtocolHandler is built as a `nar` file, and will be loaded when Pulsar Broker starting.
 
-> NOTE: KoP currently supports [Kafka Client 2.0.0](https://kafka.apache.org/20/documentation.html). And KoP is build Base on [Pulsar 2.5.0](http://pulsar.apache.org/en/download/)
+> NOTE: KoP currently supports [Kafka Client 2.0.0](https://kafka.apache.org/20/documentation.html). And KoP is build based on [Pulsar 2.5.0](http://pulsar.apache.org/en/download/)
 
-## Limit for KoP
+## Limitations for KoP
 
 KoP leverage Pulsar features, but some of the manners between Pulsar and Kafka are different. In this implementation, there are some limitations.
 
 - KoP does not support Pulsar non-partitioned topic. Because all topics in Kafka are partitioned type, not support non-partitioned topic is easy to align this.
-- All topics in KoP are placed under a user pre-defined tenant and namespace. 
+- All topics in KoP are placed under a user specified tenant and namespace. 
 
 ## Get started
 
@@ -22,27 +22,11 @@ In this guide, you will learn how to use the KoP broker to serve requests from K
 
 Download [Pulsar 2.5.0](http://pulsar.apache.org/en/download/) binary package `apache-pulsar-2.5.0-bin.tar.gz`. and unzip it.
 
-### Download KoP nar
+### Download KoP Plugin
 
 TODO: https://github.com/streamnative/kop/issues/68
 
-### Build KoP broker
-
-1. Git clone `kop`.    
-Assume *KOP_HOME* is the home directory for your cloned `kop` repository.
-  
-   ```
-   $ git clone https://github.com/streamnative/kop
-   ```
-
-2. Build the source in the `${KOP_HOME}` directory.
-   
-   ```
-   mvn clean install -DskipTests
-   ```
-After building the source successfully, the KoP nar file is created under dir `${KOP_HOME}/impl/target/` with name looks like `pulsar-protocol-handler-kop-0.0.1-SNAPSHOT.nar`.  
-
-### Config Pulsar broker to run KoP protocol handler
+### Config Pulsar broker to run KoP protocol handler as Plugin
 
 As mentioned above, KoP module is loaded along with Pulsar broker. You need to add configs in Pulsar's config file, such as `broker.conf` or `standalone.conf`.
 

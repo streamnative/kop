@@ -4,34 +4,22 @@ KOP stands for Kafka on Pulsar. KOP broker supports Kafka protocols, and is back
 
 The operation and management for KOP broker is the same as Pulsar broker.
 
-> NOTE: This broker currently supports [Kafka Client 2.0.0](https://kafka.apache.org/20/documentation.html).
+> NOTE: KoP currently supports [Kafka Client 2.0.0](https://kafka.apache.org/20/documentation.html).
 
-## Limit for KOP
+## Limitations for KOP
 
 KOP leverage Pulsar features, but some of the manners between Pulsar and Kafka are different. In this implementation, there are some limitations.
 
 - KOP does not support Pulsar non-partitioned topic. Because all topics in Kafka are partitioned type, not support non-partitioned topic is easy to align this.
-- All topics in KOP are placed under a user pre-defined tenant and namespace. 
+- All topics in KOP are placed under a user specified tenant and namespace. 
 
 ## Get started
 
 In this guide, you will learn how to use the KOP broker to serve requests from Kafka client.
 
-### Build KOP broker
+### Download KoP binary
 
-1. Git clone `kop`.    
-Assume *KOP_HOME* is the home directory for your cloned `kop` repository.
-  
-   ```
-   $ git clone https://github.com/streamnative/kop
-   ```
-
-2. Build the source in the `${KOP_HOME}` directory.
-   
-   ```
-   mvn clean install -DskipTests
-   ```
-   After building the source successfully, the KOP binary is created in your target directory, and installed in your maven.  
+TODO: https://github.com/streamnative/kop/issues/68
 
 ### Run KOP broker
 

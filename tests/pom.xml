@@ -21,12 +21,12 @@
 
   <parent>
     <groupId>io.streamnative.pulsar.handlers</groupId>
-    <artifactId>pulsar-protocol-handler-kop-parent</artifactId>
+    <artifactId>pulsar-protocol-handler-kafka-parent</artifactId>
     <version>0.0.1-SNAPSHOT</version>
   </parent>
 
   <groupId>io.streamnative.pulsar.handlers</groupId>
-  <artifactId>pulsar-protocol-handler-kop-tests</artifactId>
+  <artifactId>pulsar-protocol-handler-kafka-tests</artifactId>
   <name>StreamNative :: Pulsar Protocol Handler :: KoP Tests</name>
   <description>Tests for Kafka on Pulsar</description>
 
@@ -35,7 +35,7 @@
     <!-- test dependencies -->
     <dependency>
       <groupId>io.streamnative.pulsar.handlers</groupId>
-      <artifactId>pulsar-protocol-handler-kop</artifactId>
+      <artifactId>pulsar-protocol-handler-kafka</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
@@ -63,7 +63,7 @@
             <configuration>
               <tasks>
                 <echo>copy protocol handler</echo>
-                <copy file="${basedir}/../impl/target/pulsar-protocol-handler-kop-${project.version}.nar"
+                <copy file="${basedir}/../impl/target/pulsar-protocol-handler-kafka-${project.version}.nar"
                       tofile="${basedir}/src/test/resources/test-protocol-handler.nar"/>
               </tasks>
             </configuration>
