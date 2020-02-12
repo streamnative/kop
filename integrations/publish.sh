@@ -16,11 +16,7 @@
 BINDIR=$(dirname "$0")
 INTR_HOME=`cd ${BINDIR}/..;pwd`
 
-##  TODO: change this home dir, since moved get-project-version.py
-##    from root/dev into integrations/dev
-echo "++++ dir Bindir : ${BINDIR}, INTR_HOME: ${INTR_HOME}"
-
-VERSION=$(${INTR_HOME}/dev/get-project-version.py)
+VERSION=$(${BINDIR}/dev/get-project-version.py)
 TAG=${VERSION%"-SNAPSHOT"}
 IMAGE_NAME_PREFIX="kop-test-"
 
@@ -40,7 +36,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-for img_dir in `ls -d ${INTR_HOME}/integrations/*/`; do
+for img_dir in `ls -d ${INTR_HOME}/integrations/*/ | grep -v dev`; do
     BASE_NAME=$(basename ${img_dir})
     IMAGE="streamnative/${IMAGE_NAME_PREFIX}${BASE_NAME}:${TAG}"
     IMAGE_LATEST="streamnative/${IMAGE_NAME_PREFIX}${BASE_NAME}:latest"
