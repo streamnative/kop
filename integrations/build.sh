@@ -20,7 +20,7 @@ VERSION=$(${BINDIR}/dev/get-project-version.py)
 TAG=${VERSION%"-SNAPSHOT"}
 IMAGE_NAME_PREFIX="kop-test-"
 
-for img_dir in `ls -d ${INTR_HOME}/integrations/*/`; do
+for img_dir in `ls -d ${INTR_HOME}/integrations/*/ | grep -v dev`; do
     BASE_NAME=$(basename ${img_dir})
     cd ${img_dir}
     IMAGE="streamnative/${IMAGE_NAME_PREFIX}${BASE_NAME}:${TAG}"

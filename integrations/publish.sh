@@ -36,7 +36,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-for img_dir in `ls -d ${INTR_HOME}/integrations/*/`; do
+for img_dir in `ls -d ${INTR_HOME}/integrations/*/ | grep -v dev`; do
     BASE_NAME=$(basename ${img_dir})
     IMAGE="streamnative/${IMAGE_NAME_PREFIX}${BASE_NAME}:${TAG}"
     IMAGE_LATEST="streamnative/${IMAGE_NAME_PREFIX}${BASE_NAME}:latest"
