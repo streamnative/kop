@@ -28,7 +28,13 @@
 FROM golang:1.13.4-alpine
 
 RUN apk -U add ca-certificates git bash build-base sudo  pkgconf build-base
-RUN git clone https://github.com/edenhill/librdkafka.git && cd librdkafka && ./configure --prefix /usr && make && make install
+
+RUN git clone https://github.com/edenhill/librdkafka.git \
+    && cd librdkafka \
+    && git checkout v1.1.0 \
+    &&  ./configure --prefix /usr \
+    && make \
+    && make install
 
 WORKDIR /go/src/app
 COPY . .
