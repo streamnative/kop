@@ -26,6 +26,9 @@ jobs:
       with:
         java-version: 1.8
 
+    - name: build before check
+      run: mvn clean install -DskipTests
+
     - name: License check
       run: mvn license:check
 

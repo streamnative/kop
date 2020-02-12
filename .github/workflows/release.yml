@@ -1,0 +1,30 @@
+name: KoP Release
+
+on:
+  release:
+
+jobs:
+  upload:
+    name: Upload go build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Set up JDK 1.8
+        uses: actions/setup-java@v1
+        with:
+          java-version: 1.8
+
+      - name: build
+        run: |
+          version=`./dev/get-project-version.py`
+          mvn clean install -DskipTests
+          cp target/kop-${version}.jar ../
+          cp target/kop-${version}.nar ../
+          cp target/kop-${version}-bin.tar.gz ../
+
+      - name: publish
+        uses: skx/github-action-publish-binaries@release-0.11
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: 'kop*'
