@@ -72,7 +72,7 @@
   </licenses>
 
   <modules>
-    <module>impl</module>
+    <module>kafka-impl</module>
     <module>tests</module>
   </modules>
 

@@ -63,7 +63,7 @@
             <configuration>
               <tasks>
                 <echo>copy protocol handler</echo>
-                <copy file="${basedir}/../impl/target/pulsar-protocol-handler-kafka-${project.version}.nar"
+                <copy file="${basedir}/../kafka-impl/target/pulsar-protocol-handler-kafka-${project.version}.nar"
                       tofile="${basedir}/src/test/resources/test-protocol-handler.nar"/>
               </tasks>
             </configuration>
