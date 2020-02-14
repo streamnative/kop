@@ -35,6 +35,13 @@
   <includeBaseDirectory>true</includeBaseDirectory>
   <fileSets>
     <fileSet>
+      <directory>target</directory>
+      <outputDirectory></outputDirectory>
+      <includes>
+        <include>${project.artifactId}-${project.version}.jar</include>
+      </includes>
+    </fileSet>
+    <fileSet>
       <directory>${basedir}/conf</directory>
     </fileSet>
     <fileSet>
@@ -63,7 +70,7 @@
       <outputDirectory>lib</outputDirectory>
       <unpack>false</unpack>
       <scope>compile</scope>
-      <useProjectArtifact>true</useProjectArtifact>
+      <useProjectArtifact>false</useProjectArtifact>
       <!-- Include 'groupId' in the dependencies Jar names to better identify
            the provenance of the jar -->
       <outputFileNameMapping>${artifact.groupId}-${artifact.artifactId}-${artifact.version}${dashClassifier?}.${artifact.extension}</outputFileNameMapping>
