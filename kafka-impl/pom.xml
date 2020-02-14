@@ -67,7 +67,7 @@
             </goals>
             <configuration>
               <attach>true</attach>
-              <finalName>kop-${project.version}</finalName>
+              <finalName>pulsar-kop-${project.version}</finalName>
               <descriptors>
                 <descriptor>src/assemble/bin.xml</descriptor>
               </descriptors>

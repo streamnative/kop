@@ -18,13 +18,13 @@ jobs:
         run: |
           version=`./dev/get-project-version.py`
           mvn clean install -DskipTests
-          cp kafka-impl/target/pulsar-protocol-handler-kafka-${version}.jar ../
           cp kafka-impl/target/pulsar-protocol-handler-kafka-${version}.nar ../
-          cp kafka-impl/target/pulsar-protocol-handler-kafka-${version}-bin.tar.gz ../
+          cp kafka-impl/target/pulsar-kop-${version}-bin.tar.gz ../
+          cp README.md ../pulsar-protocol-handler-kafka-readme.md
 
       - name: publish
         uses: skx/github-action-publish-binaries@release-0.11
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: 'pulsar-protocol-handler-kafka-*'
+          args: 'pulsar-*'
