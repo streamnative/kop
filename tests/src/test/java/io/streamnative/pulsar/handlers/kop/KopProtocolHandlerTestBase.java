@@ -511,6 +511,10 @@ public abstract class KopProtocolHandlerTestBase {
             this.consumerGroup = consumerGroup;
         }
 
+        public KConsumer(String topic, int port, boolean autoCommit, String consumerGroup) {
+            this(topic, "localhost", port, autoCommit, null, null, consumerGroup);
+        }
+
         public KConsumer(String topic, int port, boolean autoCommit) {
             this(topic, "localhost", port, autoCommit, null, null, "DemoKafkaOnPulsarConsumer");
         }

@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.AsyncCallbacks.MarkDeleteCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
@@ -314,10 +315,16 @@ public final class MessageFetchContext {
                             if (!list.isEmpty()) {
                                 entry = list.get(0);
                                 long offset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
+                                PositionImpl currentPosition = PositionImpl
+                                    .get(entry.getLedgerId(), entry.getEntryId());
+
+                                // commit the offset, so backlog not affect by this cursor.
+                                commitOffset((NonDurableCursorImpl) cursor, currentPosition);
+
                                 // get next offset
-                                PositionImpl nextPosition = ((NonDurableCursorImpl ) cursor)
-                                    .getNextAvailablePosition(PositionImpl
-                                        .get(entry.getLedgerId(), entry.getEntryId()));
+                                PositionImpl nextPosition = ((NonDurableCursorImpl) cursor)
+                                    .getNextAvailablePosition(currentPosition);
+
                                 long nextOffset = MessageIdUtils
                                     .getOffset(nextPosition.getLedgerId(), nextPosition.getEntryId());
 
@@ -364,6 +371,25 @@ public final class MessageFetchContext {
         });
 
         return readFutures;
+    }
+
+    // commit the offset, so backlog not affect by this cursor.
+    private static void commitOffset(NonDurableCursorImpl cursor, PositionImpl currentPosition) {
+        cursor.asyncMarkDelete(currentPosition, new MarkDeleteCallback() {
+            @Override
+            public void markDeleteComplete(Object ctx) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Mark delete success for position: {}", currentPosition);
+                }
+            }
+
+            // this is OK, since this is kind of cumulative ack, following commit will come.
+            @Override
+            public void markDeleteFailed(ManagedLedgerException e, Object ctx) {
+                log.warn("Mark delete success for position: {} with error:",
+                    currentPosition, e);
+            }
+        }, null);
     }
 
 }

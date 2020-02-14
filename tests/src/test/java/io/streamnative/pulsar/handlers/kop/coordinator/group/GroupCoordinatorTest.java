@@ -56,6 +56,7 @@ import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
+import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
@@ -185,7 +186,8 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
             groupMetadataManager,
             heartbeatPurgatory,
             joinPurgatory,
-            timer.time()
+            timer.time(),
+            new OffsetAcker((PulsarClientImpl) pulsarClient)
         );
 
         // start the group coordinator
