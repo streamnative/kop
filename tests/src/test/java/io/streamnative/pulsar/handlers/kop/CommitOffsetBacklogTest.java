@@ -15,38 +15,23 @@ package io.streamnative.pulsar.handlers.kop;
 
 
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotNull;
-import static org.testng.Assert.assertNull;
-import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.client.api.Consumer;
-import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.impl.MessageIdImpl;
-import org.apache.pulsar.client.impl.TopicMessageIdImpl;
+import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
-import org.apache.pulsar.common.policies.data.SubscriptionStats;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.apache.pulsar.common.policies.data.TopicStats;
 import org.testng.annotations.AfterMethod;
@@ -106,30 +91,32 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    // dump Topic Stats, mainly want to get backlogSize.
-    private void dumpSubStats(PersistentTopic persistentTopic, int index) {
+    // dump Topic Stats, mainly want to get and verify backlogSize.
+    private void verifyBacklogInTopicStats(PersistentTopic persistentTopic, int expected) {
         TopicStats topicStats = persistentTopic.getStats();
-        log.info("++++ dump index {}, dump topicStats for topic : {}, storageSize: {}, backlogSize: {}",
-            index, persistentTopic.getName(),
-            topicStats.storageSize, topicStats.backlogSize,
-            topicStats.subscriptions.size());
+        if (log.isDebugEnabled()) {
+            log.info(" dump topicStats for topic : {}, storageSize: {}, backlogSize: {}",
+                persistentTopic.getName(),
+                topicStats.storageSize, topicStats.backlogSize,
+                topicStats.subscriptions.size());
 
-        topicStats.subscriptions.forEach((subname, substats) -> {
-            log.info("++++ 1. subname: {}, activeConsumerName {}, consumers {}, msgBacklog {}, unackedMessages {}.",
-                subname,
-                substats.activeConsumerName, substats.consumers, substats.msgBacklog, substats.unackedMessages);
-        });
+            topicStats.subscriptions.forEach((subname, substats) -> {
+                log.debug(" dump sub: subname - {}, activeConsumerName {}, "
+                        + "consumers {}, msgBacklog {}, unackedMessages {}.",
+                    subname,
+                    substats.activeConsumerName, substats.consumers,
+                    substats.msgBacklog, substats.unackedMessages);
+            });
 
-        persistentTopic.getManagedLedger().getCursors().forEach(cursor ->
-            log.info(" ++++ 2. cursor: {}, durable: {}, numberEntryis: {}, readPosition: {}, markdeletePosition: {}",
-                cursor.getName(), cursor.isDurable(), cursor.getNumberOfEntries(), cursor.getReadPosition(),
-                cursor.getMarkDeletedPosition()));
-    }
+            persistentTopic.getManagedLedger().getCursors().forEach(cursor ->
+                log.debug(" dump cursor: cursor - {}, durable: {}, numberEntryis: {},"
+                        + " readPosition: {}, markdeletePosition: {}",
+                    cursor.getName(), cursor.isDurable(), cursor.getNumberOfEntries(),
+                    cursor.getReadPosition(), cursor.getMarkDeletedPosition()));
+        }
 
-    private Map<TopicPartition, Long> getKConsumerOffset(KConsumer kConsumer, List<TopicPartition> partitions) {
-        Map<TopicPartition, Long> offsets = kConsumer.getConsumer().endOffsets(partitions);
-        offsets.forEach((topic, offset) -> log.info("++++ topic: {} offset: {}", topic, offset));
-        return offsets;
+        long backlog = topicStats.backlogSize;
+        assertEquals(backlog, expected);
     }
 
     @Test(timeOut = 20000)
@@ -144,75 +131,96 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
         // create partitioned topic with 1 partition.
         admin.topics().createPartitionedTopic(kafkaTopicName, 1);
 
-        @Cleanup
-        Consumer<byte[]> consumer = pulsarClient.newConsumer()
-            .topic(pulsarPartitionName)
-            .receiverQueueSize(0)
-            .subscriptionName("kopOffsetCommittedBacklogCleared_sub")
-            .subscribe();
+        ProducerBuilder<byte[]> producerBuilder = pulsarClient.newProducer()
+            .topic(pulsarTopicName)
+            .enableBatching(false);
 
+        // create 1 pulsar producer and 2 kafka consumer group, each with 1 consumer.
+        @Cleanup
+        Producer<byte[]> producer = producerBuilder.create();
         PersistentTopic topicRef = (PersistentTopic)
             pulsar.getBrokerService().getTopicReference(pulsarPartitionName).get();
 
-        // 1. produce message with Kafka producer. todo: turn to pulsar producer to easy get messageid.
+        String consumerGroupA = kafkaTopicName + "_cg_a";
+        String consumerGroupB = kafkaTopicName + "_cg_b";
         @Cleanup
-        KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort());
-        int totalMsgs = 50;
-        String messageStrPrefix = "Message_Kop_ProduceConsumeMultiLedger_XXXXXXXXXXXXXXXX_";
-        // send in sync mode, each message not batched.
+        KConsumer kConsumerA = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), false, consumerGroupA);
+        @Cleanup
+        KConsumer kConsumerB = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), false, consumerGroupB);
+
+        kConsumerA.getConsumer().subscribe(Collections.singletonList(kafkaTopicName));
+        kConsumerB.getConsumer().subscribe(Collections.singletonList(kafkaTopicName));
+
+        int totalMsgs = 60;
+        String messageStrPrefix = "Message_Kop_ProduceConsumeMultiLedger_XXXXXXXXXXXXX_";
+
+        // create messages, each size of 100 bytes, all 6000 bytes.
+        MessageId lastMessageId = null;
         for (int i = 0; i < totalMsgs; i++) {
-            String messageStr = messageStrPrefix + i;
-            ProducerRecord record = new ProducerRecord<>(
-                kafkaTopicName,
-                i,
-                messageStr);
-
-            kProducer.getProducer().send(record).get();
-
-            if (log.isDebugEnabled()) {
-                log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
-            }
+            String message = messageStrPrefix + (i % 10);
+            lastMessageId = producer.newMessage()
+                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
+                .value(message.getBytes())
+                .send();
         }
 
-        dumpSubStats(topicRef, 1);
-
-        // 2. use kafka consumer to consume, use consumer group, offset auto-commit
-        String consumerGroupName = kafkaTopicName + "_cg_a";
-        @Cleanup
-        KConsumer kConsumer = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), false, consumerGroupName);
-        kConsumer.getConsumer().subscribe(Collections.singletonList(kafkaTopicName));
-
         int i = 0;
-        while (i < totalMsgs / 2) {
+        while (i < totalMsgs / 2 - 1) {
             if (log.isDebugEnabled()) {
-                log.debug("start poll message: {}", i);
+                log.debug("start poll message from cgA: {}", i);
             }
-            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+            ConsumerRecords<Integer, String> records = kConsumerA.getConsumer().poll(Duration.ofMillis(200));
             for (ConsumerRecord<Integer, String> record : records) {
-                Integer key = record.key();
-                assertEquals(messageStrPrefix + key.toString(), record.value());
-                log.debug("Kafka Consumer Received message: {}, {} at offset {}",
-                    record.key(), record.value(), record.offset());
+                if (log.isDebugEnabled()) {
+                    log.debug("Kafka Consumer Received message: {}, {} at offset {}",
+                        record.key(), record.value(), record.offset());
+                }
                 i++;
             }
         }
 
-        Map<TopicPartition, Long> offsets = getKConsumerOffset(kConsumer, kafkaPartitions);
-        long offset = offsets.get(kafkaPartition);
+        i = 0;
+        while (i < totalMsgs / 2 - 1) {
+            if (log.isDebugEnabled()) {
+                log.debug("start poll message from cgB: {}", i);
+            }
+            ConsumerRecords<Integer, String> records = kConsumerB.getConsumer().poll(Duration.ofMillis(200));
+            for (ConsumerRecord<Integer, String> record : records) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Kafka Consumer Received message: {}, {} at offset {}",
+                        record.key(), record.value(), record.offset());
+                }
+                i++;
+            }
+        }
 
-        MessageId messageId = MessageIdUtils.getMessageId(offset);
+        // 2 consumers not acked. expected backlog == 6000.
+        verifyBacklogInTopicStats(topicRef, 6000);
 
-        dumpSubStats(topicRef, 2);
+        // 1 consumer acked. still expected backlog 6000
+        kConsumerA.getConsumer().commitSync();
+        Thread.sleep(200);
+        verifyBacklogInTopicStats(topicRef, 6000);
 
-        kConsumer.getConsumer().commitSync();
-        Thread.sleep(1000);
+        // 2 consumers acked, consumed 30 X 100. expected backlog 6000 - 3000
+        kConsumerB.getConsumer().commitSync();
+        Thread.sleep(200);
+        verifyBacklogInTopicStats(topicRef, 6000 - 3000);
 
-        dumpSubStats(topicRef, 3);
-               consumer.acknowledgeCumulative(messageId);
-        Thread.sleep(1000);
+        // 2 consumers cconsume and acked all messages, expected backlog 0.
+        ConsumerRecords<Integer, String> recordsA = kConsumerA.getConsumer().poll(Duration.ofMillis(200));
+        while (!recordsA.isEmpty()) {
+            recordsA = kConsumerA.getConsumer().poll(Duration.ofMillis(200));
+        }
 
-        dumpSubStats(topicRef, 4);
-
+        ConsumerRecords<Integer, String> recordsB = kConsumerB.getConsumer().poll(Duration.ofMillis(200));
+        while (!recordsB.isEmpty()) {
+            recordsB = kConsumerB.getConsumer().poll(Duration.ofMillis(200));
+        }
+        kConsumerA.getConsumer().commitSync();
+        kConsumerB.getConsumer().commitSync();
+        Thread.sleep(200);
+        verifyBacklogInTopicStats(topicRef, 0);
     }
 
 

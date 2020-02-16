@@ -191,6 +191,7 @@ public class GroupCoordinator {
         groupManager.shutdown();
         heartbeatPurgatory.shutdown();
         joinPurgatory.shutdown();
+        offsetAcker.close();
         log.info("Shutdown group coordinator completely.");
     }
 
@@ -451,6 +452,12 @@ public class GroupCoordinator {
             (assignment, errors) -> resultFuture.complete(
                 new KeyValue<>(errors, assignment))
         );
+
+        resultFuture.whenComplete((kv, throwable) -> {
+            if (throwable == null && kv.getKey() == Errors.NONE) {
+                offsetAcker.addOffsets(groupId, kv.getValue());
+            }
+        });
         return resultFuture;
     }
 
@@ -660,6 +667,7 @@ public class GroupCoordinator {
             );
         }
 
+        offsetAcker.close();
         return groupErrors;
     }
 
@@ -790,8 +798,12 @@ public class GroupCoordinator {
                     });
             });
 
-        result.whenComplete((ignore,e) ->
-            offsetAcker.ackOffsets(groupId, offsetMetadata));
+        result.whenComplete((ignore, e) ->{
+            if (e != null){
+                offsetAcker.ackOffsets(groupId, offsetMetadata);
+            }
+        });
+
         return result;
     }
 

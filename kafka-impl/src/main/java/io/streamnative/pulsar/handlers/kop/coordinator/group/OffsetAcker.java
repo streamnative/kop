@@ -17,26 +17,26 @@ import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.io.Closeable;
-import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.internals.ConsumerProtocol;
+import org.apache.kafka.clients.consumer.internals.PartitionAssignor.Assignment;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
-import org.apache.pulsar.client.api.SubscriptionInitialPosition;
-import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.client.impl.ReaderBuilderImpl;
 import org.apache.pulsar.client.impl.ReaderImpl;
-import org.apache.pulsar.client.impl.conf.ConsumerConfigurationData;
 import org.apache.pulsar.common.naming.TopicName;
 
 /**
- * This will
+ * This class used to track all the partition offset commit position.
  */
 @Slf4j
 public class OffsetAcker implements Closeable {
@@ -49,8 +49,17 @@ public class OffsetAcker implements Closeable {
             .startMessageId(MessageId.earliest);
     }
 
-    // <groupId, consumers>
+    // map off consumser: <groupId, consumers>
     Map<String, Map<TopicPartition, CompletableFuture<Consumer<byte[]>>>> consumers = new ConcurrentHashMap<>();
+
+    public void addOffsets(String groupId, byte[] assignment) {
+        ByteBuffer assignBuffer = ByteBuffer.wrap(assignment);
+        Assignment assign = ConsumerProtocol.deserializeAssignment(assignBuffer);
+        if (log.isDebugEnabled()) {
+            log.debug(" Add offsets after sync group: {}", assign.toString());
+        }
+        assign.partitions().forEach(topicPartition -> getConsumer(groupId, topicPartition));
+    }
 
     public void ackOffsets(String groupId, Map<TopicPartition, OffsetAndMetadata> offsetMetadata) {
         offsetMetadata.forEach(((topicPartition, offsetAndMetadata) -> {
@@ -58,6 +67,10 @@ public class OffsetAcker implements Closeable {
             CompletableFuture<Consumer<byte[]>> consumerFuture = getConsumer(groupId, topicPartition);
 
             consumerFuture.whenComplete((consumer, throwable) -> {
+                if (throwable != null) {
+                    log.warn("Error when get consumer for offset ack:", throwable);
+                    return;
+                }
                 MessageId messageId = MessageIdUtils.getMessageId(offsetAndMetadata.offset());
                 consumer.acknowledgeCumulativeAsync(messageId);
             });
@@ -72,17 +85,28 @@ public class OffsetAcker implements Closeable {
                 partition -> createConsumer(groupId, partition));
     }
 
-    // todo: need close consumer when deleteGroup.
-    @Override
-    public void close() throws IOException {
-
+    public void close(Set<String> groupIds) {
+        groupIds.forEach(groupId -> consumers.get(groupId).values().forEach(consumerFuture -> {
+            consumerFuture.whenComplete((consumer, throwable) -> {
+                if (throwable != null) {
+                    log.warn("Error when get consumer for consumer group close:", throwable);
+                    return;
+                }
+                try {
+                    consumer.close();
+                } catch (Exception e) {
+                    log.warn("Error when close consumer topic: {}, sub: {}.",
+                        consumer.getTopic(), consumer.getSubscription());
+                }
+            });
+        }));
     }
 
-    // TODO: need to handle group join/leave/sync, get the topics for each memoryId.
-    // consumer for partition created when SyncGroup response send.
-    // consumer for partition delete when leave?
-
-
+    @Override
+    public void close() {
+        log.info("close OffsetAcker with {} groupIds", consumers.size());
+        close(consumers.keySet());
+    }
 
     private CompletableFuture<Consumer<byte[]>> createConsumer(String groupId, TopicPartition topicPartition) {
         TopicName pulsarTopicName = TopicNameUtils.pulsarTopicName(topicPartition);

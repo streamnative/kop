@@ -113,6 +113,7 @@ public abstract class KopProtocolHandlerTestBase {
 
         kafkaConfig.setManagedLedgerCacheSizeMB(8);
         kafkaConfig.setActiveConsumerFailoverDelayTimeMillis(0);
+        kafkaConfig.setDefaultRetentionTimeInMinutes(7);
         kafkaConfig.setDefaultNumberOfNamespaceBundles(1);
         kafkaConfig.setZookeeperServers("localhost:2181");
         kafkaConfig.setConfigurationStoreServers("localhost:3181");
