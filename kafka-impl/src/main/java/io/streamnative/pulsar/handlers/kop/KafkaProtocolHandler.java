@@ -28,7 +28,6 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,12 +46,7 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.ProducerBuilder;
-import org.apache.pulsar.client.api.ReaderBuilder;
-import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
-import org.apache.pulsar.client.impl.ReaderBuilderImpl;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
@@ -290,6 +284,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         if (groupCoordinator != null) {
             groupCoordinator.shutdown();
         }
+        KafkaTopicManager.LOOKUP_CACHE.clear();
     }
 
     public void initGroupCoordinator(BrokerService service) throws Exception {
@@ -314,19 +309,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         // topicName in pulsar format: tenant/ns/topic
         createKafkaOffsetsTopic(service);
 
-        ProducerBuilder<ByteBuffer> groupCoordinatorTopicProducer = service.pulsar().getClient()
-            .newProducer(Schema.BYTEBUFFER)
-            .maxPendingMessages(100000);
-
-        // TODO: replace this back to service.pulsar().getClient().newReader after merge pulsar PR:
-        //  https://github.com/apache/pulsar/pull/5923
-        ReaderBuilder<ByteBuffer> groupCoordinatorTopicReader =
-            new ReaderBuilderImpl<>((PulsarClientImpl) (service.pulsar().getClient()), Schema.BYTEBUFFER);
-        groupCoordinatorTopicReader.startMessageId(MessageId.earliest);
-
         this.groupCoordinator = GroupCoordinator.of(
-            groupCoordinatorTopicProducer,
-            groupCoordinatorTopicReader,
+            (PulsarClientImpl) (service.pulsar().getClient()),
             groupConfig,
             offsetConfig,
             SystemTimer.builder()

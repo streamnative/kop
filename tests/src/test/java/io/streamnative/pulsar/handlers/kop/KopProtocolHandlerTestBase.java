@@ -113,6 +113,7 @@ public abstract class KopProtocolHandlerTestBase {
 
         kafkaConfig.setManagedLedgerCacheSizeMB(8);
         kafkaConfig.setActiveConsumerFailoverDelayTimeMillis(0);
+        kafkaConfig.setDefaultRetentionTimeInMinutes(7);
         kafkaConfig.setDefaultNumberOfNamespaceBundles(1);
         kafkaConfig.setZookeeperServers("localhost:2181");
         kafkaConfig.setConfigurationStoreServers("localhost:3181");
@@ -509,6 +510,10 @@ public abstract class KopProtocolHandlerTestBase {
             this.consumer = new KafkaConsumer<>(props);
             this.topic = topic;
             this.consumerGroup = consumerGroup;
+        }
+
+        public KConsumer(String topic, int port, boolean autoCommit, String consumerGroup) {
+            this(topic, "localhost", port, autoCommit, null, null, consumerGroup);
         }
 
         public KConsumer(String topic, int port, boolean autoCommit) {

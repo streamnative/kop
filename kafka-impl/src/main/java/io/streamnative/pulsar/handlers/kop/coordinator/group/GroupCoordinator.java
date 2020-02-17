@@ -51,6 +51,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.TopicPartition;
@@ -61,10 +62,14 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.Reader;
 import org.apache.pulsar.client.api.ReaderBuilder;
+import org.apache.pulsar.client.api.Schema;
+import org.apache.pulsar.client.impl.PulsarClientImpl;
+import org.apache.pulsar.client.impl.ReaderBuilderImpl;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 
@@ -75,8 +80,7 @@ import org.apache.pulsar.common.util.FutureUtil;
 public class GroupCoordinator {
 
     public static GroupCoordinator of(
-        ProducerBuilder<ByteBuffer> producer,
-        ReaderBuilder<ByteBuffer> reader,
+        PulsarClientImpl pulsarClient,
         GroupConfig groupConfig,
         OffsetConfig offsetConfig,
         Timer timer,
@@ -86,6 +90,13 @@ public class GroupCoordinator {
             .name("group-coordinator-executor")
             .build();
 
+        // __offset partitions producers and readers builder.
+        ProducerBuilder<ByteBuffer> producer = pulsarClient
+            .newProducer(Schema.BYTEBUFFER)
+            .maxPendingMessages(100000);
+        ReaderBuilder<ByteBuffer> reader = new ReaderBuilderImpl<>(pulsarClient, Schema.BYTEBUFFER);
+
+        reader.startMessageId(MessageId.earliest);
         GroupMetadataManager metadataManager = new GroupMetadataManager(
             offsetConfig,
             producer,
@@ -105,12 +116,14 @@ public class GroupCoordinator {
                 .timeoutTimer(timer)
                 .build();
 
+        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient);
         return new GroupCoordinator(
             groupConfig,
             metadataManager,
             heartbeatPurgatory,
             joinPurgatory,
-            time
+            time,
+            offsetAcker
         );
     }
 
@@ -133,6 +146,9 @@ public class GroupCoordinator {
         Collections.emptyList()
     );
 
+    // for topic backlog tracking.
+    @Getter
+    private final OffsetAcker offsetAcker;
     private final AtomicBoolean isActive = new AtomicBoolean(false);
     private final GroupConfig groupConfig;
     private final GroupMetadataManager groupManager;
@@ -145,12 +161,14 @@ public class GroupCoordinator {
         GroupMetadataManager groupManager,
         DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory,
         DelayedOperationPurgatory<DelayedJoin> joinPurgatory,
-        Time time) {
+        Time time,
+        OffsetAcker offsetAcker) {
         this.groupConfig = groupConfig;
         this.groupManager = groupManager;
         this.heartbeatPurgatory = heartbeatPurgatory;
         this.joinPurgatory = joinPurgatory;
         this.time = time;
+        this.offsetAcker = offsetAcker;
     }
 
     /**
@@ -173,6 +191,7 @@ public class GroupCoordinator {
         groupManager.shutdown();
         heartbeatPurgatory.shutdown();
         joinPurgatory.shutdown();
+        offsetAcker.close();
         log.info("Shutdown group coordinator completely.");
     }
 
@@ -433,6 +452,12 @@ public class GroupCoordinator {
             (assignment, errors) -> resultFuture.complete(
                 new KeyValue<>(errors, assignment))
         );
+
+        resultFuture.whenCompleteAsync((kv, throwable) -> {
+            if (throwable == null && kv.getKey() == Errors.NONE) {
+                offsetAcker.addOffsetsTracker(groupId, kv.getValue());
+            }
+        });
         return resultFuture;
     }
 
@@ -642,6 +667,7 @@ public class GroupCoordinator {
             );
         }
 
+        offsetAcker.close(groupIds);
         return groupErrors;
     }
 
@@ -740,7 +766,7 @@ public class GroupCoordinator {
         int generationId,
         Map<TopicPartition, OffsetAndMetadata> offsetMetadata
     ) {
-        return validateGroupStatus(groupId, ApiKeys.OFFSET_COMMIT)
+        CompletableFuture<Map<TopicPartition, Errors>> result = validateGroupStatus(groupId, ApiKeys.OFFSET_COMMIT)
             .map(error ->
                 CompletableFuture.completedFuture(
                     CoreUtils.mapValue(
@@ -771,6 +797,14 @@ public class GroupCoordinator {
                         }
                     });
             });
+
+        result.whenCompleteAsync((ignore, e) ->{
+            if (e == null){
+                offsetAcker.ackOffsets(groupId, offsetMetadata);
+            }
+        });
+
+        return result;
     }
 
     public Future<?> scheduleHandleTxnCompletion(
