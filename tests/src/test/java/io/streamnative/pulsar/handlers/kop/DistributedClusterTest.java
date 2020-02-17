@@ -22,7 +22,6 @@ import static org.testng.Assert.assertTrue;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
-import com.google.gson.Gson;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -31,7 +30,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
@@ -41,7 +39,6 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.common.policies.data.ClusterData;
-import org.apache.pulsar.common.policies.data.PartitionedTopicStats;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.junit.Assert;
@@ -343,18 +340,6 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         final AtomicInteger numberTopic2 = new AtomicInteger(0);
         topicMap.values().stream().forEach(list -> numberTopic2.addAndGet(list.size()));
         assertTrue(numberTopic2.get() == partitionNumber);
-
-        final PartitionedTopicStats topicStats = admin.topics().getPartitionedStats(pulsarTopicName, true);
-        log.info("PartitionedTopicStats for topic {} : {}",  pulsarTopicName, new Gson().toJson(topicStats));
-
-        topicMap.forEach((broker, topics) -> {
-            AtomicLong brokerStorageSize = new AtomicLong(0);
-            topics.forEach(topic -> {
-                brokerStorageSize.addAndGet(topicStats.partitions.get(topic).storageSize);
-            });
-            log.info("get data topics served by broker {}, broker storage size: {}",  broker, brokerStorageSize.get());
-            assertTrue(brokerStorageSize.get() > 0L);
-        });
 
         offsetTopicMap = Maps.newHashMap();
         for (int ii = 0; ii < offsetsTopicNumPartitions; ii++) {
