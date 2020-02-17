@@ -4,15 +4,9 @@ on:
   pull_request:
     branches:
       - master
-    paths:
-      - '.github/workflows/**'
-      - 'src/**'
   push:
     branches:
       - master
-    paths:
-      - '.github/workflows/**'
-      - 'src/**'
 
 jobs:
   build:
