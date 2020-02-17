@@ -94,7 +94,7 @@ public class OffsetAcker implements Closeable {
                     consumer.close();
                 } catch (Exception e) {
                     log.warn("Error when close consumer topic: {}, sub: {}.",
-                        consumer.getTopic(), consumer.getSubscription());
+                        consumer.getTopic(), consumer.getSubscription(), e);
                 }
             });
         }));

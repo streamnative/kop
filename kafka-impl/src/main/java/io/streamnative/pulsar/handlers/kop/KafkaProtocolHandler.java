@@ -284,6 +284,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         if (groupCoordinator != null) {
             groupCoordinator.shutdown();
         }
+        KafkaTopicManager.LOOKUP_CACHE.clear();
     }
 
     public void initGroupCoordinator(BrokerService service) throws Exception {

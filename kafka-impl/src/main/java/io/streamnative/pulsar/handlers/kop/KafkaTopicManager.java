@@ -130,6 +130,10 @@ public class KafkaTopicManager {
     // call pulsarclient.lookup.getbroker to get and own a topic
     public CompletableFuture<InetSocketAddress> getTopicBroker(String topicName) {
         return LOOKUP_CACHE.computeIfAbsent(topicName, t -> {
+            if (log.isDebugEnabled()) {
+                log.debug("topic {} not in Lookup_cache, call lookupBroker",
+                    topicName);
+            }
             CompletableFuture<InetSocketAddress> returnFuture = new CompletableFuture<>();
             Backoff backoff = new Backoff(
                 100, TimeUnit.MILLISECONDS,
