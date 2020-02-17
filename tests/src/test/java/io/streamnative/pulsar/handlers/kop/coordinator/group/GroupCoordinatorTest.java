@@ -122,7 +122,6 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         }
     }
 
-
     @Override
     protected void resetConfig() {
         super.resetConfig();
@@ -528,7 +527,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         ).get();
         assertEquals(Errors.NONE, syncGroupResult.getKey());
 
-        timer.advanceClock(DefaultSessionTimeout + 200);
+        timer.advanceClock(DefaultSessionTimeout * 2 + 100);
 
         Errors heartbeatResult = groupCoordinator.handleHeartbeat(
             groupId, assignedConsumerId, 1
