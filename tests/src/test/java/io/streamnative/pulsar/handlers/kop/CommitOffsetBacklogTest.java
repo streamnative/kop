@@ -21,6 +21,7 @@ import com.google.common.collect.Sets;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -92,13 +93,21 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
     }
 
     // dump Topic Stats, mainly want to get and verify backlogSize.
-    private void verifyBacklogInTopicStats(PersistentTopic persistentTopic, int expected) {
-        TopicStats topicStats = persistentTopic.getStats();
+    private void verifyBacklogInTopicStats(PersistentTopic persistentTopic, int expected) throws Exception {
+        final AtomicLong backlog = new AtomicLong(0);
+        retryStrategically(
+            ((test) -> {
+                backlog.set(persistentTopic.getStats().backlogSize);
+                return backlog.get() == expected;
+            }),
+            5,
+            200);
+
         if (log.isDebugEnabled()) {
-            log.info(" dump topicStats for topic : {}, storageSize: {}, backlogSize: {}",
+            TopicStats topicStats = persistentTopic.getStats();
+            log.info(" dump topicStats for topic : {}, storageSize: {}, backlogSize: {}, expected: {}",
                 persistentTopic.getName(),
-                topicStats.storageSize, topicStats.backlogSize,
-                topicStats.subscriptions.size());
+                topicStats.storageSize, topicStats.backlogSize, expected);
 
             topicStats.subscriptions.forEach((subname, substats) -> {
                 log.debug(" dump sub: subname - {}, activeConsumerName {}, "
@@ -115,8 +124,7 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
                     cursor.getReadPosition(), cursor.getMarkDeletedPosition()));
         }
 
-        long backlog = topicStats.backlogSize;
-        assertEquals(backlog, expected);
+        assertEquals(backlog.get(), expected);
     }
 
     @Test(timeOut = 20000)
@@ -199,15 +207,13 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
 
         // 1 consumer acked. still expected backlog 6000
         kConsumerA.getConsumer().commitSync();
-        Thread.sleep(200);
         verifyBacklogInTopicStats(topicRef, 6000);
 
         // 2 consumers acked, consumed 30 X 100. expected backlog 6000 - 3000
         kConsumerB.getConsumer().commitSync();
-        Thread.sleep(200);
         verifyBacklogInTopicStats(topicRef, 6000 - 3000);
 
-        // 2 consumers cconsume and acked all messages, expected backlog 0.
+        // 2 consumers consumed and acked all messages, expected backlog 0.
         ConsumerRecords<Integer, String> recordsA = kConsumerA.getConsumer().poll(Duration.ofMillis(200));
         while (!recordsA.isEmpty()) {
             recordsA = kConsumerA.getConsumer().poll(Duration.ofMillis(200));
@@ -219,7 +225,6 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
         }
         kConsumerA.getConsumer().commitSync();
         kConsumerB.getConsumer().commitSync();
-        Thread.sleep(200);
         verifyBacklogInTopicStats(topicRef, 0);
     }
 

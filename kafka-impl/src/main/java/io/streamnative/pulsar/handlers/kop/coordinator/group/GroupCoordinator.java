@@ -453,9 +453,9 @@ public class GroupCoordinator {
                 new KeyValue<>(errors, assignment))
         );
 
-        resultFuture.whenComplete((kv, throwable) -> {
+        resultFuture.whenCompleteAsync((kv, throwable) -> {
             if (throwable == null && kv.getKey() == Errors.NONE) {
-                offsetAcker.addOffsets(groupId, kv.getValue());
+                offsetAcker.addOffsetsTracker(groupId, kv.getValue());
             }
         });
         return resultFuture;
@@ -667,7 +667,7 @@ public class GroupCoordinator {
             );
         }
 
-        offsetAcker.close();
+        offsetAcker.close(groupIds);
         return groupErrors;
     }
 
@@ -798,8 +798,8 @@ public class GroupCoordinator {
                     });
             });
 
-        result.whenComplete((ignore, e) ->{
-            if (e != null){
+        result.whenCompleteAsync((ignore, e) ->{
+            if (e == null){
                 offsetAcker.ackOffsets(groupId, offsetMetadata);
             }
         });

@@ -52,7 +52,7 @@ public class OffsetAcker implements Closeable {
     // map off consumser: <groupId, consumers>
     Map<String, Map<TopicPartition, CompletableFuture<Consumer<byte[]>>>> consumers = new ConcurrentHashMap<>();
 
-    public void addOffsets(String groupId, byte[] assignment) {
+    public void addOffsetsTracker(String groupId, byte[] assignment) {
         ByteBuffer assignBuffer = ByteBuffer.wrap(assignment);
         Assignment assign = ConsumerProtocol.deserializeAssignment(assignBuffer);
         if (log.isDebugEnabled()) {
@@ -62,6 +62,12 @@ public class OffsetAcker implements Closeable {
     }
 
     public void ackOffsets(String groupId, Map<TopicPartition, OffsetAndMetadata> offsetMetadata) {
+        if (log.isDebugEnabled()) {
+            log.debug(" ack offsets after commit offset for group: {}", groupId);
+            offsetMetadata.forEach((partition, metadata) ->
+                log.debug("\t partition: {}, offset: {}",
+                    partition,  MessageIdUtils.getPosition(metadata.offset())));
+        }
         offsetMetadata.forEach(((topicPartition, offsetAndMetadata) -> {
             // 1. get consumer, then do ackCumulative
             CompletableFuture<Consumer<byte[]>> consumerFuture = getConsumer(groupId, topicPartition);
@@ -75,14 +81,6 @@ public class OffsetAcker implements Closeable {
                 consumer.acknowledgeCumulativeAsync(messageId);
             });
         }));
-    }
-
-    public CompletableFuture<Consumer<byte[]>> getConsumer(String groupId, TopicPartition topicPartition) {
-        Map<TopicPartition, CompletableFuture<Consumer<byte[]>>> group = consumers
-            .computeIfAbsent(groupId, gid -> new ConcurrentHashMap<>());
-        return group.computeIfAbsent(
-                topicPartition,
-                partition -> createConsumer(groupId, partition));
     }
 
     public void close(Set<String> groupIds) {
@@ -106,6 +104,14 @@ public class OffsetAcker implements Closeable {
     public void close() {
         log.info("close OffsetAcker with {} groupIds", consumers.size());
         close(consumers.keySet());
+    }
+
+    private CompletableFuture<Consumer<byte[]>> getConsumer(String groupId, TopicPartition topicPartition) {
+        Map<TopicPartition, CompletableFuture<Consumer<byte[]>>> group = consumers
+            .computeIfAbsent(groupId, gid -> new ConcurrentHashMap<>());
+        return group.computeIfAbsent(
+            topicPartition,
+            partition -> createConsumer(groupId, partition));
     }
 
     private CompletableFuture<Consumer<byte[]>> createConsumer(String groupId, TopicPartition topicPartition) {

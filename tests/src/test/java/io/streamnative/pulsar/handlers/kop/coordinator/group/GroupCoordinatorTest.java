@@ -37,6 +37,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -94,6 +95,33 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
     private String otherGroupId;
     private int otherGroupPartitionId;
     private Map<String, byte[]> protocols;
+
+    static class MockOffsetAcker extends OffsetAcker {
+        public MockOffsetAcker(PulsarClientImpl pulsarClient) {
+            super(pulsarClient);
+        }
+
+        @Override
+        public void addOffsetsTracker(String groupId, byte[] assignment) {
+            // non op
+        }
+
+        @Override
+        public void ackOffsets(String groupId, Map<TopicPartition, OffsetAndMetadata> offsetMetadata) {
+            // non op
+        }
+
+        @Override
+        public void close(Set<String> groupIds) {
+            // non op
+        }
+
+        @Override
+        public void close() {
+            // non op
+        }
+    }
+
 
     @Override
     protected void resetConfig() {
@@ -187,7 +215,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
             heartbeatPurgatory,
             joinPurgatory,
             timer.time(),
-            new OffsetAcker((PulsarClientImpl) pulsarClient)
+            new MockOffsetAcker((PulsarClientImpl) pulsarClient)
         );
 
         // start the group coordinator
@@ -500,7 +528,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         ).get();
         assertEquals(Errors.NONE, syncGroupResult.getKey());
 
-        timer.advanceClock(DefaultSessionTimeout + 100);
+        timer.advanceClock(DefaultSessionTimeout + 200);
 
         Errors heartbeatResult = groupCoordinator.handleHeartbeat(
             groupId, assignedConsumerId, 1
