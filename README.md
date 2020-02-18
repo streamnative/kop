@@ -24,7 +24,7 @@ Download [Pulsar 2.5.0](http://pulsar.apache.org/en/download/) binary package `a
 
 ### Download KoP Plugin
 
-TODO: https://github.com/streamnative/kop/issues/68
+https://github.com/streamnative/kop/releases
 
 ### Config Pulsar broker to run KoP protocol handler as Plugin
 
