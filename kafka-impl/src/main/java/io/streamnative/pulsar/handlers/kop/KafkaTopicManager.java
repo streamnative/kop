@@ -93,7 +93,7 @@ public class KafkaTopicManager {
                         log.debug("Call getTopicConsumerManager for {}, and create KafkaTopicConsumerManager.", t);
                     }
                     // return consumer manager
-                    return new KafkaTopicConsumerManager(t2);
+                    return new KafkaTopicConsumerManager(t2, requestHandler.getExecutor());
                 }).exceptionally(ex -> {
                     log.error("Failed to getTopicConsumerManager {}. exception:",
                         t, ex);
@@ -240,15 +240,7 @@ public class KafkaTopicManager {
     public synchronized void close() {
         try {
             for (CompletableFuture<KafkaTopicConsumerManager> manager : consumerTopicManagers.values()) {
-                manager.get().getConsumers().values()
-                    .forEach(pair -> {
-                        try {
-                            pair.get().getLeft().close();
-                        } catch (Exception e) {
-                            log.error("Failed to close cursor for topic {}. exception:",
-                                pair.join().getLeft().getName(), e);
-                        }
-                    });
+                manager.get().close();
             }
             consumerTopicManagers.clear();
 

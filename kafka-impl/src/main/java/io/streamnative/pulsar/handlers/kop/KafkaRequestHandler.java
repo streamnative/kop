@@ -52,6 +52,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -148,7 +149,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final GroupCoordinator groupCoordinator;
 
     private final String clusterName;
-    private final ExecutorService executor;
+    private final ScheduledExecutorService executor;
     private final PulsarAdmin admin;
     private final Boolean tlsEnabled;
     private final int plaintextPort;
