@@ -20,18 +20,15 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.Closeable;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
-import org.apache.pulsar.common.util.collections.ConcurrentLongHashMap;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
+import org.apache.pulsar.common.util.collections.ConcurrentLongHashMap;
 
 /**
  * KafkaTopicConsumerManager manages a topic and its related offset cursor.
@@ -40,9 +37,6 @@ import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 @Slf4j
 public class KafkaTopicConsumerManager implements Closeable {
     private final PersistentTopic topic;
-    private final ScheduledExecutorService executorService;
-
-    private ScheduledFuture<?> cursorExpireTask;
 
     // keep fetch offset and related cursor. keep cursor and its last offset in Pair. <offset, pair>
     @Getter
@@ -51,28 +45,20 @@ public class KafkaTopicConsumerManager implements Closeable {
     // track last access time(millis) for offsets <offset, time>
     @Getter
     private final ConcurrentLongHashMap<Long> lastAccessTimes;
-    long checkPeriodMillis = 1 * 60 * 1000;
-    long expireMillis = 2 * 60 * 1000;
 
-    KafkaTopicConsumerManager(PersistentTopic topic, ScheduledExecutorService executorService) {
+    KafkaTopicConsumerManager(PersistentTopic topic) {
         this.topic = topic;
         this.consumers = new ConcurrentLongHashMap<>();
         this.lastAccessTimes = new ConcurrentLongHashMap<>();
-        this.executorService = executorService;
-        // check expired cursor every 2 min.
-        this.cursorExpireTask = this.executorService.scheduleWithFixedDelay(() -> {
-            long current = System.currentTimeMillis();
-            lastAccessTimes.forEach((offset, time) -> {
-                if (expired(current, time)) {
-                    deleteCursor(offset);
-                }
-            });
-        }, checkPeriodMillis, checkPeriodMillis, TimeUnit.MILLISECONDS);
     }
 
-    // expired after 5 minutes.
-    private boolean expired(long current, long record) {
-        return current - record - expireMillis > 0;
+    // delete expired cursors, so backlog can be cleared.
+    void deleteExpiredCursor(long current, long expirePeriodMillis) {
+        lastAccessTimes.forEach((offset, record) -> {
+                if (current - record - expirePeriodMillis > 0) {
+                    deleteCursor(offset);
+                }
+        });
     }
 
     void deleteCursor(long offset) {
@@ -167,8 +153,6 @@ public class KafkaTopicConsumerManager implements Closeable {
 
     @Override
     public void close() {
-        this.cursorExpireTask.cancel(true);
-
         consumers.values()
             .forEach(pair -> {
                 try {

@@ -248,7 +248,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         long offset2 = MessageIdUtils.getOffset(messageId2.getLedgerId(), messageId2.getEntryId());
         long offset3 = MessageIdUtils.getOffset(messageId3.getLedgerId(), messageId3.getEntryId());
 
-        CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager.getTopicConsumerManager(pulsarPartitionName);
+        CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager
+            .getTopicConsumerManager(pulsarPartitionName);
         KafkaTopicConsumerManager topicConsumerManager = tcm.get();
 
         // before a read, first get cursor of offset.
