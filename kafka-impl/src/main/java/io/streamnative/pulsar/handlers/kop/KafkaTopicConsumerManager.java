@@ -17,6 +17,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils.offsetAfterBatchIndex;
 
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+import java.io.Closeable;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import lombok.Getter;
@@ -24,27 +25,66 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
-import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
+import org.apache.pulsar.common.util.collections.ConcurrentLongHashMap;
 
 /**
  * KafkaTopicConsumerManager manages a topic and its related offset cursor.
  * Each cursor is trying to track the read from a consumer client.
  */
 @Slf4j
-public class KafkaTopicConsumerManager {
-
+public class KafkaTopicConsumerManager implements Closeable {
     private final PersistentTopic topic;
 
-    // keep fetch offset and related cursor. keep cursor and its last offset in Pair
+    // keep fetch offset and related cursor. keep cursor and its last offset in Pair. <offset, pair>
     @Getter
     private final ConcurrentLongHashMap<CompletableFuture<Pair<ManagedCursor, Long>>> consumers;
+
+    // track last access time(millis) for offsets <offset, time>
+    @Getter
+    private final ConcurrentLongHashMap<Long> lastAccessTimes;
 
     KafkaTopicConsumerManager(PersistentTopic topic) {
         this.topic = topic;
         this.consumers = new ConcurrentLongHashMap<>();
+        this.lastAccessTimes = new ConcurrentLongHashMap<>();
+    }
+
+    // delete expired cursors, so backlog can be cleared.
+    void deleteExpiredCursor(long current, long expirePeriodMillis) {
+        lastAccessTimes.forEach((offset, record) -> {
+                if (current - record - expirePeriodMillis > 0) {
+                    deleteCursor(offset);
+                }
+        });
+    }
+
+    void deleteCursor(long offset) {
+        CompletableFuture<Pair<ManagedCursor, Long>> cursor = consumers.remove(offset);
+        if (cursor != null) {
+            if (log.isDebugEnabled()) {
+                log.debug("Cursor timed out for offset: {}, cache size: {}",
+                    offset, consumers.size());
+            }
+
+            cursor.whenComplete((pair, throwable) -> {
+                if (throwable != null) {
+                    log.warn("Error while get cursor for topic {}.", topic.getName(), throwable);
+                    return;
+                }
+                ManagedCursor managedCursor = pair.getKey();
+                try {
+                    topic.getManagedLedger().deleteCursor(managedCursor.getName());
+                    managedCursor.close();
+                } catch (Exception e) {
+                    log.warn("Error while delete cursor {} for topic {}.",
+                        managedCursor.getName(), topic.getName(), e);
+                    return;
+                }
+            });
+        }
     }
 
     public CompletableFuture<Pair<ManagedCursor, Long>> remove(long offset) {
@@ -52,6 +92,7 @@ public class KafkaTopicConsumerManager {
         offset = offsetAfterBatchIndex(offset);
 
         CompletableFuture<Pair<ManagedCursor, Long>> cursor = consumers.remove(offset);
+        lastAccessTimes.remove(offset);
         if (cursor != null) {
             if (log.isDebugEnabled()) {
                 log.debug("Get cursor for offset: {} in cache. cache size: {}",
@@ -63,6 +104,7 @@ public class KafkaTopicConsumerManager {
         // handle null remove.
         cursor = new CompletableFuture<>();
         CompletableFuture<Pair<ManagedCursor, Long>> oldCursor = consumers.putIfAbsent(offset, cursor);
+        lastAccessTimes.putIfAbsent(offset, System.currentTimeMillis());
         if (oldCursor != null) {
             // added by other thread while creating.
             return remove(offset);
@@ -102,10 +144,25 @@ public class KafkaTopicConsumerManager {
 
         cursorOffsetPair.complete(cursor);
         consumers.putIfAbsent(offset, cursorOffsetPair);
+        lastAccessTimes.putIfAbsent(offset, System.currentTimeMillis());
 
         if (log.isDebugEnabled()) {
             log.debug("Add cursor back {} for offset: {}", cursor.getLeft().getName(), offset);
         }
     }
 
+    @Override
+    public void close() {
+        consumers.values()
+            .forEach(pair -> {
+                try {
+                    ManagedCursor cursor = pair.get().getLeft();
+                    topic.getManagedLedger().deleteCursor(cursor.getName());
+                    cursor.close();
+                } catch (Exception e) {
+                    log.error("Failed to close cursor for topic {}. exception:",
+                        pair.join().getLeft().getName(), e);
+                }
+            });
+    }
 }

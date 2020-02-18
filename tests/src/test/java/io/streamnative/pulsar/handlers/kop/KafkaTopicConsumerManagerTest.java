@@ -27,14 +27,18 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
+import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
+import org.apache.pulsar.common.policies.data.TopicStats;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
@@ -184,4 +188,145 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(cursorCompletableFuture.get().getRight(), Long.valueOf(offset));
     }
 
+    @Test
+    public void testTopicConsumerManagerRemoveCursorAndBacklog() throws Exception {
+        String kafkaTopicName = "RemoveCursorAndBacklog";
+        String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
+        String pulsarPartitionName = pulsarTopicName + "-partition-" + 0;
+
+        // create partitioned topic with 1 partition.
+        admin.topics().createPartitionedTopic(kafkaTopicName, 1);
+
+        ProducerBuilder<byte[]> producerBuilder = pulsarClient.newProducer()
+            .topic(pulsarTopicName)
+            .enableBatching(false);
+        Producer<byte[]> producer = producerBuilder.create();
+        PersistentTopic persistentTopic = (PersistentTopic)
+            pulsar.getBrokerService().getTopicReference(pulsarPartitionName).get();
+
+        MessageIdImpl messageId1 = null;
+        int i = 0;
+        String messagePrefix = "testTopicConsumerManagerRemoveCursor_message_XXXXXX_";
+
+        for (; i < 5; i++) {
+            String message = messagePrefix + i % 10;
+            messageId1 = (MessageIdImpl) producer.newMessage()
+                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
+                .value(message.getBytes())
+                .send();
+        }
+
+        // produce another 5 message
+        MessageIdImpl messageId2 = null;
+        for (; i < 10; i++) {
+            String message = messagePrefix + i % 10;
+            messageId2 = (MessageIdImpl) producer.newMessage()
+                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
+                .value(message.getBytes())
+                .send();
+        }
+
+        // produce another 5 message
+        MessageIdImpl messageId3 = null;
+        for (; i < 15; i++) {
+            String message = messagePrefix + i % 10;
+            messageId3 = (MessageIdImpl) producer.newMessage()
+                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
+                .value(message.getBytes())
+                .send();
+        }
+
+        for (; i < 20; i++) {
+            String message = messagePrefix + i % 10;
+            producer.newMessage()
+                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
+                .value(message.getBytes())
+                .send();
+        }
+
+        long offset1 = MessageIdUtils.getOffset(messageId1.getLedgerId(), messageId1.getEntryId());
+        long offset2 = MessageIdUtils.getOffset(messageId2.getLedgerId(), messageId2.getEntryId());
+        long offset3 = MessageIdUtils.getOffset(messageId3.getLedgerId(), messageId3.getEntryId());
+
+        CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager
+            .getTopicConsumerManager(pulsarPartitionName);
+        KafkaTopicConsumerManager topicConsumerManager = tcm.get();
+
+        // before a read, first get cursor of offset.
+        CompletableFuture<Pair<ManagedCursor, Long>> cursorCompletableFuture1 = topicConsumerManager.remove(offset1);
+        CompletableFuture<Pair<ManagedCursor, Long>> cursorCompletableFuture2 = topicConsumerManager.remove(offset2);
+        CompletableFuture<Pair<ManagedCursor, Long>> cursorCompletableFuture3 = topicConsumerManager.remove(offset3);
+        assertEquals(topicConsumerManager.getConsumers().size(), 0);
+
+        ManagedCursor cursor1 = cursorCompletableFuture1.get().getLeft();
+        ManagedCursor cursor2 = cursorCompletableFuture2.get().getLeft();
+        ManagedCursor cursor3 = cursorCompletableFuture3.get().getLeft();
+
+        long backlogSize = persistentTopic.getStats().backlogSize;
+        verifyBacklogAndNumCursor(persistentTopic, backlogSize, 3);
+
+        // simulate a read complete;
+        offset1 += 1 << MessageIdUtils.BATCH_BITS;
+        offset2 += 1 << MessageIdUtils.BATCH_BITS;
+        offset3 += 1 << MessageIdUtils.BATCH_BITS;
+
+        topicConsumerManager.add(offset1, Pair.of(cursor1, offset1));
+        topicConsumerManager.add(offset2, Pair.of(cursor2, offset2));
+        topicConsumerManager.add(offset3, Pair.of(cursor3, offset3));
+        assertEquals(topicConsumerManager.getConsumers().size(), 3);
+
+        // simulate cursor deleted, and backlog cleared.
+        topicConsumerManager.deleteCursor(offset3);
+        verifyBacklogAndNumCursor(persistentTopic, backlogSize, 2);
+        topicConsumerManager.deleteCursor(offset2);
+        verifyBacklogAndNumCursor(persistentTopic, backlogSize, 1);
+        topicConsumerManager.deleteCursor(offset1);
+        verifyBacklogAndNumCursor(persistentTopic, 0, 0);
+
+        assertEquals(topicConsumerManager.getConsumers().size(), 0);
+    }
+
+    // dump Topic Stats, mainly want to get and verify backlogSize.
+    private void verifyBacklogAndNumCursor(PersistentTopic persistentTopic,
+                                           long expectedBacklog,
+                                           int numCursor) throws Exception {
+        AtomicLong backlog = new AtomicLong(0);
+        AtomicInteger cursorCount = new AtomicInteger(0);
+        retryStrategically(
+            ((test) -> {
+                backlog.set(persistentTopic.getStats().backlogSize);
+                return backlog.get() == expectedBacklog;
+            }),
+            5,
+            200);
+
+        if (log.isDebugEnabled()) {
+            TopicStats topicStats = persistentTopic.getStats();
+            log.info(" dump topicStats for topic : {}, storageSize: {}, backlogSize: {}, expected: {}",
+                persistentTopic.getName(),
+                topicStats.storageSize, topicStats.backlogSize, expectedBacklog);
+
+            topicStats.subscriptions.forEach((subname, substats) -> {
+                log.debug(" dump sub: subname - {}, activeConsumerName {}, "
+                        + "consumers {}, msgBacklog {}, unackedMessages {}.",
+                    subname,
+                    substats.activeConsumerName, substats.consumers,
+                    substats.msgBacklog, substats.unackedMessages);
+            });
+        }
+
+        persistentTopic.getManagedLedger().getCursors().forEach(cursor -> {
+            if (log.isDebugEnabled()) {
+                log.debug(" dump cursor: cursor - {}, durable: {}, numberEntryis: {},"
+                        + " readPosition: {}, markdeletePosition: {}",
+                    cursor.getName(), cursor.isDurable(), cursor.getNumberOfEntries(),
+                    cursor.getReadPosition(), cursor.getMarkDeletedPosition());
+            }
+            cursorCount.incrementAndGet();
+        });
+
+        // verify.
+        assertEquals(backlog.get(), expectedBacklog);
+        assertEquals(cursorCount.get(), numCursor);
+    }
 }

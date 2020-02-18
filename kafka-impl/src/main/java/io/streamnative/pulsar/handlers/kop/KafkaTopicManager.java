@@ -19,6 +19,7 @@ import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +55,12 @@ public class KafkaTopicManager {
 
     private InternalServerCnx internalServerCnx;
 
+    // every 1 min, check if the KafkaTopicConsumerManagers have expired cursors.
+    // remove expired cursors, so backlog can be cleared.
+    private long checkPeriodMillis = 1 * 60 * 1000;
+    private long expirePeriodMillis = 2 * 60 * 1000;
+    private final ScheduledFuture<?> cursorExpireTask;
+
     public static final ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>
         LOOKUP_CACHE = new ConcurrentHashMap<>();
 
@@ -66,6 +73,15 @@ public class KafkaTopicManager {
         consumerTopicManagers = new ConcurrentHashMap<>();
         topics = new ConcurrentHashMap<>();
         references = new ConcurrentHashMap<>();
+        // check expired cursor every 2 min.
+        this.cursorExpireTask = brokerService.executor().scheduleWithFixedDelay(() -> {
+            long current = System.currentTimeMillis();
+            consumerTopicManagers.values().forEach(future -> {
+                if (future != null && future.isDone() && !future.isCompletedExceptionally()) {
+                    future.join().deleteExpiredCursor(current, expirePeriodMillis);
+                }
+            });
+        }, checkPeriodMillis, checkPeriodMillis, TimeUnit.MILLISECONDS);
     }
 
     // update Ctx information, since at create time there is no ctx passed into kafkaRequestHandler.
@@ -239,16 +255,10 @@ public class KafkaTopicManager {
     // when channel close, release all the topics reference in persistentTopic
     public synchronized void close() {
         try {
+            this.cursorExpireTask.cancel(true);
+
             for (CompletableFuture<KafkaTopicConsumerManager> manager : consumerTopicManagers.values()) {
-                manager.get().getConsumers().values()
-                    .forEach(pair -> {
-                        try {
-                            pair.get().getLeft().close();
-                        } catch (Exception e) {
-                            log.error("Failed to close cursor for topic {}. exception:",
-                                pair.join().getLeft().getName(), e);
-                        }
-                    });
+                manager.get().close();
             }
             consumerTopicManagers.clear();
 
@@ -276,24 +286,15 @@ public class KafkaTopicManager {
         try {
             LOOKUP_CACHE.remove(topicName);
 
-            if (!consumerTopicManagers.containsKey(topicName)) {
-                return;
+            if (consumerTopicManagers.containsKey(topicName)) {
+                CompletableFuture<KafkaTopicConsumerManager> manager = consumerTopicManagers.get(topicName);
+                manager.get().close();
+                consumerTopicManagers.remove(topicName);
             }
-
-            consumerTopicManagers.get(topicName).get().getConsumers().values().forEach(pair -> {
-                try {
-                    pair.join().getLeft().close();
-                    consumerTopicManagers.remove(topicName);
-                } catch (Exception e) {
-                    log.error("Failed to close cursor for individual topic {}. exception:",
-                        topicName, e);
-                }
-            });
 
             if (!topics.containsKey(topicName)) {
                 return;
             }
-
             topics.get(topicName).get().removeProducer(references.get(topicName));
             topics.remove(topicName);
         } catch (Exception e) {
