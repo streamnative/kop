@@ -16,7 +16,7 @@
 BINDIR=$(dirname "$0")
 INTR_HOME=`cd ${BINDIR}/..;pwd`
 
-VERSION=$(${BINDIR}/dev/get-project-version.py)
+VERSION=$(${INTR_HOME}/scripts/dev/get-project-version.py)
 TAG=${VERSION%"-SNAPSHOT"}
 IMAGE_NAME_PREFIX="kop-test-"
 
