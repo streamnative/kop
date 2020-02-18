@@ -1048,8 +1048,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleListGroupsRequest(KafkaHeaderAndRequest listGroups,
                                            CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(listGroups.getRequest() instanceof ListGroupsRequest);
-        ListGroupsRequest request = (ListGroupsRequest) listGroups.getRequest();
-
         KeyValue<Errors, List<GroupOverview>> listResult = groupCoordinator.handleListGroups();
         ListGroupsResponse response = new ListGroupsResponse(
             listResult.getKey(),
