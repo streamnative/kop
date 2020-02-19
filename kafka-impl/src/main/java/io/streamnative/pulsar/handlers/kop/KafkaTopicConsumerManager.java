@@ -22,7 +22,9 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteCursorCallback;
 import org.apache.bookkeeper.mledger.ManagedCursor;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.codec.digest.DigestUtils;
@@ -63,9 +65,10 @@ public class KafkaTopicConsumerManager implements Closeable {
 
     void deleteCursor(long offset) {
         CompletableFuture<Pair<ManagedCursor, Long>> cursor = consumers.remove(offset);
+        lastAccessTimes.remove(offset);
         if (cursor != null) {
             if (log.isDebugEnabled()) {
-                log.debug("Cursor timed out for offset: {}, cache size: {}",
+                log.debug("Cursor timed out for offset: {}, cursors cache size: {}",
                     offset, consumers.size());
             }
 
@@ -75,14 +78,23 @@ public class KafkaTopicConsumerManager implements Closeable {
                     return;
                 }
                 ManagedCursor managedCursor = pair.getKey();
-                try {
-                    topic.getManagedLedger().deleteCursor(managedCursor.getName());
-                    managedCursor.close();
-                } catch (Exception e) {
-                    log.warn("Error while delete cursor {} for topic {}.",
-                        managedCursor.getName(), topic.getName(), e);
-                    return;
-                }
+                topic.getManagedLedger().asyncDeleteCursor(managedCursor.getName(),new DeleteCursorCallback() {
+                    @Override
+                    public void deleteCursorComplete(Object ctx) {
+                        if (log.isDebugEnabled()) {
+                            log.debug("[{}][{}] Cursor deleted successfully",
+                                topic.getName(), managedCursor.getName());
+                        }
+                    }
+
+                    @Override
+                    public void deleteCursorFailed(ManagedLedgerException exception, Object ctx) {
+                        if (log.isDebugEnabled()) {
+                            log.debug("[{}][{}] Error deleting cursor for subscription",
+                                topic.getName(), managedCursor.getName(), exception);
+                        }
+                    }
+                }, null);
             });
         }
     }
