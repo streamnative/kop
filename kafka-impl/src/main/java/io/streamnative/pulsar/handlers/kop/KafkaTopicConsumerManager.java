@@ -78,7 +78,7 @@ public class KafkaTopicConsumerManager implements Closeable {
                     return;
                 }
                 ManagedCursor managedCursor = pair.getKey();
-                topic.getManagedLedger().asyncDeleteCursor(managedCursor.getName(),new DeleteCursorCallback() {
+                topic.getManagedLedger().asyncDeleteCursor(managedCursor.getName(), new DeleteCursorCallback() {
                     @Override
                     public void deleteCursorComplete(Object ctx) {
                         if (log.isDebugEnabled()) {
