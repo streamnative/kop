@@ -28,6 +28,7 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Queues;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
@@ -49,10 +50,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -65,6 +68,7 @@ import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
@@ -485,21 +489,29 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
-    protected void handleProduceRequest(KafkaHeaderAndRequest produceHar,
-                                        CompletableFuture<AbstractResponse> resultFuture) {
-        checkArgument(produceHar.getRequest() instanceof ProduceRequest);
-        ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
+    // handle produce request one by one, so the produced MessageId is in order.
+    private Queue<Pair<KafkaHeaderAndRequest, CompletableFuture<AbstractResponse>>> produceRequestsQueue = Queues
+        .newConcurrentLinkedQueue();
+    // whether the head of queue is running.
+    private AtomicBoolean isHeadRequestRun = new AtomicBoolean(false);
 
-        if (produceRequest.transactionalId() != null) {
-            log.warn("[{}] Transactions not supported", ctx.channel());
-
-            resultFuture.complete(
-                failedResponse(produceHar, new UnsupportedOperationException("No transaction support")));
+    private void handleProducerRequestInternal() {
+        // the first request that success set to running, get running.
+        if (produceRequestsQueue.isEmpty() || !isHeadRequestRun.compareAndSet(false, true)) {
+            // the head of queue is already running, when head complete, it will peek the following request to run.
+            if (log.isDebugEnabled()) {
+                log.debug(" Produce messages not entered. queue.size: {}, head isHeadRequestRun: {}",
+                    produceRequestsQueue.size(), isHeadRequestRun.get());
+            }
             return;
         }
 
-        // Ignore request.acks() and request.timeout(), which related to kafka replication in this broker.
+        Pair<KafkaHeaderAndRequest, CompletableFuture<AbstractResponse>> head = produceRequestsQueue.peek();
+        KafkaHeaderAndRequest produceHar = head.getKey();
+        CompletableFuture<AbstractResponse> resultFuture = head.getValue();
+        ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
 
+        // Ignore request.acks() and request.timeout(), which related to kafka replication in this broker.
         Map<TopicPartition, CompletableFuture<PartitionResponse>> responsesFutures = new HashMap<>();
 
         final int responsesSize = produceRequest.partitionRecordsOrFail().size();
@@ -549,6 +561,47 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
                 resultFuture.complete(new ProduceResponse(responses));
             });
+
+        // trigger following request to run.
+        resultFuture.whenComplete((response, throwable) -> {
+            if (throwable != null) {
+                log.warn("Error produce message for {}.", produceHar.getHeader(), throwable);
+            }
+
+            if (log.isDebugEnabled()) {
+                log.debug("Produce messages complete. trigger next. queue.size: {}, head isHeadRequestRun: {}",
+                    produceRequestsQueue.size(), isHeadRequestRun.get());
+            }
+
+            boolean compare = isHeadRequestRun.compareAndSet(true, false);
+            checkState(compare, "Head should be running when completed head.");
+            // remove completed request.
+            produceRequestsQueue.remove();
+
+            // trigger another run.
+            handleProducerRequestInternal();
+        });
+    }
+
+    protected void handleProduceRequest(KafkaHeaderAndRequest produceHar,
+                                        CompletableFuture<AbstractResponse> resultFuture) {
+        checkArgument(produceHar.getRequest() instanceof ProduceRequest);
+        ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
+        if (produceRequest.transactionalId() != null) {
+            log.warn("[{}] Transactions not supported", ctx.channel());
+
+            resultFuture.complete(
+                failedResponse(produceHar, new UnsupportedOperationException("No transaction support")));
+            return;
+        }
+
+        if (log.isDebugEnabled()) {
+            log.debug(" new produce request comes: {}, isHeadRequestRun: {}",
+                produceRequestsQueue.size(), isHeadRequestRun.get());
+        }
+        produceRequestsQueue.add(Pair.of(produceHar, resultFuture));
+
+        handleProducerRequestInternal();
     }
 
     protected void handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator,
