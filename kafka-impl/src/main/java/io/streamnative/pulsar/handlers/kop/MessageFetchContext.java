@@ -100,7 +100,7 @@ public final class MessageFetchContext {
                     long offset = entry.getValue().fetchOffset;
 
                     if (log.isDebugEnabled()) {
-                        log.debug("Request {}: Fetch topic {}, remove cursor for fetch offset: {} - {}.",
+                        log.debug("Request {}: Fetch topic {}, remove tcm to get cursor for fetch offset: {} - {}.",
                             fetchRequest.getHeader(), topicName, offset, MessageIdUtils.getPosition(offset));
                     }
 
@@ -125,6 +125,7 @@ public final class MessageFetchContext {
 
                     return Pair.of(
                         entry.getKey(),
+                        // TODO: only removed once. readMessagesInternal serveral times cause added too much?
                         consumerManager.thenCompose(cm -> cm.remove(offset)));
                 })
                 .filter(x -> x != null)
@@ -146,11 +147,6 @@ public final class MessageFetchContext {
         AtomicInteger bytesRead = new AtomicInteger(0);
         Map<TopicPartition, List<Entry>> entryValues = new ConcurrentHashMap<>();
 
-        if (log.isDebugEnabled()) {
-            log.debug("Request {}: Read Messages for request.",
-                 fetch.getHeader());
-        }
-
         readMessagesInternal(fetch, cursors, bytesRead, entryValues, resultFuture, responseData);
     }
 
@@ -161,6 +157,7 @@ public final class MessageFetchContext {
                                       CompletableFuture<AbstractResponse> resultFuture,
                                       LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData) {
         AtomicInteger entriesRead = new AtomicInteger(0);
+        // here do the real read, and in read callback put cursor back to KafkaTopicConsumerManager.
         Map<TopicPartition, CompletableFuture<Entry>> readFutures = readAllCursorOnce(cursors);
         CompletableFuture.allOf(readFutures.values().stream().toArray(CompletableFuture<?>[]::new))
             .whenComplete((ignore, ex) -> {
@@ -259,8 +256,10 @@ public final class MessageFetchContext {
                     });
 
                     if (allPartitionsNoEntry.get()) {
-                        log.debug("Request {}: All partitions for request read 0 entry",
-                            fetch.getHeader());
+                        if (log.isDebugEnabled()) {
+                            log.debug("Request {}: All partitions for request read 0 entry",
+                                fetch.getHeader());
+                        }
 
                         requestHandler.getPulsarService().getExecutor().schedule(() -> {
                             resultFuture.complete(
@@ -280,7 +279,11 @@ public final class MessageFetchContext {
                         this.recycle();
                     }
                 } else {
-                    //need do another round read
+                    if (log.isDebugEnabled()) {
+                        log.debug("Request {}: Read time or size not reach, do another round of read before return.",
+                            fetch.getHeader());
+                    }
+                    // need do another round read
                     readMessagesInternal(fetch, cursors, bytesRead, responseValues, resultFuture, responseData);
                 }
             });
@@ -360,12 +363,16 @@ public final class MessageFetchContext {
                         public void readEntriesFailed(ManagedLedgerException e, Object o) {
                             log.error("Error read entry for topic: {}",
                                 pulsarTopicName(pair.getKey(), requestHandler.getNamespace()));
+
+                            // todo: delete current cursor.
                             readFuture.completeExceptionally(e);
                         }
                     }, null);
             } catch (Exception e) {
                 log.error("Error for cursor to read entry for topic: {}. ",
                     pulsarTopicName(pair.getKey()), e);
+                // todo: delete current cursor.
+
                 readFuture.completeExceptionally(e);
             }
 

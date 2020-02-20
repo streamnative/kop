@@ -16,10 +16,13 @@ package io.streamnative.pulsar.handlers.kop;
 import static com.google.common.base.Preconditions.checkArgument;
 import static io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils.offsetAfterBatchIndex;
 
+import com.google.common.base.Supplier;
+import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.Closeable;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteCursorCallback;
@@ -41,6 +44,10 @@ public class KafkaTopicConsumerManager implements Closeable {
     private final PersistentTopic topic;
     private final KafkaRequestHandler requestHandler;
 
+    // the lock for closed status change.
+    private final ReentrantReadWriteLock rwLock;
+    private boolean closed;
+
     // keep fetch offset and related cursor. keep cursor and its last offset in Pair. <offset, pair>
     @Getter
     private final ConcurrentLongHashMap<CompletableFuture<Pair<ManagedCursor, Long>>> consumers;
@@ -54,6 +61,8 @@ public class KafkaTopicConsumerManager implements Closeable {
         this.consumers = new ConcurrentLongHashMap<>();
         this.lastAccessTimes = new ConcurrentLongHashMap<>();
         this.requestHandler = requestHandler;
+        this.rwLock = new ReentrantReadWriteLock();
+        this.closed = false;
     }
 
     // delete expired cursors, so backlog can be cleared.
@@ -124,10 +133,11 @@ public class KafkaTopicConsumerManager implements Closeable {
             return remove(offset);
         }
 
-        String cursorName = "kop-consumer-cursor-" + topic.getName() + "-" + offset + "-"
-            + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 10);
-
         PositionImpl position = MessageIdUtils.getPosition(offset);
+
+        String cursorName = "kop-consumer-cursor-" + topic.getName()
+            + "-" + position.getLedgerId() + "-" + position.getEntryId()
+            + "-" + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 10);
 
         try {
             // get previous position, because NonDurableCursor is read from next position.
@@ -155,6 +165,32 @@ public class KafkaTopicConsumerManager implements Closeable {
         checkArgument(offset == cursor.getRight(),
             "offset not equal. key: " + offset + " value: " + cursor.getRight());
 
+        rwLock.readLock().lock();
+        try {
+            // should delete the cursor since this tcm already in closing state.
+            if (closed) {
+                ManagedCursor managedCursor = cursor.getLeft();
+                topic.getManagedLedger().asyncDeleteCursor(managedCursor.getName(), new DeleteCursorCallback() {
+                    @Override
+                    public void deleteCursorComplete(Object ctx) {
+                        if (log.isDebugEnabled()) {
+                            log.debug("[{}] A race - tcm already closed at add back, "
+                                    + "Cursor {} for topic {} deleted successfully.",
+                                requestHandler.ctx.channel(), topic.getName(), topic.getName());
+                        }
+                    }
+                    @Override
+                    public void deleteCursorFailed(ManagedLedgerException exception, Object ctx) {
+                        log.warn("[{}] A race - tcm already closed, Error deleting cursor for topic {} when add back.",
+                            requestHandler.ctx.channel(), topic.getName(), topic.getName(), exception);
+                    }
+                }, null);
+                return;
+            }
+        } finally {
+            rwLock.readLock().unlock();
+        }
+
         CompletableFuture<Pair<ManagedCursor, Long>> cursorOffsetPair = new CompletableFuture<>();
 
         cursorOffsetPair.complete(cursor);
@@ -169,6 +205,20 @@ public class KafkaTopicConsumerManager implements Closeable {
 
     @Override
     public void close() {
+        rwLock.writeLock().lock();
+        try {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] Close TCM for topic {}.",
+                    requestHandler.ctx.channel(), topic.getName());
+            }
+        } finally {
+            rwLock.writeLock().unlock();
+        }
+
         consumers.values()
             .forEach(pair -> {
                 try {
@@ -178,22 +228,21 @@ public class KafkaTopicConsumerManager implements Closeable {
                         public void deleteCursorComplete(Object ctx) {
                             if (log.isDebugEnabled()) {
                                 log.debug("[{}] Cursor {} for topic {} deleted successfully when close.",
-                                    requestHandler.ctx.channel(), topic.getName(), topic.getName());
+                                    requestHandler.ctx.channel(), cursor.getName(), topic.getName());
                             }
                         }
-
                         @Override
                         public void deleteCursorFailed(ManagedLedgerException exception, Object ctx) {
-                            if (log.isDebugEnabled()) {
-                                log.debug("[{}] Error deleting cursor for topic {} when close.",
-                                    requestHandler.ctx.channel(), topic.getName(), topic.getName(), exception);
-                            }
+                            log.warn("[{}] Error deleting cursor for topic {} when close.",
+                                requestHandler.ctx.channel(), cursor.getName(), topic.getName(), exception);
                         }
                     }, null);
                 } catch (Exception e) {
                     log.error("[{}] Failed to close cursor for topic {}. exception:",
-                        requestHandler.ctx.channel(), pair.join().getLeft().getName(), e);
+                        requestHandler.ctx.channel(), topic.getName(), e);
                 }
             });
+        consumers.clear();
+        lastAccessTimes.clear();
     }
 }
