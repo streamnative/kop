@@ -20,7 +20,6 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.Closeable;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteCursorCallback;
