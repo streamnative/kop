@@ -77,7 +77,8 @@ public class KafkaTopicManager {
         this.cursorExpireTask = brokerService.executor().scheduleWithFixedDelay(() -> {
             long current = System.currentTimeMillis();
             if (log.isDebugEnabled()) {
-                log.debug("Schedule a check of expired cursor: {}", internalServerCnx.getRemoteAddress());
+                log.debug("[{}] Schedule a check of expired cursor",
+                    requestHandler.ctx.channel());
             }
             consumerTopicManagers.values().forEach(future -> {
                 if (future != null && future.isDone() && !future.isCompletedExceptionally()) {
@@ -87,12 +88,9 @@ public class KafkaTopicManager {
         }, checkPeriodMillis, checkPeriodMillis, TimeUnit.MILLISECONDS);
     }
 
-    // update Ctx information, since at create time there is no ctx passed into kafkaRequestHandler.
+    // update Ctx information, since at internalServerCnx create time there is no ctx passed into kafkaRequestHandler.
     public void updateCtx() {
         internalServerCnx.updateCtx();
-        if (log.isDebugEnabled()) {
-            log.debug("internalServerCnx.remoteAddress: {}", internalServerCnx.getRemoteAddress());
-        }
     }
 
     // topicName is in pulsar format. e.g. persistent://public/default/topic-partition-0
@@ -103,19 +101,21 @@ public class KafkaTopicManager {
             t -> {
                 CompletableFuture<PersistentTopic> topic = getTopic(t);
                 if (topic == null) {
-                    log.warn("Failed to getTopicConsumerManager for topic {}. return null", t);
+                    log.warn("[{}] Failed to getTopicConsumerManager for topic {}. return null",
+                        requestHandler.ctx.channel(), t);
                     return null;
                 }
 
                 return topic.thenApply(t2 -> {
                     if (log.isDebugEnabled()) {
-                        log.debug("Call getTopicConsumerManager for {}, and create KafkaTopicConsumerManager.", t);
+                        log.debug("[{}] Call getTopicConsumerManager for {}, and create KafkaTopicConsumerManager.",
+                            requestHandler.ctx.channel(), topicName, t);
                     }
                     // return consumer manager
-                    return new KafkaTopicConsumerManager(t2);
+                    return new KafkaTopicConsumerManager(requestHandler, t2);
                 }).exceptionally(ex -> {
-                    log.error("Failed to getTopicConsumerManager {}. exception:",
-                        t, ex);
+                    log.error("[{}] Failed to getTopicConsumerManager {}. exception:",
+                        requestHandler.ctx.channel(), t, ex);
                     return null;
                 });
             }
@@ -137,8 +137,8 @@ public class KafkaTopicManager {
             brokerService.generateUniqueProducerName());
 
         if (log.isDebugEnabled()) {
-            log.debug("Register Mock Producer {} into PersistentTopic {}",
-                producer, persistentTopic.getName());
+            log.debug("[{}] Register Mock Producer {} into PersistentTopic {}",
+                requestHandler.ctx.channel(), producer, persistentTopic.getName());
         }
 
         // this will register and add USAGE_COUNT_UPDATER.
@@ -150,8 +150,8 @@ public class KafkaTopicManager {
     public CompletableFuture<InetSocketAddress> getTopicBroker(String topicName) {
         return LOOKUP_CACHE.computeIfAbsent(topicName, t -> {
             if (log.isDebugEnabled()) {
-                log.debug("topic {} not in Lookup_cache, call lookupBroker",
-                    topicName);
+                log.debug("[{}] topic {} not in Lookup_cache, call lookupBroker",
+                    requestHandler.ctx.channel(), topicName);
             }
             CompletableFuture<InetSocketAddress> returnFuture = new CompletableFuture<>();
             Backoff backoff = new Backoff(
@@ -179,7 +179,7 @@ public class KafkaTopicManager {
 
                     if (backoff.isMandatoryStopMade()) {
                         log.warn("[{}] getBroker for topic failed, retried too many times, return null. throwable: ",
-                            topicName, waitTimeMs, th);
+                            requestHandler.ctx.channel(), topicName, waitTimeMs, th);
                         retFuture.complete(null);
                     } else {
                         log.warn("[{}] getBroker for topic failed, will retry in {} ms. throwable: ",
@@ -192,8 +192,8 @@ public class KafkaTopicManager {
                     return null;
                 });
         } catch (PulsarServerException e) {
-            log.error("[{}] getTopicBroker for topic failed get pulsar client, return null. throwable: ",
-                topicName, e);
+            log.error("[{}] getTopicBroker for topic {} failed get pulsar client, return null. throwable: ",
+                requestHandler.ctx.channel(), topicName, e);
             retFuture.complete(null);
         }
     }
@@ -208,44 +208,41 @@ public class KafkaTopicManager {
 
                 getTopicBroker(t).whenCompleteAsync((ignore, th) -> {
                     if (th != null || ignore == null) {
-                        log.warn("[{}] failed getTopicBroker, return null PersistentTopic. throwable: ",
-                            topicName, th);
+                        log.warn("[{}] Failed getTopicBroker {}, return null PersistentTopic. throwable: ",
+                            requestHandler.ctx.channel(), t, th);
                         topicCompletableFuture.complete(null);
                         return;
                     }
 
                     if (log.isDebugEnabled()) {
-                        log.debug("getTopicBroker for {} in KafkaTopicManager. brokerAddress: {}",
-                            t, ignore);
+                        log.debug("[{}] getTopicBroker for {} in KafkaTopicManager. brokerAddress: {}",
+                            requestHandler.ctx.channel(), t, ignore);
                     }
 
                     brokerService
                         .getTopic(t, true)
                         .thenApply(t2 -> {
-                            if (log.isDebugEnabled()) {
-                                log.debug("GetTopic for {} in KafkaTopicManager", t);
-                            }
-
                             try {
                                 if (t2.isPresent()) {
                                     PersistentTopic persistentTopic = (PersistentTopic) t2.get();
                                     references.putIfAbsent(t, registerInPersistentTopic(persistentTopic));
                                     topicCompletableFuture.complete(persistentTopic);
                                 } else {
-                                    log.error("Get empty topic for name {}", t);
+                                    log.error("[{}]Get empty topic for name {}",
+                                        requestHandler.ctx.channel(), t);
                                     topicCompletableFuture.complete(null);
                                 }
                             } catch (Exception e) {
-                                log.error("Failed to registerInPersistentTopic {}. exception:",
-                                    t, e);
+                                log.error("[{}] Failed to registerInPersistentTopic {}. exception:",
+                                    requestHandler.ctx.channel(), t, e);
                                 topicCompletableFuture.complete(null);
                             }
 
                             return null;
                         })
                         .exceptionally(ex -> {
-                            log.error("Failed to getTopic {}. exception:",
-                                t, ex);
+                            log.error("[{}] Failed to getTopic {}. exception:",
+                                requestHandler.ctx.channel(), t, ex);
                             topicCompletableFuture.complete(null);
                             return null;
                         });
@@ -270,8 +267,8 @@ public class KafkaTopicManager {
                 LOOKUP_CACHE.remove(topicName);
                 CompletableFuture<PersistentTopic> topicFuture = entry.getValue();
                 if (log.isDebugEnabled()) {
-                    log.debug("remove producer {} for topic {} at close()",
-                        references.get(topicName), topicName);
+                    log.debug("[{}] remove producer {} for topic {} at close()",
+                        requestHandler.ctx.channel(), references.get(topicName), topicName);
                 }
                 if (references.get(topicName) != null) {
                     topicFuture.get().removeProducer(references.get(topicName));
@@ -281,7 +278,8 @@ public class KafkaTopicManager {
             }
             topics.clear();
         } catch (Exception e) {
-            log.error("Failed to close KafkaTopicManager. exception:", e);
+            log.error("[{}] Failed to close KafkaTopicManager. exception:",
+                requestHandler.ctx.channel(), e);
         }
     }
 
@@ -301,8 +299,8 @@ public class KafkaTopicManager {
             topics.get(topicName).get().removeProducer(references.get(topicName));
             topics.remove(topicName);
         } catch (Exception e) {
-            log.error("Failed to close reference for individual topic {}. exception:",
-                topicName, e);
+            log.error("[{}] Failed to close reference for individual topic {}. exception:",
+                requestHandler.ctx.channel(), topicName, e);
         }
     }
 
