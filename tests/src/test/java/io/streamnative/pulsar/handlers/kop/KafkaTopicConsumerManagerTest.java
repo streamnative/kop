@@ -139,10 +139,10 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         long offset = MessageIdUtils.getOffset(messageId.getLedgerId(), messageId.getEntryId());
 
         // before a read, first get cursor of offset.
-        CompletableFuture<Pair<ManagedCursor, Long>> cursorCompletableFuture = topicConsumerManager.remove(offset);
+        Pair<ManagedCursor, Long> cursorPair = topicConsumerManager.remove(offset);
         assertEquals(topicConsumerManager.getConsumers().size(), 0);
-        ManagedCursor cursor = cursorCompletableFuture.get().getLeft();
-        assertEquals(cursorCompletableFuture.get().getRight(), Long.valueOf(offset));
+        ManagedCursor cursor = cursorPair.getLeft();
+        assertEquals(cursorPair.getRight(), Long.valueOf(offset));
 
         // another write.
         producer.newMessage()
@@ -157,13 +157,13 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(topicConsumerManager.getConsumers().size(), 1);
 
         // another read, cache hit.
-        cursorCompletableFuture = topicConsumerManager.remove(offset);
+        cursorPair  = topicConsumerManager.remove(offset);
         assertEquals(topicConsumerManager.getConsumers().size(), 0);
-        ManagedCursor cursor2 = cursorCompletableFuture.get().getLeft();
+        ManagedCursor cursor2 = cursorPair.getLeft();
 
         assertTrue(cursor2 == cursor);
         assertEquals(cursor2.getName(), cursor.getName());
-        assertEquals(cursorCompletableFuture.get().getRight(), Long.valueOf(offset));
+        assertEquals(cursorPair.getRight(), Long.valueOf(offset));
 
         // simulate a read complete, add back offset.
         offset += 1 << MessageIdUtils.BATCH_BITS;
@@ -180,12 +180,12 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
 
         // try read last messages, so read not continuous
         offset = MessageIdUtils.getOffset(messageId.getLedgerId(), messageId.getEntryId());
-        cursorCompletableFuture = topicConsumerManager.remove(offset);
+        cursorPair = topicConsumerManager.remove(offset);
         // since above remove will use a new cursor. there should be one in the map.
         assertEquals(topicConsumerManager.getConsumers().size(), 1);
-        cursor2 = cursorCompletableFuture.get().getLeft();
+        cursor2 = cursorPair.getLeft();
         assertNotEquals(cursor2.getName(), cursor.getName());
-        assertEquals(cursorCompletableFuture.get().getRight(), Long.valueOf(offset));
+        assertEquals(cursorPair.getRight(), Long.valueOf(offset));
     }
 
     @Test
@@ -253,14 +253,14 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         KafkaTopicConsumerManager topicConsumerManager = tcm.get();
 
         // before a read, first get cursor of offset.
-        CompletableFuture<Pair<ManagedCursor, Long>> cursorCompletableFuture1 = topicConsumerManager.remove(offset1);
-        CompletableFuture<Pair<ManagedCursor, Long>> cursorCompletableFuture2 = topicConsumerManager.remove(offset2);
-        CompletableFuture<Pair<ManagedCursor, Long>> cursorCompletableFuture3 = topicConsumerManager.remove(offset3);
+        Pair<ManagedCursor, Long> cursorPair1 = topicConsumerManager.remove(offset1);
+        Pair<ManagedCursor, Long> cursorPair2 = topicConsumerManager.remove(offset2);
+        Pair<ManagedCursor, Long> cursorPair3 = topicConsumerManager.remove(offset3);
         assertEquals(topicConsumerManager.getConsumers().size(), 0);
 
-        ManagedCursor cursor1 = cursorCompletableFuture1.get().getLeft();
-        ManagedCursor cursor2 = cursorCompletableFuture2.get().getLeft();
-        ManagedCursor cursor3 = cursorCompletableFuture3.get().getLeft();
+        ManagedCursor cursor1 = cursorPair1.getLeft();
+        ManagedCursor cursor2 = cursorPair2.getLeft();
+        ManagedCursor cursor3 = cursorPair3.getLeft();
 
         long backlogSize = persistentTopic.getStats().backlogSize;
         verifyBacklogAndNumCursor(persistentTopic, backlogSize, 3);
@@ -276,11 +276,11 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(topicConsumerManager.getConsumers().size(), 3);
 
         // simulate cursor deleted, and backlog cleared.
-        topicConsumerManager.deleteCursor(offset3);
+        topicConsumerManager.deleteOneExpiredCursor(offset3);
         verifyBacklogAndNumCursor(persistentTopic, backlogSize, 2);
-        topicConsumerManager.deleteCursor(offset2);
+        topicConsumerManager.deleteOneExpiredCursor(offset2);
         verifyBacklogAndNumCursor(persistentTopic, backlogSize, 1);
-        topicConsumerManager.deleteCursor(offset1);
+        topicConsumerManager.deleteOneExpiredCursor(offset1);
         verifyBacklogAndNumCursor(persistentTopic, 0, 0);
 
         assertEquals(topicConsumerManager.getConsumers().size(), 0);
