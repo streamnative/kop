@@ -42,6 +42,7 @@ public class KafkaTopicConsumerManager implements Closeable {
     private final KafkaRequestHandler requestHandler;
 
     // the lock for closed status change.
+    // once closed, should not add new cursor back, since consumers are cleared.
     private final ReentrantReadWriteLock rwLock;
     private boolean closed;
 
@@ -72,6 +73,16 @@ public class KafkaTopicConsumerManager implements Closeable {
     }
 
     void deleteOneExpiredCursor(long offset) {
+        // need not do anything, since this tcm already in closing state. and close() will delete every thing.
+        rwLock.readLock().lock();
+        try {
+            if (closed) {
+                return;
+            }
+        } finally {
+            rwLock.readLock().unlock();
+        }
+
         Pair<ManagedCursor, Long> pair = consumers.remove(offset);
         lastAccessTimes.remove(offset);
         if (pair != null) {
@@ -81,7 +92,28 @@ public class KafkaTopicConsumerManager implements Closeable {
             }
 
             ManagedCursor managedCursor = pair.getKey();
-            closeOneCursorAsync(managedCursor, "cursor expired");
+            deleteOneCursorAsync(managedCursor, "cursor expired");
+        }
+    }
+
+    // delete passed in cursor.
+    void deleteOneCursorAsync(ManagedCursor cursor, String reason) {
+        if (cursor != null) {
+            topic.getManagedLedger().asyncDeleteCursor(cursor.getName(), new DeleteCursorCallback() {
+                @Override
+                public void deleteCursorComplete(Object ctx) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("[{}] Cursor {} for topic {} deleted successfully for reason: {}.",
+                            requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason);
+                    }
+                }
+
+                @Override
+                public void deleteCursorFailed(ManagedLedgerException exception, Object ctx) {
+                    log.warn("[{}] Error deleting cursor for topic {} for reason: {}.",
+                        requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason, exception);
+                }
+            }, null);
         }
     }
 
@@ -89,6 +121,17 @@ public class KafkaTopicConsumerManager implements Closeable {
     // remove from cache, so another same offset read could happen.
     // each success remove should have a following add.
     public Pair<ManagedCursor, Long> remove(long offset) {
+
+        // should not return cursor for Fetch to read, since this tcm already in closing state.
+        rwLock.readLock().lock();
+        try {
+            if (closed) {
+                return null;
+            }
+        } finally {
+            rwLock.readLock().unlock();
+        }
+
         // This is for read a new entry, first check if offset is from a batched message request.
         offset = offsetAfterBatchIndex(offset);
 
@@ -103,7 +146,7 @@ public class KafkaTopicConsumerManager implements Closeable {
         }
 
         // handle offset not exist in consumers, need create cursor.
-        cursor = consumers.computeIfAbsent(
+        consumers.computeIfAbsent(
             offset,
             off -> {
                 PositionImpl position = MessageIdUtils.getPosition(off);
@@ -132,7 +175,10 @@ public class KafkaTopicConsumerManager implements Closeable {
                 return Pair.of(newCursor, off);
             });
 
-        return consumers.remove(offset);
+        cursor = consumers.remove(offset);
+        lastAccessTimes.remove(offset);
+
+        return cursor;
     }
 
     // once entry read complete, add new offset back.
@@ -145,7 +191,7 @@ public class KafkaTopicConsumerManager implements Closeable {
         try {
             if (closed) {
                 ManagedCursor managedCursor = pair.getLeft();
-                closeOneCursorAsync(managedCursor, "A race - add cursor back but tcm already closed");
+                deleteOneCursorAsync(managedCursor, "A race - add cursor back but tcm already closed");
                 return;
             }
         } finally {
@@ -154,7 +200,7 @@ public class KafkaTopicConsumerManager implements Closeable {
 
         Pair<ManagedCursor, Long> oldPair = consumers.putIfAbsent(offset, pair);
         if (oldPair != null) {
-            closeOneCursorAsync(pair.getLeft(), "reason: A race - same cursor already cached");
+            deleteOneCursorAsync(pair.getLeft(), "reason: A race - same cursor already cached");
         }
         lastAccessTimes.put(offset, System.currentTimeMillis());
 
@@ -164,6 +210,7 @@ public class KafkaTopicConsumerManager implements Closeable {
         }
     }
 
+    // called when channel closed.
     @Override
     public void close() {
         rwLock.writeLock().lock();
@@ -184,7 +231,7 @@ public class KafkaTopicConsumerManager implements Closeable {
             .forEach(pair -> {
                 try {
                     ManagedCursor cursor = pair.getLeft();
-                    closeOneCursorAsync(cursor, "TopicConsumerManager close");
+                    deleteOneCursorAsync(cursor, "TopicConsumerManager close");
                 } catch (Exception e) {
                     log.error("[{}] Failed to close cursor for topic {}. exception:",
                         requestHandler.ctx.channel(), topic.getName(), e);
@@ -192,27 +239,5 @@ public class KafkaTopicConsumerManager implements Closeable {
             });
         consumers.clear();
         lastAccessTimes.clear();
-    }
-
-
-    // close passed in cursor.
-    private void closeOneCursorAsync(ManagedCursor cursor, String reason) {
-        if (cursor != null) {
-            topic.getManagedLedger().asyncDeleteCursor(cursor.getName(), new DeleteCursorCallback() {
-                @Override
-                public void deleteCursorComplete(Object ctx) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("[{}] Cursor {} for topic {} deleted successfully for reason: {}.",
-                            requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason);
-                    }
-                }
-
-                @Override
-                public void deleteCursorFailed(ManagedLedgerException exception, Object ctx) {
-                    log.warn("[{}] Error deleting cursor for topic {} for reason: {}.",
-                        requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason, exception);
-                }
-            }, null);
-        }
     }
 }

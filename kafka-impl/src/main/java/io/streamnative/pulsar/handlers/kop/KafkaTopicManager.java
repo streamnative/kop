@@ -21,6 +21,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarServerException;
@@ -61,6 +62,10 @@ public class KafkaTopicManager {
     private long expirePeriodMillis = 2 * 60 * 1000;
     private final ScheduledFuture<?> cursorExpireTask;
 
+    // the lock for closed status change.
+    private final ReentrantReadWriteLock rwLock;
+    private boolean closed;
+
     public static final ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>
         LOOKUP_CACHE = new ConcurrentHashMap<>();
 
@@ -73,6 +78,10 @@ public class KafkaTopicManager {
         consumerTopicManagers = new ConcurrentHashMap<>();
         topics = new ConcurrentHashMap<>();
         references = new ConcurrentHashMap<>();
+
+        this.rwLock = new ReentrantReadWriteLock();
+        this.closed = false;
+
         // check expired cursor every 1 min.
         this.cursorExpireTask = brokerService.executor().scheduleWithFixedDelay(() -> {
             long current = System.currentTimeMillis();
@@ -111,6 +120,21 @@ public class KafkaTopicManager {
                         log.debug("[{}] Call getTopicConsumerManager for {}, and create KafkaTopicConsumerManager.",
                             requestHandler.ctx.channel(), topicName, t);
                     }
+
+                    // If channel is closing, return a null TCP.
+                    rwLock.readLock().lock();
+                    try {
+                        if (closed) {
+                            if (log.isDebugEnabled()) {
+                                log.debug("[{}] Return null for getTopicConsumerManager({}) since channel closing",
+                                    requestHandler.ctx.channel(), topicName);
+                            }
+                            return null;
+                        }
+                    } finally {
+                        rwLock.readLock().unlock();
+                    }
+
                     // return consumer manager
                     return new KafkaTopicConsumerManager(requestHandler, t2);
                 }).exceptionally(ex -> {
@@ -202,10 +226,25 @@ public class KafkaTopicManager {
     // or will meet error: "Service unit is not ready when loading the topic".
     // If getTopic is called after lookup, then no needLookup.
     public CompletableFuture<PersistentTopic> getTopic(String topicName) {
+        CompletableFuture<PersistentTopic> topicCompletableFuture = new CompletableFuture<>();
+
+        // If channel is closing, complete a null to avoid brings in further handling.
+        rwLock.readLock().lock();
+        try {
+            if (closed) {
+                topicCompletableFuture.complete(null);
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Return null for getTopic({}) since channel closing",
+                        requestHandler.ctx.channel(), topicName);
+                }
+                return topicCompletableFuture;
+            }
+        } finally {
+            rwLock.readLock().unlock();
+        }
+
         return topics.computeIfAbsent(topicName,
             t -> {
-                final CompletableFuture<PersistentTopic> topicCompletableFuture = new CompletableFuture<>();
-
                 getTopicBroker(t).whenCompleteAsync((ignore, th) -> {
                     if (th != null || ignore == null) {
                         log.warn("[{}] Failed getTopicBroker {}, return null PersistentTopic. throwable: ",
@@ -254,6 +293,20 @@ public class KafkaTopicManager {
 
     // when channel close, release all the topics reference in persistentTopic
     public synchronized void close() {
+        rwLock.writeLock().lock();
+        try {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] Closing TopicManager",
+                    requestHandler.ctx.channel());
+            }
+        } finally {
+            rwLock.writeLock().unlock();
+        }
+
         try {
             this.cursorExpireTask.cancel(true);
 
