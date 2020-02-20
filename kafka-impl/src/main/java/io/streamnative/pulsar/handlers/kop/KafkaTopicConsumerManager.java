@@ -20,6 +20,7 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.Closeable;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteCursorCallback;
@@ -68,8 +69,8 @@ public class KafkaTopicConsumerManager implements Closeable {
         lastAccessTimes.remove(offset);
         if (cursor != null) {
             if (log.isDebugEnabled()) {
-                log.debug("Cursor timed out for offset: {}, cursors cache size: {}",
-                    offset, consumers.size());
+                log.debug("Cursor timed out for offset: {} - {}, cursors cache size: {}",
+                    offset, MessageIdUtils.getPosition(offset), consumers.size());
             }
 
             cursor.whenComplete((pair, throwable) -> {
@@ -107,8 +108,8 @@ public class KafkaTopicConsumerManager implements Closeable {
         lastAccessTimes.remove(offset);
         if (cursor != null) {
             if (log.isDebugEnabled()) {
-                log.debug("Get cursor for offset: {} in cache. cache size: {}",
-                    offset, consumers.size());
+                log.debug("Get cursor for offset: {} - {} in cache. cache size: {}",
+                    offset, MessageIdUtils.getPosition(offset), consumers.size());
             }
             return cursor;
         }
@@ -159,7 +160,8 @@ public class KafkaTopicConsumerManager implements Closeable {
         lastAccessTimes.putIfAbsent(offset, System.currentTimeMillis());
 
         if (log.isDebugEnabled()) {
-            log.debug("Add cursor back {} for offset: {}", cursor.getLeft().getName(), offset);
+            log.debug("Add cursor back {} for offset: {} - {}",
+                cursor.getLeft().getName(), offset, MessageIdUtils.getPosition(offset));
         }
     }
 
@@ -169,8 +171,23 @@ public class KafkaTopicConsumerManager implements Closeable {
             .forEach(pair -> {
                 try {
                     ManagedCursor cursor = pair.get().getLeft();
-                    topic.getManagedLedger().deleteCursor(cursor.getName());
-                    cursor.close();
+                    topic.getManagedLedger().asyncDeleteCursor(cursor.getName(), new DeleteCursorCallback() {
+                        @Override
+                        public void deleteCursorComplete(Object ctx) {
+                            if (log.isDebugEnabled()) {
+                                log.debug("[{}][{}] Cursor deleted successfully when close",
+                                    topic.getName(), cursor.getName());
+                            }
+                        }
+
+                        @Override
+                        public void deleteCursorFailed(ManagedLedgerException exception, Object ctx) {
+                            if (log.isDebugEnabled()) {
+                                log.debug("[{}][{}] Error deleting cursor for subscription when close",
+                                    topic.getName(), cursor.getName(), exception);
+                            }
+                        }
+                    }, null);
                 } catch (Exception e) {
                     log.error("Failed to close cursor for topic {}. exception:",
                         pair.join().getLeft().getName(), e);
