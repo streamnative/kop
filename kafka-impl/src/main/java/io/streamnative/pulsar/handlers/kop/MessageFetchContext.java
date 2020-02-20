@@ -100,8 +100,8 @@ public final class MessageFetchContext {
                     long offset = entry.getValue().fetchOffset;
 
                     if (log.isDebugEnabled()) {
-                        log.debug("Request {}: Fetch topic {}, remove cursor for fetch offset: {}.",
-                            fetchRequest.getHeader(), topicName, offset);
+                        log.debug("Request {}: Fetch topic {}, remove cursor for fetch offset: {} - {}.",
+                            fetchRequest.getHeader(), topicName, offset, MessageIdUtils.getPosition(offset));
                     }
 
                     CompletableFuture<KafkaTopicConsumerManager> consumerManager =
@@ -330,9 +330,11 @@ public final class MessageFetchContext {
 
                                 if (log.isDebugEnabled()) {
                                     log.debug("Topic {} success read entry: ledgerId: {}, entryId: {}, size: {},"
-                                            + " ConsumerManager original offset: {}, entryOffset: {}, nextOffset: {}",
+                                            + " ConsumerManager original offset: {}, entryOffset: {} - {}, "
+                                            + "nextOffset: {} - {}",
                                         topicName.toString(), entry.getLedgerId(), entry.getEntryId(),
-                                        entry.getLength(), keptOffset, offset, nextOffset);
+                                        entry.getLength(), keptOffset, offset, currentPosition,
+                                        nextOffset, nextPosition);
                                 }
 
                                 requestHandler.getTopicManager()
@@ -341,8 +343,8 @@ public final class MessageFetchContext {
                             } else {
                                 // since no read entry, add the original offset back.
                                 if (log.isDebugEnabled()) {
-                                    log.debug("Read no entry, add offset back:  {}",
-                                        keptOffset);
+                                    log.debug("Read no entry, add offset back:  {} - {}",
+                                        keptOffset, MessageIdUtils.getPosition(keptOffset));
                                 }
 
                                 requestHandler.getTopicManager()

@@ -171,14 +171,15 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         return new KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
     }
 
-    CompletableFuture<AbstractResponse> checkInvalidPartition(String topic,
+    void checkInvalidPartition(CompletableFuture<AbstractResponse> future,
+                                                              String topic,
                                                               int invalidPartitionId) {
         TopicPartition invalidTopicPartition = new TopicPartition(topic, invalidPartitionId);
         PartitionData partitionOffsetCommitData = new PartitionData(15L, "");
         Map<TopicPartition, PartitionData> offsetData = Maps.newHashMap();
         offsetData.put(invalidTopicPartition, partitionOffsetCommitData);
         KafkaHeaderAndRequest request = buildRequest(new OffsetCommitRequest.Builder("groupId", offsetData));
-        return kafkaRequestHandler.handleOffsetCommitRequest(request);
+        kafkaRequestHandler.handleOffsetCommitRequest(request, future);
     }
 
     @Test(timeOut = 20000, enabled = false)
@@ -186,15 +187,17 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     public void testOffsetCommitWithInvalidPartition() throws Exception {
         String topicName = "kopOffsetCommitWithInvalidPartition";
 
+        CompletableFuture<AbstractResponse> invalidResponse1 = new CompletableFuture<>();
         // invalid partition id -1;
-        CompletableFuture<AbstractResponse> invalidResponse1 = checkInvalidPartition(topicName, -1);
+        checkInvalidPartition(invalidResponse1, topicName, -1);
         AbstractResponse response1 = invalidResponse1.get();
         TopicPartition topicPartition1 = new TopicPartition(topicName, -1);
         assertEquals(((OffsetCommitResponse) response1).responseData().get(topicPartition1),
             Errors.UNKNOWN_TOPIC_OR_PARTITION);
 
         // invalid partition id 1.
-        CompletableFuture<AbstractResponse> invalidResponse2 = checkInvalidPartition(topicName, 1);
+        CompletableFuture<AbstractResponse> invalidResponse2 = new CompletableFuture<>();
+        checkInvalidPartition(invalidResponse2, topicName, 1);
         TopicPartition topicPartition2 = new TopicPartition(topicName, 1);
         AbstractResponse response2 = invalidResponse2.get();
         assertEquals(((OffsetCommitResponse) response2).responseData().get(topicPartition2),
@@ -273,8 +276,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             .setTargetTimes(targetTimes);
 
         KafkaHeaderAndRequest request = buildRequest(builder);
-        CompletableFuture<AbstractResponse> responseFuture = kafkaRequestHandler
-            .handleListOffsetRequest(request);
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        kafkaRequestHandler.handleListOffsetRequest(request, responseFuture);
 
         AbstractResponse response = responseFuture.get();
         ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
@@ -341,8 +344,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             .setTargetTimes(targetTimes);
 
         KafkaHeaderAndRequest request = buildRequest(builder);
-        CompletableFuture<AbstractResponse> responseFuture = kafkaRequestHandler
-            .handleListOffsetRequest(request);
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        kafkaRequestHandler
+            .handleListOffsetRequest(request, responseFuture);
 
         AbstractResponse response = responseFuture.get();
         ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
@@ -539,7 +543,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             maxPartitionBytes,
             shuffledTopicPartitions1,
             Collections.EMPTY_MAP);
-        CompletableFuture<AbstractResponse> responseFuture1 = kafkaRequestHandler.handleFetchRequest(fetchRequest1);
+        CompletableFuture<AbstractResponse> responseFuture1 = new CompletableFuture<>();
+        kafkaRequestHandler.handleFetchRequest(fetchRequest1, responseFuture1);
         FetchResponse<MemoryRecords> fetchResponse1 =
             (FetchResponse<MemoryRecords>) responseFuture1.get();
 
@@ -557,7 +562,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             maxPartitionBytes,
             shuffledTopicPartitions2,
             Collections.EMPTY_MAP);
-        CompletableFuture<AbstractResponse> responseFuture2 = kafkaRequestHandler.handleFetchRequest(fetchRequest2);
+        CompletableFuture<AbstractResponse> responseFuture2 = new CompletableFuture<>();
+        kafkaRequestHandler.handleFetchRequest(fetchRequest2, responseFuture2);
         FetchResponse<MemoryRecords> fetchResponse2 =
             (FetchResponse<MemoryRecords>) responseFuture2.get();
 
@@ -578,7 +584,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             maxPartitionBytes,
             shuffledTopicPartitions3,
             offsetMaps);
-        CompletableFuture<AbstractResponse> responseFuture3 = kafkaRequestHandler.handleFetchRequest(fetchRequest3);
+        CompletableFuture<AbstractResponse> responseFuture3 = new CompletableFuture<>();
+        kafkaRequestHandler.handleFetchRequest(fetchRequest3, responseFuture3);
         FetchResponse<MemoryRecords> fetchResponse3 =
             (FetchResponse<MemoryRecords>) responseFuture3.get();
 
@@ -596,8 +603,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         List<TopicPartition> topicPartitions = createTopics(topicName, numberTopics, numberPartitions);
         List<String> kafkaTopics = getCreatedTopics(topicName, numberTopics);
         KafkaHeaderAndRequest metadataRequest = createTopicMetadataRequest(kafkaTopics);
-        CompletableFuture<AbstractResponse> responseFuture =
-            kafkaRequestHandler.handleTopicMetadataRequest(metadataRequest);
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        kafkaRequestHandler.handleTopicMetadataRequest(metadataRequest, responseFuture);
 
         MetadataResponse metadataResponse = (MetadataResponse) responseFuture.get();
 
@@ -639,8 +646,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             .setTargetTimes(targetTimes);
 
         KafkaHeaderAndRequest request = buildRequest(builder);
-        CompletableFuture<AbstractResponse> responseFuture = kafkaRequestHandler
-            .handleListOffsetRequest(request);
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        kafkaRequestHandler
+            .handleListOffsetRequest(request, responseFuture);
 
         AbstractResponse response = responseFuture.get();
         ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;

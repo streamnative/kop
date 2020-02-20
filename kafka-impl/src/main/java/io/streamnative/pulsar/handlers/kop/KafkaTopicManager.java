@@ -73,9 +73,12 @@ public class KafkaTopicManager {
         consumerTopicManagers = new ConcurrentHashMap<>();
         topics = new ConcurrentHashMap<>();
         references = new ConcurrentHashMap<>();
-        // check expired cursor every 2 min.
+        // check expired cursor every 1 min.
         this.cursorExpireTask = brokerService.executor().scheduleWithFixedDelay(() -> {
             long current = System.currentTimeMillis();
+            if (log.isDebugEnabled()) {
+                log.debug("Schedule a check of expired cursor: {}", internalServerCnx.getRemoteAddress());
+            }
             consumerTopicManagers.values().forEach(future -> {
                 if (future != null && future.isDone() && !future.isCompletedExceptionally()) {
                     future.join().deleteExpiredCursor(current, expirePeriodMillis);

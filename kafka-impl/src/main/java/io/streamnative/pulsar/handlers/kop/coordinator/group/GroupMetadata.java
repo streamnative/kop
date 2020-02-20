@@ -137,7 +137,7 @@ public class GroupMetadata {
      * Class used to represent group metadata for the ListGroups API.
      */
     @Data
-    static class GroupOverview {
+    public static class GroupOverview {
         private final String groupId;
         private final String protocolType;
     }

@@ -19,7 +19,7 @@ In this guide, you will learn how to use the KOP broker to serve requests from K
 
 ### Download KoP binary
 
-TODO: https://github.com/streamnative/kop/issues/68
+https://github.com/streamnative/kop/releases
 
 ### Run KOP broker
 
