@@ -103,7 +103,7 @@ public class KafkaTopicConsumerManager implements Closeable {
         }
 
         // handle offset not exist in consumers, need create cursor.
-        return consumers.computeIfAbsent(
+        cursor = consumers.computeIfAbsent(
             offset,
             off -> {
                 PositionImpl position = MessageIdUtils.getPosition(off);
@@ -131,6 +131,8 @@ public class KafkaTopicConsumerManager implements Closeable {
                 lastAccessTimes.put(off, System.currentTimeMillis());
                 return Pair.of(newCursor, off);
             });
+
+        return consumers.remove(offset);
     }
 
     // once entry read complete, add new offset back.
