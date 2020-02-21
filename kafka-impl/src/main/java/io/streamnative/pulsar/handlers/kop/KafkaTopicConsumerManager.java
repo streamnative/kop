@@ -175,6 +175,7 @@ public class KafkaTopicConsumerManager implements Closeable {
                 return Pair.of(newCursor, off);
             });
 
+        // notice:  above would add a <offset, null-Pair>
         cursor = consumers.remove(offset);
         lastAccessTimes.remove(offset);
 

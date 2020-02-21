@@ -111,7 +111,7 @@ public final class MessageFetchContext {
         CompletableFuture
             .allOf(topicsAndCursor.entrySet().stream().map(Map.Entry::getValue).toArray(CompletableFuture<?>[]::new))
             .whenComplete((ignore, ex) -> {
-                Map<TopicPartition, Pair<ManagedCursor, Long>> partitonCursor =
+                Map<TopicPartition, Pair<ManagedCursor, Long>> partitionCursor =
                     topicsAndCursor.entrySet().stream()
                         .map(pair -> {
                             KafkaTopicConsumerManager tcm;
@@ -167,7 +167,7 @@ public final class MessageFetchContext {
                         .filter(x -> x != null)
                         .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
-                readMessages(fetchRequest, partitonCursor, fetchResponse, responseData);
+                readMessages(fetchRequest, partitionCursor, fetchResponse, responseData);
             });
 
         return fetchResponse;
