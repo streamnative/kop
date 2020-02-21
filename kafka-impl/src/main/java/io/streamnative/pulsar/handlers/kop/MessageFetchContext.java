@@ -101,28 +101,10 @@ public final class MessageFetchContext {
                     CompletableFuture<KafkaTopicConsumerManager> consumerManager =
                         requestHandler.getTopicManager().getTopicConsumerManager(topicName.toString());
 
-                    // topic not owned by broker, return NOT_LEADER_FOR_PARTITION
-                    if (consumerManager == null) {
-                        responseData.put(entry.getKey(),
-                            new FetchResponse.PartitionData(
-                                Errors.NOT_LEADER_FOR_PARTITION,
-                                FetchResponse.INVALID_HIGHWATERMARK,
-                                FetchResponse.INVALID_LAST_STABLE_OFFSET,
-                                FetchResponse.INVALID_LOG_START_OFFSET,
-                                null,
-                                MemoryRecords.EMPTY));
-
-                        log.warn("Partition {} not owned by this broker, will not trigger read for this partition",
-                            entry.getKey());
-                        // result got. this will be filtered in following filter method.
-                        return null;
-                    }
-
                     return Pair.of(
                         entry.getKey(),
                         consumerManager);
                 })
-                .filter(x -> x != null)
                 .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
         // wait to get all the cursor, then readMessages
@@ -134,7 +116,11 @@ public final class MessageFetchContext {
                         .map(pair -> {
                             KafkaTopicConsumerManager tcm;
                             try {
+                                // all future completed now.
                                 tcm = pair.getValue().get();
+                                if (tcm == null) {
+                                    throw new NullPointerException("topic not owned, and return null TCM in fetch.");
+                                }
                             } catch (Exception e) {
                                 log.warn("Error for get KafkaTopicConsumerManager.", e);
 

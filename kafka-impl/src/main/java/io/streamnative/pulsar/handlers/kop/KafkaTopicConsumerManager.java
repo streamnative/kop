@@ -205,8 +205,8 @@ public class KafkaTopicConsumerManager implements Closeable {
         lastAccessTimes.put(offset, System.currentTimeMillis());
 
         if (log.isDebugEnabled()) {
-            log.debug("[{}] requestHandler.ctx.channel(), Add cursor back {} for offset: {} - {}",
-                pair.getLeft().getName(), offset, MessageIdUtils.getPosition(offset));
+            log.debug("[{}] Add cursor back {} for offset: {} - {}",
+                requestHandler.ctx.channel(), pair.getLeft().getName(), offset, MessageIdUtils.getPosition(offset));
         }
     }
 

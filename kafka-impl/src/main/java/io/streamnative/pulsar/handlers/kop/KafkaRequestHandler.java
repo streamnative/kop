@@ -668,7 +668,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     perTopic == null ? "null" : perTopic.getName(), timestamp, t);
 
                 partitionData.complete(new ListOffsetResponse.PartitionData(
-                    Errors.UNKNOWN_SERVER_ERROR,
+                    Errors.LEADER_NOT_AVAILABLE,
                     ListOffsetResponse.UNKNOWN_TIMESTAMP,
                     ListOffsetResponse.UNKNOWN_OFFSET));
                 return;
@@ -1200,6 +1200,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         if (pulsarAddress == null) {
             log.error("[{}] failed get pulsar address, returned null.", topic.toString());
+
+            // getTopicBroker returns null. topic should be removed from LookupCache.
+            topicManager.removeLookupCache(topic.toString());
+
             returnFuture.complete(Optional.empty());
             return returnFuture;
         }
@@ -1208,7 +1212,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             log.debug("Found broker for topic {} puslarAddress: {}",
                 topic, pulsarAddress);
         }
-
 
         // advertised data is write in  /loadbalance/brokers/advertisedAddress:webServicePort
         // here we get the broker url, need to find related webServiceUrl.
