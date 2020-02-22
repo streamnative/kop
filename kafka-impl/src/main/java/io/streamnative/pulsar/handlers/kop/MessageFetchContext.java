@@ -221,11 +221,17 @@ public final class MessageFetchContext {
                         // delete related cursor in TCM
                         TopicName pulsarTopicName = pulsarTopicName(kafkaTopic, requestHandler.getNamespace());
                         requestHandler.getTopicManager()
-                                .getTopicConsumerManager(pulsarTopicName.toString())
-                                .thenAccept(cm ->
+                            .getTopicConsumerManager(pulsarTopicName.toString())
+                            .thenAccept(cm -> {
+                                // Notice, channel may be close, then TCM would be null.
+                                if (cm != null) {
                                     cm.deleteOneCursorAsync(
                                         cursors.get(kafkaTopic).getLeft(),
-                                        "cursor.readEntry fail. deleteCursor"));
+                                        "cursor.readEntry fail. deleteCursor");
+                                } else {
+                                    log.warn("Cursor deleted while TCM close.");
+                                }
+                            });
 
                         cursors.remove(kafkaTopic);
 
@@ -277,8 +283,14 @@ public final class MessageFetchContext {
                         Pair<ManagedCursor, Long> pair = cursors.get(kafkaPartition);
                         requestHandler.getTopicManager()
                             .getTopicConsumerManager(pulsarTopicName.toString())
-                            .thenAccept(cm ->
-                                cm.add(pair.getRight(), pair));
+                            .thenAccept(cm -> {
+                                // Notice, channel may be close, then TCM would be null.
+                                if (cm != null) {
+                                    cm.add(pair.getRight(), pair);
+                                } else {
+                                    log.warn("Cursor deleted while TCM close, failed to add cursor back to TCM.");
+                                }
+                            });
 
                         if (entries.isEmpty()) {
                             partitionData = new FetchResponse.PartitionData(

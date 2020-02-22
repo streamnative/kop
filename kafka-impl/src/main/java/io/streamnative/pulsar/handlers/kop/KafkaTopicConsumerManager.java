@@ -21,7 +21,6 @@ import java.io.Closeable;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -52,7 +51,9 @@ public class KafkaTopicConsumerManager implements Closeable {
     // keep fetch offset and related cursor. keep cursor and its last offset in Pair. <offset, pair>
     @Getter
     private final ConcurrentLongHashMap<Pair<ManagedCursor, Long>> consumers;
-    private final ConcurrentMap<String, ManagedCursor> cursors;
+    // used to track all created cursor, since above consumers may be remove and in fly,
+    // use this map will not leak cursor when close.
+    private final ConcurrentMap<String, ManagedCursor> createdCursors;
 
     // track last access time(millis) for offsets <offset, time>
     @Getter
@@ -61,7 +62,7 @@ public class KafkaTopicConsumerManager implements Closeable {
     KafkaTopicConsumerManager(KafkaRequestHandler requestHandler, PersistentTopic topic) {
         this.topic = topic;
         this.consumers = new ConcurrentLongHashMap<>();
-        this.cursors = new ConcurrentHashMap<>();
+        this.createdCursors = new ConcurrentHashMap<>();
         this.lastAccessTimes = new ConcurrentLongHashMap<>();
         this.requestHandler = requestHandler;
         this.rwLock = new ReentrantReadWriteLock();
@@ -121,7 +122,7 @@ public class KafkaTopicConsumerManager implements Closeable {
                         requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason, exception);
                 }
             }, null);
-            cursors.remove(cursor.getName());
+            createdCursors.remove(cursor.getName());
         }
     }
 
@@ -185,9 +186,9 @@ public class KafkaTopicConsumerManager implements Closeable {
                     ManagedCursor newCursor;
                     try {
                         newCursor = ledger.newNonDurableCursor(previous, cursorName);
-                        cursors.put(newCursor.getName(), newCursor);
+                        createdCursors.put(newCursor.getName(), newCursor);
                     } catch (ManagedLedgerException e) {
-                        log.error("[{}] Error create cursor for topic {} at offset {} - {}. will cause fetch data error.",
+                        log.error("[{}] Error new cursor for topic {} at offset {} - {}. will cause fetch data error.",
                             requestHandler.ctx.channel(), topic.getName(), off, previous, e);
                         return null;
                     }
@@ -255,29 +256,24 @@ public class KafkaTopicConsumerManager implements Closeable {
             consumers.clear();
             lastAccessTimes.clear();
             cursorsToClose = new ConcurrentHashMap<>();
-            cursors.clear();
+            createdCursors.forEach((k, v) -> cursorsToClose.put(k, v));
+            createdCursors.clear();
         } finally {
             rwLock.writeLock().unlock();
         }
 
         consumersToClose.values()
             .forEach(pair -> {
-                try {
                     ManagedCursor cursor = pair.getLeft();
                     deleteOneCursorAsync(cursor, "TopicConsumerManager close");
                     if (null != cursor) {
                         cursorsToClose.remove(cursor.getName());
                     }
-                } catch (Exception e) {
-                    log.error("[{}] Failed to close cursor for topic {}. exception:",
-                        requestHandler.ctx.channel(), topic.getName(), e);
-                }
             });
 
-        // delete dangling cursors
-        cursorsToClose.values().forEach(cursor -> {
-            deleteOneCursorAsync(cursor, "TopicConsumerManager close but cursor is still outstanding");
-        });
+        // delete dangling createdCursors
+        cursorsToClose.values().forEach(cursor ->
+            deleteOneCursorAsync(cursor, "TopicConsumerManager close but cursor is still outstanding"));
         cursorsToClose.clear();
     }
 }
