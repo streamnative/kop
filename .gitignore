@@ -9,6 +9,8 @@ pulsar-kopBroker/tmp.*
 pulsar-kopBroker/src/test/resources/log4j2.yaml
 pulsar-functions/worker/test-tenant/
 pulsar-kopBroker/src/test/resources/pulsar-functions-api-examples.jar
+pulsar-kop-*-bin.tar.gz
+pulsar-protocol-handler-kafka-readme.md
 *.log
 *.nar
 
