@@ -5,7 +5,7 @@ on:
 
 jobs:
   upload:
-    name: Upload go build
+    name: Upload Release files
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1
@@ -18,9 +18,12 @@ jobs:
         run: |
           version=`./scripts/dev/get-project-version.py`
           mvn clean install -DskipTests
-          cp kafka-impl/target/pulsar-protocol-handler-kafka-${version}.nar ../
-          cp kafka-impl/target/pulsar-kop-${version}-bin.tar.gz ../
-          cp README.md ../pulsar-protocol-handler-kafka-readme.md
+          rm -rf pulsar-*
+          cp kafka-impl/target/pulsar-protocol-handler-kafka-${version}.nar ./
+          cp kafka-impl/target/pulsar-kop-${version}-bin.tar.gz ./
+          cp README.md ./pulsar-protocol-handler-kafka-readme.md
+          echo "ls pulsar-*"
+          ls pulsar-*
 
       - name: publish
         uses: skx/github-action-publish-binaries@release-0.11
