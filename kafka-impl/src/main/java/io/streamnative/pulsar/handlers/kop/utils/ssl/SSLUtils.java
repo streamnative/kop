@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.utils.ssl;
 
 
-import com.beust.jcommander.internal.Sets;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMap.Builder;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
