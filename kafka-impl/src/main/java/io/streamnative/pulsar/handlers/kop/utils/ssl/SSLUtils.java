@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.utils.ssl;
 
 
+import com.beust.jcommander.internal.Sets;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMap.Builder;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
@@ -64,6 +65,7 @@ public class SSLUtils {
                     obj = kafkaServiceConfiguration.getKopSslProvider();
                     break;
                 case SslConfigs.SSL_CIPHER_SUITES_CONFIG:
+                    // this obj is Set<String>
                     obj = kafkaServiceConfiguration.getKopSslCipherSuites();
                     break;
                 case SslConfigs.SSL_ENABLED_PROTOCOLS_CONFIG:
