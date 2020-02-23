@@ -64,6 +64,7 @@ public class SSLUtils {
                     obj = kafkaServiceConfiguration.getKopSslProvider();
                     break;
                 case SslConfigs.SSL_CIPHER_SUITES_CONFIG:
+                    // this obj is Set<String>
                     obj = kafkaServiceConfiguration.getKopSslCipherSuites();
                     break;
                 case SslConfigs.SSL_ENABLED_PROTOCOLS_CONFIG:

@@ -161,7 +161,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         category = CATEGORY_KOP_SSL,
         doc = "Kafka ssl configuration map with: SSL_CIPHER_SUITES_CONFIG = \"ssl.cipher.suites\""
     )
-    private String kopSslCipherSuites;
+    private Set<String> kopSslCipherSuites;
 
     @FieldContext(
         category = CATEGORY_KOP_SSL,

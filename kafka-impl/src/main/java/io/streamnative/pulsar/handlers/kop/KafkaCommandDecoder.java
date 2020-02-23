@@ -267,7 +267,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 ResponseAndRequest pair = responseQueue.remove();
 
                 if (log.isDebugEnabled()) {
-                    log.debug("Write kafka cmd responseFuture back to client. request: {}",
+                    log.debug("Channel Closing! Write kafka cmd responseFuture back to client. request: {}",
                         pair.getRequest().getHeader());
                 }
                 AbstractRequest request = pair.getRequest().getRequest();

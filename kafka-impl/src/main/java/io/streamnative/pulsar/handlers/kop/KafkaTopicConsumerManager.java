@@ -19,7 +19,9 @@ import static io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils.offsetAft
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.Closeable;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteCursorCallback;
@@ -39,158 +41,239 @@ import org.apache.pulsar.common.util.collections.ConcurrentLongHashMap;
 @Slf4j
 public class KafkaTopicConsumerManager implements Closeable {
     private final PersistentTopic topic;
+    private final KafkaRequestHandler requestHandler;
+
+    // the lock for closed status change.
+    // once closed, should not add new cursor back, since consumers are cleared.
+    private final ReentrantReadWriteLock rwLock;
+    private boolean closed;
 
     // keep fetch offset and related cursor. keep cursor and its last offset in Pair. <offset, pair>
     @Getter
-    private final ConcurrentLongHashMap<CompletableFuture<Pair<ManagedCursor, Long>>> consumers;
+    private final ConcurrentLongHashMap<Pair<ManagedCursor, Long>> consumers;
+    // used to track all created cursor, since above consumers may be remove and in fly,
+    // use this map will not leak cursor when close.
+    private final ConcurrentMap<String, ManagedCursor> createdCursors;
 
     // track last access time(millis) for offsets <offset, time>
     @Getter
     private final ConcurrentLongHashMap<Long> lastAccessTimes;
 
-    KafkaTopicConsumerManager(PersistentTopic topic) {
+    KafkaTopicConsumerManager(KafkaRequestHandler requestHandler, PersistentTopic topic) {
         this.topic = topic;
         this.consumers = new ConcurrentLongHashMap<>();
+        this.createdCursors = new ConcurrentHashMap<>();
         this.lastAccessTimes = new ConcurrentLongHashMap<>();
+        this.requestHandler = requestHandler;
+        this.rwLock = new ReentrantReadWriteLock();
+        this.closed = false;
     }
 
     // delete expired cursors, so backlog can be cleared.
     void deleteExpiredCursor(long current, long expirePeriodMillis) {
         lastAccessTimes.forEach((offset, record) -> {
-                if (current - record - expirePeriodMillis > 0) {
-                    deleteCursor(offset);
-                }
+            if (current - record - expirePeriodMillis > 0) {
+                deleteOneExpiredCursor(offset);
+            }
         });
     }
 
-    void deleteCursor(long offset) {
-        CompletableFuture<Pair<ManagedCursor, Long>> cursor = consumers.remove(offset);
-        lastAccessTimes.remove(offset);
-        if (cursor != null) {
+    void deleteOneExpiredCursor(long offset) {
+        Pair<ManagedCursor, Long> pair;
+
+        // need not do anything, since this tcm already in closing state. and close() will delete every thing.
+        rwLock.readLock().lock();
+        try {
+            if (closed) {
+                return;
+            }
+            pair = consumers.remove(offset);
+            lastAccessTimes.remove(offset);
+        } finally {
+            rwLock.readLock().unlock();
+        }
+
+        if (pair != null) {
             if (log.isDebugEnabled()) {
-                log.debug("Cursor timed out for offset: {} - {}, cursors cache size: {}",
-                    offset, MessageIdUtils.getPosition(offset), consumers.size());
+                log.debug("[{}] Cursor timed out for offset: {} - {}, cursors cache size: {}",
+                    requestHandler.ctx.channel(), offset, MessageIdUtils.getPosition(offset), consumers.size());
             }
 
-            cursor.whenComplete((pair, throwable) -> {
-                if (throwable != null) {
-                    log.warn("Error while get cursor for topic {}.", topic.getName(), throwable);
-                    return;
-                }
-                ManagedCursor managedCursor = pair.getKey();
-                topic.getManagedLedger().asyncDeleteCursor(managedCursor.getName(), new DeleteCursorCallback() {
-                    @Override
-                    public void deleteCursorComplete(Object ctx) {
-                        if (log.isDebugEnabled()) {
-                            log.debug("[{}][{}] Cursor deleted successfully",
-                                topic.getName(), managedCursor.getName());
-                        }
-                    }
-
-                    @Override
-                    public void deleteCursorFailed(ManagedLedgerException exception, Object ctx) {
-                        if (log.isDebugEnabled()) {
-                            log.debug("[{}][{}] Error deleting cursor for subscription",
-                                topic.getName(), managedCursor.getName(), exception);
-                        }
-                    }
-                }, null);
-            });
+            ManagedCursor managedCursor = pair.getKey();
+            deleteOneCursorAsync(managedCursor, "cursor expired");
         }
     }
 
-    public CompletableFuture<Pair<ManagedCursor, Long>> remove(long offset) {
-        // This is for read a new entry, first check if offset is from a batched message request.
-        offset = offsetAfterBatchIndex(offset);
+    // delete passed in cursor.
+    void deleteOneCursorAsync(ManagedCursor cursor, String reason) {
+        if (cursor != null) {
+            topic.getManagedLedger().asyncDeleteCursor(cursor.getName(), new DeleteCursorCallback() {
+                @Override
+                public void deleteCursorComplete(Object ctx) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("[{}] Cursor {} for topic {} deleted successfully for reason: {}.",
+                            requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason);
+                    }
+                }
 
-        CompletableFuture<Pair<ManagedCursor, Long>> cursor = consumers.remove(offset);
-        lastAccessTimes.remove(offset);
+                @Override
+                public void deleteCursorFailed(ManagedLedgerException exception, Object ctx) {
+                    log.warn("[{}] Error deleting cursor for topic {} for reason: {}.",
+                        requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason, exception);
+                }
+            }, null);
+            createdCursors.remove(cursor.getName());
+        }
+    }
+
+    // get one cursor offset pair.
+    // remove from cache, so another same offset read could happen.
+    // each success remove should have a following add.
+    public Pair<ManagedCursor, Long> remove(long offset) {
+        Pair<ManagedCursor, Long> cursor;
+
+        // should not return cursor for Fetch to read, since this tcm already in closing state.
+        rwLock.readLock().lock();
+        try {
+            if (closed) {
+                return null;
+            }
+            cursor = consumers.remove(offset);
+            lastAccessTimes.remove(offset);
+        } finally {
+            rwLock.readLock().unlock();
+        }
+
         if (cursor != null) {
             if (log.isDebugEnabled()) {
-                log.debug("Get cursor for offset: {} - {} in cache. cache size: {}",
-                    offset, MessageIdUtils.getPosition(offset), consumers.size());
+                log.debug("[{}] Get cursor for offset: {} - {} in cache. cache size: {}",
+                    requestHandler.ctx.channel(), offset, MessageIdUtils.getPosition(offset), consumers.size());
             }
             return cursor;
         }
 
-        // handle null remove.
-        cursor = new CompletableFuture<>();
-        CompletableFuture<Pair<ManagedCursor, Long>> oldCursor = consumers.putIfAbsent(offset, cursor);
-        lastAccessTimes.putIfAbsent(offset, System.currentTimeMillis());
-        if (oldCursor != null) {
-            // added by other thread while creating.
-            return remove(offset);
-        }
+        return createCursorIfNotExists(offset);
+    }
 
-        String cursorName = "kop-consumer-cursor-" + topic.getName() + "-" + offset + "-"
-            + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 10);
+    private Pair<ManagedCursor, Long> createCursorIfNotExists(long offset) {
+        // This is for read a new entry, first check if offset is from a batched message request.
+        offset = offsetAfterBatchIndex(offset);
 
-        PositionImpl position = MessageIdUtils.getPosition(offset);
+        Pair<ManagedCursor, Long> cursor;
 
+        rwLock.readLock().lock();
         try {
-            // get previous position, because NonDurableCursor is read from next position.
-            ManagedLedgerImpl ledger = (ManagedLedgerImpl) topic.getManagedLedger();
-            PositionImpl previous = ledger.getPreviousPosition(position);
-            if (log.isDebugEnabled()) {
-                log.debug("Create cursor {} for offset: {}. position: {}, previousPosition: {}",
-                    cursorName, offset, position, previous);
+            if (closed) {
+                return null;
             }
+            // handle offset not exist in consumers, need create cursor.
+            consumers.computeIfAbsent(
+                offset,
+                off -> {
+                    PositionImpl position = MessageIdUtils.getPosition(off);
 
-            cursor.complete(Pair
-                .of(ledger.newNonDurableCursor(previous, cursorName),
-                    offset));
-        } catch (Exception e) {
-            log.error("Failed create nonDurable cursor for topic {} position: {}.", topic, position, e);
-            cursor.completeExceptionally(e);
+                    String cursorName = "kop-consumer-cursor-" + topic.getName()
+                        + "-" + position.getLedgerId() + "-" + position.getEntryId()
+                        + "-" + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 10);
+
+                    // get previous position, because NonDurableCursor is read from next position.
+                    ManagedLedgerImpl ledger = (ManagedLedgerImpl) topic.getManagedLedger();
+                    PositionImpl previous = ledger.getPreviousPosition(position);
+                    if (log.isDebugEnabled()) {
+                        log.debug("[{}] Create cursor {} for offset: {}. position: {}, previousPosition: {}",
+                            requestHandler.ctx.channel(), cursorName, off, position, previous);
+                    }
+                    ManagedCursor newCursor;
+                    try {
+                        newCursor = ledger.newNonDurableCursor(previous, cursorName);
+                        createdCursors.put(newCursor.getName(), newCursor);
+                    } catch (ManagedLedgerException e) {
+                        log.error("[{}] Error new cursor for topic {} at offset {} - {}. will cause fetch data error.",
+                            requestHandler.ctx.channel(), topic.getName(), off, previous, e);
+                        return null;
+                    }
+
+                    lastAccessTimes.put(off, System.currentTimeMillis());
+                    return Pair.of(newCursor, off);
+                });
+
+            // notice:  above would add a <offset, null-Pair>
+            cursor = consumers.remove(offset);
+            lastAccessTimes.remove(offset);
+        } finally {
+            rwLock.readLock().unlock();
         }
 
-        return remove(offset);
+        return cursor;
     }
 
     // once entry read complete, add new offset back.
-    public void add(long offset, Pair<ManagedCursor, Long> cursor) {
-        checkArgument(offset == cursor.getRight(),
-            "offset not equal. key: " + offset + " value: " + cursor.getRight());
+    public void add(long offset, Pair<ManagedCursor, Long> pair) {
+        checkArgument(offset == pair.getRight(),
+            "offset not equal. key: " + offset + " value: " + pair.getRight());
 
-        CompletableFuture<Pair<ManagedCursor, Long>> cursorOffsetPair = new CompletableFuture<>();
+        rwLock.readLock().lock();
+        // should delete the cursor since this tcm already in closing state.
+        try {
+            if (closed) {
+                ManagedCursor managedCursor = pair.getLeft();
+                deleteOneCursorAsync(managedCursor, "A race - add cursor back but tcm already closed");
+                return;
+            }
+        } finally {
+            rwLock.readLock().unlock();
+        }
 
-        cursorOffsetPair.complete(cursor);
-        consumers.putIfAbsent(offset, cursorOffsetPair);
-        lastAccessTimes.putIfAbsent(offset, System.currentTimeMillis());
+        Pair<ManagedCursor, Long> oldPair = consumers.putIfAbsent(offset, pair);
+        if (oldPair != null) {
+            deleteOneCursorAsync(pair.getLeft(), "reason: A race - same cursor already cached");
+        }
+        lastAccessTimes.put(offset, System.currentTimeMillis());
 
         if (log.isDebugEnabled()) {
-            log.debug("Add cursor back {} for offset: {} - {}",
-                cursor.getLeft().getName(), offset, MessageIdUtils.getPosition(offset));
+            log.debug("[{}] Add cursor back {} for offset: {} - {}",
+                requestHandler.ctx.channel(), pair.getLeft().getName(), offset, MessageIdUtils.getPosition(offset));
         }
     }
 
+    // called when channel closed.
     @Override
     public void close() {
-        consumers.values()
-            .forEach(pair -> {
-                try {
-                    ManagedCursor cursor = pair.get().getLeft();
-                    topic.getManagedLedger().asyncDeleteCursor(cursor.getName(), new DeleteCursorCallback() {
-                        @Override
-                        public void deleteCursorComplete(Object ctx) {
-                            if (log.isDebugEnabled()) {
-                                log.debug("[{}][{}] Cursor deleted successfully when close",
-                                    topic.getName(), cursor.getName());
-                            }
-                        }
+        ConcurrentLongHashMap<Pair<ManagedCursor, Long>> consumersToClose;
+        ConcurrentMap<String, ManagedCursor> cursorsToClose;
+        rwLock.writeLock().lock();
+        try {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] Close TCM for topic {}.",
+                    requestHandler.ctx.channel(), topic.getName());
+            }
+            consumersToClose = new ConcurrentLongHashMap<>();
+            consumers.forEach((k, v) -> consumersToClose.put(k, v));
+            consumers.clear();
+            lastAccessTimes.clear();
+            cursorsToClose = new ConcurrentHashMap<>();
+            createdCursors.forEach((k, v) -> cursorsToClose.put(k, v));
+            createdCursors.clear();
+        } finally {
+            rwLock.writeLock().unlock();
+        }
 
-                        @Override
-                        public void deleteCursorFailed(ManagedLedgerException exception, Object ctx) {
-                            if (log.isDebugEnabled()) {
-                                log.debug("[{}][{}] Error deleting cursor for subscription when close",
-                                    topic.getName(), cursor.getName(), exception);
-                            }
-                        }
-                    }, null);
-                } catch (Exception e) {
-                    log.error("Failed to close cursor for topic {}. exception:",
-                        pair.join().getLeft().getName(), e);
-                }
+        consumersToClose.values()
+            .forEach(pair -> {
+                    ManagedCursor cursor = pair.getLeft();
+                    deleteOneCursorAsync(cursor, "TopicConsumerManager close");
+                    if (null != cursor) {
+                        cursorsToClose.remove(cursor.getName());
+                    }
             });
+
+        // delete dangling createdCursors
+        cursorsToClose.values().forEach(cursor ->
+            deleteOneCursorAsync(cursor, "TopicConsumerManager close but cursor is still outstanding"));
+        cursorsToClose.clear();
     }
 }
