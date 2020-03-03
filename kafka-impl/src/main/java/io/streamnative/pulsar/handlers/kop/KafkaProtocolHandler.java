@@ -46,6 +46,7 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.admin.PulsarAdminException.ConflictException;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
@@ -360,6 +361,11 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     new RetentionPolicies(-1, -1));
             }
         } catch (PulsarAdminException e) {
+            if (e instanceof ConflictException) {
+                log.info("Resources concurrent creating and cause e: ", e);
+                return;
+            }
+
             log.error("Failed to get retention policy for kafka metadata namespace {}",
                 kafkaMetadataNamespace, e);
             throw e;
