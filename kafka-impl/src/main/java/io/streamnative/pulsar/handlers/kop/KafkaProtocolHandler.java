@@ -380,17 +380,24 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             service.pulsar().getAdminClient().topics().getPartitionedTopicMetadata(offsetsTopic);
         if (offsetsTopicMetadata.partitions <= 0) {
             log.info("Kafka group metadata topic {} doesn't exist. Creating it ...",
-                offsetsTopic);
-            service.pulsar().getAdminClient().topics().createPartitionedTopic(
-                offsetsTopic,
-                kafkaConfig.getOffsetsTopicNumPartitions()
-            );
-            for (int i = 0; i < kafkaConfig.getOffsetsTopicNumPartitions(); i++) {
-                service.pulsar().getAdminClient().topics()
-                    .createNonPartitionedTopic(offsetsTopic + PARTITIONED_TOPIC_SUFFIX + i);
+                    offsetsTopic);
+            try {
+                service.pulsar().getAdminClient().topics().createPartitionedTopic(
+                        offsetsTopic,
+                        kafkaConfig.getOffsetsTopicNumPartitions()
+                );
+
+                for (int i = 0; i < kafkaConfig.getOffsetsTopicNumPartitions(); i++) {
+                    service.pulsar().getAdminClient().topics()
+                            .createNonPartitionedTopic(offsetsTopic + PARTITIONED_TOPIC_SUFFIX + i);
+                }
+            } catch (ConflictException e) {
+                log.info("Topic {} concurrent creating and cause e: ", offsetsTopic, e);
+                return offsetsTopic;
             }
+
             log.info("Successfully created group metadata topic {} with {} partitions.",
-                offsetsTopic, kafkaConfig.getOffsetsTopicNumPartitions());
+                    offsetsTopic, kafkaConfig.getOffsetsTopicNumPartitions());
         }
 
         return offsetsTopic;
