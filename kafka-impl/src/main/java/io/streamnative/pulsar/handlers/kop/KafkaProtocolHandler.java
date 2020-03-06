@@ -46,6 +46,7 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.admin.PulsarAdminException.ConflictException;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
@@ -360,6 +361,11 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     new RetentionPolicies(-1, -1));
             }
         } catch (PulsarAdminException e) {
+            if (e instanceof ConflictException) {
+                log.info("Resources concurrent creating and cause e: ", e);
+                return;
+            }
+
             log.error("Failed to get retention policy for kafka metadata namespace {}",
                 kafkaMetadataNamespace, e);
             throw e;
@@ -374,17 +380,24 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             service.pulsar().getAdminClient().topics().getPartitionedTopicMetadata(offsetsTopic);
         if (offsetsTopicMetadata.partitions <= 0) {
             log.info("Kafka group metadata topic {} doesn't exist. Creating it ...",
-                offsetsTopic);
-            service.pulsar().getAdminClient().topics().createPartitionedTopic(
-                offsetsTopic,
-                kafkaConfig.getOffsetsTopicNumPartitions()
-            );
-            for (int i = 0; i < kafkaConfig.getOffsetsTopicNumPartitions(); i++) {
-                service.pulsar().getAdminClient().topics()
-                    .createNonPartitionedTopic(offsetsTopic + PARTITIONED_TOPIC_SUFFIX + i);
+                    offsetsTopic);
+            try {
+                service.pulsar().getAdminClient().topics().createPartitionedTopic(
+                        offsetsTopic,
+                        kafkaConfig.getOffsetsTopicNumPartitions()
+                );
+
+                for (int i = 0; i < kafkaConfig.getOffsetsTopicNumPartitions(); i++) {
+                    service.pulsar().getAdminClient().topics()
+                            .createNonPartitionedTopic(offsetsTopic + PARTITIONED_TOPIC_SUFFIX + i);
+                }
+            } catch (ConflictException e) {
+                log.info("Topic {} concurrent creating and cause e: ", offsetsTopic, e);
+                return offsetsTopic;
             }
+
             log.info("Successfully created group metadata topic {} with {} partitions.",
-                offsetsTopic, kafkaConfig.getOffsetsTopicNumPartitions());
+                    offsetsTopic, kafkaConfig.getOffsetsTopicNumPartitions());
         }
 
         return offsetsTopic;
