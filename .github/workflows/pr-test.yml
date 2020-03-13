@@ -1,4 +1,4 @@
-name: kop unit test
+name: kop mvn build check and ut
 
 on:
   pull_request:
@@ -20,8 +20,17 @@ jobs:
       with:
         java-version: 1.8
 
+    - name: License check
+      run: mvn license:check
+
     - name: Build with Maven skipTests
       run: mvn clean install -DskipTests
+
+    - name: Style check
+      run: mvn checkstyle:check
+
+    - name: Spotbugs check
+      run: mvn spotbugs:check
 
     - name: test after build
       run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegrationTest,!DistributedClusterTest'

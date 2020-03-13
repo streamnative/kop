@@ -1,186 +1,273 @@
 # KoP
 
-KoP stands for Kafka on Pulsar. KoP broker supports Kafka protocols, and is backed by Pulsar.
+KoP (Kafka on Pulsar) supports Kafka protocol and it is backed by Pulsar, which means you can use Pulsar as the infrastructure without modifying various applications and services based on Kafka API.
 
-KoP is implemented as a Pulsar [ProtocolHandler](https://github.com/apache/pulsar/blob/master/pulsar-broker/src/main/java/org/apache/pulsar/broker/protocol/ProtocolHandler.java) with protocol name "kafka"
-ProtocolHandler is built as a `nar` file, and will be loaded when Pulsar Broker starting.
+KoP, implemented as a Pulsar [protocol handler](https://github.com/apache/pulsar/blob/master/pulsar-broker/src/main/java/org/apache/pulsar/broker/protocol/ProtocolHandler.java) plugin with protocol name "kafka", is loaded when Pulsar broker starts.
+
+![](docs/kop-architecture.png)
 
 > NOTE: KoP currently supports [Kafka Client 2.0.0](https://kafka.apache.org/20/documentation.html). And KoP is build based on [Pulsar 2.5.0](http://pulsar.apache.org/en/download/)
-
-## Limitations for KoP
-
-KoP leverage Pulsar features, but some of the manners between Pulsar and Kafka are different. In this implementation, there are some limitations.
-
-- KoP does not support Pulsar non-partitioned topic. Because all topics in Kafka are partitioned type, not support non-partitioned topic is easy to align this.
-- All topics in KoP are placed under a user specified tenant and namespace. 
 
 ## Get started
 
 In this guide, you will learn how to use the KoP broker to serve requests from Kafka client.
 
-### Download Pulsar 
+## Supported version
 
-Download [Pulsar 2.5.0](http://pulsar.apache.org/en/download/) binary package `apache-pulsar-2.5.0-bin.tar.gz`. and unzip it.
+Currently, KoP has the following version.
 
-### Download KoP Plugin
+KoP version | Release notes | Download link
+|---|---|---
+0.1.0 | See [here](#release-notes) | See [here](https://github.com/streamnative/kop/releases/tag/v0.1.0)
 
-https://github.com/streamnative/kop/releases
+## Prerequisite
 
-### Config Pulsar broker to run KoP protocol handler as Plugin
+Check the following requirements before using KoP. 
 
-As mentioned above, KoP module is loaded along with Pulsar broker. You need to add configs in Pulsar's config file, such as `broker.conf` or `standalone.conf`.
+Currently, KoP supports **[Kafka Client 2.0.0](https://kafka.apache.org/20/documentation.html)** and it is build based on **[Pulsar 2.5.0](http://pulsar.apache.org/en/download/)**.
 
-1. Protocol handler's config
+KoP version | Kafka client version | Pulsar version
+|---|---|---
+[0.1.0]((#release-notes)) | [Kafka client 2.0.0](https://kafka.apache.org/20/documentation.html) | [Pulsar 2.5.0](http://pulsar.apache.org/en/download/)
 
-You need to add `messagingProtocols`(default value is null) and  `protocolHandlerDirectory` ( default value is "./protocols"), in Pulsar's config file, such as `broker.conf` or `standalone.conf`
-For KoP, value for `messagingProtocols` is `kafka`; value for `protocolHandlerDirectory` is the place of KoP nar file.
 
-e.g.
-```access transformers
-messagingProtocols=kafka
-protocolHandlerDirectory=./protocols
+## Download 
+
+1. Download [Pulsar 2.5.0](http://pulsar.apache.org/en/download/) binary package `apache-pulsar-2.5.0-bin.tar.gz`. and unzip it.
+
+2. Download KoP Plugin at [here](https://github.com/streamnative/kop/releases).
+
+## Build KoP nar from source code
+
+1. clone this project from GitHub to your local.
+
+```bash
+git clone https://github.com/streamnative/kop.git
+cd kop
 ```
 
-2. Set Kafka service listeners
-
-Set Kafka service `listeners`. Note that the hostname value in listeners should be the same as Pulsar broker's `advertisedAddress`.
-
-e.g.
-```
-listeners=PLAINTEXT://127.0.0.1:9092
-advertisedAddress=127.0.0.1
+2. build the project.
+```bash
+mvn clean install -DskipTests
 ```
 
-### Run Pulsar broker.
+3. the nar file can be found at this location.
+```bash
+./kafka-impl/target/pulsar-protocol-handler-kafka-${version}.nar
+```
 
-With above 2 configs, you can start your Pulsar broker. You can follow Pulsar's [Get started page](http://pulsar.apache.org/docs/en/standalone/) for more details
+## Configure
 
-```access transformers
+As mentioned previously, KoP module is loaded along with the Pulsar broker. You need to configure the Pulsar broker to run the KoP protocol handler as a plugin, that is, add configurations in Pulsar's configuration file, such as `broker.conf` or `standalone.conf`.
+
+1. Set the configuration of the KoP protocol handler.
+
+    Add the following properties and set their values in Pulsar configuration file, such as `conf/broker.conf` or `conf/standalone.conf`.
+
+
+    Property | Set it to the following value | Default value
+    |---|---|---
+    `messagingProtocols` | kafka | null
+    `protocolHandlerDirectory`| Location of KoP NAR file | ./protocols
+
+    **Example**
+
+    ```
+    messagingProtocols=kafka
+    protocolHandlerDirectory=./protocols
+    ```
+
+2. Set Kafka service listeners.
+
+    > #### Note
+    > The hostname in listeners should be the same as Pulsar broker's `advertisedAddress`.
+
+    **Example**
+
+    ```
+    listeners=PLAINTEXT://127.0.0.1:9092
+    advertisedAddress=127.0.0.1
+    ```
+
+## Run 
+
+The instructions below assume you use KoP 0.1.0.
+
+### Run Pulsar broker in standalone mode
+
+Run the following commands to start Pulsar locally. 
+
+```
 cd apache-pulsar-2.5.0
 bin/pulsar standalone
 ```
 
-### Run Kafka Client to verify.
+> #### Tip
+> For more information about how to set up a standalone Pulsar locally, see [here](https://pulsar.apache.org/docs/en/next/standalone/).
 
-1. Download the [Kafka 2.0.0](https://www.apache.org/dyn/closer.cgi?path=/kafka/2.0.0/kafka_2.11-2.0.0.tgz) release and un-tar it.
+### Run Kafka client to verify
 
-```access transformers
-tar -xzf kafka_2.11-2.0.0.tgz
-cd kafka_2.11-2.0.0
+1. Download the [Kafka 2.0.0](https://www.apache.org/dyn/closer.cgi?path=/kafka/2.0.0/kafka_2.11-2.0.0.tgz) release and untar it.
+
+    ```
+    tar -xzf kafka_2.11-2.0.0.tgz
+    cd kafka_2.11-2.0.0
+    ```
+
+2. Use a Kafka producer and a Kafka consumer to verify.
+
+    In Kafka’s binary, there is a command-line producer and consumer.
+
+    Run the command-line producer and send a few messages to the server.
+
+    ```
+    > bin/kafka-console-producer.sh --broker-list 127.0.0.1:9092 --topic test
+    This is a message
+    This is another message
+    ```
+
+    Kafka has a command-line consumer dumping out messages to standard output.
+
+    ```
+    > bin/kafka-console-consumer.sh --bootstrap-server 127.0.0.1:9092 --topic test --from-beginning
+    This is a message
+    This is another message
+    ```
+
+# Configure
+
+You can configure the following properties for KoP.
+
+## Log level 
+
+In Pulsar's [log4j2.yaml config file](https://github.com/apache/pulsar/blob/master/conf/log4j2.yaml), 
+you can set KoP's log level.
+
+**Example**
+
 ```
-
-2. Use console producer/consumer to verify.
-
-Run the producer and then type a few messages into the console to send to the server.
-
-```access transformers
-> bin/kafka-console-producer.sh --broker-list 127.0.0.1:9092 --topic test
-This is a message
-This is another message
-```
-
-Kafka also has a command line consumer that will dump out messages to standard output.
-
-```access transformers
-> bin/kafka-console-consumer.sh --bootstrap-server 127.0.0.1:9092 --topic test --from-beginning
-This is a message
-This is another message
-```
-
-
-
-### Other configs.
-
-#### log level config
-
-In Pulsar's [log4j2.yaml config file](https://github.com/apache/pulsar/blob/master/conf/log4j2.yaml), you can set KoP's log level.
-
-e.g.
-```
-    Logger:
-      - name: io.streamnative.pulsar.handlers.kop
-        level: warn
-        additivity: false
-        AppenderRef:
-          - ref: Console
+Logger:
+    - name: io.streamnative.pulsar.handlers.kop
+    level: debug
+    additivity: false
+    AppenderRef:
+        - ref: Console
 ``` 
 
-#### SSL Connection
+## Secure
 
-KoP support Kafka listeners config of type "PLAINTEXT" and "SSL". 
-You could set config like `listeners=PLAINTEXT://localhost:9092,SSL://localhost:9093`. 
-Please reference [Kafka SSL document](https://kafka.apache.org/documentation/#security_ssl) for how to config SSL keys.
-Here is some steps that you need to be able to connect KoP through SSL.
+### SSL connection
 
-1. create SSL related Keys.
+KoP supports the following configuration types for Kafka listeners:
 
-Here is an example of a bash script to create related CA and jks files.
-```access transformers
-            #!/bin/bash
-            #Step 1
-            keytool -keystore server.keystore.jks -alias localhost -validity 365 -keyalg RSA -genkey
-            #Step 2
-            openssl req -new -x509 -keyout ca-key -out ca-cert -days 365
-            keytool -keystore server.truststore.jks -alias CARoot -import -file ca-cert
-            keytool -keystore client.truststore.jks -alias CARoot -import -file ca-cert
-            #Step 3
-            keytool -keystore server.keystore.jks -alias localhost -certreq -file cert-file
-            openssl x509 -req -CA ca-cert -CAkey ca-key -in cert-file -out cert-signed -days 365 -CAcreateserial -passin pass:test1234
-            keytool -keystore server.keystore.jks -alias CARoot -import -file ca-cert
-            keytool -keystore server.keystore.jks -alias localhost -import -file cert-signed
+- PLAINTEXT  
+  
+- SSL
+
+**Example**
+
 ```
-
-2. config KoP Broker.
-
-In Pulsar's config file (`broker.conf` or `standalone.conf`), Add related configurations that using the jks configs that create in step1:
-```access transformers
 listeners=PLAINTEXT://localhost:9092,SSL://localhost:9093
-
-kopSslKeystoreLocation=/Users/kop/server.keystore.jks
-kopSslKeystorePassword=test1234
-kopSslKeyPassword=test1234
-kopSslTruststoreLocation=/Users/kop/server.truststore.jks
-kopSslTruststorePassword=test1234
 ```
 
-3. config kafka clients
+> #### Tip
+> For how to configure SSL keys, see [Kafka SSL](https://kafka.apache.org/documentation/#security_ssl). 
 
-This is similar to [Kafka client config doc](https://kafka.apache.org/documentation/#security_configclients).
+The following example shows how to connect KoP through SSL.
 
-Prepare a file named `client-ssl.properties`, which contains:
+1. Create SSL related keys.
+
+    This example creates related CA and jks files.
+
+    ```
+    #!/bin/bash
+    #Step 1
+    keytool -keystore server.keystore.jks -alias localhost -validity 365 -keyalg RSA -genkey
+    #Step 2
+    openssl req -new -x509 -keyout ca-key -out ca-cert -days 365
+    keytool -keystore server.truststore.jks -alias CARoot -import -file ca-cert
+    keytool -keystore client.truststore.jks -alias CARoot -import -file ca-cert
+    #Step 3
+    keytool -keystore server.keystore.jks -alias localhost -certreq -file cert-file
+    openssl x509 -req -CA ca-cert -CAkey ca-key -in cert-file -out cert-signed -days 365 -CAcreateserial -passin pass:test1234
+    keytool -keystore server.keystore.jks -alias CARoot -import -file ca-cert
+    keytool -keystore server.keystore.jks -alias localhost -import -file cert-signed
+    ```
+
+2. Configure KoP broker.
+
+    In Pulsar configuration file (`broker.conf` or `standalone.conf`), add the related configurations that using the jks configs created in step1:
+
+    ```
+    listeners=PLAINTEXT://localhost:9092,SSL://localhost:9093
+
+    kopSslKeystoreLocation=/Users/kop/server.keystore.jks
+    kopSslKeystorePassword=test1234
+    kopSslKeyPassword=test1234
+    kopSslTruststoreLocation=/Users/kop/server.truststore.jks
+    kopSslTruststorePassword=test1234
+    ```
+
+3. Configure Kafka client.
+
+    (1) Prepare a file named `client-ssl.properties` containing the following information.
+
+    ```
+    security.protocol=SSL
+    ssl.truststore.location=client.truststore.jks
+    ssl.truststore.password=test1234
+    ssl.endpoint.identification.algorithm=
+    ```
+
+    (2) Verify console-producer and console-consumer.
+
+    ```
+    kafka-console-producer.sh --broker-list localhost:9093 --topic test --producer.config client-ssl.properties
+    kafka-console-consumer.sh --bootstrap-server localhost:9093 --topic test --consumer.config client-ssl.properties
+    ```
+
+    > #### Tip
+    > For more information, see [configure Kafka client](https://kafka.apache.org/documentation/#security_configclients).
+
+### KoP authentication
+
+You can enable both authentication and authorization on KoP, they use the underlying Pulsar [token based authentication](http://pulsar.apache.org/docs/en/security-jwt/) mechanisms.
+
+> #### Tip
+> For more information about Kafka authentication, see [Kafka security documentation](https://kafka.apache.org/documentation/#security_sasl). 
+
+To forward your credentials, `SASL-PLAIN` is used on the Kafka client side. The two important settings are `username and `password`:
+
+* The `username` of Kafka JAAS is the `tenant/namespace`, in which Kafka’s topics are stored in Pulsar. 
+For example, `public/default`.  
+
+* The `password` must be your token authentication parameters from Pulsar. For example, `token:xxx`.
+
+    The token can be created by [Pulsar tokens tools](http://pulsar.apache.org/docs/en/security-jwt/#generate-tokens). The [role](http://pulsar.apache.org/docs/en/security-overview/#role-tokens) is the `subject` for token, it is embedded in the created token, and the broker can get `role` by parsing this token.
+
+
+#### Enable authentication on Pulsar broker
+
+To enable KoP authentication, you need to set all the options required by [Pulsar token based authentication](http://pulsar.apache.org/docs/en/security-jwt/) and set `saslAllowedMechanisms` (set it to`PLAIN`) in Pulsar configuration file (`broker.conf` or `standalone.conf`).
+
 ```
-security.protocol=SSL
-ssl.truststore.location=client.truststore.jks
-ssl.truststore.password=test1234
-ssl.endpoint.identification.algorithm=
+saslAllowedMechanisms=PLAIN
+
+# Configuration to enable authentication and authorization
+authenticationEnabled=true
+authorizationEnabled=true
+authenticationProviders=org.apache.pulsar.broker.authentication.AuthenticationProviderToken
+
+# If using secret key
+tokenSecretKey=file:///path/to/secret.key
 ```
 
-And verify us console-producer and console-consumer:
-```access transformers
-kafka-console-producer.sh --broker-list localhost:9093 --topic test --producer.config client-ssl.properties
-kafka-console-consumer.sh --bootstrap-server localhost:9093 --topic test --consumer.config client-ssl.properties
-```
+#### Enable authentication on Kafka client
 
-#### KoP auth
+You can use the following code to enable SASL-PLAIN through jaas.
 
-You can enable both authentication and authorization on KoP. It will use the underlying Pulsar auth mechanisms.
-
-To forward your credentials, `SASL-PLAIN` is used on Kafka's side:
-
-* The user must be your fully qualified namespace
-* the password must be your auth params from pulsar, for example `token:xxx`
-
-###### Enable Auth on broker
-
-To enable KoP auth, you need to set all the options required by Pulsar to enable auth, and also:
-
-*  `saslAllowedMechanisms`: default value is `PLAIN`
-
-###### Enable auth on Kafka client
-
-You can use the following code to enable SASL-PLAIN through jaas:
 ```java
-String tenant = "ns1/tenant1";
+String tenant = "public/default";
 String pasword = "token:xxx";
 
 String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"%s\" password=\"%s\";";
@@ -189,6 +276,16 @@ props.put("sasl.jaas.config", jaasCfg);
 props.put("security.protocol", "SASL_PLAINTEXT");
 props.put("sasl.mechanism", "PLAIN");
 ```
+
+Kafka consumers and Kafka producers can use the props to connect to brokers.
+
+
+## Limitations for KoP
+
+KoP leverage Pulsar features, but some of the manners between Pulsar and Kafka are different. In this implementation, there are some limitations.
+
+- KoP does not support Pulsar non-partitioned topic. Because all topics in Kafka are partitioned type, not support non-partitioned topic is easy to align this.
+- All topics in KoP are placed under a user specified tenant and namespace. 
 
 #### all the KoP configs.
 
