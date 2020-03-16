@@ -39,6 +39,7 @@ import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.PulsarServerException;
+import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.namespace.NamespaceBundleOwnershipListener;
@@ -69,6 +70,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public static final String LISTENER_DEL = ",";
     public static final String TLS_HANDLER = "tls";
     public static final String LISTENER_PATTEN = "^(PLAINTEXT?|SSL)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-0-9+]";
+    public static final int DEFAULT_PORT = 9092;
 
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
@@ -200,10 +202,11 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     // This method is called after initialize
     @Override
     public String getProtocolDataToAdvertise() {
+        String listeners = getListeners(kafkaConfig);
         if (log.isDebugEnabled()) {
-            log.debug("Get configured listeners", kafkaConfig.getListeners());
+            log.debug("Get configured listeners {}", listeners);
         }
-        return kafkaConfig.getListeners();
+        return listeners;
     }
 
     @Override
@@ -237,13 +240,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     @Override
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
         checkState(kafkaConfig != null);
-        checkState(kafkaConfig.getListeners() != null);
         checkState(brokerService != null);
         if (kafkaConfig.isEnableGroupCoordinator()) {
             checkState(groupCoordinator != null);
         }
 
-        String listeners = kafkaConfig.getListeners();
+        String listeners = getListeners(kafkaConfig);
         String[] parts = listeners.split(LISTENER_DEL);
 
         try {
@@ -462,5 +464,15 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
         log.info("listener {} not contains a valid SSL or PLAINTEXT address", listeners);
         return null;
+    }
+
+    // getLocalListeners from config, if not exists in config, set it as PLAINTEXT://advertisedAddress:9092
+    public static String getListeners(KafkaServiceConfiguration kafkaConfig) {
+        String listeners = kafkaConfig.getListeners();
+        if (listeners == null || listeners.isEmpty()) {
+            String advertisedAddress = PulsarService.advertisedAddress(kafkaConfig);
+            listeners = PLAINTEXT_PREFIX + advertisedAddress + ':' + DEFAULT_PORT;
+        }
+        return listeners;
     }
 }
