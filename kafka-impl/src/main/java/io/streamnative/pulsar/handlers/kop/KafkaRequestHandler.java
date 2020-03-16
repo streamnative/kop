@@ -159,6 +159,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final ScheduledExecutorService executor;
     private final PulsarAdmin admin;
     private final Boolean tlsEnabled;
+    private final String localListeners;
     private final int plaintextPort;
     private final int sslPort;
     private NamespaceName namespace;
@@ -177,8 +178,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
         this.tlsEnabled = tlsEnabled;
-        this.plaintextPort = getListenerPort(kafkaConfig.getListeners(), PLAINTEXT);
-        this.sslPort = getListenerPort(kafkaConfig.getListeners(), SSL);
+        this.localListeners = KafkaProtocolHandler.getListeners(kafkaConfig);
+        this.plaintextPort = getListenerPort(localListeners, PLAINTEXT);
+        this.sslPort = getListenerPort(localListeners, SSL);
         this.namespace = NamespaceName.get(
             kafkaConfig.getKafkaTenant(),
             kafkaConfig.getKafkaNamespace());
@@ -1327,11 +1329,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     kopUri.getHost(),
                     kopUri.getPort()));
 
-                // get local listeners.
-                String localListeners = kafkaConfig.getListeners();
-
                 if (log.isDebugEnabled()) {
-                    log.debug("Found broker listeners: {} for topicName: {}, "
+                    log.debug("Found broker localListeners: {} for topicName: {}, "
                             + "localListeners: {}, found Listeners: {}",
                         listeners, topic, localListeners, listeners);
                 }

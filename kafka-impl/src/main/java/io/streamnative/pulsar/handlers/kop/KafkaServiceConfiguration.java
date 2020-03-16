@@ -140,9 +140,10 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     @FieldContext(
         category = CATEGORY_KOP,
         doc = "ListenersProp for Kafka service(host should follow the advertisedAddress). "
-            + "e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093"
+              + "e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093. "
+              + "If not set, kop will use PLAINTEXT://advertisedAddress:9092"
     )
-    private String listeners = "PLAINTEXT://localhost:9092";
+    private String listeners;
 
     // Kafka SSL configs
     @FieldContext(
