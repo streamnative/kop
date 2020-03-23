@@ -39,6 +39,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.Header;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
@@ -284,7 +285,7 @@ public class KafkaRequestTypeTest extends KopProtocolHandlerTestBase {
                 }
                 if (log.isDebugEnabled()) {
                     log.debug("Kafka consumer get message: {}, key: {} at offset {}",
-                        record.key(), record.value(), record.offset());
+                        record.value(), record.key(), record.offset());
                 }
                 i++;
             }
@@ -368,7 +369,7 @@ public class KafkaRequestTypeTest extends KopProtocolHandlerTestBase {
                 }
                 if (log.isDebugEnabled()) {
                     log.debug("Kafka consumer get message: {}, key: {} at offset {}",
-                        record.key(), record.value(), record.offset());
+                            record.value(), record.key(), record.offset());
                 }
                 i++;
             }
@@ -456,6 +457,94 @@ public class KafkaRequestTypeTest extends KopProtocolHandlerTestBase {
 
         // no more records
         ConsumerRecords<Integer, String> records = kConsumer2.getConsumer().poll(Duration.ofSeconds(1));
+        assertTrue(records.isEmpty());
+    }
+
+    // use String instead of Int as key
+    @Test(timeOut = 20000)
+    public void testKafkaProduceKafkaConsumeString() throws Exception {
+        boolean isBatch = false;
+        int partitionNumber = 1;
+        String kafkaTopicName = "kopKafkaProduceKafkaConsume" + partitionNumber;
+        String key1 = "header_key1_";
+        String key2 = "header_key2_";
+        String value1 = "header_value1_";
+        String value2 = "header_value2_";
+        String keyPrefix = "tenant-";
+
+        // create partitioned topic.
+        admin.topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
+
+        // 1. produce message with Kafka producer.
+        int totalMsgs = 10;
+        String messageStrPrefix = "Message_Kop_KafkaProduceKafkaConsume_" + partitionNumber + "_";
+
+        @Cleanup
+        KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort(),
+                StringSerializer.class.getName(), StringSerializer.class.getName());
+
+        for (int i = 0; i < totalMsgs; i++) {
+            String messageStr = messageStrPrefix + i;
+            ProducerRecord record = new ProducerRecord<>(
+                    kafkaTopicName,
+                    keyPrefix + i,
+                    messageStr);
+            record.headers()
+                    .add(key1 + i, (value1 + i).getBytes(UTF_8))
+                    .add(key2 + i, (value2 + i).getBytes(UTF_8));
+
+            if (isBatch) {
+                kProducer.getProducer()
+                        .send(record);
+            } else {
+                kProducer.getProducer()
+                        .send(record)
+                        .get();
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("Kafka Producer Sent message with header: ({}, {})", i, messageStr);
+            }
+        }
+
+        // 2. use kafka consumer to consume.
+        @Cleanup
+        KConsumer kConsumer = new KConsumer(kafkaTopicName, getKafkaBrokerPort(),
+                "org.apache.kafka.common.serialization.StringDeserializer",
+                "org.apache.kafka.common.serialization.StringDeserializer");
+        List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
+                .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
+        log.info("Partition size: {}", topicPartitions.size());
+        kConsumer.getConsumer().assign(topicPartitions);
+
+        int i = 0;
+        while (i < totalMsgs) {
+            if (log.isDebugEnabled()) {
+                log.debug("start poll message: {}", i);
+            }
+            ConsumerRecords<String, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<String, String> record : records) {
+                Header[] headers = record.headers().toArray();
+                for (int j = 1; j <= 2; j++) {
+                    String k = headers[j - 1].key();
+                    String v = new String(headers[j - 1].value(), UTF_8);
+
+                    if (log.isDebugEnabled()) {
+                        log.debug("headers key: {}, value:{}", k, v);
+                    }
+                    assertTrue(k.contains(key1) || k.contains(key2));
+                    assertTrue(v.contains(value1) || v.contains(value2));
+                }
+                if (log.isDebugEnabled()) {
+                    log.debug("Kafka consumer get message: key: {}, value: {} at offset {}",
+                            record.key(), record.value(), record.offset());
+                }
+                i++;
+            }
+        }
+        assertEquals(i, totalMsgs);
+
+        // no more records
+        ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofMillis(200));
         assertTrue(records.isEmpty());
     }
 }

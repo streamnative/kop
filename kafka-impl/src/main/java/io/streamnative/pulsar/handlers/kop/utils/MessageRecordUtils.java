@@ -73,6 +73,8 @@ public final class MessageRecordUtils {
             byte[] key = new byte[record.keySize()];
             record.key().get(key);
             builder.keyBytes(key);
+            // reuse ordering key to avoid converting string < > bytes
+            builder.orderingKey(key);
         }
 
         // value
@@ -276,7 +278,7 @@ public final class MessageRecordUtils {
                         builder.appendWithOffset(
                             MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId(), i),
                             msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
-                            Base64.getDecoder().decode(singleMessageMetadata.getPartitionKey()),
+                            getKeyBytes(singleMessageMetadata),
                             data,
                             headers);
                         singleMessageMetadataBuilder.recycle();
@@ -290,7 +292,7 @@ public final class MessageRecordUtils {
                     builder.appendWithOffset(
                         MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
                         msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
-                        Base64.getDecoder().decode(msgMetadata.getPartitionKey()),
+                        getKeyBytes(msgMetadata),
                         data,
                         headers);
                 }
@@ -308,6 +310,33 @@ public final class MessageRecordUtils {
         }
     }
 
+    private static byte[] getKeyBytes(MessageMetadata messageMetadata) {
+        if (messageMetadata.hasOrderingKey()) {
+            return messageMetadata.getOrderingKey().toByteArray();
+        }
+
+        String key = messageMetadata.getPartitionKey();
+        if (messageMetadata.hasPartitionKeyB64Encoded()) {
+            return Base64.getDecoder().decode(key);
+        } else {
+            // for Base64 not encoded string, convert to UTF_8 chars
+            return key.getBytes(UTF_8);
+        }
+    }
+
+    private static byte[] getKeyBytes(SingleMessageMetadata messageMetadata) {
+        if (messageMetadata.hasOrderingKey()) {
+            return messageMetadata.getOrderingKey().toByteArray();
+        }
+
+        String key = messageMetadata.getPartitionKey();
+        if (messageMetadata.hasPartitionKeyB64Encoded()) {
+            return Base64.getDecoder().decode(key);
+        } else {
+            // for Base64 not encoded string, convert to UTF_8 chars
+            return key.getBytes(UTF_8);
+        }
+    }
 
 
 }
