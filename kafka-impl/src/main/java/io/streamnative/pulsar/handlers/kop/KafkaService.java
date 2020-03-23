@@ -38,6 +38,7 @@ import org.apache.pulsar.broker.stats.MetricsGenerator;
 import org.apache.pulsar.broker.stats.prometheus.PrometheusMetricsServlet;
 import org.apache.pulsar.broker.web.WebService;
 import org.apache.pulsar.common.configuration.VipStatus;
+import org.apache.pulsar.common.policies.data.OffloadPolicies;
 import org.apache.pulsar.zookeeper.LocalZooKeeperConnectionService;
 import org.eclipse.jetty.servlet.ServletHolder;
 
@@ -116,7 +117,7 @@ public class KafkaService extends PulsarService {
             // Start load management service (even if load balancing is disabled)
             getLoadManager().set(LoadManager.create(this));
 
-            setOffloader(createManagedLedgerOffloader(kafkaConfig));
+            setDefaultOffloader(createManagedLedgerOffloader(OffloadPolicies.create(kafkaConfig.getProperties())));
 
             getBrokerService().start();
 

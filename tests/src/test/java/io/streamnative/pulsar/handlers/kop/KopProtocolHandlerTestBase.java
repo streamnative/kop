@@ -345,17 +345,18 @@ public abstract class KopProtocolHandlerTestBase {
      */
     @Getter
     public static class KProducer implements Closeable {
-        private final KafkaProducer<Integer, String> producer;
+        private final KafkaProducer producer;
         private final String topic;
         private final Boolean isAsync;
 
         public KProducer(String topic, Boolean isAsync, String host,
-                         int port, String username, String password, Boolean retry) {
+                         int port, String username, String password,
+                         Boolean retry, String keySer, String valueSer) {
             Properties props = new Properties();
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducer");
-            props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
-            props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+            props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, keySer);
+            props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, valueSer);
             props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000);
 
             if (retry) {
@@ -379,19 +380,28 @@ public abstract class KopProtocolHandlerTestBase {
 
         public KProducer(String topic, Boolean isAsync, String host,
                          int port, String username, String password) {
-            this(topic, isAsync, host, port, username, password, false);
+            this(topic, isAsync, host, port, username, password, false,
+                    IntegerSerializer.class.getName(), StringSerializer.class.getName());
         }
 
         public KProducer(String topic, Boolean isAsync, String host, int port) {
-            this(topic, isAsync, "localhost", port, null, null, false);
+            this(topic, isAsync, "localhost", port, null, null, false,
+                    IntegerSerializer.class.getName(), StringSerializer.class.getName());
         }
+
+        public KProducer(String topic, Boolean isAsync, int port, Boolean retry) {
+            this(topic, isAsync, "localhost", port, null, null, retry,
+                    IntegerSerializer.class.getName(), StringSerializer.class.getName());
+        }
+
 
         public KProducer(String topic, Boolean isAsync, int port) {
             this(topic, isAsync, "localhost", port);
         }
 
-        public KProducer(String topic, Boolean isAsync, int port, Boolean retry) {
-            this(topic, isAsync, "localhost", port, null, null, retry);
+        public KProducer(String topic, Boolean isAsync, int port, String keySer, String valueSer) {
+            this(topic, isAsync, "localhost", port, null, null, false,
+                    keySer, valueSer);
         }
 
         @Override
@@ -474,13 +484,14 @@ public abstract class KopProtocolHandlerTestBase {
      */
     @Getter
     public static class KConsumer implements Closeable {
-        private final KafkaConsumer<Integer, String> consumer;
+        private final KafkaConsumer consumer;
         private final String topic;
         private final String consumerGroup;
 
         public KConsumer(
             String topic, String host, int port,
-            boolean autoCommit, String username, String password, String consumerGroup) {
+            boolean autoCommit, String username, String password,
+            String consumerGroup, String keyDeser, String valueDeser) {
             Properties props = new Properties();
             props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             props.put(ConsumerConfig.GROUP_ID_CONFIG, consumerGroup);
@@ -503,29 +514,38 @@ public abstract class KopProtocolHandlerTestBase {
 
             props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "30000");
             props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
-                "org.apache.kafka.common.serialization.IntegerDeserializer");
+                keyDeser);
             props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
-                "org.apache.kafka.common.serialization.StringDeserializer");
+                valueDeser);
 
             this.consumer = new KafkaConsumer<>(props);
             this.topic = topic;
             this.consumerGroup = consumerGroup;
         }
 
-        public KConsumer(String topic, String host, int port, boolean autoCommit, String consumerGroup) {
-            this(topic, host, port, autoCommit, null, null, consumerGroup);
+        public KConsumer(String topic, String host, int port, boolean autoCommit,
+                         String username, String password, String consumerGroup) {
+            this(topic, host, port, autoCommit, username, password, consumerGroup,
+                    "org.apache.kafka.common.serialization.IntegerDeserializer",
+                    "org.apache.kafka.common.serialization.StringDeserializer");
         }
 
         public KConsumer(String topic, int port, boolean autoCommit, String consumerGroup) {
-            this(topic, "localhost", port, autoCommit, null, null, consumerGroup);
+            this(topic, "localhost", port, autoCommit, null, null, consumerGroup,
+                    "org.apache.kafka.common.serialization.IntegerDeserializer",
+                    "org.apache.kafka.common.serialization.StringDeserializer");
         }
 
         public KConsumer(String topic, int port, boolean autoCommit) {
-            this(topic, "localhost", port, autoCommit, null, null, "DemoKafkaOnPulsarConsumer");
+            this(topic, "localhost", port, autoCommit, null, null, "DemoKafkaOnPulsarConsumer",
+                    "org.apache.kafka.common.serialization.IntegerDeserializer",
+                    "org.apache.kafka.common.serialization.StringDeserializer");
         }
 
         public KConsumer(String topic, String host, int port) {
-            this(topic, "localhost", port, false, null, null, "DemoKafkaOnPulsarConsumer");
+            this(topic, "localhost", port, false, null, null, "DemoKafkaOnPulsarConsumer",
+                    "org.apache.kafka.common.serialization.IntegerDeserializer",
+                    "org.apache.kafka.common.serialization.StringDeserializer");
         }
 
         public KConsumer(String topic, int port) {
@@ -533,7 +553,14 @@ public abstract class KopProtocolHandlerTestBase {
         }
 
         public KConsumer(String topic, int port, String group) {
-            this(topic, "localhost", port, false, null, null, group);
+            this(topic, "localhost", port, false, null, null, group,
+                    "org.apache.kafka.common.serialization.IntegerDeserializer",
+                    "org.apache.kafka.common.serialization.StringDeserializer");
+        }
+
+        public KConsumer(String topic, int port, String keyDeser, String valueDeser) {
+            this(topic, "localhost", port, false, null, null,
+                    "DemoKafkaOnPulsarConsumer", keyDeser, valueDeser);
         }
 
         @Override

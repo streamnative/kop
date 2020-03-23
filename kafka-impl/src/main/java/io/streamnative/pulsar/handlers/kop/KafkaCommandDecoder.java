@@ -47,6 +47,7 @@ import org.apache.kafka.common.requests.ResponseUtils;
 @Slf4j
 public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected ChannelHandlerContext ctx;
+    @Getter
     protected SocketAddress remoteAddress;
     @Getter
     protected AtomicBoolean isActive = new AtomicBoolean(false);
