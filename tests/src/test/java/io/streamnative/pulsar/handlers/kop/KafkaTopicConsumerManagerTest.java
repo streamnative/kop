@@ -262,7 +262,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         ManagedCursor cursor2 = cursorPair2.getLeft();
         ManagedCursor cursor3 = cursorPair3.getLeft();
 
-        long backlogSize = persistentTopic.getStats().backlogSize;
+        long backlogSize = persistentTopic.getStats(true).backlogSize;
         verifyBacklogAndNumCursor(persistentTopic, backlogSize, 3);
 
         // simulate a read complete;
@@ -294,14 +294,14 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         AtomicInteger cursorCount = new AtomicInteger(0);
         retryStrategically(
             ((test) -> {
-                backlog.set(persistentTopic.getStats().backlogSize);
+                backlog.set(persistentTopic.getStats(true).backlogSize);
                 return backlog.get() == expectedBacklog;
             }),
             5,
             200);
 
         if (log.isDebugEnabled()) {
-            TopicStats topicStats = persistentTopic.getStats();
+            TopicStats topicStats = persistentTopic.getStats(true);
             log.info(" dump topicStats for topic : {}, storageSize: {}, backlogSize: {}, expected: {}",
                 persistentTopic.getName(),
                 topicStats.storageSize, topicStats.backlogSize, expectedBacklog);

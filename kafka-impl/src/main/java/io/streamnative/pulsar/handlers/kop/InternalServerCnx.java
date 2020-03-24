@@ -34,7 +34,7 @@ public class InternalServerCnx extends ServerCnx {
         super(kafkaRequestHandler.getPulsarService());
         this.kafkaRequestHandler = kafkaRequestHandler;
         // this is the client address that connect to this server.
-        this.remoteAddress = kafkaRequestHandler.remoteAddress;
+        this.remoteAddress = kafkaRequestHandler.getRemoteAddress();
 
         // mock some values, or Producer create will meet NPE.
         // used in test, which will not call channel.active, and not call updateCtx.
@@ -57,7 +57,7 @@ public class InternalServerCnx extends ServerCnx {
 
     // called after channel active
     public void updateCtx() {
-        this.remoteAddress = kafkaRequestHandler.remoteAddress;
+        this.remoteAddress = kafkaRequestHandler.getRemoteAddress();
     }
 
     @Override
@@ -66,4 +66,9 @@ public class InternalServerCnx extends ServerCnx {
         return;
     }
 
+    @Override
+    public void disableCnxAutoRead() {
+        // do nothing in this mock.
+        return;
+    }
 }
