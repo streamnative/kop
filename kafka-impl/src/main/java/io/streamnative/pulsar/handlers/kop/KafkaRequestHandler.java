@@ -1345,8 +1345,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     && localListeners.contains(kopBrokerUrl)) {
                     topicManager.getTopic(topic.toString()).whenComplete((persistentTopic, exception) -> {
                         if (exception != null || persistentTopic == null) {
-                            log.warn("[{}] findBroker: Failed to getOrCreateTopic {}. exception:",
-                                ctx.channel(), topic.toString(), exception);
+                            log.warn("[{}] findBroker: Failed to getOrCreateTopic {}. broker:{}, exception:",
+                                ctx.channel(), topic.toString(), kopBrokerUrl, exception);
                             returnFuture.complete(null);
                         } else {
                             if (log.isDebugEnabled()) {
