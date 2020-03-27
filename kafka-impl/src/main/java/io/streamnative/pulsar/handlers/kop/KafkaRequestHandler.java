@@ -361,11 +361,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         pulsarTopics.put(topic, Lists.newArrayList(newTopic));
 
                                     } else {
-                                        if (log.isDebugEnabled()) {
-                                            log.debug("[{}] Request {}: Topic {} has single partition, "
-                                                    + "Not allow to auto create partitioned topic",
+                                        log.error("[{}] Request {}: Topic {} has single partition, "
+                                                        + "Not allow to auto create partitioned topic",
                                                 ctx.channel(), metadataHar.getHeader(), topic);
-                                        }
                                         // not allow to auto create topic, return unknown topic
                                         allTopicMetadata.add(
                                             new TopicMetadata(
