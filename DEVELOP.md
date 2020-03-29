@@ -59,18 +59,22 @@ As mentioned previously, KoP module is loaded along with the Pulsar broker. You 
 1. Set the configuration of the KoP protocol handler.
 
     Add the following properties and set their values in Pulsar configuration file, such as `conf/broker.conf` or `conf/standalone.conf`.
-
+    
+    Regarding topic auto create partition type, if you are not using [StreamNative Platform](https://streamnative.io/docs/v1.0.0/), please set it to `partitioned`.
 
     Property | Set it to the following value | Default value
     |---|---|---
     `messagingProtocols` | kafka | null
     `protocolHandlerDirectory`| Location of KoP NAR file | ./protocols
-
+    `protocolHandlerDirectory`| Location of KoP NAR file | ./protocols
+    `allowAutoTopicCreationType`| partitioned | non-partitioned
+    
     **Example**
 
     ```
     messagingProtocols=kafka
     protocolHandlerDirectory=./protocols
+    allowAutoTopicCreationType=partitioned
     ```
 
 2. Set Kafka service listeners.
