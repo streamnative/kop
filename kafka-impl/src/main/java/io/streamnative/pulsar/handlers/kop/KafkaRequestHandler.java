@@ -767,7 +767,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         } else {
                             partitionData.complete(new ListOffsetResponse.PartitionData(
                                     Errors.NONE,
-                                    0,
+                                    DEFAULT_TIMESTAMP,
                                     MessageIdUtils.getOffset(finalPosition.getLedgerId(), finalPosition.getEntryId())));
                         }
                     }
