@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static org.apache.kafka.common.record.RecordBatch.NO_TIMESTAMP;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -283,7 +282,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
         assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
         assertEquals(listOffsetResponse.responseData().get(tp).offset, Long.valueOf(limitOffset));
-        assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(NO_TIMESTAMP));
+        assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(0));
     }
 
     // these 2 test cases test Read Commit / UnCommit.
@@ -352,7 +351,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
         assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
         assertEquals(listOffsetResponse.responseData().get(tp).offset, Long.valueOf(limitOffset));
-        assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(NO_TIMESTAMP));
+        assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(0));
     }
 
     /// Add test for FetchRequest
