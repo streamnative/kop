@@ -13,28 +13,28 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.messageToByteBuf;
-import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.recordToEntry;
-import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.recordsToByteBuf;
-
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.Topic.PublishContext;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.messageToByteBuf;
+import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.recordToEntry;
+import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.recordsToByteBuf;
 
 /**
  * Implementation for PublishContext.
@@ -106,7 +106,8 @@ public final class MessagePublishContext implements PublishContext {
     // publish Kafka records to pulsar topic, handle callback in MessagePublishContext.
     public static void publishMessages(MemoryRecords records,
                                        Topic topic,
-                                       CompletableFuture<PartitionResponse> future) {
+                                       CompletableFuture<PartitionResponse> future,
+                                       ScheduledExecutorService executor) {
 
         // get records size.
         AtomicInteger size = new AtomicInteger(0);
@@ -120,14 +121,30 @@ public final class MessagePublishContext implements PublishContext {
         if (MESSAGE_BATCHED) {
             CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
 
-            ByteBuf headerAndPayload = recordsToByteBuf(records, rec);
-            topic.publishMessage(
-                headerAndPayload,
-                MessagePublishContext.get(
-                    offsetFuture, topic, System.nanoTime()));
+//            ByteBuf headerAndPayload = recordsToByteBuf(records, rec);
+            CompletableFuture<ByteBuf> transFuture = new CompletableFuture<>();
+            //put queue
+            executor.submit(() -> {
+                recordsToByteBuf(records, rec, transFuture);
+            });
+
+            transFuture.whenComplete((headerAndPayload, ex) -> {
+                if (ex != null) {
+                    log.error("record to bytebuf error: ", ex);
+                } else {
+                    topic.publishMessage(
+                            headerAndPayload,
+                            MessagePublishContext.get(
+                                    offsetFuture, topic, System.nanoTime()));
+                }
+            });
+
+//            topic.publishMessage(
+//                headerAndPayload,
+//                MessagePublishContext.get(
+//                    offsetFuture, topic, System.nanoTime()));
 
             offsetFuture.whenComplete((offset, ex) -> {
-                headerAndPayload.release();
                 if (ex != null) {
                     log.error("publishMessages for topic partition: {} failed when write.",
                         topic.getName(), ex);
@@ -140,12 +157,10 @@ public final class MessagePublishContext implements PublishContext {
             List<CompletableFuture<Long>> futures = Collections
                 .synchronizedList(Lists.newArrayListWithExpectedSize(size.get()));
 
-            List<ByteBuf> headAndPayloadList = new ArrayList<>();
             records.records().forEach(record -> {
                 CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
                 futures.add(offsetFuture);
                 ByteBuf headerAndPayload = messageToByteBuf(recordToEntry(record));
-                headAndPayloadList.add(headerAndPayload);
                 topic.publishMessage(
                     headerAndPayload,
                     MessagePublishContext.get(
@@ -153,9 +168,6 @@ public final class MessagePublishContext implements PublishContext {
             });
 
             CompletableFuture.allOf(futures.toArray(new CompletableFuture<?>[rec])).whenComplete((ignore, ex) -> {
-                for (ByteBuf byteBuf : headAndPayloadList) {
-                    byteBuf.release();
-                }
                 if (ex != null) {
                     log.error("publishMessages for topic partition: {} failed when write.",
                         topic.getName(), ex);
