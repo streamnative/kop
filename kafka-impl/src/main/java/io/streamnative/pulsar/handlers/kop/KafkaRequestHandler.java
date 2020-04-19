@@ -179,7 +179,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
         this.tlsEnabled = tlsEnabled;
-        this.localListeners = KafkaProtocolHandler.getListeners(kafkaConfig);
+        this.localListeners = KafkaProtocolHandler.getListenersFromConfig(kafkaConfig);
         this.plaintextPort = getListenerPort(localListeners, PLAINTEXT);
         this.sslPort = getListenerPort(localListeners, SSL);
         this.namespace = NamespaceName.get(

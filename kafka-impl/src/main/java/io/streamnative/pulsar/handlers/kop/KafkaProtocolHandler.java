@@ -69,7 +69,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public static final String PLAINTEXT_PREFIX = "PLAINTEXT://";
     public static final String LISTENER_DEL = ",";
     public static final String TLS_HANDLER = "tls";
-    public static final String LISTENER_PATTEN = "^(PLAINTEXT?|SSL)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-0-9+]";
+    public static final String LISTENER_PATTERN = "^(PLAINTEXT?|SSL)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*:([0-9]+)";
     public static final int DEFAULT_PORT = 9092;
 
     /**
@@ -202,7 +202,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     // This method is called after initialize
     @Override
     public String getProtocolDataToAdvertise() {
-        String listeners = getListeners(kafkaConfig);
+        String listeners = getListenersFromConfig(kafkaConfig);
         if (log.isDebugEnabled()) {
             log.debug("Get configured listeners {}", listeners);
         }
@@ -245,10 +245,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             checkState(groupCoordinator != null);
         }
 
-        String listeners = getListeners(kafkaConfig);
-        String[] parts = listeners.split(LISTENER_DEL);
-
         try {
+            String listeners = getListenersFromConfig(kafkaConfig);
+            String[] parts = listeners.split(LISTENER_DEL);
+
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
                 ImmutableMap.<InetSocketAddress, ChannelInitializer<SocketChannel>>builder();
 
@@ -277,7 +277,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
             return builder.build();
         } catch (Exception e){
-            log.error("KafkaProtocolHandler newChannelInitializers failed with", e);
+            log.error("KafkaProtocolHandler newChannelInitializers failed with ", e);
             return null;
         }
     }
@@ -428,7 +428,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     }
 
     public static int getListenerPort(String listener) {
-        checkState(listener.matches(LISTENER_PATTEN), "listener not match patten");
+        checkState(listener.matches(LISTENER_PATTERN), "listener not match patten");
 
         int lastIndex = listener.lastIndexOf(':');
         return Integer.parseInt(listener.substring(lastIndex + 1));
@@ -467,12 +467,67 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     }
 
     // getLocalListeners from config, if not exists in config, set it as PLAINTEXT://advertisedAddress:9092
-    public static String getListeners(KafkaServiceConfiguration kafkaConfig) {
+    public static String getListenersFromConfig(KafkaServiceConfiguration kafkaConfig) {
         String listeners = kafkaConfig.getListeners();
+        String advertisedAddress = PulsarService.advertisedAddress(kafkaConfig);
         if (listeners == null || listeners.isEmpty()) {
-            String advertisedAddress = PulsarService.advertisedAddress(kafkaConfig);
             listeners = PLAINTEXT_PREFIX + advertisedAddress + ':' + DEFAULT_PORT;
+            return listeners;
         }
-        return listeners;
+
+        return checkAndFillUpListeners(listeners, advertisedAddress);
+    }
+
+    // listener either in format: type://:port, e.g.: "SSL://:9093",
+    // or in format: type://hostname:port, e.g.: "SSL://hostname:9093",
+    // Ror the 1st format, need to fill it with `advertisedAddress` for hostname.
+    // For the 2nd format, need to check the hostname is the same as `advertisedAddress`.
+    public static String checkAndFillUpListeners(String listeners, String advertisedAddress) {
+        String[] parts = listeners.split(LISTENER_DEL);
+        checkState(parts.length >= 1, "Empty listener returned, should have at least 1 listener");
+
+        String retListeners = "";
+
+        for (String listener: parts) {
+            checkState(listener.matches(LISTENER_PATTERN),
+                    "Listener in wrong format: " + listener);
+
+            String retListener;
+            boolean noHostname = false;
+            int typeIndex = listener.indexOf("//") + 2;
+            int portIndex = listener.lastIndexOf(":");
+
+            String type = listener.substring(0, typeIndex);
+            String hostName = listener.substring(typeIndex,  portIndex);
+            String port = listener.substring(portIndex + 1);
+
+            checkState(type.equals(SSL_PREFIX) || type.equals(PLAINTEXT_PREFIX),
+                    "Not expected Listener type: " + type);
+
+            if (hostName.isEmpty()) {
+                hostName = advertisedAddress;
+                noHostname = true;
+            } else {
+                checkState(hostName.equals(advertisedAddress),
+                        "HostName: " + hostName + " not equals advertisedAddress: " + advertisedAddress);
+            }
+
+            int portInt = Integer.parseInt(port);
+            checkState(portInt >= 1 && portInt <= 65536, "Not a valid port: " + portInt);
+
+            if (noHostname) {
+                retListener = type + hostName + ":" + port;
+            } else {
+                retListener = listener;
+            }
+
+            if (retListeners.isEmpty()) {
+                retListeners = retListener;
+            } else {
+                retListeners += "," + retListener;
+            }
+        }
+
+        return retListeners;
     }
 }
