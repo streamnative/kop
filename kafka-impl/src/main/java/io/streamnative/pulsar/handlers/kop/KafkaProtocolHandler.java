@@ -480,7 +480,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     // listener either in format: type://:port, e.g.: "SSL://:9093",
     // or in format: type://hostname:port, e.g.: "SSL://hostname:9093",
-    // Ror the 1st format, need to fill it with `advertisedAddress` for hostname.
+    // For the 1st format, need to fill it with `advertisedAddress` for hostname.
     // For the 2nd format, need to check the hostname is the same as `advertisedAddress`.
     public static String checkAndFillUpListeners(String listeners, String advertisedAddress) {
         String[] parts = listeners.split(LISTENER_DEL);
