@@ -26,7 +26,6 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -53,8 +52,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected AtomicBoolean isActive = new AtomicBoolean(false);
 
     // Queue to make request get responseFuture in order.
-    protected final ConcurrentHashMap<Channel, Queue<ResponseAndRequest>> responsesQueue =
-        new ConcurrentHashMap();
+    private Queue<ResponseAndRequest> requestsQueue;
 
     public KafkaCommandDecoder() {
     }
@@ -65,6 +63,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         this.remoteAddress = ctx.channel().remoteAddress();
         this.ctx = ctx;
         isActive.set(true);
+        requestsQueue = Queues.newConcurrentLinkedQueue();
     }
 
     @Override
@@ -142,16 +141,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
             CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
 
-            responsesQueue.compute(channel, (key, queue) -> {
-                if (queue == null) {
-                    Queue<ResponseAndRequest> newQueue = Queues.newConcurrentLinkedQueue();
-                    newQueue.add(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
-                    return newQueue;
-                } else {
-                    queue.add(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
-                    return queue;
-                }
-            });
+            requestsQueue.add(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
 
             if (!isActive.get()) {
                 handleInactive(kafkaHeaderAndRequest, responseFuture);
@@ -230,13 +220,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     // Write and flush continuously completed request back through channel.
     // This is to make sure request get responseFuture in the same order.
     protected void writeAndFlushResponseToClient(Channel channel) {
-        Queue<ResponseAndRequest> responseQueue =
-            responsesQueue.get(channel);
-
         // loop from first responseFuture.
-        while (responseQueue != null && responseQueue.peek() != null
-            && responseQueue.peek().getResponseFuture().isDone() && isActive.get()) {
-            ResponseAndRequest response = responseQueue.remove();
+        while (requestsQueue != null && requestsQueue.peek() != null
+            && requestsQueue.peek().getResponseFuture().isDone() && isActive.get()) {
+            ResponseAndRequest response = requestsQueue.remove();
             try {
                 if (log.isDebugEnabled()) {
                     log.debug("Write kafka cmd response back to client. \n"
@@ -259,13 +246,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     // return all the current command before a channel close. return Error response for all pending request.
     protected void writeAndFlushWhenInactiveChannel(Channel channel) {
-        Queue<ResponseAndRequest> responseQueue =
-            responsesQueue.get(channel);
-
         // loop from first responseFuture, and return them all
-        while (responseQueue != null && responseQueue.peek() != null) {
+        while (requestsQueue != null && requestsQueue.peek() != null) {
             try {
-                ResponseAndRequest pair = responseQueue.remove();
+                ResponseAndRequest pair = requestsQueue.remove();
 
                 if (log.isDebugEnabled()) {
                     log.debug("Channel Closing! Write kafka cmd responseFuture back to client. request: {}",
