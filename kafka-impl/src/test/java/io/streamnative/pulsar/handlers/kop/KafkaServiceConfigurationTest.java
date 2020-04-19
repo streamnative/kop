@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.fail;
 
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import java.io.File;
@@ -24,13 +25,16 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.api.DigestType;
 
+import org.testng.Assert;
 import org.testng.annotations.Test;
 
 /**
  * Pulsar service configuration object.
  */
+@Slf4j
 public class KafkaServiceConfigurationTest {
     @Test
     public void testKopNamespace() {
@@ -87,4 +91,101 @@ public class KafkaServiceConfigurationTest {
         assertFalse(kafkaServiceConfig.getWebServicePortTls().isPresent());
         assertEquals(kafkaServiceConfig.getManagedLedgerDigestType(), DigestType.CRC32C);
     }
+
+    @Test
+    public void testKopListeners() throws Exception {
+        KafkaServiceConfiguration config = new KafkaServiceConfiguration();
+        String advertisedAddress = "127.0.0.1";
+        config.setAdvertisedAddress(advertisedAddress);
+
+        // fail for advertisedAddress not match
+        try {
+            String inputListener = "PLAINTEXT://hello:9092";
+            verifyGetListenersFromConfig(config, inputListener, inputListener);
+            fail("Should throw exception for advertisedAddress not match");
+        } catch (Exception e) {
+            // expected
+            log.info("exception: " + e);
+        }
+
+        // success match
+        try {
+            String inputListener = "PLAINTEXT://" + advertisedAddress + ":9092";
+            verifyGetListenersFromConfig(config, inputListener, inputListener);
+        } catch (Exception e) {
+            fail("Should success and equals " + e);
+        }
+
+        // success match both no hostname
+        try {
+            String inputListener = "PLAINTEXT://:9092" + ",SSL://:9093";
+            String outputListener = "PLAINTEXT://" + advertisedAddress + ":9092"
+                                    + ",SSL://" + advertisedAddress + ":9093";
+            verifyGetListenersFromConfig(config, inputListener, outputListener);
+        } catch (Exception e) {
+            fail("Should success and equals " + e);
+        }
+
+        // success match ssl no hostname
+        try {
+            String inputListener = "PLAINTEXT://" + advertisedAddress + ":9092" + ",SSL://:9093";
+            String outputListener = "PLAINTEXT://" + advertisedAddress + ":9092"
+                                    + ",SSL://" + advertisedAddress + ":9093";
+            verifyGetListenersFromConfig(config, inputListener, outputListener);
+        } catch (Exception e) {
+            fail("Should success and equals " + e);
+        }
+
+        // fail for ssl hostname not match
+        try {
+            String inputListener = "PLAINTEXT://" + advertisedAddress + ":9092" + ",SSL://" + "hello" + ":9093";
+            String outputListener = "PLAINTEXT://" + advertisedAddress + ":9092"
+                                    + ",SSL://" + advertisedAddress + ":9093";
+            verifyGetListenersFromConfig(config, inputListener, outputListener);
+            fail("Should throw exception for ssl advertisedAddress not match");
+        } catch (Exception e) {
+            // expected
+            log.info("exception: " + e);
+        }
+
+        // fail for no port
+        try {
+            String inputListener = "PLAINTEXT://" + advertisedAddress;
+            verifyGetListenersFromConfig(config, inputListener, inputListener);
+            fail("Should throw exception for no port");
+        } catch (Exception e) {
+            // expected
+            log.info("exception: " + e);
+        }
+
+        // fail for wrong port
+        try {
+            String inputListener = "PLAINTEXT://" + advertisedAddress + ":65537";
+            verifyGetListenersFromConfig(config, inputListener, inputListener);
+            fail("Should throw exception for wrong port");
+        } catch (Exception e) {
+            // expected
+            log.info("exception: " + e);
+        }
+
+        // fail for wrong port
+        try {
+            String inputListener = "PLAINTEXT://" + advertisedAddress + ":wrongPort";
+            verifyGetListenersFromConfig(config, inputListener, inputListener);
+            fail("Should throw exception for wrong port");
+        } catch (Exception e) {
+            // expected
+            log.info("exception: " + e);
+        }
+    }
+
+    private static void verifyGetListenersFromConfig(KafkaServiceConfiguration config,
+                                                     String inputListener,
+                                                     String outputListener) {
+
+        config.setListeners(inputListener);
+        log.info("inputListener: {}, outputListener: {}", inputListener, outputListener);
+        Assert.assertEquals(KafkaProtocolHandler.getListenersFromConfig(config), outputListener);
+    }
+
 }
