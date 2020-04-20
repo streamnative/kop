@@ -71,7 +71,6 @@ add configurations in Pulsar's configuration file, such as `broker.conf` or `sta
     |---|---|---
     `messagingProtocols` | kafka | null
     `protocolHandlerDirectory`| Location of KoP NAR file | ./protocols
-    `protocolHandlerDirectory`| Location of KoP NAR file | ./protocols
     `allowAutoTopicCreationType`| partitioned | non-partitioned
     
     **Example**
