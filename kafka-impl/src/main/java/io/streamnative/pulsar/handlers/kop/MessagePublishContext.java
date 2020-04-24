@@ -22,6 +22,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -125,6 +127,7 @@ public final class MessagePublishContext implements PublishContext {
                     offsetFuture, topic, System.nanoTime()));
 
             offsetFuture.whenComplete((offset, ex) -> {
+                headerAndPayload.release();
                 if (ex != null) {
                     log.error("publishMessages for topic partition: {} failed when write.",
                         topic.getName(), ex);
@@ -137,10 +140,12 @@ public final class MessagePublishContext implements PublishContext {
             List<CompletableFuture<Long>> futures = Collections
                 .synchronizedList(Lists.newArrayListWithExpectedSize(size.get()));
 
+            List<ByteBuf> headAndPayloadList = new ArrayList<>();
             records.records().forEach(record -> {
                 CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
                 futures.add(offsetFuture);
                 ByteBuf headerAndPayload = messageToByteBuf(recordToEntry(record));
+                headAndPayloadList.add(headerAndPayload);
                 topic.publishMessage(
                     headerAndPayload,
                     MessagePublishContext.get(
@@ -148,6 +153,9 @@ public final class MessagePublishContext implements PublishContext {
             });
 
             CompletableFuture.allOf(futures.toArray(new CompletableFuture<?>[rec])).whenComplete((ignore, ex) -> {
+                for (ByteBuf byteBuf : headAndPayloadList) {
+                    byteBuf.release();
+                }
                 if (ex != null) {
                     log.error("publishMessages for topic partition: {} failed when write.",
                         topic.getName(), ex);
