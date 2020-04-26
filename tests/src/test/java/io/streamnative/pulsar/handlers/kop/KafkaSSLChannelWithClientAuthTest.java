@@ -36,9 +36,10 @@ import org.testng.annotations.Test;
 
 /**
  * Validate Kafka SSL channel config.
+ * Similar to KafkaSSLChannelTest, except the setKopSslClientAuth is set as required.
  */
 @Slf4j
-public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
+public class KafkaSSLChannelWithClientAuthTest extends KopProtocolHandlerTestBase {
     protected final String kopSslKeystoreLocation = "./src/test/resources/ssl/certificate/broker.keystore.jks";
     protected final String kopSslKeystorePassword = "broker";
     protected final String kopSslTruststoreLocation = "./src/test/resources/ssl/certificate/client.truststore.jks";
@@ -60,6 +61,7 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
     }
 
     protected void sslSetUpForBroker() throws Exception {
+        ((KafkaServiceConfiguration) conf).setKopSslClientAuth("required");
         ((KafkaServiceConfiguration) conf).setKopSslKeystoreType("JKS");
         ((KafkaServiceConfiguration) conf).setKopSslKeystoreLocation(kopSslKeystoreLocation);
         ((KafkaServiceConfiguration) conf).setKopSslKeystorePassword(kopSslKeystorePassword);
@@ -174,6 +176,8 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
             props.put("security.protocol", "SSL");
             props.put("ssl.truststore.location", "./src/test/resources/ssl/certificate/broker.truststore.jks");
             props.put("ssl.truststore.password", "broker");
+            props.put("ssl.keystore.location", "./src/test/resources/ssl/certificate/client.keystore.jks");
+            props.put("ssl.keystore.password", "client");
 
             // default is https, here need to set empty.
             props.put("ssl.endpoint.identification.algorithm", "");
