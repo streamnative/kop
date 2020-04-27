@@ -230,9 +230,17 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             + "SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG = \"ssl.secure.random.implementation\""
     )
     private String kopSslSecureRandomImplementation;
+
+    @FieldContext(
+            category = CATEGORY_KOP_SSL,
+            doc = "Kafka ssl configuration map with: SSL_CLIENT_AUTH_CONFIG = \"ssl.client.auth\""
+    )
+    private String kopSslClientAuth;
+
     @FieldContext(
         category = CATEGORY_KOP,
         doc = "supported SASL mechanisms exposed by broker"
     )
     private Set<String> saslAllowedMechanisms = new HashSet<String>();
+
 }

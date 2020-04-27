@@ -391,6 +391,9 @@ kopSslTrustmanagerAlgorithm=SunX509
 #      SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG = ssl.secure.random.implementation
 kopSslSecureRandomImplementation=
 
+# Kafka ssl configuration map with: SSL_CLIENT_AUTH_CONFIG = "ssl.client.auth"
+kopSslClientAuth=
+
 # supported SASL mechanisms exposed by broker
 saslAllowedMechanisms=
 ```

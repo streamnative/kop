@@ -411,38 +411,6 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     /**
-     * A producer with ssl connect wrapper.
-     */
-    @Getter
-    public static class SslProducer implements Closeable {
-        private final KafkaProducer<Integer, String> producer;
-        private final String topic;
-
-        public SslProducer(String topic, int port) {
-            Properties props = new Properties();
-            props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + port);
-            props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducerSSL");
-            props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
-            props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-
-            // SSL client config
-            props.put("security.protocol", "SSL");
-            props.put("ssl.truststore.location", "./src/test/resources/ssl/certificate/client.truststore.jks");
-            props.put("ssl.truststore.password", "111111");
-            // default is https, here need to set empty.
-            props.put("ssl.endpoint.identification.algorithm", "");
-
-            producer = new KafkaProducer<>(props);
-            this.topic = topic;
-        }
-
-        @Override
-        public void close() {
-            this.producer.close();
-        }
-    }
-
-    /**
      * A callback wrapper for produce async.
      */
     class DemoCallBack implements Callback {

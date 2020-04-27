@@ -35,21 +35,22 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 public class SSLUtils {
     // A map between kafka SslConfigs and KafkaServiceConfiguration.
     public static final Map<String, String> CONFIG_NAME_MAP = ImmutableMap.<String, String>builder()
-        .put(SslConfigs.SSL_PROTOCOL_CONFIG, "kopSslProtocol")
-        .put(SslConfigs.SSL_PROVIDER_CONFIG, "kopSslProvider")
-        .put(SslConfigs.SSL_CIPHER_SUITES_CONFIG, "kopSslCipherSuites")
-        .put(SslConfigs.SSL_ENABLED_PROTOCOLS_CONFIG, "kopSslEnabledProtocols")
-        .put(SslConfigs.SSL_KEYSTORE_TYPE_CONFIG, "kopSslKeystoreType")
-        .put(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG, "kopSslKeystoreLocation")
-        .put(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG, "kopSslKeystorePassword")
-        .put(SslConfigs.SSL_KEY_PASSWORD_CONFIG, "kopSslKeyPassword")
-        .put(SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG, "kopSslTruststoreType")
-        .put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, "kopSslTruststoreLocation")
-        .put(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG, "kopSslTruststorePassword")
-        .put(SslConfigs.SSL_KEYMANAGER_ALGORITHM_CONFIG, "kopSslKeymanagerAlgorithm")
-        .put(SslConfigs.SSL_TRUSTMANAGER_ALGORITHM_CONFIG, "kopSslTrustmanagerAlgorithm")
-        .put(SslConfigs.SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG, "kopSslSecureRandomImplementation")
-        .build();
+            .put(SslConfigs.SSL_PROTOCOL_CONFIG, "kopSslProtocol")
+            .put(SslConfigs.SSL_PROVIDER_CONFIG, "kopSslProvider")
+            .put(SslConfigs.SSL_CIPHER_SUITES_CONFIG, "kopSslCipherSuites")
+            .put(SslConfigs.SSL_ENABLED_PROTOCOLS_CONFIG, "kopSslEnabledProtocols")
+            .put(SslConfigs.SSL_KEYSTORE_TYPE_CONFIG, "kopSslKeystoreType")
+            .put(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG, "kopSslKeystoreLocation")
+            .put(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG, "kopSslKeystorePassword")
+            .put(SslConfigs.SSL_KEY_PASSWORD_CONFIG, "kopSslKeyPassword")
+            .put(SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG, "kopSslTruststoreType")
+            .put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, "kopSslTruststoreLocation")
+            .put(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG, "kopSslTruststorePassword")
+            .put(SslConfigs.SSL_KEYMANAGER_ALGORITHM_CONFIG, "kopSslKeymanagerAlgorithm")
+            .put(SslConfigs.SSL_TRUSTMANAGER_ALGORITHM_CONFIG, "kopSslTrustmanagerAlgorithm")
+            .put(SslConfigs.SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG, "kopSslSecureRandomImplementation")
+            .put(BrokerSecurityConfigs.SSL_CLIENT_AUTH_CONFIG, "kopSslClientAuth")
+            .build();
 
     public static SslContextFactory createSslContextFactory(KafkaServiceConfiguration kafkaServiceConfiguration) {
         Builder<String, Object> sslConfigValues = ImmutableMap.builder();
@@ -99,6 +100,9 @@ public class SSLUtils {
                     break;
                 case SslConfigs.SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG:
                     obj = kafkaServiceConfiguration.getKopSslSecureRandomImplementation();
+                    break;
+                case BrokerSecurityConfigs.SSL_CLIENT_AUTH_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslClientAuth();
                     break;
                 default:
                     log.error("key {} not contained in KafkaServiceConfiguration", key);
