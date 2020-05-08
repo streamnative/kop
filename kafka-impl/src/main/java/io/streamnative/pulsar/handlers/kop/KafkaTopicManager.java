@@ -13,6 +13,16 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static com.google.common.base.Preconditions.checkState;
+
+import java.net.InetSocketAddress;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarServerException;
@@ -23,16 +33,6 @@ import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.impl.Backoff;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.TopicName;
-
-import java.net.InetSocketAddress;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-
-import static com.google.common.base.Preconditions.checkState;
 
 /**
  * KafkaTopicManager manages a Map of topic to KafkaTopicConsumerManager.
@@ -219,8 +219,8 @@ public class KafkaTopicManager {
                     long waitTimeMs = backoff.next();
 
                     if (backoff.isMandatoryStopMade()) {
-                        log.warn("[{}] getBroker for topic {} failed, retried too many times {}, return null. throwable: ",
-                            requestHandler.ctx.channel(), topicName, waitTimeMs, th);
+                        log.warn("[{}] getBroker for topic {} failed, retried too many times {}, return null."
+                                        + " throwable: ", requestHandler.ctx.channel(), topicName, waitTimeMs, th);
                         retFuture.complete(null);
                     } else {
                         log.warn("[{}] getBroker for topic failed, will retry in {} ms. throwable: ",

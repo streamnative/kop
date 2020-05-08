@@ -13,6 +13,20 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.ListenerType.PLAINTEXT;
+import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.ListenerType.SSL;
+import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.getKopBrokerUrl;
+import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.getListenerPort;
+import static io.streamnative.pulsar.handlers.kop.MessagePublishContext.MESSAGE_BATCHED;
+import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.recordsToByteBuf;
+import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
+import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.pulsarTopicName;
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
+import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
+
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Queues;
@@ -26,6 +40,30 @@ import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.SaslUtils;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Queue;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import javax.naming.AuthenticationException;
+
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
@@ -44,13 +82,46 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
-import org.apache.kafka.common.requests.*;
+import org.apache.kafka.common.requests.AbstractRequest;
+import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.common.requests.ApiVersionsResponse;
+import org.apache.kafka.common.requests.DeleteGroupsRequest;
+import org.apache.kafka.common.requests.DeleteGroupsResponse;
+import org.apache.kafka.common.requests.DescribeGroupsRequest;
+import org.apache.kafka.common.requests.DescribeGroupsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsResponse.GroupMember;
 import org.apache.kafka.common.requests.DescribeGroupsResponse.GroupMetadata;
+import org.apache.kafka.common.requests.FetchRequest;
+import org.apache.kafka.common.requests.FindCoordinatorRequest;
+import org.apache.kafka.common.requests.FindCoordinatorResponse;
+import org.apache.kafka.common.requests.HeartbeatRequest;
+import org.apache.kafka.common.requests.HeartbeatResponse;
+import org.apache.kafka.common.requests.JoinGroupRequest;
+import org.apache.kafka.common.requests.JoinGroupResponse;
+import org.apache.kafka.common.requests.LeaveGroupRequest;
+import org.apache.kafka.common.requests.LeaveGroupResponse;
+import org.apache.kafka.common.requests.ListGroupsRequest;
+import org.apache.kafka.common.requests.ListGroupsResponse;
 import org.apache.kafka.common.requests.ListGroupsResponse.Group;
+import org.apache.kafka.common.requests.ListOffsetRequest;
+import org.apache.kafka.common.requests.ListOffsetResponse;
+import org.apache.kafka.common.requests.MetadataRequest;
+import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
+import org.apache.kafka.common.requests.OffsetCommitRequest;
+import org.apache.kafka.common.requests.OffsetCommitResponse;
+import org.apache.kafka.common.requests.OffsetFetchRequest;
+import org.apache.kafka.common.requests.OffsetFetchResponse;
+import org.apache.kafka.common.requests.ProduceRequest;
+import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
+import org.apache.kafka.common.requests.SaslAuthenticateRequest;
+import org.apache.kafka.common.requests.SaslAuthenticateResponse;
+import org.apache.kafka.common.requests.SaslHandshakeRequest;
+import org.apache.kafka.common.requests.SaslHandshakeResponse;
+import org.apache.kafka.common.requests.SyncGroupRequest;
+import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
@@ -75,43 +146,6 @@ import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 import org.apache.pulsar.zookeeper.ZooKeeperCache;
 import org.apache.pulsar.zookeeper.ZooKeeperCache.Deserializer;
-
-import javax.naming.AuthenticationException;
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Queue;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkState;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.ListenerType.PLAINTEXT;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.ListenerType.SSL;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.getKopBrokerUrl;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.getListenerPort;
-import static io.streamnative.pulsar.handlers.kop.MessagePublishContext.MESSAGE_BATCHED;
-import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.recordsToByteBuf;
-import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
-import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.pulsarTopicName;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
-import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 /**
  * This class contains all the request handling methods.
@@ -466,8 +500,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     // whether the head of queue is running.
     private AtomicBoolean isHeadRequestRun = new AtomicBoolean(false);
 
-    private ConcurrentHashMap<TopicName, Queue<Pair<CompletableFuture<ByteBuf>, CompletableFuture<PartitionResponse>>>> transQueue =
-            new ConcurrentHashMap<>();
+    private ConcurrentHashMap<TopicName, Queue<Pair<CompletableFuture<ByteBuf>, CompletableFuture<PartitionResponse>>>>
+            transQueue = new ConcurrentHashMap<>();
 
     private void publishMessages(MemoryRecords records,
                                  TopicName topic,
@@ -496,35 +530,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     doPublishMessages(topic);
                 }
             });
-
-//        } else {
-//            List<CompletableFuture<Long>> futures = Collections
-//                    .synchronizedList(Lists.newArrayListWithExpectedSize(size.get()));
-//
-//            records.records().forEach(record -> {
-//                CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
-//                futures.add(offsetFuture);
-//                ByteBuf headerAndPayload = messageToByteBuf(recordToEntry(record));
-//                topic.publishMessage(
-//                        headerAndPayload,
-//                        MessagePublishContext.get(
-//                                offsetFuture, topic, System.nanoTime()));
-//            });
-//
-//            CompletableFuture.allOf(futures.toArray(new CompletableFuture<?>[rec])).whenComplete((ignore, ex) -> {
-//                if (ex != null) {
-//                    log.error("publishMessages for topic partition: {} failed when write.",
-//                            topic.getName(), ex);
-//                    future.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
-//                } else {
-//                    future.complete(new PartitionResponse(Errors.NONE));
-//                }
-//            });
         }
     }
 
     private void doPublishMessages(TopicName topic) {
-        Queue<Pair<CompletableFuture<ByteBuf>, CompletableFuture<PartitionResponse>>> topicQueue = transQueue.get(topic);
+        Queue<Pair<CompletableFuture<ByteBuf>, CompletableFuture<PartitionResponse>>> topicQueue =
+                transQueue.get(topic);
 
         // loop from first responseFuture.
         while (topicQueue != null && topicQueue.peek() != null

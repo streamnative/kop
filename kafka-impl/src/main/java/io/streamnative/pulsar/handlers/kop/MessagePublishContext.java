@@ -13,28 +13,27 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.messageToByteBuf;
+import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.recordToEntry;
+import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.recordsToByteBuf;
+
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
-import org.apache.pulsar.broker.service.Topic;
-import org.apache.pulsar.broker.service.Topic.PublishContext;
-
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.messageToByteBuf;
-import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.recordToEntry;
-import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.recordsToByteBuf;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
+import org.apache.pulsar.broker.service.Topic;
+import org.apache.pulsar.broker.service.Topic.PublishContext;
 
 /**
  * Implementation for PublishContext.

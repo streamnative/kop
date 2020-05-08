@@ -13,8 +13,19 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.time.Clock;
+import java.util.Base64;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.StreamSupport;
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
@@ -40,17 +51,6 @@ import org.apache.pulsar.common.compression.CompressionCodecProvider;
 import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.protocol.Commands.ChecksumType;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.time.Clock;
-import java.util.Base64;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.stream.StreamSupport;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkState;
-import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * Pulsar Message and Kafka Record utils.
