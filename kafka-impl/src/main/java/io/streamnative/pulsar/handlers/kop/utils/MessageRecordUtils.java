@@ -23,8 +23,9 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Clock;
 import java.util.Base64;
-import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.StreamSupport;
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
@@ -49,6 +50,7 @@ import org.apache.pulsar.common.api.proto.PulsarApi.SingleMessageMetadata;
 import org.apache.pulsar.common.compression.CompressionCodecProvider;
 import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.protocol.Commands.ChecksumType;
+
 
 /**
  * Pulsar Message and Kafka Record utils.
@@ -157,27 +159,48 @@ public final class MessageRecordUtils {
         List<MessageImpl<byte[]>> messages = Lists.newArrayListWithExpectedSize(size);
         MessageMetadata.Builder messageMetaBuilder = MessageMetadata.newBuilder();
 
-        Iterator<Record> iterator = records.records().iterator();
-        while (iterator.hasNext()) {
-            MessageImpl<byte[]> message = recordToEntry(iterator.next());
+        StreamSupport.stream(records.records().spliterator(), true).forEachOrdered(record -> {
+            MessageImpl<byte[]> message = recordToEntry(record);
+            messages.add(message);
+        });
+
+        for (MessageImpl<byte[]> message : messages) {
             if (++numMessagesInBatch == 1) {
                 sequenceId = Commands.initBatchMessageMetadata(messageMetaBuilder, message.getMessageBuilder());
             }
-            messages.add(message);
             currentBatchSizeBytes += message.getDataBuffer().readableBytes();
-
             if (log.isDebugEnabled()) {
                 log.debug("recordsToByteBuf , sequenceId: {}, numMessagesInBatch: {}, currentBatchSizeBytes: {} ",
-                    sequenceId, numMessagesInBatch, currentBatchSizeBytes);
+                        sequenceId, numMessagesInBatch, currentBatchSizeBytes);
             }
-        }
 
-        for (MessageImpl<byte[]> msg : messages) {
-            PulsarApi.MessageMetadata.Builder msgBuilder = msg.getMessageBuilder();
+            PulsarApi.MessageMetadata.Builder msgBuilder = message.getMessageBuilder();
             batchedMessageMetadataAndPayload = Commands.serializeSingleMessageInBatchWithPayload(msgBuilder,
-                msg.getDataBuffer(), batchedMessageMetadataAndPayload);
+                    message.getDataBuffer(), batchedMessageMetadataAndPayload);
             msgBuilder.recycle();
         }
+
+//        Iterator<Record> iterator = records.records().iterator();
+//        while (iterator.hasNext()) {
+//            MessageImpl<byte[]> message = recordToEntry(iterator.next());
+//            if (++numMessagesInBatch == 1) {
+//                sequenceId = Commands.initBatchMessageMetadata(messageMetaBuilder, message.getMessageBuilder());
+//            }
+//            messages.add(message);
+//            currentBatchSizeBytes += message.getDataBuffer().readableBytes();
+//
+//            if (log.isDebugEnabled()) {
+//                log.debug("recordsToByteBuf , sequenceId: {}, numMessagesInBatch: {}, currentBatchSizeBytes: {} ",
+//                    sequenceId, numMessagesInBatch, currentBatchSizeBytes);
+//            }
+//        }
+
+//        for (MessageImpl<byte[]> msg : messages) {
+//            PulsarApi.MessageMetadata.Builder msgBuilder = msg.getMessageBuilder();
+//            batchedMessageMetadataAndPayload = Commands.serializeSingleMessageInBatchWithPayload(msgBuilder,
+//                msg.getDataBuffer(), batchedMessageMetadataAndPayload);
+//            msgBuilder.recycle();
+//        }
         int uncompressedSize = batchedMessageMetadataAndPayload.readableBytes();
 
         if (PulsarApi.CompressionType.NONE != compressionType) {
@@ -198,6 +221,85 @@ public final class MessageRecordUtils {
         batchedMessageMetadataAndPayload.release();
 
         return buf;
+    }
+
+    public static void recordsToByteBuf(MemoryRecords records, int size,
+                                        CompletableFuture<ByteBuf> transFuture) {
+        long currentBatchSizeBytes = 0;
+        int numMessagesInBatch = 0;
+
+        long sequenceId = -1;
+
+        // TODO: handle different compression type
+        PulsarApi.CompressionType compressionType = PulsarApi.CompressionType.NONE;
+
+        ByteBuf batchedMessageMetadataAndPayload = PulsarByteBufAllocator.DEFAULT
+                .buffer(Math.min(INITIAL_BATCH_BUFFER_SIZE, MAX_MESSAGE_BATCH_SIZE_BYTES));
+        List<MessageImpl<byte[]>> messages = Lists.newArrayListWithExpectedSize(size);
+        MessageMetadata.Builder messageMetaBuilder = MessageMetadata.newBuilder();
+
+        StreamSupport.stream(records.records().spliterator(), true).forEachOrdered(record -> {
+            MessageImpl<byte[]> message = recordToEntry(record);
+            messages.add(message);
+        });
+
+        for (MessageImpl<byte[]> message : messages) {
+            if (++numMessagesInBatch == 1) {
+                sequenceId = Commands.initBatchMessageMetadata(messageMetaBuilder, message.getMessageBuilder());
+            }
+            currentBatchSizeBytes += message.getDataBuffer().readableBytes();
+            if (log.isDebugEnabled()) {
+                log.debug("recordsToByteBuf , sequenceId: {}, numMessagesInBatch: {}, currentBatchSizeBytes: {} ",
+                        sequenceId, numMessagesInBatch, currentBatchSizeBytes);
+            }
+
+            PulsarApi.MessageMetadata.Builder msgBuilder = message.getMessageBuilder();
+            batchedMessageMetadataAndPayload = Commands.serializeSingleMessageInBatchWithPayload(msgBuilder,
+                    message.getDataBuffer(), batchedMessageMetadataAndPayload);
+            msgBuilder.recycle();
+        }
+
+//        Iterator<Record> iterator = records.records().iterator();
+//        while (iterator.hasNext()) {
+//            MessageImpl<byte[]> message = recordToEntry(iterator.next());
+//            if (++numMessagesInBatch == 1) {
+//                sequenceId = Commands.initBatchMessageMetadata(messageMetaBuilder, message.getMessageBuilder());
+//            }
+//            messages.add(message);
+//            currentBatchSizeBytes += message.getDataBuffer().readableBytes();
+//
+//            if (log.isDebugEnabled()) {
+//                log.debug("recordsToByteBuf , sequenceId: {}, numMessagesInBatch: {}, currentBatchSizeBytes: {} ",
+//                    sequenceId, numMessagesInBatch, currentBatchSizeBytes);
+//            }
+//        }
+
+//        for (MessageImpl<byte[]> msg : messages) {
+//            PulsarApi.MessageMetadata.Builder msgBuilder = msg.getMessageBuilder();
+//            batchedMessageMetadataAndPayload = Commands.serializeSingleMessageInBatchWithPayload(msgBuilder,
+//                msg.getDataBuffer(), batchedMessageMetadataAndPayload);
+//            msgBuilder.recycle();
+//        }
+        int uncompressedSize = batchedMessageMetadataAndPayload.readableBytes();
+
+        if (PulsarApi.CompressionType.NONE != compressionType) {
+            messageMetaBuilder.setCompression(compressionType);
+            messageMetaBuilder.setUncompressedSize(uncompressedSize);
+        }
+
+        messageMetaBuilder.setNumMessagesInBatch(numMessagesInBatch);
+
+        MessageMetadata msgMetadata = messageMetaBuilder.build();
+
+        ByteBuf buf = Commands.serializeMetadataAndPayload(ChecksumType.Crc32c,
+                msgMetadata,
+                batchedMessageMetadataAndPayload);
+
+        messageMetaBuilder.recycle();
+        msgMetadata.recycle();
+        batchedMessageMetadataAndPayload.release();
+
+        transFuture.complete(buf);
     }
 
     private static Header[] getHeadersFromMetadata(List<KeyValue> properties) {

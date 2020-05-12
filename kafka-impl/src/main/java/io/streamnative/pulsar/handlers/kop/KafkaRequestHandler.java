@@ -19,7 +19,8 @@ import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.ListenerT
 import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.ListenerType.SSL;
 import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.getKopBrokerUrl;
 import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.getListenerPort;
-import static io.streamnative.pulsar.handlers.kop.MessagePublishContext.publishMessages;
+import static io.streamnative.pulsar.handlers.kop.MessagePublishContext.MESSAGE_BATCHED;
+import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.recordsToByteBuf;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.pulsarTopicName;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -29,6 +30,7 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Queues;
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
@@ -38,6 +40,7 @@ import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.SaslUtils;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -60,6 +63,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import javax.naming.AuthenticationException;
+
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
@@ -496,92 +500,81 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     // whether the head of queue is running.
     private AtomicBoolean isHeadRequestRun = new AtomicBoolean(false);
 
-    private void handleProducerRequestInternal() {
-        // the first request that success set to running, get running.
-        if (produceRequestsQueue.isEmpty() || !isHeadRequestRun.compareAndSet(false, true)) {
-            // the head of queue is already running, when head complete, it will peek the following request to run.
-            if (log.isDebugEnabled()) {
-                log.debug(" Produce messages not entered. queue.size: {}, head isHeadRequestRun: {}",
-                    produceRequestsQueue.size(), isHeadRequestRun.get());
-            }
-            return;
+    private ConcurrentHashMap<TopicName, Queue<Pair<CompletableFuture<ByteBuf>, CompletableFuture<PartitionResponse>>>>
+            transQueue = new ConcurrentHashMap<>();
+
+    private void publishMessages(MemoryRecords records,
+                                 TopicName topic,
+                                 CompletableFuture<PartitionResponse> future,
+                                 CompletableFuture<ByteBuf> transFuture) {
+        // get records size.
+        AtomicInteger size = new AtomicInteger(0);
+        records.records().forEach(record -> size.incrementAndGet());
+        int rec = size.get();
+
+        if (log.isDebugEnabled()) {
+            log.debug("publishMessages for topic partition: {} , records size is {} ", topic.toString(), size.get());
         }
 
-        Pair<KafkaHeaderAndRequest, CompletableFuture<AbstractResponse>> head = produceRequestsQueue.peek();
-        KafkaHeaderAndRequest produceHar = head.getKey();
-        CompletableFuture<AbstractResponse> resultFuture = head.getValue();
-        ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
+        if (MESSAGE_BATCHED) {
+            pulsarService.getExecutor().submit(() -> {
+                ByteBuf buf = recordsToByteBuf(records, rec);
+                transFuture.complete(buf);
+            });
 
-        // Ignore request.acks() and request.timeout(), which related to kafka replication in this broker.
-        Map<TopicPartition, CompletableFuture<PartitionResponse>> responsesFutures = new HashMap<>();
-
-        final int responsesSize = produceRequest.partitionRecordsOrFail().size();
-
-        // TODO: handle un-exist topic:
-        //     nonExistingTopicResponses += topicPartition -> new PartitionResponse(Errors.UNKNOWN_TOPIC_OR_PARTITION)
-        for (Map.Entry<TopicPartition, ? extends Records> entry : produceRequest.partitionRecordsOrFail().entrySet()) {
-            TopicPartition topicPartition = entry.getKey();
-
-            CompletableFuture<PartitionResponse> partitionResponse = new CompletableFuture<>();
-            responsesFutures.put(topicPartition, partitionResponse);
-
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Request {}: Produce messages for topic {} partition {}, request size: {} ",
-                    ctx.channel(), produceHar.getHeader(),
-                    topicPartition.topic(), topicPartition.partition(), responsesSize);
-            }
-
-            TopicName topicName = pulsarTopicName(topicPartition, namespace);
-
-            topicManager.getTopic(topicName.toString()).whenComplete((persistentTopic, exception) -> {
-                if (exception != null || persistentTopic == null) {
-                    log.warn("[{}] Request {}: Failed to getOrCreateTopic {}. "
-                            + "Topic is in loading status, return LEADER_NOT_AVAILABLE. exception:",
-                        ctx.channel(), produceHar.getHeader(), topicName, exception);
-                    partitionResponse.complete(new PartitionResponse(Errors.LEADER_NOT_AVAILABLE));
+            transFuture.whenComplete((headerAndPayload, ex) -> {
+                if (ex != null) {
+                    log.error("record to bytebuf error: ", ex);
+                    future.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
                 } else {
-                    CompletableFuture<PersistentTopic> topicFuture = new CompletableFuture<>();
-                    topicFuture.complete(persistentTopic);
-                    publishMessages((MemoryRecords) entry.getValue(), persistentTopic, partitionResponse);
+                    doPublishMessages(topic);
                 }
             });
         }
+    }
 
-        CompletableFuture.allOf(responsesFutures.values().toArray(new CompletableFuture<?>[responsesSize]))
-            .whenComplete((ignore, ex) -> {
-                // all ex has translated to PartitionResponse with Errors.KAFKA_STORAGE_ERROR
-                Map<TopicPartition, PartitionResponse> responses = new ConcurrentHashMap<>();
-                for (Map.Entry<TopicPartition, CompletableFuture<PartitionResponse>> entry:
-                    responsesFutures.entrySet()) {
-                    responses.put(entry.getKey(), entry.getValue().join());
-                }
+    private void doPublishMessages(TopicName topic) {
+        Queue<Pair<CompletableFuture<ByteBuf>, CompletableFuture<PartitionResponse>>> topicQueue =
+                transQueue.get(topic);
 
+        // loop from first responseFuture.
+        while (topicQueue != null && topicQueue.peek() != null
+                && topicQueue.peek().getLeft().isDone() && isActive.get()) {
+            CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
+            Pair<CompletableFuture<ByteBuf>, CompletableFuture<PartitionResponse>> result = topicQueue.remove();
+            try {
                 if (log.isDebugEnabled()) {
-                    log.debug("[{}] Request {}: Complete handle produce.",
-                        ctx.channel(), produceHar.toString());
+                    log.debug("[{}] topic", topic.toString());
                 }
-                resultFuture.complete(new ProduceResponse(responses));
-            });
+                ByteBuf headerAndPayload = result.getLeft().get();
+                topicManager.getTopic(topic.toString()).whenComplete((persistentTopic, throwable) -> {
+                    if (throwable != null || persistentTopic == null) {
+                        log.warn("[{}] Request {}: Failed to getOrCreateTopic {}. "
+                                        + "Topic is in loading status, return LEADER_NOT_AVAILABLE. exception:",
+                                ctx.channel(), topic.toString(), throwable);
+                        result.getRight().complete(new PartitionResponse(Errors.LEADER_NOT_AVAILABLE));
+                    } else {
+                        persistentTopic.publishMessage(
+                                headerAndPayload,
+                                MessagePublishContext.get(
+                                        offsetFuture, persistentTopic, System.nanoTime()));
+                    }
+                });
 
-        // trigger following request to run.
-        resultFuture.whenComplete((response, throwable) -> {
-            if (throwable != null) {
-                log.warn("Error produce message for {}.", produceHar.getHeader(), throwable);
+                offsetFuture.whenComplete((offset, ex) -> {
+                    if (ex != null) {
+                        log.error("publishMessages for topic partition: {} failed when write.",
+                                topic.toString(), ex);
+                        result.getRight().complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
+                    } else {
+                        result.getRight().complete(new PartitionResponse(Errors.NONE));
+                    }
+                });
+            } catch (Exception e) {
+                // should not comes here.
+                log.error("error to get Response ByteBuf:", e);
             }
-
-            if (log.isDebugEnabled()) {
-                log.debug("Produce messages complete. trigger next. queue.size: {}, head isHeadRequestRun: {}",
-                    produceRequestsQueue.size(), isHeadRequestRun.get());
-            }
-
-            boolean compare = isHeadRequestRun.compareAndSet(true, false);
-            checkState(compare, "Head should be running when completed head.");
-            // remove completed request.
-            produceRequestsQueue.remove();
-
-            // trigger another run.
-            handleProducerRequestInternal();
-        });
+        }
     }
 
     protected void handleProduceRequest(KafkaHeaderAndRequest produceHar,
@@ -596,13 +589,59 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             return;
         }
 
-        if (log.isDebugEnabled()) {
-            log.debug(" new produce request comes: {}, isHeadRequestRun: {}",
-                produceRequestsQueue.size(), isHeadRequestRun.get());
-        }
-        produceRequestsQueue.add(Pair.of(produceHar, resultFuture));
+        Map<TopicPartition, CompletableFuture<PartitionResponse>> responsesFutures = new HashMap<>();
 
-        handleProducerRequestInternal();
+        final int responsesSize = produceRequest.partitionRecordsOrFail().size();
+
+        // TODO: handle un-exist topic:
+        //     nonExistingTopicResponses += topicPartition -> new PartitionResponse(Errors.UNKNOWN_TOPIC_OR_PARTITION)
+        for (Map.Entry<TopicPartition, ? extends Records> entry : produceRequest.partitionRecordsOrFail().entrySet()) {
+            TopicPartition topicPartition = entry.getKey();
+
+            CompletableFuture<PartitionResponse> partitionResponse = new CompletableFuture<>();
+            responsesFutures.put(topicPartition, partitionResponse);
+
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] Request {}: Produce messages for topic {} partition {}, request size: {} ",
+                        ctx.channel(), produceHar.getHeader(),
+                        topicPartition.topic(), topicPartition.partition(), responsesSize);
+            }
+
+            TopicName topicName = pulsarTopicName(topicPartition, namespace);
+
+            CompletableFuture<ByteBuf> transFuture = new CompletableFuture<>();
+            //put queue
+            transQueue.compute(topicName, (key, queue) -> {
+                if (queue == null) {
+                    Queue<Pair<CompletableFuture<ByteBuf>, CompletableFuture<PartitionResponse>>> newQueue =
+                            Queues.newConcurrentLinkedQueue();
+                    newQueue.add(Pair.of(transFuture, partitionResponse));
+                    return newQueue;
+                } else {
+                    queue.add(Pair.of(transFuture, partitionResponse));
+                    return queue;
+                }
+            });
+
+            topicManager.getTopic(topicName.toString());
+            publishMessages((MemoryRecords) entry.getValue(), topicName, partitionResponse, transFuture);
+        }
+
+        CompletableFuture.allOf(responsesFutures.values().toArray(new CompletableFuture<?>[responsesSize]))
+                .whenComplete((ignore, ex) -> {
+                    // all ex has translated to PartitionResponse with Errors.KAFKA_STORAGE_ERROR
+                    Map<TopicPartition, PartitionResponse> responses = new ConcurrentHashMap<>();
+                    for (Map.Entry<TopicPartition, CompletableFuture<PartitionResponse>> entry :
+                            responsesFutures.entrySet()) {
+                        responses.put(entry.getKey(), entry.getValue().join());
+                    }
+
+                    if (log.isDebugEnabled()) {
+                        log.debug("[{}] Request {}: Complete handle produce.",
+                                ctx.channel(), produceHar.toString());
+                    }
+                    resultFuture.complete(new ProduceResponse(responses));
+                });
     }
 
     protected void handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator,

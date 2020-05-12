@@ -22,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarServerException;
@@ -218,8 +219,8 @@ public class KafkaTopicManager {
                     long waitTimeMs = backoff.next();
 
                     if (backoff.isMandatoryStopMade()) {
-                        log.warn("[{}] getBroker for topic failed, retried too many times, return null. throwable: ",
-                            requestHandler.ctx.channel(), topicName, waitTimeMs, th);
+                        log.warn("[{}] getBroker for topic {} failed, retried too many times {}, return null."
+                                        + " throwable: ", requestHandler.ctx.channel(), topicName, waitTimeMs, th);
                         retFuture.complete(null);
                     } else {
                         log.warn("[{}] getBroker for topic failed, will retry in {} ms. throwable: ",
@@ -260,58 +261,55 @@ public class KafkaTopicManager {
             rwLock.readLock().unlock();
         }
 
-        return topics.computeIfAbsent(topicName,
-            t -> {
-                getTopicBroker(t).whenCompleteAsync((ignore, th) -> {
-                    if (th != null || ignore == null) {
-                        log.warn("[{}] Failed getTopicBroker {}, return null PersistentTopic. throwable: ",
+        return topics.computeIfAbsent(topicName, t -> {
+            getTopicBroker(t).whenCompleteAsync((ignore, th) -> {
+                if (th != null || ignore == null) {
+                    log.warn("[{}] Failed getTopicBroker {}, return null PersistentTopic. throwable: ",
                             requestHandler.ctx.channel(), t, th);
 
-                        // get topic broker returns null. topic should be removed from LookupCache.
-                        if (ignore == null) {
-                            removeLookupCache(topicName);
-                        }
+                    // get topic broker returns null. topic should be removed from LookupCache.
+                    if (ignore == null) {
+                        removeLookupCache(topicName);
+                    }
 
+                    topicCompletableFuture.complete(null);
+                    return;
+                }
+
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] getTopicBroker for {} in KafkaTopicManager. brokerAddress: {}",
+                            requestHandler.ctx.channel(), t, ignore);
+                }
+
+                brokerService.getTopic(t, true).whenComplete((t2, throwable) -> {
+                    if (throwable != null) {
+                        log.error("[{}] Failed to getTopic {}. exception:",
+                                requestHandler.ctx.channel(), t, throwable);
+                        // failed to getTopic from current broker, remove cache, which added in getTopicBroker.
+                        removeLookupCache(t);
                         topicCompletableFuture.complete(null);
                         return;
                     }
 
-                    if (log.isDebugEnabled()) {
-                        log.debug("[{}] getTopicBroker for {} in KafkaTopicManager. brokerAddress: {}",
-                            requestHandler.ctx.channel(), t, ignore);
+                    try {
+                        if (t2.isPresent()) {
+                            PersistentTopic persistentTopic = (PersistentTopic) t2.get();
+                            references.putIfAbsent(t, registerInPersistentTopic(persistentTopic));
+                            topicCompletableFuture.complete(persistentTopic);
+                        } else {
+                            log.error("[{}]Get empty topic for name {}",
+                                    requestHandler.ctx.channel(), t);
+                            topicCompletableFuture.complete(null);
+                        }
+                    } catch (Exception e) {
+                        log.error("[{}] Failed to get client in registerInPersistentTopic {}. exception:",
+                                requestHandler.ctx.channel(), t, e);
+                        topicCompletableFuture.complete(null);
                     }
-
-                    brokerService
-                        .getTopic(t, true)
-                        .whenComplete((t2, throwable) -> {
-                            if (throwable != null) {
-                                log.error("[{}] Failed to getTopic {}. exception:",
-                                    requestHandler.ctx.channel(), t, throwable);
-                                // failed to getTopic from current broker, remove cache, which added in getTopicBroker.
-                                removeLookupCache(t);
-                                topicCompletableFuture.complete(null);
-                                return;
-                            }
-
-                            try {
-                                if (t2.isPresent()) {
-                                    PersistentTopic persistentTopic = (PersistentTopic) t2.get();
-                                    references.putIfAbsent(t, registerInPersistentTopic(persistentTopic));
-                                    topicCompletableFuture.complete(persistentTopic);
-                                } else {
-                                    log.error("[{}]Get empty topic for name {}",
-                                        requestHandler.ctx.channel(), t);
-                                    topicCompletableFuture.complete(null);
-                                }
-                            } catch (Exception e) {
-                                log.error("[{}] Failed to get client in registerInPersistentTopic {}. exception:",
-                                    requestHandler.ctx.channel(), t, e);
-                                topicCompletableFuture.complete(null);
-                            }
-                        });
                 });
-                return topicCompletableFuture;
             });
+            return topicCompletableFuture;
+        });
     }
 
     // when channel close, release all the topics reference in persistentTopic
