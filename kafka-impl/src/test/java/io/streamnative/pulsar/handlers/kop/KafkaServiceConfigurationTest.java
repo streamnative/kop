@@ -28,6 +28,7 @@ import java.io.PrintWriter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.api.DigestType;
 
+import org.apache.pulsar.broker.ServiceConfiguration;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
@@ -90,6 +91,33 @@ public class KafkaServiceConfigurationTest {
         assertFalse(kafkaServiceConfig.getWebServicePort().isPresent());
         assertFalse(kafkaServiceConfig.getWebServicePortTls().isPresent());
         assertEquals(kafkaServiceConfig.getManagedLedgerDigestType(), DigestType.CRC32C);
+    }
+
+    @Test
+    public void testConfigurationChangedByServiceConfiguration() throws Exception {
+        File testConfigFile = new File("tmp." + System.currentTimeMillis() + ".properties");
+        if (testConfigFile.exists()) {
+            testConfigFile.delete();
+        }
+        final String advertisedAddress1 = "advertisedAddress1";
+        final String advertisedAddress2 = "advertisedAddress2";
+
+        PrintWriter printWriter = new PrintWriter(new OutputStreamWriter(new FileOutputStream(testConfigFile)));
+        printWriter.println("advertisedAddress=" + advertisedAddress1);
+        printWriter.close();
+        testConfigFile.deleteOnExit();
+
+        InputStream stream = new FileInputStream(testConfigFile);
+        final ServiceConfiguration serviceConfiguration =
+                ConfigurationUtils.create(stream, ServiceConfiguration.class);
+
+        serviceConfiguration.setAdvertisedAddress(advertisedAddress2);
+
+        final KafkaServiceConfiguration kafkaServiceConfig = ConfigurationUtils
+                .create(serviceConfiguration.getProperties(), KafkaServiceConfiguration.class);
+
+        assertEquals(kafkaServiceConfig.getAdvertisedAddress(), advertisedAddress1);
+        assertEquals(serviceConfiguration.getAdvertisedAddress(), advertisedAddress2);
     }
 
     @Test

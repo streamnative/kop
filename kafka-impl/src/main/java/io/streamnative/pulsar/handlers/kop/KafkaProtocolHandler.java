@@ -195,6 +195,11 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         } else {
             // when loaded with PulsarService as NAR, `conf` will be type of ServiceConfiguration
             kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
+
+            // some of the configs value in conf.properties may not updated.
+            // So need to get latest value from conf itself
+            kafkaConfig.setAdvertisedAddress(conf.getAdvertisedAddress());
+            kafkaConfig.setBindAddress(conf.getBindAddress());
         }
         this.bindAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(kafkaConfig.getBindAddress());
     }
