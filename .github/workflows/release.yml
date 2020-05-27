@@ -2,6 +2,7 @@ name: KoP Release
 
 on:
   release:
+    types: [created]
 
 jobs:
   upload:
