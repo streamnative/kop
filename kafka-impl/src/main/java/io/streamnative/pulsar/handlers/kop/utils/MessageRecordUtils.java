@@ -30,7 +30,6 @@ import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -374,7 +373,8 @@ public final class MessageRecordUtils {
 
                             builder.appendWithOffset(
                                     MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId(), i),
-                                    msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
+                                    msgMetadata.getEventTime() > 0
+                                            ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
                                     getKeyByteBuffer(singleMessageMetadata),
                                     getNioBuffer(singleMessagePayload),
                                     headers);
