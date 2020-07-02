@@ -44,7 +44,7 @@
     <jackson.version>2.10.3</jackson.version>
     <jcommander.version>1.48</jcommander.version>
     <kafka.version>2.0.0</kafka.version>
-    <log4j2.version>2.10.0</log4j2.version>
+    <log4j2.version>2.13.3</log4j2.version>
     <lombok.version>1.18.4</lombok.version>
     <mockito.version>2.22.0</mockito.version>
     <pulsar.version>2.5.0-ad0224407</pulsar.version>
