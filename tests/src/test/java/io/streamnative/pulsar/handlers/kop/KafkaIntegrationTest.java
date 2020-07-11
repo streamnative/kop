@@ -83,7 +83,51 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
                 // {"rustlang-rdkafka", Optional.empty(), true, true},
                 // consumer is broken, see integrations/README.md
                 {"node-kafka-node", Optional.empty(), true, false},
-                {"node-rdkafka", Optional.empty(), true, true},
+                {"node-rdkafka", Optional.empty(), true, true}
+        };
+    }
+
+    @DataProvider
+    public static Object[][] pythonIntegrations() {
+        return new Object[][]{
+                /* kafka-python < 1.4.0 not support
+                {"python2-kafka-python", Optional.of("python2-test-kop-v1.3.3"),
+                        true, true, "test-kop", "kafka-python==1.3.3"},
+                {"python2-kafka-python", Optional.of("python2-test-kop-v1.3.4"),
+                        true, true, "test-kop", "kafka-python==1.3.4"},
+                {"python2-kafka-python", Optional.of("python2-test-kop-v1.3.5"),
+                        true, true, "test-kop", "kafka-python==1.3.5"},
+                */
+                {"python2-kafka-python", Optional.of("python2-test-kop-v1.4.0"),
+                        true, true, "test-kop", "kafka-python==1.4.0"},
+                {"python2-kafka-python", Optional.of("python2-test-kop-v1.4.1"),
+                        true, true, "test-kop", "kafka-python==1.4.1"},
+                {"python2-kafka-python", Optional.of("python2-test-kop-v1.4.2"),
+                        true, true, "test-kop", "kafka-python==1.4.2"},
+                {"python2-kafka-python", Optional.of("python2-test-kop-v1.4.3"),
+                        true, true, "test-kop", "kafka-python==1.4.3"},
+                {"python2-kafka-python", Optional.of("python2-test-kop-v1.4.4"),
+                        true, true, "test-kop", "kafka-python==1.4.4"},
+                {"python2-kafka-python", Optional.of("python2-test-kop-v1.4.5"),
+                        true, true, "test-kop", "kafka-python==1.4.5"},
+                {"python2-kafka-python", Optional.of("python2-test-kop-v1.4.6"),
+                        true, true, "test-kop", "kafka-python==1.4.6"},
+                {"python2-kafka-python", Optional.of("python2-test-kop-v1.4.7"),
+                        true, true, "test-kop", "kafka-python==1.4.7"},
+                {"python2-kafka-python", Optional.of("python2-test-kop-v2.0.0"),
+                        true, true, "test-kop", "kafka-python==2.0.0"},
+                {"python2-kafka-python", Optional.of("python2-test-kop-v2.0.1"),
+                        true, true, "test-kop", "kafka-python==2.0.1"}
+        };
+    }
+
+    @DataProvider
+    public static Object[][] pyKafkaIntegrations() {
+        return new Object[][]{
+                /* all pykafka versions are not support
+                {"python2-pykafka", Optional.of("python2-test-kop-v1.3.5"),
+                        true, true, true, true, "test-kop", "pykafka==2.1.0", "RDKAFKA_INSTALL=system"}
+                */
         };
     }
 
@@ -158,6 +202,139 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
         Testcontainers.exposeHostPorts(ImmutableMap.of(super.kafkaBrokerPort, super.kafkaBrokerPort));
     }
 
+    @Test(timeOut = 3 * 60_000, dataProvider = "pythonIntegrations")
+    void simpleKafkaPythonProduceAndConsume(final String integration, final Optional<String> topic,
+                                 final boolean shouldProduce, final boolean shouldConsume,
+                                 final String groupId, final String requirements) throws Exception {
+        String topicName = topic.orElse(integration);
+        System.out.println("starting integration " + integration + " with topicName " + topicName);
+
+        admin.topics().createPartitionedTopic(topicName, 3);
+
+        System.out.println("topic created");
+
+        final GenericContainer producer = new GenericContainer<>("streamnative/kop-test-" + integration)
+                .withEnv("KOP_BROKER", "host.testcontainers.internal:" + super.kafkaBrokerPort)
+                .withEnv("KOP_PRODUCE", "true")
+                .withEnv("KOP_TOPIC", topic.orElse(integration))
+                .withEnv("KOP_LIMIT", "10")
+                .withCommand("bash", "-c", " pip install --no-cache-dir " + requirements
+                        + "; python produceConsume.py; echo \"ExitCode=$?\"")
+                .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
+                .waitingFor(Wait.forLogMessage("starting to produce\\n", 1))
+                .withNetworkMode("host");
+
+        final GenericContainer consumer = new GenericContainer<>("streamnative/kop-test-" + integration)
+                .withEnv("KOP_BROKER", "host.testcontainers.internal:" + super.kafkaBrokerPort)
+                .withEnv("KOP_TOPIC", topic.orElse(integration))
+                .withEnv("KOP_CONSUME", "true")
+                .withEnv("KOP_LIMIT", "10")
+                .withEnv("KOP_GROUPID", groupId)
+                .withCommand("bash", "-c", " pip install --no-cache-dir " + requirements
+                        + "; python produceConsume.py; echo \"ExitCode=$?\"")
+                .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
+                .waitingFor(Wait.forLogMessage("starting to consume\\n", 1))
+                .withNetworkMode("host");
+
+        WaitingConsumer producerWaitingConsumer = null;
+        WaitingConsumer consumerWaitingConsumer = null;
+        if (shouldProduce) {
+            producer.start();
+            producerWaitingConsumer = KafkaIntegrationTest.createLogFollower(producer);
+            System.out.println("producer started");
+        }
+
+        if (shouldConsume) {
+            consumer.start();
+            consumerWaitingConsumer = KafkaIntegrationTest.createLogFollower(consumer);
+            System.out.println("consumer started");
+        }
+
+        if (shouldProduce) {
+            producerWaitingConsumer.waitUntil(frame ->
+                    frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
+            KafkaIntegrationTest.checkForErrorsInLogs(producer.getLogs());
+        }
+
+        if (shouldConsume) {
+            consumerWaitingConsumer.waitUntil(frame ->
+                    frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
+            KafkaIntegrationTest.checkForErrorsInLogs(consumer.getLogs());
+        }
+
+        producer.close();
+        consumer.close();
+    }
+
+    @Test(timeOut = 3 * 60_000, dataProvider = "pyKafkaIntegrations")
+    void simplePyKafkaPythonProduceAndConsume(final String integration, final Optional<String> topic,
+                                 final boolean shouldProduce, final boolean shouldConsume,
+                                 final boolean balance_consumer, final boolean use_rdkafka,
+                                 final String groupId, final String requirements,
+                                 final String command) throws Exception {
+        String topicName = topic.orElse(integration);
+        System.out.println("starting integration " + integration + " with topicName " + topicName);
+
+        admin.topics().createPartitionedTopic(topicName, 3);
+
+        System.out.println("topic created");
+
+        final GenericContainer producer = new GenericContainer<>("streamnative/kop-test-" + integration)
+                .withEnv("KOP_BROKER", "host.testcontainers.internal:" + super.kafkaBrokerPort)
+                .withEnv("KOP_PRODUCE", "true")
+                .withEnv("KOP_TOPIC", topic.orElse(integration))
+                .withEnv("KOP_LIMIT", "10")
+                .withEnv("KOP_USE_RDKAFKA", String.valueOf(use_rdkafka))
+                .withCommand("bash", "-c", command + " pip install --no-cache-dir " + requirements
+                        + "; python produceConsume.py; echo \"ExitCode=$?\"")
+                .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
+                .waitingFor(Wait.forLogMessage("starting to produce\\n", 1))
+                .withNetworkMode("host");
+
+        final GenericContainer consumer = new GenericContainer<>("streamnative/kop-test-" + integration)
+                .withEnv("KOP_BROKER", "host.testcontainers.internal:" + super.kafkaBrokerPort)
+                .withEnv("KOP_TOPIC", topic.orElse(integration))
+                .withEnv("KOP_CONSUME", "true")
+                .withEnv("KOP_LIMIT", "10")
+                .withEnv("KOP_GROUPID", groupId)
+                .withEnv("KOP_USE_RDKAFKA", String.valueOf(use_rdkafka))
+                .withEnv("KOP_BALANCE_CONSUME", String.valueOf(balance_consumer))
+                .withCommand("bash", "-c", command + " pip install --no-cache-dir " + requirements
+                        + "; python produceConsume.py; echo \"ExitCode=$?\"")
+                .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
+                .waitingFor(Wait.forLogMessage("starting to consume\\n", 1))
+                .withNetworkMode("host");
+
+        WaitingConsumer producerWaitingConsumer = null;
+        WaitingConsumer consumerWaitingConsumer = null;
+        if (shouldProduce) {
+            producer.start();
+            producerWaitingConsumer = KafkaIntegrationTest.createLogFollower(producer);
+            System.out.println("producer started");
+        }
+
+        if (shouldConsume) {
+            consumer.start();
+            consumerWaitingConsumer = KafkaIntegrationTest.createLogFollower(consumer);
+            System.out.println("consumer started");
+        }
+
+        if (shouldProduce) {
+            producerWaitingConsumer.waitUntil(frame ->
+                    frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
+            KafkaIntegrationTest.checkForErrorsInLogs(producer.getLogs());
+        }
+
+        if (shouldConsume) {
+            consumerWaitingConsumer.waitUntil(frame ->
+                    frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
+            KafkaIntegrationTest.checkForErrorsInLogs(consumer.getLogs());
+        }
+
+        producer.close();
+        consumer.close();
+    }
+
     @Test(timeOut = 3 * 60_000, dataProvider = "integrations")
     void simpleProduceAndConsume(final String integration, final Optional<String> topic,
                                  final boolean shouldProduce, final boolean shouldConsume) throws Exception {
@@ -211,6 +388,9 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
                     frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
             KafkaIntegrationTest.checkForErrorsInLogs(consumer.getLogs());
         }
+
+        producer.close();
+        consumer.close();
     }
 
     @Override
