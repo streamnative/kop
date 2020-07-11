@@ -125,7 +125,7 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
     public static Object[][] pyKafkaIntegrations() {
         return new Object[][]{
                 /* all pykafka versions are not support
-                {"python2-pykafka", Optional.of("python2-test-kop-v1.3.5"),
+                {"python2-pykafka", Optional.of("python2-test-kop-v2.1.0"),
                         true, true, true, true, "test-kop", "pykafka==2.1.0", "RDKAFKA_INSTALL=system"}
                 */
         };
