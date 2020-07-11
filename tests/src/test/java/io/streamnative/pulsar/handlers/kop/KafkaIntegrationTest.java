@@ -269,7 +269,7 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 3 * 60_000, dataProvider = "pyKafkaIntegrations")
     void simplePyKafkaPythonProduceAndConsume(final String integration, final Optional<String> topic,
                                  final boolean shouldProduce, final boolean shouldConsume,
-                                 final boolean balance_consumer, final boolean use_rdkafka,
+                                 final boolean balanceConsumer, final boolean useRdkafka,
                                  final String groupId, final String requirements,
                                  final String command) throws Exception {
         String topicName = topic.orElse(integration);
@@ -284,7 +284,7 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
                 .withEnv("KOP_PRODUCE", "true")
                 .withEnv("KOP_TOPIC", topic.orElse(integration))
                 .withEnv("KOP_LIMIT", "10")
-                .withEnv("KOP_USE_RDKAFKA", String.valueOf(use_rdkafka))
+                .withEnv("KOP_USE_RDKAFKA", String.valueOf(useRdkafka))
                 .withCommand("bash", "-c", command + " pip install --no-cache-dir " + requirements
                         + "; python produceConsume.py; echo \"ExitCode=$?\"")
                 .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
@@ -297,8 +297,8 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
                 .withEnv("KOP_CONSUME", "true")
                 .withEnv("KOP_LIMIT", "10")
                 .withEnv("KOP_GROUPID", groupId)
-                .withEnv("KOP_USE_RDKAFKA", String.valueOf(use_rdkafka))
-                .withEnv("KOP_BALANCE_CONSUME", String.valueOf(balance_consumer))
+                .withEnv("KOP_USE_RDKAFKA", String.valueOf(useRdkafka))
+                .withEnv("KOP_BALANCE_CONSUME", String.valueOf(balanceConsumer))
                 .withCommand("bash", "-c", command + " pip install --no-cache-dir " + requirements
                         + "; python produceConsume.py; echo \"ExitCode=$?\"")
                 .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
