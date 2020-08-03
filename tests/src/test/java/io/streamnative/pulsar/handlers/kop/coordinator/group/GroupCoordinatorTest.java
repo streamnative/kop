@@ -142,16 +142,6 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
             .numThreads(1)
             .build();
 
-        admin.clusters().createCluster("test",
-            new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
-
-        admin.tenants().createTenant("public",
-            new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
-        admin.namespaces().createNamespace("public/default");
-        admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
-        admin.namespaces().setRetention("public/default",
-            new RetentionPolicies(20, 100));
-
         GroupConfig groupConfig = new GroupConfig(
             ConsumerMinSessionTimeout,
             ConsumerMaxSessionTimeout,

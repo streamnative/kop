@@ -57,11 +57,6 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
-        // super class already created clusters and tenants
-        admin.namespaces().createNamespace("public/default");
-        admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
-        admin.namespaces().setRetention("public/default",
-            new RetentionPolicies(20, 100));
 
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();

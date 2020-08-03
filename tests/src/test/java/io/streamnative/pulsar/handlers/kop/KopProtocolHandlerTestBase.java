@@ -21,6 +21,9 @@ import static org.mockito.Mockito.spy;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
+import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
+
 import java.io.Closeable;
 import java.lang.reflect.Field;
 import java.net.URI;
@@ -75,7 +78,7 @@ import org.apache.zookeeper.data.ACL;
 @Slf4j
 public abstract class KopProtocolHandlerTestBase {
 
-    protected ServiceConfiguration conf;
+    protected KafkaServiceConfiguration conf;
     protected PulsarService pulsar;
     protected PulsarAdmin admin;
     protected URL brokerUrl;
@@ -96,6 +99,9 @@ public abstract class KopProtocolHandlerTestBase {
     protected NonClosableMockBookKeeper mockBookKeeper;
     protected boolean isTcpLookup = false;
     protected final String configClusterName = "test";
+    
+    protected final String TEST_TENANT = "public";
+    protected final String TEST_NAMESPACE = "default";
 
     private SameThreadOrderedSafeExecutor sameThreadOrderedSafeExecutor;
     private ExecutorService bkExecutor;
@@ -123,6 +129,9 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setAllowAutoTopicCreation(true);
         kafkaConfig.setAllowAutoTopicCreationType("non-partitioned");
         kafkaConfig.setBrokerDeleteInactiveTopicsEnabled(false);
+        
+        kafkaConfig.setKafkaMetadataTenant(TEST_TENANT);
+        kafkaConfig.setKafkaMetadataNamespace(TEST_NAMESPACE);
 
         // kafka related settings.
         kafkaConfig.setEnableGroupCoordinator(true);
@@ -163,6 +172,10 @@ public abstract class KopProtocolHandlerTestBase {
     protected PulsarClient newPulsarClient(String url, int intervalInSecs) throws PulsarClientException {
         return PulsarClient.builder().serviceUrl(url).statsInterval(intervalInSecs, TimeUnit.SECONDS).build();
     }
+    
+    protected void createAdmin() throws Exception {
+        this.admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString()).build());
+    }
 
     protected final void init() throws Exception {
         sameThreadOrderedSafeExecutor = new SameThreadOrderedSafeExecutor();
@@ -170,16 +183,23 @@ public abstract class KopProtocolHandlerTestBase {
             new ThreadFactoryBuilder().setNameFormat("mock-pulsar-bk")
                 .setUncaughtExceptionHandler((thread, ex) -> log.info("Uncaught exception", ex))
                 .build());
+                
+        brokerUrl = new URL("http://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePort);
+        brokerUrlTls = new URL("https://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePortTls);
+        
+        String serviceUrl = "http://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePort;
+        String serviceUrlTls = "https://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePortTls;
+        String brokerServiceUrl = "pulsar://" + this.conf.getAdvertisedAddress() + ":" + brokerPort;
+        String brokerServiceUrlTls = null; // TLS not supported at this time
 
-        mockZooKeeper = createMockZooKeeper();
+        mockZooKeeper = createMockZooKeeper(configClusterName, serviceUrl, serviceUrlTls, brokerServiceUrl, brokerServiceUrlTls);
         mockBookKeeper = createMockBookKeeper(mockZooKeeper, bkExecutor);
 
         startBroker();
-
-        brokerUrl = new URL("http://" + pulsar.getAdvertisedAddress() + ":" + brokerWebservicePort);
-        brokerUrlTls = new URL("https://" + pulsar.getAdvertisedAddress() + ":" + brokerWebservicePortTls);
-
-        admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString()).build());
+        
+        createAdmin();
+        
+        MetadataUtils.createKafkaMetadataIfMissing(admin, this.conf);
     }
 
     protected final void internalCleanup() throws Exception {
@@ -253,7 +273,8 @@ public abstract class KopProtocolHandlerTestBase {
         doReturn(sameThreadOrderedSafeExecutor).when(pulsar).getOrderedExecutor();
     }
 
-    public static MockZooKeeper createMockZooKeeper() throws Exception {
+    public static MockZooKeeper createMockZooKeeper(String clusterName, String brokerUrl, String brokerUrlTls,
+            String brokerServiceUrl, String brokerServiceUrlTls) throws Exception {
         MockZooKeeper zk = MockZooKeeper.newInstance(MoreExecutors.newDirectExecutorService());
         List<ACL> dummyAclList = new ArrayList<>(0);
 
@@ -264,6 +285,12 @@ public abstract class KopProtocolHandlerTestBase {
             "/ledgers/LAYOUT",
             "1\nflat:1".getBytes(ZookeeperClientFactoryImpl.ENCODING_SCHEME), dummyAclList,
             CreateMode.PERSISTENT);
+        
+        ZkUtils.createFullPathOptimistic(zk, 
+            "/admin/clusters/" + clusterName,
+            String.format("{\"serviceUrl\" : \"%s\", \"serviceUrlTls\" : \"%s\", \"brokerServiceUrl\" : \"%s\", \"brokerServiceUrlTls\" : \"%s\"}", brokerUrl, brokerUrlTls, brokerServiceUrl, brokerServiceUrlTls).getBytes(ZookeeperClientFactoryImpl.ENCODING_SCHEME), dummyAclList,
+            CreateMode.PERSISTENT);
+        
         return zk;
     }
 
