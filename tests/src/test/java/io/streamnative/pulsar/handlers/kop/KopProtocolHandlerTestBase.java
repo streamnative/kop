@@ -99,9 +99,9 @@ public abstract class KopProtocolHandlerTestBase {
     protected NonClosableMockBookKeeper mockBookKeeper;
     protected boolean isTcpLookup = false;
     protected final String configClusterName = "test";
-    
-    protected final String TEST_TENANT = "public";
-    protected final String TEST_NAMESPACE = "default";
+
+    protected final String tenant = "public";
+    protected final String namespace = "default";
 
     private SameThreadOrderedSafeExecutor sameThreadOrderedSafeExecutor;
     private ExecutorService bkExecutor;
@@ -129,9 +129,9 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setAllowAutoTopicCreation(true);
         kafkaConfig.setAllowAutoTopicCreationType("non-partitioned");
         kafkaConfig.setBrokerDeleteInactiveTopicsEnabled(false);
-        
-        kafkaConfig.setKafkaMetadataTenant(TEST_TENANT);
-        kafkaConfig.setKafkaMetadataNamespace(TEST_NAMESPACE);
+
+        kafkaConfig.setKafkaMetadataTenant(tenant);
+        kafkaConfig.setKafkaMetadataNamespace(namespace);
 
         // kafka related settings.
         kafkaConfig.setEnableGroupCoordinator(true);
@@ -172,7 +172,7 @@ public abstract class KopProtocolHandlerTestBase {
     protected PulsarClient newPulsarClient(String url, int intervalInSecs) throws PulsarClientException {
         return PulsarClient.builder().serviceUrl(url).statsInterval(intervalInSecs, TimeUnit.SECONDS).build();
     }
-    
+
     protected void createAdmin() throws Exception {
         this.admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString()).build());
     }
@@ -183,22 +183,23 @@ public abstract class KopProtocolHandlerTestBase {
             new ThreadFactoryBuilder().setNameFormat("mock-pulsar-bk")
                 .setUncaughtExceptionHandler((thread, ex) -> log.info("Uncaught exception", ex))
                 .build());
-                
+
         brokerUrl = new URL("http://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePort);
         brokerUrlTls = new URL("https://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePortTls);
-        
+
         String serviceUrl = "http://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePort;
         String serviceUrlTls = "https://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePortTls;
         String brokerServiceUrl = "pulsar://" + this.conf.getAdvertisedAddress() + ":" + brokerPort;
         String brokerServiceUrlTls = null; // TLS not supported at this time
 
-        mockZooKeeper = createMockZooKeeper(configClusterName, serviceUrl, serviceUrlTls, brokerServiceUrl, brokerServiceUrlTls);
+        mockZooKeeper = createMockZooKeeper(configClusterName, serviceUrl, serviceUrlTls, brokerServiceUrl,
+            brokerServiceUrlTls);
         mockBookKeeper = createMockBookKeeper(mockZooKeeper, bkExecutor);
 
         startBroker();
-        
+
         createAdmin();
-        
+
         MetadataUtils.createKafkaMetadataIfMissing(admin, this.conf);
     }
 
@@ -285,12 +286,12 @@ public abstract class KopProtocolHandlerTestBase {
             "/ledgers/LAYOUT",
             "1\nflat:1".getBytes(ZookeeperClientFactoryImpl.ENCODING_SCHEME), dummyAclList,
             CreateMode.PERSISTENT);
-        
-        ZkUtils.createFullPathOptimistic(zk, 
-            "/admin/clusters/" + clusterName,
-            String.format("{\"serviceUrl\" : \"%s\", \"serviceUrlTls\" : \"%s\", \"brokerServiceUrl\" : \"%s\", \"brokerServiceUrlTls\" : \"%s\"}", brokerUrl, brokerUrlTls, brokerServiceUrl, brokerServiceUrlTls).getBytes(ZookeeperClientFactoryImpl.ENCODING_SCHEME), dummyAclList,
-            CreateMode.PERSISTENT);
-        
+
+        ZkUtils.createFullPathOptimistic(zk, "/admin/clusters/" + clusterName,
+            String.format("{\"serviceUrl\" : \"%s\", \"serviceUrlTls\" : \"%s\", \"brokerServiceUrl\" : \"%s\","
+            + "\"brokerServiceUrlTls\" : \"%s\"}", brokerUrl, brokerUrlTls, brokerServiceUrl, brokerServiceUrlTls)
+                .getBytes(ZookeeperClientFactoryImpl.ENCODING_SCHEME), dummyAclList, CreateMode.PERSISTENT);
+
         return zk;
     }
 

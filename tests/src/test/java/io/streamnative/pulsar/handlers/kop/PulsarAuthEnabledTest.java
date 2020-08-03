@@ -104,7 +104,7 @@ public class PulsarAuthEnabledTest extends KopProtocolHandlerTestBase {
         admin.namespaces().grantPermissionOnNamespace(TENANT + "/" + NAMESPACE, ADMIN_USER,
             Sets.newHashSet(AuthAction.consume, AuthAction.produce));
     }
-    
+
     @Override
     protected void createAdmin() throws Exception {
         super.admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString())

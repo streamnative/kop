@@ -18,8 +18,6 @@ import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaT
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupConfig;
@@ -33,17 +31,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.utils.Time;
-import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
@@ -52,8 +47,6 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.Lookup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.client.admin.PulsarAdminException.ConflictException;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
@@ -317,7 +310,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
         PulsarAdmin pulsarAdmin = service.pulsar().getAdminClient();
         MetadataUtils.createKafkaMetadataIfMissing(pulsarAdmin, kafkaConfig);
-        
+
 
         this.groupCoordinator = GroupCoordinator.of(
             (PulsarClientImpl) (service.pulsar().getClient()),
@@ -349,23 +342,24 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         String currentBroker = brokerService.pulsar().getBrokerServiceUrl();
         String topicBase = MetadataUtils.constructOffsetsTopicBaseName(kafkaConfig);
         int numPartitions = kafkaConfig.getOffsetsTopicNumPartitions();
-        
+
         Map<String, List<Integer>> mapBrokerToPartition = new HashMap<>();
-        
+
         for (int i = 0; i < numPartitions; i++) {
             String broker = lookupService.lookupTopic(topicBase + PARTITIONED_TOPIC_SUFFIX + i);
             mapBrokerToPartition.putIfAbsent(broker, new ArrayList());
             mapBrokerToPartition.get(broker).add(i);
         }
-        
-        mapBrokerToPartition.entrySet().stream().forEach(e-> log.info("Discovered broker: {} owns offset topic partitions: {} ", e.getKey(), e.getValue()));
-        
+
+        mapBrokerToPartition.entrySet().stream().forEach(
+            e -> log.info("Discovered broker: {} owns offset topic partitions: {} ", e.getKey(), e.getValue()));
+
         List<Integer> partitionsOwnedByCurrentBroker = mapBrokerToPartition.get(currentBroker);
-        
-        if(null != partitionsOwnedByCurrentBroker && !partitionsOwnedByCurrentBroker.isEmpty()) {
+
+        if (null != partitionsOwnedByCurrentBroker && !partitionsOwnedByCurrentBroker.isEmpty()) {
             List<CompletableFuture<Void>> lists = partitionsOwnedByCurrentBroker.stream().map(
                 (ii) -> groupCoordinator.handleGroupImmigration(ii)).collect(Collectors.toList());
-            
+
             FutureUtil.waitForAll(lists).get();
         } else {
             log.info("Current broker: {} does not own any of the offset topic partitions", currentBroker);

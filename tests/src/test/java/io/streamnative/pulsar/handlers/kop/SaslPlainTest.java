@@ -96,7 +96,7 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
         conf.setBrokerClientAuthenticationPlugin(AuthenticationToken.class.getName());
         conf.setBrokerClientAuthenticationParameters("token:" + adminToken);
         conf.setProperties(properties);
-        
+
         super.internalSetup();
 
         admin.tenants().createTenant(TENANT,
@@ -107,7 +107,7 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
             .namespaces().grantPermissionOnNamespace(TENANT + "/" + NAMESPACE, SIMPLE_USER,
             Sets.newHashSet(AuthAction.consume, AuthAction.produce));
     }
-    
+
     @Override
     protected void createAdmin() throws Exception {
         super.admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString())

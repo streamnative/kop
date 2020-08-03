@@ -15,14 +15,19 @@ package io.streamnative.pulsar.handlers.kop.utils;
 
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
+import com.google.common.collect.Sets;
+
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import lombok.extern.slf4j.Slf4j;
+
 import org.apache.kafka.common.internals.Topic;
 import org.apache.pulsar.broker.PulsarServerException;
-import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.Clusters;
 import org.apache.pulsar.client.admin.Namespaces;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -35,23 +40,17 @@ import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 
-import com.google.common.collect.Sets;
-
-import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
-import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
-import lombok.extern.slf4j.Slf4j;
-
 /**
  * Utils for KoP Metadata.
  */
 @Slf4j
 public class MetadataUtils {
-    
+
     public static String constructOffsetsTopicBaseName(KafkaServiceConfiguration conf) {
         return conf.getKafkaMetadataTenant() + "/" + conf.getKafkaMetadataNamespace()
             + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
     }
-    
+
    /**
      * This method creates the Kafka metadata tenant and namespace if they are not currently present.
      * <ul>
@@ -71,9 +70,9 @@ public class MetadataUtils {
         String cluster = conf.getClusterName();
         String kafkaMetadataTenant = conf.getKafkaMetadataTenant();
         String kafkaMetadataNamespace = kafkaMetadataTenant + "/" + conf.getKafkaMetadataNamespace();
-        
+
         String offsetsTopic = constructOffsetsTopicBaseName(conf);
-            
+
         boolean clusterExists, tenantExists, namespaceExists, offsetsTopicExists;
         clusterExists = tenantExists = namespaceExists = offsetsTopicExists = false;
 
@@ -86,7 +85,7 @@ public class MetadataUtils {
                 log.info("Cluster {} found: {}", cluster, configuredClusterData);
                 clusterExists = true;
             }
-            
+
             // Check if the metadata tenant exists and create it if not
             Tenants tenants = pulsarAdmin.tenants();
             if (!tenants.getTenants().contains(kafkaMetadataTenant)) {
@@ -96,7 +95,7 @@ public class MetadataUtils {
             } else {
                 TenantInfo kafkaMetadataTenantInfo = tenants.getTenantInfo(kafkaMetadataTenant);
                 Set<String> allowedClusters = kafkaMetadataTenantInfo.getAllowedClusters();
-                if(!allowedClusters.contains(cluster)) {
+                if (!allowedClusters.contains(cluster)) {
                     log.info("Tenant: {} exists but cluster: {} is not in the allowedClusters list, updating it ...",
                         kafkaMetadataTenant, cluster);
                     allowedClusters.add(cluster);
@@ -104,11 +103,12 @@ public class MetadataUtils {
                 }
             }
             tenantExists = true;
-            
+
             // Check if the metadata namespace exists and create it if not
             Namespaces namespaces = pulsarAdmin.namespaces();
             if (!namespaces.getNamespaces(kafkaMetadataTenant).contains(kafkaMetadataNamespace)) {
-                log.info("Namespaces: {} does not exist in tenant: {}, creating it ...", kafkaMetadataNamespace, kafkaMetadataTenant);
+                log.info("Namespaces: {} does not exist in tenant: {}, creating it ...",
+                    kafkaMetadataNamespace, kafkaMetadataTenant);
                 Set<String> replicationClusters = Sets.newHashSet(conf.getClusterName());
                 namespaces.createNamespace(kafkaMetadataNamespace, replicationClusters);
                 namespaces.setNamespaceReplicationClusters(kafkaMetadataNamespace, replicationClusters);
@@ -116,28 +116,28 @@ public class MetadataUtils {
                     new RetentionPolicies(-1, -1));
             } else {
                 List<String> replicationClusters = namespaces.getNamespaceReplicationClusters(kafkaMetadataNamespace);
-                if(!replicationClusters.contains(cluster)) {
-                    log.info("Namespace: {} exists but cluster: {} is not in the replicationClusters list, updating it ...",
-                        kafkaMetadataNamespace, cluster);
+                if (!replicationClusters.contains(cluster)) {
+                    log.info("Namespace: {} exists but cluster: {} is not in the replicationClusters list,"
+                    + "updating it ...", kafkaMetadataNamespace, cluster);
                     Set<String> newReplicationClusters = Sets.newHashSet(replicationClusters);
                     newReplicationClusters.add(cluster);
                     namespaces.setNamespaceReplicationClusters(kafkaMetadataNamespace, newReplicationClusters);
                 }
             }
             namespaceExists = true;
-            
+
             // Check if the offsets topic exists and create it if not
             Topics topics = pulsarAdmin.topics();
             PartitionedTopicMetadata offsetsTopicMetadata = topics.getPartitionedTopicMetadata(offsetsTopic);
-            
+
             Set<String> offsetPartitionSet = new HashSet<String>(conf.getOffsetsTopicNumPartitions());
             for (int i = 0; i < conf.getOffsetsTopicNumPartitions(); i++) {
                 offsetPartitionSet.add(offsetsTopic + PARTITIONED_TOPIC_SUFFIX + i);
             }
-            
+
             if (offsetsTopicMetadata.partitions <= 0) {
                 log.info("Kafka group metadata topic {} doesn't exist. Creating it ...", offsetsTopic);
-                
+
                 topics.createPartitionedTopic(
                         offsetsTopic,
                         conf.getOffsetsTopicNumPartitions()
@@ -157,9 +157,9 @@ public class MetadataUtils {
                     return topic.startsWith(offsetsTopic + PARTITIONED_TOPIC_SUFFIX);
                 }).collect(Collectors.toList()));
 
-                if(!offsetPartitionSet.isEmpty()) {
+                if (!offsetPartitionSet.isEmpty()) {
                     log.info("Identified missing offset topic partitions: {}", offsetPartitionSet);
-                    for(String offsetPartition : offsetPartitionSet) {
+                    for (String offsetPartition : offsetPartitionSet) {
                         topics.createNonPartitionedTopic(offsetPartition);
                     }
                 }
@@ -175,9 +175,9 @@ public class MetadataUtils {
                 kafkaMetadataNamespace, e);
             throw e;
         } finally {
-            log.info("Current state of kafka metadata, cluster: {} exists: {}, tenant: {} exists: {}, namespace: {} exists: {}, topic: {} exists: {}",
-                cluster, clusterExists, kafkaMetadataTenant, tenantExists, kafkaMetadataNamespace,
-                namespaceExists, offsetsTopic, offsetsTopicExists);
+            log.info("Current state of kafka metadata, cluster: {} exists: {}, tenant: {} exists: {},"
+                + " namespace: {} exists: {}, topic: {} exists: {}", cluster, clusterExists, kafkaMetadataTenant,
+                tenantExists, kafkaMetadataNamespace, namespaceExists, offsetsTopic, offsetsTopicExists);
         }
     }
 }
