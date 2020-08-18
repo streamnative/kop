@@ -569,6 +569,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     } else {
                         result.getRight().complete(new PartitionResponse(Errors.NONE));
                     }
+                    headerAndPayload.release();
                 });
             } catch (Exception e) {
                 // should not comes here.
