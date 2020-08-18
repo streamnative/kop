@@ -360,7 +360,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     + "auto create partitioned topic",
                                                 ctx.channel(), metadataHar.getHeader(), topic);
                                         }
-                                        admin.topics().createPartitionedTopicAsync(pulsarTopicName.toString(), 1);
+                                        admin.topics().createPartitionedTopicAsync(pulsarTopicName.toString(), kafkaConfig.getDefaultNumPartitions());
                                         final TopicName newTopic = TopicName
                                             .get(pulsarTopicName.toString() + PARTITIONED_TOPIC_SUFFIX + 0);
                                         pulsarTopics.put(topic, Lists.newArrayList(newTopic));
