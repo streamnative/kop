@@ -51,14 +51,13 @@ import org.testng.annotations.Test;
 public class SaslPlainTest extends KopProtocolHandlerTestBase {
 
     private static final String SIMPLE_USER = "muggle_user";
-    private static final String TENANT = "testTenant";
+    private static final String TENANT = "SaslPlainTest";
     private static final String ANOTHER_USER = "death_eater_user";
     private static final String ADMIN_USER = "admin_user";
     private static final String NAMESPACE = "ns1";
     private static final String KAFKA_TOPIC = "topic1";
     private static final String PULSAR_TOPIC_NAME = "persistent://" + TENANT
         + "/" + NAMESPACE + "/" + KAFKA_TOPIC;
-    private static final String CLUSTER_NAME = "c1";
     private String adminToken;
     private String userToken;
     private String anotherToken;
@@ -86,7 +85,7 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
         ((KafkaServiceConfiguration) conf).setKafkaMetadataTenant("internal");
         ((KafkaServiceConfiguration) conf).setKafkaMetadataNamespace("__kafka");
 
-        conf.setClusterName(CLUSTER_NAME);
+        conf.setClusterName(super.configClusterName);
         conf.setAuthorizationEnabled(true);
         conf.setAuthenticationEnabled(true);
         conf.setAuthorizationAllowWildcardsMatching(true);
@@ -100,16 +99,20 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
 
         super.internalSetup();
 
-        admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString())
-            .authentication(AuthenticationToken.class.getName(), "token:" + adminToken).build());
-
         admin.tenants().createTenant(TENANT,
-            new TenantInfo(Sets.newHashSet(ADMIN_USER), Sets.newHashSet(CLUSTER_NAME)));
+            new TenantInfo(Sets.newHashSet(ADMIN_USER), Sets.newHashSet(super.configClusterName)));
         admin.namespaces().createNamespace(TENANT + "/" + NAMESPACE);
         admin.topics().createPartitionedTopic(PULSAR_TOPIC_NAME, 1);
         admin
             .namespaces().grantPermissionOnNamespace(TENANT + "/" + NAMESPACE, SIMPLE_USER,
             Sets.newHashSet(AuthAction.consume, AuthAction.produce));
+    }
+
+    @Override
+    protected void createAdmin() throws Exception {
+        super.admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString())
+            .authentication(this.conf.getBrokerClientAuthenticationPlugin(),
+                this.conf.getBrokerClientAuthenticationParameters()).build());
     }
 
     protected void cleanup() throws Exception {

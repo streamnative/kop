@@ -18,44 +18,39 @@ import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaT
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
+import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.utils.Time;
-import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.namespace.NamespaceBundleOwnershipListener;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
+import org.apache.pulsar.client.admin.Lookup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.client.admin.PulsarAdminException.ConflictException;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
-import org.apache.pulsar.common.policies.data.ClusterData;
-import org.apache.pulsar.common.policies.data.RetentionPolicies;
-import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.apache.pulsar.common.util.FutureUtil;
 
 /**
@@ -313,9 +308,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             .offsetsRetentionMs(TimeUnit.MINUTES.toMillis(kafkaConfig.getOffsetsRetentionMinutes()))
             .build();
 
-        createKafkaMetadataNamespaceIfNeeded(service);
-        // topicName in pulsar format: tenant/ns/topic
-        createKafkaOffsetsTopic(service);
+        PulsarAdmin pulsarAdmin = service.pulsar().getAdminClient();
+        MetadataUtils.createKafkaMetadataIfMissing(pulsarAdmin, kafkaConfig);
+
 
         this.groupCoordinator = GroupCoordinator.of(
             (PulsarClientImpl) (service.pulsar().getClient()),
@@ -338,98 +333,37 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
     }
 
-    private void createKafkaMetadataNamespaceIfNeeded(BrokerService service)
-        throws PulsarServerException, PulsarAdminException {
-        String cluster = kafkaConfig.getClusterName();
-        String kafkaMetadataTenant = kafkaConfig.getKafkaMetadataTenant();
-        String kafkaMetadataNamespace = kafkaMetadataTenant + "/" + kafkaConfig.getKafkaMetadataNamespace();
-        PulsarAdmin pulsarAdmin = service.pulsar().getAdminClient();
-
-        try {
-            ClusterData clusterData = new ClusterData(service.pulsar().getWebServiceAddress(),
-                null /* serviceUrlTls */,
-                service.pulsar().getBrokerServiceUrl(),
-                null /* brokerServiceUrlTls */);
-            if (!pulsarAdmin.clusters().getClusters().contains(cluster)) {
-                pulsarAdmin.clusters().createCluster(cluster, clusterData);
-            } else {
-                pulsarAdmin.clusters().updateCluster(cluster, clusterData);
-            }
-
-            if (!pulsarAdmin.tenants().getTenants().contains(kafkaMetadataTenant)) {
-                pulsarAdmin.tenants().createTenant(kafkaMetadataTenant,
-                    new TenantInfo(Sets.newHashSet(kafkaConfig.getSuperUserRoles()), Sets.newHashSet(cluster)));
-            }
-            if (!pulsarAdmin.namespaces().getNamespaces(kafkaMetadataTenant).contains(kafkaMetadataNamespace)) {
-                Set<String> clusters = Sets.newHashSet(kafkaConfig.getClusterName());
-                pulsarAdmin.namespaces().createNamespace(kafkaMetadataNamespace, clusters);
-                pulsarAdmin.namespaces().setNamespaceReplicationClusters(kafkaMetadataNamespace, clusters);
-                pulsarAdmin.namespaces().setRetention(kafkaMetadataNamespace,
-                    new RetentionPolicies(-1, -1));
-            }
-        } catch (PulsarAdminException e) {
-            if (e instanceof ConflictException) {
-                log.info("Resources concurrent creating and cause e: ", e);
-                return;
-            }
-
-            log.error("Failed to get retention policy for kafka metadata namespace {}",
-                kafkaMetadataNamespace, e);
-            throw e;
-        }
-    }
-
-    private String createKafkaOffsetsTopic(BrokerService service) throws PulsarServerException, PulsarAdminException {
-        String offsetsTopic = kafkaConfig.getKafkaMetadataTenant() + "/" + kafkaConfig.getKafkaMetadataNamespace()
-            + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
-
-        PartitionedTopicMetadata offsetsTopicMetadata =
-            service.pulsar().getAdminClient().topics().getPartitionedTopicMetadata(offsetsTopic);
-        if (offsetsTopicMetadata.partitions <= 0) {
-            log.info("Kafka group metadata topic {} doesn't exist. Creating it ...",
-                    offsetsTopic);
-            try {
-                service.pulsar().getAdminClient().topics().createPartitionedTopic(
-                        offsetsTopic,
-                        kafkaConfig.getOffsetsTopicNumPartitions()
-                );
-
-                for (int i = 0; i < kafkaConfig.getOffsetsTopicNumPartitions(); i++) {
-                    service.pulsar().getAdminClient().topics()
-                            .createNonPartitionedTopic(offsetsTopic + PARTITIONED_TOPIC_SUFFIX + i);
-                }
-            } catch (ConflictException e) {
-                log.info("Topic {} concurrent creating and cause e: ", offsetsTopic, e);
-                return offsetsTopic;
-            }
-
-            log.info("Successfully created group metadata topic {} with {} partitions.",
-                    offsetsTopic, kafkaConfig.getOffsetsTopicNumPartitions());
-        }
-
-        return offsetsTopic;
-    }
-
+    /**
+     * This method discovers ownership of offset topic partitions and attempts to load offset topics
+     * assigned to this broker.
+     */
     private void loadOffsetTopics(GroupCoordinator groupCoordinator) throws Exception {
-        String offsetsTopic = kafkaConfig.getKafkaMetadataTenant() + "/" + kafkaConfig.getKafkaMetadataNamespace()
-            + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
+        Lookup lookupService = brokerService.pulsar().getAdminClient().lookups();
+        String currentBroker = brokerService.pulsar().getBrokerServiceUrl();
+        String topicBase = MetadataUtils.constructOffsetsTopicBaseName(kafkaConfig);
         int numPartitions = kafkaConfig.getOffsetsTopicNumPartitions();
-        List<CompletableFuture<Void>> lists = Lists.newArrayListWithExpectedSize(numPartitions);
+
+        Map<String, List<Integer>> mapBrokerToPartition = new HashMap<>();
+
         for (int i = 0; i < numPartitions; i++) {
-            String partition = offsetsTopic + PARTITIONED_TOPIC_SUFFIX + i;
-            String broker = brokerService.pulsar().getAdminClient().lookups()
-                .lookupTopic(partition);
-
-            if (log.isDebugEnabled()) {
-                log.debug("found broker {} for offset topic partition {}. current broker: {}",
-                    broker, partition, brokerService.pulsar().getBrokerServiceUrl());
-            }
-
-            if (broker.equalsIgnoreCase(brokerService.pulsar().getBrokerServiceUrl())) {
-                lists.add(groupCoordinator.handleGroupImmigration(i));
-            }
+            String broker = lookupService.lookupTopic(topicBase + PARTITIONED_TOPIC_SUFFIX + i);
+            mapBrokerToPartition.putIfAbsent(broker, new ArrayList());
+            mapBrokerToPartition.get(broker).add(i);
         }
-        FutureUtil.waitForAll(lists).get();
+
+        mapBrokerToPartition.entrySet().stream().forEach(
+            e -> log.info("Discovered broker: {} owns offset topic partitions: {} ", e.getKey(), e.getValue()));
+
+        List<Integer> partitionsOwnedByCurrentBroker = mapBrokerToPartition.get(currentBroker);
+
+        if (null != partitionsOwnedByCurrentBroker && !partitionsOwnedByCurrentBroker.isEmpty()) {
+            List<CompletableFuture<Void>> lists = partitionsOwnedByCurrentBroker.stream().map(
+                (ii) -> groupCoordinator.handleGroupImmigration(ii)).collect(Collectors.toList());
+
+            FutureUtil.waitForAll(lists).get();
+        } else {
+            log.info("Current broker: {} does not own any of the offset topic partitions", currentBroker);
+        }
     }
 
     public static int getListenerPort(String listener) {
