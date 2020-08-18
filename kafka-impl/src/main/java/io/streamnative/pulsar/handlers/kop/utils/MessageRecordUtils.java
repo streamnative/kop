@@ -165,7 +165,7 @@ public final class MessageRecordUtils {
         StreamSupport.stream(records.records().spliterator(), true).forEachOrdered(record -> {
             MessageImpl<byte[]> message = recordToEntry(record);
             messages.add(message);
-            if (messageMetaBuilder.getPublishTime() <= 0 ) {
+            if (messageMetaBuilder.getPublishTime() <= 0) {
                 messageMetaBuilder.setPublishTime(message.getPublishTime());
             }
         });
