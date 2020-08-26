@@ -220,31 +220,41 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected void handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest,
                                             CompletableFuture<AbstractResponse> resultFuture) {
-        AbstractResponse apiResponse = overloadDefaultApiVersionsResponse();
-        resultFuture.complete(apiResponse);
+        if (!ApiKeys.API_VERSIONS.isVersionSupported(apiVersionRequest.getHeader().apiVersion())) {
+            // Notify Client that API_VERSION is UNSUPPORTED.
+            AbstractResponse apiResponse = overloadDefaultApiVersionsResponse(true);
+            resultFuture.complete(apiResponse);
+        } else {
+            AbstractResponse apiResponse = overloadDefaultApiVersionsResponse(false);
+            resultFuture.complete(apiResponse);
+        }
     }
 
-    protected ApiVersionsResponse overloadDefaultApiVersionsResponse() {
+    protected ApiVersionsResponse overloadDefaultApiVersionsResponse(boolean unsupportedApiVersion) {
         List<ApiVersionsResponse.ApiVersion> versionList = new ArrayList<>();
-        for (ApiKeys apiKey : ApiKeys.values()) {
-            if (apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE) {
-                switch (apiKey) {
-                    case FETCH:
-                        // V4 added MessageSets responses. We need to make sure RecordBatch format is not used
-                        versionList.add(new ApiVersionsResponse.ApiVersion((short) 1, (short) 4,
-                                apiKey.latestVersion()));
-                        break;
-                    case LIST_OFFSETS:
-                        // V0 is needed for librdkafka
-                        versionList.add(new ApiVersionsResponse.ApiVersion((short) 2, (short) 0,
-                                apiKey.latestVersion()));
-                        break;
-                    default:
-                        versionList.add(new ApiVersionsResponse.ApiVersion(apiKey));
+        if (unsupportedApiVersion){
+            return new ApiVersionsResponse(0, Errors.UNSUPPORTED_VERSION, versionList);
+        } else {
+            for (ApiKeys apiKey : ApiKeys.values()) {
+                if (apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE) {
+                    switch (apiKey) {
+                        case FETCH:
+                            // V4 added MessageSets responses. We need to make sure RecordBatch format is not used
+                            versionList.add(new ApiVersionsResponse.ApiVersion((short) 1, (short) 4,
+                                    apiKey.latestVersion()));
+                            break;
+                        case LIST_OFFSETS:
+                            // V0 is needed for librdkafka
+                            versionList.add(new ApiVersionsResponse.ApiVersion((short) 2, (short) 0,
+                                    apiKey.latestVersion()));
+                            break;
+                        default:
+                            versionList.add(new ApiVersionsResponse.ApiVersion(apiKey));
+                    }
                 }
             }
+            return new ApiVersionsResponse(0, Errors.NONE, versionList);
         }
-        return new ApiVersionsResponse(0, Errors.NONE, versionList);
     }
 
     protected void handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest,
