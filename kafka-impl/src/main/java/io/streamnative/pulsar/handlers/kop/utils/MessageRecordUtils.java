@@ -96,6 +96,9 @@ public final class MessageRecordUtils {
         // timestamp
         if (record.timestamp() >= 0) {
             builder.eventTime(record.timestamp());
+            builder.getMetadataBuilder().setPublishTime(record.timestamp());
+        } else {
+            builder.getMetadataBuilder().setPublishTime(System.currentTimeMillis());
         }
 
         // header
@@ -162,6 +165,9 @@ public final class MessageRecordUtils {
         StreamSupport.stream(records.records().spliterator(), true).forEachOrdered(record -> {
             MessageImpl<byte[]> message = recordToEntry(record);
             messages.add(message);
+            if (messageMetaBuilder.getPublishTime() <= 0) {
+                messageMetaBuilder.setPublishTime(message.getPublishTime());
+            }
         });
 
         for (MessageImpl<byte[]> message : messages) {

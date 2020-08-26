@@ -19,7 +19,6 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertTrue;
 
-import com.google.common.collect.Sets;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
@@ -37,7 +36,6 @@ import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.impl.MessageIdImpl;
-import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TopicStats;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -57,11 +55,6 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
-        // super class already created clusters and tenants
-        admin.namespaces().createNamespace("public/default");
-        admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
-        admin.namespaces().setRetention("public/default",
-            new RetentionPolicies(20, 100));
 
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();

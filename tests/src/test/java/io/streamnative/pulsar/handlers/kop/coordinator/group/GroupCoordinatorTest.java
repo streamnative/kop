@@ -58,9 +58,6 @@ import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
-import org.apache.pulsar.common.policies.data.ClusterData;
-import org.apache.pulsar.common.policies.data.RetentionPolicies;
-import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -141,16 +138,6 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
             .name("test-scheduler")
             .numThreads(1)
             .build();
-
-        admin.clusters().createCluster("test",
-            new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
-
-        admin.tenants().createTenant("public",
-            new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
-        admin.namespaces().createNamespace("public/default");
-        admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
-        admin.namespaces().setRetention("public/default",
-            new RetentionPolicies(20, 100));
 
         GroupConfig groupConfig = new GroupConfig(
             ConsumerMinSessionTimeout,
