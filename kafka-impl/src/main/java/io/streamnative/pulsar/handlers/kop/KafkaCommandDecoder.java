@@ -108,9 +108,17 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected ByteBuf responseToByteBuf(AbstractResponse response, KafkaHeaderAndRequest request) {
         try (KafkaHeaderAndResponse kafkaHeaderAndResponse =
                  KafkaHeaderAndResponse.responseForRequest(request, response)) {
-
+            // Lowering Client API_VERSION request to the oldest API_VERSION KoP supports, this is to make \
+            // Kafka-Clients 2.4.x and above compatible and prevent KoP from panicking \
+            // when it comes across a higher API_VERSION.
+            short apiVersion = kafkaHeaderAndResponse.getApiVersion();
+            if (request.getHeader().apiKey() == API_VERSIONS){
+                if (!ApiKeys.API_VERSIONS.isVersionSupported(apiVersion)) {
+                    apiVersion = ApiKeys.API_VERSIONS.oldestVersion();
+                }
+            }
             return ResponseUtils.serializeResponse(
-                kafkaHeaderAndResponse.getApiVersion(),
+                apiVersion,
                 kafkaHeaderAndResponse.getHeader(),
                 kafkaHeaderAndResponse.getResponse()
             );
