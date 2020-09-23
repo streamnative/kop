@@ -27,12 +27,10 @@ import org.apache.kafka.clients.consumer.internals.ConsumerProtocol;
 import org.apache.kafka.clients.consumer.internals.PartitionAssignor.Assignment;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.client.api.Consumer;
+import org.apache.pulsar.client.api.ConsumerBuilder;
 import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.ReaderBuilder;
-import org.apache.pulsar.client.api.Schema;
+import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
-import org.apache.pulsar.client.impl.ReaderBuilderImpl;
-import org.apache.pulsar.client.impl.ReaderImpl;
 import org.apache.pulsar.common.naming.TopicName;
 
 /**
@@ -41,12 +39,12 @@ import org.apache.pulsar.common.naming.TopicName;
 @Slf4j
 public class OffsetAcker implements Closeable {
 
-    private final ReaderBuilder<byte[]> readerBuilder;
+    private final ConsumerBuilder<byte[]> consumerBuilder;
 
     public OffsetAcker(PulsarClientImpl pulsarClient) {
-        this.readerBuilder = new ReaderBuilderImpl<>(pulsarClient, Schema.BYTES)
-            .receiverQueueSize(0)
-            .startMessageId(MessageId.earliest);
+        this.consumerBuilder = pulsarClient.newConsumer()
+                .receiverQueueSize(0)
+                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
     }
 
     // map off consumser: <groupId, consumers>
@@ -116,11 +114,10 @@ public class OffsetAcker implements Closeable {
 
     private CompletableFuture<Consumer<byte[]>> createConsumer(String groupId, TopicPartition topicPartition) {
         TopicName pulsarTopicName = TopicNameUtils.pulsarTopicName(topicPartition);
-        return readerBuilder.clone()
-            .topic(pulsarTopicName.toString())
-            .subscriptionRolePrefix(groupId)
-            .createAsync()
-            .thenApply(reader -> ((ReaderImpl<byte[]>) reader).getConsumer());
+        return consumerBuilder.clone()
+                .topic(pulsarTopicName.toString())
+                .subscriptionName(groupId)
+                .subscribeAsync();
     }
 
 }

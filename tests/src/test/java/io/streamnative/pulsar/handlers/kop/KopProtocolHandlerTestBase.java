@@ -25,6 +25,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 
 import java.io.Closeable;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.URI;
 import java.net.URL;
@@ -46,6 +47,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.EnsemblePlacementPolicy;
 import org.apache.bookkeeper.client.PulsarMockBookKeeper;
+import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.util.ZkUtils;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -342,6 +344,13 @@ public abstract class KopProtocolHandlerTestBase {
                                  Optional<Class<? extends EnsemblePlacementPolicy>> ensemblePlacementPolicyClass,
                                  Map<String, Object> properties) {
             // Always return the same instance (so that we don't loose the mock BK content on broker restart
+            return mockBookKeeper;
+        }
+
+        @Override
+        public BookKeeper create(ServiceConfiguration serviceConfiguration, ZooKeeper zooKeeper,
+                                 Optional<Class<? extends EnsemblePlacementPolicy>> optional,
+                                 Map<String, Object> map, StatsLogger statsLogger) throws IOException {
             return mockBookKeeper;
         }
 
