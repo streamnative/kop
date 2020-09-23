@@ -173,7 +173,7 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
         }
 
         int i = 0;
-        while (i < totalMsgs / 2 - 1) {
+        while (i < totalMsgs / 2) {
             if (log.isDebugEnabled()) {
                 log.debug("start poll message from cgA: {}", i);
             }
@@ -188,7 +188,7 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
         }
 
         i = 0;
-        while (i < totalMsgs / 2 - 1) {
+        while (i < totalMsgs / 2) {
             if (log.isDebugEnabled()) {
                 log.debug("start poll message from cgB: {}", i);
             }
