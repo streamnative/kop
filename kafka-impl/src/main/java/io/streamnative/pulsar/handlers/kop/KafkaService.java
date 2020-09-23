@@ -19,6 +19,7 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import java.net.InetSocketAddress;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
@@ -27,6 +28,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
+import org.apache.pulsar.ZookeeperSessionExpiredHandlers;
 import org.apache.pulsar.broker.BookKeeperClientFactory;
 import org.apache.pulsar.broker.ManagedLedgerClientFactory;
 import org.apache.pulsar.broker.PulsarServerException;
@@ -40,6 +42,7 @@ import org.apache.pulsar.broker.web.WebService;
 import org.apache.pulsar.common.configuration.VipStatus;
 import org.apache.pulsar.common.policies.data.OffloadPolicies;
 import org.apache.pulsar.zookeeper.LocalZooKeeperConnectionService;
+import org.apache.pulsar.zookeeper.ZookeeperSessionExpiredHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 
 /**
@@ -103,7 +106,10 @@ public class KafkaService extends PulsarService {
             // Now we are ready to start services
             setLocalZooKeeperConnectionProvider(new LocalZooKeeperConnectionService(getZooKeeperClientFactory(),
                 kafkaConfig.getZookeeperServers(), kafkaConfig.getZooKeeperSessionTimeoutMillis()));
-            getLocalZooKeeperConnectionProvider().start(getShutdownService());
+            // TODO: check shutdown policy and reconnect policy
+            ZookeeperSessionExpiredHandler expiredHandler =
+                    ZookeeperSessionExpiredHandlers.shutdownWhenZookeeperSessionExpired(getShutdownService());
+            getLocalZooKeeperConnectionProvider().start(expiredHandler);
 
             // Initialize and start service to access configuration repository.
             startZkCacheService();
@@ -160,7 +166,8 @@ public class KafkaService extends PulsarService {
             }
             webService.addStaticResources("/static", "/static");
 
-            setSchemaRegistryService(SchemaRegistryService.create(this));
+            // TODO: Configure SchemaStorage later, currently set it to null just for DefaultSchemaRegistryService
+            setSchemaRegistryService(SchemaRegistryService.create(null, new HashSet<>()));
 
             webService.start();
 
