@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.group;
 
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
@@ -31,6 +32,7 @@ import org.apache.pulsar.client.api.ConsumerBuilder;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
+import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 
 /**
@@ -40,12 +42,21 @@ import org.apache.pulsar.common.naming.TopicName;
 public class OffsetAcker implements Closeable {
 
     private final ConsumerBuilder<byte[]> consumerBuilder;
+    private KafkaServiceConfiguration kafkaServiceConfiguration;
+
 
     public OffsetAcker(PulsarClientImpl pulsarClient) {
         this.consumerBuilder = pulsarClient.newConsumer()
                 .receiverQueueSize(0)
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
     }
+    public OffsetAcker(PulsarClientImpl pulsarClient, KafkaServiceConfiguration kafkaServiceConfiguration) {
+        this.consumerBuilder = pulsarClient.newConsumer()
+                .receiverQueueSize(0)
+                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
+        this.kafkaServiceConfiguration = kafkaServiceConfiguration;
+    }
+
 
     // map off consumser: <groupId, consumers>
     Map<String, Map<TopicPartition, CompletableFuture<Consumer<byte[]>>>> consumers = new ConcurrentHashMap<>();
@@ -113,7 +124,10 @@ public class OffsetAcker implements Closeable {
     }
 
     private CompletableFuture<Consumer<byte[]>> createConsumer(String groupId, TopicPartition topicPartition) {
-        TopicName pulsarTopicName = TopicNameUtils.pulsarTopicName(topicPartition);
+        NamespaceName nameSpace = NamespaceName.get(
+                kafkaServiceConfiguration.getKafkaTenant(),
+                kafkaServiceConfiguration.getKafkaNamespace());
+        TopicName pulsarTopicName = TopicNameUtils.pulsarTopicName(topicPartition, nameSpace);
         return consumerBuilder.clone()
                 .topic(pulsarTopicName.toString())
                 .subscriptionName(groupId)

@@ -316,6 +316,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             (PulsarClientImpl) (service.pulsar().getClient()),
             groupConfig,
             offsetConfig,
+            kafkaConfig,
             SystemTimer.builder()
                 .executorName("group-coordinator-timer")
                 .build(),
