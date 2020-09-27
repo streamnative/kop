@@ -40,6 +40,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.pulsar.client.api.CompressionType;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
@@ -317,24 +318,28 @@ public class KafkaRequestTypeTest extends KopProtocolHandlerTestBase {
             .topic(pulsarTopicName)
             .enableBatching(isBatch);
 
-        @Cleanup
-        Producer<byte[]> producer = producerBuilder.create();
-        List<CompletableFuture<MessageId>> sendResults = Lists.newArrayListWithExpectedSize(totalMsgs);
-        CountDownLatch latch = new CountDownLatch(1);
-        for (int i = 0; i < totalMsgs; i++) {
-            String message = messageStrPrefix + i;
-            CompletableFuture<MessageId> id = producer.newMessage()
-                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
-                .value(message.getBytes())
-                .property(key1 + i, value1 + i)
-                .property(key2 + i, value2 + i)
-                .sendAsync();
-            sendResults.add(id);
+        for (CompressionType compressionType : CompressionType.values()) {
+            ProducerBuilder<byte[]> builder = producerBuilder.clone();
+            @Cleanup
+            Producer<byte[]> producer = builder.create();
+            List<CompletableFuture<MessageId>> sendResults = Lists.newArrayListWithExpectedSize(totalMsgs);
+            CountDownLatch latch = new CountDownLatch(1);
+            for (int i = 0; i < totalMsgs; i++) {
+                String message = messageStrPrefix + i;
+                CompletableFuture<MessageId> id = producer.newMessage()
+                        .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
+                        .value(message.getBytes())
+                        .property(key1 + i, value1 + i)
+                        .property(key2 + i, value2 + i)
+                        .sendAsync();
+                sendResults.add(id);
+            }
+            FutureUtil.waitForAll(sendResults).whenCompleteAsync((r, t) -> {
+                latch.countDown();
+            });
+            latch.await();
         }
-        FutureUtil.waitForAll(sendResults).whenCompleteAsync((r, t) -> {
-           latch.countDown();
-        });
-        latch.await();
+        totalMsgs *= CompressionType.values().length;
 
         // 2. use kafka consumer to consume.
         @Cleanup
