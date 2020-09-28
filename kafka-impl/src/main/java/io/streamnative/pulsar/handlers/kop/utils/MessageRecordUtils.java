@@ -47,6 +47,7 @@ import org.apache.pulsar.common.api.proto.PulsarApi;
 import org.apache.pulsar.common.api.proto.PulsarApi.KeyValue;
 import org.apache.pulsar.common.api.proto.PulsarApi.MessageMetadata;
 import org.apache.pulsar.common.api.proto.PulsarApi.SingleMessageMetadata;
+import org.apache.pulsar.common.compression.CompressionCodec;
 import org.apache.pulsar.common.compression.CompressionCodecProvider;
 import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.protocol.Commands.ChecksumType;
@@ -349,10 +350,15 @@ public final class MessageRecordUtils {
             for (Entry entry : entries) {
                 // each entry is a batched message
                 ByteBuf metadataAndPayload = entry.getDataBuffer();
+
+                // Uncompress the payload if necessary
                 MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
+                CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(msgMetadata.getCompression());
+                int uncompressedSize = msgMetadata.getUncompressedSize();
+                ByteBuf payload = codec.decode(metadataAndPayload, uncompressedSize);
+
                 int numMessages = msgMetadata.getNumMessagesInBatch();
                 boolean notBatchMessage = (numMessages == 1 && !msgMetadata.hasNumMessagesInBatch());
-                ByteBuf payload = metadataAndPayload.retain();
 
                 if (log.isDebugEnabled()) {
                     log.debug("entriesToRecords.  NumMessagesInBatch: {}, isBatchMessage: {}, entries in list: {}."
@@ -372,7 +378,7 @@ public final class MessageRecordUtils {
 
                         SingleMessageMetadata.Builder singleMessageMetadataBuilder = SingleMessageMetadata
                             .newBuilder();
-                        ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(metadataAndPayload,
+                        ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(payload,
                             singleMessageMetadataBuilder, i, numMessages);
 
                         SingleMessageMetadata singleMessageMetadata = singleMessageMetadataBuilder.build();
@@ -445,6 +451,5 @@ public final class MessageRecordUtils {
             return key.getBytes(UTF_8);
         }
     }
-
 
 }
