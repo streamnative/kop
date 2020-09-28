@@ -565,6 +565,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 ctx.channel(), topic.toString(), throwable);
                         result.getRight().complete(new PartitionResponse(Errors.LEADER_NOT_AVAILABLE));
                     } else {
+                        topicManager.registerProducerInPersistentTopic(topic.toString(), persistentTopic);
                         persistentTopic.publishMessage(
                                 headerAndPayload,
                                 MessagePublishContext.get(
