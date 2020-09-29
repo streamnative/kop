@@ -306,7 +306,9 @@ public class KafkaTopicManager {
 
     public void registerProducerInPersistentTopic (String topicName, PersistentTopic persistentTopic) {
         try {
-            references.putIfAbsent(topicName, registerInPersistentTopic(persistentTopic));
+            if (!references.containsKey(topicName)) {
+                references.put(topicName, registerInPersistentTopic(persistentTopic));
+            }
         } catch (Exception e){
             log.error("[{}] Failed to register producer in PersistentTopic {}. exception:",
                     requestHandler.ctx.channel(), topicName, e);
