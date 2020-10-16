@@ -36,11 +36,22 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-for img_dir in `ls -d ${INTR_HOME}/integrations/*/ | grep -v dev`; do
-    BASE_NAME=$(basename ${img_dir})
-    IMAGE="streamnative/${IMAGE_NAME_PREFIX}${BASE_NAME}:${TAG}"
-    IMAGE_LATEST="streamnative/${IMAGE_NAME_PREFIX}${BASE_NAME}:latest"
+push_image() {
+    IMAGE="streamnative/${IMAGE_NAME_PREFIX}$1:${TAG}"
+    IMAGE_LATEST="streamnative/${IMAGE_NAME_PREFIX}$1:latest"
     docker tag ${IMAGE} ${IMAGE_LATEST}
     docker push ${IMAGE_LATEST}
     docker push ${IMAGE}
+}
+
+for img_dir in `ls -d ${INTR_HOME}/integrations/*/ | grep -v dev`; do
+    BASE_NAME=$(basename ${img_dir})
+    if [[ $BASE_NAME == "kafka-client" ]]; then
+        KAFKA_VERSIONS=(1.0.0 1.1.0 2.0.0 2.1.0 2.2.0 2.3.0 2.4.0 2.5.0 2.6.0)
+        for KAFKA_VERSION in ${KAFKA_VERSIONS[@]}; do
+            push_image "${BASE_NAME}-${KAFKA_VERSION}"
+        done
+    else
+        push_image $BASE_NAME
+    fi
 done
