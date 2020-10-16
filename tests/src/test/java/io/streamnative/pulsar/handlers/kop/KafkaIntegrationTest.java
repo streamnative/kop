@@ -33,6 +33,10 @@ import static org.testng.AssertJUnit.assertTrue;
 
 import com.google.common.collect.Sets;
 import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.net.UnknownHostException;
+import java.util.Enumeration;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
@@ -87,6 +91,25 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
         };
     }
 
+    public static String getSiteLocalAddress() throws UnknownHostException {
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface networkInterface = interfaces.nextElement();
+                Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    InetAddress address = addresses.nextElement();
+                    if (address.isSiteLocalAddress()) {
+                        return address.getHostAddress();
+                    }
+                }
+            }
+        } catch (SocketException e) {
+            log.warn("getSiteLocalAddress failed: {}, use local address instead", e.getMessage());
+        }
+        return InetAddress.getLocalHost().getHostAddress();
+    }
+
     private static WaitingConsumer createLogFollower(final GenericContainer container) {
         final WaitingConsumer waitingConsumer = new WaitingConsumer();
         container.followOutput(waitingConsumer);
@@ -118,7 +141,7 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
         // in order to access PulsarBroker when using Docker for Mac, we need to adjust things:
         // - set pulsar advertized address to host IP
         // - use the `host.testcontainers.internal` address exposed by testcontainers
-        String ip = InetAddress.getLocalHost().getHostAddress();
+        final String ip = getSiteLocalAddress();
         System.out.println("exposing Pulsar broker on " + ip);
         conf.setAdvertisedAddress(ip);
         ((KafkaServiceConfiguration) conf).setListeners(
