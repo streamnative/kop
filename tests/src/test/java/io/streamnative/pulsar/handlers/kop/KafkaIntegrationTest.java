@@ -88,6 +88,15 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
                 // consumer is broken, see integrations/README.md
                 {"node-kafka-node", Optional.empty(), true, false},
                 {"node-rdkafka", Optional.empty(), true, true},
+                {"kafka-client-1.0.0", Optional.empty(), true, true},
+                {"kafka-client-1.1.0", Optional.empty(), true, true},
+                {"kafka-client-2.0.0", Optional.empty(), true, true},
+                {"kafka-client-2.1.0", Optional.empty(), true, true},
+                {"kafka-client-2.2.0", Optional.empty(), true, true},
+                {"kafka-client-2.3.0", Optional.empty(), true, true},
+                {"kafka-client-2.4.0", Optional.empty(), true, true},
+                {"kafka-client-2.5.0", Optional.empty(), true, true},
+                {"kafka-client-2.6.0", Optional.empty(), true, true},
         };
     }
 
