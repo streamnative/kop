@@ -206,7 +206,7 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
                 .withEnv("KOP_TOPIC", topic.orElse(integration))
                 .withEnv("KOP_LIMIT", "10")
                 .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
-                //.waitingFor(Wait.forLogMessage("starting to produce\\n", 1))
+                .waitingFor(Wait.forLogMessage("starting to produce\\n", 1))
                 .withNetworkMode("host");
 
         final GenericContainer consumer = new GenericContainer<>("streamnative/kop-test-" + integration)
@@ -215,7 +215,7 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
                 .withEnv("KOP_CONSUME", "true")
                 .withEnv("KOP_LIMIT", "10")
                 .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
-                //.waitingFor(Wait.forLogMessage("starting to consume\\n", 1))
+                .waitingFor(Wait.forLogMessage("starting to consume\\n", 1))
                 .withNetworkMode("host");
 
         WaitingConsumer producerWaitingConsumer = null;
