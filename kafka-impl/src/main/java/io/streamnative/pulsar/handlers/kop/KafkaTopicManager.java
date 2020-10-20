@@ -315,7 +315,6 @@ public class KafkaTopicManager {
                 }
                 references.put(topicName, registerInPersistentTopic(persistentTopic));
             }
-
         } catch (Exception e){
             log.error("[{}] Failed to register producer in PersistentTopic {}. exception:",
                     requestHandler.ctx.channel(), topicName, e);
