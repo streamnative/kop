@@ -37,7 +37,9 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
@@ -84,7 +86,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kConfig.setClusterName(configClusterName);
         kConfig.setManagedLedgerCacheSizeMB(8);
         kConfig.setActiveConsumerFailoverDelayTimeMillis(0);
-        kConfig.setDefaultNumberOfNamespaceBundles(2);
+        kConfig.setDefaultNumberOfNamespaceBundles(4);
         kConfig.setZookeeperServers("localhost:2181");
         kConfig.setConfigurationStoreServers("localhost:3181");
         kConfig.setEnableGroupCoordinator(true);
@@ -223,6 +225,55 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         return i;
     }
 
+    /**
+     * Redistribute a topic's partitions to all brokers
+     *
+     * @param namespace the full namespace name, e.g. "public/default"
+     * @param topic the partitioned topic's full base name, e.g. "public/default/my-topic"
+     * @param numPartitions topic's partitions count
+     * @return a Map whose key is the broker's service url, value is the broker's owned partitions
+     */
+    protected Map<String, List<String>> redistributePartitions(
+            String namespace, String topic, int numPartitions) throws PulsarAdminException, PulsarServerException {
+        final int maxRetryCount = 15;
+        Map<String, List<String>> topicMap = Maps.newHashMap();
+        for (int i = 0; i < maxRetryCount; i++) {
+            // Unload all bundles to redistribute partitions
+            pulsarService.getAdminClient().namespaces().unloadNamespaceBundle(namespace, "0x00000000_0x40000000");
+            pulsarService.getAdminClient().namespaces().unloadNamespaceBundle(namespace, "0x40000000_0x80000000");
+            pulsarService.getAdminClient().namespaces().unloadNamespaceBundle(namespace, "0x80000000_0xc0000000");
+            pulsarService.getAdminClient().namespaces().unloadNamespaceBundle(namespace, "0xc0000000_0xffffffff");
+
+            for (int ii = 0; ii < numPartitions; ii++) {
+                String partitionName = topic + PARTITIONED_TOPIC_SUFFIX + ii;
+                String result = admin.lookups().lookupTopic(partitionName);
+                topicMap.putIfAbsent(result, Lists.newArrayList());
+                topicMap.get(result).add(partitionName);
+                log.info("serving broker for topic {} is {}, bundle range: {}", partitionName, result,
+                        admin.lookups().getBundleRange(partitionName));
+            }
+
+            final int loopIndex = i;
+            if (topicMap.size() == 2) {
+                topicMap.forEach((serviceUrl, partitions) -> {
+                    List<String> indexes = partitions.stream().map(
+                            s -> s.substring(s.indexOf(PARTITIONED_TOPIC_SUFFIX) + PARTITIONED_TOPIC_SUFFIX.length()))
+                            .collect(Collectors.toList());
+                    log.info("[{}] {} owns {}'s partitions: {}", loopIndex, serviceUrl, topic, indexes);
+                });
+                return topicMap;
+            } else { // topicMap.size() == 1
+                log.warn("[{}] {} owns all partitions", loopIndex, topicMap.keySet());
+            }
+            topicMap.clear();
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException ignored) {
+            }
+        }
+        return topicMap;
+    }
+
     protected void kafkaConsumeCommitMessage(KConsumer kConsumer,
                                              int numMessages,
                                              String messageStrPrefix,
@@ -275,22 +326,8 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         // 0.  Preparing:
         // create partitioned topic.
         pulsarService1.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
-        // Because pulsarService1 is start firstly. all the offset topics is served in broker1.
-        // In setting, each ns has 2 bundles. unload the first part, and this part will be served by broker2.
-        pulsarService1.getAdminClient().namespaces().unloadNamespaceBundle(offsetNs, "0x00000000_0x80000000");
 
-        log.info("unloaded offset namespace, will call lookup to force reload");
-
-        // Offsets partitions should be served by 2 brokers now.
-        Map<String, List<String>> offsetTopicMap = Maps.newHashMap();
-        for (int ii = 0; ii < offsetsTopicNumPartitions; ii++) {
-            String offsetsTopic = offsetsTopicName + PARTITIONED_TOPIC_SUFFIX + ii;
-            String result = admin.lookups().lookupTopic(offsetsTopic);
-            offsetTopicMap.putIfAbsent(result, Lists.newArrayList());
-            offsetTopicMap.get(result).add(offsetsTopic);
-            log.info("serving broker for topic {} is {}, bundle range: {}", offsetsTopic, result,
-                    pulsarService1.getAdminClient().lookups().getBundleRange(offsetsTopic));
-        }
+        Map<String, List<String>> offsetTopicMap = redistributePartitions(offsetNs, offsetsTopicName, offsetsTopicNumPartitions);
         assertEquals(offsetTopicMap.size(), 2);
 
         final AtomicInteger numberTopic = new AtomicInteger(0);
@@ -410,15 +447,8 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         pulsarService1.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
 
         // 1. use a map for serving broker and topics <broker, topics>, verify both broker has messages served.
-        Map<String, List<String>> topicMap = Maps.newHashMap();
-        for (int ii = 0; ii < partitionNumber; ii++) {
-            String topicName = pulsarTopicName + PARTITIONED_TOPIC_SUFFIX + ii;
-            String result = admin.lookups().lookupTopic(topicName);
-            topicMap.putIfAbsent(result, Lists.newArrayList());
-            topicMap.get(result).add(topicName);
-            log.info("serving broker for topic {} is {}, bundle range: {}", topicName, result,
-                    pulsarService1.getAdminClient().lookups().getBundleRange(topicName));
-        }
+        Map<String, List<String>> topicMap = redistributePartitions(kopNamespace, pulsarTopicName, partitionNumber);
+        assertEquals(topicMap.size(), 2);
 
         // 2. produce consume message with Kafka producer.
         int totalMsgs = 50;
@@ -454,20 +484,13 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         int partitionNumber = 10;
         String kafkaTopicName = "kopOneBrokerShutdown" + partitionNumber;
         String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
+        String kopNamespace = "public/default";
 
         // 0.  Preparing: create partitioned topic.
         pulsarService1.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
 
         // 1. use a map for serving broker and topics <broker, topics>, verify both broker has messages served.
-        Map<String, List<String>> topicMap = Maps.newHashMap();
-        for (int ii = 0; ii < partitionNumber; ii++) {
-            String topicName = pulsarTopicName + PARTITIONED_TOPIC_SUFFIX + ii;
-            String result = admin.lookups().lookupTopic(topicName);
-            topicMap.putIfAbsent(result, Lists.newArrayList());
-            topicMap.get(result).add(topicName);
-            log.info("serving broker for topic {} is {}, bundle range: {}", topicName, result,
-                    pulsarService1.getAdminClient().lookups().getBundleRange(topicName));
-        }
+        Map<String, List<String>> topicMap = redistributePartitions(kopNamespace, pulsarTopicName, partitionNumber);
         assertEquals(topicMap.size(), 2);
 
         // 2. produce consume message with Kafka producer.
