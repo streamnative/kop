@@ -86,7 +86,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kConfig.setClusterName(configClusterName);
         kConfig.setManagedLedgerCacheSizeMB(8);
         kConfig.setActiveConsumerFailoverDelayTimeMillis(0);
-        kConfig.setDefaultNumberOfNamespaceBundles(4);
+        kConfig.setDefaultNumberOfNamespaceBundles(16);
         kConfig.setZookeeperServers("localhost:2181");
         kConfig.setConfigurationStoreServers("localhost:3181");
         kConfig.setEnableGroupCoordinator(true);
@@ -225,6 +225,19 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         return i;
     }
 
+    protected void unloadAll(final String namespace) throws PulsarServerException, PulsarAdminException {
+        final String[] boundaries = {
+                "0x00000000", "0x10000000", "0x20000000", "0x30000000",
+                "0x40000000", "0x50000000", "0x60000000", "0x70000000",
+                "0x80000000", "0x90000000", "0xa0000000", "0xb0000000",
+                "0xc0000000", "0xd0000000", "0xe0000000", "0xf0000000",
+                "0xffffffff"
+        };
+        for (int i = 1; i < boundaries.length; i++) {
+            pulsarService.getAdminClient().namespaces().unloadNamespaceBundle(namespace, boundaries[i - 1] + "_" + boundaries[i]);
+        }
+    }
+
     /**
      * Redistribute a topic's partitions to all brokers
      *
@@ -238,11 +251,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         final int maxRetryCount = 15;
         Map<String, List<String>> topicMap = Maps.newHashMap();
         for (int i = 0; i < maxRetryCount; i++) {
-            // Unload all bundles to redistribute partitions
-            pulsarService.getAdminClient().namespaces().unloadNamespaceBundle(namespace, "0x00000000_0x40000000");
-            pulsarService.getAdminClient().namespaces().unloadNamespaceBundle(namespace, "0x40000000_0x80000000");
-            pulsarService.getAdminClient().namespaces().unloadNamespaceBundle(namespace, "0x80000000_0xc0000000");
-            pulsarService.getAdminClient().namespaces().unloadNamespaceBundle(namespace, "0xc0000000_0xffffffff");
+            unloadAll(namespace);
 
             for (int ii = 0; ii < numPartitions; ii++) {
                 String partitionName = topic + PARTITIONED_TOPIC_SUFFIX + ii;
@@ -267,7 +276,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
             }
             topicMap.clear();
             try {
-                Thread.sleep(100);
+                Thread.sleep(300);
             } catch (InterruptedException ignored) {
             }
         }
