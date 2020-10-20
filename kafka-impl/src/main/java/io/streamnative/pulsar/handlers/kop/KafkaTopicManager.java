@@ -290,26 +290,35 @@ public class KafkaTopicManager {
                         topicCompletableFuture.complete(null);
                         return;
                     }
-
-                    try {
-                        if (t2.isPresent()) {
-                            PersistentTopic persistentTopic = (PersistentTopic) t2.get();
-                            references.putIfAbsent(t, registerInPersistentTopic(persistentTopic));
-                            topicCompletableFuture.complete(persistentTopic);
-                        } else {
-                            log.error("[{}]Get empty topic for name {}",
-                                    requestHandler.ctx.channel(), t);
-                            topicCompletableFuture.complete(null);
-                        }
-                    } catch (Exception e) {
-                        log.error("[{}] Failed to get client in registerInPersistentTopic {}. exception:",
-                                requestHandler.ctx.channel(), t, e);
+                    if (t2.isPresent()) {
+                        PersistentTopic persistentTopic = (PersistentTopic) t2.get();
+                        topicCompletableFuture.complete(persistentTopic);
+                    } else {
+                        log.error("[{}]Get empty topic for name {}",
+                                requestHandler.ctx.channel(), t);
                         topicCompletableFuture.complete(null);
                     }
                 });
             });
             return topicCompletableFuture;
         });
+    }
+
+    public void registerProducerInPersistentTopic (String topicName, PersistentTopic persistentTopic) {
+        try {
+            if (references.containsKey(topicName)) {
+                return;
+            }
+            synchronized (this) {
+                if (references.containsKey(topicName)) {
+                    return;
+                }
+                references.put(topicName, registerInPersistentTopic(persistentTopic));
+            }
+        } catch (Exception e){
+            log.error("[{}] Failed to register producer in PersistentTopic {}. exception:",
+                    requestHandler.ctx.channel(), topicName, e);
+        }
     }
 
     // when channel close, release all the topics reference in persistentTopic
