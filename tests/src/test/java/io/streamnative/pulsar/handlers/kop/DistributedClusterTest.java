@@ -288,7 +288,8 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
             String result = admin.lookups().lookupTopic(offsetsTopic);
             offsetTopicMap.putIfAbsent(result, Lists.newArrayList());
             offsetTopicMap.get(result).add(offsetsTopic);
-            log.info("serving broker for offset topic {} is {}", offsetsTopic, result);
+            log.info("serving broker for topic {} is {}, bundle range: {}", offsetsTopic, result,
+                    pulsarService1.getAdminClient().lookups().getBundleRange(offsetsTopic));
         }
         assertEquals(offsetTopicMap.size(), 2);
 
@@ -415,9 +416,9 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
             String result = admin.lookups().lookupTopic(topicName);
             topicMap.putIfAbsent(result, Lists.newArrayList());
             topicMap.get(result).add(topicName);
-            log.info("serving broker for topic {} is {}", topicName, result);
+            log.info("serving broker for topic {} is {}, bundle range: {}", topicName, result,
+                    pulsarService1.getAdminClient().lookups().getBundleRange(topicName));
         }
-        assertEquals(topicMap.size(), 2);
 
         // 2. produce consume message with Kafka producer.
         int totalMsgs = 50;
@@ -464,7 +465,8 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
             String result = admin.lookups().lookupTopic(topicName);
             topicMap.putIfAbsent(result, Lists.newArrayList());
             topicMap.get(result).add(topicName);
-            log.info("serving broker for topic {} is {}", topicName, result);
+            log.info("serving broker for topic {} is {}, bundle range: {}", topicName, result,
+                    pulsarService1.getAdminClient().lookups().getBundleRange(topicName));
         }
         assertEquals(topicMap.size(), 2);
 
