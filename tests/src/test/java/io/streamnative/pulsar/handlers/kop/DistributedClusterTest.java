@@ -234,7 +234,11 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
                 "0xffffffff"
         };
         for (int i = 1; i < boundaries.length; i++) {
-            pulsarService.getAdminClient().namespaces().unloadNamespaceBundle(namespace, boundaries[i - 1] + "_" + boundaries[i]);
+            if (i % 2 == 0) {
+                pulsarService.getAdminClient().namespaces().unloadNamespaceBundle(namespace, boundaries[i - 1] + "_" + boundaries[i]);
+            } else {
+                pulsarService1.getAdminClient().namespaces().unloadNamespaceBundle(namespace, boundaries[i - 1] + "_" + boundaries[i]);
+            }
         }
     }
 
