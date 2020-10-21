@@ -328,7 +328,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     public void startGroupCoordinator() throws Exception {
         if (this.groupCoordinator != null) {
-            this.groupCoordinator.startup(false);
+            this.groupCoordinator.startup(true);
         } else {
             log.error("Failed to start group coordinator. Need init it first.");
         }
