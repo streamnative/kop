@@ -324,7 +324,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
      // Unit test {@link GroupCoordinator}.
     @Test(timeOut = 30000)
     public void testMutiBrokerAndCoordinator() throws Exception {
-        int partitionNumber = 10;
+        int partitionNumber = 32;
         String kafkaTopicName = "kopMutiBrokerAndCoordinator" + partitionNumber;
         String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
 
@@ -447,7 +447,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
     // Unit test for unload / reload user topic bundle, verify it works well.
     @Test(timeOut = 30000)
     public void testMutiBrokerUnloadReload() throws Exception {
-        int partitionNumber = 10;
+        int partitionNumber = 32;
         String kafkaTopicName = "kopMutiBrokerUnloadReload" + partitionNumber;
         String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
         String kopNamespace = "public/default";
@@ -483,6 +483,10 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
 
         // 4. publish consume again
         log.info("Re Publish / Consume again.");
+        kConsumer1.close();
+        kConsumer2.close();
+        kConsumer1 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-1");
+        kConsumer2 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-2");
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
         kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
         kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
@@ -490,7 +494,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 30000)
     public void testOneBrokerShutdown() throws Exception {
-        int partitionNumber = 10;
+        int partitionNumber = 32;
         String kafkaTopicName = "kopOneBrokerShutdown" + partitionNumber;
         String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
         String kopNamespace = "public/default";
