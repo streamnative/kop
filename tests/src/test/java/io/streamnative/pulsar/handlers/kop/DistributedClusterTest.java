@@ -479,7 +479,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
 
         // 3. unload
         log.info("Unload namespace, lookup will trigger another reload.");
-        pulsarService1.getAdminClient().namespaces().unload(kopNamespace);
+        redistributePartitions(kopNamespace, kafkaTopicName, partitionNumber);
 
         // 4. publish consume again
         log.info("Re Publish / Consume again.");
