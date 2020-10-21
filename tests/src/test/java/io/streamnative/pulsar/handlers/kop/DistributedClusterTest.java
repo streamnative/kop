@@ -248,9 +248,10 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
      */
     protected Map<String, List<String>> redistributePartitions(
             String namespace, String topic, int numPartitions) throws PulsarAdminException, PulsarServerException {
-        final int maxRetryCount = 15;
+        final int maxRetryCount = 50;
         Map<String, List<String>> topicMap = Maps.newHashMap();
         for (int i = 0; i < maxRetryCount; i++) {
+            topicMap.clear();
             unloadAll(namespace);
 
             for (int ii = 0; ii < numPartitions; ii++) {
@@ -274,9 +275,8 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
             } else { // topicMap.size() == 1
                 log.warn("[{}] {} owns all partitions", loopIndex, topicMap.keySet());
             }
-            topicMap.clear();
             try {
-                Thread.sleep(300);
+                Thread.sleep(20);
             } catch (InterruptedException ignored) {
             }
         }
@@ -332,12 +332,12 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
             + ((KafkaServiceConfiguration) conf).getKafkaMetadataNamespace();
         String offsetsTopicName = "persistent://" + offsetNs + "/" + GROUP_METADATA_TOPIC_NAME;
 
+        Map<String, List<String>> offsetTopicMap = redistributePartitions(offsetNs, offsetsTopicName, offsetsTopicNumPartitions);
+        assertEquals(offsetTopicMap.size(), 2);
+
         // 0.  Preparing:
         // create partitioned topic.
         pulsarService1.getAdminClient().topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
-
-        Map<String, List<String>> offsetTopicMap = redistributePartitions(offsetNs, offsetsTopicName, offsetsTopicNumPartitions);
-        assertEquals(offsetTopicMap.size(), 2);
 
         final AtomicInteger numberTopic = new AtomicInteger(0);
         offsetTopicMap.values().stream().forEach(list -> numberTopic.addAndGet(list.size()));
