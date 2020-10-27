@@ -119,7 +119,7 @@ public class GroupCoordinator {
                 .timeoutTimer(timer)
                 .build();
 
-        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient, kafkaServiceConfiguration);
+        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient);
         return new GroupCoordinator(
             groupConfig,
             metadataManager,

@@ -21,11 +21,8 @@ import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.getKopBro
 import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.getListenerPort;
 import static io.streamnative.pulsar.handlers.kop.MessagePublishContext.MESSAGE_BATCHED;
 import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.recordsToByteBuf;
-import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
-import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.pulsarTopicName;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
-import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -37,6 +34,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.Group
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.SaslUtils;
@@ -123,6 +121,7 @@ import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
@@ -135,8 +134,6 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.PulsarClientException.AuthorizationException;
 import org.apache.pulsar.common.api.AuthData;
-import org.apache.pulsar.common.naming.NamespaceName;
-import org.apache.pulsar.common.naming.TopicDomain;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.AuthAction;
@@ -167,7 +164,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final String localListeners;
     private final int plaintextPort;
     private final int sslPort;
-    private NamespaceName namespace;
     private String authRole;
     private AuthenticationState authState;
 
@@ -186,9 +182,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.localListeners = KafkaProtocolHandler.getListenersFromConfig(kafkaConfig);
         this.plaintextPort = getListenerPort(localListeners, PLAINTEXT);
         this.sslPort = getListenerPort(localListeners, SSL);
-        this.namespace = NamespaceName.get(
-            kafkaConfig.getKafkaTenant(),
-            kafkaConfig.getKafkaNamespace());
         this.topicManager = new KafkaTopicManager(this);
     }
 
@@ -305,22 +298,37 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         //      e.g. <topic1, {persistent://public/default/topic1-partition-0,...}>
         //   1. no topics provided, get all topics from namespace;
         //   2. topics provided, get provided topics.
-        CompletableFuture<Map<String, List<TopicName>>> pulsarTopicsFuture =
-            (topics == null || topics.isEmpty())
-                ?
-                pulsarService.getNamespaceService().getListOfPersistentTopics(namespace)
-                    .thenApply(
-                        list -> list.stream()
-                            .map(topicString -> TopicName.get(topicString))
-                            .collect(Collectors
-                                .groupingBy(
-                                    topicName -> getKafkaTopicNameFromPulsarTopicname(topicName),
-                                    Collectors.toList()))
-                    )
-                :
-                new CompletableFuture<>();
+        CompletableFuture<Map<String, List<TopicName>>> pulsarTopicsFuture = new CompletableFuture<>();
 
-        if (!(topics == null || topics.isEmpty())) {
+        if (topics == null || topics.isEmpty()) {
+            // get all topics
+            Map<String, List<TopicName>> pulsarTopics = Maps.newConcurrentMap();
+            final String offsetsTopicName = new KopTopic(String.join("/",
+                    kafkaConfig.getKafkaMetadataTenant(),
+                    kafkaConfig.getKafkaMetadataNamespace(),
+                    Topic.GROUP_METADATA_TOPIC_NAME)
+            ).getFullName();
+            try {
+                for (String tenant : pulsarService.getAdminClient().tenants().getTenants()) {
+                    for (String namespace : admin.namespaces().getNamespaces(tenant)) {
+                        for (String topic : admin.topics().getList(namespace)) {
+                            TopicName topicName = TopicName.get(topic);
+                            if (!topicName.getPartitionedTopicName().equals(offsetsTopicName)) {
+                                pulsarTopics.computeIfAbsent(
+                                        topicName.getPartitionedTopicName(),
+                                        key -> new ArrayList<>()
+                                ).add(topicName);
+                            }
+                        }
+                    }
+                }
+                pulsarTopicsFuture.complete(pulsarTopics);
+            } catch (PulsarServerException | PulsarAdminException e) {
+                log.error("Failed to get all topics: ", e);
+                pulsarTopicsFuture.completeExceptionally(e);
+            }
+        } else {
+            // get only the provided topics
             Map<String, List<TopicName>> pulsarTopics = Maps.newHashMap();
 
             List<String> requestTopics = metadataRequest.topics();
@@ -329,16 +337,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             requestTopics.stream()
                 .forEach(topic -> {
-
-                    TopicName pulsarTopicName;
-                    if (topic.startsWith(TopicDomain.persistent.value()) && topic.contains(namespace.getLocalName())) {
-                        pulsarTopicName = pulsarTopicName(topic);
-                    } else {
-                        pulsarTopicName = pulsarTopicName(topic, namespace);
-                    }
+                    KopTopic kopTopic = new KopTopic(topic);
 
                     // get partition numbers for each topic.
-                    getPartitionedTopicMetadataAsync(pulsarTopicName.toString())
+                    getPartitionedTopicMetadataAsync(kopTopic.getFullName())
                         .whenComplete((partitionedTopicMetadata, throwable) -> {
                             if (throwable != null) {
                                 // Failed get partitions.
@@ -349,45 +351,43 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         false,
                                         Collections.emptyList()));
                                 log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} metadata: {}",
-                                    ctx.channel(), metadataHar.getHeader(), pulsarTopicName, throwable.getMessage());
+                                        ctx.channel(), metadataHar.getHeader(),
+                                        kopTopic.getFullName(), throwable.getMessage());
                             } else {
-                                List<TopicName> pulsarTopicNames;
-                                if (partitionedTopicMetadata.partitions > 0) {
+                                int numPartitions = partitionedTopicMetadata.partitions;
+                                if (numPartitions <= 0) {
                                     if (log.isDebugEnabled()) {
-                                        log.debug("Topic {} has {} partitions",
-                                            topic, partitionedTopicMetadata.partitions);
-                                    }
-                                    pulsarTopicNames = IntStream
-                                        .range(0, partitionedTopicMetadata.partitions)
-                                        .mapToObj(i ->
-                                            TopicName.get(pulsarTopicName.toString() + PARTITIONED_TOPIC_SUFFIX + i))
-                                        .collect(Collectors.toList());
-                                    pulsarTopics.put(topic, pulsarTopicNames);
-                                } else {
-                                    if (kafkaConfig.isAllowAutoTopicCreation()) {
-                                        if (log.isDebugEnabled()) {
-                                            log.debug("[{}] Request {}: Topic {} has single partition, "
-                                                    + "auto create partitioned topic",
+                                        log.debug("[{}] Request {}: Topic {} has single partition, "
+                                                        + "auto create partitioned topic",
                                                 ctx.channel(), metadataHar.getHeader(), topic);
+                                    }
+                                    if (kafkaConfig.isAllowAutoTopicCreation()) {
+                                        try {
+                                            admin.topics().createPartitionedTopic(kopTopic.getFullName(),
+                                                    kafkaConfig.getDefaultNumPartitions());
+                                            numPartitions = kafkaConfig.getDefaultNumPartitions();
+                                        } catch (PulsarAdminException e) {
+                                            log.error("[{}] Request {}: Cannot create topic {}: {}",
+                                                    ctx.channel(), metadataHar.getHeader(), kopTopic.getFullName(), e);
                                         }
-                                        admin.topics().createPartitionedTopicAsync(pulsarTopicName.toString(),
-                                                kafkaConfig.getDefaultNumPartitions());
-                                        final TopicName newTopic = TopicName
-                                            .get(pulsarTopicName.toString() + PARTITIONED_TOPIC_SUFFIX + 0);
-                                        pulsarTopics.put(topic, Lists.newArrayList(newTopic));
-
                                     } else {
                                         log.error("[{}] Request {}: Topic {} has single partition, "
                                                         + "Not allow to auto create partitioned topic",
                                                 ctx.channel(), metadataHar.getHeader(), topic);
                                         // not allow to auto create topic, return unknown topic
                                         allTopicMetadata.add(
-                                            new TopicMetadata(
-                                                Errors.UNKNOWN_TOPIC_OR_PARTITION,
-                                                topic,
-                                                false,
-                                                Collections.emptyList()));
+                                                new TopicMetadata(
+                                                        Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                                                        topic,
+                                                        false,
+                                                        Collections.emptyList()));
                                     }
+                                }
+                                if (numPartitions > 0) {
+                                    pulsarTopics.put(topic,
+                                            IntStream.range(0, numPartitions)
+                                                    .mapToObj(i -> TopicName.get(kopTopic.getPartitionName(i)))
+                                                    .collect(Collectors.toList()));
                                 }
                             }
 
@@ -620,8 +620,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         topicPartition.topic(), topicPartition.partition(), responsesSize);
             }
 
-            TopicName topicName = pulsarTopicName(topicPartition, namespace);
-
+            String fullPartitionName = KopTopic.toString(topicPartition);
+            TopicName topicName = TopicName.get(fullPartitionName);
             CompletableFuture<ByteBuf> transFuture = new CompletableFuture<>();
             //put queue
             transQueue.compute(topicName, (key, queue) -> {
@@ -636,7 +636,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
             });
 
-            topicManager.getTopic(topicName.toString());
+            topicManager.getTopic(fullPartitionName);
             publishMessages((MemoryRecords) entry.getValue(), topicName, partitionResponse, transFuture);
         }
 
@@ -856,11 +856,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         request.partitionTimestamps().entrySet().stream().forEach(tms -> {
             TopicPartition topic = tms.getKey();
-            TopicName pulsarTopic = pulsarTopicName(topic, namespace);
             Long times = tms.getValue();
             CompletableFuture<ListOffsetResponse.PartitionData> partitionData;
 
-            CompletableFuture<PersistentTopic> persistentTopic = topicManager.getTopic(pulsarTopic.toString());
+            CompletableFuture<PersistentTopic> persistentTopic = topicManager.getTopic(KopTopic.toString(topic));
             partitionData = fetchOffsetForTimestamp(persistentTopic, times, false);
 
             responseData.put(topic, partitionData);
@@ -889,14 +888,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         log.warn("received a v0 listOffset: {}", request.toString(true));
         request.offsetData().entrySet().stream().forEach(tms -> {
             TopicPartition topic = tms.getKey();
-            TopicName pulsarTopic = pulsarTopicName(topic, namespace);
+            String fullPartitionName = KopTopic.toString(topic);
             Long times = tms.getValue().timestamp;
             CompletableFuture<ListOffsetResponse.PartitionData> partitionData;
 
             // num_num_offsets > 1 is not handled for now, returning an error
             if (tms.getValue().maxNumOffsets > 1) {
-                log.warn("request is asking for multiples offsets for {}, not supported for now",
-                        pulsarTopic.toString());
+                log.warn("request is asking for multiples offsets for {}, not supported for now", fullPartitionName);
                 partitionData = new CompletableFuture<>();
                 partitionData.complete(new ListOffsetResponse
                         .PartitionData(
@@ -904,7 +902,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET)));
             }
 
-            CompletableFuture<PersistentTopic> persistentTopic = topicManager.getTopic(pulsarTopic.toString());
+            CompletableFuture<PersistentTopic> persistentTopic = topicManager.getTopic(fullPartitionName);
             partitionData = fetchOffsetForTimestamp(persistentTopic, times, true);
 
             responseData.put(topic, partitionData);
@@ -1188,7 +1186,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         try {
             saslAuth = SaslUtils.parseSaslAuthBytes(Utils.toArray(request.saslAuthBytes()));
 
-            namespace = NamespaceName.get(saslAuth.getUsername());
+            // saslAuth.getUsername() is useless now
             AuthData authData = AuthData.of(saslAuth.getAuthData().getBytes(UTF_8));
 
             AuthenticationService authenticationService = getPulsarService()
