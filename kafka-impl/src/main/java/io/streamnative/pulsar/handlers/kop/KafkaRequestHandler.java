@@ -274,6 +274,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     // Leverage pulsar admin to get partitioned topic metadata
+    // If the future completed successfully, the PartitionedTopicMetadata's partition must be > 0
     private CompletableFuture<PartitionedTopicMetadata> getPartitionedTopicMetadataAsync(String topicName) {
         return admin.topics().getPartitionedTopicMetadataAsync(topicName).thenCompose(partitionedTopicMetadata -> {
             if (partitionedTopicMetadata.partitions > 0) {
@@ -373,10 +374,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         ctx.channel(), metadataHar.getHeader(),
                                         kopTopic.getFullName(), throwable.getMessage());
                             } else {
+                                // numPartitions must be positive, see `getPartitionedTopicMetadataAsync`
                                 int numPartitions = partitionedTopicMetadata.partitions;
-                                if (numPartitions <= 0) {
-                                    throw new RuntimeException("Unexpected numPartitions: " + numPartitions);
-                                }
                                 pulsarTopics.put(topic,
                                         IntStream.range(0, numPartitions)
                                                 .mapToObj(i -> TopicName.get(kopTopic.getPartitionName(i)))
