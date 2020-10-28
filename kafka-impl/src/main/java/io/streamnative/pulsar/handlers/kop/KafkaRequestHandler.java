@@ -463,10 +463,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 allTopicMetadata.add(
                                     new TopicMetadata(
                                         Errors.NONE,
-                                        // we should answer with the right name, either local of full-name,
-                                        // depending on what was asked
-                                        topic.startsWith("persistent://")
-                                                ? TopicName.get(topic).toString() : TopicName.get(topic).getLocalName(),
+                                        // The topic returned to Kafka clients should be the same with what it sent
+                                        topic,
                                         false,
                                         partitionMetadatas));
 
