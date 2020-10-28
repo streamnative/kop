@@ -166,6 +166,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final int sslPort;
     private String authRole;
     private AuthenticationState authState;
+    private final int defaultNumPartitions;
 
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
@@ -183,6 +184,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.plaintextPort = getListenerPort(localListeners, PLAINTEXT);
         this.sslPort = getListenerPort(localListeners, SSL);
         this.topicManager = new KafkaTopicManager(this);
+        this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
     }
 
     @Override
@@ -273,7 +275,23 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     // Leverage pulsar admin to get partitioned topic metadata
     private CompletableFuture<PartitionedTopicMetadata> getPartitionedTopicMetadataAsync(String topicName) {
-        return admin.topics().getPartitionedTopicMetadataAsync(topicName);
+        return admin.topics().getPartitionedTopicMetadataAsync(topicName).thenCompose(partitionedTopicMetadata -> {
+            if (partitionedTopicMetadata.partitions > 0) {
+                return CompletableFuture.completedFuture(partitionedTopicMetadata);
+            } else {
+                if (log.isDebugEnabled()) {
+                    log.debug("Topic {}'s partition is {}, try to auto create partitioned topic",
+                            topicName, partitionedTopicMetadata.partitions);
+                }
+                if (kafkaConfig.isAllowAutoTopicCreation()) {
+                    return admin.topics().createPartitionedTopicAsync(topicName, defaultNumPartitions)
+                            .thenApply(ignored -> new PartitionedTopicMetadata(defaultNumPartitions));
+                } else {
+                    throw new RuntimeException("Topic " + topicName + " has single partition, "
+                            + "Not allow to auto create partitioned topic");
+                }
+            }
+        });
     }
 
     protected void handleTopicMetadataRequest(KafkaHeaderAndRequest metadataHar,
@@ -340,6 +358,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     KopTopic kopTopic = new KopTopic(topic);
 
                     // get partition numbers for each topic.
+                    // If topic doesn't exist and allowAutoTopicCreation is enabled, the topic will be created first.
                     getPartitionedTopicMetadataAsync(kopTopic.getFullName())
                         .whenComplete((partitionedTopicMetadata, throwable) -> {
                             if (throwable != null) {
@@ -356,39 +375,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             } else {
                                 int numPartitions = partitionedTopicMetadata.partitions;
                                 if (numPartitions <= 0) {
-                                    if (log.isDebugEnabled()) {
-                                        log.debug("[{}] Request {}: Topic {} has single partition, "
-                                                        + "auto create partitioned topic",
-                                                ctx.channel(), metadataHar.getHeader(), topic);
-                                    }
-                                    if (kafkaConfig.isAllowAutoTopicCreation()) {
-                                        try {
-                                            admin.topics().createPartitionedTopic(kopTopic.getFullName(),
-                                                    kafkaConfig.getDefaultNumPartitions());
-                                            numPartitions = kafkaConfig.getDefaultNumPartitions();
-                                        } catch (PulsarAdminException e) {
-                                            log.error("[{}] Request {}: Cannot create topic {}: {}",
-                                                    ctx.channel(), metadataHar.getHeader(), kopTopic.getFullName(), e);
-                                        }
-                                    } else {
-                                        log.error("[{}] Request {}: Topic {} has single partition, "
-                                                        + "Not allow to auto create partitioned topic",
-                                                ctx.channel(), metadataHar.getHeader(), topic);
-                                        // not allow to auto create topic, return unknown topic
-                                        allTopicMetadata.add(
-                                                new TopicMetadata(
-                                                        Errors.UNKNOWN_TOPIC_OR_PARTITION,
-                                                        topic,
-                                                        false,
-                                                        Collections.emptyList()));
-                                    }
+                                    throw new RuntimeException("Unexpected numPartitions: " + numPartitions);
                                 }
-                                if (numPartitions > 0) {
-                                    pulsarTopics.put(topic,
-                                            IntStream.range(0, numPartitions)
-                                                    .mapToObj(i -> TopicName.get(kopTopic.getPartitionName(i)))
-                                                    .collect(Collectors.toList()));
-                                }
+                                pulsarTopics.put(topic,
+                                        IntStream.range(0, numPartitions)
+                                                .mapToObj(i -> TopicName.get(kopTopic.getPartitionName(i)))
+                                                .collect(Collectors.toList()));
                             }
 
                             // whether handled all topics get partitions
