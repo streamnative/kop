@@ -1205,7 +1205,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         try {
             saslAuth = SaslUtils.parseSaslAuthBytes(Utils.toArray(request.saslAuthBytes()));
 
-            // saslAuth.getUsername() is useless now
+            // TODO: saslAuth.getUsername() isn't necessary from now. By the way, a proper authentication way
+            //   would be applied in the future, see https://github.com/streamnative/kop/issues/208
             AuthData authData = AuthData.of(saslAuth.getAuthData().getBytes(UTF_8));
 
             AuthenticationService authenticationService = getPulsarService()
