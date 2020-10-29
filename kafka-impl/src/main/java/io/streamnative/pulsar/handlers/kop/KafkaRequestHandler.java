@@ -274,25 +274,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     // Leverage pulsar admin to get partitioned topic metadata
-    // If the future completed successfully, the PartitionedTopicMetadata's partition must be > 0
     private CompletableFuture<PartitionedTopicMetadata> getPartitionedTopicMetadataAsync(String topicName) {
-        return admin.topics().getPartitionedTopicMetadataAsync(topicName).thenCompose(partitionedTopicMetadata -> {
-            if (partitionedTopicMetadata.partitions > 0) {
-                return CompletableFuture.completedFuture(partitionedTopicMetadata);
-            } else {
-                if (log.isDebugEnabled()) {
-                    log.debug("Topic {}'s partition is {}, try to auto create partitioned topic",
-                            topicName, partitionedTopicMetadata.partitions);
-                }
-                if (kafkaConfig.isAllowAutoTopicCreation()) {
-                    return admin.topics().createPartitionedTopicAsync(topicName, defaultNumPartitions)
-                            .thenApply(ignored -> new PartitionedTopicMetadata(defaultNumPartitions));
-                } else {
-                    throw new RuntimeException("Topic " + topicName + " has single partition, "
-                            + "Not allow to auto create partitioned topic");
-                }
-            }
-        });
+        return admin.topics().getPartitionedTopicMetadataAsync(topicName);
     }
 
     // Get all topics exclude `__consumer_offsets`, the result of `topicMapFuture` is a map:
@@ -395,21 +378,54 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             if (throwable != null) {
                                 // Failed get partitions.
                                 allTopicMetadata.add(
-                                    new TopicMetadata(
-                                        Errors.UNKNOWN_TOPIC_OR_PARTITION,
-                                        topic,
-                                        false,
-                                        Collections.emptyList()));
+                                        new TopicMetadata(
+                                                Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                                                topic,
+                                                false,
+                                                Collections.emptyList()));
                                 log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} metadata: {}",
                                         ctx.channel(), metadataHar.getHeader(),
                                         kopTopic.getFullName(), throwable.getMessage());
                             } else {
-                                // numPartitions must be positive, see `getPartitionedTopicMetadataAsync`
-                                int numPartitions = partitionedTopicMetadata.partitions;
-                                pulsarTopics.put(topic,
-                                        IntStream.range(0, numPartitions)
+                                List<TopicName> pulsarTopicNames;
+                                if (partitionedTopicMetadata.partitions > 0) {
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("Topic {} has {} partitions",
+                                                topic, partitionedTopicMetadata.partitions);
+                                    }
+                                    pulsarTopicNames = IntStream
+                                            .range(0, partitionedTopicMetadata.partitions)
+                                            .mapToObj(i -> TopicName.get(kopTopic.getPartitionName(i)))
+                                            .collect(Collectors.toList());
+                                    pulsarTopics.put(topic, pulsarTopicNames);
+                                } else {
+                                    if (kafkaConfig.isAllowAutoTopicCreation()) {
+                                        if (log.isDebugEnabled()) {
+                                            log.debug("[{}] Request {}: Topic {} has single partition, "
+                                                            + "auto create partitioned topic",
+                                                    ctx.channel(), metadataHar.getHeader(), topic);
+                                        }
+                                        admin.topics().createPartitionedTopicAsync(kopTopic.getFullName(),
+                                                defaultNumPartitions);
+                                        pulsarTopicNames = IntStream
+                                                .range(0, defaultNumPartitions)
                                                 .mapToObj(i -> TopicName.get(kopTopic.getPartitionName(i)))
-                                                .collect(Collectors.toList()));
+                                                .collect(Collectors.toList());
+                                        pulsarTopics.put(topic, pulsarTopicNames);
+
+                                    } else {
+                                        log.error("[{}] Request {}: Topic {} has single partition, "
+                                                        + "Not allow to auto create partitioned topic",
+                                                ctx.channel(), metadataHar.getHeader(), topic);
+                                        // not allow to auto create topic, return unknown topic
+                                        allTopicMetadata.add(
+                                                new TopicMetadata(
+                                                        Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                                                        topic,
+                                                        false,
+                                                        Collections.emptyList()));
+                                    }
+                                }
                             }
 
                             // whether handled all topics get partitions
@@ -417,7 +433,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             if (completedTopics == topicsNumber) {
                                 if (log.isDebugEnabled()) {
                                     log.debug("[{}] Request {}: Completed get {} topic's partitions",
-                                        ctx.channel(), metadataHar.getHeader(), topicsNumber);
+                                            ctx.channel(), metadataHar.getHeader(), topicsNumber);
                                 }
                                 pulsarTopicsFuture.complete(pulsarTopics);
                             }
