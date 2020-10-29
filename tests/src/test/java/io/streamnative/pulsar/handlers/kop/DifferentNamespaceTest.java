@@ -19,6 +19,8 @@ import static org.testng.Assert.fail;
 
 import com.google.common.collect.Sets;
 
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -27,7 +29,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
