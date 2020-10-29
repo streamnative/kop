@@ -143,4 +143,58 @@ public class DifferentNamespaceTest extends KopProtocolHandlerTestBase {
         assertTrue(topicMap.containsKey(key2));
         assertEquals(topicMap.get(key2).size(), numPartitions2);
     }
+
+    @Test(timeOut = 30000)
+    void testCommitOffset() throws Exception {
+        final String topic = ANOTHER_TENANT + "/" + ANOTHER_NAMESPACE + "/test-commit-offset";
+        final int numMessages = 50;
+        final String messagePrefix = topic + "-msg-";
+
+        @Cleanup
+        KProducer kProducer = new KProducer(topic, false, getKafkaBrokerPort());
+        for (int i = 0; i < numMessages; i++) {
+            kProducer.getProducer().send(new ProducerRecord<>(topic, i, messagePrefix + i));
+        }
+
+        // disable auto commit
+        KConsumer kConsumer1 = new KConsumer(topic, getKafkaBrokerPort(), true);
+        kConsumer1.getConsumer().subscribe(Collections.singleton(topic));
+
+        int numMessagesReceived = 0;
+        while (numMessagesReceived < numMessages / 2) {
+            ConsumerRecords<Integer, String> records = kConsumer1.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<Integer, String> record : records) {
+                log.info("[Loop 1] Receive message [key = {}, value = '{}']", record.key(), record.value());
+                assertEquals(messagePrefix + record.key(), record.value());
+                numMessagesReceived++;
+            }
+        }
+
+        // manual commit first half of messages
+        kConsumer1.getConsumer().commitSync(Duration.ofSeconds(2));
+        kConsumer1.close();
+
+        // disable auto commit
+        KConsumer kConsumer2 = new KConsumer(topic, getKafkaBrokerPort(), false);
+        kConsumer2.getConsumer().subscribe(Collections.singleton(topic));
+        while (numMessagesReceived < numMessages) {
+            ConsumerRecords<Integer, String> records = kConsumer2.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<Integer, String> record : records) {
+                log.info("[Loop 2] Receive message [key = {}, value = '{}']", record.key(), record.value());
+                assertEquals(messagePrefix + record.key(), record.value());
+                numMessagesReceived++;
+            }
+        }
+
+        // manual commit the rest messages
+        kConsumer2.getConsumer().commitSync(Duration.ofSeconds(2));
+        kConsumer2.close();
+
+        @Cleanup
+        KConsumer kConsumer3 = new KConsumer(topic, getKafkaBrokerPort(), false);
+        kConsumer3.getConsumer().subscribe(Collections.singleton(topic));
+        // the offset is the latest message now, so no records would be received
+        ConsumerRecords<Integer, String> records = kConsumer3.getConsumer().poll(Duration.ofSeconds(5));
+        assertEquals(records.count(), 0);
+    }
 }
