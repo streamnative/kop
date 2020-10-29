@@ -24,6 +24,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
@@ -197,6 +198,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             kafkaConfig.setBindAddress(conf.getBindAddress());
         }
         this.bindAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(kafkaConfig.getBindAddress());
+        KopTopic.initialize(kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace());
     }
 
     // This method is called after initialize

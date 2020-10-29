@@ -90,7 +90,11 @@ public class PublishRateLimitTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 20000)
     public void testBrokerPublishByteThrottling() throws Exception {
         String topicName = "kopBrokerPublishByteThrottling";
-        String pulsarTopicName = "persistent://public/default/" + topicName;
+        String pulsarTopicName = "persistent://public/default/" + topicName + "-partition-0";
+
+        // NOTE: KoP doesn't support non-partitioned topics, so we need to create it first to avoid Pulsar producer
+        //   create a non-partitioned topic automatically.
+        admin.topics().createPartitionedTopic(topicName, 1);
 
         // 1. produce message with Kafka producer.
         @Cleanup

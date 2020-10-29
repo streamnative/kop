@@ -55,9 +55,7 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
     private static final String ANOTHER_USER = "death_eater_user";
     private static final String ADMIN_USER = "admin_user";
     private static final String NAMESPACE = "ns1";
-    private static final String KAFKA_TOPIC = "topic1";
-    private static final String PULSAR_TOPIC_NAME = "persistent://" + TENANT
-        + "/" + NAMESPACE + "/" + KAFKA_TOPIC;
+    private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/topic1";
     private String adminToken;
     private String userToken;
     private String anotherToken;
@@ -102,7 +100,7 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
         admin.tenants().createTenant(TENANT,
             new TenantInfo(Sets.newHashSet(ADMIN_USER), Sets.newHashSet(super.configClusterName)));
         admin.namespaces().createNamespace(TENANT + "/" + NAMESPACE);
-        admin.topics().createPartitionedTopic(PULSAR_TOPIC_NAME, 1);
+        admin.topics().createPartitionedTopic(TOPIC, 1);
         admin
             .namespaces().grantPermissionOnNamespace(TENANT + "/" + NAMESPACE, SIMPLE_USER,
             Sets.newHashSet(AuthAction.consume, AuthAction.produce));
@@ -121,19 +119,19 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 40000)
     void simpleProduceAndConsume() throws Exception {
-        KProducer kProducer = new KProducer(KAFKA_TOPIC, false, "localhost", getKafkaBrokerPort(),
+        KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
             TENANT + "/" + NAMESPACE, "token:" + userToken);
         int totalMsgs = 10;
-        String messageStrPrefix = PULSAR_TOPIC_NAME + "_message_";
+        String messageStrPrefix = TOPIC + "_message_";
 
         for (int i = 0; i < totalMsgs; i++) {
             String messageStr = messageStrPrefix + i;
-            kProducer.getProducer().send(new ProducerRecord<>(KAFKA_TOPIC, i, messageStr));
+            kProducer.getProducer().send(new ProducerRecord<>(TOPIC, i, messageStr));
         }
 
-        KConsumer kConsumer = new KConsumer(KAFKA_TOPIC, "localhost", getKafkaBrokerPort(), false,
+        KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getKafkaBrokerPort(), false,
             TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
-        kConsumer.getConsumer().subscribe(Collections.singleton(KAFKA_TOPIC));
+        kConsumer.getConsumer().subscribe(Collections.singleton(TOPIC));
 
         int i = 0;
         while (i < totalMsgs) {
@@ -154,17 +152,17 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
         Map<String, List<PartitionInfo>> result = kConsumer
             .getConsumer().listTopics(Duration.ofSeconds(1));
         assertEquals(result.size(), 1);
-        assertTrue(result.containsKey(KAFKA_TOPIC),
-            "list of topics " + result.keySet().toString() + "  does not contains " + KAFKA_TOPIC);
+        assertTrue(result.containsKey(TOPIC),
+            "list of topics " + result.keySet().toString() + "  does not contains " + TOPIC);
     }
 
     @Test(timeOut = 20000)
     void badCredentialFail() throws Exception {
         try {
             @Cleanup
-            KProducer kProducer = new KProducer(KAFKA_TOPIC, false, "localhost", getKafkaBrokerPort(),
+            KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
                 TENANT + "/" + NAMESPACE, "token:dsa");
-            kProducer.getProducer().send(new ProducerRecord<>(KAFKA_TOPIC, 0, "")).get();
+            kProducer.getProducer().send(new ProducerRecord<>(TOPIC, 0, "")).get();
             fail("should have failed");
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("SaslAuthenticationException"));
@@ -175,9 +173,9 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
     void badUserFail() throws Exception {
         try {
             @Cleanup
-            KProducer kProducer = new KProducer(KAFKA_TOPIC, false, "localhost", getKafkaBrokerPort(),
+            KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
                 TENANT + "/" + NAMESPACE, "token:" + anotherToken);
-            kProducer.getProducer().send(new ProducerRecord<>(KAFKA_TOPIC, 0, "")).get();
+            kProducer.getProducer().send(new ProducerRecord<>(TOPIC, 0, "")).get();
             fail("should have failed");
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("SaslAuthenticationException"));
@@ -187,9 +185,9 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 20000)
     void badNamespaceProvided() throws Exception {
         try {
-            KProducer kProducer = new KProducer(KAFKA_TOPIC, false, "localhost", getKafkaBrokerPort(),
+            KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
                 TENANT + "/ns2", "token:" + userToken);
-            kProducer.getProducer().send(new ProducerRecord<>(KAFKA_TOPIC, 0, "")).get();
+            kProducer.getProducer().send(new ProducerRecord<>(TOPIC, 0, "")).get();
             fail("should have failed");
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("SaslAuthenticationException"));

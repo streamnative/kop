@@ -14,13 +14,13 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.entriesToRecords;
-import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.pulsarTopicName;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 
 import com.google.common.collect.Lists;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -48,7 +48,6 @@ import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.FetchResponse.PartitionData;
-import org.apache.pulsar.common.naming.TopicName;
 
 /**
  * MessageFetchContext handling FetchRequest .
@@ -96,10 +95,8 @@ public final class MessageFetchContext {
             ((FetchRequest) fetchRequest.getRequest())
                 .fetchData().entrySet().stream()
                 .map(entry -> {
-                    TopicName topicName = pulsarTopicName(entry.getKey(), requestHandler.getNamespace());
-
                     CompletableFuture<KafkaTopicConsumerManager> consumerManager =
-                        requestHandler.getTopicManager().getTopicConsumerManager(topicName.toString());
+                        requestHandler.getTopicManager().getTopicConsumerManager(KopTopic.toString(entry.getKey()));
 
                     return Pair.of(
                         entry.getKey(),
@@ -221,9 +218,8 @@ public final class MessageFetchContext {
                             fetch.getHeader(), kafkaTopic, e);
 
                         // delete related cursor in TCM
-                        TopicName pulsarTopicName = pulsarTopicName(kafkaTopic, requestHandler.getNamespace());
                         requestHandler.getTopicManager()
-                            .getTopicConsumerManager(pulsarTopicName.toString())
+                            .getTopicConsumerManager(KopTopic.toString(kafkaTopic))
                             .thenAccept(cm -> {
                                 // Notice, channel may be close, then TCM would be null.
                                 if (cm != null) {
@@ -282,10 +278,9 @@ public final class MessageFetchContext {
                         TopicPartition kafkaPartition = responseEntrys.getKey();
                         List<Entry> entries = responseEntrys.getValue();
                         // Add cursor and offset back to TCM when all the read completed.
-                        TopicName pulsarTopicName = pulsarTopicName(kafkaPartition, requestHandler.getNamespace());
                         Pair<ManagedCursor, Long> pair = cursors.get(kafkaPartition);
                         requestHandler.getTopicManager()
-                            .getTopicConsumerManager(pulsarTopicName.toString())
+                            .getTopicConsumerManager(KopTopic.toString(kafkaPartition))
                             .thenAccept(cm -> {
                                 // Notice, channel may be close, then TCM would be null.
                                 if (cm != null) {
@@ -375,9 +370,7 @@ public final class MessageFetchContext {
                 new ReadEntriesCallback() {
                     @Override
                     public void readEntriesComplete(List<Entry> list, Object o) {
-                        TopicName topicName = pulsarTopicName(
-                            cursorOffsetPair.getKey(),
-                            requestHandler.getNamespace());
+                        String fullPartitionName = KopTopic.toString(cursorOffsetPair.getKey());
 
                         Entry entry = null;
                         if (!list.isEmpty()) {
@@ -403,7 +396,7 @@ public final class MessageFetchContext {
                                 log.debug("Topic {} success read entry: ledgerId: {}, entryId: {}, size: {},"
                                         + " ConsumerManager original offset: {}, entryOffset: {} - {}, "
                                         + "nextOffset: {} - {}",
-                                    topicName.toString(), entry.getLedgerId(), entry.getEntryId(),
+                                    fullPartitionName, entry.getLedgerId(), entry.getEntryId(),
                                     entry.getLength(), currentOffset, offset, currentPosition,
                                     nextOffset, nextPosition);
                             }
@@ -414,8 +407,7 @@ public final class MessageFetchContext {
 
                     @Override
                     public void readEntriesFailed(ManagedLedgerException e, Object o) {
-                        log.error("Error read entry for topic: {}",
-                            pulsarTopicName(cursorOffsetPair.getKey(), requestHandler.getNamespace()));
+                        log.error("Error read entry for topic: {}", KopTopic.toString(cursorOffsetPair.getKey()));
 
                         readFuture.completeExceptionally(e);
                     }

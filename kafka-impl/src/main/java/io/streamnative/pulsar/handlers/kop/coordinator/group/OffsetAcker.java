@@ -13,10 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.group;
 
-import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
-import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.util.Map;
@@ -32,8 +31,6 @@ import org.apache.pulsar.client.api.ConsumerBuilder;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
-import org.apache.pulsar.common.naming.NamespaceName;
-import org.apache.pulsar.common.naming.TopicName;
 
 /**
  * This class used to track all the partition offset commit position.
@@ -42,21 +39,12 @@ import org.apache.pulsar.common.naming.TopicName;
 public class OffsetAcker implements Closeable {
 
     private final ConsumerBuilder<byte[]> consumerBuilder;
-    private KafkaServiceConfiguration kafkaServiceConfiguration;
-
 
     public OffsetAcker(PulsarClientImpl pulsarClient) {
         this.consumerBuilder = pulsarClient.newConsumer()
                 .receiverQueueSize(0)
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
     }
-    public OffsetAcker(PulsarClientImpl pulsarClient, KafkaServiceConfiguration kafkaServiceConfiguration) {
-        this.consumerBuilder = pulsarClient.newConsumer()
-                .receiverQueueSize(0)
-                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
-        this.kafkaServiceConfiguration = kafkaServiceConfiguration;
-    }
-
 
     // map off consumser: <groupId, consumers>
     Map<String, Map<TopicPartition, CompletableFuture<Consumer<byte[]>>>> consumers = new ConcurrentHashMap<>();
@@ -124,12 +112,9 @@ public class OffsetAcker implements Closeable {
     }
 
     private CompletableFuture<Consumer<byte[]>> createConsumer(String groupId, TopicPartition topicPartition) {
-        NamespaceName nameSpace = NamespaceName.get(
-                kafkaServiceConfiguration.getKafkaTenant(),
-                kafkaServiceConfiguration.getKafkaNamespace());
-        TopicName pulsarTopicName = TopicNameUtils.pulsarTopicName(topicPartition, nameSpace);
+        KopTopic kopTopic = new KopTopic(topicPartition.topic());
         return consumerBuilder.clone()
-                .topic(pulsarTopicName.toString())
+                .topic(kopTopic.getPartitionName(topicPartition.partition()))
                 .subscriptionName(groupId)
                 .subscribeAsync();
     }
