@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
 import com.google.common.collect.Sets;
@@ -22,21 +23,24 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.PartitionInfo;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 /**
- * test produce/consume in different namespaces.
+ * test topics in different namespaces.
  */
 @Slf4j
 public class DifferentNamespaceTest extends KopProtocolHandlerTestBase {
@@ -113,5 +117,29 @@ public class DifferentNamespaceTest extends KopProtocolHandlerTestBase {
         List<Integer> sortedSuffixes = suffixes.stream().sorted().collect(Collectors.toList());
         List<Integer> expectedSuffixes = IntStream.range(0, numMessages).boxed().collect(Collectors.toList());
         assertEquals(sortedSuffixes, expectedSuffixes);
+    }
+
+    @Test(timeOut = 20000)
+    void testListTopics() throws Exception {
+        final String topic1 = "list-topics-1";
+        final int numPartitions1 = 3;
+        final String topic2 = ANOTHER_TENANT + "/" + ANOTHER_NAMESPACE + "/list-topics-2";
+        final int numPartitions2 = 5;
+
+        admin.topics().createPartitionedTopic(topic1, numPartitions1);
+        admin.topics().createPartitionedTopic(topic2, numPartitions2);
+
+        @Cleanup
+        KConsumer kConsumer = new KConsumer("", getKafkaBrokerPort(), true);
+        Map<String, List<PartitionInfo>> topicMap = kConsumer.getConsumer().listTopics(Duration.ofSeconds(5));
+        log.info("topicMap: {}", topicMap);
+
+        final String key1 = new KopTopic(topic1).getFullName();
+        assertTrue(topicMap.containsKey(key1));
+        assertEquals(topicMap.get(key1).size(), numPartitions1);
+
+        final String key2 = new KopTopic(topic2).getFullName();
+        assertTrue(topicMap.containsKey(key2));
+        assertEquals(topicMap.get(key2).size(), numPartitions2);
     }
 }

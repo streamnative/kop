@@ -69,6 +69,7 @@ import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.commons.collections.list.SynchronizedList;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
@@ -134,6 +135,7 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.PulsarClientException.AuthorizationException;
 import org.apache.pulsar.common.api.AuthData;
+import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.AuthAction;
@@ -295,6 +297,60 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
+    // Get all topics exclude `__consumer_offsets`, the result of `topicMapFuture` is a map:
+    //   key: the full topic name without partition suffix, e.g. persistent://public/default/my-topic
+    //   value: the partitions associated with the key, e.g. for a topic with 3 partitions,
+    //     persistent://public/default/my-topic-partition-0
+    //     persistent://public/default/my-topic-partition-1
+    //     persistent://public/default/my-topic-partition-2
+    private void getAllTopicsAsync(CompletableFuture<Map<String, List<TopicName>>> topicMapFuture) {
+        final String offsetsTopicName = new KopTopic(String.join("/",
+                kafkaConfig.getKafkaMetadataTenant(),
+                kafkaConfig.getKafkaMetadataNamespace(),
+                Topic.GROUP_METADATA_TOPIC_NAME)
+        ).getFullName();
+        admin.tenants().getTenantsAsync().thenApply(tenants -> {
+            if (tenants.isEmpty()) {
+                topicMapFuture.complete(Maps.newHashMap());
+                return null;
+            }
+            Map<String, List<TopicName>> topicMap = Maps.newConcurrentMap();
+
+            AtomicInteger numTenants = new AtomicInteger(tenants.size());
+            for (String tenant : tenants) {
+                admin.namespaces().getNamespacesAsync(tenant).thenApply(namespaces -> {
+                    if (namespaces.isEmpty() && numTenants.decrementAndGet() == 0) {
+                        topicMapFuture.complete(topicMap);
+                        return null;
+                    }
+                    AtomicInteger numNamespaces = new AtomicInteger(namespaces.size());
+                    for (String namespace : namespaces) {
+                        pulsarService.getNamespaceService().getListOfPersistentTopics(NamespaceName.get(namespace))
+                                .thenApply(topics -> {
+                                    for (String topic : topics) {
+                                        TopicName topicName = TopicName.get(topic);
+                                        String key = topicName.getPartitionedTopicName();
+                                        // ignore the `__consumer_offsets` topic
+                                        if (key.equals(offsetsTopicName)) {
+                                            continue;
+                                        }
+                                        topicMap.computeIfAbsent(key, ignored ->
+                                                Collections.synchronizedList(new ArrayList<>())
+                                        ).add(topicName);
+                                    }
+                                    if (numNamespaces.decrementAndGet() == 0 && numTenants.decrementAndGet() == 0) {
+                                        topicMapFuture.complete(topicMap);
+                                    }
+                                    return null;
+                                });
+                    }
+                    return null;
+                });
+            }
+            return null;
+        }).exceptionally(topicMapFuture::completeExceptionally);
+    }
+
     protected void handleTopicMetadataRequest(KafkaHeaderAndRequest metadataHar,
                                               CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(metadataHar.getRequest() instanceof MetadataRequest);
@@ -321,31 +377,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         if (topics == null || topics.isEmpty()) {
             // get all topics
-            Map<String, List<TopicName>> pulsarTopics = Maps.newConcurrentMap();
-            final String offsetsTopicName = new KopTopic(String.join("/",
-                    kafkaConfig.getKafkaMetadataTenant(),
-                    kafkaConfig.getKafkaMetadataNamespace(),
-                    Topic.GROUP_METADATA_TOPIC_NAME)
-            ).getFullName();
-            try {
-                for (String tenant : pulsarService.getAdminClient().tenants().getTenants()) {
-                    for (String namespace : admin.namespaces().getNamespaces(tenant)) {
-                        for (String topic : admin.topics().getList(namespace)) {
-                            TopicName topicName = TopicName.get(topic);
-                            if (!topicName.getPartitionedTopicName().equals(offsetsTopicName)) {
-                                pulsarTopics.computeIfAbsent(
-                                        topicName.getPartitionedTopicName(),
-                                        key -> new ArrayList<>()
-                                ).add(topicName);
-                            }
-                        }
-                    }
-                }
-                pulsarTopicsFuture.complete(pulsarTopics);
-            } catch (PulsarServerException | PulsarAdminException e) {
-                log.error("Failed to get all topics: ", e);
-                pulsarTopicsFuture.completeExceptionally(e);
-            }
+            getAllTopicsAsync(pulsarTopicsFuture);
         } else {
             // get only the provided topics
             Map<String, List<TopicName>> pulsarTopics = Maps.newHashMap();
