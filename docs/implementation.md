@@ -1,5 +1,7 @@
 # Implementation
 
+This documents describes how to implement the KoP protocol handler.
+
 ## Topic
 
 In Kafka, all topics are stored in one flat namespace. But in Pulsar, topics are organized in hierarchical multi-tenant namespaces. KoP introduces a setting `kafkaNamespace` in the broker configuration, which allows the administrator to map Kafka topics to Pulsar topics.

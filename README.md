@@ -68,7 +68,7 @@ add configurations in Pulsar's configuration file, such as `broker.conf` or `sta
 
     Add the following properties and set their values in Pulsar configuration file, such as `conf/broker.conf` or `conf/standalone.conf`.
 
-    KoP supports partitioned topics only, so it's better set `allowAutoTopicCreationType` to `partitioned`. If the config is the default  `non-partitioned`, the automatically created topics by KoP are still partitioned topics. However, if a topic was created automatically by Pulsar broker, it would be a non-partitioned topic.
+    KoP supports partitioned topics only. Therefore, you had better to set `allowAutoTopicCreationType` to `partitioned`. If it is set to `non-partitioned` by default, the topics that are automatically created by KoP are still partitioned topics. However, topics that are created automatically by Pulsar broker are non-partitioned topics.
 
     | Property | Set it to the following value | Default value |
     | :------- | :---------------------------- | :------------ |
@@ -131,14 +131,14 @@ After you have installed the KoP protocol handler to Pulsar broker, you can rest
 
 ## Configure KoP
 
-See [Configure KoP](docs/configuration.md).
+For details, see [Configure KoP](docs/configuration.md).
 
 ## Secure KoP
 
 KoP supports TLS encryption and integrates with Pulsar's authentication and authorization providers seamlessly.
 
-See [Secure KoP](docs/security.md).
+For details, see [Secure KoP](docs/security.md).
 
 ## Implementation
 
-See [Implementation](docs/implementation.md) for the implementation details, including some difference of basic concepts between Kafka and Pulsar, and how the conversion was done.
+See [Implementation](docs/implementation.md) for the implementation details, including some difference of basic concepts between Kafka and Pulsar, and how the conversion is done.

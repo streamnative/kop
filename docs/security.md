@@ -3,9 +3,9 @@
 ## KoP authentication
 
 > **Tip**
-> For more details of Kafka authentication, see [Kafka security documentation](https://kafka.apache.org/documentation/#security_sasl).
+> For more details about Kafka authentication, see [Kafka security documentation](https://kafka.apache.org/documentation/#security_sasl).
 
-To forward your credentials, `SASL-PLAIN` is used on the Kafka client side. The two important settings are `username and `password`:
+To forward your credentials, `SASL-PLAIN` is used on the Kafka client side. The two important settings are `username` and `password`:
 
 * The `username` of Kafka JAAS is the `tenant/namespace`, in which Kafka’s topics are stored in Pulsar.
 
@@ -15,11 +15,11 @@ To forward your credentials, `SASL-PLAIN` is used on the Kafka client side. The 
 
     For example, `token:xxx`.
 
-    The token can be created by Pulsar tokens tools. The role is the `subject` for token, it is embedded in the created token, and the broker can get `role` by parsing this token.
+    The token can be created by Pulsar tokens tools. The role is the `subject` for token. It is embedded in the created token, and the broker can get `role` by parsing this token.
 
 ## Enable authentication on Pulsar broker
 
-To enable KoP authentication, you need to set all the options required by Pulsar token based authentication and set `saslAllowedMechanisms` (set it to`PLAIN`). The Kafka authentication is forwarded to Pulsar's JWT (Json Web Token) authentication, so you also need to configure the [JWT authentication](https://pulsar.apache.org/docs/en/security-jwt/).
+To enable KoP authentication, you need to set all the options required by the Pulsar token based authentication and set `saslAllowedMechanisms` (set it to`PLAIN`). The Kafka authentication is forwarded to Pulsar's JWT (Json Web Token) authentication, so you also need to configure the [JWT authentication](https://pulsar.apache.org/docs/en/security-jwt/).
 
 ```properties
 saslAllowedMechanisms=PLAIN
@@ -75,7 +75,7 @@ The following example shows how to connect KoP through SSL.
 
 1. Create SSL related keys.
 
-    This example creates related CA and jks files.
+    This example creates the related CA and JKS files.
 
     ```shell
     #!/bin/bash
@@ -92,9 +92,9 @@ The following example shows how to connect KoP through SSL.
     keytool -keystore server.keystore.jks -alias localhost -import -file cert-signed
     ```
 
-2. Configure KoP broker.
+2. Configure the KoP broker.
 
-    In StreamNative Platform configuration file (`${PLATFORM_HOME}/etc/pulsar/broker.conf` or `${PLATFORM_HOME}/etc/pulsar/standalone.conf`), add the related configurations that using the jks configs created in step1:
+    In the StreamNative Platform configuration file (`${PLATFORM_HOME}/etc/pulsar/broker.conf` or `${PLATFORM_HOME}/etc/pulsar/standalone.conf`), add the related configurations that using the jks configurations created in Step 1:
 
     ```shell
     listeners=PLAINTEXT://localhost:9092,SSL://localhost:9093
@@ -106,9 +106,9 @@ The following example shows how to connect KoP through SSL.
     kopSslTruststorePassword=test1234
     ```
 
-3. Configure Kafka client.
+3. Configure the Kafka client.
 
-    (1) Prepare a file named `client-ssl.properties` containing the following information.
+    (1) Prepare a file named `client-ssl.properties`. The file contains the following information.
 
     ```shell
     security.protocol=SSL
@@ -117,7 +117,7 @@ The following example shows how to connect KoP through SSL.
     ssl.endpoint.identification.algorithm=
     ```
 
-    (2) Verify console-producer and console-consumer.
+    (2) Verify the console-producer and the console-consumer.
 
     ```shell
     kafka-console-producer.sh --broker-list localhost:9093 --topic test --producer.config client-ssl.properties

@@ -4,7 +4,7 @@
 
 ## Java
 
-Kafka official clients, the supported versions are:
+The following official Kafka clients are available:
 
 - [2.6.0](https://kafka.apache.org/26/javadoc/overview-summary.html)
 - [2.5.0](https://kafka.apache.org/25/javadoc/overview-summary.html)
