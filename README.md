@@ -1,30 +1,33 @@
 # Kafka-on-Pulsar (aka KoP)
 
-Kafka-on-Pulsar (aka KoP) was developed to support Kafka protocol natively on Apache Pulsar.
+KoP (Kafka on Pulsar) brings the native Apache Kafka protocol support to Apache Pulsar by introducing a Kafka protocol handler on Pulsar brokers. By adding the KoP protocol handler to your existing Pulsar cluster, you can now migrate your existing Kafka applications and services to Pulsar without modifying the code. This enables Kafka applications to leverage Pulsar’s powerful features, such as:
 
-KoP brings the native Apache Kafka protocol support to Apache Pulsar by introducing a Kafka [protocol handler](https://github.com/apache/pulsar/blob/master/pulsar-broker/src/main/java/org/apache/pulsar/broker/protocol/ProtocolHandler.java) on
-Pulsar brokers. By adding the KoP protocol handler to your existing Pulsar cluster, you can now migrate your existing
-Kafka applications and services to Pulsar without modifying the code. This enables Kafka applications to leverage Pulsar’s
-powerful features, such as:
+- Streamlined operations with enterprise-grade multi-tenancy
+- Simplified operations with a rebalance-free architecture
+- Infinite event stream retention with Apache BookKeeper and tiered storage
+- Serverless event processing with Pulsar Functions
 
-- [x] Streamlined operations with enterprise-grade multi-tenancy. 
-- [x] Simplified operations with a rebalance-free architecture.
-- [x] Infinite event stream retention with Apache BookKeeper and tiered storage.
-- [x] Serverless event processing with Pulsar Functions.
+KoP, implemented as a Pulsar [protocol handler](https://github.com/apache/pulsar/blob/master/pulsar-broker/src/main/java/org/apache/pulsar/broker/protocol/ProtocolHandler.java) plugin with the protocol name "kafka", is loaded when Pulsar broker starts. It is believed that providing a native Kafka protocol support on Apache Pulsar helps reduce the barriers for people adopting Pulsar to achieve their business success. By integrating two popular event streaming ecosystems, KoP unlocks new use cases. You can leverage advantages from each ecosystem and build a truly unified event streaming platform with Apache Pulsar to accelerate the development of real-time applications and services.
 
-KoP unlocks new use cases by integrating two popular messaging and event streaming ecosystems together.
-Customers can leverage advantages from each ecosystem and build a truly unified event streaming platform with
-Apache Pulsar to accelerate the development of real-time applications and services. 
+KoP implements the Kafka wire protocol on Pulsar by leveraging the existing components (such as topic discovery, the distributed log library - ManagedLedger, cursors and so on) that Pulsar already has.
 
 The following figure illustrates how is the Kafka-on-Pulsar protocol handler was implemented within Pulsar.
 
 ![](docs/kop-architecture.png)
 
-> KoP is part of StreamNative Platform. Please visit [StreamNative Docs](https://streamnative.io/docs) for more details.
+## Prerequisite
 
-## Get started
+Check the following requirements before using KoP.
 
-Kafka-on-Pulsar is released and bundled as part of StreamNative Platform. You can download [StreamNative Platform](https://streamnative.io/download/platform) to [get started](https://streamnative.io/docs/v1.0.0/get-started/local/)
+Currently, KoP supports **[Kafka Client 1.x and 2.x](integrations/README.md)** and it is build based on **[Pulsar 2.6.1](http://pulsar.apache.org/en/download/)**.
+
+| KoP version | Kafka client version | Pulsar version |
+| :---------- | :------------------- | :------------- |
+| [0.3.0](https://github.com/streamnative/kop/releases/tag/v0.3.0) | [Kafka client 1.x, 2.0~2.6](integrations/README.md) | [Pulsar 2.6.1](http://pulsar.apache.org/en/download/) |
+| [0.2.0](https://github.com/streamnative/kop/releases/tag/v0.2.0) | [Kafka client 2.0.0](https://kafka.apache.org/20/documentation.html) | [Pulsar 2.5.0](http://pulsar.apache.org/en/download/) |
+| [0.1.0](https://github.com/streamnative/kop/releases/tag/v0.1.0) | [Kafka client 2.0.0](https://kafka.apache.org/20/documentation.html) | [Pulsar 2.5.0](http://pulsar.apache.org/en/download/) |
+
+The `pulsar-protocol-handler-kafka-${version}.nar` is the KoP binary file which can be loaded by Pulsar broker.
 
 ## Enable KoP on your existing Apache Pulsar clusters
 
@@ -64,18 +67,18 @@ add configurations in Pulsar's configuration file, such as `broker.conf` or `sta
 1. Set the configuration of the KoP protocol handler.
 
     Add the following properties and set their values in Pulsar configuration file, such as `conf/broker.conf` or `conf/standalone.conf`.
-    
-    Regarding topic auto create partition type, if you are not using [StreamNative Platform](https://streamnative.io/docs/v1.0.0/), please set it to `partitioned`.
 
-    Property | Set it to the following value | Default value
-    |---|---|---
-    `messagingProtocols` | kafka | null
-    `protocolHandlerDirectory`| Location of KoP NAR file | ./protocols
-    `allowAutoTopicCreationType`| partitioned | non-partitioned
-    
+    KoP supports partitioned topics only. Therefore, you had better to set `allowAutoTopicCreationType` to `partitioned`. If it is set to `non-partitioned` by default, the topics that are automatically created by KoP are still partitioned topics. However, topics that are created automatically by Pulsar broker are non-partitioned topics.
+
+    | Property | Set it to the following value | Default value |
+    | :------- | :---------------------------- | :------------ |
+    | `messagingProtocols` | kafka | null |
+    | `protocolHandlerDirectory`| Location of KoP NAR file | ./protocols |
+    | `allowAutoTopicCreationType`| partitioned | non-partitioned |
+
     **Example**
 
-    ```
+    ```properties
     messagingProtocols=kafka
     protocolHandlerDirectory=./protocols
     allowAutoTopicCreationType=partitioned
@@ -88,7 +91,7 @@ add configurations in Pulsar's configuration file, such as `broker.conf` or `sta
 
     **Example**
 
-    ```
+    ```properties
     listeners=PLAINTEXT://127.0.0.1:9092
     advertisedAddress=127.0.0.1
     ```
@@ -128,14 +131,14 @@ After you have installed the KoP protocol handler to Pulsar broker, you can rest
 
 ## Configure KoP
 
-See [Configure KoP](https://streamnative.io/docs/v1.0.0/configure/pulsar-core/kop/) for more details.
+For details, see [Configure KoP](docs/configuration.md).
 
 ## Secure KoP
 
 KoP supports TLS encryption and integrates with Pulsar's authentication and authorization providers seamlessly.
 
-See [Secure KoP](https://streamnative.io/docs/v1.0.0/secure/pulsar-core/kop/) for more details.
+For details, see [Secure KoP](docs/security.md).
 
----
+## Implementation
 
-For the complete documentation of KoP, please checkout [StreamNative Documentation](https://streamnative.io/docs/kop).
+See [Implementation](docs/implementation.md) for the implementation details, including some difference of basic concepts between Kafka and Pulsar, and how the conversion is done.

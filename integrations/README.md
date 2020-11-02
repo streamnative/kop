@@ -2,6 +2,20 @@
 
 # Produce and Consume support
 
+## Java
+
+The following official Kafka clients are available:
+
+- [2.6.0](https://kafka.apache.org/26/javadoc/overview-summary.html)
+- [2.5.0](https://kafka.apache.org/25/javadoc/overview-summary.html)
+- [2.4.0](https://kafka.apache.org/24/javadoc/overview-summary.html)
+- [2.3.0](https://kafka.apache.org/23/javadoc/overview-summary.html)
+- [2.2.0](https://kafka.apache.org/22/javadoc/overview-summary.html)
+- [2.1.0](https://kafka.apache.org/21/javadoc/overview-summary.html)
+- [2.0.0](https://kafka.apache.org/20/javadoc/overview-summary.html)
+- [1.1.0](https://kafka.apache.org/11/javadoc/overview-summary.html)
+- [1.0.0](https://kafka.apache.org/10/javadoc/overview-summary.html)
+
 ## Golang
 
 * [https://github.com/Shopify/sarama](https://github.com/Shopify/sarama)
