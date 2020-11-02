@@ -740,7 +740,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         KeyValue<Errors, Map<TopicPartition, OffsetFetchResponse.PartitionData>> keyValue =
             groupCoordinator.handleFetchOffsets(
                 request.groupId(),
-                Optional.of(request.partitions())
+                Optional.ofNullable(request.partitions())
             );
 
         resultFuture.complete(new OffsetFetchResponse(keyValue.getKey(), keyValue.getValue()));
