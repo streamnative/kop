@@ -21,6 +21,7 @@ The following table lists all KoP configurations.
 |kafkaNamespace| The default namespace of Kafka's topics |default|
 |kafkaMetadataTenant| Tenant used for storing Kafka metadata topics |public|
 |kafkaMetadataNamespace| Namespace used for storing Kafka metadata topics  |__kafka|
+|maxReadEntriesNum| Maximum number of entries that are read from cursor once per time  |5|
 |enableGroupCoordinator|  Flag used to enable the group coordinator  |true|
 |groupMinSessionTimeoutMs| The minimum allowed session timeout for registered consumers<br>Shorter timeouts result in quicker failure detection while require more frequent consumer heart beating, which can overwhelm broker resources.  |6000|
 |groupMaxSessionTimeoutMs| The maximum allowed session timeout for registered consumers. <br>Longer timeouts give consumers more time to process messages between heartbeats while require longer time to detect failures. |300000|

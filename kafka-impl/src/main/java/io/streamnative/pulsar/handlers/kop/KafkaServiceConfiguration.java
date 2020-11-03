@@ -243,4 +243,10 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private Set<String> saslAllowedMechanisms = new HashSet<String>();
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Maximum number of entries that are read from cursor once per time"
+    )
+    private int maxReadEntriesNum = 5;
+
 }

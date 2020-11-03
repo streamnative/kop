@@ -49,6 +49,14 @@ public class KafkaServiceConfigurationTest {
     }
 
     @Test
+    public void testMaxReadEntriesNum() {
+        int readEntriesNum = 60;
+        KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
+        configuration.setMaxReadEntriesNum(readEntriesNum);
+        assertEquals(60, configuration.getMaxReadEntriesNum());
+    }
+
+    @Test
     public void testConfigurationUtilsStream() throws Exception {
         File testConfigFile = new File("tmp." + System.currentTimeMillis() + ".properties");
         if (testConfigFile.exists()) {
