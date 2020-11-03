@@ -167,7 +167,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private String authRole;
     private AuthenticationState authState;
     private final int defaultNumPartitions;
-    public static int readEntriesNum;
+    public final int readEntriesNum;
 
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
