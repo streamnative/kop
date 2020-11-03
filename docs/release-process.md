@@ -35,6 +35,8 @@ There has two type of the tags, one is stable `vX.Y.Z(.M)`, and another is unsta
 
 2. Update the project version and tag
 
+   > If the dependency of Apache Pulsar needs to change, i.e. the project version was from `X1.Y1.Z1.M` to `X2.Y2.Z2.0`, you should change the dependency of Apache Pulsar first.
+
    ```bash
    $ ./scripts/set-project-version.sh X.Y.Z.M
    $ git commit -m "Release X.Y.Z.M" -a
@@ -51,12 +53,18 @@ There has two type of the tags, one is stable `vX.Y.Z(.M)`, and another is unsta
 
 4. Verify the artifacts
 
+   You can run the following commands to verify it in local environment:
+
    ```bash
    $ mvn checkstyle:check
    $ mvn spotbugs:check
    $ mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegrationTest,!DistributedClusterTest'
    $ mvn test '-Dtest=KafkaIntegrationTest' -pl tests
    ```
+
+   See [pr-test.yml](.github/workflows/pr-test.yml) for details.
+
+   Then you should push a PR to merge `branch-X.Y.Z` to `master` for running CI tests using Github Actions.
 
 5. Move master branch to the next version
 
