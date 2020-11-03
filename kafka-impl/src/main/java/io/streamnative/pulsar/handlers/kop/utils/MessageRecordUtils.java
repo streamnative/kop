@@ -21,14 +21,15 @@ import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
 import java.time.Clock;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -347,7 +348,7 @@ public final class MessageRecordUtils {
                 RecordBatch.NO_PARTITION_LEADER_EPOCH,
                 MAX_RECORDS_BUFFER_SIZE);
 
-            for (Entry entry : entries) {
+            StreamSupport.stream(entries.spliterator(), true).forEach(entry -> {
                 // each entry is a batched message
                 ByteBuf metadataAndPayload = entry.getDataBuffer();
 
@@ -355,8 +356,13 @@ public final class MessageRecordUtils {
                 MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
                 CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(msgMetadata.getCompression());
                 int uncompressedSize = msgMetadata.getUncompressedSize();
-                ByteBuf payload = codec.decode(metadataAndPayload, uncompressedSize);
-
+                ByteBuf payload;
+                try {
+                    payload = codec.decode(metadataAndPayload, uncompressedSize);
+                } catch (IOException ioe) {
+                    log.error("Meet IOException: {}", ioe);
+                    throw new UncheckedIOException(ioe);
+                }
                 int numMessages = msgMetadata.getNumMessagesInBatch();
                 boolean notBatchMessage = (numMessages == 1 && !msgMetadata.hasNumMessagesInBatch());
 
@@ -371,49 +377,48 @@ public final class MessageRecordUtils {
                 checkState(msgMetadata.getEncryptionKeysCount() == 0);
 
                 if (!notBatchMessage) {
-                    for (int i = 0; i < numMessages; ++i) {
+                    IntStream.range(0, numMessages).parallel().forEachOrdered(i -> {
                         if (log.isDebugEnabled()) {
                             log.debug(" processing message num - {} in batch", i);
                         }
+                        try {
+                            SingleMessageMetadata.Builder singleMessageMetadataBuilder = SingleMessageMetadata
+                                    .newBuilder();
+                            ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(payload,
+                                    singleMessageMetadataBuilder, i, numMessages);
 
-                        SingleMessageMetadata.Builder singleMessageMetadataBuilder = SingleMessageMetadata
-                            .newBuilder();
-                        ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(payload,
-                            singleMessageMetadataBuilder, i, numMessages);
+                            SingleMessageMetadata singleMessageMetadata = singleMessageMetadataBuilder.build();
+                            Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
 
-                        SingleMessageMetadata singleMessageMetadata = singleMessageMetadataBuilder.build();
-
-                        // TODO: optimize this to avoid memory copy
-                        byte[] data = new byte[singleMessagePayload.readableBytes()];
-                        singleMessagePayload.readBytes(data);
-                        singleMessagePayload.release();
-                        Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
-
-                        builder.appendWithOffset(
-                            MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId(), i),
-                            msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
-                            getKeyBytes(singleMessageMetadata),
-                            data,
-                            headers);
-                        singleMessageMetadataBuilder.recycle();
-                    }
+                            builder.appendWithOffset(
+                                    MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId(), i),
+                                    msgMetadata.getEventTime() > 0
+                                            ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
+                                    getKeyByteBuffer(singleMessageMetadata),
+                                    getNioBuffer(singleMessagePayload),
+                                    headers);
+                            singleMessagePayload.release();
+                            singleMessageMetadataBuilder.recycle();
+                        } catch (IOException e) {
+                            log.error("Meet IOException: {}", e);
+                            throw new UncheckedIOException(e);
+                        }
+                    });
                 } else {
-                    // TODO: optimize this to avoid memory copy
-                    byte[] data = new byte[payload.readableBytes()];
-                    payload.readBytes(data);
                     Header[] headers = getHeadersFromMetadata(msgMetadata.getPropertiesList());
 
                     builder.appendWithOffset(
                         MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
                         msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
-                        getKeyBytes(msgMetadata),
-                        data,
+                        getKeyByteBuffer(msgMetadata),
+                        getNioBuffer(payload),
                         headers);
                 }
 
+                msgMetadata.recycle();
                 payload.release();
                 entry.release();
-            }
+            });
             return builder.build();
         } catch (IOException ioe){
             log.error("Meet IOException: {}", ioe);
@@ -424,32 +429,41 @@ public final class MessageRecordUtils {
         }
     }
 
-    private static byte[] getKeyBytes(MessageMetadata messageMetadata) {
+    private static ByteBuffer getKeyByteBuffer(MessageMetadata messageMetadata) {
         if (messageMetadata.hasOrderingKey()) {
-            return messageMetadata.getOrderingKey().toByteArray();
+            return messageMetadata.getOrderingKey().asReadOnlyByteBuffer();
         }
 
         String key = messageMetadata.getPartitionKey();
         if (messageMetadata.hasPartitionKeyB64Encoded()) {
-            return Base64.getDecoder().decode(key);
+            return ByteBuffer.wrap(Base64.getDecoder().decode(key));
         } else {
             // for Base64 not encoded string, convert to UTF_8 chars
-            return key.getBytes(UTF_8);
+            return ByteBuffer.wrap(key.getBytes(UTF_8));
         }
     }
 
-    private static byte[] getKeyBytes(SingleMessageMetadata messageMetadata) {
+    private static ByteBuffer getKeyByteBuffer(SingleMessageMetadata messageMetadata) {
         if (messageMetadata.hasOrderingKey()) {
-            return messageMetadata.getOrderingKey().toByteArray();
+            return messageMetadata.getOrderingKey().asReadOnlyByteBuffer();
         }
 
         String key = messageMetadata.getPartitionKey();
         if (messageMetadata.hasPartitionKeyB64Encoded()) {
-            return Base64.getDecoder().decode(key);
+            return ByteBuffer.wrap(Base64.getDecoder().decode(key));
         } else {
             // for Base64 not encoded string, convert to UTF_8 chars
-            return key.getBytes(UTF_8);
+            return ByteBuffer.wrap(key.getBytes(UTF_8));
         }
+    }
+
+    public static ByteBuffer getNioBuffer(ByteBuf buffer) {
+        if (buffer.isDirect()) {
+            return buffer.nioBuffer();
+        }
+        final byte[] bytes = new byte[buffer.readableBytes()];
+        buffer.getBytes(buffer.readerIndex(), bytes);
+        return ByteBuffer.wrap(bytes);
     }
 
 }
