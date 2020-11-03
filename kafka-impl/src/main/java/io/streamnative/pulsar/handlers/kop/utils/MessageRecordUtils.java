@@ -333,9 +333,9 @@ public final class MessageRecordUtils {
 
     // Convert entries read from BookKeeper into Kafka Records
     // Entries can be batched messages, may need un-batch.
-    public static MemoryRecords entriesToRecords(List<org.apache.bookkeeper.mledger.Entry> entries) {
+    public static MemoryRecords entriesToRecords(List<org.apache.bookkeeper.mledger.Entry> entries, byte magic) {
         try (ByteBufferOutputStream outputStream = new ByteBufferOutputStream(DEFAULT_FETCH_BUFFER_SIZE)) {
-            MemoryRecordsBuilder builder = new MemoryRecordsBuilder(outputStream, RecordBatch.CURRENT_MAGIC_VALUE,
+            MemoryRecordsBuilder builder = new MemoryRecordsBuilder(outputStream, magic,
                 org.apache.kafka.common.record.CompressionType.NONE,
                 TimestampType.CREATE_TIME,
                 MessageIdUtils.getOffset(entries.get(0).getLedgerId(), 0),

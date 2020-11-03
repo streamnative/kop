@@ -44,6 +44,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
@@ -305,9 +306,17 @@ public final class MessageFetchContext {
                             long highWatermark = entryOffset
                                 + cursors.get(kafkaPartition).getLeft().getNumberOfEntries();
 
-                            // by default kafka is produced message in batched mode.
+                            // use compatible magic value by apiVersion
+                            short apiVersion = fetch.getHeader().apiVersion();
+                            byte magic = RecordBatch.CURRENT_MAGIC_VALUE;
+                            if (apiVersion <= 1) {
+                                magic = RecordBatch.MAGIC_VALUE_V0;
+                            } else if (apiVersion <= 3) {
+                                magic = RecordBatch.MAGIC_VALUE_V1;
+                            }
                             MemoryRecords records;
-                            records = entriesToRecords(entries);
+                            // by default kafka is produced message in batched mode.
+                            records = entriesToRecords(entries, magic);
 
                             partitionData = new FetchResponse.PartitionData(
                                 Errors.NONE,
