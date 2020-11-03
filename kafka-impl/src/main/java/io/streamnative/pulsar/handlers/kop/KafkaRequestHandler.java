@@ -167,7 +167,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private String authRole;
     private AuthenticationState authState;
     private final int defaultNumPartitions;
-    public final int readEntriesNum;
+    public final int maxReadEntriesNum;
 
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
@@ -186,7 +186,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.sslPort = getListenerPort(localListeners, SSL);
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
-        this.readEntriesNum = kafkaConfig.getReadEntriesNum();
+        this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
     }
 
     @Override

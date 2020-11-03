@@ -364,7 +364,7 @@ public final class MessageFetchContext {
             CompletableFuture<List<Entry>> readFuture = new CompletableFuture<>();
             cursor = cursorOffsetPair.getValue().getLeft();
             long currentOffset = cursorOffsetPair.getValue().getRight();
-            int readeEntryNum = requestHandler.getReadEntriesNum();
+            int readeEntryNum = requestHandler.getMaxReadEntriesNum();
 
             // read readeEntryNum size entry.
             cursor.asyncReadEntries(readeEntryNum,
