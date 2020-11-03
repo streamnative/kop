@@ -243,4 +243,10 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private Set<String> saslAllowedMechanisms = new HashSet<String>();
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "the number of reading entries from bookie"
+    )
+    private int readEntriesNum = 10;
+
 }

@@ -49,6 +49,14 @@ public class KafkaServiceConfigurationTest {
     }
 
     @Test
+    public void testReadEntriesNum() {
+        int readEntriesNum = 60;
+        KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
+        configuration.setReadEntriesNum(readEntriesNum);
+        assertEquals(60, configuration.getReadEntriesNum());
+    }
+
+    @Test
     public void testConfigurationUtilsStream() throws Exception {
         File testConfigFile = new File("tmp." + System.currentTimeMillis() + ".properties");
         if (testConfigFile.exists()) {

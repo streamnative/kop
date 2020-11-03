@@ -32,6 +32,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.MarkDeleteCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
@@ -191,25 +192,25 @@ public final class MessageFetchContext {
                                       LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData) {
         AtomicInteger entriesRead = new AtomicInteger(0);
         // here do the real read, and in read callback put cursor back to KafkaTopicConsumerManager.
-        Map<TopicPartition, CompletableFuture<Entry>> readFutures = readAllCursorOnce(cursors);
+        Map<TopicPartition, CompletableFuture<List<Entry>>> readFutures = readAllCursorOnce(cursors);
         CompletableFuture.allOf(readFutures.values().stream().toArray(CompletableFuture<?>[]::new))
             .whenComplete((ignore, ex) -> {
                 // keep entries since all read completed.
                 readFutures.entrySet().parallelStream().forEach(kafkaTopicReadEntry -> {
                     TopicPartition kafkaTopic = kafkaTopicReadEntry.getKey();
-                    CompletableFuture<Entry> readEntry = kafkaTopicReadEntry.getValue();
+                    CompletableFuture<List<Entry>> readEntry = kafkaTopicReadEntry.getValue();
                     try {
-                        Entry entry = readEntry.get();
+                        List<Entry> entries = readEntry.get();
                         List<Entry> entryList = responseValues.computeIfAbsent(kafkaTopic, l -> Lists.newArrayList());
 
-                        if (entry != null) {
-                            entryList.add(entry);
-                            entriesRead.incrementAndGet();
-                            bytesRead.addAndGet(entry.getLength());
+                        if (entries != null && !entries.isEmpty()) {
+                            entryList.addAll(entries);
+                            entriesRead.addAndGet(entries.size());
+                            bytesRead.addAndGet(entryList.stream().parallel().map(e ->
+                                        e.getLength()).reduce(0, Integer::sum));
                             if (log.isDebugEnabled()) {
-                                log.debug("Request {}: For topic {}, entries in list: {}. add new entry {}:{}",
-                                    fetch.getHeader(), kafkaTopic.toString(), entryList.size(),
-                                    entry.getLedgerId(), entry.getEntryId());
+                                log.debug("Request {}: For topic {}, entries in list: {}.",
+                                    fetch.getHeader(), kafkaTopic.toString(), entryList.size());
                             }
                         }
                     } catch (Exception e) {
@@ -354,56 +355,56 @@ public final class MessageFetchContext {
             });
     }
 
-    private Map<TopicPartition, CompletableFuture<Entry>> readAllCursorOnce(
+    private Map<TopicPartition, CompletableFuture<List<Entry>>> readAllCursorOnce(
         Map<TopicPartition, Pair<ManagedCursor, Long>> cursors) {
-        Map<TopicPartition, CompletableFuture<Entry>> readFutures = new ConcurrentHashMap<>();
+        Map<TopicPartition, CompletableFuture<List<Entry>>> readFutures = new ConcurrentHashMap<>();
 
-        cursors.entrySet().forEach(cursorOffsetPair -> {
+        cursors.entrySet().parallelStream().forEach(cursorOffsetPair -> {
             ManagedCursor cursor;
-            CompletableFuture<Entry> readFuture = new CompletableFuture<>();
-
+            CompletableFuture<List<Entry>> readFuture = new CompletableFuture<>();
             cursor = cursorOffsetPair.getValue().getLeft();
             long currentOffset = cursorOffsetPair.getValue().getRight();
+            int readeEntryNum = KafkaRequestHandler.readEntriesNum;
 
-            // only read 1 entry currently.
-            cursor.asyncReadEntries(1,
-                new ReadEntriesCallback() {
-                    @Override
-                    public void readEntriesComplete(List<Entry> list, Object o) {
-                        String fullPartitionName = KopTopic.toString(cursorOffsetPair.getKey());
+            // read readeEntryNum size entry.
+            cursor.asyncReadEntries(readeEntryNum,
+                    new ReadEntriesCallback() {
+                        @Override
+                        public void readEntriesComplete(List<Entry> list, Object o) {
+                            String fullPartitionName = KopTopic.toString(cursorOffsetPair.getKey());
 
-                        Entry entry = null;
-                        if (!list.isEmpty()) {
-                            entry = list.get(0);
-                            long offset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
-                            PositionImpl currentPosition = PositionImpl
-                                .get(entry.getLedgerId(), entry.getEntryId());
+                            if (!list.isEmpty()) {
+                                StreamSupport.stream(list.spliterator(), true).forEachOrdered(entry -> {
+                                    long offset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
+                                    PositionImpl currentPosition = PositionImpl
+                                            .get(entry.getLedgerId(), entry.getEntryId());
 
-                            // commit the offset, so backlog not affect by this cursor.
-                            commitOffset((NonDurableCursorImpl) cursor, currentPosition);
+                                    // commit the offset, so backlog not affect by this cursor.
+                                    commitOffset((NonDurableCursorImpl) cursor, currentPosition);
 
-                            // get next offset
-                            PositionImpl nextPosition = ((NonDurableCursorImpl) cursor)
-                                .getNextAvailablePosition(currentPosition);
+                                    // get next offset
+                                    PositionImpl nextPosition = ((NonDurableCursorImpl) cursor)
+                                            .getNextAvailablePosition(currentPosition);
 
-                            long nextOffset = MessageIdUtils
-                                .getOffset(nextPosition.getLedgerId(), nextPosition.getEntryId());
+                                    long nextOffset = MessageIdUtils
+                                            .getOffset(nextPosition.getLedgerId(), nextPosition.getEntryId());
 
-                            // put next offset in to passed in cursors map. and add back to TCM when all read complete.
-                            cursors.put(cursorOffsetPair.getKey(), Pair.of(cursor, nextOffset));
+                                    // put next offset in to passed in cursors map. and add back to TCM when all read complete.
+                                    cursors.put(cursorOffsetPair.getKey(), Pair.of(cursor, nextOffset));
 
-                            if (log.isDebugEnabled()) {
-                                log.debug("Topic {} success read entry: ledgerId: {}, entryId: {}, size: {},"
-                                        + " ConsumerManager original offset: {}, entryOffset: {} - {}, "
-                                        + "nextOffset: {} - {}",
-                                    fullPartitionName, entry.getLedgerId(), entry.getEntryId(),
-                                    entry.getLength(), currentOffset, offset, currentPosition,
-                                    nextOffset, nextPosition);
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("Topic {} success read entry: ledgerId: {}, entryId: {}, size: {},"
+                                                        + " ConsumerManager original offset: {}, entryOffset: {} - {}, "
+                                                        + "nextOffset: {} - {}",
+                                                fullPartitionName, entry.getLedgerId(), entry.getEntryId(),
+                                                entry.getLength(), currentOffset, offset, currentPosition,
+                                                nextOffset, nextPosition);
+                                    }
+                                });
                             }
-                        }
 
-                        readFuture.complete(entry);
-                    }
+                            readFuture.complete(list);
+                        }
 
                     @Override
                     public void readEntriesFailed(ManagedLedgerException e, Object o) {
