@@ -247,6 +247,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             category = CATEGORY_KOP,
             doc = "the number of reading entries from bookie"
     )
-    private int readEntriesNum = 10;
+    private int readEntriesNum = 5;
 
 }
