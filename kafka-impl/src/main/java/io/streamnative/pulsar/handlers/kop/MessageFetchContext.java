@@ -389,7 +389,8 @@ public final class MessageFetchContext {
                                     long nextOffset = MessageIdUtils
                                             .getOffset(nextPosition.getLedgerId(), nextPosition.getEntryId());
 
-                                    // put next offset in to passed in cursors map. and add back to TCM when all read complete.
+                                    // put next offset in to passed in cursors map.
+                                    // and add back to TCM when all read complete.
                                     cursors.put(cursorOffsetPair.getKey(), Pair.of(cursor, nextOffset));
 
                                     if (log.isDebugEnabled()) {
