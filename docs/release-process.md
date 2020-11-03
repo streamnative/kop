@@ -16,16 +16,21 @@ There has two type of the tags, one is stable `vX.Y.Z(.M)`, and another is unsta
 
 ## Release workflow
 
-1. Create the release branch
-2. Update the project version and tag
-3. Build the artifacts
-4. Verify the artifacts
-5. Move master branch to the next version
-6. Write release notes
+1. Prepare for a release
+2. Create the release branch
+3. Update the project version and tag
+4. Build the artifacts
+5. Verify the artifacts
+6. Move master branch to the next version
+7. Write release notes
 
 ## Steps in detail
 
-1. Create the release branch
+1. Prepare for a release
+
+   Create a new milestone and move the pull requests that can not  be published in this release to the new milestone.
+
+2. Create the release branch
 
    ```bash
    $ git clone git@github.com:streamnative/kop.git
@@ -33,7 +38,7 @@ There has two type of the tags, one is stable `vX.Y.Z(.M)`, and another is unsta
    $ git checkout -b branch-X.Y.Z
    ```
 
-2. Update the project version and tag
+3. Update the project version and tag
 
    > If the dependency of Apache Pulsar needs to change, i.e. the project version was from `X1.Y1.Z1.M` to `X2.Y2.Z2.0`, you should change the dependency of Apache Pulsar first.
 
@@ -45,13 +50,13 @@ There has two type of the tags, one is stable `vX.Y.Z(.M)`, and another is unsta
    $ git push origin vX.Y.Z.M
    ```
 
-3. Build the artifacts
+4. Build the artifacts
 
    ```bash
    $ mvn clean install -DskipTests
    ```
 
-4. Verify the artifacts
+5. Verify the artifacts
 
    You can run the following commands to verify it in local environment:
 
@@ -66,7 +71,7 @@ There has two type of the tags, one is stable `vX.Y.Z(.M)`, and another is unsta
 
    Then you should push a PR to merge `branch-X.Y.Z` to `master` for running CI tests using Github Actions.
 
-5. Move master branch to the next version
+6. Move master branch to the next version
 
    ```bash
    $ git checkout master
@@ -74,7 +79,7 @@ There has two type of the tags, one is stable `vX.Y.Z(.M)`, and another is unsta
    $ git commit -m 'Bumped version to X.Y.Z-SNAPSHOT' -a
    ```
 
-6. Write release notes
+7. Write release notes
 
    Release notes is mainly to track the document catch up work.
 
