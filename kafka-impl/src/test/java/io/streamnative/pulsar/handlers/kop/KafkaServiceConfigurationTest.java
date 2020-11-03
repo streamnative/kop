@@ -49,11 +49,11 @@ public class KafkaServiceConfigurationTest {
     }
 
     @Test
-    public void testReadEntriesNum() {
+    public void testMaxReadEntriesNum() {
         int readEntriesNum = 60;
         KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
-        configuration.setReadEntriesNum(readEntriesNum);
-        assertEquals(60, configuration.getReadEntriesNum());
+        configuration.setMaxReadEntriesNum(readEntriesNum);
+        assertEquals(60, configuration.getMaxReadEntriesNum());
     }
 
     @Test

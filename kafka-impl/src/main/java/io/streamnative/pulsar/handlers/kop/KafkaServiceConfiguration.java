@@ -245,7 +245,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "maximum number of entries that are read from cursor once per time"
+            doc = "Maximum number of entries that are read from cursor once per time"
     )
     private int maxReadEntriesNum = 5;
 
