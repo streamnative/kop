@@ -16,7 +16,7 @@
 set -e
 
 if [ $# -eq 0 ]; then
-    echo "Required argument with new project version"
+    echo "Required argument with new pulsar version"
     exit 1
 fi
 
