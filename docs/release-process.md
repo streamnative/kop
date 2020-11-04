@@ -23,7 +23,7 @@ There has two type of the tags, one is stable `vX.Y.Z(.M)`, and another is unsta
 5. Verify the artifacts
 6. Release the artifacts using streamnative-ci
 7. Write release notes
-9. Move master branch to the next version
+8. Move master branch to the next version
 
 ## Steps in detail
 
@@ -108,12 +108,12 @@ There has two type of the tags, one is stable `vX.Y.Z(.M)`, and another is unsta
    - Feature
    - Bug fixed
 
-9. Move master branch to the next version
+8. Move master branch to the next version
 
    ```bash
    $ git checkout -b bump-master
    $ ./scripts/set-project-version.sh X.Y.Z-SNAPSHOT
-   $ git commit -m 'Bumped version to X.Y.Z-SNAPSHOT' -a
+   $ git commit -m 'Bump version to X.Y.Z-SNAPSHOT' -a
    $ git push origin bump-master
    # create a PR for this change
    ```
