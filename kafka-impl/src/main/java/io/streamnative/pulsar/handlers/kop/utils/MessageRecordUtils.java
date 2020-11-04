@@ -348,7 +348,7 @@ public final class MessageRecordUtils {
                 RecordBatch.NO_PARTITION_LEADER_EPOCH,
                 MAX_RECORDS_BUFFER_SIZE);
 
-            StreamSupport.stream(entries.spliterator(), true).forEach(entry -> {
+            entries.parallelStream().forEachOrdered(entry -> {
                 // each entry is a batched message
                 ByteBuf metadataAndPayload = entry.getDataBuffer();
 
