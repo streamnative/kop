@@ -643,6 +643,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         final int responsesSize = produceRequest.partitionRecordsOrFail().size();
 
+        final long dataSizePerPartition = produceHar.getBuffer().readableBytes();
+        topicManager.getInternalServerCnx().increasePublishBuffer(dataSizePerPartition);
+
         // TODO: handle un-exist topic:
         //     nonExistingTopicResponses += topicPartition -> new PartitionResponse(Errors.UNKNOWN_TOPIC_OR_PARTITION)
         for (Map.Entry<TopicPartition, ? extends Records> entry : produceRequest.partitionRecordsOrFail().entrySet()) {
@@ -679,6 +682,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         CompletableFuture.allOf(responsesFutures.values().toArray(new CompletableFuture<?>[responsesSize]))
                 .whenComplete((ignore, ex) -> {
+                    topicManager.getInternalServerCnx().decreasePublishBuffer(dataSizePerPartition);
                     // all ex has translated to PartitionResponse with Errors.KAFKA_STORAGE_ERROR
                     Map<TopicPartition, PartitionResponse> responses = new ConcurrentHashMap<>();
                     for (Map.Entry<TopicPartition, CompletableFuture<PartitionResponse>> entry :
