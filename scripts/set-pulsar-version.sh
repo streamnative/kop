@@ -25,6 +25,6 @@ NEW_VERSION=$1
 # Go to top level project directory
 pushd $(dirname "$0")/..
 
-mvn versions:set -DnewVersion=$NEW_VERSION
+mvn versions:set-property -Dproperty=pulsar.version -DnewVersion=$NEW_VERSION
 
 popd
