@@ -175,7 +175,7 @@ public class OffsetFinderTest extends MockedBookKeeperTestCase {
         assertTrue(ex.get());
 
         PersistentMessageExpiryMonitor monitor =
-            new PersistentMessageExpiryMonitor("topicname", c1.getName(), c1);
+            new PersistentMessageExpiryMonitor("topicname", c1.getName(), c1, null);
         monitor.findEntryFailed(new ManagedLedgerException
             .ConcurrentFindCursorPositionException("failed"), Optional.empty(), null);
         Field field = monitor.getClass().getDeclaredField("expirationCheckInProgress");
