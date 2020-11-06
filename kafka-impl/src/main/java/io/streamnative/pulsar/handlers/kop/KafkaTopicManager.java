@@ -188,6 +188,10 @@ public class KafkaTopicManager {
         });
     }
 
+    public InternalServerCnx getInternalServerCnx() {
+        return internalServerCnx;
+    }
+
     // this method do the real lookup into Pulsar broker.
     // retFuture will be completed with null when meet error.
     private void lookupBroker(String topicName,

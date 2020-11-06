@@ -13,7 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import com.google.common.annotations.VisibleForTesting;
+
 import java.net.InetSocketAddress;
+import java.util.concurrent.atomic.AtomicLongFieldUpdater;
+
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.service.Producer;
@@ -29,6 +33,10 @@ import org.apache.pulsar.broker.service.ServerCnx;
 public class InternalServerCnx extends ServerCnx {
     @Getter
     KafkaRequestHandler kafkaRequestHandler;
+
+    private static final AtomicLongFieldUpdater<InternalServerCnx> KOP_MSG_PUBLISH_BUFFER_SIZE_UPDATER =
+            AtomicLongFieldUpdater.newUpdater(InternalServerCnx.class, "kopMessagePublishBufferSize");
+    private volatile long kopMessagePublishBufferSize = 0;
 
     public InternalServerCnx(KafkaRequestHandler kafkaRequestHandler) {
         super(kafkaRequestHandler.getPulsarService());
@@ -62,13 +70,45 @@ public class InternalServerCnx extends ServerCnx {
 
     @Override
     public void enableCnxAutoRead() {
-        // do nothing in this mock.
-        return;
+        if (!kafkaRequestHandler.ctx.channel().config().isAutoRead()) {
+            kafkaRequestHandler.ctx.channel().config().setAutoRead(true);
+            kafkaRequestHandler.ctx.read();
+            log.info("Channel {}  auto read has set to true.", kafkaRequestHandler.ctx.channel());
+        }
     }
 
     @Override
     public void disableCnxAutoRead() {
-        // do nothing in this mock.
-        return;
+        if (kafkaRequestHandler.ctx.channel().config().isAutoRead()) {
+            kafkaRequestHandler.ctx.channel().config().setAutoRead(false);
+            log.warn("Channel {} auto read has set to false.", kafkaRequestHandler.ctx.channel());
+        }
     }
+
+    public void increasePublishBuffer(long msgSize) {
+        KOP_MSG_PUBLISH_BUFFER_SIZE_UPDATER.getAndAdd(this, msgSize);
+        if (getBrokerService().isReachMessagePublishBufferThreshold()) {
+            disableCnxAutoRead();
+        }
+    }
+
+    public void decreasePublishBuffer(long msgSize) {
+        KOP_MSG_PUBLISH_BUFFER_SIZE_UPDATER.getAndAdd(this, -msgSize);
+    }
+
+    @Override
+    public long getMessagePublishBufferSize() {
+        return kopMessagePublishBufferSize;
+    }
+
+
+    public void cancelPublishBufferLimiting() {
+        // do nothing.
+    }
+
+    @VisibleForTesting
+    public void setMessagePublishBufferSize(long size) {
+        this.kopMessagePublishBufferSize = size;
+    }
+
 }

@@ -27,10 +27,12 @@ import org.apache.pulsar.broker.service.Topic;
  */
 @Slf4j
 public class InternalProducer extends Producer {
+    private ServerCnx serverCnx;
     public InternalProducer(Topic topic, ServerCnx cnx,
                             long producerId, String producerName) {
         super(topic, cnx, producerId, producerName, null,
             false, null, null, 0, false);
+        this.serverCnx = cnx;
     }
 
     // this will call back by bundle unload
@@ -49,5 +51,18 @@ public class InternalProducer extends Producer {
         return future;
     }
 
+    @Override
+    public ServerCnx getCnx() {
+        return serverCnx;
+    }
 
+    @Override
+    public boolean equals(Object obj) {
+        return super.equals(obj);
+    }
+
+    @Override
+    public int hashCode() {
+        return super.hashCode();
+    }
 }
