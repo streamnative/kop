@@ -18,15 +18,16 @@ There has two type of the tags, one is stable `vX.Y.Z(.M)`, and another is unsta
 
 1. Prepare for a release
 2. Create the release branch
-3. Update the project version and tag
+3. Update the project version and pulsar version
 4. Build the artifacts
 5. Verify the artifacts
 6. Release the artifacts using streamnative-ci
 7. Write release notes
-8. Overwrite the branch
-9. Move master branch to the next version
+8. Move master branch to the next version
 
 ## Steps in detail
+
+> In this section, `X.Y.Z.M` represents a specific version, e.g. `2.6.2.0`.
 
 1. Prepare for a release
 
@@ -37,18 +38,16 @@ There has two type of the tags, one is stable `vX.Y.Z(.M)`, and another is unsta
    ```bash
    $ git clone git@github.com:streamnative/kop.git
    $ cd kop
-   $ git checkout -b branch-X.Y.Z
+   $ git checkout -b bump-pulsar-version
    ```
 
-3. Update the project version and tag
+3. Update the project version and pulsar version
 
    ```bash
    $ ./scripts/set-project-version.sh X.Y.Z.M
    $ ./scripts/set-pulsar-version.sh X.Y.Z.M
    $ git commit -m "Release X.Y.Z.M" -a
-   $ git push origin branch-X.Y.Z
-   $ git tag vX.Y.Z.M
-   $ git push origin vX.Y.Z.M
+   $ git push origin bump-pulsar-version
    ```
 
 4. Build the artifacts
@@ -78,11 +77,24 @@ There has two type of the tags, one is stable `vX.Y.Z(.M)`, and another is unsta
 
    After the PR being merged to `master`, you can use streamnative-ci to release the artifacts.
 
+   The streamnative-ci needs the specified tag, so we need to push a tag `vX.Y.Z.M` first, as well as the branch:
+
    ```bash
-   $ git clone https://github.com/streamnative/streamnative-ci.git
+   $ git clone git@github.com:streamnative/kop.git
+   $ cd kop
+   $ git checkout -b branch-X.Y.Z
+   $ git push origin branch-X.Y.Z
+   $ git tag vX.Y.Z.M
+   $ git push origin vX.Y.Z.M
+   ```
+
+   Then use streamnative-ci to release the latest KoP:
+
+   ```bash
+   $ git clone git@github.com:streamnative/streamnative-ci.git
    $ cd streamnative-ci
    $ git checkout release
-   $ git commit --allow-empty -m "/snbot release kop X.Y.Z.M"
+   $ git commit --allow-empty -m "/snbot release kop vX.Y.Z.M"
    $ git push origin release
    # Then, you can see the release process: https://github.com/streamnative/streamnative-ci/actions
    ```
@@ -96,23 +108,12 @@ There has two type of the tags, one is stable `vX.Y.Z(.M)`, and another is unsta
    - Feature
    - Bug fixed
 
-8. Overwrite the branch
-
-   Because the PR may contain multiple commits that will be squashed to a single commit, we need to overwrite the branch after the release.
-
-   ```bash
-   $ git clone git@github.com:streamnative/kop.git
-   $ cd kop
-   $ git checkout -b branch-X.Y.Z
-   $ git push origin branch-X.Y.Z -f
-   ```
-
-9. Move master branch to the next version
+8. Move master branch to the next version
 
    ```bash
    $ git checkout -b bump-master
    $ ./scripts/set-project-version.sh X.Y.Z-SNAPSHOT
-   $ git commit -m 'Bumped version to X.Y.Z-SNAPSHOT' -a
+   $ git commit -m 'Bump version to X.Y.Z-SNAPSHOT' -a
    $ git push origin bump-master
    # create a PR for this change
    ```
