@@ -370,6 +370,10 @@ public class KafkaTopicManager {
         }
     }
 
+    public Producer getReferenceProducer(String topicName) {
+        return references.get(topicName);
+    }
+
     public void deReference(String topicName) {
         try {
             removeLookupCache(topicName);
