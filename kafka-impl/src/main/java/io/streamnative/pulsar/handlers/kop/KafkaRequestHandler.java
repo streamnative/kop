@@ -603,9 +603,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         result.getRight().complete(new PartitionResponse(Errors.LEADER_NOT_AVAILABLE));
                     } else {
                         topicManager.registerProducerInPersistentTopic(topic.toString(), persistentTopic);
-                        topicManager.getReferenceProducer(topic.toString()).publishMessage(0, 0,
-                                headerAndPayload, size, false);
-                        offsetFuture.complete(Long.valueOf(size));
+                        // collect metrics
+                        topicManager.getReferenceProducer(topic.toString())
+                                .getTopic().incrementPublishCount(size, headerAndPayload.readableBytes());
+                        // publish message
+                        persistentTopic.publishMessage(
+                                headerAndPayload,
+                                MessagePublishContext.get(
+                                        offsetFuture, persistentTopic, System.nanoTime()));
                     }
                 });
 
