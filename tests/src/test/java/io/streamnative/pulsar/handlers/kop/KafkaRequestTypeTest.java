@@ -253,12 +253,11 @@ public class KafkaRequestTypeTest extends KopProtocolHandlerTestBase {
                     .add(key2 + i, (value2 + i).getBytes(UTF_8));
 
             if (isBatch) {
-                recordMetadata = (RecordMetadata)kProducer.getProducer()
-                        .send(record).get();
+                recordMetadata = (RecordMetadata) kProducer
+                        .getProducer().send(record).get();
             } else {
-                recordMetadata = (RecordMetadata)kProducer.getProducer()
-                        .send(record)
-                        .get();
+                recordMetadata = (RecordMetadata) kProducer
+                        .getProducer().send(record).get();
             }
 
             byte[] serializedKey = new byte[recordMetadata.serializedKeySize()];
