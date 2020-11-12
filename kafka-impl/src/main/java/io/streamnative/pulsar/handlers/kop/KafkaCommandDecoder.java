@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.kafka.common.protocol.ApiKeys.API_VERSIONS;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Queues;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
@@ -81,6 +82,15 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         if (log.isDebugEnabled()) {
             log.debug("Channel writability has changed to: {}", ctx.channel().isWritable());
         }
+        if (ctx.channel().isWritable()) {
+            // set auto read to true if channel is writable.
+            ctx.channel().config().setAutoRead(true);
+        } else {
+            log.warn("channel is not writable, disable auto reading for back pressing");
+            ctx.channel().config().setAutoRead(false);
+            ctx.flush();
+        }
+        ctx.fireChannelWritabilityChanged();
     }
 
     // turn input ByteBuf msg, which send from client side, into KafkaHeaderAndRequest
@@ -454,5 +464,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             this.responseFuture = response;
             this.request = request;
         }
+    }
+
+    @VisibleForTesting
+    public ChannelHandlerContext getCtx() {
+        return ctx;
     }
 }
