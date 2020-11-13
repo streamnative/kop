@@ -167,7 +167,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
-        this.authenticator = (pulsarService.getBrokerService().isAuthenticationEnabled())
+        final boolean authenticationEnabled = pulsarService.getBrokerService().isAuthenticationEnabled()
+                && !kafkaConfig.getSaslAllowedMechanisms().isEmpty();
+        this.authenticator = authenticationEnabled
                 ? new SaslAuthenticator(pulsarService, kafkaConfig.getSaslAllowedMechanisms())
                 : null;
         this.tlsEnabled = tlsEnabled;
