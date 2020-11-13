@@ -930,7 +930,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         // in v0, the iterator is offsetData,
         // in v1, the iterator is partitionTimestamps,
-        log.warn("received a v0 listOffset: {}", request.toString(true));
+        log.debug("received a v0 listOffset: {}", request.toString(true));
         request.offsetData().entrySet().stream().forEach(tms -> {
             TopicPartition topic = tms.getKey();
             String fullPartitionName = KopTopic.toString(topic);

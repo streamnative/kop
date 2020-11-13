@@ -37,7 +37,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -51,13 +50,13 @@ import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
+import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
-import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -94,8 +93,8 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
     private Map<String, byte[]> protocols;
 
     static class MockOffsetAcker extends OffsetAcker {
-        public MockOffsetAcker(PulsarClientImpl pulsarClient) {
-            super(pulsarClient);
+        public MockOffsetAcker(PulsarAdmin pulsarAdmin) {
+            super(pulsarAdmin);
         }
 
         @Override
@@ -105,16 +104,6 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
 
         @Override
         public void ackOffsets(String groupId, Map<TopicPartition, OffsetAndMetadata> offsetMetadata) {
-            // non op
-        }
-
-        @Override
-        public void close(Set<String> groupIds) {
-            // non op
-        }
-
-        @Override
-        public void close() {
             // non op
         }
     }
@@ -201,7 +190,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
             heartbeatPurgatory,
             joinPurgatory,
             timer.time(),
-            new MockOffsetAcker((PulsarClientImpl) pulsarClient)
+            new MockOffsetAcker(admin)
         );
 
         // start the group coordinator

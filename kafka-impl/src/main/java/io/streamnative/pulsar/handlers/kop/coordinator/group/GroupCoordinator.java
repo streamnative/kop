@@ -25,7 +25,6 @@ import static org.apache.kafka.common.record.RecordBatch.NO_PRODUCER_ID;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
@@ -63,6 +62,7 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
@@ -82,9 +82,9 @@ public class GroupCoordinator {
 
     public static GroupCoordinator of(
         PulsarClientImpl pulsarClient,
+        PulsarAdmin pulsarAdmin,
         GroupConfig groupConfig,
         OffsetConfig offsetConfig,
-        KafkaServiceConfiguration kafkaServiceConfiguration,
 
         Timer timer,
         Time time
@@ -119,7 +119,7 @@ public class GroupCoordinator {
                 .timeoutTimer(timer)
                 .build();
 
-        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient);
+        OffsetAcker offsetAcker = new OffsetAcker(pulsarAdmin);
         return new GroupCoordinator(
             groupConfig,
             metadataManager,
@@ -194,7 +194,6 @@ public class GroupCoordinator {
         groupManager.shutdown();
         heartbeatPurgatory.shutdown();
         joinPurgatory.shutdown();
-        offsetAcker.close();
         log.info("Shutdown group coordinator completely.");
     }
 
@@ -670,7 +669,6 @@ public class GroupCoordinator {
             );
         }
 
-        offsetAcker.close(groupIds);
         return groupErrors;
     }
 
