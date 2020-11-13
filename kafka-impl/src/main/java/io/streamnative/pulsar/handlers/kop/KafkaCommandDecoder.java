@@ -163,9 +163,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             } else {
                 if (!hasAuthenticated(kafkaHeaderAndRequest)) {
                     authenticate(kafkaHeaderAndRequest, responseFuture);
-                    if (!hasAuthenticated(kafkaHeaderAndRequest)) {
-                        return;
-                    }
+                    return;
                 }
                 switch (kafkaHeaderAndRequest.getHeader().apiKey()) {
                     case API_VERSIONS:

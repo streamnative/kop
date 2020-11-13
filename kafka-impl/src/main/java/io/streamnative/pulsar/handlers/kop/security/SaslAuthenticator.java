@@ -174,6 +174,7 @@ public class SaslAuthenticator {
             throw e;
         }
 
+        responseFuture.complete(new SaslAuthenticateResponse(Errors.NONE, ""));
         authData = AuthData.of(saslAuth.getAuthData().getBytes(UTF_8));
         setState(State.COMPLETE);
     }
