@@ -144,11 +144,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final KafkaServiceConfiguration kafkaConfig;
     private final KafkaTopicManager topicManager;
     private final GroupCoordinator groupCoordinator;
-    private final SaslAuthenticator authenticator;
 
     private final String clusterName;
     private final ScheduledExecutorService executor;
     private final PulsarAdmin admin;
+    private final SaslAuthenticator authenticator;
     private final Boolean tlsEnabled;
     private final String localListeners;
     private final int plaintextPort;
@@ -164,12 +164,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
         this.groupCoordinator = groupCoordinator;
-        this.authenticator = (pulsarService.getBrokerService().isAuthenticationEnabled())
-                ? new SaslAuthenticator(pulsarService.getBrokerService(), kafkaConfig.getSaslAllowedMechanisms())
-                : null;
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
+        this.authenticator = (pulsarService.getBrokerService().isAuthenticationEnabled())
+                ? new SaslAuthenticator(pulsarService, kafkaConfig.getSaslAllowedMechanisms())
+                : null;
         this.tlsEnabled = tlsEnabled;
         this.localListeners = KafkaProtocolHandler.getListenersFromConfig(kafkaConfig);
         this.plaintextPort = getListenerPort(localListeners, PLAINTEXT);

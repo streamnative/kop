@@ -19,10 +19,12 @@ import io.streamnative.pulsar.handlers.kop.SaslAuth;
 import io.streamnative.pulsar.handlers.kop.utils.SaslUtils;
 
 import java.io.IOException;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import javax.naming.AuthenticationException;
 
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -37,9 +39,16 @@ import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SaslHandshakeRequest;
 import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.pulsar.broker.PulsarServerException;
+import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
-import org.apache.pulsar.broker.service.BrokerService;
+import org.apache.pulsar.broker.authentication.AuthenticationService;
+import org.apache.pulsar.broker.authentication.AuthenticationState;
+import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.api.AuthData;
+import org.apache.pulsar.common.policies.data.AuthAction;
 
 /**
  * The SASL authenticator.
@@ -74,13 +83,20 @@ public class SaslAuthenticator {
         }
     }
 
-    private final BrokerService brokerService;
+    private final AuthenticationService authenticationService;
+    private final PulsarAdmin admin;
     private final Set<String> allowedMechanisms;
     private State state = State.HANDSHAKE_OR_VERSIONS_REQUEST;
-    private AuthData authData = null;
+    @Getter
+    private AuthenticationState authState = null;
+    @Getter
+    private AuthenticationDataSource authDataSource = null;
+    @Getter
+    private String authRole = null;
 
-    public SaslAuthenticator(BrokerService brokerService, Set<String> allowedMechanisms) {
-        this.brokerService = brokerService;
+    public SaslAuthenticator(PulsarService pulsarService, Set<String> allowedMechanisms) throws PulsarServerException {
+        this.authenticationService = pulsarService.getBrokerService().getAuthenticationService();
+        this.admin = pulsarService.getAdminClient();
         this.allowedMechanisms = allowedMechanisms;
     }
 
@@ -104,13 +120,11 @@ public class SaslAuthenticator {
         return state == State.COMPLETE;
     }
 
-    public AuthData getAuthData() {
-        return complete() ? authData : null;
-    }
-
     public void reset() {
         state = State.HANDSHAKE_OR_VERSIONS_REQUEST;
-        authData = null;
+        authState = null;
+        authDataSource = null;
+        authRole = null;
     }
 
     private void setState(State state) {
@@ -158,15 +172,16 @@ public class SaslAuthenticator {
         }
 
         SaslAuthenticateRequest saslAuthenticateRequest = (SaslAuthenticateRequest) request;
-        SaslAuth saslAuth = null;
+        SaslAuth saslAuth;
         try {
             saslAuth = SaslUtils.parseSaslAuthBytes(Utils.toArray(saslAuthenticateRequest.saslAuthBytes()));
         } catch (IOException e) {
             responseFuture.complete(new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()));
             return;
         }
+
         AuthenticationProvider authenticationProvider =
-                brokerService.getAuthenticationService().getAuthenticationProvider(saslAuth.getAuthMethod());
+                authenticationService.getAuthenticationProvider(saslAuth.getAuthMethod());
         if (authenticationProvider == null) {
             AuthenticationException e = new AuthenticationException(
                     "No AuthenticationProvider found for method " + saslAuth.getAuthMethod());
@@ -174,9 +189,36 @@ public class SaslAuthenticator {
             throw e;
         }
 
-        responseFuture.complete(new SaslAuthenticateResponse(Errors.NONE, ""));
-        authData = AuthData.of(saslAuth.getAuthData().getBytes(UTF_8));
-        setState(State.COMPLETE);
+        try {
+            authState = authenticationProvider.newAuthState(
+                    AuthData.of(saslAuth.getAuthData().getBytes(UTF_8)), null, null);
+        } catch (AuthenticationException e) {
+            responseFuture.complete(new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()));
+            return;
+        }
+        authDataSource = authState.getAuthDataSource();
+        authRole = authState.getAuthRole();
+
+        // TODO: we need to let KafkaRequestHandler do the authorization works. Here we just check the permissions
+        //  of the namespace, which is the namespace.
+        final String namespace = saslAuth.getUsername();
+        try {
+            Map<String, Set<AuthAction>> permissions = admin.namespaces().getPermissions(namespace);
+            if (permissions.containsKey(authRole)) {
+                responseFuture.complete(new SaslAuthenticateResponse(Errors.NONE, ""));
+                setState(State.COMPLETE);
+            } else {
+                responseFuture.complete(new SaslAuthenticateResponse(
+                        Errors.SASL_AUTHENTICATION_FAILED,
+                        "Role: " + authRole + " is not allowed on namespace " + namespace));
+            }
+        } catch (PulsarAdminException e) {
+            AuthenticationException authException =
+                    new AuthenticationException("Failed to get permissions of " + namespace + ": " + e.getMessage());
+            responseFuture.complete(
+                    new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, authException.getMessage()));
+            responseFuture.complete(request.getErrorResponse(authException));
+        }
     }
 
     private void handleApiVersionsRequest(ApiVersionsRequest request,
