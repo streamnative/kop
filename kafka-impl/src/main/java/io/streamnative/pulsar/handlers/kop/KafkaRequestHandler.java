@@ -575,13 +575,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     log.error("record to bytebuf error: ", ex);
                     future.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
                 } else {
-                    doPublishMessages(topic);
+                    doPublishMessages(topic, size.get());
                 }
             });
         }
     }
 
-    private void doPublishMessages(TopicName topic) {
+    private void doPublishMessages(TopicName topic, int size) {
         Queue<Pair<CompletableFuture<ByteBuf>, CompletableFuture<PartitionResponse>>> topicQueue =
                 transQueue.get(topic);
 
@@ -603,6 +603,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         result.getRight().complete(new PartitionResponse(Errors.LEADER_NOT_AVAILABLE));
                     } else {
                         topicManager.registerProducerInPersistentTopic(topic.toString(), persistentTopic);
+                        // collect metrics
+                        topicManager.getReferenceProducer(topic.toString())
+                                .getTopic().incrementPublishCount(size, headerAndPayload.readableBytes());
+                        // publish message
                         persistentTopic.publishMessage(
                                 headerAndPayload,
                                 MessagePublishContext.get(

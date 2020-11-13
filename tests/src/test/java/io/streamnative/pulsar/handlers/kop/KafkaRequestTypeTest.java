@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
@@ -212,6 +213,42 @@ public class KafkaRequestTypeTest extends KopProtocolHandlerTestBase {
         // verify have received all messages
         msg = consumer.receive(100, TimeUnit.MILLISECONDS);
         assertNull(msg);
+    }
+
+    @Test(timeOut = 20000, dataProvider = "partitionsAndBatch")
+    public void testKafkaProducePulsarMetrics(int partitionNumber, boolean isBatch) throws Exception {
+        String kafkaTopicName = "kopKafkaProducePulsarMetrics" + partitionNumber;
+        String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
+
+        // create partitioned topic.
+        admin.topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
+
+        // 1. produce message with Kafka producer.
+        @Cleanup
+        KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort());
+
+        int totalMsgs = 10;
+
+        String messageStrPrefix = "Message_Kop_KafkaProducePulsarConsume_"  + partitionNumber + "_";
+
+        for (int i = 0; i < totalMsgs; i++) {
+            String messageStr = messageStrPrefix + i;
+            ProducerRecord record = new ProducerRecord<>(
+                    kafkaTopicName,
+                    i,
+                    messageStr);
+
+            kProducer.getProducer().send(record).get();
+
+            if (log.isDebugEnabled()) {
+                log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+            }
+        }
+
+        long msgInCounter = admin.topics().getPartitionedStats(pulsarTopicName, false).msgInCounter;
+        assertEquals(msgInCounter, totalMsgs);
+        long bytesInCounter = admin.topics().getPartitionedStats(pulsarTopicName, false).bytesInCounter;
+        assertNotEquals(bytesInCounter, 0);
     }
 
     @Test(timeOut = 20000, dataProvider = "partitionsAndBatch")
