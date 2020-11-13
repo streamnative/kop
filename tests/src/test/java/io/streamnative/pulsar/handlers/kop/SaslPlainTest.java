@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
@@ -31,8 +32,11 @@ import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
@@ -192,5 +196,25 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("SaslAuthenticationException"));
         }
+    }
+
+    @Test
+    void clientWithoutAuth() throws Exception {
+        final int metadataTimeoutMs = 8000;
+
+        Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, Integer.toString(metadataTimeoutMs));
+
+        KafkaProducer<String, String> producer = new KafkaProducer<>(props);
+        producer.send(new ProducerRecord<>(TOPIC, "", "hello"), (recordMetadata, e) -> {
+            assertNotNull(e);
+            assertTrue(e.getMessage().contains("Failed to update metadata"));
+        });
+
+        Thread.sleep(metadataTimeoutMs + 300);
+        producer.close();
     }
 }
