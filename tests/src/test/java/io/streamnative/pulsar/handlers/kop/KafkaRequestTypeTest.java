@@ -219,10 +219,6 @@ public class KafkaRequestTypeTest extends KopProtocolHandlerTestBase {
     public void testKafkaProducePulsarMetrics(int partitionNumber, boolean isBatch) throws Exception {
         String kafkaTopicName = "kopKafkaProducePulsarMetrics" + partitionNumber;
         String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
-        String key1 = "header_key1_";
-        String key2 = "header_key2_";
-        String value1 = "header_value1_";
-        String value2 = "header_value2_";
 
         // create partitioned topic.
         admin.topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
@@ -241,21 +237,11 @@ public class KafkaRequestTypeTest extends KopProtocolHandlerTestBase {
                     kafkaTopicName,
                     i,
                     messageStr);
-            record.headers()
-                    .add(key1 + i, (value1 + i).getBytes(UTF_8))
-                    .add(key2 + i, (value2 + i).getBytes(UTF_8));
 
-            if (isBatch) {
-                kProducer.getProducer()
-                        .send(record).get();
-            } else {
-                kProducer.getProducer()
-                        .send(record)
-                        .get();
-            }
+            kProducer.getProducer().send(record).get();
 
             if (log.isDebugEnabled()) {
-                log.debug("Kafka Producer Sent message with header: ({}, {})", i, messageStr);
+                log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
             }
         }
 
