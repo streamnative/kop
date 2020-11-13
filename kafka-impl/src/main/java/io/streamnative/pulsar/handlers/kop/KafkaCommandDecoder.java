@@ -27,6 +27,8 @@ import java.nio.ByteBuffer;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import javax.naming.AuthenticationException;
+
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
@@ -148,12 +150,23 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             }
 
             CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+            responseFuture.whenComplete((response, e) -> {
+                ctx.channel().eventLoop().execute(() -> {
+                    writeAndFlushResponseToClient(channel);
+                });
+            });
 
             requestsQueue.add(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
 
             if (!isActive.get()) {
                 handleInactive(kafkaHeaderAndRequest, responseFuture);
             } else {
+                if (!hasAuthenticated(kafkaHeaderAndRequest)) {
+                    authenticate(kafkaHeaderAndRequest, responseFuture);
+                    if (!hasAuthenticated(kafkaHeaderAndRequest)) {
+                        return;
+                    }
+                }
                 switch (kafkaHeaderAndRequest.getHeader().apiKey()) {
                     case API_VERSIONS:
                         handleApiVersionsRequest(kafkaHeaderAndRequest, responseFuture);
@@ -212,12 +225,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                         handleError(kafkaHeaderAndRequest, responseFuture);
                 }
             }
-
-            responseFuture.whenComplete((response, e) -> {
-                ctx.channel().eventLoop().execute(() -> {
-                    writeAndFlushResponseToClient(channel);
-                });
-            });
+        } catch (AuthenticationException e) {
+            log.error("unexpected error in authenticate:", e);
+            close();
         } catch (Exception e) {
             log.error("error while handle command:", e);
             close();
@@ -278,6 +288,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             }
         }
     }
+
+    protected abstract boolean hasAuthenticated(KafkaHeaderAndRequest kafkaHeaderAndRequest);
+
+    protected abstract void
+    authenticate(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response)
+            throws AuthenticationException;
 
     protected abstract void
     handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);

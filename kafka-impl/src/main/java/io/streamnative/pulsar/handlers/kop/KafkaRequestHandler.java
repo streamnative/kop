@@ -33,13 +33,12 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
-import io.streamnative.pulsar.handlers.kop.utils.SaslUtils;
 
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -52,7 +51,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
@@ -114,29 +112,19 @@ import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
-import org.apache.kafka.common.requests.SaslAuthenticateRequest;
 import org.apache.kafka.common.requests.SaslAuthenticateResponse;
-import org.apache.kafka.common.requests.SaslHandshakeRequest;
 import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
-import org.apache.pulsar.broker.authentication.AuthenticationProvider;
-import org.apache.pulsar.broker.authentication.AuthenticationService;
-import org.apache.pulsar.broker.authentication.AuthenticationState;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.client.api.PulsarClientException.AuthorizationException;
-import org.apache.pulsar.common.api.AuthData;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
-import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
@@ -156,6 +144,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final KafkaServiceConfiguration kafkaConfig;
     private final KafkaTopicManager topicManager;
     private final GroupCoordinator groupCoordinator;
+    private final SaslAuthenticator authenticator;
 
     private final String clusterName;
     private final ScheduledExecutorService executor;
@@ -164,8 +153,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final String localListeners;
     private final int plaintextPort;
     private final int sslPort;
-    private String authRole;
-    private AuthenticationState authState;
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
 
@@ -177,6 +164,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
         this.groupCoordinator = groupCoordinator;
+        this.authenticator = (pulsarService.getBrokerService().isAuthenticationEnabled())
+                ? new SaslAuthenticator(pulsarService.getBrokerService(), kafkaConfig.getSaslAllowedMechanisms())
+                : null;
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
@@ -193,6 +183,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         super.channelActive(ctx);
         getTopicManager().updateCtx();
+        if (authenticator != null) {
+            authenticator.reset();
+        }
         log.info("channel active: {}", ctx.channel());
     }
 
@@ -212,6 +205,20 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             writeAndFlushWhenInactiveChannel(ctx.channel());
             ctx.close();
             topicManager.close();
+        }
+    }
+
+    @Override
+    protected boolean hasAuthenticated(KafkaHeaderAndRequest request) {
+        return authenticator == null || authenticator.complete();
+    }
+
+    @Override
+    protected void authenticate(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                CompletableFuture<AbstractResponse> responseFuture) throws AuthenticationException {
+        if (authenticator != null) {
+            authenticator.authenticate(
+                    kafkaHeaderAndRequest.getHeader(), kafkaHeaderAndRequest.getRequest(), responseFuture);
         }
     }
 
@@ -1220,57 +1227,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void handleSaslAuthenticate(KafkaHeaderAndRequest saslAuthenticate,
                                           CompletableFuture<AbstractResponse> resultFuture) {
-        checkArgument(saslAuthenticate.getRequest() instanceof SaslAuthenticateRequest);
-        SaslAuthenticateRequest request = (SaslAuthenticateRequest) saslAuthenticate.getRequest();
-
-        SaslAuth saslAuth;
-        try {
-            saslAuth = SaslUtils.parseSaslAuthBytes(Utils.toArray(request.saslAuthBytes()));
-
-            // TODO: saslAuth.getUsername() isn't necessary from now. By the way, a proper authentication way
-            //   would be applied in the future, see https://github.com/streamnative/kop/issues/208
-            AuthData authData = AuthData.of(saslAuth.getAuthData().getBytes(UTF_8));
-
-            AuthenticationService authenticationService = getPulsarService()
-                .getBrokerService().getAuthenticationService();
-            AuthenticationProvider authenticationProvider = authenticationService
-                .getAuthenticationProvider(saslAuth.getAuthMethod());
-            if (null == authenticationProvider) {
-                throw new PulsarClientException.AuthenticationException("cannot find provider "
-                    + saslAuth.getAuthMethod());
-            }
-
-            authState = authenticationProvider.newAuthState(authData, remoteAddress, null);
-            authRole = authState.getAuthRole();
-
-            Map<String, Set<AuthAction>> permissions = getAdmin()
-                .namespaces().getPermissions(saslAuth.getUsername());
-            if (!permissions.containsKey(authRole)) {
-                throw new AuthorizationException("Role: " +  authRole + " Not allowed on this namespace");
-            }
-
-            log.debug("successfully authenticate user " + authRole);
-
-            // TODO: what should be answered?
-            SaslAuthenticateResponse response = new SaslAuthenticateResponse(
-                Errors.NONE, "", request.saslAuthBytes());
-            resultFuture.complete(response);
-
-        } catch (IOException | AuthenticationException | PulsarAdminException e) {
-            SaslAuthenticateResponse response = new SaslAuthenticateResponse(
-                Errors.SASL_AUTHENTICATION_FAILED, e.getMessage(), request.saslAuthBytes());
-            resultFuture.complete(response);
-        }
+        resultFuture.complete(new SaslAuthenticateResponse(Errors.ILLEGAL_SASL_STATE,
+                "SaslAuthenticate request received after successful authentication"));
     }
 
     @Override
     protected void handleSaslHandshake(KafkaHeaderAndRequest saslHandshake,
                                        CompletableFuture<AbstractResponse> resultFuture) {
-        checkArgument(saslHandshake.getRequest() instanceof SaslHandshakeRequest);
-        SaslHandshakeRequest request = (SaslHandshakeRequest) saslHandshake.getRequest();
-
-        SaslHandshakeResponse response = checkSaslMechanism(request.mechanism());
-        resultFuture.complete(response);
+        resultFuture.complete(new SaslHandshakeResponse(Errors.ILLEGAL_SASL_STATE, Collections.emptySet()));
     }
 
     private SaslHandshakeResponse checkSaslMechanism(String mechanism) {
