@@ -109,7 +109,7 @@ public class SaslAuthenticator {
                 handleKafkaRequest(header, request, response);
                 break;
             case AUTHENTICATE:
-                handleSaslToken(header, request, response);
+                handleAuthenticate(header, request, response);
                 break;
             default:
                 break;
@@ -156,9 +156,9 @@ public class SaslAuthenticator {
         }
     }
 
-    private void handleSaslToken(RequestHeader header,
-                                 AbstractRequest request,
-                                 CompletableFuture<AbstractResponse> responseFuture) throws AuthenticationException {
+    private void handleAuthenticate(RequestHeader header,
+                                    AbstractRequest request,
+                                    CompletableFuture<AbstractResponse> responseFuture) throws AuthenticationException {
         ApiKeys apiKey = header.apiKey();
         short version = header.apiVersion();
         if (apiKey != ApiKeys.SASL_AUTHENTICATE) {
