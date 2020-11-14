@@ -86,7 +86,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             // set auto read to true if channel is writable.
             ctx.channel().config().setAutoRead(true);
         } else {
-            log.debug("channel is not writable, disable auto reading for back pressing");
+            log.warn("channel is not writable, disable auto reading for back pressing");
             ctx.channel().config().setAutoRead(false);
             ctx.flush();
         }
