@@ -200,7 +200,7 @@ public class SaslAuthenticator {
         authRole = authState.getAuthRole();
 
         // TODO: we need to let KafkaRequestHandler do the authorization works. Here we just check the permissions
-        //  of the namespace, which is the namespace.
+        //  of the namespace, which is the namespace. See https://github.com/streamnative/kop/issues/236
         final String namespace = saslAuth.getUsername();
         try {
             Map<String, Set<AuthAction>> permissions = admin.namespaces().getPermissions(namespace);
@@ -243,7 +243,7 @@ public class SaslAuthenticator {
 
         final String mechanism = request.mechanism();
         if (mechanism != null && !mechanism.equals("PLAIN")) {
-            // TODO: support more mechanisms
+            // TODO: support more mechanisms, see https://github.com/streamnative/kop/issues/235
             AuthenticationException e = new AuthenticationException("KoP only support PLAIN mechanism");
             responseFuture.complete(request.getErrorResponse(e));
             throw e;
