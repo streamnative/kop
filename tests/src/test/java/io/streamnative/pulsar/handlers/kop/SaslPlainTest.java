@@ -26,13 +26,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.concurrent.ExecutionException;
 import javax.crypto.SecretKey;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
@@ -191,6 +196,27 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
             fail("should have failed");
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("SaslAuthenticationException"));
+        }
+    }
+
+    @Test(timeOut = 20000)
+    void clientWithoutAuth() throws Exception {
+        final int metadataTimeoutMs = 8000;
+
+        Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, Integer.toString(metadataTimeoutMs));
+
+        @Cleanup
+        KafkaProducer<String, String> producer = new KafkaProducer<>(props);
+        try {
+            producer.send(new ProducerRecord<>(TOPIC, "", "hello")).get();
+            fail("should have failed");
+        } catch (ExecutionException e) {
+            assertTrue(e.getCause() instanceof TimeoutException);
+            assertTrue(e.getMessage().contains("Failed to update metadata"));
         }
     }
 }
