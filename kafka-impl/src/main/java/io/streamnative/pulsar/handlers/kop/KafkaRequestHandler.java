@@ -557,13 +557,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     // whether the head of queue is running.
     private AtomicBoolean isHeadRequestRun = new AtomicBoolean(false);
 
-    private ConcurrentHashMap<TopicName, Queue<Pair<CompletableFuture<ByteBuf>, CompletableFuture<PartitionResponse>>>>
-            transQueue = new ConcurrentHashMap<>();
-
     private void publishMessages(MemoryRecords records,
                                  TopicName topic,
-                                 CompletableFuture<PartitionResponse> future,
-                                 CompletableFuture<ByteBuf> transFuture) {
+                                 CompletableFuture<PartitionResponse> future) {
+        CompletableFuture<ByteBuf> transFuture = new CompletableFuture<>();
         // get records size.
         AtomicInteger size = new AtomicInteger(0);
         records.records().forEach(record -> size.incrementAndGet());
@@ -584,59 +581,53 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     log.error("record to bytebuf error: ", ex);
                     future.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
                 } else {
-                    doPublishMessages(topic, size.get());
+                    doPublishMessages(topic, size.get(), headerAndPayload, future);
                 }
             });
         }
     }
 
-    private void doPublishMessages(TopicName topic, int size) {
-        Queue<Pair<CompletableFuture<ByteBuf>, CompletableFuture<PartitionResponse>>> topicQueue =
-                transQueue.get(topic);
-
-        // loop from first responseFuture.
-        while (topicQueue != null && topicQueue.peek() != null
-                && topicQueue.peek().getLeft().isDone() && isActive.get()) {
-            CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
-            Pair<CompletableFuture<ByteBuf>, CompletableFuture<PartitionResponse>> result = topicQueue.remove();
-            try {
-                if (log.isDebugEnabled()) {
-                    log.debug("[{}] topic", topic.toString());
-                }
-                ByteBuf headerAndPayload = result.getLeft().get();
-                topicManager.getTopic(topic.toString()).whenComplete((persistentTopic, throwable) -> {
-                    if (throwable != null || persistentTopic == null) {
-                        log.warn("[{}] Request {}: Failed to getOrCreateTopic {}. "
-                                        + "Topic is in loading status, return LEADER_NOT_AVAILABLE. exception:",
-                                ctx.channel(), topic.toString(), throwable);
-                        result.getRight().complete(new PartitionResponse(Errors.LEADER_NOT_AVAILABLE));
-                    } else {
-                        topicManager.registerProducerInPersistentTopic(topic.toString(), persistentTopic);
-                        // collect metrics
-                        topicManager.getReferenceProducer(topic.toString())
-                                .getTopic().incrementPublishCount(size, headerAndPayload.readableBytes());
-                        // publish message
-                        persistentTopic.publishMessage(
-                                headerAndPayload,
-                                MessagePublishContext.get(
-                                        offsetFuture, persistentTopic, System.nanoTime()));
-                    }
-                });
-
-                offsetFuture.whenComplete((offset, ex) -> {
-                    if (ex != null) {
-                        log.error("publishMessages for topic partition: {} failed when write.",
-                                topic.toString(), ex);
-                        result.getRight().complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
-                    } else {
-                        result.getRight().complete(new PartitionResponse(Errors.NONE));
-                    }
-                    headerAndPayload.release();
-                });
-            } catch (Exception e) {
-                // should not comes here.
-                log.error("error to get Response ByteBuf:", e);
+    private void doPublishMessages(
+            TopicName topic, int size,
+            ByteBuf headerAndPayload,
+            CompletableFuture<PartitionResponse> future) {
+        CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
+        try {
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] topic", topic.toString());
             }
+            topicManager.getTopic(topic.toString()).whenComplete((persistentTopic, throwable) -> {
+                if (throwable != null || persistentTopic == null) {
+                    log.warn("[{}] Request {}: Failed to getOrCreateTopic {}. "
+                                    + "Topic is in loading status, return LEADER_NOT_AVAILABLE. exception:",
+                            ctx.channel(), topic.toString(), throwable);
+                    future.complete(new PartitionResponse(Errors.LEADER_NOT_AVAILABLE));
+                } else {
+                    topicManager.registerProducerInPersistentTopic(topic.toString(), persistentTopic);
+                    // collect metrics
+                    topicManager.getReferenceProducer(topic.toString())
+                            .getTopic().incrementPublishCount(size, headerAndPayload.readableBytes());
+                    // publish message
+                    persistentTopic.publishMessage(
+                            headerAndPayload,
+                            MessagePublishContext.get(
+                                    offsetFuture, persistentTopic, System.nanoTime()));
+                }
+            });
+
+            offsetFuture.whenComplete((offset, ex) -> {
+                if (ex != null) {
+                    log.error("publishMessages for topic partition: {} failed when write.",
+                            topic.toString(), ex);
+                    future.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
+                } else {
+                    future.complete(new PartitionResponse(Errors.NONE));
+                }
+                headerAndPayload.release();
+            });
+        } catch (Exception e) {
+            // should not comes here.
+            log.error("error to get Response ByteBuf:", e);
         }
     }
 
@@ -675,22 +666,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             String fullPartitionName = KopTopic.toString(topicPartition);
             TopicName topicName = TopicName.get(fullPartitionName);
-            CompletableFuture<ByteBuf> transFuture = new CompletableFuture<>();
-            //put queue
-            transQueue.compute(topicName, (key, queue) -> {
-                if (queue == null) {
-                    Queue<Pair<CompletableFuture<ByteBuf>, CompletableFuture<PartitionResponse>>> newQueue =
-                            Queues.newConcurrentLinkedQueue();
-                    newQueue.add(Pair.of(transFuture, partitionResponse));
-                    return newQueue;
-                } else {
-                    queue.add(Pair.of(transFuture, partitionResponse));
-                    return queue;
-                }
-            });
 
             topicManager.getTopic(fullPartitionName);
-            publishMessages((MemoryRecords) entry.getValue(), topicName, partitionResponse, transFuture);
+            publishMessages((MemoryRecords) entry.getValue(), topicName, partitionResponse);
         }
 
         CompletableFuture.allOf(responsesFutures.values().toArray(new CompletableFuture<?>[responsesSize]))
