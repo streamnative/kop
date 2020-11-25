@@ -30,11 +30,19 @@ import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRes
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.Properties;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
@@ -274,5 +282,25 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         assertEquals(localName, getKafkaTopicNameFromPulsarTopicname(topicName));
         assertEquals(localName, getKafkaTopicNameFromPulsarTopicname(topicNamePartition));
+    }
+
+    @Test(timeOut = 10000)
+    public void testCreateTopics() throws InterruptedException {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(props);
+        final String topic = "testCreateTopic-0";
+        final int numPartitions = 1;
+        final short replicationFactor = 1;
+        try {
+            kafkaAdmin.createTopics(Collections.singleton(new NewTopic(topic, numPartitions, replicationFactor))).all()
+                    .get();
+        } catch (ExecutionException e) {
+            // TODO: it should fail after CreateTopics was supported, see https://github.com/streamnative/kop/issues/241
+            log.info("Failed to create topic '{}': {}", topic, e);
+            assertTrue(e.getMessage().contains("Not supported by kop server."));
+        }
     }
 }
