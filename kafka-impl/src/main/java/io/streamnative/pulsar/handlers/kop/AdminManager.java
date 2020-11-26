@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.TopicKey;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
@@ -49,7 +50,7 @@ class AdminManager {
 
     CompletableFuture<Map<String, ApiError>> createTopicsAsync(Map<String, TopicDetails> createInfo, int timeoutMs) {
         final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();
-        final AtomicInteger numTopics = new AtomicInteger(futureMap.size());
+        final AtomicInteger numTopics = new AtomicInteger(createInfo.size());
         final CompletableFuture<Map<String, ApiError>> resultFuture = new CompletableFuture<>();
 
         Runnable complete = () -> {
@@ -71,24 +72,26 @@ class AdminManager {
             final CompletableFuture<ApiError> errorFuture = new CompletableFuture<>();
             futureMap.put(topic, errorFuture);
 
-            admin.topics().createPartitionedTopicAsync(topic, detail.numPartitions).whenComplete((ignored, e) -> {
-                if (e == null) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Successfully create topic '{}'", topic);
-                    }
-                } else {
-                    log.error("Failed to create topic '{}': {}", topic, e);
-                }
+            KopTopic kopTopic = new KopTopic(topic);
+            admin.topics().createPartitionedTopicAsync(kopTopic.getFullName(), detail.numPartitions)
+                    .whenComplete((ignored, e) -> {
+                        if (e == null) {
+                            if (log.isDebugEnabled()) {
+                                log.debug("Successfully create topic '{}'", topic);
+                            }
+                        } else {
+                            log.error("Failed to create topic '{}': {}", topic, e);
+                        }
 
-                int restNumTopics = numTopics.decrementAndGet();
-                if (restNumTopics < 0) {
-                    return;
-                }
-                errorFuture.complete((e == null) ? ApiError.NONE : ApiError.fromThrowable(e));
-                if (restNumTopics == 0) {
-                    complete.run();
-                }
-            });
+                        int restNumTopics = numTopics.decrementAndGet();
+                        if (restNumTopics < 0) {
+                            return;
+                        }
+                        errorFuture.complete((e == null) ? ApiError.NONE : ApiError.fromThrowable(e));
+                        if (restNumTopics == 0) {
+                            complete.run();
+                        }
+                    });
         });
 
         if (timeoutMs <= 0) {
