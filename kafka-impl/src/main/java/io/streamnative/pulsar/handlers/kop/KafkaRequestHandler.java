@@ -23,6 +23,7 @@ import static io.streamnative.pulsar.handlers.kop.MessagePublishContext.MESSAGE_
 import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.recordsToByteBuf;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
+import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -51,6 +52,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
@@ -80,7 +82,10 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
+import org.apache.kafka.common.requests.CreateTopicsRequest;
+import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteGroupsRequest;
 import org.apache.kafka.common.requests.DeleteGroupsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsRequest;
@@ -149,6 +154,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final ScheduledExecutorService executor;
     private final PulsarAdmin admin;
     private final SaslAuthenticator authenticator;
+    private final AdminManager adminManager;
+
     private final Boolean tlsEnabled;
     private final String localListeners;
     private final int plaintextPort;
@@ -172,6 +179,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.authenticator = authenticationEnabled
                 ? new SaslAuthenticator(pulsarService, kafkaConfig.getSaslAllowedMechanisms())
                 : null;
+        this.adminManager = new AdminManager(admin);
         this.tlsEnabled = tlsEnabled;
         this.localListeners = KafkaProtocolHandler.getListenersFromConfig(kafkaConfig);
         this.plaintextPort = getListenerPort(localListeners, PLAINTEXT);
@@ -1244,6 +1252,38 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleSaslHandshake(KafkaHeaderAndRequest saslHandshake,
                                        CompletableFuture<AbstractResponse> resultFuture) {
         resultFuture.complete(new SaslHandshakeResponse(Errors.ILLEGAL_SASL_STATE, Collections.emptySet()));
+    }
+
+    @Override
+    protected void handleCreateTopics(KafkaHeaderAndRequest createTopics,
+                                      CompletableFuture<AbstractResponse> resultFuture) {
+        checkArgument(createTopics.getRequest() instanceof CreateTopicsRequest);
+        CreateTopicsRequest request = (CreateTopicsRequest) createTopics.getRequest();
+
+        final Map<String, ApiError> result = new HashMap<>();
+        final Map<String, TopicDetails> validTopics = new HashMap<>();
+        final Set<String> duplicateTopics = request.duplicateTopics();
+
+        request.topics().forEach((topic, details) -> {
+            if (!duplicateTopics.contains(topic)) {
+                validTopics.put(topic, details);
+            } else {
+                final String errorMessage = "Create topics request from client `" + createTopics.getHeader().clientId()
+                        + "` contains multiple entries for the following topics: " + duplicateTopics;
+                result.put(topic, new ApiError(Errors.INVALID_REQUEST, errorMessage));
+            }
+        });
+
+        if (validTopics.isEmpty()) {
+            resultFuture.complete(new CreateTopicsResponse(result));
+        } else {
+            // TODO: handle request.validateOnly()
+            adminManager.createTopicsAsync(validTopics, request.timeout()).thenApply(validResult -> {
+                result.putAll(validResult);
+                resultFuture.complete(new CreateTopicsResponse(result));
+                return null;
+            });
+        }
     }
 
     private SaslHandshakeResponse checkSaslMechanism(String mechanism) {
