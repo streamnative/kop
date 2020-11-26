@@ -34,7 +34,7 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,6 +43,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
@@ -63,6 +64,8 @@ import org.apache.kafka.common.requests.ResponseHeader;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
+import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
@@ -118,6 +121,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             admin.namespaces().setRetention("public/__kafka",
                 new RetentionPolicies(-1, -1));
         }
+
+        admin.tenants().createTenant("my-tenant",
+                new TenantInfo(Sets.newHashSet(), Sets.newHashSet(super.configClusterName)));
+        admin.namespaces().createNamespace("my-tenant/my-ns");
 
         log.info("created namespaces, init handler");
 
@@ -299,24 +306,40 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertEquals(localName, getKafkaTopicNameFromPulsarTopicname(topicNamePartition));
     }
 
+    void createTopicsByKafkaAdmin(AdminClient admin, Map<String, Integer> topicToNumPartitions)
+            throws ExecutionException, InterruptedException {
+        final short replicationFactor = 1; // replication factor will be ignored
+        admin.createTopics(topicToNumPartitions.entrySet().stream().map(entry -> {
+            final String topic = entry.getKey();
+            final int numPartitions = entry.getValue();
+            return new NewTopic(topic, numPartitions, replicationFactor);
+        }).collect(Collectors.toList())).all().get();
+    }
+
+    void verifyTopicsByPulsarAdmin(PulsarAdmin admin, Map<String, Integer> topicToNumPartitions)
+            throws PulsarAdminException {
+        for (Map.Entry<String, Integer> entry : topicToNumPartitions.entrySet()) {
+            final String topic = entry.getKey();
+            final int numPartitions = entry.getValue();
+            assertEquals(admin.topics().getPartitionedTopicMetadata(topic).partitions, numPartitions);
+        }
+    }
+
     @Test(timeOut = 10000)
-    public void testCreateTopics() throws InterruptedException {
+    public void testCreateTopics() throws Exception {
         Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
 
         @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(props);
-        final String topic = "testCreateTopic-0";
-        final int numPartitions = 1;
-        final short replicationFactor = 1;
-        try {
-            kafkaAdmin.createTopics(Collections.singleton(new NewTopic(topic, numPartitions, replicationFactor))).all()
-                    .get();
-        } catch (ExecutionException e) {
-            // TODO: it should fail after CreateTopics was supported, see https://github.com/streamnative/kop/issues/241
-            log.info("Failed to create topic '{}': {}", topic, e);
-            assertTrue(e.getMessage().contains("Not supported by kop server."));
-        }
+        Map<String, Integer> topicToNumPartitions = new HashMap<String, Integer>(){{
+            put("testCreateTopics-0", 1);
+            put("testCreateTopics-1", 3);
+            put("my-tenant/my-ns/testCreateTopics-2", 1);
+            put("my-tenant/my-ns/testCreateTopics-3", 5);
+        }};
+        createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
+        verifyTopicsByPulsarAdmin(admin, topicToNumPartitions);
     }
 
     @Test(timeOut = 10000)
