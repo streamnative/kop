@@ -72,7 +72,13 @@ class AdminManager {
             final CompletableFuture<ApiError> errorFuture = new CompletableFuture<>();
             futureMap.put(topic, errorFuture);
 
-            KopTopic kopTopic = new KopTopic(topic);
+            KopTopic kopTopic;
+            try {
+                kopTopic = new KopTopic(topic);
+            } catch (RuntimeException e) {
+                errorFuture.complete(ApiError.fromThrowable(e));
+                return;
+            }
             admin.topics().createPartitionedTopicAsync(kopTopic.getFullName(), detail.numPartitions)
                     .whenComplete((ignored, e) -> {
                         if (e == null) {

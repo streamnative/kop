@@ -54,6 +54,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
@@ -64,7 +65,6 @@ import org.apache.kafka.common.requests.ResponseHeader;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
-import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
@@ -316,7 +316,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         }).collect(Collectors.toList())).all().get();
     }
 
-    void verifyTopicsByPulsarAdmin(PulsarAdmin admin, Map<String, Integer> topicToNumPartitions)
+    void verifyTopicsByPulsarAdmin(Map<String, Integer> topicToNumPartitions)
             throws PulsarAdminException {
         for (Map.Entry<String, Integer> entry : topicToNumPartitions.entrySet()) {
             final String topic = entry.getKey();
@@ -336,10 +336,30 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             put("testCreateTopics-0", 1);
             put("testCreateTopics-1", 3);
             put("my-tenant/my-ns/testCreateTopics-2", 1);
-            put("my-tenant/my-ns/testCreateTopics-3", 5);
+            put("persistent://my-tenant/my-ns/testCreateTopics-3", 5);
         }};
         createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
-        verifyTopicsByPulsarAdmin(admin, topicToNumPartitions);
+        verifyTopicsByPulsarAdmin(topicToNumPartitions);
+    }
+
+    @Test(timeOut = 10000)
+    public void testCreateInvalidTopics() {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000);
+
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(props);
+        Map<String, Integer> topicToNumPartitions = new HashMap<String, Integer>(){{
+            put("xxx/testCreateInvalidTopics-0", 1);
+        }};
+        try {
+            createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
+            fail("create a invalid topic should fail");
+        } catch (Exception e) {
+            log.info("Failed to create topics: {}", topicToNumPartitions);
+            assertTrue(e.getCause() instanceof TimeoutException);
+        }
     }
 
     @Test(timeOut = 10000)
