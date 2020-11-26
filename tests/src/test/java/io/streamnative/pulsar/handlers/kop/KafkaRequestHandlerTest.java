@@ -321,7 +321,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         for (Map.Entry<String, Integer> entry : topicToNumPartitions.entrySet()) {
             final String topic = entry.getKey();
             final int numPartitions = entry.getValue();
-            assertEquals(admin.topics().getPartitionedTopicMetadata(topic).partitions, numPartitions);
+            assertEquals(this.admin.topics().getPartitionedTopicMetadata(topic).partitions, numPartitions);
         }
     }
 
