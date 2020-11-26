@@ -454,6 +454,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         // 2. After get all topics, for each topic, get the service Broker for it, and add to response
         AtomicInteger topicsCompleted = new AtomicInteger(0);
+        // Each Pulsar broker can manage metadata like controller in Kafka, Kafka's AdminClient needs to find a
+        // controller node for metadata management. So here we return the broker itself as a controller.
+        final int controllerId = newSelfNode().id();
         pulsarTopicsFuture.whenComplete((pulsarTopics, e) -> {
             if (e != null) {
                 log.warn("[{}] Request {}: Exception fetching metadata, will return null Response",
@@ -463,7 +466,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     new MetadataResponse(
                         allNodes,
                         clusterName,
-                        MetadataResponse.NO_CONTROLLER_ID,
+                        controllerId,
                         Collections.emptyList());
                 resultFuture.complete(finalResponse);
                 return;
@@ -478,7 +481,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     new MetadataResponse(
                         allNodes,
                         clusterName,
-                        MetadataResponse.NO_CONTROLLER_ID,
+                        controllerId,
                         allTopicMetadata);
                 resultFuture.complete(finalResponse);
                 return;
@@ -541,7 +544,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         new MetadataResponse(
                                             allNodes,
                                             clusterName,
-                                            MetadataResponse.NO_CONTROLLER_ID,
+                                            controllerId,
                                             allTopicMetadata);
                                     resultFuture.complete(finalResponse);
                                 }
