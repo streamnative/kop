@@ -632,7 +632,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 topic.toString(), ex);
                         result.getRight().complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
                     } else {
-                        result.getRight().complete(new PartitionResponse(Errors.NONE));
+                        result.getRight().complete(new PartitionResponse(Errors.NONE, offset, -1L, -1L));
                     }
                     headerAndPayload.release();
                 });
