@@ -42,6 +42,9 @@ public class OffsetAcker {
         if (log.isDebugEnabled()) {
             log.debug(" Add offsets after sync group: {}", assign.toString());
         }
+        assign.partitions().forEach(topicPartition -> {
+            pulsarAdmin.topics().resetCursorAsync(topicPartition.toString(), groupId, MessageId.latest);
+        });
     }
 
     public void ackOffsets(String groupId, Map<TopicPartition, OffsetAndMetadata> offsetMetadata) {
