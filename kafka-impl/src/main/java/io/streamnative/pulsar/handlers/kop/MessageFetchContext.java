@@ -20,6 +20,7 @@ import com.google.common.collect.Lists;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
+import io.streamnative.pulsar.handlers.kop.utils.KoPZKUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.util.Date;
@@ -50,6 +51,8 @@ import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.FetchResponse.PartitionData;
+import org.apache.pulsar.broker.service.Consumer;
+import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 
 /**
  * MessageFetchContext handling FetchRequest .
@@ -313,9 +316,41 @@ public final class MessageFetchContext {
                             } else if (apiVersion <= 3) {
                                 magic = RecordBatch.MAGIC_VALUE_V1;
                             }
+
+                            String clientHost = fetch.getClientHost();
+                            // get group name from zk
+                            if (!requestHandler.currentConnectedGroup.containsKey(clientHost)) {
+                                String zkSubPath = clientHost.split(":")[0]
+                                        + "-" + fetch.getHeader().clientId();
+                                String groupId = KoPZKUtils.getData(requestHandler.pulsarService.getZkClient(),
+                                        "/consumer_client_group", zkSubPath);
+                                requestHandler.currentConnectedGroup.put(clientHost, groupId);
+                                log.info("get group name from zk for current connection:{} groupId:{}",
+                                        clientHost, groupId);
+                            }
+
+                            Consumer consumer = null;
+                            try {
+                                String groupId = requestHandler.currentConnectedGroup.get(clientHost);
+                                // create broker consumer
+                                requestHandler.getGroupCoordinator()
+                                        .getoffsetAcker().getConsumer(groupId, kafkaPartition).get();
+                                PersistentTopic persistentTopic = requestHandler.getTopicManager()
+                                        .getTopic(kafkaPartition.toString()).get();
+                                // get the broker consumer size
+                                log.info("consumer size " + persistentTopic.getSubscription(groupId)
+                                        .getConsumers().size());
+                                consumer = persistentTopic.getSubscriptions()
+                                        .get(groupId).getDispatcher().getConsumers().get(0);
+                            } catch (InterruptedException e) {
+                                log.error("get topic error", e);
+                            } catch (Exception e) {
+                                log.error("get topic error", e);
+                            }
+
                             MemoryRecords records;
                             // by default kafka is produced message in batched mode.
-                            records = entriesToRecords(entries, magic);
+                            records = entriesToRecords(entries, magic, consumer);
 
                             partitionData = new FetchResponse.PartitionData(
                                 Errors.NONE,

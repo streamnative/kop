@@ -36,6 +36,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.Group
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import io.streamnative.pulsar.handlers.kop.utils.KoPZKUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
@@ -145,7 +146,7 @@ import org.apache.pulsar.zookeeper.ZooKeeperCache.Deserializer;
 public class KafkaRequestHandler extends KafkaCommandDecoder {
     public static final long DEFAULT_TIMESTAMP = 0L;
 
-    private final PulsarService pulsarService;
+    public final PulsarService pulsarService;
     private final KafkaServiceConfiguration kafkaConfig;
     private final KafkaTopicManager topicManager;
     private final GroupCoordinator groupCoordinator;
@@ -162,6 +163,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final int sslPort;
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
+    public static ConcurrentHashMap<String, String> currentConnectedGroup;
 
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
@@ -187,6 +189,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
+        this.currentConnectedGroup = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -214,6 +217,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             log.info("close channel {}", ctx.channel());
             writeAndFlushWhenInactiveChannel(ctx.channel());
             ctx.close();
+            String clientHost = ctx.channel().remoteAddress().toString();
+            if (currentConnectedGroup.containsKey(clientHost)){
+                log.info("currentConnectedGroup remove {}", clientHost);
+                currentConnectedGroup.remove(clientHost);
+            }
             topicManager.close();
         }
     }
@@ -728,8 +736,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
 
         if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
-            int partition = groupCoordinator.partitionFor(request.coordinatorKey());
+            String groupId = request.coordinatorKey();
+            int partition = groupCoordinator.partitionFor(groupId);
             String pulsarTopicName = groupCoordinator.getTopicPartitionName(partition);
+
+            // store group name to zk for current client
+            String zkSubPath = findCoordinator.getClientHost().split(":")[0]
+                    + "-" + findCoordinator.getHeader().clientId();
+            KoPZKUtils.createPath(pulsarService.getZkClient(),
+                    "/consumer_client_group", zkSubPath, groupId.getBytes());
 
             findBroker(TopicName.get(pulsarTopicName))
                 .whenComplete((node, t) -> {

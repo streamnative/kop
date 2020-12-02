@@ -103,7 +103,7 @@ public class OffsetAcker implements Closeable {
         close(consumers.keySet());
     }
 
-    private CompletableFuture<Consumer<byte[]>> getConsumer(String groupId, TopicPartition topicPartition) {
+    public CompletableFuture<Consumer<byte[]>> getConsumer(String groupId, TopicPartition topicPartition) {
         Map<TopicPartition, CompletableFuture<Consumer<byte[]>>> group = consumers
             .computeIfAbsent(groupId, gid -> new ConcurrentHashMap<>());
         return group.computeIfAbsent(
