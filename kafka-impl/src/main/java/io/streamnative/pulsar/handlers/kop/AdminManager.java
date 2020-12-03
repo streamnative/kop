@@ -21,7 +21,6 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -121,30 +120,50 @@ class AdminManager {
 
     CompletableFuture<Map<ConfigResource, DescribeConfigsResponse.Config>> describeConfigsAsync(
             Map<ConfigResource, Optional<Set<String>>> resourceToConfigNames) {
-        // Since Kafka's storage and policies are much different from Pulsar, here we just return a default config
-        // to avoid some Kafka based systems need to send DescribeConfigs request, like confluent schema registry
-        Map<ConfigResource, DescribeConfigsResponse.Config> configMap = resourceToConfigNames.entrySet().stream()
-                .collect(Collectors.toMap(Map.Entry::getKey, entry -> {
+        // Since Kafka's storage and policies are much different from Pulsar, here we just return a default config to
+        // avoid some Kafka based systems need to send DescribeConfigs request, like confluent schema registry.
+        final DescribeConfigsResponse.Config defaultTopicConfig = new DescribeConfigsResponse.Config(ApiError.NONE,
+                KafkaLogConfig.getEntries().entrySet().stream().map(entry ->
+                        new DescribeConfigsResponse.ConfigEntry(entry.getKey(), entry.getValue(),
+                                DescribeConfigsResponse.ConfigSource.DEFAULT_CONFIG, false, false,
+                                Collections.emptyList())
+                ).collect(Collectors.toList()));
+
+        Map<ConfigResource, CompletableFuture<DescribeConfigsResponse.Config>> futureMap =
+                resourceToConfigNames.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> {
                     ConfigResource resource = entry.getKey();
-                    List<DescribeConfigsResponse.ConfigEntry> entries = new ArrayList<>();
                     try {
+                        CompletableFuture<DescribeConfigsResponse.Config> future = new CompletableFuture<>();
                         switch (resource.type()) {
                             case TOPIC:
-                                KafkaLogConfig.getEntries().forEach((key, value) ->
-                                        entries.add(new DescribeConfigsResponse.ConfigEntry(key, value,
-                                                DescribeConfigsResponse.ConfigSource.DEFAULT_CONFIG,
-                                                false, false, Collections.emptyList())));
+                                KopTopic kopTopic = new KopTopic(resource.name());
+                                admin.topics().getPartitionedTopicMetadataAsync(kopTopic.getFullName())
+                                        .whenComplete((ignored, e) -> {
+                                            if (e == null) {
+                                                future.complete(defaultTopicConfig);
+                                            } else {
+                                                future.complete(new DescribeConfigsResponse.Config(
+                                                        ApiError.fromThrowable(e), Collections.emptyList()));
+                                            }
+                                        });
                                 break;
                             case BROKER:
                                 throw new RuntimeException("KoP doesn't support resource type: " + resource.type());
                             default:
                                 throw new InvalidRequestException("Unsupported resource type: " + resource.type());
                         }
-                        return new DescribeConfigsResponse.Config(ApiError.NONE, entries);
+                        return future;
                     } catch (Exception e) {
-                        return new DescribeConfigsResponse.Config(ApiError.fromThrowable(e), Collections.emptyList());
+                        return CompletableFuture.completedFuture(
+                                new DescribeConfigsResponse.Config(ApiError.fromThrowable(e), Collections.emptyList()));
                     }
                 }));
-        return CompletableFuture.completedFuture(configMap);
+        CompletableFuture<Map<ConfigResource, DescribeConfigsResponse.Config>> resultFuture = new CompletableFuture<>();
+        CompletableFuture.allOf(futureMap.values().toArray(new CompletableFuture[0])).whenComplete((ignored, e) -> {
+            resultFuture.complete(futureMap.entrySet().stream().collect(
+                    Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getNow(null))
+            ));
+        });
+        return resultFuture;
     }
 }
