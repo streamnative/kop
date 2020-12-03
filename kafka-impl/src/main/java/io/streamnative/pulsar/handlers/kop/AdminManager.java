@@ -21,16 +21,23 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.errors.InvalidRequestException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
+import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 
 @Slf4j
@@ -110,5 +117,34 @@ class AdminManager {
         }
 
         return resultFuture;
+    }
+
+    CompletableFuture<Map<ConfigResource, DescribeConfigsResponse.Config>> describeConfigsAsync(
+            Map<ConfigResource, Optional<Set<String>>> resourceToConfigNames) {
+        // Since Kafka's storage and policies are much different from Pulsar, here we just return a default config
+        // to avoid some Kafka based systems need to send DescribeConfigs request, like confluent schema registry
+        Map<ConfigResource, DescribeConfigsResponse.Config> configMap = resourceToConfigNames.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> {
+                    ConfigResource resource = entry.getKey();
+                    List<DescribeConfigsResponse.ConfigEntry> entries = new ArrayList<>();
+                    try {
+                        switch (resource.type()) {
+                            case TOPIC:
+                                KafkaLogConfig.getEntries().forEach((key, value) ->
+                                        entries.add(new DescribeConfigsResponse.ConfigEntry(key, value,
+                                                DescribeConfigsResponse.ConfigSource.DEFAULT_CONFIG,
+                                                false, false, Collections.emptyList())));
+                                break;
+                            case BROKER:
+                                throw new RuntimeException("KoP doesn't support resource type: " + resource.type());
+                            default:
+                                throw new InvalidRequestException("Unsupported resource type: " + resource.type());
+                        }
+                        return new DescribeConfigsResponse.Config(ApiError.NONE, entries);
+                    } catch (Exception e) {
+                        return new DescribeConfigsResponse.Config(ApiError.fromThrowable(e), Collections.emptyList());
+                    }
+                }));
+        return CompletableFuture.completedFuture(configMap);
     }
 }

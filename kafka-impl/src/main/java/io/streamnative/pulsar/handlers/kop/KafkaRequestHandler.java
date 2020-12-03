@@ -88,6 +88,8 @@ import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteGroupsRequest;
 import org.apache.kafka.common.requests.DeleteGroupsResponse;
+import org.apache.kafka.common.requests.DescribeConfigsRequest;
+import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsRequest;
 import org.apache.kafka.common.requests.DescribeGroupsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsResponse.GroupMember;
@@ -1284,6 +1286,22 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 return null;
             });
         }
+    }
+
+    protected void handleDescribeConfigs(KafkaHeaderAndRequest describeConfigs,
+                                         CompletableFuture<AbstractResponse> resultFuture) {
+        checkArgument(describeConfigs.getRequest() instanceof DescribeConfigsRequest);
+        DescribeConfigsRequest request = (DescribeConfigsRequest) describeConfigs.getRequest();
+
+        adminManager.describeConfigsAsync(new ArrayList<>(request.resources()).stream()
+                .collect(Collectors.toMap(
+                        resource -> resource,
+                        resource -> Optional.of(new HashSet<>(request.configNames(resource)))
+                ))
+        ).thenApply(configResourceConfigMap -> {
+            resultFuture.complete(new DescribeConfigsResponse(0, configResourceConfigMap));
+            return null;
+        });
     }
 
     private SaslHandshakeResponse checkSaslMechanism(String mechanism) {
