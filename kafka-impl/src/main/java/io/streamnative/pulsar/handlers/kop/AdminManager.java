@@ -138,12 +138,17 @@ class AdminManager {
                             case TOPIC:
                                 KopTopic kopTopic = new KopTopic(resource.name());
                                 admin.topics().getPartitionedTopicMetadataAsync(kopTopic.getFullName())
-                                        .whenComplete((ignored, e) -> {
-                                            if (e == null) {
-                                                future.complete(defaultTopicConfig);
-                                            } else {
+                                        .whenComplete((metadata, e) -> {
+                                            if (e != null) {
                                                 future.complete(new DescribeConfigsResponse.Config(
                                                         ApiError.fromThrowable(e), Collections.emptyList()));
+                                            } else if (metadata.partitions > 0) {
+                                                future.complete(defaultTopicConfig);
+                                            } else {
+                                                final ApiError error = new ApiError(Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                                                        "Topic " + kopTopic.getOriginalName() + " doesn't exist");
+                                                future.complete(new DescribeConfigsResponse.Config(
+                                                        error, Collections.emptyList()));
                                             }
                                         });
                                 break;
