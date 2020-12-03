@@ -34,6 +34,7 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -54,7 +55,9 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
@@ -359,6 +362,34 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         } catch (Exception e) {
             log.info("Failed to create topics: {}", topicToNumPartitions);
             assertTrue(e.getCause() instanceof TimeoutException);
+        }
+    }
+
+    @Test(timeOut = 10000)
+    public void testDescribeConfigs() throws Exception {
+        final String topic = "testDescribeConfigs";
+        admin.topics().createPartitionedTopic(topic, 1);
+
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(props);
+        final Map<String, String> entries = KafkaLogConfig.getEntries();
+
+        kafkaAdmin.describeConfigs(Collections.singletonList(new ConfigResource(ConfigResource.Type.TOPIC, topic)))
+                .all().get().forEach((resource, config) -> {
+            assertEquals(resource.name(), topic);
+            config.entries().forEach(entry -> assertEquals(entry.value(), entries.get(entry.name())));
+        });
+
+        final String invalidTopic = "invalid-topic";
+        try {
+            kafkaAdmin.describeConfigs(Collections.singletonList(
+                    new ConfigResource(ConfigResource.Type.TOPIC, invalidTopic))).all().get();
+        } catch (ExecutionException e) {
+            assertTrue(e.getCause() instanceof UnknownTopicOrPartitionException);
+            assertTrue(e.getMessage().contains("Topic " + invalidTopic + " doesn't exist"));
         }
     }
 
