@@ -1296,7 +1296,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         adminManager.describeConfigsAsync(new ArrayList<>(request.resources()).stream()
                 .collect(Collectors.toMap(
                         resource -> resource,
-                        resource -> Optional.of(new HashSet<>(request.configNames(resource)))
+                        resource -> Optional.ofNullable(request.configNames(resource)).map(HashSet::new)
                 ))
         ).thenApply(configResourceConfigMap -> {
             resultFuture.complete(new DescribeConfigsResponse(0, configResourceConfigMap));
