@@ -51,6 +51,7 @@ import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 /**
@@ -58,6 +59,13 @@ import org.testng.annotations.Test;
  */
 @Slf4j
 public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
+
+    @DataProvider(name = "batchSizeList")
+    public static Object[][] batchSizeList() {
+        // For the messageStrPrefix in testKafkaProduceMessageOrder(), 100 messages will be split to 50, 34, 25, 20
+        // batches associated with following batch.size config.
+        return new Object[][] { { 200 }, { 250 }, { 300 }, { 350 } };
+    }
 
     @BeforeMethod
     @Override
@@ -101,8 +109,8 @@ public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    @Test(timeOut = 20000)
-    public void testKafkaProduceMessageOrder() throws Exception {
+    @Test(timeOut = 20000, dataProvider = "batchSizeList")
+    public void testKafkaProduceMessageOrder(int batchSize) throws Exception {
         String topicName = "kopKafkaProducePulsarConsumeMessageOrder";
         String pulsarTopicName = "persistent://public/default/" + topicName;
 
@@ -119,13 +127,13 @@ public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        props.put(ProducerConfig.BATCH_SIZE_CONFIG, 256); // avoid all messages are in a single batch
+        props.put(ProducerConfig.BATCH_SIZE_CONFIG, batchSize); // avoid all messages are in a single batch
 
         // 1. produce message with Kafka producer.
         @Cleanup
         KafkaProducer<Integer, String> producer = new KafkaProducer<>(props);
 
-        int totalMsgs = 10;
+        int totalMsgs = 100;
         String messageStrPrefix = "Message_Kop_KafkaProducePulsarConsumeOrder_";
 
         Map<Long, Set<Long>> ledgerToEntrySet = new ConcurrentHashMap<>();
