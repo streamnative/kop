@@ -13,9 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import java.util.ArrayList;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Queue;
 
 /**
@@ -25,17 +23,15 @@ public class PendingProduceQueue {
 
     private final Queue<PendingProduce> queue = new LinkedList<>();
 
-    public synchronized List<PendingProduce> getAndRemoveCompletedProduces() {
-        List<PendingProduce> completedProduces = new ArrayList<>();
+    public synchronized void sendCompletedProduces() {
         while (!queue.isEmpty()) {
             PendingProduce pendingProduce = queue.peek();
             if (!pendingProduce.ready()) {
                 break;
             }
-            completedProduces.add(pendingProduce);
             queue.remove();
+            pendingProduce.publishMessages();
         }
-        return completedProduces;
     }
 
     public synchronized void add(PendingProduce pendingProduce) {

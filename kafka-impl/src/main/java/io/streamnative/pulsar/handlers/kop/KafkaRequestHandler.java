@@ -597,9 +597,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             PendingProduceQueue queue =
                     pendingProduceQueueMap.computeIfAbsent(topicPartition, ignored -> new PendingProduceQueue());
             queue.add(pendingProduce);
-            pendingProduce.whenComplete(() -> {
-                queue.getAndRemoveCompletedProduces().forEach(PendingProduce::publishMessages);
-            });
+            pendingProduce.whenComplete(queue::sendCompletedProduces);
         }
 
         CompletableFuture.allOf(responsesFutures.values().toArray(new CompletableFuture<?>[responsesSize]))
