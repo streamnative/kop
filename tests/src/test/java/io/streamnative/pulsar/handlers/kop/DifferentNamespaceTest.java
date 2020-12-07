@@ -149,8 +149,8 @@ public class DifferentNamespaceTest extends KopProtocolHandlerTestBase {
 
         Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
-        AdminClient admin = AdminClient.create(props);
-        Set<String> topicSet = admin.listTopics().names().get();
+        AdminClient kafkaAdmin = AdminClient.create(props);
+        Set<String> topicSet = kafkaAdmin.listTopics().names().get();
         log.info("topicSet: {}", topicSet);
         assertTrue(topicSet.contains(topic1ShortName));
         assertTrue(topicSet.contains(key2));
