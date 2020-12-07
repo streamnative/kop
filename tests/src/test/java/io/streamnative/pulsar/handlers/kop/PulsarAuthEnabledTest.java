@@ -53,7 +53,8 @@ public class PulsarAuthEnabledTest extends KopProtocolHandlerTestBase {
     private static final String TENANT = "PulsarAuthEnabledTest";
     private static final String ADMIN_USER = "admin_user";
     private static final String NAMESPACE = "ns2";
-    private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/topic2";
+    private static final String SHORT_TOPIC = "topic2";
+    private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/" + SHORT_TOPIC;
     private String adminToken;
 
     @BeforeClass
@@ -149,8 +150,8 @@ public class PulsarAuthEnabledTest extends KopProtocolHandlerTestBase {
         Map<String, List<PartitionInfo>> result = kConsumer
             .getConsumer().listTopics(Duration.ofSeconds(1));
         assertEquals(result.size(), 1);
-        assertTrue(result.containsKey(TOPIC),
-            "list of topics " + result.keySet().toString() + "  does not contains " + TOPIC);
+        assertTrue(result.containsKey(SHORT_TOPIC),
+            "list of topics " + result.keySet().toString() + "  does not contains " + SHORT_TOPIC);
     }
 
 }
