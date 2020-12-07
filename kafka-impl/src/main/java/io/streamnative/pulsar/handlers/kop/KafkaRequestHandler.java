@@ -334,7 +334,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         if (key.equals(offsetsTopicName)) {
                                             continue;
                                         }
-                                        topicMap.computeIfAbsent(key, ignored ->
+                                        topicMap.computeIfAbsent(KopTopic.removeDefaultNamespacePrefix(key), ignored ->
                                                 Collections.synchronizedList(new ArrayList<>())
                                         ).add(topicName);
                                     }
