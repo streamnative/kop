@@ -32,6 +32,11 @@
 
   <!-- include the dependencies -->
   <dependencies>
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-streams</artifactId>
+      <version>${kafka.version}</version>
+    </dependency>
     <!-- test dependencies -->
     <dependency>
       <groupId>io.streamnative.pulsar.handlers</groupId>
