@@ -1222,7 +1222,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             log.error("[{}] failed get pulsar address, returned null.", topic.toString());
 
             // getTopicBroker returns null. topic should be removed from LookupCache.
-            topicManager.removeLookupCache(topic.toString());
+            topicManager.removeTopicManagerCache(topic.toString());
 
             returnFuture.complete(Optional.empty());
             return returnFuture;
@@ -1233,6 +1233,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 topic, pulsarAddress);
         }
 
+        // get kop address from cache to prevent query zk each time.
+        if (topicManager.KOP_ADDRESS_CACHE.containsKey(topic.toString())) {
+            return topicManager.KOP_ADDRESS_CACHE.get(topic.toString());
+        }
         // advertised data is write in  /loadbalance/brokers/advertisedAddress:webServicePort
         // here we get the broker url, need to find related webServiceUrl.
         ZooKeeperCache zkCache = pulsarService.getLocalZkCache();
@@ -1288,6 +1292,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     }
 
                                     if (lookupDataContainsAddress(data, hostAndPort)) {
+                                        topicManager.KOP_ADDRESS_CACHE.put(topic.toString(), returnFuture);
                                         returnFuture.complete(data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
                                         return;
                                     }
@@ -1356,7 +1361,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 // here we found topic broker: broker2, but this is in broker1,
                 // how to clean the lookup cache?
                 if (!localListeners.contains(kopBrokerUrl)) {
-                    topicManager.removeLookupCache(topic.toString());
+                    topicManager.removeTopicManagerCache(topic.toString());
                 }
 
                 if (!topicManager.topicExists(topic.toString())
