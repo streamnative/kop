@@ -290,7 +290,7 @@ public class KafkaTopicManager {
                             requestHandler.ctx.channel(), t, ignore);
                 }
 
-                brokerService.getTopic(t, true).whenComplete((t2, throwable) -> {
+                brokerService.getTopic(t, brokerService.isAllowAutoTopicCreation(t)).whenComplete((t2, throwable) -> {
                     if (throwable != null) {
                         log.error("[{}] Failed to getTopic {}. exception:",
                                 requestHandler.ctx.channel(), t, throwable);
