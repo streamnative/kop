@@ -17,6 +17,7 @@ import static com.google.common.base.Preconditions.checkState;
 
 import java.net.InetSocketAddress;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
@@ -69,6 +70,9 @@ public class KafkaTopicManager {
 
     public static final ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>
         LOOKUP_CACHE = new ConcurrentHashMap<>();
+
+    public static final ConcurrentHashMap<String, CompletableFuture<Optional<String>>>
+            KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
 
     KafkaTopicManager(KafkaRequestHandler kafkaRequestHandler) {
         this.requestHandler = kafkaRequestHandler;
@@ -128,8 +132,9 @@ public class KafkaTopicManager {
         );
     }
 
-    public static void removeLookupCache(String topicName) {
+    public static void removeTopicManagerCache(String topicName) {
         LOOKUP_CACHE.remove(topicName);
+        KOP_ADDRESS_CACHE.remove(topicName);
     }
 
     // whether topic exists in cache.
@@ -273,7 +278,7 @@ public class KafkaTopicManager {
 
                     // get topic broker returns null. topic should be removed from LookupCache.
                     if (ignore == null) {
-                        removeLookupCache(topicName);
+                        removeTopicManagerCache(topicName);
                     }
 
                     topicCompletableFuture.complete(null);
@@ -290,7 +295,7 @@ public class KafkaTopicManager {
                         log.error("[{}] Failed to getTopic {}. exception:",
                                 requestHandler.ctx.channel(), t, throwable);
                         // failed to getTopic from current broker, remove cache, which added in getTopicBroker.
-                        removeLookupCache(t);
+                        removeTopicManagerCache(t);
                         topicCompletableFuture.complete(null);
                         return;
                     }
@@ -351,7 +356,7 @@ public class KafkaTopicManager {
 
             for (Map.Entry<String, CompletableFuture<PersistentTopic>> entry : topics.entrySet()) {
                 String topicName = entry.getKey();
-                removeLookupCache(topicName);
+                removeTopicManagerCache(topicName);
                 CompletableFuture<PersistentTopic> topicFuture = entry.getValue();
                 if (log.isDebugEnabled()) {
                     log.debug("[{}] remove producer {} for topic {} at close()",
@@ -376,7 +381,7 @@ public class KafkaTopicManager {
 
     public void deReference(String topicName) {
         try {
-            removeLookupCache(topicName);
+            removeTopicManagerCache(topicName);
 
             if (consumerTopicManagers.containsKey(topicName)) {
                 CompletableFuture<KafkaTopicConsumerManager> manager = consumerTopicManagers.get(topicName);

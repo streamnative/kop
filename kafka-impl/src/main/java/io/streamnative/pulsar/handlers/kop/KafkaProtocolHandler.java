@@ -98,7 +98,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                             if (Topic.GROUP_METADATA_TOPIC_NAME.equals(getKafkaTopicNameFromPulsarTopicname(name))) {
                                 checkState(name.isPartitioned(),
                                     "OffsetTopic should be partitioned in onLoad, but get " + name);
-                                KafkaTopicManager.removeLookupCache(name.toString());
+                                KafkaTopicManager.removeTopicManagerCache(name.toString());
 
                                 if (log.isDebugEnabled()) {
                                     log.debug("New offset partition load:  {}, broker: {}",
@@ -129,7 +129,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                             if (Topic.GROUP_METADATA_TOPIC_NAME.equals(getKafkaTopicNameFromPulsarTopicname(name))) {
                                 checkState(name.isPartitioned(),
                                     "OffsetTopic should be partitioned in unLoad, but get " + name);
-                                KafkaTopicManager.removeLookupCache(name.toString());
+                                KafkaTopicManager.removeTopicManagerCache(name.toString());
 
                                 if (log.isDebugEnabled()) {
                                     log.debug("Offset partition unload:  {}, broker: {}",
