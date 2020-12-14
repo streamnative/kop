@@ -30,6 +30,10 @@
   <name>StreamNative :: Pulsar Protocol Handler :: KoP Tests</name>
   <description>Tests for Kafka on Pulsar</description>
 
+  <properties>
+    <schema.registry.version>5.0.0</schema.registry.version>
+  </properties>
+
   <!-- include the dependencies -->
   <dependencies>
     <dependency>
@@ -52,6 +56,33 @@
       <scope>test</scope>
     </dependency>
 
+    <dependency>
+      <groupId>io.confluent</groupId>
+      <artifactId>kafka-schema-registry</artifactId>
+      <version>${schema.registry.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-log4j12</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.glassfish.jersey.core</groupId>
+          <artifactId>jersey-common</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>io.confluent</groupId>
+      <artifactId>kafka-avro-serializer</artifactId>
+      <version>${schema.registry.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-log4j12</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
   </dependencies>
 
   <build>
@@ -78,4 +109,10 @@
     </plugins>
   </build>
 
+  <repositories>
+    <repository>
+      <id>io-confluent</id>
+      <url>https://packages.confluent.io/maven/</url>
+    </repository>
+  </repositories>
 </project>

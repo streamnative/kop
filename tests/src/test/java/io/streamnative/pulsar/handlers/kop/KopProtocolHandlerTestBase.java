@@ -22,6 +22,9 @@ import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
+import io.confluent.kafka.schemaregistry.avro.AvroCompatibilityLevel;
+import io.confluent.kafka.schemaregistry.rest.SchemaRegistryConfig;
+import io.confluent.kafka.schemaregistry.rest.SchemaRegistryRestApplication;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 
 import java.io.Closeable;
@@ -73,6 +76,7 @@ import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.MockZooKeeper;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
+import org.eclipse.jetty.server.Server;
 
 /**
  * Unit test to test KoP handler.
@@ -96,6 +100,8 @@ public abstract class KopProtocolHandlerTestBase {
     protected int kafkaBrokerPort = PortManager.nextFreePort();
     @Getter
     protected int kafkaBrokerPortTls = PortManager.nextFreePort();
+    @Getter
+    protected int kafkaSchemaRegistryPort = PortManager.nextFreePort();
 
     protected MockZooKeeper mockZooKeeper;
     protected NonClosableMockBookKeeper mockBookKeeper;
@@ -107,6 +113,13 @@ public abstract class KopProtocolHandlerTestBase {
 
     private SameThreadOrderedSafeExecutor sameThreadOrderedSafeExecutor;
     private ExecutorService bkExecutor;
+
+    // Fields about Confluent Schema Registry
+    protected boolean enableSchemaRegistry = false;
+    private static final String KAFKASTORE_TOPIC = SchemaRegistryConfig.DEFAULT_KAFKASTORE_TOPIC;
+    protected SchemaRegistryRestApplication restApp;
+    protected Server restServer;
+    protected String restConnect;
 
     public KopProtocolHandlerTestBase() {
         resetConfig();
@@ -203,12 +216,38 @@ public abstract class KopProtocolHandlerTestBase {
         createAdmin();
 
         MetadataUtils.createKafkaMetadataIfMissing(admin, this.conf);
+
+        if (enableSchemaRegistry) {
+            admin.topics().createPartitionedTopic(KAFKASTORE_TOPIC, 1);
+            final Properties props = new Properties();
+            props.put(SchemaRegistryConfig.PORT_CONFIG, Integer.toString(getKafkaSchemaRegistryPort()));
+            // Increase the kafkastore.timeout.ms (default: 500) to avoid test failure in CI
+            props.put(SchemaRegistryConfig.KAFKASTORE_TIMEOUT_CONFIG, 3000);
+            // NOTE: KoP doesn't support kafkastore.connection.url
+            props.put(SchemaRegistryConfig.KAFKASTORE_BOOTSTRAP_SERVERS_CONFIG,
+                    "PLAINTEXT://localhost:" + getKafkaBrokerPort());
+            props.put(SchemaRegistryConfig.KAFKASTORE_TOPIC_CONFIG, KAFKASTORE_TOPIC);
+            props.put(SchemaRegistryConfig.COMPATIBILITY_CONFIG, AvroCompatibilityLevel.NONE.name);
+            props.put(SchemaRegistryConfig.MASTER_ELIGIBILITY, true);
+
+            restApp = new SchemaRegistryRestApplication(props);
+            restServer = restApp.createServer();
+            restServer.start();
+            restConnect = restServer.getURI().toString();
+            if (restConnect.endsWith("/")) {
+                restConnect = restConnect.substring(0, restConnect.length() - 1);
+            }
+        }
     }
 
     protected final void internalCleanup() throws Exception {
         try {
             // if init fails, some of these could be null, and if so would throw
             // an NPE in shutdown, obscuring the real error
+            if (restServer != null) {
+                restServer.stop();
+                restServer.join();
+            }
             if (admin != null) {
                 admin.close();
             }
