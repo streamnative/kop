@@ -221,6 +221,8 @@ public abstract class KopProtocolHandlerTestBase {
             admin.topics().createPartitionedTopic(KAFKASTORE_TOPIC, 1);
             final Properties props = new Properties();
             props.put(SchemaRegistryConfig.PORT_CONFIG, Integer.toString(getKafkaSchemaRegistryPort()));
+            // Increase the kafkastore.timeout.ms (default: 500) to avoid test failure in CI
+            props.put(SchemaRegistryConfig.KAFKASTORE_TIMEOUT_CONFIG, 3000);
             // NOTE: KoP doesn't support kafkastore.connection.url
             props.put(SchemaRegistryConfig.KAFKASTORE_BOOTSTRAP_SERVERS_CONFIG,
                     "PLAINTEXT://localhost:" + getKafkaBrokerPort());
