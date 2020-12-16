@@ -116,6 +116,9 @@ public final class MessageFetchContext {
                                 // all future completed now.
                                 tcm = pair.getValue().get();
                                 if (tcm == null) {
+                                    // remove null future cache from consumerTopicManagers
+                                    requestHandler.getTopicManager().getConsumerTopicManagers()
+                                            .remove(KopTopic.toString(pair.getKey()));
                                     throw new NullPointerException("topic not owned, and return null TCM in fetch.");
                                 }
                             } catch (Exception e) {
@@ -227,6 +230,9 @@ public final class MessageFetchContext {
                                         cursors.get(kafkaTopic).getLeft(),
                                         "cursor.readEntry fail. deleteCursor");
                                 } else {
+                                    // remove null future cache from consumerTopicManagers
+                                    requestHandler.getTopicManager().getConsumerTopicManagers()
+                                            .remove(KopTopic.toString(kafkaTopic));
                                     log.warn("Cursor deleted while TCM close.");
                                 }
                             });
@@ -286,6 +292,9 @@ public final class MessageFetchContext {
                                 if (cm != null) {
                                     cm.add(pair.getRight(), pair);
                                 } else {
+                                    // remove null future cache from consumerTopicManagers
+                                    requestHandler.getTopicManager().getConsumerTopicManagers()
+                                            .remove(KopTopic.toString(kafkaPartition));
                                     log.warn("Cursor deleted while TCM close, failed to add cursor back to TCM.");
                                 }
                             });
