@@ -373,6 +373,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture<Map<String, List<TopicName>>> pulsarTopicsFuture = new CompletableFuture<>();
 
         if (topics == null || topics.isEmpty()) {
+            // clean all cache when get all metadata for librdkafka(<1.0.0).
+            topicManager.clearTopicManagerCache();
             // get all topics
             getAllTopicsAsync(pulsarTopicsFuture);
         } else {
