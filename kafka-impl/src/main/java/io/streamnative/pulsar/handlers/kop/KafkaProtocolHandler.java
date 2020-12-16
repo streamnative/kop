@@ -111,7 +111,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                 groupCoordinator.handleGroupImmigration(name.getPartitionIndex());
                             }
                             KafkaTopicManager.removeTopicManagerCache(name.toString());
-                            // uppdate lookup cache when onload
+                            // update lookup cache when onload
                             try {
                                 CompletableFuture<InetSocketAddress> retFuture = new CompletableFuture<>();
                                 ((PulsarClientImpl) service.pulsar().getClient()).getLookup()
