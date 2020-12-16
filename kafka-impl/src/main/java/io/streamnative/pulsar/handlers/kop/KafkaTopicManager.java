@@ -137,6 +137,11 @@ public class KafkaTopicManager {
         KOP_ADDRESS_CACHE.remove(topicName);
     }
 
+    public static void clearTopicManagerCache() {
+        LOOKUP_CACHE.clear();
+        KOP_ADDRESS_CACHE.clear();
+    }
+
     // whether topic exists in cache.
     public boolean topicExists(String topicName) {
         return topics.containsKey(topicName);
