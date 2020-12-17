@@ -15,8 +15,6 @@ package io.streamnative.pulsar.handlers.kop.streams;
 
 import static org.testng.Assert.assertEquals;
 
-import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
-
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -47,7 +45,6 @@ import org.testng.annotations.Test;
  */
 @Slf4j
 public class GlobalKTableTest extends KafkaStreamsTestBase {
-    private final MockTime mockTime = new MockTime();
     private final KeyValueMapper<String, Long, Long> keyMapper = (key, value) -> value;
     private final ValueJoiner<Long, String, String> joiner = (value1, value2) -> value1 + "+" + value2;
     private final String globalStore = "globalStore";
@@ -80,6 +77,16 @@ public class GlobalKTableTest extends KafkaStreamsTestBase {
         final Consumed<String, Long> stringLongConsumed = Consumed.with(Serdes.String(), Serdes.Long());
         stream = builder.stream(streamTopic, stringLongConsumed);
         foreachAction = results::put;
+    }
+
+    @Override
+    protected Class<?> getKeySerdeClass() {
+        return null;
+    }
+
+    @Override
+    protected Class<?> getValueSerdeClass() {
+        return null;
     }
 
     @Test(timeOut = 20000)

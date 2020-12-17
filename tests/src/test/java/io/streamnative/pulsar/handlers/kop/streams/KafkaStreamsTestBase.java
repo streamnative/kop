@@ -14,9 +14,11 @@
 package io.streamnative.pulsar.handlers.kop.streams;
 
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.util.Properties;
 
 import lombok.Getter;
+import lombok.NonNull;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -30,6 +32,7 @@ import org.testng.annotations.BeforeSuite;
  * Base test class for tests related to Kafka Streams.
  */
 public abstract class KafkaStreamsTestBase extends KopProtocolHandlerTestBase {
+    protected final MockTime mockTime = new MockTime();
     protected String bootstrapServers;
     @Getter
     private int testNo = 0; // the suffix of the prefix of test topic name or application id, etc.
@@ -88,15 +91,11 @@ public abstract class KafkaStreamsTestBase extends KopProtocolHandlerTestBase {
 
     protected abstract void createTopics() throws Exception;
 
-    protected abstract String getApplicationIdPrefix();
+    protected abstract @NonNull String getApplicationIdPrefix();
 
     protected abstract void extraSetup() throws Exception;
 
-    protected Class<?> getKeySerdeClass() {
-        return null;
-    }
+    protected abstract Class<?> getKeySerdeClass();
 
-    protected Class<?> getValueSerdeClass() {
-        return null;
-    }
+    protected abstract Class<?> getValueSerdeClass();
 }
