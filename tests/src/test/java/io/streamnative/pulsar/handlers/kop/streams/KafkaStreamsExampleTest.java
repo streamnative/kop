@@ -11,10 +11,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop;
+package io.streamnative.pulsar.handlers.kop.streams;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNull;
+
+import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -53,10 +55,10 @@ import org.testng.annotations.Test;
 
 
 /**
- * Unit test for KafkaStream.
+ * Unit test for KafkaStreams' simple examples.
  */
 @Slf4j
-public class KafkaStreamsTest extends KopProtocolHandlerTestBase {
+public class KafkaStreamsExampleTest extends KopProtocolHandlerTestBase {
 
     @BeforeMethod
     @Override
