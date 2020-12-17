@@ -36,6 +36,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
@@ -363,6 +364,39 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             log.info("Failed to create topics: {}", topicToNumPartitions);
             assertTrue(e.getCause() instanceof TimeoutException);
         }
+    }
+
+    @Test(timeOut = 10000)
+    public void testDescribeTopics() throws Exception {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000);
+
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(props);
+
+        final String topicNotExisted = "testDescribeTopics-topic-not-existed";
+        try {
+            kafkaAdmin.describeTopics(new HashSet<>(Collections.singletonList(topicNotExisted))).all().get();
+        } catch (ExecutionException e) {
+            assertTrue(e.getCause() instanceof UnknownTopicOrPartitionException);
+        }
+
+        final Map<String, Integer> expectedTopicPartitions = new HashMap<String, Integer>() {{
+            put("testDescribeTopics-topic-1", 1);
+            put("testDescribeTopics-topic-2", 3);
+        }};
+        for (Map.Entry<String, Integer> entry : expectedTopicPartitions.entrySet()) {
+            admin.topics().createPartitionedTopic(entry.getKey(), entry.getValue());
+        }
+
+        final Map<String, Integer> result = kafkaAdmin
+                .describeTopics(expectedTopicPartitions.keySet())
+                .all().get().entrySet().stream().collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> entry.getValue().partitions().size()
+                ));
+        assertEquals(result, expectedTopicPartitions);
     }
 
     @Test(timeOut = 10000)

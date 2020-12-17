@@ -417,7 +417,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         .collect(Collectors.toList());
                                     pulsarTopics.put(topic, pulsarTopicNames);
                                 } else {
-                                    if (kafkaConfig.isAllowAutoTopicCreation()) {
+                                    if (kafkaConfig.isAllowAutoTopicCreation()
+                                            && metadataRequest.allowAutoTopicCreation()) {
                                         if (log.isDebugEnabled()) {
                                             log.debug("[{}] Request {}: Topic {} has single partition, "
                                                     + "auto create partitioned topic",
@@ -432,8 +433,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         pulsarTopics.put(topic, pulsarTopicNames);
 
                                     } else {
-                                        log.error("[{}] Request {}: Topic {} has single partition, "
-                                                        + "Not allow to auto create partitioned topic",
+                                        // NOTE: Currently no matter topic is a non-partitioned topic or topic doesn't
+                                        // exist, the queried partitions from broker are both 0.
+                                        // See https://github.com/apache/pulsar/issues/8813 for details.
+                                        log.error("[{}] Request {}: Topic {} doesn't exist and it's not allowed to"
+                                                        + "auto create partitioned topic",
                                                 ctx.channel(), metadataHar.getHeader(), topic);
                                         // not allow to auto create topic, return unknown topic
                                         allTopicMetadata.add(
