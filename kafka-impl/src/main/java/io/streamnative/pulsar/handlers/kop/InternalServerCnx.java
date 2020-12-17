@@ -73,7 +73,9 @@ public class InternalServerCnx extends ServerCnx {
         if (!kafkaRequestHandler.ctx.channel().config().isAutoRead()) {
             kafkaRequestHandler.ctx.channel().config().setAutoRead(true);
             kafkaRequestHandler.ctx.read();
-            log.info("Channel {}  auto read has set to true.", kafkaRequestHandler.ctx.channel());
+            if (log.isDebugEnabled()) {
+                log.debug("Channel {}  auto read has set to true.", kafkaRequestHandler.ctx.channel());
+            }
         }
     }
 
@@ -81,7 +83,9 @@ public class InternalServerCnx extends ServerCnx {
     public void disableCnxAutoRead() {
         if (kafkaRequestHandler.ctx.channel().config().isAutoRead()) {
             kafkaRequestHandler.ctx.channel().config().setAutoRead(false);
-            log.warn("Channel {} auto read has set to false.", kafkaRequestHandler.ctx.channel());
+            if (log.isDebugEnabled()) {
+                log.debug("Channel {} auto read has set to false.", kafkaRequestHandler.ctx.channel());
+            }
         }
     }
 
