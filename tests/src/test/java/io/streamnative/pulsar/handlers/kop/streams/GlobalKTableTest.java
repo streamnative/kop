@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop.streams;
 
 import static org.testng.Assert.assertEquals;
 
-import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 
 import java.util.Arrays;
@@ -23,15 +22,12 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.LongSerializer;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Bytes;
-import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
-import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.ForeachAction;
 import org.apache.kafka.streams.kstream.GlobalKTable;
@@ -43,11 +39,6 @@ import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.QueryableStoreTypes;
 import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 import org.apache.kafka.streams.state.Stores;
-import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.testng.annotations.AfterMethod;
-import org.testng.annotations.AfterSuite;
-import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.BeforeSuite;
 import org.testng.annotations.Test;
 
 
@@ -55,49 +46,33 @@ import org.testng.annotations.Test;
  * Test all available joins of Kafka Streams DSL.
  */
 @Slf4j
-public class GlobalKTableTest extends KopProtocolHandlerTestBase {
-    private String bootstrapServers;
-    private static int testNo = 0;
+public class GlobalKTableTest extends KafkaStreamsTestBase {
     private final MockTime mockTime = new MockTime();
     private final KeyValueMapper<String, Long, Long> keyMapper = (key, value) -> value;
     private final ValueJoiner<Long, String, String> joiner = (value1, value2) -> value1 + "+" + value2;
     private final String globalStore = "globalStore";
     private final Map<String, String> results = new HashMap<>();
-    private StreamsBuilder builder;
-    private Properties streamsConfiguration;
-    private KafkaStreams kafkaStreams;
     private String globalTableTopic;
     private String streamTopic;
     private GlobalKTable<Long, String> globalTable;
     private KStream<String, Long> stream;
     private ForeachAction<String, String> foreachAction;
 
-    @BeforeSuite
-    protected void setupCluster() throws Exception {
-        super.internalSetup();
-        bootstrapServers = "localhost:" + getKafkaBrokerPort();
-    }
-
-    @AfterSuite
-    protected void cleanupCluster() throws Exception {
-        super.internalCleanup();
-    }
-
-    @BeforeMethod
     @Override
-    protected void setup() throws Exception {
-        testNo++;
-        createTopics();
-        builder = new StreamsBuilder();
-        streamsConfiguration = new Properties();
-        final String applicationId = "globalTableTopic-table-test-" + testNo;
-        streamsConfiguration.put(StreamsConfig.APPLICATION_ID_CONFIG, applicationId);
-        streamsConfiguration.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        streamsConfiguration.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        streamsConfiguration.put(StreamsConfig.STATE_DIR_CONFIG, TestUtils.tempDirectory().getPath());
-        streamsConfiguration.put(StreamsConfig.CACHE_MAX_BYTES_BUFFERING_CONFIG, 0);
-        streamsConfiguration.put(TestUtils.INTERNAL_LEAVE_GROUP_ON_CLOSE, true);
-        streamsConfiguration.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 100);
+    protected void createTopics() throws Exception {
+        streamTopic = "stream-" + getTestNo();
+        globalTableTopic = "globalTable-" + getTestNo();
+        admin.topics().createPartitionedTopic(streamTopic, 1);
+        admin.topics().createPartitionedTopic(globalTableTopic, 2);
+    }
+
+    @Override
+    protected String getApplicationIdPrefix() {
+        return "globalTableTopic-table-test";
+    }
+
+    @Override
+    protected void extraSetup() throws Exception {
         globalTable = builder.globalTable(globalTableTopic, Consumed.with(Serdes.Long(), Serdes.String()),
                 Materialized.<Long, String, KeyValueStore<Bytes, byte[]>>as(globalStore)
                         .withKeySerde(Serdes.Long())
@@ -105,15 +80,6 @@ public class GlobalKTableTest extends KopProtocolHandlerTestBase {
         final Consumed<String, Long> stringLongConsumed = Consumed.with(Serdes.String(), Serdes.Long());
         stream = builder.stream(streamTopic, stringLongConsumed);
         foreachAction = results::put;
-    }
-
-    @AfterMethod
-    @Override
-    protected void cleanup() throws Exception {
-        if (kafkaStreams != null) {
-            kafkaStreams.close();
-        }
-        TestUtils.purgeLocalStreamsState(streamsConfiguration);
     }
 
     @Test(timeOut = 20000)
@@ -208,18 +174,6 @@ public class GlobalKTableTest extends KopProtocolHandlerTestBase {
         Thread.sleep(1000); // NOTE: it may take a few milliseconds to wait streams started
         store = kafkaStreams.store(globalStore, QueryableStoreTypes.keyValueStore());
         assertEquals(store.approximateNumEntries(), 4L);
-    }
-
-    private void createTopics() throws PulsarAdminException {
-        streamTopic = "stream-" + testNo;
-        globalTableTopic = "globalTable-" + testNo;
-        admin.topics().createPartitionedTopic(streamTopic, 1);
-        admin.topics().createPartitionedTopic(globalTableTopic, 2);
-    }
-
-    private void startStreams() {
-        kafkaStreams = new KafkaStreams(builder.build(), streamsConfiguration);
-        kafkaStreams.start();
     }
 
     private void produceTopicValues(final String topic) throws Exception {
