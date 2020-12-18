@@ -344,7 +344,10 @@ public class KafkaTopicManager {
                         requestHandler.ctx.channel(), references.get(topicName), topicName);
                 }
                 if (references.get(topicName) != null) {
-                    topicFuture.get().removeProducer(references.get(topicName));
+                    PersistentTopic persistentTopic = topicFuture.get();
+                    if (persistentTopic != null) {
+                        persistentTopic.removeProducer(references.get(topicName));
+                    }
                     references.remove(topicName);
                 }
             }
@@ -373,7 +376,10 @@ public class KafkaTopicManager {
             if (!topics.containsKey(topicName)) {
                 return;
             }
-            topics.get(topicName).get().removeProducer(references.get(topicName));
+            PersistentTopic persistentTopic = topics.get(topicName).get();
+            if (persistentTopic != null) {
+                persistentTopic.removeProducer(references.get(topicName));
+            }
             topics.remove(topicName);
         } catch (Exception e) {
             log.error("[{}] Failed to close reference for individual topic {}. exception:",
