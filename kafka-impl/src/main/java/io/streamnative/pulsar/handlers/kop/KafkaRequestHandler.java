@@ -684,7 +684,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (t != null || perTopic == null) {
                 log.error("Failed while get persistentTopic topic: {} ts: {}. ",
                     perTopic == null ? "null" : perTopic.getName(), timestamp, t);
-
+                // remove cache when topic is null
+                topicManager.removeTopicManagerCache(perTopic.getName());
                 partitionData.complete(new ListOffsetResponse.PartitionData(
                     Errors.LEADER_NOT_AVAILABLE,
                     ListOffsetResponse.UNKNOWN_TIMESTAMP,
@@ -1368,12 +1369,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     topicManager.removeTopicManagerCache(topic.toString());
                 }
 
-                if (!topicManager.topicExists(topic.toString())
-                    && localListeners.contains(kopBrokerUrl)) {
+                if (localListeners.contains(kopBrokerUrl)) {
                     topicManager.getTopic(topic.toString()).whenComplete((persistentTopic, exception) -> {
                         if (exception != null || persistentTopic == null) {
                             log.warn("[{}] findBroker: Failed to getOrCreateTopic {}. broker:{}, exception:",
                                 ctx.channel(), topic.toString(), kopBrokerUrl, exception);
+                            // remove cache when topic is null
+                            topicManager.removeTopicManagerCache(topic.toString());
                             returnFuture.complete(null);
                         } else {
                             if (log.isDebugEnabled()) {
