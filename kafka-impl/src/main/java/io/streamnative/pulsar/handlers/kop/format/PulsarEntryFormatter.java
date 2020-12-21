@@ -41,9 +41,13 @@ import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.client.impl.TypedMessageBuilderImpl;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.PulsarApi;
+import org.apache.pulsar.common.api.proto.PulsarApi.KeyValue;
+import org.apache.pulsar.common.api.proto.PulsarApi.MessageMetadata;
+import org.apache.pulsar.common.api.proto.PulsarApi.SingleMessageMetadata;
 import org.apache.pulsar.common.compression.CompressionCodec;
 import org.apache.pulsar.common.compression.CompressionCodecProvider;
 import org.apache.pulsar.common.protocol.Commands;
+import org.apache.pulsar.common.protocol.Commands.ChecksumType;
 
 
 /**
@@ -70,7 +74,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
                 .buffer(Math.min(INITIAL_BATCH_BUFFER_SIZE, MAX_MESSAGE_BATCH_SIZE_BYTES));
         final int size = getMemoryRecordsCount(records);
         List<MessageImpl<byte[]>> messages = Lists.newArrayListWithExpectedSize(size);
-        PulsarApi.MessageMetadata.Builder messageMetaBuilder = PulsarApi.MessageMetadata.newBuilder();
+        MessageMetadata.Builder messageMetaBuilder = MessageMetadata.newBuilder();
 
         StreamSupport.stream(records.records().spliterator(), true).forEachOrdered(record -> {
             MessageImpl<byte[]> message = recordToEntry(record);
@@ -105,9 +109,9 @@ public class PulsarEntryFormatter implements EntryFormatter {
 
         messageMetaBuilder.setNumMessagesInBatch(numMessagesInBatch);
 
-        PulsarApi.MessageMetadata msgMetadata = messageMetaBuilder.build();
+        MessageMetadata msgMetadata = messageMetaBuilder.build();
 
-        ByteBuf buf = Commands.serializeMetadataAndPayload(Commands.ChecksumType.Crc32c,
+        ByteBuf buf = Commands.serializeMetadataAndPayload(ChecksumType.Crc32c,
                 msgMetadata,
                 batchedMessageMetadataAndPayload);
 
@@ -139,7 +143,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
                 ByteBuf metadataAndPayload = entry.getDataBuffer();
 
                 // Uncompress the payload if necessary
-                PulsarApi.MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
+                MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
                 CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(msgMetadata.getCompression());
                 int uncompressedSize = msgMetadata.getUncompressedSize();
                 ByteBuf payload;
@@ -168,12 +172,12 @@ public class PulsarEntryFormatter implements EntryFormatter {
                             log.debug(" processing message num - {} in batch", i);
                         }
                         try {
-                            PulsarApi.SingleMessageMetadata.Builder singleMessageMetadataBuilder = PulsarApi.SingleMessageMetadata
+                            SingleMessageMetadata.Builder singleMessageMetadataBuilder = SingleMessageMetadata
                                     .newBuilder();
                             ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(payload,
                                     singleMessageMetadataBuilder, i, numMessages);
 
-                            PulsarApi.SingleMessageMetadata singleMessageMetadata = singleMessageMetadataBuilder.build();
+                            SingleMessageMetadata singleMessageMetadata = singleMessageMetadataBuilder.build();
                             Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
 
                             builder.appendWithOffset(
@@ -215,7 +219,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
         }
     }
 
-    private int getMemoryRecordsCount(final MemoryRecords records) {
+    private static int getMemoryRecordsCount(final MemoryRecords records) {
         int n = 0;
         for (Record ignored : records.records()) {
             n++;
@@ -226,7 +230,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
     // convert kafka Record to Pulsar Message.
     // convert kafka Record to Pulsar Message.
     // called when publish received Kafka Record into Pulsar.
-    private MessageImpl<byte[]> recordToEntry(Record record) {
+    private static MessageImpl<byte[]> recordToEntry(Record record) {
         @SuppressWarnings("unchecked")
         TypedMessageBuilderImpl<byte[]> builder = new TypedMessageBuilderImpl(null, Schema.BYTES);
 
@@ -270,7 +274,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
         return (MessageImpl<byte[]>) builder.getMessage();
     }
 
-    private Header[] getHeadersFromMetadata(List<PulsarApi.KeyValue> properties) {
+    private Header[] getHeadersFromMetadata(List<KeyValue> properties) {
         Header[] headers = new Header[properties.size()];
 
         if (log.isDebugEnabled()) {
@@ -279,7 +283,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
         }
 
         int index = 0;
-        for (PulsarApi.KeyValue kv: properties) {
+        for (KeyValue kv: properties) {
             headers[index] = new RecordHeader(kv.getKey(), kv.getValue().getBytes(UTF_8));
 
             if (log.isDebugEnabled()) {
@@ -292,7 +296,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
         return headers;
     }
 
-    private static ByteBuffer getKeyByteBuffer(PulsarApi.SingleMessageMetadata messageMetadata) {
+    private static ByteBuffer getKeyByteBuffer(SingleMessageMetadata messageMetadata) {
         if (messageMetadata.hasOrderingKey()) {
             return messageMetadata.getOrderingKey().asReadOnlyByteBuffer();
         }
@@ -306,7 +310,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
         }
     }
 
-    private ByteBuffer getKeyByteBuffer(PulsarApi.MessageMetadata messageMetadata) {
+    private static ByteBuffer getKeyByteBuffer(MessageMetadata messageMetadata) {
         if (messageMetadata.hasOrderingKey()) {
             return messageMetadata.getOrderingKey().asReadOnlyByteBuffer();
         }
@@ -320,7 +324,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
         }
     }
 
-    private ByteBuffer getNioBuffer(ByteBuf buffer) {
+    private static ByteBuffer getNioBuffer(ByteBuf buffer) {
         if (buffer.isDirect()) {
             return buffer.nioBuffer();
         }

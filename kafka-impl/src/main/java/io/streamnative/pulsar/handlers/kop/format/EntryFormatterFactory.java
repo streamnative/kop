@@ -13,6 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+/**
+ * Factory of EntryFormatter.
+ *
+ * @see EntryFormatter
+ */
 public class EntryFormatterFactory {
 
     public static EntryFormatter create(final String format) {
