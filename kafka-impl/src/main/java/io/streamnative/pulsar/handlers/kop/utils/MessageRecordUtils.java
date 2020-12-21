@@ -339,7 +339,8 @@ public final class MessageRecordUtils {
             MemoryRecordsBuilder builder = new MemoryRecordsBuilder(outputStream, magic,
                 org.apache.kafka.common.record.CompressionType.NONE,
                 TimestampType.CREATE_TIME,
-                MessageIdUtils.getOffset(entries.get(0).getLedgerId(), 0),
+                // using the first entry, index 0 as base offset
+                MessageIdUtils.getOffset(entries.get(0).getLedgerId(), entries.get(0).getEntryId(), 0),
                 RecordBatch.NO_TIMESTAMP,
                 RecordBatch.NO_PRODUCER_ID,
                 RecordBatch.NO_PRODUCER_EPOCH,
