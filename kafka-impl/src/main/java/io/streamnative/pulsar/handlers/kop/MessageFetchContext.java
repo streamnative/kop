@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.entriesToRecords;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 
 import com.google.common.collect.Lists;
@@ -322,9 +321,7 @@ public final class MessageFetchContext {
                             } else if (apiVersion <= 3) {
                                 magic = RecordBatch.MAGIC_VALUE_V1;
                             }
-                            MemoryRecords records;
-                            // by default kafka is produced message in batched mode.
-                            records = entriesToRecords(entries, magic);
+                            final MemoryRecords records = requestHandler.getEntryFormatter().decode(entries, magic);
 
                             partitionData = new FetchResponse.PartitionData(
                                 Errors.NONE,

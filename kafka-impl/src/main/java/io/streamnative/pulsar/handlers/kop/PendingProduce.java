@@ -14,7 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import io.netty.buffer.ByteBuf;
-import io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -42,6 +42,7 @@ public class PendingProduce {
     public PendingProduce(CompletableFuture<PartitionResponse> responseFuture,
                           KafkaTopicManager topicManager,
                           String partitionName,
+                          EntryFormatter entryFormatter,
                           MemoryRecords memoryRecords,
                           ExecutorService executor) {
         this.responseFuture = responseFuture;
@@ -58,10 +59,7 @@ public class PendingProduce {
             log.error("Failed to compute ByteBuf for partition '{}': {}", partitionName, e);
             return null;
         });
-        executor.execute(() -> {
-            ByteBuf byteBuf = MessageRecordUtils.recordsToByteBuf(memoryRecords, this.numMessages);
-            this.byteBufFuture.complete(byteBuf);
-        });
+        executor.execute(() -> this.byteBufFuture.complete(entryFormatter.encode(memoryRecords)));
         this.offsetFuture = new CompletableFuture<>();
     }
 
