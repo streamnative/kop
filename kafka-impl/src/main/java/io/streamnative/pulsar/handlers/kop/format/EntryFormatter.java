@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop.format;
 
 import io.netty.buffer.ByteBuf;
 import java.util.List;
-import java.util.Optional;
 
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
