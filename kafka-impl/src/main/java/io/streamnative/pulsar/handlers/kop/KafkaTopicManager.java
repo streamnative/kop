@@ -159,7 +159,7 @@ public class KafkaTopicManager {
         }
 
         // this will register and add USAGE_COUNT_UPDATER.
-        persistentTopic.addProducer(producer);
+        persistentTopic.addProducer(producer, new CompletableFuture<>());
         return producer;
     }
 
