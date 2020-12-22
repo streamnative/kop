@@ -62,7 +62,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
     private static final int MAX_MESSAGE_BATCH_SIZE_BYTES = 128 * 1024;
 
     @Override
-    public ByteBuf encode(MemoryRecords records) {
+    public ByteBuf encode(final MemoryRecords records, final int numMessages) {
         long currentBatchSizeBytes = 0;
         int numMessagesInBatch = 0;
 
@@ -72,8 +72,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
 
         ByteBuf batchedMessageMetadataAndPayload = PulsarByteBufAllocator.DEFAULT
                 .buffer(Math.min(INITIAL_BATCH_BUFFER_SIZE, MAX_MESSAGE_BATCH_SIZE_BYTES));
-        final int size = getMemoryRecordsCount(records);
-        List<MessageImpl<byte[]>> messages = Lists.newArrayListWithExpectedSize(size);
+        List<MessageImpl<byte[]>> messages = Lists.newArrayListWithExpectedSize(numMessages);
         MessageMetadata.Builder messageMetaBuilder = MessageMetadata.newBuilder();
 
         StreamSupport.stream(records.records().spliterator(), true).forEachOrdered(record -> {
@@ -123,7 +122,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
     }
 
     @Override
-    public MemoryRecords decode(List<Entry> entries, byte magic) {
+    public MemoryRecords decode(final List<Entry> entries, final byte magic) {
         try (ByteBufferOutputStream outputStream = new ByteBufferOutputStream(DEFAULT_FETCH_BUFFER_SIZE)) {
             MemoryRecordsBuilder builder = new MemoryRecordsBuilder(outputStream, magic,
                     org.apache.kafka.common.record.CompressionType.NONE,
@@ -217,14 +216,6 @@ public class PulsarEntryFormatter implements EntryFormatter {
             log.error("Meet exception: {}", e);
             throw e;
         }
-    }
-
-    private static int getMemoryRecordsCount(final MemoryRecords records) {
-        int n = 0;
-        for (Record ignored : records.records()) {
-            n++;
-        }
-        return n;
     }
 
     // convert kafka Record to Pulsar Message.
