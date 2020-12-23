@@ -20,11 +20,21 @@ package io.streamnative.pulsar.handlers.kop.format;
  */
 public class EntryFormatterFactory {
 
+    enum EntryFormat {
+        PULSAR
+    }
+
     public static EntryFormatter create(final String format) {
-        if (format.equalsIgnoreCase("pulsar")) {
-            return new PulsarEntryFormatter();
-        } else {
-            throw new IllegalArgumentException("Unsupported entry.format: " + format);
+        try {
+            EntryFormat entryFormat = Enum.valueOf(EntryFormat.class, format.toUpperCase());
+            switch (entryFormat) {
+                case PULSAR:
+                    return new PulsarEntryFormatter();
+                default:
+                    throw new Exception("No EntryFormatter for " + entryFormat);
+            }
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Unsupported entry.format '" + format + "': " + e.getMessage());
         }
     }
 }
