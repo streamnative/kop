@@ -18,11 +18,10 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
+import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.ByteBuffer;
-import java.util.Base64;
 import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
@@ -183,8 +182,8 @@ public class PulsarEntryFormatter implements EntryFormatter {
                                     MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId(), i),
                                     msgMetadata.getEventTime() > 0
                                             ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
-                                    getKeyByteBuffer(singleMessageMetadata),
-                                    getNioBuffer(singleMessagePayload),
+                                    ByteBufUtils.getKeyByteBuffer(singleMessageMetadata),
+                                    ByteBufUtils.getNioBuffer(singleMessagePayload),
                                     headers);
                             singleMessagePayload.release();
                             singleMessageMetadataBuilder.recycle();
@@ -199,8 +198,8 @@ public class PulsarEntryFormatter implements EntryFormatter {
                     builder.appendWithOffset(
                             MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
                             msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
-                            getKeyByteBuffer(msgMetadata),
-                            getNioBuffer(payload),
+                            ByteBufUtils.getKeyByteBuffer(msgMetadata),
+                            ByteBufUtils.getNioBuffer(payload),
                             headers);
                 }
 
@@ -287,40 +286,5 @@ public class PulsarEntryFormatter implements EntryFormatter {
         return headers;
     }
 
-    private static ByteBuffer getKeyByteBuffer(SingleMessageMetadata messageMetadata) {
-        if (messageMetadata.hasOrderingKey()) {
-            return messageMetadata.getOrderingKey().asReadOnlyByteBuffer();
-        }
 
-        String key = messageMetadata.getPartitionKey();
-        if (messageMetadata.hasPartitionKeyB64Encoded()) {
-            return ByteBuffer.wrap(Base64.getDecoder().decode(key));
-        } else {
-            // for Base64 not encoded string, convert to UTF_8 chars
-            return ByteBuffer.wrap(key.getBytes(UTF_8));
-        }
-    }
-
-    private static ByteBuffer getKeyByteBuffer(MessageMetadata messageMetadata) {
-        if (messageMetadata.hasOrderingKey()) {
-            return messageMetadata.getOrderingKey().asReadOnlyByteBuffer();
-        }
-
-        String key = messageMetadata.getPartitionKey();
-        if (messageMetadata.hasPartitionKeyB64Encoded()) {
-            return ByteBuffer.wrap(Base64.getDecoder().decode(key));
-        } else {
-            // for Base64 not encoded string, convert to UTF_8 chars
-            return ByteBuffer.wrap(key.getBytes(UTF_8));
-        }
-    }
-
-    private static ByteBuffer getNioBuffer(ByteBuf buffer) {
-        if (buffer.isDirect()) {
-            return buffer.nioBuffer();
-        }
-        final byte[] bytes = new byte[buffer.readableBytes()];
-        buffer.getBytes(buffer.readerIndex(), bytes);
-        return ByteBuffer.wrap(bytes);
-    }
 }
