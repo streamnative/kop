@@ -249,4 +249,9 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private int maxReadEntriesNum = 5;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "The format of an entry. Default: pulsar. Optional: [pulsar]"
+    )
+    private String entryFormat = "pulsar";
 }

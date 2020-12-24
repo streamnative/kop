@@ -29,6 +29,8 @@ import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
@@ -157,6 +159,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final int sslPort;
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
+    @Getter
+    private final EntryFormatter entryFormatter;
 
     private final Map<TopicPartition, PendingProduceQueue> pendingProduceQueueMap = new ConcurrentHashMap<>();
 
@@ -184,6 +188,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
+        this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
     }
 
     @Override
@@ -600,8 +605,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             MemoryRecords records = (MemoryRecords) entry.getValue();
             String fullPartitionName = KopTopic.toString(topicPartition);
-            PendingProduce pendingProduce =
-                    new PendingProduce(partitionResponse, topicManager, fullPartitionName, records, executor);
+            PendingProduce pendingProduce = new PendingProduce(partitionResponse, topicManager, fullPartitionName,
+                    entryFormatter, records, executor);
             PendingProduceQueue queue =
                     pendingProduceQueueMap.computeIfAbsent(topicPartition, ignored -> new PendingProduceQueue());
             queue.add(pendingProduce);

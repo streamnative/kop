@@ -493,7 +493,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 20000)
     public void testBrokerRespectsPartitionsOrderAndSizeLimits() throws Exception {
         String topicName = "kopBrokerRespectsPartitionsOrderAndSizeLimits";
-        int numberTopics = 5;
+        int numberTopics = 8;
         int numberPartitions = 6;
 
         int messagesPerPartition = 9;
