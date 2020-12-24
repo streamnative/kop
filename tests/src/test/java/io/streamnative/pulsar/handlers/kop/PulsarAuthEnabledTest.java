@@ -40,6 +40,7 @@ import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 /**
@@ -56,6 +57,18 @@ public class PulsarAuthEnabledTest extends KopProtocolHandlerTestBase {
     private static final String SHORT_TOPIC = "topic2";
     private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/" + SHORT_TOPIC;
     private String adminToken;
+
+    public PulsarAuthEnabledTest(final String entryFormat) {
+        super(entryFormat);
+    }
+
+    @Factory
+    public static Object[] instances() {
+        return new Object[] {
+                new PulsarAuthEnabledTest("pulsar"),
+                new PulsarAuthEnabledTest("kafka")
+        };
+    }
 
     @BeforeClass
     @Override

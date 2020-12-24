@@ -49,9 +49,10 @@ import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
-import org.testng.annotations.AfterMethod;
-import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.AfterClass;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
+import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 /**
@@ -60,6 +61,18 @@ import org.testng.annotations.Test;
 @Slf4j
 public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
 
+    public KafkaMessageOrderTest(final String entryFormat) {
+        super(entryFormat);
+    }
+
+    @Factory
+    public static Object[] instances() {
+        return new Object[] {
+                new KafkaMessageOrderTest("pulsar"),
+                new KafkaMessageOrderTest("kafka")
+        };
+    }
+
     @DataProvider(name = "batchSizeList")
     public static Object[][] batchSizeList() {
         // For the messageStrPrefix in testKafkaProduceMessageOrder(), 100 messages will be split to 50, 34, 25, 20
@@ -67,7 +80,7 @@ public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
         return new Object[][] { { 200 }, { 250 }, { 300 }, { 350 } };
     }
 
-    @BeforeMethod
+    @BeforeClass
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
@@ -103,7 +116,7 @@ public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
         }
     }
 
-    @AfterMethod
+    @AfterClass
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
@@ -111,7 +124,7 @@ public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000, dataProvider = "batchSizeList")
     public void testKafkaProduceMessageOrder(int batchSize) throws Exception {
-        String topicName = "kopKafkaProducePulsarConsumeMessageOrder";
+        String topicName = "kopKafkaProducePulsarConsumeMessageOrder-" + batchSize;
         String pulsarTopicName = "persistent://public/default/" + topicName;
 
         // create partitioned topic with 1 partition.
@@ -150,32 +163,34 @@ public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
         }
 
         // 2. Consume messages use Pulsar client Consumer.
-        Message<byte[]> msg = null;
-        for (int i = 0; i < totalMsgs; i++) {
-            msg = consumer.receive(1000, TimeUnit.MILLISECONDS);
-            assertNotNull(msg);
-            Integer key = kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey()));
-            assertEquals(messageStrPrefix + key.toString(), new String(msg.getValue()));
+        if (conf.getEntryFormat().equals("pulsar")) {
+            Message<byte[]> msg = null;
+            for (int i = 0; i < totalMsgs; i++) {
+                msg = consumer.receive(1000, TimeUnit.MILLISECONDS);
+                assertNotNull(msg);
+                Integer key = kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey()));
+                assertEquals(messageStrPrefix + key.toString(), new String(msg.getValue()));
 
-            if (log.isDebugEnabled()) {
-                log.debug("Pulsar consumer get i: {} message: {}, key: {}",
-                    i,
-                    new String(msg.getData()),
-                    kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey())).toString());
+                if (log.isDebugEnabled()) {
+                    log.debug("Pulsar consumer get i: {} message: {}, key: {}",
+                            i,
+                            new String(msg.getData()),
+                            kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey())).toString());
+                }
+                assertEquals(i, key.intValue());
+
+                consumer.acknowledge(msg);
             }
-            assertEquals(i, key.intValue());
 
-            consumer.acknowledge(msg);
+            // verify have received all messages
+            msg = consumer.receive(100, TimeUnit.MILLISECONDS);
+            assertNull(msg);
+
+            final AtomicInteger numEntries = new AtomicInteger(0);
+            ledgerToEntrySet.forEach((ledgerId, entrySet) -> numEntries.set(numEntries.get() + entrySet.size()));
+            log.info("Successfully write {} entries of {} messages to bookie", numEntries.get(), totalMsgs);
+            assertTrue(numEntries.get() > 1 && numEntries.get() < totalMsgs);
         }
-
-        // verify have received all messages
-        msg = consumer.receive(100, TimeUnit.MILLISECONDS);
-        assertNull(msg);
-
-        final AtomicInteger numEntries = new AtomicInteger(0);
-        ledgerToEntrySet.forEach((ledgerId, entrySet) -> numEntries.set(numEntries.get() + entrySet.size()));
-        log.info("Successfully write {} entries of {} messages to bookie", numEntries.get(), totalMsgs);
-        assertTrue(numEntries.get() > 1 && numEntries.get() < totalMsgs);
 
         // 3. Consume messages use Kafka consumer.
         @Cleanup

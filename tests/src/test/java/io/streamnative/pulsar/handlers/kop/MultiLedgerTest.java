@@ -34,6 +34,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
+import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.TopicMessageIdImpl;
 import org.apache.pulsar.common.policies.data.ClusterData;
@@ -41,6 +42,7 @@ import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 /**
@@ -48,6 +50,18 @@ import org.testng.annotations.Test;
  */
 @Slf4j
 public class MultiLedgerTest extends KopProtocolHandlerTestBase {
+
+    public MultiLedgerTest(final String entryFormat) {
+        super(entryFormat);
+    }
+
+    @Factory
+    public static Object[] instances() {
+        return new Object[] {
+                new MultiLedgerTest("pulsar"),
+                new MultiLedgerTest("kafka")
+        };
+    }
 
     @Override
     protected void resetConfig() {
@@ -107,12 +121,6 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
         // create partitioned topic with 1 partition.
         admin.topics().createPartitionedTopic(kafkaTopicName, 1);
 
-        @Cleanup
-        Consumer<byte[]> consumer = pulsarClient.newConsumer()
-            .topic(pulsarTopicName)
-            .subscriptionName("test_produce_consume_multi_ledger_sub")
-            .subscribe();
-
         // 1. produce message with Kafka producer.
         @Cleanup
         KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort());
@@ -137,32 +145,42 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
 
         // 2. Consume messages use Pulsar client Consumer. verify content and key is in order
         //    also verify messages are in different ledgers.
-        Message<byte[]> msg = null;
-        for (int i = 0; i < totalMsgs; i++) {
-            msg = consumer.receive(100, TimeUnit.MILLISECONDS);
-            assertNotNull(msg);
-            Integer key = kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey()));
-            assertEquals(messageStrPrefix + key.toString(), new String(msg.getValue()));
+        if (conf.getEntryFormat().equals("pulsar")) {
+            @Cleanup
+            Consumer<byte[]> consumer = pulsarClient.newConsumer()
+                    .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                    .topic(pulsarTopicName)
+                    .subscriptionName("test_produce_consume_multi_ledger_sub")
+                    .subscribe();
 
-            MessageIdImpl messageId = (MessageIdImpl) (((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId());
-            if (log.isDebugEnabled()) {
-                log.info("Pulsar consumer get i: {} , messageId: {}, message: {}, key: {}",
-                    i,
-                    ((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId(),
-                    new String(msg.getData()),
-                    kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey())).toString());
+            Message<byte[]> msg = null;
+            for (int i = 0; i < totalMsgs; i++) {
+                msg = consumer.receive(100, TimeUnit.MILLISECONDS);
+                assertNotNull(msg);
+                Integer key = kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey()));
+                assertEquals(messageStrPrefix + key.toString(), new String(msg.getValue()));
+
+                MessageIdImpl messageId =
+                        (MessageIdImpl) (((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId());
+                if (log.isDebugEnabled()) {
+                    log.info("Pulsar consumer get i: {} , messageId: {}, message: {}, key: {}",
+                            i,
+                            ((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId(),
+                            new String(msg.getData()),
+                            kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey())).toString());
+                }
+                assertEquals(i, key.intValue());
+
+                // each ledger should only have 5 entry.
+                assertTrue(messageId.getEntryId() / 5 == 0);
+
+                consumer.acknowledge(msg);
             }
-            assertEquals(i, key.intValue());
 
-            // each ledger should only have 5 entry.
-            assertTrue(messageId.getEntryId() / 5 == 0);
-
-            consumer.acknowledge(msg);
+            // verify have received all messages
+            msg = consumer.receive(100, TimeUnit.MILLISECONDS);
+            assertNull(msg);
         }
-
-        // verify have received all messages
-        msg = consumer.receive(100, TimeUnit.MILLISECONDS);
-        assertNull(msg);
 
         // 3. use kafka consumer to consume. messages in order.
         @Cleanup
