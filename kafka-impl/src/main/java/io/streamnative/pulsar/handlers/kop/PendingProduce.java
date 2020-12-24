@@ -14,14 +14,13 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import io.netty.buffer.ByteBuf;
-import io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 
@@ -42,12 +41,13 @@ public class PendingProduce {
     public PendingProduce(CompletableFuture<PartitionResponse> responseFuture,
                           KafkaTopicManager topicManager,
                           String partitionName,
+                          EntryFormatter entryFormatter,
                           MemoryRecords memoryRecords,
                           ExecutorService executor) {
         this.responseFuture = responseFuture;
         this.topicManager = topicManager;
         this.partitionName = partitionName;
-        this.numMessages = parseNumMessages(memoryRecords);
+        this.numMessages = EntryFormatter.parseNumMessages(memoryRecords);
 
         this.topicFuture = topicManager.getTopic(partitionName).exceptionally(e -> {
             log.error("Failed to getTopic for partition '{}': {}", partitionName, e);
@@ -58,10 +58,7 @@ public class PendingProduce {
             log.error("Failed to compute ByteBuf for partition '{}': {}", partitionName, e);
             return null;
         });
-        executor.execute(() -> {
-            ByteBuf byteBuf = MessageRecordUtils.recordsToByteBuf(memoryRecords, this.numMessages);
-            this.byteBufFuture.complete(byteBuf);
-        });
+        executor.execute(() -> byteBufFuture.complete(entryFormatter.encode(memoryRecords, numMessages)));
         this.offsetFuture = new CompletableFuture<>();
     }
 
@@ -118,13 +115,5 @@ public class PendingProduce {
             }
             byteBuf.release();
         });
-    }
-
-    private static int parseNumMessages(MemoryRecords records) {
-        int n = 0;
-        for (Record ignored : records.records()) {
-            n++;
-        }
-        return n;
     }
 }
