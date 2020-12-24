@@ -251,7 +251,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "The format of an entry. Default: pulsar. Optional: [pulsar]"
+            doc = "The format of an entry. Default: pulsar. Optional: [pulsar, kafka]"
     )
     private String entryFormat = "pulsar";
 }
