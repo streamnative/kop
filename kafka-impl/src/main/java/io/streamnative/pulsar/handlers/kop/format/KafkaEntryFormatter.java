@@ -64,6 +64,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
                 builder.appendWithOffset(offset, record);
                 offset++;
             }
+            entry.release();
         });
         return builder.build();
     }

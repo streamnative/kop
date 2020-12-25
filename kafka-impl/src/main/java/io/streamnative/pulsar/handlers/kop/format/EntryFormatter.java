@@ -37,6 +37,7 @@ public interface EntryFormatter {
 
     /**
      * Decode a stream of entries to Kafka records.
+     * It should be noted that this method is responsible for releasing the entries.
      *
      * @param entries the list of entries
      * @param magic the Kafka record batch's magic value
