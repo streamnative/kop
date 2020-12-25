@@ -63,7 +63,10 @@ public class PendingProduce {
     }
 
     public boolean ready() {
-        return topicFuture.isDone() && byteBufFuture.isDone();
+        return topicFuture.isDone()
+                && !topicFuture.isCompletedExceptionally()
+                && byteBufFuture.isDone()
+                && !byteBufFuture.isCompletedExceptionally();
     }
 
     public void whenComplete(Runnable runnable) {
