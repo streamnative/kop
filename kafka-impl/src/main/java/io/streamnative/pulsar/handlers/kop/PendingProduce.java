@@ -111,7 +111,7 @@ public class PendingProduce {
         producer.getTopic().incrementPublishCount(numMessages, byteBuf.readableBytes());
         // publish
         persistentTopic.publishMessage(byteBuf,
-                MessagePublishContext.get(offsetFuture, persistentTopic, System.nanoTime()));
+                MessagePublishContext.get(offsetFuture, persistentTopic, persistentTopic.getManagedLedger(), numMessages, System.nanoTime()));
         offsetFuture.whenComplete((offset, e) -> {
             if (e == null) {
                 responseFuture.complete(new PartitionResponse(Errors.NONE, offset, -1L, -1L));

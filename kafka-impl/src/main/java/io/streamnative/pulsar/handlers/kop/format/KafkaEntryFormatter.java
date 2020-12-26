@@ -38,7 +38,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
     public ByteBuf encode(MemoryRecords records, int numMessages) {
         return Commands.serializeMetadataAndPayload(
                 Commands.ChecksumType.None,
-                header.getMessageMetadata(),
+                header.getMessageMetadataWithNumberMessages(numMessages),
                 Unpooled.wrappedBuffer(records.buffer())
         );
     }
@@ -54,15 +54,15 @@ public class KafkaEntryFormatter implements EntryFormatter {
                 magic,
                 CompressionType.NONE,
                 TimestampType.CREATE_TIME,
-                MessageIdUtils.getOffset(entries.get(0).getLedgerId(), entries.get(0).getEntryId()));
+                MessageIdUtils.peekBaseOffsetFromEntry(entries.get(0)));
         entries.forEach(entry -> {
+            long startOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
             final ByteBuf byteBuf = entry.getDataBuffer();
             Commands.skipMessageMetadata(byteBuf);
             final MemoryRecords records = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
-            long offset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
             for (Record record : records.records()) {
-                builder.appendWithOffset(offset, record);
-                offset++;
+                builder.appendWithOffset(startOffset, record);
+                startOffset++;
             }
             entry.release();
         });

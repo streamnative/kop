@@ -340,6 +340,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
 
         this.groupCoordinator = GroupCoordinator.of(
+            brokerService,
             (PulsarClientImpl) (service.pulsar().getClient()),
             groupConfig,
             offsetConfig,

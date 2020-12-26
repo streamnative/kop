@@ -82,6 +82,7 @@ import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 /**
@@ -222,6 +223,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     // Test ListOffset for earliest get the earliest message in topic.
     // testReadUncommittedConsumerListOffsetEarliestOffsetEqualsHighWatermark
     // testReadCommittedConsumerListOffsetEarliestOffsetEqualsLastStableOffset
+    @Ignore
     @Test(timeOut = 20000)
     public void testReadUncommittedConsumerListOffsetEarliestOffsetEquals() throws Exception {
         String topicName = "testReadUncommittedConsumerListOffsetEarliest";
@@ -290,6 +292,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     // Test ListOffset for latest get the earliest message in topic.
     // testReadUncommittedConsumerListOffsetLatest
     // testReadCommittedConsumerListOffsetLatest
+    @Ignore
     @Test(timeOut = 20000)
     public void testConsumerListOffsetLatest() throws Exception {
         String topicName = "testConsumerListOffsetLatest";
@@ -490,6 +493,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         }
     }
 
+    @Ignore
     @Test(timeOut = 20000)
     public void testBrokerRespectsPartitionsOrderAndSizeLimits() throws Exception {
         String topicName = "kopBrokerRespectsPartitionsOrderAndSizeLimits";

@@ -703,29 +703,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
 
             ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) perTopic.getManagedLedger();
+            PositionImpl lac = (PositionImpl) managedLedger.getLastConfirmedEntry();
             if (timestamp == ListOffsetRequest.LATEST_TIMESTAMP) {
                 PositionImpl position = (PositionImpl) managedLedger.getLastConfirmedEntry();
                 if (log.isDebugEnabled()) {
                     log.debug("Get latest position for topic {} time {}. result: {}",
                         perTopic.getName(), timestamp, position);
                 }
-
-                // no entry in ledger, then entry id could be -1
-                long entryId = position.getEntryId();
-
-                if (legacyMode) {
-                    partitionData.complete(new ListOffsetResponse.PartitionData(
-                            Errors.NONE,
-                            Collections.singletonList(MessageIdUtils
-                                    .getOffset(position.getLedgerId(), entryId == -1 ? 0 : entryId))));
-
-                } else {
-                    partitionData.complete(new ListOffsetResponse.PartitionData(
-                            Errors.NONE,
-                            DEFAULT_TIMESTAMP,
-                            MessageIdUtils
-                                    .getOffset(position.getLedgerId(), entryId == -1 ? 0 : entryId)));
-                }
+                long offset = MessageIdUtils.getCurrentOffset(managedLedger);
+                fetchOffsetForTimestampSuccess(partitionData, legacyMode, offset);
 
             } else if (timestamp == ListOffsetRequest.EARLIEST_TIMESTAMP) {
                 PositionImpl position = OffsetFinder.getFirstValidPosition(managedLedger);
@@ -734,17 +720,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     log.debug("Get earliest position for topic {} time {}. result: {}",
                         perTopic.getName(), timestamp, position);
                 }
-
-                if (legacyMode) {
-                    partitionData.complete(new ListOffsetResponse.PartitionData(
-                            Errors.NONE,
-                            Collections.singletonList(MessageIdUtils.getOffset(position.getLedgerId(),
-                                    position.getEntryId()))));
+                if (position.compareTo(lac) > 0 || MessageIdUtils.getCurrentOffset(managedLedger) < 0) {
+                    long offset = Math.max(0, MessageIdUtils.getCurrentOffset(managedLedger));
+                    fetchOffsetForTimestampSuccess(partitionData, legacyMode, offset);
                 } else {
-                    partitionData.complete(new ListOffsetResponse.PartitionData(
-                            Errors.NONE,
-                            DEFAULT_TIMESTAMP,
-                            MessageIdUtils.getOffset(position.getLedgerId(), position.getEntryId())));
+                    MessageIdUtils.getOffsetOfPosition(managedLedger, position).whenComplete((offset, throwable) -> {
+                        if (throwable != null) {
+                            log.error("[{}] Failed to get offset for position {}", perTopic, position, throwable);
+                            fetchOffsetForTimestampFailed(partitionData, legacyMode);
+                            return;
+                        }
+                        fetchOffsetForTimestampSuccess(partitionData, legacyMode, offset);
+                    });
                 }
 
             } else {
@@ -760,40 +747,33 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             if (finalPosition == null) {
                                 log.warn("Unable to find position for topic {} time {}. get NULL position",
                                     perTopic.getName(), timestamp);
-
-                                if (legacyMode) {
-                                    partitionData.complete(new ListOffsetResponse
-                                            .PartitionData(
-                                            Errors.UNKNOWN_SERVER_ERROR,
-                                            Collections.emptyList()));
-                                } else {
-                                    partitionData.complete(new ListOffsetResponse
-                                            .PartitionData(
-                                            Errors.UNKNOWN_SERVER_ERROR,
-                                            ListOffsetResponse.UNKNOWN_TIMESTAMP,
-                                            ListOffsetResponse.UNKNOWN_OFFSET));
-                                }
+                                fetchOffsetForTimestampFailed(partitionData, legacyMode);
                                 return;
                             }
                         } else {
                             finalPosition = (PositionImpl) position;
                         }
 
+
                         if (log.isDebugEnabled()) {
                             log.debug("Find position for topic {} time {}. position: {}",
                                 perTopic.getName(), timestamp, finalPosition);
                         }
-                        if (legacyMode) {
-                            partitionData.complete(new ListOffsetResponse.PartitionData(
-                                    Errors.NONE,
-                                    Collections.singletonList(
-                                            MessageIdUtils.getOffset(
-                                                    finalPosition.getLedgerId(), finalPosition.getEntryId()))));
+
+                        if (finalPosition.compareTo(lac) > 0 || MessageIdUtils.getCurrentOffset(managedLedger) < 0) {
+                            long offset = Math.max(0, MessageIdUtils.getCurrentOffset(managedLedger));
+                            fetchOffsetForTimestampSuccess(partitionData, legacyMode, offset);
                         } else {
-                            partitionData.complete(new ListOffsetResponse.PartitionData(
-                                    Errors.NONE,
-                                    DEFAULT_TIMESTAMP,
-                                    MessageIdUtils.getOffset(finalPosition.getLedgerId(), finalPosition.getEntryId())));
+                            MessageIdUtils.getOffsetOfPosition(managedLedger, finalPosition)
+                                    .whenComplete((offset, throwable) -> {
+                                        if (throwable != null) {
+                                            log.error("[{}] Failed to get offset for position {}",
+                                                    perTopic, finalPosition, throwable);
+                                            fetchOffsetForTimestampFailed(partitionData, legacyMode);
+                                            return;
+                                        }
+                                        fetchOffsetForTimestampSuccess(partitionData, legacyMode, offset);
+                                    });
                         }
                     }
 
@@ -802,18 +782,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                 Optional<Position> position, Object ctx) {
                         log.warn("Unable to find position for topic {} time {}. Exception:",
                             perTopic.getName(), timestamp, exception);
-                        if (legacyMode) {
-                            partitionData.complete(new ListOffsetResponse
-                                    .PartitionData(
-                                    Errors.UNKNOWN_SERVER_ERROR,
-                                    Collections.emptyList()));
-                        } else {
-                            partitionData.complete(new ListOffsetResponse
-                                    .PartitionData(
-                                    Errors.UNKNOWN_SERVER_ERROR,
-                                    ListOffsetResponse.UNKNOWN_TIMESTAMP,
-                                    ListOffsetResponse.UNKNOWN_OFFSET));
-                        }
+                        fetchOffsetForTimestampFailed(partitionData, legacyMode);
                         return;
                     }
                 });
@@ -821,6 +790,37 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
 
         return partitionData;
+    }
+
+    private void fetchOffsetForTimestampFailed(CompletableFuture<ListOffsetResponse.PartitionData> partitionData,
+                                               boolean legacyMode) {
+        if (legacyMode) {
+            partitionData.complete(new ListOffsetResponse
+                    .PartitionData(
+                    Errors.UNKNOWN_SERVER_ERROR,
+                    Collections.emptyList()));
+        } else {
+            partitionData.complete(new ListOffsetResponse
+                    .PartitionData(
+                    Errors.UNKNOWN_SERVER_ERROR,
+                    ListOffsetResponse.UNKNOWN_TIMESTAMP,
+                    ListOffsetResponse.UNKNOWN_OFFSET));
+        }
+    }
+
+    private void fetchOffsetForTimestampSuccess(CompletableFuture<ListOffsetResponse.PartitionData> partitionData,
+                                                boolean legacyMode,
+                                                long offset) {
+        if (legacyMode) {
+            partitionData.complete(new ListOffsetResponse.PartitionData(
+                    Errors.NONE,
+                    Collections.singletonList(offset)));
+        } else {
+            partitionData.complete(new ListOffsetResponse.PartitionData(
+                    Errors.NONE,
+                    DEFAULT_TIMESTAMP,
+                    offset));
+        }
     }
 
     private void handleListOffsetRequestV1AndAbove(KafkaHeaderAndRequest listOffset,

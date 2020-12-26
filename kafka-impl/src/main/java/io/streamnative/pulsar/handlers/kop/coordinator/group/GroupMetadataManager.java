@@ -530,7 +530,7 @@ public class GroupMetadataManager {
             .thenApplyAsync(messageId -> {
                 if (!group.is(GroupState.Dead)) {
                     MessageIdImpl lastMessageId = (MessageIdImpl) messageId;
-                    long baseOffset = MessageIdUtils.getOffset(
+                    long baseOffset = MessageIdUtils.getMockOffset(
                         lastMessageId.getLedgerId(),
                         lastMessageId.getEntryId()
                     );

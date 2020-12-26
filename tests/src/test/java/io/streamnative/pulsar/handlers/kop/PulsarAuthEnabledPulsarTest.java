@@ -13,10 +13,23 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import org.testng.annotations.AfterClass;
+import org.testng.annotations.BeforeClass;
+
 /**
  * {@link PulsarAuthEnabledTestBase} with `entryFormat=pulsar`.
  */
 public class PulsarAuthEnabledPulsarTest extends PulsarAuthEnabledTestBase {
+    @BeforeClass
+    @Override
+    protected void setup() throws Exception {
+        super.setup();
+    }
+    @AfterClass
+    @Override
+    protected void cleanup() throws Exception {
+        super.cleanup();
+    }
 
     public PulsarAuthEnabledPulsarTest() {
         super("pulsar");
