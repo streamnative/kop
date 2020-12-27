@@ -51,6 +51,7 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.shaded.com.google.common.collect.ImmutableMap;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
+import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 /**
@@ -76,6 +77,18 @@ import org.testng.annotations.Test;
  */
 @Slf4j
 public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
+
+    public KafkaIntegrationTest(final String entryFormat) {
+        super(entryFormat);
+    }
+
+    @Factory
+    public static Object[] instances() {
+        return new Object[] {
+                new KafkaIntegrationTest("pulsar"),
+                new KafkaIntegrationTest("kafka")
+        };
+    }
 
     @DataProvider
     public static Object[][] integrations() {

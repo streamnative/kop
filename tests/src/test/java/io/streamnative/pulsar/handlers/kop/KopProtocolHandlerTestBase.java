@@ -121,7 +121,15 @@ public abstract class KopProtocolHandlerTestBase {
     protected Server restServer;
     protected String restConnect;
 
+    private final String entryFormat;
+
     public KopProtocolHandlerTestBase() {
+        this.entryFormat = "pulsar";
+        resetConfig();
+    }
+
+    public KopProtocolHandlerTestBase(final String entryFormat) {
+        this.entryFormat = entryFormat;
         resetConfig();
     }
 
@@ -154,6 +162,7 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setListeners(
             PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort + ","
                 + SSL_PREFIX + "localhost:" + kafkaBrokerPortTls);
+        kafkaConfig.setEntryFormat(entryFormat);
 
         // set protocol related config
         URL testHandlerUrl = this.getClass().getClassLoader().getResource("test-protocol-handler.nar");
