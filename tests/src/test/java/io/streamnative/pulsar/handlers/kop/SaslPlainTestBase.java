@@ -53,7 +53,7 @@ import org.testng.annotations.Test;
  */
 @Test
 @Slf4j
-public class SaslPlainTest extends KopProtocolHandlerTestBase {
+public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
 
     private static final String SIMPLE_USER = "muggle_user";
     private static final String TENANT = "SaslPlainTest";
@@ -64,6 +64,10 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
     private String adminToken;
     private String userToken;
     private String anotherToken;
+
+    public SaslPlainTestBase(final String entryFormat) {
+        super(entryFormat);
+    }
 
     @BeforeClass
     @Override
@@ -201,7 +205,7 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     void clientWithoutAuth() throws Exception {
-        final int metadataTimeoutMs = 8000;
+        final int metadataTimeoutMs = 3000;
 
         Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());

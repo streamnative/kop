@@ -40,8 +40,10 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.pulsar.common.policies.data.TenantInfo;
+import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
+import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 /**
@@ -55,6 +57,17 @@ public class DifferentNamespaceTest extends KopProtocolHandlerTestBase {
     private static final String ANOTHER_TENANT = "my-tenant";
     private static final String ANOTHER_NAMESPACE = "my-ns";
 
+    public DifferentNamespaceTest(final String entryFormat) {
+        super(entryFormat);
+    }
+
+    @Factory
+    public static Object[] instances() {
+        return new Object[] {
+                new DifferentNamespaceTest("pulsar"),
+                new DifferentNamespaceTest("kafka")
+        };
+    }
 
     @DataProvider(name = "topics")
     public static Object[][] topics() {
@@ -77,6 +90,8 @@ public class DifferentNamespaceTest extends KopProtocolHandlerTestBase {
         admin.namespaces().createNamespace(ANOTHER_TENANT + "/" + ANOTHER_NAMESPACE);
     }
 
+    @AfterClass
+    @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
     }

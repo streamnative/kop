@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.streams;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 
 import lombok.Getter;
 import lombok.NonNull;
@@ -23,10 +24,10 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
+import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
-import org.testng.annotations.AfterSuite;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.BeforeSuite;
 
 /**
  * Base test class for tests related to Kafka Streams.
@@ -40,14 +41,18 @@ public abstract class KafkaStreamsTestBase extends KopProtocolHandlerTestBase {
     protected StreamsBuilder builder; // the builder to build `kafkaStreams` and other objects of Kafka Streams
     protected KafkaStreams kafkaStreams;
 
-    @BeforeSuite
+    public KafkaStreamsTestBase(final String entryFormat) {
+        super(entryFormat);
+    }
+
+    @BeforeClass
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
         bootstrapServers = "localhost:" + getKafkaBrokerPort();
     }
 
-    @AfterSuite
+    @AfterClass
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
@@ -79,7 +84,7 @@ public abstract class KafkaStreamsTestBase extends KopProtocolHandlerTestBase {
     @AfterMethod
     protected void cleanupTestCase() throws Exception {
         if (kafkaStreams != null) {
-            kafkaStreams.close();
+            kafkaStreams.close(3, TimeUnit.SECONDS);
             TestUtils.purgeLocalStreamsState(streamsConfiguration);
         }
     }

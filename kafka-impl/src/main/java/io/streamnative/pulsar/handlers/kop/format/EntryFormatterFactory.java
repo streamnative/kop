@@ -21,7 +21,8 @@ package io.streamnative.pulsar.handlers.kop.format;
 public class EntryFormatterFactory {
 
     enum EntryFormat {
-        PULSAR
+        PULSAR,
+        KAFKA
     }
 
     public static EntryFormatter create(final String format) {
@@ -30,6 +31,8 @@ public class EntryFormatterFactory {
             switch (entryFormat) {
                 case PULSAR:
                     return new PulsarEntryFormatter();
+                case KAFKA:
+                    return new KafkaEntryFormatter();
                 default:
                     throw new Exception("No EntryFormatter for " + entryFormat);
             }

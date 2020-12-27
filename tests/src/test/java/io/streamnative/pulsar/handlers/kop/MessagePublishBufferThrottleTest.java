@@ -22,6 +22,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.pulsar.broker.service.Topic;
 import org.testng.Assert;
+import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 /**
@@ -29,6 +30,19 @@ import org.testng.annotations.Test;
  * */
 
 public class MessagePublishBufferThrottleTest extends KopProtocolHandlerTestBase{
+
+    public MessagePublishBufferThrottleTest(final String entryFormat) {
+        super(entryFormat);
+    }
+
+    @Factory
+    public static Object[] instances() {
+        return new Object[] {
+                new MessagePublishBufferThrottleTest("pulsar"),
+                new MessagePublishBufferThrottleTest("kafka")
+        };
+    }
+
     @Test
     public void testMessagePublishBufferThrottleDisabled() throws Exception {
         conf.setMaxMessagePublishBufferSizeInMB(-1);
