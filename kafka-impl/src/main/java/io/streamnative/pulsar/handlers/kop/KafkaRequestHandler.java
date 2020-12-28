@@ -685,7 +685,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (t != null || perTopic == null) {
                 log.error("Failed while get persistentTopic topic: {} ts: {}. ",
                     perTopic == null ? "null" : perTopic.getName(), timestamp, t);
-
+                // remove cache when topic is null
+                topicManager.removeTopicManagerCache(perTopic.getName());
                 partitionData.complete(new ListOffsetResponse.PartitionData(
                     Errors.LEADER_NOT_AVAILABLE,
                     ListOffsetResponse.UNKNOWN_TIMESTAMP,
