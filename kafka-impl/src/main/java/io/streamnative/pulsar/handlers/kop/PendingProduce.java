@@ -22,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
+import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 
 /**
@@ -105,8 +106,10 @@ public class PendingProduce {
         }
         topicManager.registerProducerInPersistentTopic(partitionName, persistentTopic);
         // collect metrics
-        topicManager.getReferenceProducer(partitionName).getTopic()
-                .incrementPublishCount(numMessages, byteBuf.readableBytes());
+        Producer producer = topicManager.getReferenceProducer(partitionName);
+        producer.updateRates(numMessages, byteBuf.readableBytes());
+        producer.getTopic().incrementPublishCount(numMessages, byteBuf.readableBytes());
+        // publish
         persistentTopic.publishMessage(byteBuf,
                 MessagePublishContext.get(offsetFuture, persistentTopic, System.nanoTime()));
         offsetFuture.whenComplete((offset, e) -> {
