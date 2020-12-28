@@ -33,10 +33,10 @@ jobs:
       run: mvn spotbugs:check
 
     - name: test after build
-      run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegrationTest,!DistributedClusterTest'
+      run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test,!DistributedClusterTest'
 
     - name: KafkaIntegrationTest
-      run: mvn test '-Dtest=KafkaIntegrationTest' -pl tests
+      run: mvn test '-Dtest=KafkaIntegration*Test' -pl tests
 
     # The DistributedClusterTest is hard to pass in CI tests environment, we disable it first
     # the track issue: https://github.com/streamnative/kop/issues/184
