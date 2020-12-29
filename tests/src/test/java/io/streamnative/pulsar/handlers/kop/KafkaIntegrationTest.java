@@ -43,14 +43,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
-import org.junit.AfterClass;
 import org.testcontainers.Testcontainers;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.output.WaitingConsumer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.shaded.com.google.common.collect.ImmutableMap;
+import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
+import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 /**
@@ -75,10 +76,18 @@ import org.testng.annotations.Test;
  * * how many message to produce/consume,
  */
 @Slf4j
-public abstract class KafkaIntegrationTestBase extends KopProtocolHandlerTestBase {
+public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
 
-    public KafkaIntegrationTestBase(final String entryFormat) {
+    public KafkaIntegrationTest(final String entryFormat) {
         super(entryFormat);
+    }
+
+    @Factory
+    public static Object[] instances() {
+        return new Object[] {
+                new KafkaIntegrationTest("pulsar"),
+                new KafkaIntegrationTest("kafka")
+        };
     }
 
     @DataProvider
@@ -210,7 +219,7 @@ public abstract class KafkaIntegrationTestBase extends KopProtocolHandlerTestBas
                 .withEnv("KOP_TOPIC", topic.orElse(integration))
                 .withEnv("KOP_LIMIT", "10")
                 .withLogConsumer(
-                        new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTestBase.log))
+                        new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
                 .waitingFor(Wait.forLogMessage("starting to produce\\n", 1))
                 .withNetworkMode("host");
 
@@ -220,7 +229,7 @@ public abstract class KafkaIntegrationTestBase extends KopProtocolHandlerTestBas
                 .withEnv("KOP_CONSUME", "true")
                 .withEnv("KOP_LIMIT", "10")
                 .withLogConsumer(
-                        new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTestBase.log))
+                        new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
                 .waitingFor(Wait.forLogMessage("starting to consume\\n", 1))
                 .withNetworkMode("host");
 
@@ -228,31 +237,31 @@ public abstract class KafkaIntegrationTestBase extends KopProtocolHandlerTestBas
         WaitingConsumer consumerWaitingConsumer = null;
         if (shouldProduce) {
             producer.start();
-            producerWaitingConsumer = KafkaIntegrationTestBase.createLogFollower(producer);
+            producerWaitingConsumer = KafkaIntegrationTest.createLogFollower(producer);
             System.out.println("producer started");
         }
 
         if (shouldConsume) {
             consumer.start();
-            consumerWaitingConsumer = KafkaIntegrationTestBase.createLogFollower(consumer);
+            consumerWaitingConsumer = KafkaIntegrationTest.createLogFollower(consumer);
             System.out.println("consumer started");
         }
 
         if (shouldProduce) {
             producerWaitingConsumer.waitUntil(frame ->
                     frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
-            KafkaIntegrationTestBase.checkForErrorsInLogs(producer.getLogs());
+            KafkaIntegrationTest.checkForErrorsInLogs(producer.getLogs());
         }
 
         if (shouldConsume) {
             consumerWaitingConsumer.waitUntil(frame ->
                     frame.getUtf8String().contains("ExitCode"), 30, TimeUnit.SECONDS);
-            KafkaIntegrationTestBase.checkForErrorsInLogs(consumer.getLogs());
+            KafkaIntegrationTest.checkForErrorsInLogs(consumer.getLogs());
         }
     }
 
-    @Override
     @AfterClass
+    @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
     }
