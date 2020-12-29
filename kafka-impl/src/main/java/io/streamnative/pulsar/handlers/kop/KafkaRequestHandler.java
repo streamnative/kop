@@ -22,12 +22,17 @@ import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.buffer.UnpooledDirectByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.AbortedIndexEntry;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -42,12 +47,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -68,11 +76,19 @@ import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.record.ControlRecordType;
+import org.apache.kafka.common.record.DefaultRecordBatch;
+import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
+import org.apache.kafka.common.requests.AddOffsetsToTxnResponse;
+import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
+import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
@@ -85,11 +101,15 @@ import org.apache.kafka.common.requests.DescribeGroupsRequest;
 import org.apache.kafka.common.requests.DescribeGroupsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsResponse.GroupMember;
 import org.apache.kafka.common.requests.DescribeGroupsResponse.GroupMetadata;
+import org.apache.kafka.common.requests.EndTxnRequest;
+import org.apache.kafka.common.requests.EndTxnResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FindCoordinatorRequest;
 import org.apache.kafka.common.requests.FindCoordinatorResponse;
 import org.apache.kafka.common.requests.HeartbeatRequest;
 import org.apache.kafka.common.requests.HeartbeatResponse;
+import org.apache.kafka.common.requests.InitProducerIdRequest;
+import org.apache.kafka.common.requests.InitProducerIdResponse;
 import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
@@ -114,15 +134,31 @@ import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.SyncGroupResponse;
+import org.apache.kafka.common.requests.TransactionResult;
+import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
+import org.apache.kafka.common.requests.TxnOffsetCommitResponse;
+import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
+import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
+import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.api.transaction.TransactionCoordinatorClient;
+import org.apache.pulsar.client.api.transaction.TxnID;
+import org.apache.pulsar.client.impl.MessageImpl;
+import org.apache.pulsar.client.impl.PulsarClientImpl;
+import org.apache.pulsar.client.impl.transaction.TransactionImpl;
+import org.apache.pulsar.common.api.proto.PulsarApi;
+import org.apache.pulsar.common.api.proto.PulsarMarkers;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
+import org.apache.pulsar.common.protocol.Commands;
+import org.apache.pulsar.common.protocol.Markers;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
@@ -142,6 +178,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final KafkaServiceConfiguration kafkaConfig;
     private final KafkaTopicManager topicManager;
     private final GroupCoordinator groupCoordinator;
+    private final TransactionCoordinator transactionCoordinator;
 
     private final String clusterName;
     private final ScheduledExecutorService executor;
@@ -162,12 +199,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
                                GroupCoordinator groupCoordinator,
+                               TransactionCoordinator transactionCoordinator,
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint) throws Exception {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
         this.groupCoordinator = groupCoordinator;
+        this.transactionCoordinator = transactionCoordinator;
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
@@ -569,13 +608,20 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
-        if (produceRequest.transactionalId() != null) {
-            log.warn("[{}] Transactions not supported", ctx.channel());
-
-            resultFuture.complete(
-                failedResponse(produceHar, new UnsupportedOperationException("No transaction support")));
-            return;
-        }
+        log.info("Command [handleProduceRequest] request: transactionalId {}", produceRequest.transactionalId());
+//        if (produceRequest.transactionalId() != null) {
+//            log.warn("[{}] Transactions not supported", ctx.channel());
+//
+//            Map<TopicPartition, PartitionResponse> partitionResponseMap = new HashMap<>();
+//            MutableRecordBatch recordBatch = produceRequest.partitionRecordsOrFail().entrySet().iterator().next().getValue().batches().iterator().next();
+//            DefaultRecordBatch defaultRecordBatch = (DefaultRecordBatch) recordBatch;
+//            for (Map.Entry<TopicPartition, MemoryRecords> entry : produceRequest.partitionRecordsOrFail().entrySet()) {
+//                partitionResponseMap.put(entry.getKey(), new PartitionResponse(Errors.NONE));
+//            }
+//
+//            resultFuture.complete(new ProduceResponse(partitionResponseMap));
+//            return;
+//        }
 
         Map<TopicPartition, CompletableFuture<PartitionResponse>> responsesFutures = new HashMap<>();
 
@@ -601,7 +647,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             MemoryRecords records = (MemoryRecords) entry.getValue();
             String fullPartitionName = KopTopic.toString(topicPartition);
             PendingProduce pendingProduce = new PendingProduce(partitionResponse, topicManager, fullPartitionName,
-                    entryFormatter, records, executor);
+                    entryFormatter, records, executor, transactionCoordinator);
             PendingProduceQueue queue =
                     pendingProduceQueueMap.computeIfAbsent(topicPartition, ignored -> new PendingProduceQueue());
             queue.add(pendingProduce);
@@ -631,37 +677,44 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(findCoordinator.getRequest() instanceof FindCoordinatorRequest);
         FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
 
-        if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
-            int partition = groupCoordinator.partitionFor(request.coordinatorKey());
-            String pulsarTopicName = groupCoordinator.getTopicPartitionName(partition);
+        String pulsarTopicName;
+        int partition;
 
-            findBroker(TopicName.get(pulsarTopicName))
+        if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.TRANSACTION) {
+            log.info("Command [handleFindCoordinatorRequest] request: {}", request);
+            partition = transactionCoordinator.partitionFor(request.coordinatorKey());
+            pulsarTopicName = transactionCoordinator.getTopicPartitionName(partition);
+        } else if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
+            partition = groupCoordinator.partitionFor(request.coordinatorKey());
+            pulsarTopicName = groupCoordinator.getTopicPartitionName(partition);
+        } else {
+            throw new NotImplementedException("FindCoordinatorRequest not support TRANSACTION type "
+                + request.coordinatorType());
+        }
+
+        findBroker(TopicName.get(pulsarTopicName))
                 .whenComplete((node, t) -> {
                     if (t != null || node == null){
                         log.error("[{}] Request {}: Error while find coordinator, .",
-                            ctx.channel(), findCoordinator.getHeader(), t);
+                                ctx.channel(), findCoordinator.getHeader(), t);
 
                         AbstractResponse response = new FindCoordinatorResponse(
-                            Errors.LEADER_NOT_AVAILABLE,
-                            Node.noNode());
+                                Errors.LEADER_NOT_AVAILABLE,
+                                Node.noNode());
                         resultFuture.complete(response);
                         return;
                     }
 
                     if (log.isDebugEnabled()) {
                         log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
-                            ctx.channel(), node.leader(), request.coordinatorKey(), partition);
+                                ctx.channel(), node.leader(), request.coordinatorKey(), partition);
                     }
 
                     AbstractResponse response = new FindCoordinatorResponse(
-                        Errors.NONE,
-                        node.leader());
+                            Errors.NONE,
+                            node.leader());
                     resultFuture.complete(response);
                 });
-        } else {
-            throw new NotImplementedException("FindCoordinatorRequest not support TRANSACTION type "
-                + request.coordinatorType());
-        }
     }
 
     protected void handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch,
@@ -1039,7 +1092,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
 
         MessageFetchContext fetchContext = MessageFetchContext.get(this);
-        fetchContext.handleFetch(resultFuture, fetch);
+        fetchContext.handleFetch(resultFuture, fetch, transactionCoordinator);
     }
 
     protected void handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup,
@@ -1283,6 +1336,160 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
+    @Override
+    protected void handleInitProducerId(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                        CompletableFuture<AbstractResponse> response) {
+        InitProducerIdRequest request = (InitProducerIdRequest) kafkaHeaderAndRequest.getRequest();
+        log.info("Command [handleInitProducerId] request: {}", request);
+        transactionCoordinator.handleInitProducerId(
+                request.transactionalId(), request.transactionTimeoutMs(), response);
+    }
+
+    @Override
+    protected void handleAddPartitionsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                            CompletableFuture<AbstractResponse> response) {
+        AddPartitionsToTxnRequest request = (AddPartitionsToTxnRequest) kafkaHeaderAndRequest.getRequest();
+        log.info("Command [handleAddPartitionsToTxn] request: {}", request);
+        transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
+                request.producerId(), request.producerEpoch(), request.partitions(), response);
+    }
+
+    @Override
+    protected void handleAddOffsetsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                         CompletableFuture<AbstractResponse> response) {
+        AddOffsetsToTxnRequest request = (AddOffsetsToTxnRequest) kafkaHeaderAndRequest.getRequest();
+        log.info("Command [handleAddOffsetsToTxn] request: {}", request);
+        int partition = groupCoordinator.partitionFor(request.consumerGroupId());
+        String offsetTopicName = groupCoordinator.getGroupManager().getOffsetConfig().offsetsTopicName();
+        transactionCoordinator.handleAddPartitionsToTransaction(
+                request.transactionalId(),
+                request.producerId(),
+                request.producerEpoch(),
+                Collections.singletonList(new TopicPartition(offsetTopicName, partition)), response);
+    }
+
+    @Override
+    protected void handleTxnOffsetCommit(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                         CompletableFuture<AbstractResponse> response) {
+        TxnOffsetCommitRequest request = (TxnOffsetCommitRequest) kafkaHeaderAndRequest.getRequest();
+        log.info("Command [handleTxnOffsetCommit] request: {}", request);
+        response.complete(new TxnOffsetCommitResponse(0, Collections.EMPTY_MAP));
+    }
+
+    @Override
+    protected void handleEndTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                CompletableFuture<AbstractResponse> response) {
+        EndTxnRequest request = (EndTxnRequest) kafkaHeaderAndRequest.getRequest();
+        log.info("Command [handleEndTxn] request: {}", request);
+        transactionCoordinator.handleEndTransaction(
+                request.transactionalId(),
+                request.producerId(),
+                request.producerEpoch(),
+                request.command(),
+                this,
+                response);
+    }
+
+    @Override
+    protected void handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                         CompletableFuture<AbstractResponse> response) {
+        WriteTxnMarkersRequest request = (WriteTxnMarkersRequest) kafkaHeaderAndRequest.getRequest();
+        log.info("Command [handleWriteTxnMarkers] request: {}", request);
+        Map<Long, Map<TopicPartition, Errors>> resultMap = new HashMap<>();
+        List<CompletableFuture<Long>> offsetFutureList = new ArrayList<>();
+        for (WriteTxnMarkersRequest.TxnMarkerEntry txnMarkerEntry : request.markers()) {
+            resultMap.compute(txnMarkerEntry.producerId(), (key, value) -> {
+                if (value == null) {
+                    value = new HashMap<>();
+                }
+                for (TopicPartition topicPartition : txnMarkerEntry.partitions()) {
+                    CompletableFuture<Long> completableFuture = writeTxnMarker(
+                            topicPartition,
+                            txnMarkerEntry.transactionResult(),
+                            txnMarkerEntry.producerId(),
+                            txnMarkerEntry.producerEpoch());
+                    completableFuture.whenComplete((offset, throwable) -> {
+                        String fullPartitionName = KopTopic.toString(topicPartition);
+
+                        TopicName topicName = TopicName.get(fullPartitionName);
+                        long firstOffset = transactionCoordinator.removeActivePidOffset(topicName, txnMarkerEntry.producerId());
+                        long lastStableOffset = transactionCoordinator.getLastStableOffset(topicName);
+
+                        if (txnMarkerEntry.transactionResult().equals(TransactionResult.ABORT)) {
+                            transactionCoordinator.addAbortedIndex(AbortedIndexEntry.builder()
+                                    .version(request.version())
+                                    .pid(txnMarkerEntry.producerId())
+                                    .firstOffset(firstOffset)
+                                    .lastOffset(offset)
+                                    .lastStableOffset(lastStableOffset)
+                                    .build());
+                        }
+                    });
+                    offsetFutureList.add(completableFuture);
+                    value.put(topicPartition, Errors.NONE);
+                }
+                return value;
+            });
+        }
+        FutureUtil.waitForAll(offsetFutureList).whenComplete((ignored, throwable) -> {
+            response.complete(new WriteTxnMarkersResponse(resultMap));
+        });
+    }
+
+    /**
+     * Write the txn marker to the topic partition
+     * @param topicPartition
+     */
+    private CompletableFuture<Long> writeTxnMarker(TopicPartition topicPartition,
+                                TransactionResult transactionResult,
+                                long producerId,
+                                short producerEpoch) {
+        CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
+        String fullPartitionName = KopTopic.toString(topicPartition);
+        TopicName topicName = TopicName.get(fullPartitionName);
+        topicManager.getTopic(topicName.toString())
+                .thenAccept(persistentTopic -> {
+                    persistentTopic.publishMessage(
+                            generateTxnMarker(transactionResult, producerId, producerEpoch),
+                            MessagePublishContext.get(
+                                    offsetFuture,
+                                    persistentTopic,
+                                    persistentTopic.getManagedLedger(),
+                                    1,
+                                    SystemTime.SYSTEM.milliseconds()));
+                });
+        offsetFuture.thenAccept(offset -> {
+            log.info("writeTxnMarker offset: {}", offset);
+        });
+        return offsetFuture;
+    }
+
+    private ByteBuf generateTxnMarker(TransactionResult transactionResult, long producerId, short producerEpoch) {
+        ControlRecordType controlRecordType;
+        PulsarMarkers.MarkerType markerType;
+        if (transactionResult.equals(TransactionResult.COMMIT)) {
+            markerType = PulsarMarkers.MarkerType.TXN_COMMIT;
+            controlRecordType = ControlRecordType.COMMIT;
+        } else {
+            markerType = PulsarMarkers.MarkerType.TXN_ABORT;
+            controlRecordType = ControlRecordType.ABORT;
+        }
+        EndTransactionMarker marker = new EndTransactionMarker(controlRecordType, 0);
+        MemoryRecords memoryRecords = MemoryRecords.withEndTransactionMarker(producerId, producerEpoch, marker);
+
+        ByteBuf byteBuf = Unpooled.wrappedBuffer(memoryRecords.buffer());
+        PulsarApi.MessageMetadata messageMetadata = PulsarApi.MessageMetadata.newBuilder()
+                .setTxnidMostBits(producerId)
+                .setTxnidLeastBits(producerEpoch)
+                .setMarkerType(markerType.getNumber())
+                .setPublishTime(SystemTime.SYSTEM.milliseconds())
+                .setProducerName("")
+                .setSequenceId(0L)
+                .build();
+        return Commands.serializeMetadataAndPayload(Commands.ChecksumType.None, messageMetadata, byteBuf);
+//        return entryFormatter.encode(memoryRecords, 1);
+    }
+
     private SaslHandshakeResponse checkSaslMechanism(String mechanism) {
         if (getKafkaConfig().getSaslAllowedMechanisms().contains(mechanism)) {
             return new SaslHandshakeResponse(Errors.NONE, getKafkaConfig().getSaslAllowedMechanisms());
@@ -1395,7 +1602,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return returnFuture;
     }
 
-    private CompletableFuture<PartitionMetadata> findBroker(TopicName topic) {
+    private boolean isOffsetTopic(String topic) {
+        String offsetsTopic = kafkaConfig.getKafkaMetadataTenant() + "/"
+            + kafkaConfig.getKafkaMetadataNamespace()
+            + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
+
+        return topic.contains(offsetsTopic);
+    }
+
+    public CompletableFuture<PartitionMetadata> findBroker(TopicName topic) {
         if (log.isDebugEnabled()) {
             log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }

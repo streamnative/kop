@@ -21,6 +21,7 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslHandler;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import lombok.Getter;
 import org.apache.pulsar.broker.PulsarService;
@@ -40,6 +41,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     @Getter
     private final GroupCoordinator groupCoordinator;
     @Getter
+    private final TransactionCoordinator transactionCoordinator;
+    @Getter
     private final boolean enableTls;
     @Getter
     private final EndPoint advertisedEndPoint;
@@ -49,12 +52,14 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
                                    GroupCoordinator groupCoordinator,
+                                   TransactionCoordinator transactionCoordinator,
                                    boolean enableTLS,
                                    EndPoint advertisedEndPoint) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
         this.groupCoordinator = groupCoordinator;
+        this.transactionCoordinator = transactionCoordinator;
         this.enableTls = enableTLS;
         this.advertisedEndPoint = advertisedEndPoint;
 
@@ -74,7 +79,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         ch.pipeline().addLast("frameDecoder",
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
-            new KafkaRequestHandler(pulsarService, kafkaConfig, groupCoordinator, enableTls, advertisedEndPoint));
+            new KafkaRequestHandler(pulsarService, kafkaConfig, groupCoordinator, transactionCoordinator, enableTls, advertisedEndPoint));
     }
 
 }

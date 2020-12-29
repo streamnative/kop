@@ -30,6 +30,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
+import org.apache.kafka.common.record.ControlRecordType;
+import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.Record;
@@ -44,6 +46,7 @@ import org.apache.pulsar.common.api.proto.PulsarApi;
 import org.apache.pulsar.common.api.proto.PulsarApi.KeyValue;
 import org.apache.pulsar.common.api.proto.PulsarApi.MessageMetadata;
 import org.apache.pulsar.common.api.proto.PulsarApi.SingleMessageMetadata;
+import org.apache.pulsar.common.api.proto.PulsarMarkers;
 import org.apache.pulsar.common.compression.CompressionCodec;
 import org.apache.pulsar.common.compression.CompressionCodecProvider;
 import org.apache.pulsar.common.protocol.Commands;
@@ -75,12 +78,18 @@ public class PulsarEntryFormatter implements EntryFormatter {
         List<MessageImpl<byte[]>> messages = Lists.newArrayListWithExpectedSize(numMessages);
         MessageMetadata.Builder messageMetaBuilder = MessageMetadata.newBuilder();
 
-        StreamSupport.stream(records.records().spliterator(), true).forEachOrdered(record -> {
-            MessageImpl<byte[]> message = recordToEntry(record);
-            messages.add(message);
-            if (messageMetaBuilder.getPublishTime() <= 0) {
-                messageMetaBuilder.setPublishTime(message.getPublishTime());
-            }
+        records.batches().forEach(recordBatch -> {
+            StreamSupport.stream(recordBatch.spliterator(), true).forEachOrdered(record -> {
+                MessageImpl<byte[]> message = recordToEntry(record);
+                messages.add(message);
+                if (messageMetaBuilder.getPublishTime() <= 0) {
+                    messageMetaBuilder.setPublishTime(message.getPublishTime());
+                }
+                if (recordBatch.isTransactional()) {
+                    messageMetaBuilder.setTxnidMostBits(recordBatch.producerId());
+                    messageMetaBuilder.setTxnidLeastBits(recordBatch.producerEpoch());
+                }
+            });
         });
 
         for (MessageImpl<byte[]> message : messages) {
@@ -222,6 +231,133 @@ public class PulsarEntryFormatter implements EntryFormatter {
             log.error("Meet exception: {}", e);
             throw e;
         }
+    }
+
+
+    private MemoryRecords decodeMultipleBatch(final List<Entry> entries, final byte magic) {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(DEFAULT_FETCH_BUFFER_SIZE);
+
+        entries.forEach(entry -> {
+            // each entry is a batched message
+            ByteBuf metadataAndPayload = entry.getDataBuffer();
+
+            // Uncompress the payload if necessary
+            MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
+
+            long offset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
+
+            if (msgMetadata.getMarkerType() == PulsarMarkers.MarkerType.TXN_COMMIT_VALUE
+                    || msgMetadata.getMarkerType() == PulsarMarkers.MarkerType.TXN_ABORT_VALUE) {
+                MemoryRecords memoryRecords = MemoryRecords.withEndTransactionMarker(
+                        offset,
+                        msgMetadata.getPublishTime(),
+                        0,
+                        msgMetadata.getTxnidMostBits(),
+                        (short) msgMetadata.getTxnidLeastBits(),
+                        new EndTransactionMarker(
+                                msgMetadata.getMarkerType() == PulsarMarkers.MarkerType.TXN_COMMIT_VALUE
+                                        ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0));
+                byteBuffer.put(memoryRecords.buffer());
+                log.info("decodeMultipleBatch markerType: {}, pos: {}:{}",
+                        msgMetadata.getMarkerType(), entry.getLedgerId(), entry.getEntryId());
+                return;
+            }
+
+            log.info("decodeMultipleBatch pos: {}:{}", entry.getLedgerId(), entry.getEntryId());
+
+            MemoryRecordsBuilder builder = new MemoryRecordsBuilder(byteBuffer, magic,
+                    org.apache.kafka.common.record.CompressionType.NONE,
+                    TimestampType.CREATE_TIME,
+                    // using the first entry, index 0 as base offset
+                    offset,
+                    msgMetadata.getPublishTime(),
+                    RecordBatch.NO_PRODUCER_ID,
+                    RecordBatch.NO_PRODUCER_EPOCH,
+                    RecordBatch.NO_SEQUENCE,
+                    msgMetadata.hasTxnidMostBits() && msgMetadata.hasTxnidLeastBits(),
+                    false,
+                    RecordBatch.NO_PARTITION_LEADER_EPOCH,
+                    MAX_RECORDS_BUFFER_SIZE);
+
+            CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(msgMetadata.getCompression());
+            int uncompressedSize = msgMetadata.getUncompressedSize();
+            ByteBuf payload;
+            try {
+                payload = codec.decode(metadataAndPayload, uncompressedSize);
+            } catch (IOException ioe) {
+                log.error("Meet IOException: {}", ioe);
+                throw new UncheckedIOException(ioe);
+            }
+            int numMessages = msgMetadata.getNumMessagesInBatch();
+            boolean notBatchMessage = (numMessages == 1 && !msgMetadata.hasNumMessagesInBatch());
+
+            if (log.isDebugEnabled()) {
+                log.debug("entriesToRecords.  NumMessagesInBatch: {}, isBatchMessage: {}, entries in list: {}."
+                                + " new entryId {}:{}, readerIndex: {},  writerIndex: {}",
+                        numMessages, !notBatchMessage, entries.size(), entry.getLedgerId(),
+                        entry.getEntryId(), payload.readerIndex(), payload.writerIndex());
+            }
+
+            // need handle encryption
+            checkState(msgMetadata.getEncryptionKeysCount() == 0);
+
+            if (msgMetadata.hasTxnidMostBits()) {
+                builder.setProducerState(
+                        msgMetadata.getTxnidMostBits(),
+                        (short) msgMetadata.getTxnidLeastBits(), 0, true);
+            }
+
+            if (!notBatchMessage) {
+                IntStream.range(0, numMessages).parallel().forEachOrdered(i -> {
+                    if (log.isDebugEnabled()) {
+                        log.debug(" processing message num - {} in batch", i);
+                    }
+                    try {
+                        SingleMessageMetadata.Builder singleMessageMetadataBuilder = SingleMessageMetadata
+                                .newBuilder();
+                        ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(payload,
+                                singleMessageMetadataBuilder, i, numMessages);
+
+                        SingleMessageMetadata singleMessageMetadata = singleMessageMetadataBuilder.build();
+                        Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
+
+                        final ByteBuffer value = (singleMessageMetadata.getNullValue())
+                                ? null
+                                : ByteBufUtils.getNioBuffer(singleMessagePayload);
+                        builder.appendWithOffset(
+                                MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId(), i),
+                                msgMetadata.getEventTime() > 0
+                                        ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
+                                ByteBufUtils.getKeyByteBuffer(singleMessageMetadata),
+                                value,
+                                headers);
+                        singleMessagePayload.release();
+                        singleMessageMetadataBuilder.recycle();
+                    } catch (IOException e) {
+                        log.error("Meet IOException: {}", e);
+                        throw new UncheckedIOException(e);
+                    }
+                });
+            } else {
+                Header[] headers = getHeadersFromMetadata(msgMetadata.getPropertiesList());
+
+                builder.appendWithOffset(
+                        MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
+                        msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
+                        ByteBufUtils.getKeyByteBuffer(msgMetadata),
+                        ByteBufUtils.getNioBuffer(payload),
+                        headers);
+            }
+
+            msgMetadata.recycle();
+            payload.release();
+            entry.release();
+
+            builder.close();
+        });
+
+        byteBuffer.flip();
+        return MemoryRecords.readableRecords(byteBuffer);
     }
 
     // convert kafka Record to Pulsar Message.
