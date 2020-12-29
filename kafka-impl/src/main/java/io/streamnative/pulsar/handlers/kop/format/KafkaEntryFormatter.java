@@ -35,7 +35,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
     private final KafkaEntryFormatterHeader header = new KafkaEntryFormatterHeader();
 
     @Override
-    public ByteBuf encode(MemoryRecords records, int numMessages) {
+    public ByteBuf encode(MemoryRecords records) {
         return Commands.serializeMetadataAndPayload(
                 Commands.ChecksumType.None,
                 header.getMessageMetadata(),

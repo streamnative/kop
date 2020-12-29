@@ -16,12 +16,12 @@ package io.streamnative.pulsar.handlers.kop.format;
 import static com.google.common.base.Preconditions.checkState;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
@@ -61,7 +61,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
     private static final int MAX_MESSAGE_BATCH_SIZE_BYTES = 128 * 1024;
 
     @Override
-    public ByteBuf encode(final MemoryRecords records, final int numMessages) {
+    public ByteBuf encode(final MemoryRecords records) {
         long currentBatchSizeBytes = 0;
         int numMessagesInBatch = 0;
 
@@ -71,7 +71,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
 
         ByteBuf batchedMessageMetadataAndPayload = PulsarByteBufAllocator.DEFAULT
                 .buffer(Math.min(INITIAL_BATCH_BUFFER_SIZE, MAX_MESSAGE_BATCH_SIZE_BYTES));
-        List<MessageImpl<byte[]>> messages = Lists.newArrayListWithExpectedSize(numMessages);
+        List<MessageImpl<byte[]>> messages = new ArrayList<>();
         MessageMetadata.Builder messageMetaBuilder = MessageMetadata.newBuilder();
 
         StreamSupport.stream(records.records().spliterator(), true).forEachOrdered(record -> {

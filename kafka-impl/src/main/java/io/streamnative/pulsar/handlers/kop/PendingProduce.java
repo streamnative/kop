@@ -15,9 +15,13 @@ package io.streamnative.pulsar.handlers.kop;
 
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -36,7 +40,7 @@ public class PendingProduce {
     private final String partitionName;
     private final int numMessages;
     private final CompletableFuture<PersistentTopic> topicFuture;
-    private final CompletableFuture<ByteBuf> byteBufFuture;
+    private final CompletableFuture<List<ByteBuf>> byteBufFutureList;
     private CompletableFuture<Long> offsetFuture;
 
     public PendingProduce(CompletableFuture<PartitionResponse> responseFuture,
@@ -54,31 +58,40 @@ public class PendingProduce {
             log.error("Failed to getTopic for partition '{}': {}", partitionName, e);
             return null;
         });
-        this.byteBufFuture = new CompletableFuture<>();
-        this.byteBufFuture.exceptionally(e -> {
+        this.byteBufFutureList = new CompletableFuture<>();
+        this.byteBufFutureList.exceptionally(e -> {
             log.error("Failed to compute ByteBuf for partition '{}': {}", partitionName, e);
             return null;
         });
-        executor.execute(() -> byteBufFuture.complete(entryFormatter.encode(memoryRecords, numMessages)));
+        executor.execute(() -> {
+            List<MemoryRecords> memoryRecordsList = EntryFormatter
+                    .splitLargeBatchRecords(memoryRecords, numMessages);
+            List<ByteBuf> byteBufList = new ArrayList<>();
+            memoryRecordsList.forEach(memoryRecordsInList -> {
+                ByteBuf byteBuf = entryFormatter.encode(memoryRecordsInList);
+                byteBufList.add(byteBuf);
+            });
+            this.byteBufFutureList.complete(byteBufList);
+        });
         this.offsetFuture = new CompletableFuture<>();
     }
 
     public boolean ready() {
         return topicFuture.isDone()
                 && !topicFuture.isCompletedExceptionally()
-                && byteBufFuture.isDone()
-                && !byteBufFuture.isCompletedExceptionally();
+                && byteBufFutureList.isDone()
+                && !byteBufFutureList.isCompletedExceptionally();
     }
 
     public void whenComplete(Runnable runnable) {
-        CompletableFuture.allOf(topicFuture, byteBufFuture).whenComplete((ignored, e) -> {
+        CompletableFuture.allOf(topicFuture, byteBufFutureList).whenComplete((ignored, e) -> {
             if (e == null) {
                 runnable.run();
             } else {
                 // The error logs have already been printed, so we needn't log error again.
                 if (topicFuture.isCompletedExceptionally()) {
                     responseFuture.complete(new PartitionResponse(Errors.LEADER_NOT_AVAILABLE));
-                } else if (byteBufFuture.isCompletedExceptionally()) {
+                } else if (byteBufFutureList.isCompletedExceptionally()) {
                     responseFuture.complete(new PartitionResponse(Errors.CORRUPT_MESSAGE));
                 } else {
                     responseFuture.completeExceptionally(e);
@@ -92,10 +105,10 @@ public class PendingProduce {
             throw new RuntimeException("Try to send while PendingProduce is not ready");
         }
         PersistentTopic persistentTopic;
-        ByteBuf byteBuf;
+        List<ByteBuf> byteBufList;
         try {
             persistentTopic = topicFuture.get();
-            byteBuf = byteBufFuture.get();
+            byteBufList = byteBufFutureList.get();
         } catch (InterruptedException | ExecutionException e) {
             // It shouldn't fail because we've already checked ready() before.
             throw new RuntimeException(e);
@@ -104,22 +117,26 @@ public class PendingProduce {
         if (log.isDebugEnabled()) {
             log.debug("publishMessages for topic partition: {}, records size is {}", partitionName, numMessages);
         }
+        AtomicInteger byteBufSize = new AtomicInteger();
         topicManager.registerProducerInPersistentTopic(partitionName, persistentTopic);
+        byteBufList.forEach(byteBuf -> {
+            byteBufSize.getAndAdd(byteBuf.readableBytes());
+            // publish
+            persistentTopic.publishMessage(byteBuf,
+                    MessagePublishContext.get(offsetFuture, persistentTopic, System.nanoTime()));
+            offsetFuture.whenComplete((offset, e) -> {
+                if (e == null) {
+                    responseFuture.complete(new PartitionResponse(Errors.NONE, offset, -1L, -1L));
+                } else {
+                    log.error("publishMessages for topic partition: {} failed when write.", partitionName, e);
+                    responseFuture.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
+                }
+                byteBuf.release();
+            });
+        });
         // collect metrics
         Producer producer = topicManager.getReferenceProducer(partitionName);
-        producer.updateRates(numMessages, byteBuf.readableBytes());
-        producer.getTopic().incrementPublishCount(numMessages, byteBuf.readableBytes());
-        // publish
-        persistentTopic.publishMessage(byteBuf,
-                MessagePublishContext.get(offsetFuture, persistentTopic, System.nanoTime()));
-        offsetFuture.whenComplete((offset, e) -> {
-            if (e == null) {
-                responseFuture.complete(new PartitionResponse(Errors.NONE, offset, -1L, -1L));
-            } else {
-                log.error("publishMessages for topic partition: {} failed when write.", partitionName, e);
-                responseFuture.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
-            }
-            byteBuf.release();
-        });
+        producer.updateRates(numMessages, byteBufSize.get());
+        producer.getTopic().incrementPublishCount(numMessages, byteBufSize.get());
     }
 }

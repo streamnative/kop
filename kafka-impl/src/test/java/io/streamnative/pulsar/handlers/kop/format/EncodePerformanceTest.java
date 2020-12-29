@@ -55,21 +55,21 @@ public class EncodePerformanceTest {
 
         long t1 = System.currentTimeMillis();
         for (int i = 0; i < repeatTimes; i++) {
-            pulsarFormatter.encode(records, NUM_MESSAGES).release();
+            pulsarFormatter.encode(records).release();
         }
         long t2 = System.currentTimeMillis();
         System.out.println("PulsarEntryFormatter encode time: " + (t2 - t1) + " ms");
 
         t1 = System.currentTimeMillis();
         for (int i = 0; i < repeatTimes; i++) {
-            kafkaFormatter.encode(records, NUM_MESSAGES).release();
+            kafkaFormatter.encode(records).release();
         }
         t2 = System.currentTimeMillis();
         System.out.println("KafkaEntryFormatter encode time: " + (t2 - t1) + " ms");
 
         t1 = System.currentTimeMillis();
         for (int i = 0; i < repeatTimes; i++) {
-            noHeaderKafkaFormatter.encode(records, NUM_MESSAGES).release();
+            noHeaderKafkaFormatter.encode(records).release();
         }
         t2 = System.currentTimeMillis();
         System.out.println("NoHeaderKafkaEntryFormatter encode time: " + (t2 - t1) + " ms");

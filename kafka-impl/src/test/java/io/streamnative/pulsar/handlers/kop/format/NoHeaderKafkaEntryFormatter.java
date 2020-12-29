@@ -25,7 +25,7 @@ import org.apache.kafka.common.record.MemoryRecords;
 public class NoHeaderKafkaEntryFormatter implements EntryFormatter {
 
     @Override
-    public ByteBuf encode(MemoryRecords records, int numMessages) {
+    public ByteBuf encode(MemoryRecords records) {
         // The difference from KafkaEntryFormatter is here we don't add the header
         return Unpooled.wrappedBuffer(records.buffer());
     }
