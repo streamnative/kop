@@ -22,25 +22,16 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.pulsar.broker.service.Topic;
 import org.testng.Assert;
-import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 /**
  * Test class for message publish buffer throttle from kop side.
  * */
 
-public class MessagePublishBufferThrottleTest extends KopProtocolHandlerTestBase{
+public abstract class MessagePublishBufferThrottleTestBase extends KopProtocolHandlerTestBase{
 
-    public MessagePublishBufferThrottleTest(final String entryFormat) {
+    public MessagePublishBufferThrottleTestBase(final String entryFormat) {
         super(entryFormat);
-    }
-
-    @Factory
-    public static Object[] instances() {
-        return new Object[] {
-                new MessagePublishBufferThrottleTest("pulsar"),
-                new MessagePublishBufferThrottleTest("kafka")
-        };
     }
 
     @Test

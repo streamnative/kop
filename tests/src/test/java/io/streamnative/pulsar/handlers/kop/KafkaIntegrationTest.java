@@ -43,12 +43,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
-import org.junit.AfterClass;
 import org.testcontainers.Testcontainers;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.output.WaitingConsumer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.shaded.com.google.common.collect.ImmutableMap;
+import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Factory;
@@ -218,7 +218,8 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
                 .withEnv("KOP_PRODUCE", "true")
                 .withEnv("KOP_TOPIC", topic.orElse(integration))
                 .withEnv("KOP_LIMIT", "10")
-                .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
+                .withLogConsumer(
+                        new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
                 .waitingFor(Wait.forLogMessage("starting to produce\\n", 1))
                 .withNetworkMode("host");
 
@@ -227,7 +228,8 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
                 .withEnv("KOP_TOPIC", topic.orElse(integration))
                 .withEnv("KOP_CONSUME", "true")
                 .withEnv("KOP_LIMIT", "10")
-                .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
+                .withLogConsumer(
+                        new org.testcontainers.containers.output.Slf4jLogConsumer(KafkaIntegrationTest.log))
                 .waitingFor(Wait.forLogMessage("starting to consume\\n", 1))
                 .withNetworkMode("host");
 
@@ -258,8 +260,8 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
         }
     }
 
-    @Override
     @AfterClass
+    @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
     }

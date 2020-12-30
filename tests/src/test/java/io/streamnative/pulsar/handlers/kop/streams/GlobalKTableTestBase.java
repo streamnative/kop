@@ -37,7 +37,6 @@ import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.QueryableStoreTypes;
 import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 import org.apache.kafka.streams.state.Stores;
-import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 
@@ -45,7 +44,7 @@ import org.testng.annotations.Test;
  * Test all available joins of Kafka Streams DSL.
  */
 @Slf4j
-public class GlobalKTableTest extends KafkaStreamsTestBase {
+public abstract class GlobalKTableTestBase extends KafkaStreamsTestBase {
     private final KeyValueMapper<String, Long, Long> keyMapper = (key, value) -> value;
     private final ValueJoiner<Long, String, String> joiner = (value1, value2) -> value1 + "+" + value2;
     private final String globalStore = "globalStore";
@@ -56,16 +55,8 @@ public class GlobalKTableTest extends KafkaStreamsTestBase {
     private KStream<String, Long> stream;
     private ForeachAction<String, String> foreachAction;
 
-    public GlobalKTableTest(final String entryFormat) {
+    public GlobalKTableTestBase(final String entryFormat) {
         super(entryFormat);
-    }
-
-    @Factory
-    public static Object[] instances() {
-        return new Object[] {
-                new GlobalKTableTest("pulsar"),
-                new GlobalKTableTest("kafka")
-        };
     }
 
     @Override

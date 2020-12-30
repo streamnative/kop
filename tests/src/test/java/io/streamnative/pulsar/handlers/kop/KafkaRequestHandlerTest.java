@@ -467,8 +467,11 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                 .subscriptionName("subscription-name")
                 .subscribe();
-        for (int i = 0; i < numMessages; i++) {
+        for (int i = 0; i < numMessages; ) {
             Message<byte[]> message = consumer.receive(1, TimeUnit.SECONDS);
+            if (message == null) {
+                continue;
+            }
             assertNotNull(message);
             consumer.acknowledge(message);
             assertTrue(indexToOffset.containsKey(i));
@@ -481,6 +484,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             // The result of MessageIdUtils#getMessageId only contains ledger id and entry id, so we need to cut the
             // extra bytes of positionInSendResponse.
             assertEquals(positionInSendResponse, Arrays.copyOf(positionReceived, positionInSendResponse.length));
+            i++;
         }
     }
 }
