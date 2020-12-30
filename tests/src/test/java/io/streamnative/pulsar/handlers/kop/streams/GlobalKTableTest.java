@@ -44,7 +44,7 @@ import org.testng.annotations.Test;
  * Test all available joins of Kafka Streams DSL.
  */
 @Slf4j
-public abstract class GlobalKTableTestBase extends KafkaStreamsTestBase {
+public class GlobalKTableTest extends KafkaStreamsTestBase {
     private final KeyValueMapper<String, Long, Long> keyMapper = (key, value) -> value;
     private final ValueJoiner<Long, String, String> joiner = (value1, value2) -> value1 + "+" + value2;
     private final String globalStore = "globalStore";
@@ -54,10 +54,6 @@ public abstract class GlobalKTableTestBase extends KafkaStreamsTestBase {
     private GlobalKTable<Long, String> globalTable;
     private KStream<String, Long> stream;
     private ForeachAction<String, String> foreachAction;
-
-    public GlobalKTableTestBase(final String entryFormat) {
-        super(entryFormat);
-    }
 
     @Override
     protected void createTopics() throws Exception {

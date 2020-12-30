@@ -87,10 +87,6 @@ public class KStreamAggregationTest extends KafkaStreamsTestBase {
     private Aggregator<String, String, Integer> aggregator;
     private KStream<Integer, String> stream;
 
-    public KStreamAggregationTest() {
-        super("kafka");
-    }
-
     @Override
     protected void createTopics() throws Exception {
         streamOneInput = "stream-one-" + getTestNo();
