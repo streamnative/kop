@@ -22,12 +22,20 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -72,6 +80,66 @@ public class TestUtils {
             conditionDetails = conditionDetails != null ? conditionDetails : "";
             throw new AssertionError("Condition not met within timeout " + maxWaitMs + ". " + conditionDetails);
         }
+    }
+
+    /**
+     * Wait until enough data (key-value records) has been consumed.
+     *
+     * @param consumerConfig     Kafka Consumer configuration
+     * @param topic              Topic to consume from
+     * @param expectedNumRecords Minimum number of expected records
+     * @param waitTime           Upper bound in waiting time in milliseconds
+     * @return All the records consumed, or null if no records are consumed
+     * @throws AssertionError       if the given wait time elapses
+     */
+    public static <K, V> List<KeyValue<K, V>> waitUntilMinKeyValueRecordsReceived(final Properties consumerConfig,
+                                                                                  final String topic,
+                                                                                  final int expectedNumRecords,
+                                                                                  final long waitTime)
+            throws InterruptedException {
+        final List<KeyValue<K, V>> accumData = new ArrayList<>();
+        try (final Consumer<K, V> consumer = createConsumer(consumerConfig)) {
+            final TestCondition valuesRead = () -> {
+                final List<KeyValue<K, V>> readData =
+                        readKeyValues(topic, consumer, waitTime, expectedNumRecords);
+                accumData.addAll(readData);
+                return accumData.size() >= expectedNumRecords;
+            };
+            final String conditionDetails =
+                    "Did not receive all " + expectedNumRecords + " records from topic " + topic;
+            TestUtils.waitForCondition(valuesRead, waitTime, conditionDetails);
+        }
+        return accumData;
+    }
+
+    /**
+     * Wait until enough data (key-value records) has been consumed.
+     *
+     * @param consumerConfig     Kafka Consumer configuration
+     * @param topic              Topic to consume from
+     * @param expectedNumRecords Minimum number of expected records
+     * @param waitTime           Upper bound in waiting time in milliseconds
+     * @return All the records consumed, or null if no records are consumed
+     * @throws AssertionError       if the given wait time elapses
+     */
+    public static <K, V> List<KeyValue<K, KeyValue<V, Long>>> waitUntilMinKeyValueWithTimestampRecordsReceived(
+            final Properties consumerConfig,
+            final String topic,
+            final int expectedNumRecords,
+            final long waitTime) throws InterruptedException {
+        final List<KeyValue<K, KeyValue<V, Long>>> accumData = new ArrayList<>();
+        try (final Consumer<K, V> consumer = createConsumer(consumerConfig)) {
+            final TestCondition valuesRead = () -> {
+                final List<KeyValue<K, KeyValue<V, Long>>> readData =
+                        readKeyValuesWithTimestamp(topic, consumer, waitTime, expectedNumRecords);
+                accumData.addAll(readData);
+                return accumData.size() >= expectedNumRecords;
+            };
+            final String conditionDetails =
+                    "Did not receive all " + expectedNumRecords + " records from topic " + topic;
+            TestUtils.waitForCondition(valuesRead, waitTime, conditionDetails);
+        }
+        return accumData;
     }
 
     /**
@@ -205,6 +273,14 @@ public class TestUtils {
     public static <K, V> void produceKeyValuesSynchronouslyWithTimestamp(final String topic,
                                                                          final Collection<KeyValue<K, V>> records,
                                                                          final Properties producerConfig,
+                                                                         final Long timestamp)
+            throws ExecutionException, InterruptedException {
+        produceKeyValuesSynchronouslyWithTimestamp(topic, records, producerConfig, null, timestamp, false);
+    }
+
+    public static <K, V> void produceKeyValuesSynchronouslyWithTimestamp(final String topic,
+                                                                         final Collection<KeyValue<K, V>> records,
+                                                                         final Properties producerConfig,
                                                                          final Headers headers,
                                                                          final Long timestamp,
                                                                          final boolean enabledTransactions)
@@ -244,5 +320,89 @@ public class TestUtils {
                                             final Class keySerializer,
                                             final Class valueSerializer) {
         return producerConfig(bootstrapServers, keySerializer, valueSerializer, new Properties());
+    }
+
+    /**
+     * Sets up a {@link KafkaConsumer} from a copy of the given configuration that has
+     * {@link ConsumerConfig#AUTO_OFFSET_RESET_CONFIG} set to "earliest" and
+     * {@link ConsumerConfig#ENABLE_AUTO_COMMIT_CONFIG} set to "true"
+     * to prevent missing events as well as repeat consumption.
+     * @param consumerConfig Consumer configuration
+     * @return Consumer
+     */
+    private static <K, V> KafkaConsumer<K, V> createConsumer(final Properties consumerConfig) {
+        final Properties filtered = new Properties();
+        filtered.putAll(consumerConfig);
+        filtered.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        filtered.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
+        return new KafkaConsumer<>(filtered);
+    }
+
+    /**
+     * Returns up to `maxMessages` by reading via the provided consumer (the topic(s) to read from
+     * are already configured in the consumer).
+     *
+     * @param topic          Kafka topic to read messages from
+     * @param consumer       Kafka consumer
+     * @param waitTime       Maximum wait time in milliseconds
+     * @param maxMessages    Maximum number of messages to read via the consumer
+     * @return The KeyValue elements retrieved via the consumer
+     */
+    private static <K, V> List<KeyValue<K, V>> readKeyValues(final String topic,
+                                                             final Consumer<K, V> consumer,
+                                                             final long waitTime,
+                                                             final int maxMessages) {
+        final List<KeyValue<K, V>> consumedValues = new ArrayList<>();
+        final List<ConsumerRecord<K, V>> records = readRecords(topic, consumer, waitTime, maxMessages);
+        for (final ConsumerRecord<K, V> record : records) {
+            consumedValues.add(new KeyValue<>(record.key(), record.value()));
+        }
+        return consumedValues;
+    }
+
+    /**
+     * Returns up to `maxMessages` by reading via the provided consumer (the topic(s) to read from
+     * are already configured in the consumer).
+     *
+     * @param topic          Kafka topic to read messages from
+     * @param consumer       Kafka consumer
+     * @param waitTime       Maximum wait time in milliseconds
+     * @param maxMessages    Maximum number of messages to read via the consumer
+     * @return The KeyValue elements retrieved via the consumer
+     */
+    private static <K, V> List<KeyValue<K, KeyValue<V, Long>>> readKeyValuesWithTimestamp(final String topic,
+                                                                                          final Consumer<K, V> consumer,
+                                                                                          final long waitTime,
+                                                                                          final int maxMessages) {
+        final List<KeyValue<K, KeyValue<V, Long>>> consumedValues = new ArrayList<>();
+        final List<ConsumerRecord<K, V>> records = readRecords(topic, consumer, waitTime, maxMessages);
+        for (final ConsumerRecord<K, V> record : records) {
+            consumedValues.add(new KeyValue<>(record.key(), KeyValue.pair(record.value(), record.timestamp())));
+        }
+        return consumedValues;
+    }
+
+    private static <K, V> List<ConsumerRecord<K, V>> readRecords(final String topic,
+                                                                 final Consumer<K, V> consumer,
+                                                                 final long waitTime,
+                                                                 final int maxMessages) {
+        final List<ConsumerRecord<K, V>> consumerRecords;
+        consumer.subscribe(Collections.singletonList(topic));
+        final int pollIntervalMs = 100;
+        consumerRecords = new ArrayList<>();
+        int totalPollTimeMs = 0;
+        while (totalPollTimeMs < waitTime && continueConsuming(consumerRecords.size(), maxMessages)) {
+            totalPollTimeMs += pollIntervalMs;
+            final ConsumerRecords<K, V> records = consumer.poll(Duration.ofMillis(pollIntervalMs));
+
+            for (final ConsumerRecord<K, V> record : records) {
+                consumerRecords.add(record);
+            }
+        }
+        return consumerRecords;
+    }
+
+    private static boolean continueConsuming(final int messagesConsumed, final int maxMessages) {
+        return maxMessages <= 0 || messagesConsumed < maxMessages;
     }
 }
