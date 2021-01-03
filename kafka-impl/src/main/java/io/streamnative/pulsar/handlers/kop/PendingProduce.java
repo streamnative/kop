@@ -15,9 +15,12 @@ package io.streamnative.pulsar.handlers.kop;
 
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
+import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -59,6 +62,18 @@ public class PendingProduce {
             log.error("Failed to compute ByteBuf for partition '{}': {}", partitionName, e);
             return null;
         });
+        if (log.isDebugEnabled()) {
+            final MemoryRecords records = MemoryRecords.readableRecords(CoreUtils.deepCopy(memoryRecords.buffer()));
+            final StringBuilder stringBuilder = new StringBuilder();
+            records.records().forEach(record -> {
+                stringBuilder.append(" [");
+                stringBuilder.append(record.offset());
+                stringBuilder.append("] '");
+                stringBuilder.append(CoreUtils.bufferToString(record.value()));
+                stringBuilder.append("'");
+            });
+            log.debug("PendingProduce for {} records:{}", partitionName, stringBuilder.toString());
+        }
         executor.execute(() -> byteBufFuture.complete(entryFormatter.encode(memoryRecords, numMessages)));
         this.offsetFuture = new CompletableFuture<>();
     }

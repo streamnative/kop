@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.locks.Lock;
@@ -76,4 +77,22 @@ public final class CoreUtils {
             ));
     }
 
+    public static ByteBuffer deepCopy(final ByteBuffer original) {
+        final ByteBuffer clone = ByteBuffer.allocate(original.capacity());
+        original.rewind();
+        clone.put(original);
+        original.rewind();
+        clone.flip();
+        return clone;
+    }
+
+    public static String bufferToString(final ByteBuffer buffer) {
+        if (buffer == null) {
+            return null;
+        }
+        final byte[] bytes = new byte[buffer.remaining()];
+        buffer.get(bytes);
+        buffer.flip();
+        return new String(bytes);
+    }
 }
