@@ -37,7 +37,6 @@ import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.QueryableStoreTypes;
 import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 import org.apache.kafka.streams.state.Stores;
-import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 
@@ -55,18 +54,6 @@ public class GlobalKTableTest extends KafkaStreamsTestBase {
     private GlobalKTable<Long, String> globalTable;
     private KStream<String, Long> stream;
     private ForeachAction<String, String> foreachAction;
-
-    public GlobalKTableTest(final String entryFormat) {
-        super(entryFormat);
-    }
-
-    @Factory
-    public static Object[] instances() {
-        return new Object[] {
-                new GlobalKTableTest("pulsar"),
-                new GlobalKTableTest("kafka")
-        };
-    }
 
     @Override
     protected void createTopics() throws Exception {

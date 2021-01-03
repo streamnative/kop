@@ -41,8 +41,8 @@ public abstract class KafkaStreamsTestBase extends KopProtocolHandlerTestBase {
     protected StreamsBuilder builder; // the builder to build `kafkaStreams` and other objects of Kafka Streams
     protected KafkaStreams kafkaStreams;
 
-    public KafkaStreamsTestBase(final String entryFormat) {
-        super(entryFormat);
+    public KafkaStreamsTestBase() {
+        super("kafka");
     }
 
     @BeforeClass
