@@ -25,7 +25,7 @@ import org.testng.annotations.Test;
  */
 public class BugStreamTableJoinKafkaTest extends BugStreamTableJoinTestBase {
 
-    public BugStreamTableJoinKafkaTest(String entryFormat) {
+    public BugStreamTableJoinKafkaTest() {
         super("kafka");
     }
 
