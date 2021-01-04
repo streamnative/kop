@@ -240,7 +240,7 @@ public class GroupMetadataManager {
         if (enableMetadataExpiration) {
             scheduler.scheduleAtFixedRate(
                 this::cleanupGroupMetadata,
-                offsetConfig.offsetsRetentionCheckIntervalMs(),
+                offsetConfig.offsetsRetentionMs(),
                 offsetConfig.offsetsRetentionCheckIntervalMs(),
                 TimeUnit.MILLISECONDS
             );
