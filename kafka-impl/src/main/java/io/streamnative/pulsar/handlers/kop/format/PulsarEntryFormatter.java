@@ -258,8 +258,8 @@ public class PulsarEntryFormatter implements EntryFormatter {
                                 msgMetadata.getMarkerType() == PulsarMarkers.MarkerType.TXN_COMMIT_VALUE
                                         ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0));
                 byteBuffer.put(memoryRecords.buffer());
-                log.info("decodeMultipleBatch markerType: {}, pos: {}:{}",
-                        msgMetadata.getMarkerType(), entry.getLedgerId(), entry.getEntryId());
+                log.info("decodeMultipleBatch pos: {}:{}, markerType: {}",
+                        entry.getLedgerId(), entry.getEntryId(), msgMetadata.getMarkerType() == PulsarMarkers.MarkerType.TXN_COMMIT_VALUE ? "commit" : "abort");
                 return;
             }
 

@@ -370,16 +370,19 @@ public class TransactionCoordinator {
         log.info("abortedIndexList: {}", abortedIndexList.size());
     }
 
-    public List<FetchResponse.AbortedTransaction> getAbortedIndexList() {
+    public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
         List<FetchResponse.AbortedTransaction> abortedTransactions = new ArrayList<>(abortedIndexList.size());
         for (AbortedIndexEntry abortedIndexEntry : abortedIndexList) {
-            log.info("aborted transaction - first pos: {}, last pos: {}",
-                    MessageIdUtils.getPosition(abortedIndexEntry.getFirstOffset()),
-                    MessageIdUtils.getPosition(abortedIndexEntry.getLastOffset()));
-            abortedTransactions.add(
-                    new FetchResponse.AbortedTransaction(
-                            abortedIndexEntry.getPid(),
-                            abortedIndexEntry.getFirstOffset()));
+            if (abortedIndexEntry.getLastOffset() >= fetchOffset) {
+                log.info("Fetch for aborted transaction - fetch pos: {}, first pos: {}, last pos: {}",
+                        MessageIdUtils.getPosition(fetchOffset),
+                        MessageIdUtils.getPosition(abortedIndexEntry.getFirstOffset()),
+                        MessageIdUtils.getPosition(abortedIndexEntry.getLastOffset()));
+                abortedTransactions.add(
+                        new FetchResponse.AbortedTransaction(
+                                abortedIndexEntry.getPid(),
+                                abortedIndexEntry.getFirstOffset()));
+            }
         }
         return abortedTransactions;
     }

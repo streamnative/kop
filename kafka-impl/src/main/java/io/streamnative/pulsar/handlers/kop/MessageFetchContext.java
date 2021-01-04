@@ -228,7 +228,7 @@ public final class MessageFetchContext {
                                 TopicName topicName = TopicName.get(KopTopic.toString(kafkaTopic));
                                 long lso = transactionCoordinator.getLastStableOffset(topicName);
                                 for (Entry entry : entries) {
-                                    if (lso > MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId())) {
+                                    if (lso >= MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId())) {
                                         entryList.add(entry);
                                         entriesRead.incrementAndGet();
                                         bytesRead.addAndGet(entry.getLength());
@@ -352,12 +352,14 @@ public final class MessageFetchContext {
                             }
                             final MemoryRecords records = requestHandler.getEntryFormatter().decode(entries, magic);
 
+                            FetchRequest fetchRequest = (FetchRequest) fetch.getRequest();
+                            long fetchOffset = fetchRequest.fetchData().get(kafkaPartition).fetchOffset;
                             partitionData = new FetchResponse.PartitionData(
                                 Errors.NONE,
                                 highWatermark,
                                 highWatermark,
                                 highWatermark,
-                                transactionCoordinator.getAbortedIndexList(),
+                                transactionCoordinator.getAbortedIndexList(fetchOffset),
                                 records);
                         }
                         responseData.put(kafkaPartition, partitionData);

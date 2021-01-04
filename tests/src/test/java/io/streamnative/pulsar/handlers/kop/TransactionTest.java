@@ -23,6 +23,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -40,6 +42,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
+import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
@@ -93,7 +96,16 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     @Test
-    public void produceTxnMessageTest() throws Exception {
+    public void readCommittedTest() throws Exception {
+        produceAndConsumeTest("read-committed-test", "read_committed");
+    }
+
+    @Test
+    public void readUncommittedTest() throws Exception {
+        produceAndConsumeTest("read-uncommitted-test", "read_uncommitted");
+    }
+
+    public void produceAndConsumeTest(String topicName, String isolation) throws Exception {
         String kafkaServer = "localhost:" + getKafkaBrokerPort();
 
         Properties producerProps = new Properties();
@@ -104,29 +116,30 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "12");
         KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
 
-        String topicName = "kop-produce-txn-message";
-
         producer.initTransactions();
 
+        int totalTxnCount = 10;
+        int messageCountPerTxn = 10;
+
         String lastMessage = "";
-        for (int txnCount = 0; txnCount < 10; txnCount++) {
+        for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
             producer.beginTransaction();
 
             String contentBase;
-            if (txnCount % 2 != 0) {
-                contentBase = "commit msg txnCount %s txnIndex %s";
+            if (txnIndex % 2 != 0) {
+                contentBase = "commit msg txnIndex %s messageIndex %s";
             } else {
-                contentBase = "abort msg txnCount %s txnIndex %s";
+                contentBase = "abort msg txnIndex %s messageIndex %s";
             }
 
-            for (int i = 0; i < 10; i++) {
-                String msgContent = String.format(contentBase, txnCount, i);
+            for (int messageIndex = 0; messageIndex < 10; messageIndex++) {
+                String msgContent = String.format(contentBase, txnIndex, messageIndex);
                 log.info("send txn message {}", msgContent);
                 lastMessage = msgContent;
-                producer.send(new ProducerRecord<>(topicName, i, msgContent)).get();
+                producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
             }
 
-            if (txnCount % 2 != 0) {
+            if (txnIndex % 2 != 0) {
                 producer.commitTransaction();
             } else {
                 producer.abortTransaction();
@@ -137,7 +150,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         CountDownLatch countDownLatch = new CountDownLatch(1);
         new Thread(() -> {
             try {
-                consumeTxnMessage(countDownLatch, testMessage);
+                consumeTxnMessage(topicName, countDownLatch,
+                        totalTxnCount * messageCountPerTxn, testMessage, isolation);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -147,9 +161,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.close();
     }
 
-    private void consumeTxnMessage(CountDownLatch countDownLatch, String lastMessage) throws Exception {
+    private void consumeTxnMessage(String topicName,
+                                   CountDownLatch countDownLatch,
+                                   int totalMessageCount,
+                                   String lastMessage,
+                                   String isolation) throws InterruptedException {
         String kafkaServer = "localhost:" + getKafkaBrokerPort();
-        String topicName = "kop-produce-txn-message";
 
         Properties consumerProps = new Properties();
         consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
@@ -158,19 +175,20 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         consumerProps.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
         consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "consumer-test");
         consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        consumerProps.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_uncommitted");
-//        consumerProps.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
+        consumerProps.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, isolation);
         KafkaConsumer<Integer, String> consumer = new KafkaConsumer<>(consumerProps);
         consumer.subscribe(Collections.singleton(topicName));
 
         log.info("the last message is: {}", lastMessage);
+        AtomicInteger receiveCount = new AtomicInteger(0);
         while (true) {
             ConsumerRecords<Integer, String> consumerRecords =
                     consumer.poll(Duration.of(100, ChronoUnit.MILLIS));
 
             CompletableFuture<Void> completableFuture = new CompletableFuture<>();
             consumerRecords.forEach(record -> {
-                log.info("receive record key: {}, value: {}", record.key(), record.value());
+                log.info("Fetch for receive record key: {}, value: {}", record.key(), record.value());
+                receiveCount.incrementAndGet();
                 if (lastMessage.equalsIgnoreCase(record.value())) {
                     log.info("receive the last message");
                     completableFuture.complete(null);
@@ -181,6 +199,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 break;
             }
 //            Thread.sleep(1000 * 3);
+        }
+
+        if (isolation.equals("read_committed")) {
+            Assert.assertEquals(receiveCount.get(), totalMessageCount / 2);
+        } else {
+            Assert.assertEquals(receiveCount.get(), totalMessageCount);
         }
     }
 
