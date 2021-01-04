@@ -37,7 +37,6 @@ import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.TimestampType;
-import org.apache.kafka.common.utils.ByteBufferOutputStream;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.client.impl.TypedMessageBuilderImpl;
@@ -258,12 +257,8 @@ public class PulsarEntryFormatter implements EntryFormatter {
                                 msgMetadata.getMarkerType() == PulsarMarkers.MarkerType.TXN_COMMIT_VALUE
                                         ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0));
                 byteBuffer.put(memoryRecords.buffer());
-                log.info("decodeMultipleBatch pos: {}:{}, markerType: {}",
-                        entry.getLedgerId(), entry.getEntryId(), msgMetadata.getMarkerType() == PulsarMarkers.MarkerType.TXN_COMMIT_VALUE ? "commit" : "abort");
                 return;
             }
-
-            log.info("decodeMultipleBatch pos: {}:{}", entry.getLedgerId(), entry.getEntryId());
 
             MemoryRecordsBuilder builder = new MemoryRecordsBuilder(byteBuffer, magic,
                     org.apache.kafka.common.record.CompressionType.NONE,

@@ -19,6 +19,16 @@ import com.google.common.collect.Lists;
 import io.streamnative.pulsar.handlers.kop.KafkaRequestHandler;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 import lombok.Builder;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -37,19 +47,6 @@ import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
-
-import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.stream.Collectors;
 
 /**
  * Transaction coordinator.
@@ -263,57 +260,23 @@ public class TransactionCoordinator {
     }
 
     public void addActivePidOffset(TopicName topicName, long pid, long offset) {
-        ConcurrentHashMap<Long, Long> pidOffsetMap = 
+        ConcurrentHashMap<Long, Long> pidOffsetMap =
                 activePidOffsetMap.computeIfAbsent(topicName, topicKey -> new ConcurrentHashMap<>());
 
         NavigableMap<Long, Long> offsetPidMap =
                 activeOffsetPidMap.computeIfAbsent(topicName, topicKey -> new ConcurrentSkipListMap<>());
 
         pidOffsetMap.computeIfAbsent(pid, pidKey -> {
-            log.info("[addActivePidOffset] add pidOffsetMap: {} -> {} (pos {})",
-                    pid, offset, MessageIdUtils.getPosition(offset));
             offsetPidMap.computeIfAbsent(offset, offsetKey -> {
-                log.info("[addActivePidOffset] add offsetPidMap: {} (pos {}) -> {}",
-                        offset, MessageIdUtils.getPosition(offset), pid);
                 return pid;
             });
             return offset;
         });
-//
-//        activePidOffsetMap.compute(topicName, (topicKey, existMap) -> {
-//            if (existMap == null) {
-//                ConcurrentHashMap<Long, Long> pidOffsetInternalMap = new ConcurrentHashMap<>();
-//                pidOffsetInternalMap.put(pid, offset);
-//                return pidOffsetInternalMap;
-//            } else {
-//                existMap.computeIfAbsent(pid, pidKey -> {
-//                    return offset;
-//                });
-//                return existMap;
-//            }
-//        });
-//
-//        activeOffsetPidMap.compute(topicName, (topicKey, existMap) -> {
-//            if (existMap == null) {
-//                ConcurrentSkipListMap<Long, Long> offsetPidMap = new ConcurrentSkipListMap<>();
-//                offsetPidMap.put(offset, pid);
-//                log.info("addActivePidOffset first pos: {}", MessageIdUtils.getPosition(offset));
-//                return offsetPidMap;
-//            } else {
-//                existMap.computeIfAbsent(offset, offsetKey -> {
-//                    log.info("addActivePidOffset pos: {}", MessageIdUtils.getPosition(offset));
-//                    return pid;
-//                });
-//                return existMap;
-//            }
-//        });
     }
 
     public long removeActivePidOffset(TopicName topicName, long pid) {
-        log.info("[activeOffsetPidMap] size: {} finish write txn marker", activeOffsetPidMap.size());
         ConcurrentHashMap<Long, Long> pidOffsetMap = activePidOffsetMap.getOrDefault(topicName, null);
         if (pidOffsetMap == null) {
-            log.info("[removeActivePidOffset] pidOffsetMap is null.");
             return -1;
         }
 
@@ -323,51 +286,33 @@ public class TransactionCoordinator {
             return -1;
         }
 
-        Long offset = pidOffsetMap.remove(pid);;
+        Long offset = pidOffsetMap.remove(pid);
         if (offset == null) {
             log.warn("[removeActivePidOffset] pidOffsetMap is not contains pid {}.", pid);
             return -1;
         }
 
-//        long offset = -1;
-//        for (Map.Entry<Long, Long> entry : map.entrySet()) {
-//            if (entry.getValue() == pid) {
-//                offset = entry.getKey();
-//                break;
-//            }
-//        }
-//        if (offset == -1) {
-//            log.warn("[removeActivePidOffset] the pid {} not exist in activeOffsetPidMap", pid);
-//            return -1;
-//        }
-
         if (offsetPidMap.containsKey(offset)) {
-            log.info("[removeActivePidOffset] offsetPidMap contains key: {}, pos: {}",
-                    offset, MessageIdUtils.getPosition(offset));
             offsetPidMap.remove(offset);
         }
         return offset;
     }
 
     public long getLastStableOffset(TopicName topicName) {
-        log.info("[activeOffsetPidMap] size: {} get last stable offset", activeOffsetPidMap.size());
         NavigableMap<Long, Long> map = activeOffsetPidMap.getOrDefault(topicName, null);
         if (map == null) {
-            log.warn("[activeOffsetPidMap] size: {} the topic {} map is null last", activeOffsetPidMap.size(), topicName);
+            log.warn("[activeOffsetPidMap] size: {} the topic {} map is null last",
+                    activeOffsetPidMap.size(), topicName);
             return Long.MAX_VALUE;
         }
         if (map.size() == 0) {
             return Long.MAX_VALUE;
         }
-        log.info("[activeOffsetPidMap] size: {} activeOffsetPidMap last stable offset: {}, pos: {}",
-                activeOffsetPidMap.size(), map.firstKey(), MessageIdUtils.getPosition(map.firstKey()));
         return map.firstKey();
     }
 
     public void addAbortedIndex(AbortedIndexEntry abortedIndexEntry) {
-        log.info("addAbortedIndex: {}", abortedIndexEntry);
         abortedIndexList.add(abortedIndexEntry);
-        log.info("abortedIndexList: {}", abortedIndexList.size());
     }
 
     public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {

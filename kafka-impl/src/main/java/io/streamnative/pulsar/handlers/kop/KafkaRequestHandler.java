@@ -24,15 +24,14 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.buffer.UnpooledDirectByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.AbortedIndexEntry;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -47,15 +46,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -77,18 +73,14 @@ import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.ControlRecordType;
-import org.apache.kafka.common.record.DefaultRecordBatch;
 import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
-import org.apache.kafka.common.requests.AddOffsetsToTxnResponse;
 import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
-import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
@@ -102,14 +94,12 @@ import org.apache.kafka.common.requests.DescribeGroupsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsResponse.GroupMember;
 import org.apache.kafka.common.requests.DescribeGroupsResponse.GroupMetadata;
 import org.apache.kafka.common.requests.EndTxnRequest;
-import org.apache.kafka.common.requests.EndTxnResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FindCoordinatorRequest;
 import org.apache.kafka.common.requests.FindCoordinatorResponse;
 import org.apache.kafka.common.requests.HeartbeatRequest;
 import org.apache.kafka.common.requests.HeartbeatResponse;
 import org.apache.kafka.common.requests.InitProducerIdRequest;
-import org.apache.kafka.common.requests.InitProducerIdResponse;
 import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
@@ -142,23 +132,16 @@ import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
-import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.api.transaction.TransactionCoordinatorClient;
-import org.apache.pulsar.client.api.transaction.TxnID;
-import org.apache.pulsar.client.impl.MessageImpl;
-import org.apache.pulsar.client.impl.PulsarClientImpl;
-import org.apache.pulsar.client.impl.transaction.TransactionImpl;
 import org.apache.pulsar.common.api.proto.PulsarApi;
 import org.apache.pulsar.common.api.proto.PulsarMarkers;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.protocol.Commands;
-import org.apache.pulsar.common.protocol.Markers;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
@@ -609,19 +592,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
         log.info("Command [handleProduceRequest] request: transactionalId {}", produceRequest.transactionalId());
-//        if (produceRequest.transactionalId() != null) {
-//            log.warn("[{}] Transactions not supported", ctx.channel());
-//
-//            Map<TopicPartition, PartitionResponse> partitionResponseMap = new HashMap<>();
-//            MutableRecordBatch recordBatch = produceRequest.partitionRecordsOrFail().entrySet().iterator().next().getValue().batches().iterator().next();
-//            DefaultRecordBatch defaultRecordBatch = (DefaultRecordBatch) recordBatch;
-//            for (Map.Entry<TopicPartition, MemoryRecords> entry : produceRequest.partitionRecordsOrFail().entrySet()) {
-//                partitionResponseMap.put(entry.getKey(), new PartitionResponse(Errors.NONE));
-//            }
-//
-//            resultFuture.complete(new ProduceResponse(partitionResponseMap));
-//            return;
-//        }
+        if (produceRequest.transactionalId() != null) {
+            log.warn("[{}] Transactions not supported", ctx.channel());
+            // TODO auth check
+        }
 
         Map<TopicPartition, CompletableFuture<PartitionResponse>> responsesFutures = new HashMap<>();
 
@@ -1412,7 +1386,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         String fullPartitionName = KopTopic.toString(topicPartition);
 
                         TopicName topicName = TopicName.get(fullPartitionName);
-                        long firstOffset = transactionCoordinator.removeActivePidOffset(topicName, txnMarkerEntry.producerId());
+                        long firstOffset = transactionCoordinator.removeActivePidOffset(
+                                topicName, txnMarkerEntry.producerId());
                         long lastStableOffset = transactionCoordinator.getLastStableOffset(topicName);
 
                         if (txnMarkerEntry.transactionResult().equals(TransactionResult.ABORT)) {
@@ -1437,7 +1412,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     /**
-     * Write the txn marker to the topic partition
+     * Write the txn marker to the topic partition.
+     *
      * @param topicPartition
      */
     private CompletableFuture<Long> writeTxnMarker(TopicPartition topicPartition,

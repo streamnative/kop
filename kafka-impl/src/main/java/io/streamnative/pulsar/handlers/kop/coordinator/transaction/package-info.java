@@ -11,13 +11,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
-
 /**
- * Transaction log.
+ * Timer related classes.
+ *
+ * <p>The classes under this package are ported from Kafka.
  */
-public class TransactionLog {
-
-
-
-}
+package io.streamnative.pulsar.handlers.kop.coordinator.transaction;

@@ -15,28 +15,19 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
-import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.requests.AbstractResponse;
-import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.RequestUtils;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-
 /**
- * Transaction state manager
+ * Transaction state manager.
  */
 @Slf4j
 public class TransactionStateManager {
@@ -54,7 +45,10 @@ public class TransactionStateManager {
         transactionStateMap.put(transactionalId, metadata);
     }
 
-    public void appendTransactionToLog(String transactionalId, int coordinatorEpoch, TransactionMetadata.TxnTransitMetadata newMetadata, ResponseCallback responseCallback) {
+    public void appendTransactionToLog(String transactionalId,
+                                       int coordinatorEpoch,
+                                       TransactionMetadata.TxnTransitMetadata newMetadata,
+                                       ResponseCallback responseCallback) {
         try {
             // TODO save transaction log
             TransactionMetadata metadata = getTransactionState(transactionalId);
@@ -67,6 +61,9 @@ public class TransactionStateManager {
         }
     }
 
+    /**
+     * Response callback interface.
+     */
     public interface ResponseCallback {
         void complete();
         void fail(Exception e);
@@ -92,7 +89,7 @@ public class TransactionStateManager {
     }
 
     /**
-     * Validate the given transaction timeout value
+     * Validate the given transaction timeout value.
      */
     public boolean validateTransactionTimeoutMs(int txnTimeoutMs) {
         return txnTimeoutMs <= transactionConfig.getTransactionMaxTimeoutMs() && txnTimeoutMs > 0;

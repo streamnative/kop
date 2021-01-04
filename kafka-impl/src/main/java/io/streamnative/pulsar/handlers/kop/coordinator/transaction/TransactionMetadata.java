@@ -14,17 +14,16 @@
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
 import com.google.common.collect.Sets;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.inferred.freebuilder.shaded.com.google.common.collect.Maps;
-
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * Transaction metadata.
@@ -34,7 +33,7 @@ import java.util.Set;
 @Data
 public class TransactionMetadata {
 
-    private final static int DefaultTxnTimeOutMs = 1000 * 60;
+    private static final int DefaultTxnTimeOutMs = 1000 * 60;
 
     // transactional id
     private String transactionalId;
@@ -110,15 +109,18 @@ public class TransactionMetadata {
                                      Set<TopicPartition> newTopicPartitions,
                                      long newTxnStartTimestamp,
                                      long updateTimestamp) {
-        if (pendingState != null)
-            throw new IllegalStateException("Preparing transaction state transition to " + newState +
-                    " while it already a pending state " + pendingState);
+        if (pendingState != null) {
+            throw new IllegalStateException("Preparing transaction state transition to " + newState
+                    + " while it already a pending state " + pendingState);
+        }
 
-        if (newProducerId < 0)
+        if (newProducerId < 0) {
             throw new IllegalArgumentException("Illegal new producer id $newProducerId");
+        }
 
-        if (newEpoch < 0)
+        if (newEpoch < 0) {
             throw new IllegalArgumentException("Illegal new producer epoch $newEpoch");
+        }
 
         // check that the new state transition is valid and update the pending state if necessary
         if (validPreviousStates.get(newState).contains(state)) {
@@ -132,6 +134,9 @@ public class TransactionMetadata {
         }
     }
 
+    /**
+     * Transaction transit metadata.
+     */
     @AllArgsConstructor
     @Data
     public static class TxnTransitMetadata {
@@ -189,19 +194,19 @@ public class TransactionMetadata {
                     break;
                 case PREPARE_ABORT: // from endTxn
                 case PREPARE_COMMIT: // from endTxn
-                    if (!validProducerEpoch(transitMetadata) ||
-                            !topicPartitions.equals(transitMetadata.topicPartitions) ||
-                            txnTimeoutMs != transitMetadata.txnTimeoutMs ||
-                            txnStartTimestamp != transitMetadata.txnStartTimestamp) {
+                    if (!validProducerEpoch(transitMetadata)
+                            || !topicPartitions.equals(transitMetadata.topicPartitions)
+                            || txnTimeoutMs != transitMetadata.txnTimeoutMs
+                            || txnStartTimestamp != transitMetadata.txnStartTimestamp) {
 
                         throwStateTransitionFailure(transitMetadata);
                     }
                     break;
                 case COMPLETE_ABORT: // from write markers
                 case COMPLETE_COMMIT: // from write markers
-                    if (!validProducerEpoch(transitMetadata) ||
-                            txnTimeoutMs != transitMetadata.txnTimeoutMs ||
-                            transitMetadata.txnStartTimestamp == -1) {
+                    if (!validProducerEpoch(transitMetadata)
+                            || txnTimeoutMs != transitMetadata.txnTimeoutMs
+                            || transitMetadata.txnStartTimestamp == -1) {
 
                         throwStateTransitionFailure(transitMetadata);
                     } else {
@@ -210,18 +215,22 @@ public class TransactionMetadata {
                     }
                     break;
                 case PREPARE_EPOCH_FENCE:
-                    // We should never get here, since once we prepare to fence the epoch, we immediately set the pending state
-                    // to PrepareAbort, and then consequently to CompleteAbort after the markers are written.. So we should never
-                    // ever try to complete a transition to PrepareEpochFence, as it is not a valid previous state for any other state, and hence
-                    // can never be transitioned out of.
+                    // We should never get here, since once we prepare to fence the epoch,
+                    // we immediately set the pending state
+                    // to PrepareAbort, and then consequently to CompleteAbort after the markers are written..
+                    // So we should never ever try to complete a transition to PrepareEpochFence,
+                    // as it is not a valid previous state for any other state,
+                    // and hence can never be transitioned out of.
                     throwStateTransitionFailure(transitMetadata);
                     break;
                 case DEAD:
-                    // The transactionalId was being expired. The completion of the operation should result in removal of the
-                    // the metadata from the cache, so we should never realistically transition to the dead state.
-                    throw new IllegalStateException("TransactionalId " + transactionalId + "is trying to complete a transition to " +
-                            toState + ". This means that the transactionalId was being expired, "
-                            + "and the only acceptable completion of this operation is to remove the transaction metadata "
+                    // The transactionalId was being expired. The completion of the operation should result in
+                    // removal of the the metadata from the cache,
+                    // so we should never realistically transition to the dead state.
+                    throw new IllegalStateException("TransactionalId " + transactionalId
+                            + "is trying to complete a transition to "
+                            + toState + ". This means that the transactionalId was being expired, and the only "
+                            + "acceptable completion of this operation is to remove the transaction metadata "
                             + "from the cache, not to persist the " + toState + "in the");
             }
 

@@ -13,6 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import static io.streamnative.pulsar.handlers.kop.KafkaChannelInitializer.MAX_FRAME_LENGTH;
+import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
+
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
@@ -23,9 +26,9 @@ import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import org.apache.pulsar.broker.PulsarService;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
-import static io.streamnative.pulsar.handlers.kop.KafkaChannelInitializer.MAX_FRAME_LENGTH;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
-
+/**
+ * Transaction marker channel initializer.
+ */
 public class TransactionMarkerChannelInitializer extends ChannelInitializer<SocketChannel> {
 
     private final KafkaServiceConfiguration kafkaConfig;

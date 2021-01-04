@@ -15,11 +15,9 @@ package org.apache.kafka.common.requests;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.protocol.ApiKeys;
-import org.apache.kafka.common.protocol.types.Struct;
-
 import java.nio.ByteBuffer;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.protocol.types.Struct;
 
 /**
  * Provide util classes to access protected fields in kafka structures.

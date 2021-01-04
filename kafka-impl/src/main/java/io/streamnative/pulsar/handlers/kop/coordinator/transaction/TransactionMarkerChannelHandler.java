@@ -16,6 +16,9 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.LinkedBlockingQueue;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.RequestHeader;
@@ -23,10 +26,9 @@ import org.apache.kafka.common.requests.RequestUtils;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
 
-import java.util.Queue;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.LinkedBlockingQueue;
-
+/**
+ * Transaction marker channel handler.
+ */
 @Slf4j
 public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapter {
 
@@ -63,7 +65,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     private static class TxnMarkerRequestResponse {
         private final WriteTxnMarkersRequest request;
-        final private CompletableFuture<WriteTxnMarkersResponse> responseFuture = new CompletableFuture<>();
+        private final CompletableFuture<WriteTxnMarkersResponse> responseFuture = new CompletableFuture<>();
 
         public TxnMarkerRequestResponse(WriteTxnMarkersRequest request) {
             this.request = request;
