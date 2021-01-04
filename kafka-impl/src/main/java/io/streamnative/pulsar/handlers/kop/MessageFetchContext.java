@@ -19,7 +19,9 @@ import com.google.common.collect.Lists;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
+import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import io.streamnative.pulsar.handlers.kop.utils.MemoryRecordsUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -322,6 +324,13 @@ public final class MessageFetchContext {
                                 magic = RecordBatch.MAGIC_VALUE_V1;
                             }
                             final MemoryRecords records = requestHandler.getEntryFormatter().decode(entries, magic);
+                            if (log.isDebugEnabled()) {
+                                final String topic = KopTopic.toString(kafkaPartition);
+                                final MemoryRecords cloneRecords =
+                                        MemoryRecords.readableRecords(CoreUtils.deepCopy(records.buffer()));
+                                log.debug("ReadMessages for {} records:{}",
+                                        topic, MemoryRecordsUtils.dumpValues(cloneRecords));
+                            }
 
                             partitionData = new FetchResponse.PartitionData(
                                 Errors.NONE,
