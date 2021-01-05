@@ -229,6 +229,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     case SASL_AUTHENTICATE:
                         handleSaslAuthenticate(kafkaHeaderAndRequest, responseFuture);
                         break;
+                    case CREATE_TOPICS:
+                        handleCreateTopics(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case DESCRIBE_CONFIGS:
+                        handleDescribeConfigs(kafkaHeaderAndRequest, responseFuture);
+                        break;
                     default:
                         handleError(kafkaHeaderAndRequest, responseFuture);
                 }
@@ -359,6 +365,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected abstract void
     handleSaslHandshake(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleCreateTopics(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleDescribeConfigs(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
     static class KafkaHeaderAndRequest implements Closeable {
 

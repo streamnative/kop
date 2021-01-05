@@ -26,6 +26,7 @@
         </Root>
         <Logger name="org.eclipse.jetty" level="info"/>
         <Logger name="io.streamnative" level="trace"/>
+        <Logger name="io.streamnative.pulsar.handlers.kop.format" level="error"/>
         <Logger name="org.apache.pulsar" level="info"/>
         <Logger name="org.apache.bookkeeper" level="info"/>
         <Logger name="org.apache.kafka" level="debug"/>

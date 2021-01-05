@@ -28,7 +28,12 @@ import org.testng.annotations.Test;
  * Test class for message publish buffer throttle from kop side.
  * */
 
-public class MessagePublishBufferThrottleTest extends KopProtocolHandlerTestBase{
+public abstract class MessagePublishBufferThrottleTestBase extends KopProtocolHandlerTestBase{
+
+    public MessagePublishBufferThrottleTestBase(final String entryFormat) {
+        super(entryFormat);
+    }
+
     @Test
     public void testMessagePublishBufferThrottleDisabled() throws Exception {
         conf.setMaxMessagePublishBufferSizeInMB(-1);

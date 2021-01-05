@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
-import static org.testng.Assert.fail;
 
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
@@ -26,18 +25,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.concurrent.ExecutionException;
 import javax.crypto.SecretKey;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
-import org.apache.kafka.common.errors.TimeoutException;
-import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
@@ -49,21 +43,23 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
 /**
- * Testing the SASL-PLAIN features on KoP.
+ * Test Pulsar Auth Enabled will not affect KoP usage.
+ * Verify Pulsar auth enabled, and KoP could consume/publish success,
+ * because internal KoP using Pulsar internal admin/client
+ * This is similar to SaslPlainTest, but the KoP SASL is not enabled.
  */
-@Test
 @Slf4j
-public class SaslPlainTest extends KopProtocolHandlerTestBase {
-
-    private static final String SIMPLE_USER = "muggle_user";
-    private static final String TENANT = "SaslPlainTest";
-    private static final String ANOTHER_USER = "death_eater_user";
+public abstract class PulsarAuthEnabledTestBase extends KopProtocolHandlerTestBase {
+    private static final String TENANT = "PulsarAuthEnabledTest";
     private static final String ADMIN_USER = "admin_user";
-    private static final String NAMESPACE = "ns1";
-    private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/topic1";
+    private static final String NAMESPACE = "ns2";
+    private static final String SHORT_TOPIC = "topic2";
+    private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/" + SHORT_TOPIC;
     private String adminToken;
-    private String userToken;
-    private String anotherToken;
+
+    public PulsarAuthEnabledTestBase(final String entryFormat) {
+        super(entryFormat);
+    }
 
     @BeforeClass
     @Override
@@ -78,15 +74,15 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
         authConf.setProperties(properties);
         provider.initialize(authConf);
 
-        userToken = AuthTokenUtils.createToken(secretKey, SIMPLE_USER, Optional.empty());
         adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
-        anotherToken = AuthTokenUtils.createToken(secretKey, ANOTHER_USER, Optional.empty());
 
         super.resetConfig();
-        ((KafkaServiceConfiguration) conf).setEnableGroupCoordinator(true);
-        ((KafkaServiceConfiguration) conf).setSaslAllowedMechanisms(Sets.newHashSet("PLAIN"));
+
+        ((KafkaServiceConfiguration) conf).setKafkaTenant(TENANT);
+        ((KafkaServiceConfiguration) conf).setKafkaNamespace(NAMESPACE);
         ((KafkaServiceConfiguration) conf).setKafkaMetadataTenant("internal");
         ((KafkaServiceConfiguration) conf).setKafkaMetadataNamespace("__kafka");
+        ((KafkaServiceConfiguration) conf).setEnableGroupCoordinator(true);
 
         conf.setClusterName(super.configClusterName);
         conf.setAuthorizationEnabled(true);
@@ -105,9 +101,10 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
         admin.tenants().createTenant(TENANT,
             new TenantInfo(Sets.newHashSet(ADMIN_USER), Sets.newHashSet(super.configClusterName)));
         admin.namespaces().createNamespace(TENANT + "/" + NAMESPACE);
+        admin.namespaces()
+            .setNamespaceReplicationClusters(TENANT + "/" + NAMESPACE, Sets.newHashSet(super.configClusterName));
         admin.topics().createPartitionedTopic(TOPIC, 1);
-        admin
-            .namespaces().grantPermissionOnNamespace(TENANT + "/" + NAMESPACE, SIMPLE_USER,
+        admin.namespaces().grantPermissionOnNamespace(TENANT + "/" + NAMESPACE, ADMIN_USER,
             Sets.newHashSet(AuthAction.consume, AuthAction.produce));
     }
 
@@ -123,9 +120,10 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 40000)
-    void simpleProduceAndConsume() throws Exception {
-        KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
-            TENANT + "/" + NAMESPACE, "token:" + userToken);
+    void simpleProduceAndConsumeWithPulsarAuthed() throws Exception {
+        @Cleanup
+        KProducer kProducer = new KProducer(TOPIC, false, getKafkaBrokerPort());
+
         int totalMsgs = 10;
         String messageStrPrefix = TOPIC + "_message_";
 
@@ -133,9 +131,8 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
             String messageStr = messageStrPrefix + i;
             kProducer.getProducer().send(new ProducerRecord<>(TOPIC, i, messageStr));
         }
+        KConsumer kConsumer = new KConsumer(TOPIC, getKafkaBrokerPort(), "DemoKafkaOnPulsarConsumer");
 
-        KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getKafkaBrokerPort(), false,
-            TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
         kConsumer.getConsumer().subscribe(Collections.singleton(TOPIC));
 
         int i = 0;
@@ -157,66 +154,8 @@ public class SaslPlainTest extends KopProtocolHandlerTestBase {
         Map<String, List<PartitionInfo>> result = kConsumer
             .getConsumer().listTopics(Duration.ofSeconds(1));
         assertEquals(result.size(), 1);
-        assertTrue(result.containsKey(TOPIC),
-            "list of topics " + result.keySet().toString() + "  does not contains " + TOPIC);
+        assertTrue(result.containsKey(SHORT_TOPIC),
+            "list of topics " + result.keySet().toString() + "  does not contains " + SHORT_TOPIC);
     }
 
-    @Test(timeOut = 20000)
-    void badCredentialFail() throws Exception {
-        try {
-            @Cleanup
-            KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
-                TENANT + "/" + NAMESPACE, "token:dsa");
-            kProducer.getProducer().send(new ProducerRecord<>(TOPIC, 0, "")).get();
-            fail("should have failed");
-        } catch (Exception e) {
-            assertTrue(e.getMessage().contains("SaslAuthenticationException"));
-        }
-    }
-
-    @Test(timeOut = 20000)
-    void badUserFail() throws Exception {
-        try {
-            @Cleanup
-            KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
-                TENANT + "/" + NAMESPACE, "token:" + anotherToken);
-            kProducer.getProducer().send(new ProducerRecord<>(TOPIC, 0, "")).get();
-            fail("should have failed");
-        } catch (Exception e) {
-            assertTrue(e.getMessage().contains("SaslAuthenticationException"));
-        }
-    }
-
-    @Test(timeOut = 20000)
-    void badNamespaceProvided() throws Exception {
-        try {
-            KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
-                TENANT + "/ns2", "token:" + userToken);
-            kProducer.getProducer().send(new ProducerRecord<>(TOPIC, 0, "")).get();
-            fail("should have failed");
-        } catch (Exception e) {
-            assertTrue(e.getMessage().contains("SaslAuthenticationException"));
-        }
-    }
-
-    @Test(timeOut = 20000)
-    void clientWithoutAuth() throws Exception {
-        final int metadataTimeoutMs = 8000;
-
-        Properties props = new Properties();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, Integer.toString(metadataTimeoutMs));
-
-        @Cleanup
-        KafkaProducer<String, String> producer = new KafkaProducer<>(props);
-        try {
-            producer.send(new ProducerRecord<>(TOPIC, "", "hello")).get();
-            fail("should have failed");
-        } catch (ExecutionException e) {
-            assertTrue(e.getCause() instanceof TimeoutException);
-            assertTrue(e.getMessage().contains("Failed to update metadata"));
-        }
-    }
 }

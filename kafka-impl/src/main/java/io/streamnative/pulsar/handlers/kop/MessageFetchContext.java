@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.utils.MessageRecordUtils.entriesToRecords;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 
 import com.google.common.collect.Lists;
@@ -116,6 +115,9 @@ public final class MessageFetchContext {
                                 // all future completed now.
                                 tcm = pair.getValue().get();
                                 if (tcm == null) {
+                                    // remove null future cache from consumerTopicManagers
+                                    requestHandler.getTopicManager().getConsumerTopicManagers()
+                                            .remove(KopTopic.toString(pair.getKey()));
                                     throw new NullPointerException("topic not owned, and return null TCM in fetch.");
                                 }
                             } catch (Exception e) {
@@ -227,6 +229,9 @@ public final class MessageFetchContext {
                                         cursors.get(kafkaTopic).getLeft(),
                                         "cursor.readEntry fail. deleteCursor");
                                 } else {
+                                    // remove null future cache from consumerTopicManagers
+                                    requestHandler.getTopicManager().getConsumerTopicManagers()
+                                            .remove(KopTopic.toString(kafkaTopic));
                                     log.warn("Cursor deleted while TCM close.");
                                 }
                             });
@@ -286,6 +291,9 @@ public final class MessageFetchContext {
                                 if (cm != null) {
                                     cm.add(pair.getRight(), pair);
                                 } else {
+                                    // remove null future cache from consumerTopicManagers
+                                    requestHandler.getTopicManager().getConsumerTopicManagers()
+                                            .remove(KopTopic.toString(kafkaPartition));
                                     log.warn("Cursor deleted while TCM close, failed to add cursor back to TCM.");
                                 }
                             });
@@ -313,9 +321,7 @@ public final class MessageFetchContext {
                             } else if (apiVersion <= 3) {
                                 magic = RecordBatch.MAGIC_VALUE_V1;
                             }
-                            MemoryRecords records;
-                            // by default kafka is produced message in batched mode.
-                            records = entriesToRecords(entries, magic);
+                            final MemoryRecords records = requestHandler.getEntryFormatter().decode(entries, magic);
 
                             partitionData = new FetchResponse.PartitionData(
                                 Errors.NONE,

@@ -40,6 +40,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
@@ -71,18 +72,21 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
      */
-    public static class OffsetTopicListener implements NamespaceBundleOwnershipListener {
+    public static class OffsetAndTopicListener implements NamespaceBundleOwnershipListener {
 
         final BrokerService service;
         final NamespaceName kafkaMetaNs;
+        final NamespaceName kafkaTopicNs;
         final GroupCoordinator groupCoordinator;
-        public OffsetTopicListener(BrokerService service,
+        public OffsetAndTopicListener(BrokerService service,
                                    KafkaServiceConfiguration kafkaConfig,
                                    GroupCoordinator groupCoordinator) {
             this.service = service;
             this.kafkaMetaNs = NamespaceName
                 .get(kafkaConfig.getKafkaMetadataTenant(), kafkaConfig.getKafkaMetadataNamespace());
             this.groupCoordinator = groupCoordinator;
+            this.kafkaTopicNs = NamespaceName
+                    .get(kafkaConfig.getKafkaTenant(), kafkaConfig.getKafkaNamespace());
         }
 
         @Override
@@ -92,13 +96,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
                 .whenComplete((topics, ex) -> {
                     if (ex == null) {
+                        log.info("get owned topic list when onLoad bundle {}, topic size {} ", bundle, topics.size());
                         for (String topic : topics) {
                             TopicName name = TopicName.get(topic);
                             // already filtered namespace, check the local name without partition
                             if (Topic.GROUP_METADATA_TOPIC_NAME.equals(getKafkaTopicNameFromPulsarTopicname(name))) {
                                 checkState(name.isPartitioned(),
                                     "OffsetTopic should be partitioned in onLoad, but get " + name);
-                                KafkaTopicManager.removeLookupCache(name.toString());
 
                                 if (log.isDebugEnabled()) {
                                     log.debug("New offset partition load:  {}, broker: {}",
@@ -106,10 +110,28 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                 }
                                 groupCoordinator.handleGroupImmigration(name.getPartitionIndex());
                             }
+                            KafkaTopicManager.removeTopicManagerCache(name.toString());
+                            // update lookup cache when onload
+                            try {
+                                CompletableFuture<InetSocketAddress> retFuture = new CompletableFuture<>();
+                                ((PulsarClientImpl) service.pulsar().getClient()).getLookup()
+                                        .getBroker(TopicName.get(topic))
+                                        .whenComplete((pair, throwable) -> {
+                                            if (throwable != null) {
+                                                log.warn("cloud not get broker", throwable);
+                                                retFuture.complete(null);
+                                            }
+                                            checkState(pair.getLeft().equals(pair.getRight()));
+                                            retFuture.complete(pair.getLeft());
+                                        });
+                                KafkaTopicManager.LOOKUP_CACHE.put(topic, retFuture);
+                            } catch (PulsarServerException e) {
+                                log.error("onLoad PulsarServerException ", e);
+                            }
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
-                            + "OffsetTopicListener when triggering on-loading bundle {}.",
+                            + "OffsetAndTopicListener when triggering on-loading bundle {}.",
                             bundle, ex);
                     }
                 });
@@ -122,6 +144,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
                 .whenComplete((topics, ex) -> {
                     if (ex == null) {
+                        log.info("get owned topic list when unLoad bundle {}, topic size {} ", bundle, topics.size());
                         for (String topic : topics) {
                             TopicName name = TopicName.get(topic);
 
@@ -129,7 +152,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                             if (Topic.GROUP_METADATA_TOPIC_NAME.equals(getKafkaTopicNameFromPulsarTopicname(name))) {
                                 checkState(name.isPartitioned(),
                                     "OffsetTopic should be partitioned in unLoad, but get " + name);
-                                KafkaTopicManager.removeLookupCache(name.toString());
 
                                 if (log.isDebugEnabled()) {
                                     log.debug("Offset partition unload:  {}, broker: {}",
@@ -137,10 +159,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                 }
                                 groupCoordinator.handleGroupEmigration(name.getPartitionIndex());
                             }
+                            // remove cache when unload
+                            KafkaTopicManager.removeTopicManagerCache(name.toString());
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
-                            + "OffsetTopicListener when triggering un-loading bundle {}.",
+                            + "OffsetAndTopicListener when triggering un-loading bundle {}.",
                             bundle, ex);
                     }
                 });
@@ -150,7 +174,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         // and namespace is related to kafka metadata namespace
         @Override
         public boolean test(NamespaceBundle namespaceBundle) {
-            return namespaceBundle.getNamespaceObject().equals(kafkaMetaNs);
+            return namespaceBundle.getNamespaceObject().equals(kafkaMetaNs)
+                    || namespaceBundle.getNamespaceObject().equals(kafkaTopicNs);
         }
 
     }
@@ -231,7 +256,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 brokerService.pulsar()
                     .getNamespaceService()
                     .addNamespaceBundleOwnershipListener(
-                        new OffsetTopicListener(brokerService, kafkaConfig, groupCoordinator));
+                        new OffsetAndTopicListener(brokerService, kafkaConfig, groupCoordinator));
             } catch (Exception e) {
                 log.error("initGroupCoordinator failed with", e);
             }

@@ -29,6 +29,15 @@ public class KopTopic {
     private static final String persistentDomain = "persistent://";
     private static volatile String namespacePrefix;  // the full namespace prefix, e.g. "public/default"
 
+    public static String removeDefaultNamespacePrefix(String fullTopicName) {
+        final String topicPrefix = persistentDomain + namespacePrefix + "/";
+        if (fullTopicName.startsWith(topicPrefix)) {
+            return fullTopicName.substring(topicPrefix.length());
+        } else {
+            return fullTopicName;
+        }
+    }
+
     public static void initialize(String namespace) {
         if (namespace.split("/").length != 2) {
             throw new IllegalArgumentException("Invalid namespace: " + namespace);
