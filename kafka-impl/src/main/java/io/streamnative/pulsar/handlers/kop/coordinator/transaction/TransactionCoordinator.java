@@ -115,7 +115,6 @@ public class TransactionCoordinator {
                         .producerId(producerId)
                         .producerEpoch(producerEpoch)
                         .state(TransactionState.EMPTY)
-                        .validPreviousStates(TransactionMetadata.getValidPreviousStates())
                         .topicPartitions(new HashSet<>())
                         .build();
                 txnStateManager.putTransactionStateIfNotExists(transactionalId, metadata);

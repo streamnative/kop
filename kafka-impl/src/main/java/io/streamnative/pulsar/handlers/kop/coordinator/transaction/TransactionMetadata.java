@@ -64,10 +64,10 @@ public class TransactionMetadata {
     // initialized as the same as the current state
     private TransactionState pendingState;
 
-    private Map<TransactionState, Set<TransactionState>> validPreviousStates = Maps.newHashMap();
+    private static Map<TransactionState, Set<TransactionState>> validPreviousStates;
 
-    public static Map<TransactionState, Set<TransactionState>> getValidPreviousStates() {
-        Map<TransactionState, Set<TransactionState>> validPreviousStates = Maps.newHashMap();
+    static {
+        validPreviousStates = Maps.newHashMap();
         validPreviousStates.put(TransactionState.EMPTY, Sets.immutableEnumSet(
                 TransactionState.EMPTY,
                 TransactionState.COMPLETE_COMMIT,
@@ -99,7 +99,6 @@ public class TransactionMetadata {
 
         validPreviousStates.put(TransactionState.PREPARE_EPOCH_FENCE, Sets.immutableEnumSet(
                 TransactionState.ONGOING));
-        return validPreviousStates;
     }
 
     public TxnTransitMetadata prepareTransitionTo(TransactionState newState,
