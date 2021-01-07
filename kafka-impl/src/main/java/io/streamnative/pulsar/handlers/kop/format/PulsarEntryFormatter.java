@@ -22,6 +22,7 @@ import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
@@ -178,12 +179,15 @@ public class PulsarEntryFormatter implements EntryFormatter {
                             SingleMessageMetadata singleMessageMetadata = singleMessageMetadataBuilder.build();
                             Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
 
+                            final ByteBuffer value = (singleMessageMetadata.getNullValue())
+                                    ? null
+                                    : ByteBufUtils.getNioBuffer(singleMessagePayload);
                             builder.appendWithOffset(
                                     MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId(), i),
                                     msgMetadata.getEventTime() > 0
                                             ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
                                     ByteBufUtils.getKeyByteBuffer(singleMessageMetadata),
-                                    ByteBufUtils.getNioBuffer(singleMessagePayload),
+                                    value,
                                     headers);
                             singleMessagePayload.release();
                             singleMessageMetadataBuilder.recycle();
@@ -239,7 +243,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
             record.value().get(value);
             builder.value(value);
         } else {
-            builder.value(new byte[0]);
+            builder.value(null);
         }
 
         // sequence
