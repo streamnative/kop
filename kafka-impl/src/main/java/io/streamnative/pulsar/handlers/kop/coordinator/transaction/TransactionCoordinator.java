@@ -123,6 +123,8 @@ public class TransactionCoordinator {
             } else {
                 // TODO generate monotonically increasing epoch
                 // TODO conflict resolve
+                response.complete(new InitProducerIdResponse(
+                        0, Errors.NONE, metadata.getProducerId(), metadata.getProducerEpoch()));
             }
         }
     }

@@ -43,8 +43,8 @@ import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.Assert;
-import org.testng.annotations.AfterMethod;
-import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.AfterClass;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
 /**
@@ -53,7 +53,7 @@ import org.testng.annotations.Test;
 @Slf4j
 public class TransactionTest extends KopProtocolHandlerTestBase {
 
-    @BeforeMethod
+    @BeforeClass
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
@@ -89,7 +89,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         }
     }
 
-    @AfterMethod
+    @AfterClass
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
@@ -132,7 +132,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 contentBase = "abort msg txnIndex %s messageIndex %s";
             }
 
-            for (int messageIndex = 0; messageIndex < 10; messageIndex++) {
+            for (int messageIndex = 0; messageIndex < messageCountPerTxn; messageIndex++) {
                 String msgContent = String.format(contentBase, txnIndex, messageIndex);
                 log.info("send txn message {}", msgContent);
                 lastMessage = msgContent;
@@ -206,6 +206,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         } else {
             Assert.assertEquals(receiveCount.get(), totalMessageCount);
         }
+
+        consumer.close();
     }
 
 //    @Test

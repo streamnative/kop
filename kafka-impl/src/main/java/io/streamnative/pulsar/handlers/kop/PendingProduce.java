@@ -22,8 +22,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.record.DefaultRecordBatch;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
@@ -70,7 +70,7 @@ public class PendingProduce {
         executor.execute(() -> byteBufFuture.complete(entryFormatter.encode(memoryRecords, numMessages)));
         this.offsetFuture = new CompletableFuture<>();
 
-        DefaultRecordBatch batch = (DefaultRecordBatch) memoryRecords.batchIterator().next();
+        RecordBatch batch = memoryRecords.batchIterator().next();
         this.transactionCoordinator = transactionCoordinator;
         this.pid = batch.producerId();
         this.isTransactional = batch.isTransactional();
