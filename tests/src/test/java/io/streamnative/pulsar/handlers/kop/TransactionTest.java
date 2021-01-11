@@ -25,6 +25,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -114,6 +115,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
         producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "12");
+
+        @Cleanup
         KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
 
         producer.initTransactions();
@@ -158,7 +161,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         }).start();
 
         countDownLatch.await();
-        producer.close();
     }
 
     private void consumeTxnMessage(String topicName,
@@ -176,6 +178,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "consumer-test");
         consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         consumerProps.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, isolation);
+
+        @Cleanup
         KafkaConsumer<Integer, String> consumer = new KafkaConsumer<>(consumerProps);
         consumer.subscribe(Collections.singleton(topicName));
 
@@ -206,8 +210,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         } else {
             Assert.assertEquals(receiveCount.get(), totalMessageCount);
         }
-
-        consumer.close();
     }
 
 //    @Test
