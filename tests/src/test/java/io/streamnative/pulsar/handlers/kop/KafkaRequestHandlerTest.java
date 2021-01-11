@@ -30,6 +30,9 @@ import io.netty.util.CharsetUtil;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndResponse;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager;
+import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -45,6 +48,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import lombok.Cleanup;
@@ -56,24 +60,29 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
+import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.MessageIdImpl;
+import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
@@ -486,5 +495,125 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             assertEquals(positionInSendResponse, Arrays.copyOf(positionReceived, positionInSendResponse.length));
             i++;
         }
+    }
+
+    @Test(timeOut = 10000)
+    public void testConvertOffsetCommitRetentionMsIfSetDefaultValue() throws Exception {
+
+        String memberId = "test_member_id";
+        int generationId = 0;
+        long currentTime = 100;
+        int configRetentionMs = 1000;
+        TopicPartition topicPartition = new TopicPartition("test", 1);
+
+        // build input params
+        Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
+        offsetData.put(topicPartition,
+                new OffsetCommitRequest.PartitionData(1L, ""));
+        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder("test-groupId", offsetData)
+                .setGenerationId(generationId)
+                .setMemberId(memberId)
+                .setRetentionTime(OffsetCommitRequest.DEFAULT_RETENTION_TIME);
+        OffsetCommitRequest offsetCommitRequest = builder.build();
+
+
+        // convert
+        Map<TopicPartition, OffsetAndMetadata> converted = handler.convertOffsetCommitRequestRetentionMs(offsetCommitRequest,
+                builder.latestAllowedVersion(),
+                currentTime,
+                configRetentionMs);
+
+        OffsetAndMetadata convertedOffsetAndMetadata = converted.get(topicPartition);
+
+        // verify
+        Assert.assertEquals(convertedOffsetAndMetadata.commitTimestamp(), currentTime);
+        Assert.assertEquals(convertedOffsetAndMetadata.expireTimestamp(), currentTime + configRetentionMs);
+
+    }
+
+    @Test(timeOut = 10000)
+    public void testConvertOffsetCommitRetentionMsIfRetentionMsSet() throws Exception {
+
+        String memberId = "test_member_id";
+        int generationId = 0;
+        long currentTime = 100;
+        int offsetsConfigRetentionMs = 1000;
+        int requestSetRetentionMs = 10000;
+        TopicPartition topicPartition = new TopicPartition("test", 1);
+
+        // build input params
+        Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
+        offsetData.put(topicPartition,
+                new OffsetCommitRequest.PartitionData(1L, ""));
+        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder("test-groupId", offsetData)
+                .setGenerationId(generationId)
+                .setMemberId(memberId)
+                .setRetentionTime(requestSetRetentionMs);
+        OffsetCommitRequest offsetCommitRequest = builder.build();
+
+
+        // convert
+        Map<TopicPartition, OffsetAndMetadata> converted = handler.convertOffsetCommitRequestRetentionMs(offsetCommitRequest,
+                builder.latestAllowedVersion(),
+                currentTime,
+                offsetsConfigRetentionMs);
+
+        OffsetAndMetadata convertedOffsetAndMetadata = converted.get(topicPartition);
+
+        // verify
+        Assert.assertEquals(convertedOffsetAndMetadata.commitTimestamp(), currentTime);
+        Assert.assertEquals(convertedOffsetAndMetadata.expireTimestamp(), currentTime + requestSetRetentionMs);
+
+    }
+
+    // test for
+    // https://github.com/streamnative/kop/issues/303
+    @Test(timeOut = 10000)
+    public void testOffsetCommitRequestRetentionMs() throws Exception {
+        String group = "test-groupId";
+        String memberId = "test_member_id";
+        int generationId = -1; // use for avoid mock group state and member
+        TopicPartition topicPartition = new TopicPartition("test", 1);
+
+        // build input params
+        Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
+        offsetData.put(topicPartition,
+                new OffsetCommitRequest.PartitionData(1L, ""));
+        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder("test-groupId", offsetData)
+                .setGenerationId(generationId)
+                .setMemberId(memberId)
+                .setRetentionTime(OffsetCommitRequest.DEFAULT_RETENTION_TIME);
+        OffsetCommitRequest offsetCommitRequest = builder.build();
+
+        RequestHeader header = new RequestHeader(ApiKeys.OFFSET_COMMIT, offsetCommitRequest.version(), "", 0);
+        KafkaHeaderAndRequest headerAndRequest = new KafkaHeaderAndRequest(header, offsetCommitRequest, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null);
+
+        // handle request
+        CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
+        handler.handleOffsetCommitRequest(headerAndRequest, future);
+
+        // wait for save offset
+        future.get();
+
+        // verify
+        GroupMetadataManager groupMetadataManager = handler.getGroupCoordinator().getGroupManager();
+        GroupMetadata metadata = groupMetadataManager.getGroup(group).get();
+        OffsetAndMetadata offsetAndMetadata = metadata.offset(topicPartition).get();
+
+        // offset in cache
+        Assert.assertNotNull(offsetAndMetadata);
+
+        // trigger clean expire offset logic
+        Map<TopicPartition, OffsetAndMetadata> removeExpiredOffsets = metadata.removeExpiredOffsets(Time.SYSTEM.milliseconds());
+
+        // there is only one offset just saved. it should not being removed.
+        Assert.assertTrue(removeExpiredOffsets.isEmpty(),"expect no expired offset. but " + removeExpiredOffsets + " expired.");
+
+        metadata = groupMetadataManager.getGroup(group).get();
+        offsetAndMetadata = metadata.offset(topicPartition).get();
+
+        // not cleanup
+        Assert.assertNotNull(offsetAndMetadata);
+
     }
 }
