@@ -95,12 +95,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    @Test
+    @Test(timeOut = 1000 * 20)
     public void readCommittedTest() throws Exception {
         produceAndConsumeTest("read-committed-test", "read_committed");
     }
 
-    @Test
+    @Test(timeOut = 1000 * 20)
     public void readUncommittedTest() throws Exception {
         produceAndConsumeTest("read-uncommitted-test", "read_uncommitted");
     }

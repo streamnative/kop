@@ -37,7 +37,7 @@ jobs:
       run: mvn test '-Dtest=KafkaIntegration*Test' -pl tests
 
     - name: test after build
-      run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test,!DistributedClusterTest' -DtestForkCount=1 -DtestReuseFork=true -T1
+      run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegraTtion*Test,!DistributedClusterTest'
 
     # The DistributedClusterTest is hard to pass in CI tests environment, we disable it first
     # the track issue: https://github.com/streamnative/kop/issues/184
