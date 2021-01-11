@@ -42,13 +42,13 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import lombok.Cleanup;
@@ -69,8 +69,8 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
-import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
+import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
 import org.apache.kafka.common.serialization.IntegerSerializer;
@@ -518,7 +518,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
 
         // convert
-        Map<TopicPartition, OffsetAndMetadata> converted = handler.convertOffsetCommitRequestRetentionMs(offsetCommitRequest,
+        Map<TopicPartition, OffsetAndMetadata> converted =
+                handler.convertOffsetCommitRequestRetentionMs(offsetCommitRequest,
                 builder.latestAllowedVersion(),
                 currentTime,
                 configRetentionMs);
@@ -553,7 +554,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
 
         // convert
-        Map<TopicPartition, OffsetAndMetadata> converted = handler.convertOffsetCommitRequestRetentionMs(offsetCommitRequest,
+        Map<TopicPartition, OffsetAndMetadata> converted =
+                handler.convertOffsetCommitRequestRetentionMs(offsetCommitRequest,
                 builder.latestAllowedVersion(),
                 currentTime,
                 offsetsConfigRetentionMs);
@@ -585,8 +587,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 .setRetentionTime(OffsetCommitRequest.DEFAULT_RETENTION_TIME);
         OffsetCommitRequest offsetCommitRequest = builder.build();
 
-        RequestHeader header = new RequestHeader(ApiKeys.OFFSET_COMMIT, offsetCommitRequest.version(), "", 0);
-        KafkaHeaderAndRequest headerAndRequest = new KafkaHeaderAndRequest(header, offsetCommitRequest, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null);
+        RequestHeader header = new RequestHeader(ApiKeys.OFFSET_COMMIT, offsetCommitRequest.version(),
+                "", 0);
+        KafkaHeaderAndRequest headerAndRequest = new KafkaHeaderAndRequest(header,
+                offsetCommitRequest, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null);
 
         // handle request
         CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
@@ -604,10 +608,12 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         Assert.assertNotNull(offsetAndMetadata);
 
         // trigger clean expire offset logic
-        Map<TopicPartition, OffsetAndMetadata> removeExpiredOffsets = metadata.removeExpiredOffsets(Time.SYSTEM.milliseconds());
+        Map<TopicPartition, OffsetAndMetadata> removeExpiredOffsets =
+                metadata.removeExpiredOffsets(Time.SYSTEM.milliseconds());
 
         // there is only one offset just saved. it should not being removed.
-        Assert.assertTrue(removeExpiredOffsets.isEmpty(),"expect no expired offset. but " + removeExpiredOffsets + " expired.");
+        Assert.assertTrue(removeExpiredOffsets.isEmpty(),
+                "expect no expired offset. but " + removeExpiredOffsets + " expired.");
 
         metadata = groupMetadataManager.getGroup(group).get();
         offsetAndMetadata = metadata.offset(topicPartition).get();

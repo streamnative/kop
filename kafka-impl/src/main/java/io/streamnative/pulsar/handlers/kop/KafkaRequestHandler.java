@@ -939,8 +939,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // commit from kafka
 
         long offsetRetention;
-        if (apiVersion <= 1 ||
-                request.retentionTime() == OffsetCommitRequest.DEFAULT_RETENTION_TIME) {
+        if (apiVersion <= 1 || request.retentionTime() == OffsetCommitRequest.DEFAULT_RETENTION_TIME) {
             offsetRetention = configOffsetsRetentionMs;
         } else {
             offsetRetention = request.retentionTime();
@@ -952,7 +951,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         // > expire timestamp is computed differently for v1 and v2.
         // >  - If v1 and no explicit commit timestamp is provided we use default expiration timestamp.
-        // >  - If v1 and explicit commit timestamp is provided we calculate retention from that explicit commit timestamp
+        // >  - If v1 and explicit commit timestamp is provided we calculate retention from
+        // >    that explicit commit timestamp
         // >  - If v2 we use the default expiration timestamp
         // commit from kafka
 
