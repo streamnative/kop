@@ -21,8 +21,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import lombok.Cleanup;
@@ -98,15 +96,15 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 1000 * 20)
     public void readCommittedTest() throws Exception {
-        produceAndConsumeTest("read-committed-test", "read_committed");
+        basicProduceAndConsumeTest("read-committed-test", "read_committed");
     }
 
     @Test(timeOut = 1000 * 20)
     public void readUncommittedTest() throws Exception {
-        produceAndConsumeTest("read-uncommitted-test", "read_uncommitted");
+        basicProduceAndConsumeTest("read-uncommitted-test", "read_uncommitted");
     }
 
-    public void produceAndConsumeTest(String topicName, String isolation) throws Exception {
+    public void basicProduceAndConsumeTest(String topicName, String isolation) throws Exception {
         String kafkaServer = "localhost:" + getKafkaBrokerPort();
 
         Properties producerProps = new Properties();
@@ -149,22 +147,10 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             }
         }
 
-        final String testMessage = lastMessage;
-        CountDownLatch countDownLatch = new CountDownLatch(1);
-        new Thread(() -> {
-            try {
-                consumeTxnMessage(topicName, countDownLatch,
-                        totalTxnCount * messageCountPerTxn, testMessage, isolation);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }).start();
-
-        countDownLatch.await();
+        consumeTxnMessage(topicName, totalTxnCount * messageCountPerTxn, lastMessage, isolation);
     }
 
     private void consumeTxnMessage(String topicName,
-                                   CountDownLatch countDownLatch,
                                    int totalMessageCount,
                                    String lastMessage,
                                    String isolation) throws InterruptedException {
@@ -189,20 +175,20 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             ConsumerRecords<Integer, String> consumerRecords =
                     consumer.poll(Duration.of(100, ChronoUnit.MILLIS));
 
-            CompletableFuture<Void> completableFuture = new CompletableFuture<>();
-            consumerRecords.forEach(record -> {
+            boolean readFinish = false;
+            for (ConsumerRecord<Integer, String> record : consumerRecords) {
                 log.info("Fetch for receive record key: {}, value: {}", record.key(), record.value());
                 receiveCount.incrementAndGet();
                 if (lastMessage.equalsIgnoreCase(record.value())) {
                     log.info("receive the last message");
-                    completableFuture.complete(null);
+                    readFinish = true;
+                    break;
                 }
-            });
-            if (completableFuture.isDone()) {
-                countDownLatch.countDown();
+            }
+
+            if (readFinish) {
                 break;
             }
-//            Thread.sleep(1000 * 3);
         }
 
         if (isolation.equals("read_committed")) {
@@ -251,7 +237,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         while (iterator.hasNext()) {
             ConsumerRecord<Integer, String> record = iterator.next();
             lastOffset = record.offset();
-            producer.send(new ProducerRecord(sinkTopicName, record.key() + 100, record.value() + " [processed]")).get();
+            producer.send(
+                    new ProducerRecord<>(
+                            sinkTopicName,
+                            record.key() + 100,
+                            record.value() + " [processed]")
+            ).get();
         }
         Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
         offsets.put(new TopicPartition(sinkTopicName, 0), new OffsetAndMetadata(lastOffset));
