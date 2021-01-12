@@ -36,11 +36,13 @@ public class KafkaEntryFormatter implements EntryFormatter {
 
     @Override
     public ByteBuf encode(MemoryRecords records, int numMessages) {
-        return Commands.serializeMetadataAndPayload(
+        final ByteBuf recordsWrapper = Unpooled.wrappedBuffer(records.buffer());
+        final ByteBuf buf = Commands.serializeMetadataAndPayload(
                 Commands.ChecksumType.None,
                 header.getMessageMetadataWithNumberMessages(numMessages),
-                Unpooled.wrappedBuffer(records.buffer())
-        );
+                recordsWrapper);
+        recordsWrapper.release();
+        return buf;
     }
 
     @Override
