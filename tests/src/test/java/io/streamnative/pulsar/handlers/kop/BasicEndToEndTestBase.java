@@ -40,6 +40,7 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.testng.Assert;
+import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 
 /**
@@ -58,6 +59,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
         super.internalSetup();
     }
 
+    @AfterClass
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();

@@ -150,7 +150,7 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setAuthenticationEnabled(false);
         kafkaConfig.setAuthorizationEnabled(false);
         kafkaConfig.setAllowAutoTopicCreation(true);
-        kafkaConfig.setAllowAutoTopicCreationType("non-partitioned");
+        kafkaConfig.setAllowAutoTopicCreationType("partitioned");
         kafkaConfig.setBrokerDeleteInactiveTopicsEnabled(false);
 
         kafkaConfig.setKafkaMetadataTenant(tenant);
