@@ -15,21 +15,26 @@ package io.streamnative.pulsar.handlers.kop.coordinator.group;
 
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
-import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+import io.streamnative.pulsar.handlers.kop.utils.OffsetSearchPredicate;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.kafka.clients.consumer.internals.ConsumerProtocol;
 import org.apache.kafka.clients.consumer.internals.PartitionAssignor.Assignment;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.pulsar.broker.service.BrokerService;
+import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.ConsumerBuilder;
-import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
+import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 
 /**
@@ -39,11 +44,20 @@ import org.apache.pulsar.client.impl.PulsarClientImpl;
 public class OffsetAcker implements Closeable {
 
     private final ConsumerBuilder<byte[]> consumerBuilder;
+    private final BrokerService brokerService;
 
     public OffsetAcker(PulsarClientImpl pulsarClient) {
         this.consumerBuilder = pulsarClient.newConsumer()
                 .receiverQueueSize(0)
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
+        brokerService = null;
+    }
+
+    public OffsetAcker(PulsarClientImpl pulsarClient, BrokerService brokerService) {
+        this.consumerBuilder = pulsarClient.newConsumer()
+                .receiverQueueSize(0)
+                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
+        this.brokerService = brokerService;
     }
 
     // map off consumser: <groupId, consumers>
@@ -62,8 +76,8 @@ public class OffsetAcker implements Closeable {
         if (log.isDebugEnabled()) {
             log.debug(" ack offsets after commit offset for group: {}", groupId);
             offsetMetadata.forEach((partition, metadata) ->
-                log.debug("\t partition: {}, offset: {}",
-                    partition,  MessageIdUtils.getPosition(metadata.offset())));
+                log.debug("\t partition: {}",
+                    partition));
         }
         offsetMetadata.forEach(((topicPartition, offsetAndMetadata) -> {
             // 1. get consumer, then do ackCumulative
@@ -74,8 +88,37 @@ public class OffsetAcker implements Closeable {
                     log.warn("Error when get consumer for offset ack:", throwable);
                     return;
                 }
-                MessageId messageId = MessageIdUtils.getMessageId(offsetAndMetadata.offset());
-                consumer.acknowledgeCumulativeAsync(messageId);
+                KopTopic kopTopic = new KopTopic(topicPartition.topic());
+                String partitionTopicName = kopTopic.getPartitionName(topicPartition.partition());
+                brokerService.getTopic(partitionTopicName, false).whenComplete((topic, error) -> {
+                    if (error != null) {
+                        log.error("[{}] get topic failed when ack for {}.", partitionTopicName, groupId, error);
+                        return;
+                    }
+                    if (topic.isPresent()) {
+                        PersistentTopic persistentTopic = (PersistentTopic) topic.get();
+                        PositionImpl position = null;
+                        try {
+                            position = (PositionImpl) persistentTopic.getManagedLedger()
+                                    .asyncFindPosition(new OffsetSearchPredicate(offsetAndMetadata.offset())).get();
+                            if (position.compareTo(
+                                    (PositionImpl) persistentTopic.getManagedLedger().getLastConfirmedEntry()) > 0) {
+                                position = (PositionImpl) persistentTopic.getManagedLedger().getLastConfirmedEntry();
+                            }
+                            if (log.isDebugEnabled()) {
+                                log.debug("[{}] find position {} for offset {}.",
+                                        partitionTopicName, position, offsetAndMetadata.offset());
+                            }
+                        } catch (InterruptedException | ExecutionException e) {
+                            log.error("[{}] Failed to find position for offset {} when processing offset commit.",
+                                    partitionTopicName, offsetAndMetadata.offset());
+                        }
+                        consumer.acknowledgeCumulativeAsync(
+                                new MessageIdImpl(position.getLedgerId(), position.getEntryId(), -1));
+                    } else {
+                        log.error("[{}] Topic not exist when ack for {}.", partitionTopicName, groupId);
+                    }
+                });
             });
         }));
     }

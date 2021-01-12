@@ -128,7 +128,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
                     org.apache.kafka.common.record.CompressionType.NONE,
                     TimestampType.CREATE_TIME,
                     // using the first entry, index 0 as base offset
-                    MessageIdUtils.getOffset(entries.get(0).getLedgerId(), entries.get(0).getEntryId(), 0),
+                    MessageIdUtils.peekBaseOffsetFromEntry(entries.get(0)),
                     RecordBatch.NO_TIMESTAMP,
                     RecordBatch.NO_PRODUCER_ID,
                     RecordBatch.NO_PRODUCER_EPOCH,
@@ -141,6 +141,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
                 // each entry is a batched message
                 ByteBuf metadataAndPayload = entry.getDataBuffer();
 
+                long entryOffset = MessageIdUtils.peekOffsetFromEntry(entry);
                 // Uncompress the payload if necessary
                 MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
                 CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(msgMetadata.getCompression());
@@ -166,6 +167,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
                 checkState(msgMetadata.getEncryptionKeysCount() == 0);
 
                 if (!notBatchMessage) {
+                    long startOffset = entryOffset - numMessages + 1;
                     IntStream.range(0, numMessages).parallel().forEachOrdered(i -> {
                         if (log.isDebugEnabled()) {
                             log.debug(" processing message num - {} in batch", i);
@@ -179,11 +181,12 @@ public class PulsarEntryFormatter implements EntryFormatter {
                             SingleMessageMetadata singleMessageMetadata = singleMessageMetadataBuilder.build();
                             Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
 
+
                             final ByteBuffer value = (singleMessageMetadata.getNullValue())
                                     ? null
                                     : ByteBufUtils.getNioBuffer(singleMessagePayload);
                             builder.appendWithOffset(
-                                    MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId(), i),
+                                    startOffset + i,
                                     msgMetadata.getEventTime() > 0
                                             ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
                                     ByteBufUtils.getKeyByteBuffer(singleMessageMetadata),
@@ -200,7 +203,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
                     Header[] headers = getHeadersFromMetadata(msgMetadata.getPropertiesList());
 
                     builder.appendWithOffset(
-                            MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
+                            entryOffset,
                             msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
                             ByteBufUtils.getKeyByteBuffer(msgMetadata),
                             ByteBufUtils.getNioBuffer(payload),

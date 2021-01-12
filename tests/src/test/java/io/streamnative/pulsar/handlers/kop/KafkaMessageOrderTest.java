@@ -53,6 +53,7 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Factory;
+import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 /**
@@ -122,6 +123,7 @@ public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
+    @Ignore
     @Test(timeOut = 20000, dataProvider = "batchSizeList")
     public void testKafkaProduceMessageOrder(int batchSize) throws Exception {
         String topicName = "kopKafkaProducePulsarConsumeMessageOrder-" + batchSize;

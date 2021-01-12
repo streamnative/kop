@@ -15,14 +15,29 @@ package io.streamnative.pulsar.handlers.kop.utils;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
+import io.netty.buffer.ByteBuf;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import org.apache.bookkeeper.mledger.AsyncCallbacks;
+import org.apache.bookkeeper.mledger.Entry;
+import org.apache.bookkeeper.mledger.ManagedLedger;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.pulsar.broker.intercept.ManagedLedgerInterceptorImpl;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.impl.MessageIdImpl;
+import org.apache.pulsar.common.api.proto.PulsarApi;
+import org.apache.pulsar.common.protocol.Commands;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Utils for Pulsar MessageId.
  */
 public class MessageIdUtils {
+    private static final Logger log = LoggerFactory.getLogger(MessageIdUtils.class);
+
     // use 28 bits for ledgerId,
     // 32 bits for entryId,
     // 12 bits for batchIndex.
@@ -90,5 +105,65 @@ public class MessageIdUtils {
             return (offset - batchIndex) + (1 << BATCH_BITS);
         }
         return offset;
+    }
+
+    public static long getCurrentOffset(ManagedLedger managedLedger) {
+        return ((ManagedLedgerInterceptorImpl) managedLedger.getManagedLedgerInterceptor()).getIndex();
+    }
+
+    public static CompletableFuture<Long> getOffsetOfPosition(ManagedLedgerImpl managedLedger, PositionImpl position) {
+        final CompletableFuture<Long> future = new CompletableFuture<>();
+        managedLedger.asyncReadEntry(position, new AsyncCallbacks.ReadEntryCallback() {
+            @Override
+            public void readEntryFailed(ManagedLedgerException exception, Object ctx) {
+                future.completeExceptionally(exception);
+            }
+
+            @Override
+            public void readEntryComplete(Entry entry, Object ctx) {
+                try {
+                   future.complete(peekBaseOffsetFromEntry(entry));
+                } catch (Exception exception) {
+                    future.completeExceptionally(exception);
+                } finally {
+                    if (entry != null) {
+                        entry.release();
+                    }
+                }
+            }
+        }, null);
+        return future;
+    }
+
+    public static PositionImpl getPositionForOffset(ManagedLedger managedLedger, Long offset) {
+        try {
+            return (PositionImpl) managedLedger.asyncFindPosition(new OffsetSearchPredicate(offset)).get();
+        } catch (InterruptedException | ExecutionException e) {
+            log.error("[{}] Failed to find position for offset {}", managedLedger.getName(), offset);
+            throw new RuntimeException(managedLedger.getName() + " failed to find position for offset " + offset);
+        }
+    }
+
+    public static PulsarApi.BrokerEntryMetadata peekBrokerEntryMetadata(ByteBuf byteBuf) {
+        final int readerIndex = byteBuf.readerIndex();
+        PulsarApi.BrokerEntryMetadata entryMetadata =
+                Commands.parseBrokerEntryMetadataIfExist(byteBuf);
+        byteBuf.readerIndex(readerIndex);
+        return entryMetadata;
+    }
+
+    public static long peekOffsetFromEntry(Entry entry) {
+        return peekBrokerEntryMetadata(entry.getDataBuffer()).getIndex();
+    }
+
+    public static long peekBaseOffsetFromEntry(Entry entry) {
+
+        return peekOffsetFromEntry(entry)
+                - Commands.peekMessageMetadata(entry.getDataBuffer(), null, 0)
+                    .getNumMessagesInBatch() + 1;
+    }
+
+    public static long getMockOffset(long ledgerId, long entryId) {
+        return ledgerId + entryId;
     }
 }

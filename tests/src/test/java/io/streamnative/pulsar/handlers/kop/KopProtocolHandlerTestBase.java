@@ -35,10 +35,12 @@ import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -135,6 +137,7 @@ public abstract class KopProtocolHandlerTestBase {
 
     protected void resetConfig() {
         KafkaServiceConfiguration kafkaConfig = new KafkaServiceConfiguration();
+        addBrokerEntryMetadataInterceptors(kafkaConfig);
         kafkaConfig.setBrokerServicePort(Optional.ofNullable(brokerPort));
         kafkaConfig.setAdvertisedAddress("localhost");
         kafkaConfig.setWebServicePort(Optional.ofNullable(brokerWebservicePort));
@@ -302,8 +305,8 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     protected PulsarService startBroker(ServiceConfiguration conf) throws Exception {
+        addBrokerEntryMetadataInterceptors(conf);
         PulsarService pulsar = spy(new PulsarService(conf));
-
         setupBrokerMocks(pulsar);
         pulsar.start();
 
@@ -622,6 +625,12 @@ public abstract class KopProtocolHandlerTestBase {
         }
     }
 
+    public static void addBrokerEntryMetadataInterceptors(ServiceConfiguration configuration) {
+        Set<String> interceptorNames = new HashSet<>();
+        interceptorNames.add("org.apache.pulsar.common.intercept.AppendBrokerTimestampMetadataInterceptor");
+        interceptorNames.add("org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor");
+        configuration.setBrokerEntryMetadataInterceptors(interceptorNames);
+    }
 
     public static Integer kafkaIntDeserialize(byte[] data) {
         if (data == null) {

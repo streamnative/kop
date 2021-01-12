@@ -38,6 +38,7 @@ import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.NonDurableCursorImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.tuple.Pair;
@@ -139,8 +140,8 @@ public final class MessageFetchContext {
                                 .get(pair.getKey()).fetchOffset;
 
                             if (log.isDebugEnabled()) {
-                                log.debug("Fetch for {}: remove tcm to get cursor for fetch offset: {} - {}.",
-                                    pair.getKey(), offset, MessageIdUtils.getPosition(offset));
+                                log.debug("Fetch for {}: remove tcm to get cursor for fetch offset: {} .",
+                                    pair.getKey(), offset);
                             }
 
                             Pair<ManagedCursor, Long> cursorLongPair = tcm.remove(offset);
@@ -278,10 +279,10 @@ public final class MessageFetchContext {
                     }
 
                     AtomicBoolean allPartitionsNoEntry = new AtomicBoolean(true);
-                    responseValues.entrySet().parallelStream().forEach(responseEntrys -> {
+                    responseValues.entrySet().parallelStream().forEach(responseEntries -> {
                         final PartitionData partitionData;
-                        TopicPartition kafkaPartition = responseEntrys.getKey();
-                        List<Entry> entries = responseEntrys.getValue();
+                        TopicPartition kafkaPartition = responseEntries.getKey();
+                        List<Entry> entries = responseEntries.getValue();
                         // Add cursor and offset back to TCM when all the read completed.
                         Pair<ManagedCursor, Long> pair = cursors.get(kafkaPartition);
                         requestHandler.getTopicManager()
@@ -308,10 +309,10 @@ public final class MessageFetchContext {
                                 MemoryRecords.EMPTY);
                         } else {
                             allPartitionsNoEntry.set(false);
-                            Entry entry = entries.get(entries.size() - 1);
-                            long entryOffset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
-                            long highWatermark = entryOffset
-                                + cursors.get(kafkaPartition).getLeft().getNumberOfEntries();
+
+                            ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) cursors
+                                    .get(kafkaPartition).getLeft().getManagedLedger();
+                            long highWatermark = MessageIdUtils.getCurrentOffset(managedLedger);
 
                             // use compatible magic value by apiVersion
                             short apiVersion = fetch.getHeader().apiVersion();
@@ -388,19 +389,14 @@ public final class MessageFetchContext {
 
                             if (!list.isEmpty()) {
                                 StreamSupport.stream(list.spliterator(), true).forEachOrdered(entry -> {
-                                    long offset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
+                                    long offset = MessageIdUtils.peekOffsetFromEntry(entry);
                                     PositionImpl currentPosition = PositionImpl
                                             .get(entry.getLedgerId(), entry.getEntryId());
 
                                     // commit the offset, so backlog not affect by this cursor.
                                     commitOffset((NonDurableCursorImpl) cursor, currentPosition);
 
-                                    // get next offset
-                                    PositionImpl nextPosition = ((NonDurableCursorImpl) cursor)
-                                            .getNextAvailablePosition(currentPosition);
-
-                                    long nextOffset = MessageIdUtils
-                                            .getOffset(nextPosition.getLedgerId(), nextPosition.getEntryId());
+                                    long nextOffset = offset + 1;
 
                                     // put next offset in to passed in cursors map.
                                     // and add back to TCM when all read complete.
@@ -409,10 +405,10 @@ public final class MessageFetchContext {
                                     if (log.isDebugEnabled()) {
                                         log.debug("Topic {} success read entry: ledgerId: {}, entryId: {}, size: {},"
                                                         + " ConsumerManager original offset: {}, entryOffset: {} - {}, "
-                                                        + "nextOffset: {} - {}",
+                                                        + "nextOffset: {}",
                                                 fullPartitionName, entry.getLedgerId(), entry.getEntryId(),
                                                 entry.getLength(), currentOffset, offset, currentPosition,
-                                                nextOffset, nextPosition);
+                                                nextOffset);
                                     }
                                 });
                             }

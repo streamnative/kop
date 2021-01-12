@@ -39,6 +39,7 @@ import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.common.policies.data.TopicStats;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 /**
@@ -105,6 +106,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     }
 
 
+    @Ignore
     @Test
     public void testTopicConsumerManagerRemoveAndAdd() throws Exception {
         String topicName = "persistent://public/default/testTopicConsumerManagerRemoveAndAdd";
@@ -181,6 +183,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(cursorPair.getRight(), Long.valueOf(offset));
     }
 
+    @Ignore
     @Test
     public void testTopicConsumerManagerRemoveCursorAndBacklog() throws Exception {
         String kafkaTopicName = "RemoveCursorAndBacklog";

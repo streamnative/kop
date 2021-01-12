@@ -21,35 +21,17 @@ import org.apache.pulsar.common.api.proto.PulsarApi;
  */
 public class KafkaEntryFormatterHeader {
 
-    private static volatile PulsarApi.MessageMetadata messageMetadata = null;
-
-    public PulsarApi.MessageMetadata getMessageMetadata() {
-        if (messageMetadata == null) {
-            synchronized (KafkaEntryFormatterHeader.class) {
-                if (messageMetadata == null) {
-                    messageMetadata = createMessageMetadata();
-                }
-            }
-        }
-        return messageMetadata;
-    }
-
-    private static PulsarApi.MessageMetadata createMessageMetadata() {
+    public PulsarApi.MessageMetadata getMessageMetadataWithNumberMessages(int numMessages) {
         final PulsarApi.MessageMetadata.Builder builder = PulsarApi.MessageMetadata.newBuilder();
-
-        // TODO: Pulsar broker may add a field that represents entry.format to MessageMetadata in future. After that we
-        //  should set that field instead of adding a key-value property.
         builder.addProperties(PulsarApi.KeyValue.newBuilder()
                 .setKey("entry.format")
                 .setValue(EntryFormatterFactory.EntryFormat.KAFKA.name().toLowerCase())
                 .build());
-
-        // Following fields are meaningless because the metadata is already contained in MemoryRecords. Here we set
-        // them just because they're required fields.
         builder.setProducerName("");
         builder.setSequenceId(0L);
         builder.setPublishTime(0L);
-
+        builder.setNumMessagesInBatch(numMessages);
         return builder.build();
     }
+
 }

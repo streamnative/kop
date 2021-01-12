@@ -63,6 +63,7 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
@@ -81,6 +82,7 @@ import org.apache.pulsar.common.util.FutureUtil;
 public class GroupCoordinator {
 
     public static GroupCoordinator of(
+        BrokerService brokerService,
         PulsarClientImpl pulsarClient,
         GroupConfig groupConfig,
         OffsetConfig offsetConfig,
@@ -119,7 +121,7 @@ public class GroupCoordinator {
                 .timeoutTimer(timer)
                 .build();
 
-        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient);
+        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient, brokerService);
         return new GroupCoordinator(
             groupConfig,
             metadataManager,

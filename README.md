@@ -95,7 +95,14 @@ add configurations in Pulsar's configuration file, such as `broker.conf` or `sta
     listeners=PLAINTEXT://127.0.0.1:9092
     advertisedAddress=127.0.0.1
     ```
+3. Offset Management
 
+    Offset management for KoP is dependent on "Broker Entry Metadata" feature of Pulsar. So, you should set `brokerEntryMetadataInterceptors` to `org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor`.
+
+    **Example**
+    ```properties
+    brokerEntryMetadataInterceptors=org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor
+    ```
 ### Restart Pulsar brokers to load KoP
 
 After you have installed the KoP protocol handler to Pulsar broker, you can restart the Pulsar brokers to load KoP.
