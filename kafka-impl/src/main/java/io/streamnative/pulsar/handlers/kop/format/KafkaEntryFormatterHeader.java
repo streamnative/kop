@@ -21,9 +21,6 @@ import org.apache.pulsar.common.api.proto.PulsarApi;
  */
 public class KafkaEntryFormatterHeader {
 
-    private static volatile PulsarApi.MessageMetadata messageMetadata = null;
-
-
     public PulsarApi.MessageMetadata getMessageMetadataWithNumberMessages(int numMessages) {
         final PulsarApi.MessageMetadata.Builder builder = PulsarApi.MessageMetadata.newBuilder();
         builder.addProperties(PulsarApi.KeyValue.newBuilder()

@@ -91,6 +91,10 @@ public class OffsetAcker implements Closeable {
                 KopTopic kopTopic = new KopTopic(topicPartition.topic());
                 String partitionTopicName = kopTopic.getPartitionName(topicPartition.partition());
                 brokerService.getTopic(partitionTopicName, false).whenComplete((topic, error) -> {
+                    if (error != null) {
+                        log.error("[{}] get topic failed when ack for {}.", partitionTopicName, groupId, error);
+                        return;
+                    }
                     if (topic.isPresent()) {
                         PersistentTopic persistentTopic = (PersistentTopic) topic.get();
                         PositionImpl position = null;
@@ -111,6 +115,8 @@ public class OffsetAcker implements Closeable {
                         }
                         consumer.acknowledgeCumulativeAsync(
                                 new MessageIdImpl(position.getLedgerId(), position.getEntryId(), -1));
+                    } else {
+                        log.error("[{}] Topic not exist when ack for {}.", partitionTopicName, groupId);
                     }
                 });
             });

@@ -20,16 +20,6 @@ import org.testng.annotations.BeforeClass;
  * {@link PulsarAuthEnabledTestBase} with `entryFormat=kafka`.
  */
 public class PulsarAuthEnabledKafkaTest extends PulsarAuthEnabledTestBase {
-    @BeforeClass
-    @Override
-    protected void setup() throws Exception {
-        super.setup();
-    }
-    @AfterClass
-    @Override
-    protected void cleanup() throws Exception {
-        super.cleanup();
-    }
 
     public PulsarAuthEnabledKafkaTest() {
         super("kafka");
