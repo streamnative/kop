@@ -13,9 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import org.testng.annotations.AfterClass;
-import org.testng.annotations.BeforeClass;
-
 /**
  * {@link PulsarAuthEnabledTestBase} with `entryFormat=kafka`.
  */
