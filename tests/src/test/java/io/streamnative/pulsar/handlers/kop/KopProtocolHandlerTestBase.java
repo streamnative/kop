@@ -135,6 +135,10 @@ public abstract class KopProtocolHandlerTestBase {
         resetConfig();
     }
 
+    protected EndPoint getPlainEndPoint() {
+        return new EndPoint(PLAINTEXT_PREFIX + "127.0.0.1:" + kafkaBrokerPort);
+    }
+
     protected void resetConfig() {
         KafkaServiceConfiguration kafkaConfig = new KafkaServiceConfiguration();
         addBrokerEntryMetadataInterceptors(kafkaConfig);
@@ -162,9 +166,12 @@ public abstract class KopProtocolHandlerTestBase {
         // kafka related settings.
         kafkaConfig.setEnableGroupCoordinator(true);
         kafkaConfig.setOffsetsTopicNumPartitions(1);
-        kafkaConfig.setListeners(
-            PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort + ","
-                + SSL_PREFIX + "localhost:" + kafkaBrokerPortTls);
+        kafkaConfig.setKafkaListeners(
+                PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort + ","
+                        + SSL_PREFIX + "localhost:" + kafkaBrokerPortTls);
+        kafkaConfig.setKafkaAdvertisedListeners(
+                PLAINTEXT_PREFIX + "127.0.0.1:" + kafkaBrokerPort + ","
+                        + SSL_PREFIX + "127.0.0.1:" + kafkaBrokerPortTls);
         kafkaConfig.setEntryFormat(entryFormat);
 
         // set protocol related config

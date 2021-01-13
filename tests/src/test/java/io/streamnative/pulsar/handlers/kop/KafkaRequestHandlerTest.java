@@ -149,7 +149,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             pulsar,
             (KafkaServiceConfiguration) conf,
             groupCoordinator,
-            false);
+            false,
+            getPlainEndPoint());
     }
 
     @AfterMethod

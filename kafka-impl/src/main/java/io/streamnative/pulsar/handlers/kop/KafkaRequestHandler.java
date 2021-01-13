@@ -123,7 +123,6 @@ import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -157,7 +156,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final AdminManager adminManager;
 
     private final Boolean tlsEnabled;
-    private final String localListeners;
+    private final EndPoint advertisedEndPoint;
+    private final String advertisedListeners;
     private final int plaintextPort;
     private final int sslPort;
     private final int defaultNumPartitions;
@@ -170,7 +170,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
                                GroupCoordinator groupCoordinator,
-                               Boolean tlsEnabled) throws Exception {
+                               Boolean tlsEnabled,
+                               EndPoint advertisedEndPoint) throws Exception {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -185,9 +186,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 : null;
         this.adminManager = new AdminManager(admin);
         this.tlsEnabled = tlsEnabled;
-        this.localListeners = KafkaProtocolHandler.getListenersFromConfig(kafkaConfig);
-        this.plaintextPort = getListenerPort(localListeners, PLAINTEXT);
-        this.sslPort = getListenerPort(localListeners, SSL);
+        this.advertisedEndPoint = advertisedEndPoint;
+        this.advertisedListeners = KafkaProtocolHandler.getListenersFromConfig(kafkaConfig);
+        this.plaintextPort = getListenerPort(advertisedListeners, PLAINTEXT);
+        this.sslPort = getListenerPort(advertisedListeners, SSL);
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
@@ -1446,16 +1448,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 if (log.isDebugEnabled()) {
                     log.debug("Found broker localListeners: {} for topicName: {}, "
                             + "localListeners: {}, found Listeners: {}",
-                        listeners, topic, localListeners, listeners);
+                        listeners, topic, advertisedListeners, listeners);
                 }
 
                 // here we found topic broker: broker2, but this is in broker1,
                 // how to clean the lookup cache?
-                if (!localListeners.contains(kopBrokerUrl)) {
+                if (!advertisedListeners.contains(kopBrokerUrl)) {
                     topicManager.removeTopicManagerCache(topic.toString());
                 }
 
-                if (localListeners.contains(kopBrokerUrl)) {
+                if (advertisedListeners.contains(kopBrokerUrl)) {
                     topicManager.getTopic(topic.toString()).whenComplete((persistentTopic, exception) -> {
                         if (exception != null || persistentTopic == null) {
                             log.warn("[{}] findBroker: Failed to getOrCreateTopic {}. broker:{}, exception:",
@@ -1489,10 +1491,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     Node newSelfNode() {
-        String hostname = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(
-            kafkaConfig.getAdvertisedAddress());
-
-        int port = tlsEnabled ? sslPort : plaintextPort;
+        final String hostname = advertisedEndPoint.getHostname();
+        final int port = advertisedEndPoint.getPort();
 
         if (log.isDebugEnabled()) {
             log.debug("Return Broker Node of Self: {}:{}", hostname, port);

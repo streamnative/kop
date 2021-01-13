@@ -36,12 +36,13 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.PulsarServerException;
-import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.namespace.NamespaceBundleOwnershipListener;
@@ -229,11 +230,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     // This method is called after initialize
     @Override
     public String getProtocolDataToAdvertise() {
-        if (kafkaConfig.getKafkaAdvertisedListeners() != null) {
-            return kafkaConfig.getKafkaAdvertisedListeners();
-        } else {
-            return kafkaConfig.getListeners();
-        }
+        return getListenersFromConfig(kafkaConfig);
     }
 
     @Override
@@ -276,17 +273,24 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
                 ImmutableMap.<InetSocketAddress, ChannelInitializer<SocketChannel>>builder();
 
+            final Map<SecurityProtocol, EndPoint> advertisedEndpointMap =
+                    EndPoint.parseListeners(kafkaConfig.getKafkaAdvertisedListeners());
             EndPoint.parseListeners(kafkaConfig.getListeners()).forEach((protocol, endPoint) -> {
+                EndPoint advertisedEndPoint = advertisedEndpointMap.get(protocol);
+                if (advertisedEndPoint == null) {
+                    // Use the bind endpoint as the advertised endpoint.
+                    advertisedEndPoint = endPoint;
+                }
                 switch (protocol) {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
-                        builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(
-                                brokerService.getPulsar(), kafkaConfig, groupCoordinator, false));
+                        builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
+                                kafkaConfig, groupCoordinator, false, advertisedEndPoint));
                         break;
                     case SSL:
                     case SASL_SSL:
-                        builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(
-                                brokerService.getPulsar(), kafkaConfig, groupCoordinator, true));
+                        builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
+                                kafkaConfig, groupCoordinator, true, advertisedEndPoint));
                         break;
                 }
             });
@@ -424,15 +428,15 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     }
 
     // getLocalListeners from config, if not exists in config, set it as PLAINTEXT://advertisedAddress:9092
-    public static String getListenersFromConfig(KafkaServiceConfiguration kafkaConfig) {
-        String listeners = kafkaConfig.getListeners();
-        String advertisedAddress = PulsarService.advertisedAddress(kafkaConfig);
-        if (listeners == null || listeners.isEmpty()) {
-            listeners = PLAINTEXT_PREFIX + advertisedAddress + ':' + DEFAULT_PORT;
-            return listeners;
+    public static @NonNull String getListenersFromConfig(KafkaServiceConfiguration kafkaConfig) {
+        if (kafkaConfig.getKafkaAdvertisedListeners() != null) {
+            return kafkaConfig.getKafkaAdvertisedListeners();
+        } else {
+            if (kafkaConfig.getListeners() == null) {
+                throw new IllegalStateException("listeners or kafkaListeners is required");
+            }
+            return kafkaConfig.getListeners();
         }
-
-        return checkAndFillUpListeners(listeners, advertisedAddress);
     }
 
     // listener either in format: type://:port, e.g.: "SSL://:9093",
