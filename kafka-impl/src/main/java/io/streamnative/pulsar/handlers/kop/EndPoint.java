@@ -18,6 +18,8 @@ import static com.google.common.base.Preconditions.checkState;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.Getter;
@@ -61,5 +63,19 @@ public class EndPoint {
 
     public InetSocketAddress getInetAddress() {
         return new InetSocketAddress(hostname, port);
+    }
+
+    public static Map<SecurityProtocol, EndPoint> parseListeners(final String listeners) {
+        final Map<SecurityProtocol, EndPoint> endPointMap = new HashMap<>();
+        for (String listener : listeners.split(",")) {
+            final EndPoint endPoint = new EndPoint(listener);
+            if (endPointMap.containsKey(endPoint.securityProtocol)) {
+                throw new IllegalStateException(
+                        listeners + " has multiple listeners whose protocol is " + endPoint.securityProtocol);
+            } else {
+                endPointMap.put(endPoint.securityProtocol, endPoint);
+            }
+        }
+        return endPointMap;
     }
 }

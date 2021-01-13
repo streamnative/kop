@@ -276,9 +276,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
                 ImmutableMap.<InetSocketAddress, ChannelInitializer<SocketChannel>>builder();
 
-            for (String listener: kafkaConfig.getListeners().split(",")) {
-                final EndPoint endPoint = new EndPoint(listener);
-                switch (endPoint.getSecurityProtocol()) {
+            EndPoint.parseListeners(kafkaConfig.getListeners()).forEach((protocol, endPoint) -> {
+                switch (protocol) {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(
@@ -290,7 +289,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                 brokerService.getPulsar(), kafkaConfig, groupCoordinator, true));
                         break;
                 }
-            }
+            });
 
             return builder.build();
         } catch (Exception e){

@@ -47,7 +47,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
                                    GroupCoordinator groupCoordinator,
-                                   boolean enableTLS) throws Exception {
+                                   boolean enableTLS) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;

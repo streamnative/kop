@@ -14,9 +14,13 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 import java.net.InetAddress;
+import java.util.Map;
+
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.testng.annotations.Test;
 
@@ -45,23 +49,54 @@ public class EndPointTest {
             new EndPoint("hello world");
         } catch (IllegalStateException e) {
             assertTrue(e.getMessage().contains("listener 'hello world' is invalid"));
-            e.getMessage();
         }
         try {
             new EndPoint("pulsar://localhost:6650");
+            fail();
         } catch (IllegalArgumentException e) {
             assertTrue(e.getMessage().contains("No enum constant"));
         }
         try {
             new EndPoint("PLAINTEXT://localhost:65536");
+            fail();
         } catch (IllegalStateException e) {
             assertTrue(e.getMessage().contains("port 65536 is invalid"));
         }
         try {
             new EndPoint("PLAINTEXT://localhost:-1");
+            fail();
         } catch (IllegalStateException e) {
             assertTrue(e.getMessage().contains("port -1 is invalid"));
         }
     }
 
+    @Test
+    public void testValidListeners() throws Exception {
+        final Map<SecurityProtocol, EndPoint> endPointMap =
+                EndPoint.parseListeners("PLAINTEXT://localhost:9092,SSL://:9093");
+        assertEquals(endPointMap.size(), 2);
+
+        final EndPoint plainEndPoint = endPointMap.get(SecurityProtocol.PLAINTEXT);
+        assertNotNull(plainEndPoint);
+        assertEquals(plainEndPoint.getSecurityProtocol(), SecurityProtocol.PLAINTEXT);
+        assertEquals(plainEndPoint.getHostname(), "localhost");
+        assertEquals(plainEndPoint.getPort(), 9092);
+
+        final EndPoint sslEndPoint = endPointMap.get(SecurityProtocol.SSL);
+        final String localhost = InetAddress.getLocalHost().getCanonicalHostName();
+        assertNotNull(sslEndPoint);
+        assertEquals(sslEndPoint.getSecurityProtocol(), SecurityProtocol.SSL);
+        assertEquals(sslEndPoint.getHostname(), localhost);
+        assertEquals(sslEndPoint.getPort(), 9093);
+    }
+
+    @Test
+    public void testRepeatedListeners() throws Exception {
+        try {
+            EndPoint.parseListeners("PLAINTEXT://localhost:9092,SSL://:9093,SSL://localhost:9094");
+            fail();
+        } catch (IllegalStateException e) {
+            assertTrue(e.getMessage().contains(" has multiple listeners whose protocol is SSL"));
+        }
+    }
 }
