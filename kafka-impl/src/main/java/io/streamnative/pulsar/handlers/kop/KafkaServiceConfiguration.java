@@ -137,13 +137,26 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private long offsetsRetentionCheckIntervalMs = OffsetConfig.DefaultOffsetsRetentionCheckIntervalMs;
 
+    @Deprecated
     @FieldContext(
         category = CATEGORY_KOP,
-        doc = "ListenersProp for Kafka service(host should follow the advertisedAddress). "
+        doc = "Comma-separated list of URIs we will listen on and the listener names."
               + "e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093. "
               + "If not set, kop will use PLAINTEXT://advertisedAddress:9092"
     )
     private String listeners;
+
+    @FieldContext(
+        category = CATEGORY_KOP,
+        doc = "Comma-separated list of URIs we will listen on and the listener names."
+                + "e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093. "
+                + "If not set, kop will use PLAINTEXT://advertisedAddress:9092"
+    )
+    private String kafkaListeners;
+
+    public String getListeners() {
+        return (kafkaListeners != null) ? kafkaListeners : listeners;
+    }
 
     // Kafka SSL configs
     @FieldContext(

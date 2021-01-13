@@ -57,6 +57,16 @@ public class KafkaServiceConfigurationTest {
     }
 
     @Test
+    public void testKafkaListeners() {
+        KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
+        configuration.setListeners("PLAINTEXT://localhost:9092");
+        assertEquals(configuration.getListeners(), "PLAINTEXT://localhost:9092");
+        // kafkaListeners has higher priority than listeners
+        configuration.setKafkaListeners("PLAINTEXT://localhost:9093");
+        assertEquals(configuration.getListeners(), "PLAINTEXT://localhost:9093");
+    }
+
+    @Test
     public void testConfigurationUtilsStream() throws Exception {
         File testConfigFile = new File("tmp." + System.currentTimeMillis() + ".properties");
         if (testConfigFile.exists()) {
