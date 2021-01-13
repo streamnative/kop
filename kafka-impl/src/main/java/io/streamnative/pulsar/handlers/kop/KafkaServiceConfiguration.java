@@ -140,17 +140,15 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     @Deprecated
     @FieldContext(
         category = CATEGORY_KOP,
-        doc = "Comma-separated list of URIs we will listen on and the listener names."
-              + "e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093. "
-              + "If not set, kop will use PLAINTEXT://advertisedAddress:9092"
+        doc = "Use `kafkaListeners` instead"
     )
     private String listeners;
 
     @FieldContext(
         category = CATEGORY_KOP,
-        doc = "Comma-separated list of URIs we will listen on and the listener names."
-                + "e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093. "
-                + "If not set, kop will use PLAINTEXT://advertisedAddress:9092"
+        doc = "Comma-separated list of URIs we will listen on and the listener names.\n"
+                + "e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093.\n"
+                + "If hostname is not set, bind to the default interface."
     )
     private String kafkaListeners;
 
