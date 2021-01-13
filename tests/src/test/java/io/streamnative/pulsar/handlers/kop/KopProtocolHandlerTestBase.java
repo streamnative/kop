@@ -13,8 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.PLAINTEXT_PREFIX;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.SSL_PREFIX;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
 
@@ -61,6 +59,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.errors.SerializationException;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.BookKeeperClientFactory;
@@ -124,6 +123,9 @@ public abstract class KopProtocolHandlerTestBase {
     protected String restConnect;
 
     private final String entryFormat;
+
+    protected static final String PLAINTEXT_PREFIX = SecurityProtocol.PLAINTEXT.name() + "://";
+    protected static final String SSL_PREFIX = SecurityProtocol.SSL.name() + "://";
 
     public KopProtocolHandlerTestBase() {
         this.entryFormat = "pulsar";

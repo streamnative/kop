@@ -15,9 +15,6 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.ListenerType.PLAINTEXT;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.ListenerType.SSL;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.getListenerPort;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
@@ -155,8 +152,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final Boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
     private final String advertisedListeners;
-    private final int plaintextPort;
-    private final int sslPort;
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
     @Getter
@@ -185,8 +180,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
         this.advertisedListeners = KafkaProtocolHandler.getListenersFromConfig(kafkaConfig);
-        this.plaintextPort = getListenerPort(advertisedListeners, PLAINTEXT);
-        this.sslPort = getListenerPort(advertisedListeners, SSL);
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
@@ -1400,14 +1393,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     );
             });
         return returnFuture;
-    }
-
-    private boolean isOffsetTopic(String topic) {
-        String offsetsTopic = kafkaConfig.getKafkaMetadataTenant() + "/"
-            + kafkaConfig.getKafkaMetadataNamespace()
-            + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
-
-        return topic.contains(offsetsTopic);
     }
 
     private CompletableFuture<PartitionMetadata> findBroker(TopicName topic) {
