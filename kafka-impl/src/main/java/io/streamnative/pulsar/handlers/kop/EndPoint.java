@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static com.google.common.base.Preconditions.checkState;
 
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -55,10 +56,10 @@ public class EndPoint {
             this.hostname = originalHostname;
         }
         this.port = Integer.parseInt(matcher.group(3));
-        checkState(port >= 0 && port < 65535, errorMessage + ": port " + port + " is invalid");
+        checkState(port >= 0 && port <= 65535, errorMessage + ": port " + port + " is invalid");
     }
 
-    public String getConnectionString() {
-        return hostname + ":" + port;
+    public InetSocketAddress getInetAddress() {
+        return new InetSocketAddress(hostname, port);
     }
 }

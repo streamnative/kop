@@ -53,9 +53,9 @@ public class EndPointTest {
             assertTrue(e.getMessage().contains("No enum constant"));
         }
         try {
-            new EndPoint("PLAINTEXT://localhost:123456");
+            new EndPoint("PLAINTEXT://localhost:65536");
         } catch (IllegalStateException e) {
-            assertTrue(e.getMessage().contains("port 123456 is invalid"));
+            assertTrue(e.getMessage().contains("port 65536 is invalid"));
         }
         try {
             new EndPoint("PLAINTEXT://localhost:-1");

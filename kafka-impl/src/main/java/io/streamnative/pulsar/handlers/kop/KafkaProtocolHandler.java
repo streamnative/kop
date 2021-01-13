@@ -273,32 +273,22 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
 
         try {
-            String listeners = getListenersFromConfig(kafkaConfig);
-            String[] parts = listeners.split(LISTENER_DEL);
-
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
                 ImmutableMap.<InetSocketAddress, ChannelInitializer<SocketChannel>>builder();
 
-            for (String listener: parts) {
-                if (listener.startsWith(PLAINTEXT_PREFIX)) {
-                    builder.put(
-                        // TODO: consider using the address in the listener as the bind address.
-                        //          https://github.com/streamnative/kop/issues/46
-                        new InetSocketAddress(brokerService.pulsar().getBindAddress(), getListenerPort(listener)),
-                        new KafkaChannelInitializer(brokerService.pulsar(),
-                            kafkaConfig,
-                            groupCoordinator,
-                            false));
-                } else if (listener.startsWith(SSL_PREFIX)) {
-                    builder.put(
-                        new InetSocketAddress(brokerService.pulsar().getBindAddress(), getListenerPort(listener)),
-                        new KafkaChannelInitializer(brokerService.pulsar(),
-                            kafkaConfig,
-                            groupCoordinator,
-                            true));
-                } else {
-                    log.error("Kafka listener {} not supported. supports {} and {}",
-                        listener, PLAINTEXT_PREFIX, SSL_PREFIX);
+            for (String listener: kafkaConfig.getListeners().split(",")) {
+                final EndPoint endPoint = new EndPoint(listener);
+                switch (endPoint.getSecurityProtocol()) {
+                    case PLAINTEXT:
+                    case SASL_PLAINTEXT:
+                        builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(
+                                brokerService.getPulsar(), kafkaConfig, groupCoordinator, false));
+                        break;
+                    case SSL:
+                    case SASL_SSL:
+                        builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(
+                                brokerService.getPulsar(), kafkaConfig, groupCoordinator, true));
+                        break;
                 }
             }
 
