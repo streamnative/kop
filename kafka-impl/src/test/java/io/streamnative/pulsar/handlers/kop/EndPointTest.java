@@ -122,4 +122,11 @@ public class EndPointTest {
             assertTrue(e.getMessage().contains("has no ssl endpoint"));
         }
     }
+
+    @Test
+    public void testOriginalUrl() throws Exception {
+        final EndPoint endPoint = new EndPoint("PLAINTEXT://:9092");
+        assertEquals(endPoint.getHostname(), InetAddress.getLocalHost().getCanonicalHostName());
+        assertEquals(endPoint.getOriginalListener(), "PLAINTEXT://:9092");
+    }
 }

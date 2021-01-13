@@ -35,6 +35,8 @@ public class EndPoint {
     private static final Pattern PATTERN = Pattern.compile(REGEX);
 
     @Getter
+    private final String originalListener;
+    @Getter
     private final SecurityProtocol securityProtocol;
     @Getter
     private final String hostname;
@@ -42,6 +44,7 @@ public class EndPoint {
     private final int port;
 
     public EndPoint(final String listener) {
+        this.originalListener = listener;
         final String errorMessage = "listener '" + listener + "' is invalid";
         final Matcher matcher = PATTERN.matcher(listener);
         checkState(matcher.find(), errorMessage);
