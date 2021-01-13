@@ -25,6 +25,7 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.TimestampType;
+import org.apache.pulsar.common.api.proto.PulsarApi;
 import org.apache.pulsar.common.protocol.Commands;
 
 
@@ -32,15 +33,16 @@ import org.apache.pulsar.common.protocol.Commands;
  * The entry formatter that uses Kafka's format.
  */
 public class KafkaEntryFormatter implements EntryFormatter {
-    private final KafkaEntryFormatterHeader header = new KafkaEntryFormatterHeader();
 
     @Override
     public ByteBuf encode(MemoryRecords records, int numMessages) {
-        return Commands.serializeMetadataAndPayload(
+        final ByteBuf recordsWrapper = Unpooled.wrappedBuffer(records.buffer());
+        final ByteBuf buf = Commands.serializeMetadataAndPayload(
                 Commands.ChecksumType.None,
-                header.getMessageMetadataWithNumberMessages(numMessages),
-                Unpooled.wrappedBuffer(records.buffer())
-        );
+                getMessageMetadataWithNumberMessages(numMessages),
+                recordsWrapper);
+        recordsWrapper.release();
+        return buf;
     }
 
     @Override
@@ -66,6 +68,19 @@ public class KafkaEntryFormatter implements EntryFormatter {
             }
             entry.release();
         });
+        return builder.build();
+    }
+
+    private static PulsarApi.MessageMetadata getMessageMetadataWithNumberMessages(int numMessages) {
+        final PulsarApi.MessageMetadata.Builder builder = PulsarApi.MessageMetadata.newBuilder();
+        builder.addProperties(PulsarApi.KeyValue.newBuilder()
+                .setKey("entry.format")
+                .setValue(EntryFormatterFactory.EntryFormat.KAFKA.name().toLowerCase())
+                .build());
+        builder.setProducerName("");
+        builder.setSequenceId(0L);
+        builder.setPublishTime(0L);
+        builder.setNumMessagesInBatch(numMessages);
         return builder.build();
     }
 }
