@@ -229,11 +229,11 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     // This method is called after initialize
     @Override
     public String getProtocolDataToAdvertise() {
-        String listeners = getListenersFromConfig(kafkaConfig);
-        if (log.isDebugEnabled()) {
-            log.debug("Get configured listeners {}", listeners);
+        if (kafkaConfig.getKafkaAdvertisedListeners() != null) {
+            return kafkaConfig.getKafkaAdvertisedListeners();
+        } else {
+            return kafkaConfig.getListeners();
         }
-        return listeners;
     }
 
     @Override

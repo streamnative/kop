@@ -156,6 +156,13 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         return (kafkaListeners != null) ? kafkaListeners : listeners;
     }
 
+    @FieldContext(
+        category = CATEGORY_KOP,
+        doc = "Listeners to publish to ZooKeeper for clients to use.\n"
+                + "The format is the same as `kafkaListeners`.\n"
+    )
+    private String kafkaAdvertisedListeners;
+
     // Kafka SSL configs
     @FieldContext(
         category = CATEGORY_KOP_SSL,

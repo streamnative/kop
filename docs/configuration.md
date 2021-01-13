@@ -17,6 +17,7 @@ The following table lists all KoP configurations.
 |---|---|---|
 |messagingProtocols|  Messaging protocols available for being loaded by Pulsar Broker |kafka|
 |kafkaListeners|Comma-separated list of URIs we will listen on and the listener names.<br>e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093.<br>If hostname is not set, bind to the default interface.||
+|kafkaAdvertisedListeners|Listeners to publish to ZooKeeper for clients to use.<br>The format is the same as `kafkaListeners`.||
 |listeners|Deprecated - use `kafkaListeners` instead. ||
 |kafkaTenant| The default tenant of Kafka's topics |public|
 |kafkaNamespace| The default namespace of Kafka's topics |default|
