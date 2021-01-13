@@ -99,4 +99,27 @@ public class EndPointTest {
             assertTrue(e.getMessage().contains(" has multiple listeners whose protocol is SSL"));
         }
     }
+
+    @Test
+    public void testGetEndPoint() {
+        String listeners = "PLAINTEXT://:9092,SSL://:9093,SASL_SSL://:9094,SASL_PLAINTEXT:9095";
+        assertEquals(EndPoint.getPlainTextEndPoint(listeners).getPort(), 9092);
+        assertEquals(EndPoint.getSslEndPoint(listeners).getPort(), 9093);
+        listeners = "SASL_PLAINTEXT://:9095,SASL_SSL://:9094,SSL://:9093,PLAINTEXT:9092";
+        assertEquals(EndPoint.getPlainTextEndPoint(listeners).getPort(), 9095);
+        assertEquals(EndPoint.getSslEndPoint(listeners).getPort(), 9094);
+
+        try {
+            EndPoint.getPlainTextEndPoint("SSL://:9093");
+            fail();
+        } catch (IllegalStateException e) {
+            assertTrue(e.getMessage().contains("has no plain text endpoint"));
+        }
+
+        try {
+            EndPoint.getSslEndPoint("PLAINTEXT://:9092");
+        } catch (IllegalStateException e) {
+            assertTrue(e.getMessage().contains("has no ssl endpoint"));
+        }
+    }
 }

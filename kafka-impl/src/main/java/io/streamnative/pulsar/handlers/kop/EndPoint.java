@@ -30,6 +30,7 @@ import org.apache.kafka.common.security.auth.SecurityProtocol;
  */
 public class EndPoint {
 
+    private static final String END_POINT_SEPARATOR = ",";
     private static final String REGEX = "^(.*)://\\[?([0-9a-zA-Z\\-%._:]*)\\]?:(-?[0-9]+)";
     private static final Pattern PATTERN = Pattern.compile(REGEX);
 
@@ -67,7 +68,7 @@ public class EndPoint {
 
     public static Map<SecurityProtocol, EndPoint> parseListeners(final String listeners) {
         final Map<SecurityProtocol, EndPoint> endPointMap = new HashMap<>();
-        for (String listener : listeners.split(",")) {
+        for (String listener : listeners.split(END_POINT_SEPARATOR)) {
             final EndPoint endPoint = new EndPoint(listener);
             if (endPointMap.containsKey(endPoint.securityProtocol)) {
                 throw new IllegalStateException(
@@ -77,5 +78,25 @@ public class EndPoint {
             }
         }
         return endPointMap;
+    }
+
+    public static EndPoint getPlainTextEndPoint(final String listeners) {
+        for (String listener : listeners.split(END_POINT_SEPARATOR)) {
+            if (listener.startsWith(SecurityProtocol.PLAINTEXT.name())
+                    || listener.startsWith(SecurityProtocol.SASL_PLAINTEXT.name())) {
+                return new EndPoint(listener);
+            }
+        }
+        throw new IllegalStateException(listeners + " has no plain text endpoint");
+    }
+
+    public static EndPoint getSslEndPoint(final String listeners) {
+        for (String listener : listeners.split(END_POINT_SEPARATOR)) {
+            if (listener.startsWith(SecurityProtocol.SSL.name())
+                    || listener.startsWith(SecurityProtocol.SASL_SSL.name())) {
+                return new EndPoint(listener);
+            }
+        }
+        throw new IllegalStateException(listeners + " has no ssl endpoint");
     }
 }
