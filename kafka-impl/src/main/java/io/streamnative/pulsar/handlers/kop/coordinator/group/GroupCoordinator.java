@@ -220,6 +220,14 @@ public class GroupCoordinator {
         return groupManager;
     }
 
+    public GroupConfig groupConfig() {
+        return groupConfig;
+    }
+
+    public OffsetConfig offsetConfig() {
+        return groupManager.offsetConfig();
+    }
+
     public CompletableFuture<JoinGroupResult> handleJoinGroup(
         String groupId,
         String memberId,

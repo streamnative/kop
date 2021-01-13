@@ -23,6 +23,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.netty.channel.ChannelHandlerContext;
@@ -32,6 +33,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.Group
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -118,6 +120,7 @@ import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.SyncGroupResponse;
+import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
@@ -924,34 +927,108 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 //                ));
     }
 
+    @VisibleForTesting
+    Map<TopicPartition, OffsetAndMetadata> convertOffsetCommitRequestRetentionMs(OffsetCommitRequest request,
+                                                                                 short apiVersion,
+                                                                                 long currentTimeStamp,
+                                                                                 long configOffsetsRetentionMs) {
+
+        // commit from kafka
+        // > for version 1 and beyond store offsets in offset manager
+        // > compute the retention time based on the request version:
+        // commit from kafka
+
+        long offsetRetention;
+        if (apiVersion <= 1 || request.retentionTime() == OffsetCommitRequest.DEFAULT_RETENTION_TIME) {
+            offsetRetention = configOffsetsRetentionMs;
+        } else {
+            offsetRetention = request.retentionTime();
+        }
+
+        // commit from kafka
+        // > commit timestamp is always set to now.
+        // > "default" expiration timestamp is now + retention (and retention may be overridden if v2)
+
+        // > expire timestamp is computed differently for v1 and v2.
+        // >  - If v1 and no explicit commit timestamp is provided we use default expiration timestamp.
+        // >  - If v1 and explicit commit timestamp is provided we calculate retention from
+        // >    that explicit commit timestamp
+        // >  - If v2 we use the default expiration timestamp
+        // commit from kafka
+
+        long defaultExpireTimestamp = offsetRetention + currentTimeStamp;
+
+
+        long finalOffsetRetention = offsetRetention;
+        return CoreUtils.mapValue(request.offsetData(), (partitionData) -> {
+
+            String metadata;
+            if (partitionData.metadata == null) {
+                metadata = OffsetMetadata.NO_METADATA;
+            } else {
+                metadata = partitionData.metadata;
+            }
+
+            long expireTimeStamp;
+            if (partitionData.timestamp == OffsetCommitRequest.DEFAULT_TIMESTAMP) {
+                expireTimeStamp = defaultExpireTimestamp;
+            } else {
+                expireTimeStamp = finalOffsetRetention + partitionData.timestamp;
+            }
+
+            return OffsetAndMetadata.apply(
+                    partitionData.offset,
+                    metadata,
+                    currentTimeStamp,
+                    expireTimeStamp);
+        });
+
+    }
+
     protected void handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit,
                                              CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(offsetCommit.getRequest() instanceof OffsetCommitRequest);
         checkState(groupCoordinator != null,
-            "Group Coordinator not started");
+                "Group Coordinator not started");
 
         OffsetCommitRequest request = (OffsetCommitRequest) offsetCommit.getRequest();
 
+        // TODO not process nonExistingTopic at this time.
         Map<TopicPartition, Errors> nonExistingTopic = nonExistingTopicErrors(request);
 
-        groupCoordinator.handleCommitOffsets(
-            request.groupId(),
-            request.memberId(),
-            request.generationId(),
-            CoreUtils.mapValue(
-                request.offsetData().entrySet().stream()
-                    .filter(entry -> !nonExistingTopic.containsKey(entry.getKey()))
-                    .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue())),
-                (partitionData) ->
-                    OffsetAndMetadata.apply(partitionData.offset, partitionData.metadata, partitionData.timestamp)
-            )
-        ).thenAccept(offsetCommitResult -> {
-            if (nonExistingTopic != null) {
+        Map<TopicPartition, OffsetCommitRequest.PartitionData> authorizedTopic = request.offsetData();
+        if (authorizedTopic.isEmpty()) {
+            Map<TopicPartition, Errors> offsetCommitResult = new HashMap<>();
+            if (!nonExistingTopic.isEmpty()) {
                 offsetCommitResult.putAll(nonExistingTopic);
             }
+
             OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
             resultFuture.complete(response);
-        });
+
+        } else {
+            Map<TopicPartition, OffsetAndMetadata> convertedPartitionData =
+                    convertOffsetCommitRequestRetentionMs(
+                            request,
+                            offsetCommit.getHeader().apiVersion(),
+                            Time.SYSTEM.milliseconds(),
+                            groupCoordinator.offsetConfig().offsetsRetentionMs()
+                    );
+
+            groupCoordinator.handleCommitOffsets(
+                    request.groupId(),
+                    request.memberId(),
+                    request.generationId(),
+                    convertedPartitionData
+            ).thenAccept(offsetCommitResult -> {
+                if (!nonExistingTopic.isEmpty()) {
+                    offsetCommitResult.putAll(nonExistingTopic);
+                }
+                OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
+                resultFuture.complete(response);
+            });
+
+        }
     }
 
     protected void handleFetchRequest(KafkaHeaderAndRequest fetch,

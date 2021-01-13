@@ -341,6 +341,10 @@ public class GroupMetadataManager {
         );
     }
 
+    public OffsetConfig offsetConfig() {
+        return offsetConfig;
+    }
+
     // return true iff group is owned and the group doesn't exist
     public boolean groupNotExists(String groupId) {
         return inLock(
