@@ -167,6 +167,8 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
         ((KafkaServiceConfiguration) conf).setListeners(
                 PLAINTEXT_PREFIX + ip + ":" + kafkaBrokerPort + ","
                         + SSL_PREFIX + ip + ":" + kafkaBrokerPortTls);
+        conf.setKafkaAdvertisedListeners(
+                PLAINTEXT_PREFIX + ip + ":" + kafkaBrokerPort + "," + SSL_PREFIX + ip + ":" + kafkaBrokerPortTls);
         super.internalSetup();
 
 
