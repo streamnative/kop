@@ -26,8 +26,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.PLAINTEXT_PREFIX;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.SSL_PREFIX;
 import static org.testng.AssertJUnit.assertFalse;
 import static org.testng.AssertJUnit.assertTrue;
 
