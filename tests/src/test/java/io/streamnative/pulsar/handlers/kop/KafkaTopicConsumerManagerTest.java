@@ -64,7 +64,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
             pulsar,
             (KafkaServiceConfiguration) conf,
             groupCoordinator,
-            false);
+            false,
+            getPlainEndPoint());
 
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);

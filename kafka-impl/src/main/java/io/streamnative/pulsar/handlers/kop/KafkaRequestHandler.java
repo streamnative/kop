@@ -15,10 +15,6 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.ListenerType.PLAINTEXT;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.ListenerType.SSL;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.getKopBrokerUrl;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.getListenerPort;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
@@ -41,8 +37,6 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 
 import java.net.InetSocketAddress;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -123,7 +117,6 @@ import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -157,9 +150,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final AdminManager adminManager;
 
     private final Boolean tlsEnabled;
-    private final String localListeners;
-    private final int plaintextPort;
-    private final int sslPort;
+    private final EndPoint advertisedEndPoint;
+    private final String advertisedListeners;
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
     @Getter
@@ -170,7 +162,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
                                GroupCoordinator groupCoordinator,
-                               Boolean tlsEnabled) throws Exception {
+                               Boolean tlsEnabled,
+                               EndPoint advertisedEndPoint) throws Exception {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -185,9 +178,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 : null;
         this.adminManager = new AdminManager(admin);
         this.tlsEnabled = tlsEnabled;
-        this.localListeners = KafkaProtocolHandler.getListenersFromConfig(kafkaConfig);
-        this.plaintextPort = getListenerPort(localListeners, PLAINTEXT);
-        this.sslPort = getListenerPort(localListeners, SSL);
+        this.advertisedEndPoint = advertisedEndPoint;
+        this.advertisedListeners = KafkaProtocolHandler.getKafkaAdvertisedListeners(kafkaConfig);
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
@@ -1403,14 +1395,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return returnFuture;
     }
 
-    private boolean isOffsetTopic(String topic) {
-        String offsetsTopic = kafkaConfig.getKafkaMetadataTenant() + "/"
-            + kafkaConfig.getKafkaMetadataNamespace()
-            + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
-
-        return topic.contains(offsetsTopic);
-    }
-
     private CompletableFuture<PartitionMetadata> findBroker(TopicName topic) {
         if (log.isDebugEnabled()) {
             log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
@@ -1427,39 +1411,29 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     return;
                 }
 
-                String listeners = stringOptional.get();
-                String kopBrokerUrl = getKopBrokerUrl(listeners, tlsEnabled);
-                URI kopUri;
-                try {
-                    kopUri = new URI(kopBrokerUrl);
-                } catch (URISyntaxException e) {
-                    log.error("[{}] findBroker for topic {}: Failed to translate URI {}. exception:",
-                        ctx.channel(), topic.toString(), kopBrokerUrl, e);
-                    returnFuture.complete(null);
-                    return;
-                }
-
-                Node node = newNode(new InetSocketAddress(
-                    kopUri.getHost(),
-                    kopUri.getPort()));
+                // It's the `kafkaAdvertisedListeners` config that's written to ZK
+                final String listeners = stringOptional.get();
+                final EndPoint endPoint =
+                        (tlsEnabled ? EndPoint.getSslEndPoint(listeners) : EndPoint.getPlainTextEndPoint(listeners));
+                final Node node = newNode(endPoint.getInetAddress());
 
                 if (log.isDebugEnabled()) {
                     log.debug("Found broker localListeners: {} for topicName: {}, "
                             + "localListeners: {}, found Listeners: {}",
-                        listeners, topic, localListeners, listeners);
+                        listeners, topic, advertisedListeners, listeners);
                 }
 
                 // here we found topic broker: broker2, but this is in broker1,
                 // how to clean the lookup cache?
-                if (!localListeners.contains(kopBrokerUrl)) {
+                if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
                     topicManager.removeTopicManagerCache(topic.toString());
                 }
 
-                if (localListeners.contains(kopBrokerUrl)) {
+                if (advertisedListeners.contains(endPoint.getOriginalListener())) {
                     topicManager.getTopic(topic.toString()).whenComplete((persistentTopic, exception) -> {
                         if (exception != null || persistentTopic == null) {
                             log.warn("[{}] findBroker: Failed to getOrCreateTopic {}. broker:{}, exception:",
-                                ctx.channel(), topic.toString(), kopBrokerUrl, exception);
+                                ctx.channel(), topic.toString(), endPoint.getOriginalListener(), exception);
                             // remove cache when topic is null
                             topicManager.removeTopicManagerCache(topic.toString());
                             returnFuture.complete(null);
@@ -1489,21 +1463,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     Node newSelfNode() {
-        String hostname = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(
-            kafkaConfig.getAdvertisedAddress());
-
-        int port = tlsEnabled ? sslPort : plaintextPort;
-
-        if (log.isDebugEnabled()) {
-            log.debug("Return Broker Node of Self: {}:{}", hostname, port);
-        }
-
-        return new Node(
-            Murmur3_32Hash.getInstance().makeHash((hostname + port).getBytes(UTF_8)),
-            hostname,
-            port);
+        return newNode(advertisedEndPoint.getInetAddress());
     }
-
 
     static PartitionMetadata newPartitionMetadata(TopicName topicName, Node node) {
         int pulsarPartitionIndex = topicName.getPartitionIndex();
