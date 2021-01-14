@@ -94,6 +94,13 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     KafkaRequestHandler kafkaRequestHandler;
     SocketAddress serviceAddress;
 
+    @Override
+    protected void resetConfig() {
+        super.resetConfig();
+        this.conf.setKafkaAdvertisedListeners(PLAINTEXT_PREFIX + "127.0.0.1:" + kafkaBrokerPort + ","
+                + SSL_PREFIX + "127.0.0.1:" + kafkaBrokerPortTls);
+    }
+
     @BeforeMethod
     @Override
     protected void setup() throws Exception {

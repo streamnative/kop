@@ -18,6 +18,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import java.util.HashSet;
 import java.util.Set;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.Setter;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.pulsar.broker.ServiceConfiguration;
@@ -162,6 +163,17 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
                 + "The format is the same as `kafkaListeners`.\n"
     )
     private String kafkaAdvertisedListeners;
+
+    public @NonNull String getKafkaAdvertisedListeners() {
+        if (kafkaAdvertisedListeners != null) {
+            return kafkaAdvertisedListeners;
+        } else {
+            if (getListeners() == null) {
+                throw new IllegalStateException("listeners or kafkaListeners is required");
+            }
+            return getListeners();
+        }
+    }
 
     // Kafka SSL configs
     @FieldContext(

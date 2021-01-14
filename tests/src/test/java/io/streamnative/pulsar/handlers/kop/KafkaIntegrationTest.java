@@ -162,11 +162,12 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
         // - set pulsar advertized address to host IP
         // - use the `host.testcontainers.internal` address exposed by testcontainers
         final String ip = getSiteLocalAddress();
-        System.out.println("exposing Pulsar broker on " + ip);
-        conf.setAdvertisedAddress(ip);
+        System.out.println("Bind Pulsar broker/KoP on " + ip);
         ((KafkaServiceConfiguration) conf).setListeners(
                 PLAINTEXT_PREFIX + ip + ":" + kafkaBrokerPort + ","
                         + SSL_PREFIX + ip + ":" + kafkaBrokerPortTls);
+        conf.setKafkaAdvertisedListeners(PLAINTEXT_PREFIX + "127.0.0.1:" + kafkaBrokerPort
+                + "," + SSL_PREFIX + "127.0.0.1:" + kafkaBrokerPortTls);
         super.internalSetup();
 
 
