@@ -179,7 +179,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.adminManager = new AdminManager(admin);
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
-        this.advertisedListeners = KafkaProtocolHandler.getKafkaAdvertisedListeners(kafkaConfig);
+        this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();

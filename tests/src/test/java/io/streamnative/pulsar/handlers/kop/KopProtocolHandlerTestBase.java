@@ -171,9 +171,6 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setKafkaListeners(
                 PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort + ","
                         + SSL_PREFIX + "localhost:" + kafkaBrokerPortTls);
-        kafkaConfig.setKafkaAdvertisedListeners(
-                PLAINTEXT_PREFIX + "127.0.0.1:" + kafkaBrokerPort + ","
-                        + SSL_PREFIX + "127.0.0.1:" + kafkaBrokerPortTls);
         kafkaConfig.setEntryFormat(entryFormat);
 
         // set protocol related config
