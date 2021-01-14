@@ -225,7 +225,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     // This method is called after initialize
     @Override
     public String getProtocolDataToAdvertise() {
-        return getListenersFromConfig(kafkaConfig);
+        return getKafkaAdvertisedListeners(kafkaConfig);
     }
 
     @Override
@@ -383,8 +383,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
     }
 
-    // getLocalListeners from config, if not exists in config, set it as PLAINTEXT://advertisedAddress:9092
-    public static @NonNull String getListenersFromConfig(KafkaServiceConfiguration kafkaConfig) {
+    public static @NonNull String getKafkaAdvertisedListeners(KafkaServiceConfiguration kafkaConfig) {
         if (kafkaConfig.getKafkaAdvertisedListeners() != null) {
             return kafkaConfig.getKafkaAdvertisedListeners();
         } else {
