@@ -36,7 +36,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.Getter;
-import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
@@ -225,7 +224,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     // This method is called after initialize
     @Override
     public String getProtocolDataToAdvertise() {
-        return getKafkaAdvertisedListeners(kafkaConfig);
+        return kafkaConfig.getKafkaAdvertisedListeners();
     }
 
     @Override
@@ -379,17 +378,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             FutureUtil.waitForAll(lists).get();
         } else {
             log.info("Current broker: {} does not own any of the offset topic partitions", currentBroker);
-        }
-    }
-
-    public static @NonNull String getKafkaAdvertisedListeners(KafkaServiceConfiguration kafkaConfig) {
-        if (kafkaConfig.getKafkaAdvertisedListeners() != null) {
-            return kafkaConfig.getKafkaAdvertisedListeners();
-        } else {
-            if (kafkaConfig.getListeners() == null) {
-                throw new IllegalStateException("listeners or kafkaListeners is required");
-            }
-            return kafkaConfig.getListeners();
         }
     }
 }
