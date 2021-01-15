@@ -43,30 +43,21 @@ import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
-import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 /**
  * test topics in different namespaces.
  */
 @Slf4j
-public class DifferentNamespaceTest extends KopProtocolHandlerTestBase {
+public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestBase {
 
     private static final String DEFAULT_TENANT = "public";
     private static final String DEFAULT_NAMESPACE = "default";
     private static final String ANOTHER_TENANT = "my-tenant";
     private static final String ANOTHER_NAMESPACE = "my-ns";
 
-    public DifferentNamespaceTest(final String entryFormat) {
+    public DifferentNamespaceTestBase(final String entryFormat) {
         super(entryFormat);
-    }
-
-    @Factory
-    public static Object[] instances() {
-        return new Object[] {
-                new DifferentNamespaceTest("pulsar"),
-                new DifferentNamespaceTest("kafka")
-        };
     }
 
     @DataProvider(name = "topics")
