@@ -40,7 +40,6 @@ import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.BeforeClass;
-import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 /**
@@ -50,7 +49,7 @@ import org.testng.annotations.Test;
  * This is similar to SaslPlainTest, but the KoP SASL is not enabled.
  */
 @Slf4j
-public class PulsarAuthEnabledTest extends KopProtocolHandlerTestBase {
+public abstract class PulsarAuthEnabledTestBase extends KopProtocolHandlerTestBase {
     private static final String TENANT = "PulsarAuthEnabledTest";
     private static final String ADMIN_USER = "admin_user";
     private static final String NAMESPACE = "ns2";
@@ -58,16 +57,8 @@ public class PulsarAuthEnabledTest extends KopProtocolHandlerTestBase {
     private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/" + SHORT_TOPIC;
     private String adminToken;
 
-    public PulsarAuthEnabledTest(final String entryFormat) {
+    public PulsarAuthEnabledTestBase(final String entryFormat) {
         super(entryFormat);
-    }
-
-    @Factory
-    public static Object[] instances() {
-        return new Object[] {
-                new PulsarAuthEnabledTest("pulsar"),
-                new PulsarAuthEnabledTest("kafka")
-        };
     }
 
     @BeforeClass
