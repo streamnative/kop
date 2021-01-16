@@ -19,6 +19,8 @@ import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.stream.StreamSupport;
+
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -39,7 +41,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
         final ByteBuf recordsWrapper = Unpooled.wrappedBuffer(records.buffer());
         final ByteBuf buf = Commands.serializeMetadataAndPayload(
                 Commands.ChecksumType.None,
-                getMessageMetadataWithNumberMessages(numMessages),
+                getMessageMetadataWithNumberMessages(numMessages, records),
                 recordsWrapper);
         recordsWrapper.release();
         return buf;
@@ -71,7 +73,8 @@ public class KafkaEntryFormatter implements EntryFormatter {
         return builder.build();
     }
 
-    private static PulsarApi.MessageMetadata getMessageMetadataWithNumberMessages(int numMessages) {
+    private static PulsarApi.MessageMetadata getMessageMetadataWithNumberMessages(int numMessages,
+                                                                                  MemoryRecords records) {
         final PulsarApi.MessageMetadata.Builder builder = PulsarApi.MessageMetadata.newBuilder();
         builder.addProperties(PulsarApi.KeyValue.newBuilder()
                 .setKey("entry.format")
@@ -79,7 +82,16 @@ public class KafkaEntryFormatter implements EntryFormatter {
                 .build());
         builder.setProducerName("");
         builder.setSequenceId(0L);
-        builder.setPublishTime(0L);
+        boolean res = StreamSupport.stream(records.records().spliterator(), true).anyMatch(record -> {
+            if (record.timestamp() > 0) {
+                builder.setPublishTime(record.timestamp());
+                return true;
+            }
+            return false;
+        });
+        if (!res) {
+            builder.setPublishTime(System.currentTimeMillis());
+        }
         builder.setNumMessagesInBatch(numMessages);
         return builder.build();
     }
