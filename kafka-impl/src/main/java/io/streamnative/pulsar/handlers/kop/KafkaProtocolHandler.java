@@ -247,7 +247,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             try {
                 initGroupCoordinator(brokerService);
                 startGroupCoordinator();
-                initTransactionCoordinator();
                 // and listener for Offset topics load/unload
                 brokerService.pulsar()
                     .getNamespaceService()

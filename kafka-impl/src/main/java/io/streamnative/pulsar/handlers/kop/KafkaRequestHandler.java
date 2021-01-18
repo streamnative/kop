@@ -591,9 +591,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
-        log.info("Command [handleProduceRequest] request: transactionalId {}", produceRequest.transactionalId());
         if (produceRequest.transactionalId() != null) {
-            log.warn("[{}] Transactions not supported", ctx.channel());
             // TODO auth check
         }
 
@@ -1314,7 +1312,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleInitProducerId(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                         CompletableFuture<AbstractResponse> response) {
         InitProducerIdRequest request = (InitProducerIdRequest) kafkaHeaderAndRequest.getRequest();
-        log.info("Command [handleInitProducerId] request: {}", request);
         transactionCoordinator.handleInitProducerId(
                 request.transactionalId(), request.transactionTimeoutMs(), response);
     }
@@ -1323,7 +1320,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleAddPartitionsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                             CompletableFuture<AbstractResponse> response) {
         AddPartitionsToTxnRequest request = (AddPartitionsToTxnRequest) kafkaHeaderAndRequest.getRequest();
-        log.info("Command [handleAddPartitionsToTxn] request: {}", request);
         transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
                 request.producerId(), request.producerEpoch(), request.partitions(), response);
     }
@@ -1332,7 +1328,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleAddOffsetsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         AddOffsetsToTxnRequest request = (AddOffsetsToTxnRequest) kafkaHeaderAndRequest.getRequest();
-        log.info("Command [handleAddOffsetsToTxn] request: {}", request);
         int partition = groupCoordinator.partitionFor(request.consumerGroupId());
         String offsetTopicName = groupCoordinator.getGroupManager().getOffsetConfig().offsetsTopicName();
         transactionCoordinator.handleAddPartitionsToTransaction(
@@ -1346,7 +1341,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleTxnOffsetCommit(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         TxnOffsetCommitRequest request = (TxnOffsetCommitRequest) kafkaHeaderAndRequest.getRequest();
-        log.info("Command [handleTxnOffsetCommit] request: {}", request);
+        log.info("handleTxnOffsetCommit transactionalId: {}", request.transactionalId());
         response.complete(new TxnOffsetCommitResponse(0, Collections.EMPTY_MAP));
     }
 
@@ -1354,7 +1349,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleEndTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                 CompletableFuture<AbstractResponse> response) {
         EndTxnRequest request = (EndTxnRequest) kafkaHeaderAndRequest.getRequest();
-        log.info("Command [handleEndTxn] request: {}", request);
         transactionCoordinator.handleEndTransaction(
                 request.transactionalId(),
                 request.producerId(),
@@ -1368,7 +1362,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         WriteTxnMarkersRequest request = (WriteTxnMarkersRequest) kafkaHeaderAndRequest.getRequest();
-        log.info("Command [handleWriteTxnMarkers] request: {}", request);
         Map<Long, Map<TopicPartition, Errors>> resultMap = new HashMap<>();
         List<CompletableFuture<Long>> offsetFutureList = new ArrayList<>();
         for (WriteTxnMarkersRequest.TxnMarkerEntry txnMarkerEntry : request.markers()) {
@@ -1434,9 +1427,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     1,
                                     SystemTime.SYSTEM.milliseconds()));
                 });
-        offsetFuture.thenAccept(offset -> {
-            log.info("writeTxnMarker offset: {}", offset);
-        });
         return offsetFuture;
     }
 

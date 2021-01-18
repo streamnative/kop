@@ -177,7 +177,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
             boolean readFinish = false;
             for (ConsumerRecord<Integer, String> record : consumerRecords) {
-                log.info("Fetch for receive record offset: {}, key: {}, value: {}", record.offset(), record.key(), record.value());
+                log.info("Fetch for receive record offset: {}, key: {}, value: {}",
+                        record.offset(), record.key(), record.value());
                 receiveCount.incrementAndGet();
                 if (lastMessage.equalsIgnoreCase(record.value())) {
                     log.info("receive the last message");

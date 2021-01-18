@@ -102,7 +102,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected KafkaHeaderAndRequest byteBufToRequest(ByteBuf msg,
                                                      SocketAddress remoteAddress) {
-        log.info("byteBufToRequest msg {}", msg);
         checkArgument(msg.readableBytes() > 0);
         ByteBuffer nio = msg.nioBuffer();
         RequestHeader header = RequestHeader.parse(nio);
