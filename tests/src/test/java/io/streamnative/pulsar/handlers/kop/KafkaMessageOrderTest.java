@@ -21,8 +21,6 @@ import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
 
-import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
-
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Collections;
@@ -41,7 +39,6 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.impl.BatchMessageIdImpl;
-import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.TopicMessageIdImpl;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
@@ -150,7 +147,6 @@ public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
             final int index = i;
             producer.send(new ProducerRecord<>(topicName, i, messageStrPrefix + i), (recordMetadata, e) -> {
                 assertNull(e);
-                MessageIdImpl id = (MessageIdImpl) MessageIdUtils.getMessageId(recordMetadata.offset());
                 log.info("Success write message {} to offset {}", index, recordMetadata.offset());
             });
         }
