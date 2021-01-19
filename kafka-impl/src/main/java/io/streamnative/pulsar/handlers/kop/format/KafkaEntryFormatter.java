@@ -19,6 +19,7 @@ import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.nio.ByteBuffer;
 import java.util.List;
+
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -27,7 +28,6 @@ import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.TimestampType;
 import org.apache.pulsar.common.api.proto.PulsarApi;
 import org.apache.pulsar.common.protocol.Commands;
-
 
 /**
  * The entry formatter that uses Kafka's format.
@@ -79,7 +79,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
                 .build());
         builder.setProducerName("");
         builder.setSequenceId(0L);
-        builder.setPublishTime(0L);
+        builder.setPublishTime(System.currentTimeMillis());
         builder.setNumMessagesInBatch(numMessages);
         return builder.build();
     }
