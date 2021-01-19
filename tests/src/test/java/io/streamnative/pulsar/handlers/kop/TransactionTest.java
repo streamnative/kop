@@ -184,20 +184,22 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 if (lastMessage.equalsIgnoreCase(record.value())) {
                     log.info("receive the last message");
                     readFinish = true;
-                    break;
                 }
             }
 
             if (readFinish) {
+                log.info("Fetch for read finish.");
                 break;
             }
         }
+        log.info("Fetch for receive message finish. isolation: {}, receive count: {}", isolation, receiveCount.get());
 
         if (isolation.equals("read_committed")) {
             Assert.assertEquals(receiveCount.get(), totalMessageCount / 2);
         } else {
             Assert.assertEquals(receiveCount.get(), totalMessageCount);
         }
+        log.info("Fetch for finish consume messages. isolation: {}", isolation);
     }
 
 //    @Test
