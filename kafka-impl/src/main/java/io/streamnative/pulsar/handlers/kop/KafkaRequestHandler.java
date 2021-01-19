@@ -719,13 +719,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     long offset = Math.max(0, MessageIdUtils.getCurrentOffset(managedLedger));
                     fetchOffsetForTimestampSuccess(partitionData, legacyMode, offset);
                 } else {
-                    MessageIdUtils.getOffsetOfPosition(managedLedger, position).whenComplete((offset, throwable) -> {
-                        if (throwable != null) {
-                            log.error("[{}] Failed to get offset for position {}", perTopic, position, throwable);
-                            fetchOffsetForTimestampFailed(partitionData, legacyMode);
-                            return;
-                        }
-                        fetchOffsetForTimestampSuccess(partitionData, legacyMode, offset);
+                    MessageIdUtils.getOffsetOfPosition(managedLedger, position, false, timestamp)
+                            .whenComplete((offset, throwable) -> {
+                                if (throwable != null) {
+                                    log.error("[{}] Failed to get offset for position {}",
+                                            perTopic, position, throwable);
+                                    fetchOffsetForTimestampFailed(partitionData, legacyMode);
+                                    return;
+                                }
+                                fetchOffsetForTimestampSuccess(partitionData, legacyMode, offset);
                     });
                 }
 
@@ -759,7 +761,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             long offset = Math.max(0, MessageIdUtils.getCurrentOffset(managedLedger));
                             fetchOffsetForTimestampSuccess(partitionData, legacyMode, offset);
                         } else {
-                            MessageIdUtils.getOffsetOfPosition(managedLedger, finalPosition)
+                            MessageIdUtils.getOffsetOfPosition(managedLedger, finalPosition, true, timestamp)
                                     .whenComplete((offset, throwable) -> {
                                         if (throwable != null) {
                                             log.error("[{}] Failed to get offset for position {}",

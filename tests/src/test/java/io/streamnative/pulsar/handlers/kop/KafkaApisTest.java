@@ -321,6 +321,123 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(0));
     }
 
+    @Test(timeOut = 80000)
+    public void testConsumerListOffset() throws Exception {
+        String topicName = "listOffset";
+        TopicPartition tp = new TopicPartition(topicName, 0);
+
+        // create partitioned topic.
+        admin.topics().createPartitionedTopic(topicName, 1);
+
+        // 1. prepare topic:
+        @Cleanup
+        KProducer kProducer = new KProducer(topicName, false, getKafkaBrokerPort());
+        int totalMsgs = 10;
+        String messageStrPrefix = topicName + "_message_";
+
+        // produce 10 message with offset and timestamp :
+        //  message               timestamp        offset
+        // listOffset_message_0   2                0
+        // listOffset_message_1   4                1
+        // listOffset_message_2   6                2
+        // listOffset_message_3   8                3
+        // listOffset_message_4   10               4
+        // listOffset_message_5   12               5
+        // listOffset_message_6   14               6
+        // listOffset_message_7   16               7
+        // listOffset_message_8   18               8
+        // listOffset_message_9   20               9
+
+        long[] timestamps = new long[totalMsgs];
+
+        for (int i = 0; i < totalMsgs; i++) {
+            String messageStr = messageStrPrefix + i;
+            long timestamp = (i + 1) * 2;
+            timestamps[i] = timestamp;
+            kProducer.getProducer()
+                    .send(new ProducerRecord<>(
+                            topicName,
+                            0,
+                            timestamp,
+                            i,
+                            messageStr))
+                    .get();
+            log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+        }
+
+        // 2. real test, test earliest
+        ListOffsetResponse listOffsetResponse = listOffset(ListOffsetRequest.EARLIEST_TIMESTAMP, tp);
+        System.out.println("offset for earliest " + listOffsetResponse.responseData().get(tp).offset.intValue());
+        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);
+
+        listOffsetResponse = listOffset(ListOffsetRequest.LATEST_TIMESTAMP, tp);
+        System.out.println("offset for latest " + listOffsetResponse.responseData().get(tp).offset.intValue());
+        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), totalMsgs);
+
+        listOffsetResponse = listOffset(0, tp);
+        System.out.println("offset for timestamp=0 " + listOffsetResponse.responseData().get(tp).offset.intValue());
+        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);
+
+        listOffsetResponse = listOffset(1, tp);
+        System.out.println("offset for timestamp=0 " + listOffsetResponse.responseData().get(tp).offset.intValue());
+        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);
+
+        // when handle listOffset, result should be like:
+        //  timestamp        offset
+        //  2                0
+        //  3                1
+        //  4                1
+        //  5                2
+        //  6                2
+        //  7                3
+        //  8                3
+        //  9                4
+        //  10               4
+        //  11               5
+        //  12               5
+        //  13               6
+        //  14               6
+        //  15               7
+        //  16               7
+        //  17               8
+        //  18               8
+        //  19               9
+        //  20               9
+        //  21               10
+
+        for (int i = 0; i < totalMsgs; i++) {
+            long searchTime = timestamps[i];
+            listOffsetResponse = listOffset(searchTime, tp);
+            assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
+            assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), i);
+
+            searchTime++;
+            listOffsetResponse = listOffset(searchTime, tp);
+            assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), i + 1);
+        }
+    }
+
+    private ListOffsetResponse listOffset(long timestamp, TopicPartition tp) throws Exception {
+        Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
+        targetTimes.put(tp, timestamp);
+
+        ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
+                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
+                .setTargetTimes(targetTimes);
+
+        KafkaHeaderAndRequest request = buildRequest(builder);
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        kafkaRequestHandler
+                .handleListOffsetRequest(request, responseFuture);
+
+        AbstractResponse response = responseFuture.get();
+        return (ListOffsetResponse) response;
+    }
+
     /// Add test for FetchRequest
     private void checkFetchResponse(List<TopicPartition> expectedPartitions,
                                     FetchResponse<MemoryRecords> fetchResponse,
