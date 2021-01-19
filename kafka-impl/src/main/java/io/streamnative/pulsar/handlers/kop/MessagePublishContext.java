@@ -54,7 +54,8 @@ public final class MessagePublishContext implements PublishContext {
 
             topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.MICROSECONDS);
 
-            offsetFuture.complete(MessageIdUtils.getCurrentOffset(managedLedger));
+            final long baseOffset = MessageIdUtils.getCurrentOffset(managedLedger) - (numberOfMessages - 1);
+            offsetFuture.complete(baseOffset);
         }
 
         recycle();
