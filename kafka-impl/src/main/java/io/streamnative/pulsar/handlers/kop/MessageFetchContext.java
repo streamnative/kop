@@ -312,7 +312,7 @@ public final class MessageFetchContext {
 
                             ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) cursors
                                     .get(kafkaPartition).getLeft().getManagedLedger();
-                            long highWatermark = MessageIdUtils.getCurrentOffset(managedLedger);
+                            long highWatermark = MessageIdUtils.getHighWatermark(managedLedger);
 
                             // use compatible magic value by apiVersion
                             short apiVersion = fetch.getHeader().apiVersion();

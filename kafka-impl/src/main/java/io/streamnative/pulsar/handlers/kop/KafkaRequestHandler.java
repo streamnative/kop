@@ -705,7 +705,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     log.debug("Get latest position for topic {} time {}. result: {}",
                         perTopic.getName(), timestamp, position);
                 }
-                long offset = MessageIdUtils.getCurrentOffset(managedLedger);
+                long offset = MessageIdUtils.getLogEndOffset(managedLedger);
                 fetchOffsetForTimestampSuccess(partitionData, legacyMode, offset);
 
             } else if (timestamp == ListOffsetRequest.EARLIEST_TIMESTAMP) {
