@@ -22,7 +22,6 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicInteger;
-
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -97,15 +96,15 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 1000 * 20)
     public void readCommittedTest() throws Exception {
-        basicProduceAndConsumeTest("read-committed-test", "read_committed");
+        basicProduceAndConsumeTest("read-committed-test", "txn-11", "read_committed");
     }
 
     @Test(timeOut = 1000 * 20)
     public void readUncommittedTest() throws Exception {
-        basicProduceAndConsumeTest("read-uncommitted-test", "read_uncommitted");
+        basicProduceAndConsumeTest("read-uncommitted-test", "txn-12", "read_uncommitted");
     }
 
-    public void basicProduceAndConsumeTest(String topicName, String isolation) throws Exception {
+    public void basicProduceAndConsumeTest(String topicName, String transactionalId, String isolation) throws Exception {
         String kafkaServer = "localhost:" + getKafkaBrokerPort();
 
         Properties producerProps = new Properties();
@@ -113,7 +112,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
-        producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "12");
+        producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
 
         @Cleanup
         KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
