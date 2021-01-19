@@ -18,7 +18,6 @@ import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaT
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getPartitionedTopicNameWithoutPartitions;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
@@ -33,17 +32,15 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
-import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -78,10 +75,6 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.client.api.Consumer;
-import org.apache.pulsar.client.api.Message;
-import org.apache.pulsar.client.api.SubscriptionInitialPosition;
-import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
@@ -90,7 +83,6 @@ import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 /**
@@ -438,7 +430,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         }
     }
 
-    @Ignore
     @Test(timeOut = 10000)
     public void testProduceCallback() throws Exception {
         final String topic = "test-produce-callback";
@@ -453,7 +444,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         @Cleanup
         KafkaProducer<Integer, String> producer = new KafkaProducer<>(props);
 
-        Map<Integer, Long> indexToOffset = new ConcurrentHashMap<>();
+        final CountDownLatch latch = new CountDownLatch(numMessages);
         for (int i = 0; i < numMessages; i++) {
             final int index = i;
             producer.send(new ProducerRecord<>(topic, i, messagePrefix + i), (recordMetadata, e) -> {
@@ -461,43 +452,18 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                     log.error("Failed to send {}: {}", index, e);
                     fail("Failed to send " + index + ": " + e.getMessage());
                 }
+                if (log.isDebugEnabled()) {
+                    log.info("Send {} to offset {}", index, recordMetadata.offset());
+                }
                 assertEquals(recordMetadata.topic(), topic);
                 assertEquals(recordMetadata.partition(), 0);
-                indexToOffset.put(index, recordMetadata.offset());
-                MessageIdImpl id = (MessageIdImpl) MessageIdUtils.getMessageId(indexToOffset.get(index));
-                log.info("Success write {} to {} ({}, {})", index, recordMetadata.offset(),
-                        id.getLedgerId(), id.getEntryId());
+                assertEquals(recordMetadata.offset(), index);
+                latch.countDown();
             }).get();
-            // TODO: here we disable batching for Kafka producer, because when batching is enabled, Pulsar consumers
-            //   may receive wrong messages order from Kafka producer. This issue may be similar to
-            //   https://github.com/streamnative/kop/issues/243
+            // TODO: asynchronous send with batching enabled can't pass the test, see
+            //  https://github.com/streamnative/kop/issues/332
         }
-
-        @Cleanup
-        Consumer<byte[]> consumer = pulsarClient.newConsumer()
-                .topic(topic)
-                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-                .subscriptionName("subscription-name")
-                .subscribe();
-        for (int i = 0; i < numMessages; ) {
-            Message<byte[]> message = consumer.receive(1, TimeUnit.SECONDS);
-            if (message == null) {
-                continue;
-            }
-            assertNotNull(message);
-            consumer.acknowledge(message);
-            assertTrue(indexToOffset.containsKey(i));
-
-            MessageIdImpl id = (MessageIdImpl) MessageIdUtils.getMessageId(indexToOffset.get(i));
-            byte[] positionInSendResponse = id.toByteArray();
-            byte[] positionReceived = message.getMessageId().toByteArray();
-            log.info("Successfully send {} to ({}, {}) {}, received: {}", i, id.getLedgerId(), id.getEntryId(),
-                    positionInSendResponse, positionReceived);
-            // The result of MessageIdUtils#getMessageId only contains ledger id and entry id, so we need to cut the
-            // extra bytes of positionInSendResponse.
-            assertEquals(positionInSendResponse, Arrays.copyOf(positionReceived, positionInSendResponse.length));
-            i++;
-        }
+        latch.await();
     }
 
     @Test(timeOut = 10000)

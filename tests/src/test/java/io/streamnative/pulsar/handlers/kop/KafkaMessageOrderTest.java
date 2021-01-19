@@ -21,18 +21,11 @@ import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
 
-import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
-
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Collections;
-import java.util.HashSet;
-import java.util.Map;
 import java.util.Properties;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
@@ -45,7 +38,8 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
-import org.apache.pulsar.client.impl.MessageIdImpl;
+import org.apache.pulsar.client.impl.BatchMessageIdImpl;
+import org.apache.pulsar.client.impl.TopicMessageIdImpl;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
@@ -53,7 +47,6 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Factory;
-import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 /**
@@ -123,7 +116,6 @@ public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    @Ignore
     @Test(timeOut = 20000, dataProvider = "batchSizeList")
     public void testKafkaProduceMessageOrder(int batchSize) throws Exception {
         String topicName = "kopKafkaProducePulsarConsumeMessageOrder-" + batchSize;
@@ -151,22 +143,18 @@ public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
         int totalMsgs = 100;
         String messageStrPrefix = "Message_Kop_KafkaProducePulsarConsumeOrder_";
 
-        Map<Long, Set<Long>> ledgerToEntrySet = new ConcurrentHashMap<>();
         for (int i = 0; i < totalMsgs; i++) {
             final int index = i;
             producer.send(new ProducerRecord<>(topicName, i, messageStrPrefix + i), (recordMetadata, e) -> {
                 assertNull(e);
-                MessageIdImpl id = (MessageIdImpl) MessageIdUtils.getMessageId(recordMetadata.offset());
-                log.info("Success write message {} to {} ({}, {})", index, recordMetadata.offset(),
-                        id.getLedgerId(), id.getEntryId());
-                ledgerToEntrySet.computeIfAbsent(id.getLedgerId(), key -> Collections.synchronizedSet(new HashSet<>()))
-                        .add(id.getEntryId());
+                log.info("Success write message {} to offset {}", index, recordMetadata.offset());
             });
         }
 
         // 2. Consume messages use Pulsar client Consumer.
         if (conf.getEntryFormat().equals("pulsar")) {
             Message<byte[]> msg = null;
+            int numBatches = 0;
             for (int i = 0; i < totalMsgs; i++) {
                 msg = consumer.receive(1000, TimeUnit.MILLISECONDS);
                 assertNotNull(msg);
@@ -182,16 +170,21 @@ public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
                 assertEquals(i, key.intValue());
 
                 consumer.acknowledge(msg);
+
+                BatchMessageIdImpl id =
+                        (BatchMessageIdImpl) ((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId();
+                if (id.getBatchIndex() == 0) {
+                    numBatches++;
+                }
             }
 
             // verify have received all messages
             msg = consumer.receive(100, TimeUnit.MILLISECONDS);
             assertNull(msg);
-
-            final AtomicInteger numEntries = new AtomicInteger(0);
-            ledgerToEntrySet.forEach((ledgerId, entrySet) -> numEntries.set(numEntries.get() + entrySet.size()));
-            log.info("Successfully write {} entries of {} messages to bookie", numEntries.get(), totalMsgs);
-            assertTrue(numEntries.get() > 1 && numEntries.get() < totalMsgs);
+            // Check number of batches is in range (1, totalMsgs) to avoid each batch has only one message or all
+            // messages are batched into a single batch.
+            log.info("Successfully write {} batches of {} messages to bookie", numBatches, totalMsgs);
+            assertTrue(numBatches > 1 && numBatches < totalMsgs);
         }
 
         // 3. Consume messages use Kafka consumer.
