@@ -19,7 +19,6 @@ import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.nio.ByteBuffer;
 import java.util.List;
-import java.util.stream.StreamSupport;
 
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.CompressionType;
