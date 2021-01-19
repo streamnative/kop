@@ -36,6 +36,14 @@ public class MessageIdUtils {
         return ((ManagedLedgerInterceptorImpl) managedLedger.getManagedLedgerInterceptor()).getIndex();
     }
 
+    public static long getHighWatermark(ManagedLedger managedLedger) {
+        return getCurrentOffset(managedLedger) + 1;
+    }
+
+    public static long getLogEndOffset(ManagedLedger managedLedger) {
+        return getCurrentOffset(managedLedger) + 1;
+    }
+
     public static CompletableFuture<Long> getOffsetOfPosition(ManagedLedgerImpl managedLedger, PositionImpl position) {
         final CompletableFuture<Long> future = new CompletableFuture<>();
         managedLedger.asyncReadEntry(position, new AsyncCallbacks.ReadEntryCallback() {
