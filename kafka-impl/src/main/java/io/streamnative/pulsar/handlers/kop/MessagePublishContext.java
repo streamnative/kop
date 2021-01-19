@@ -54,6 +54,9 @@ public final class MessagePublishContext implements PublishContext {
 
             topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.MICROSECONDS);
 
+            // In asynchronously send mode, there's a possibility that some messages' offsets are larger than the actual
+            // offsets. For example, two messages are sent concurrently, if the 1st message is completed while the 2nd
+            // message is already persisted, `MessageIdUtils.getCurrentOffset` will return the 2nd message's offset.
             final long baseOffset = MessageIdUtils.getCurrentOffset(managedLedger) - (numberOfMessages - 1);
             offsetFuture.complete(baseOffset);
         }
