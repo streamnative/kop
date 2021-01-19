@@ -29,7 +29,6 @@ import org.apache.kafka.common.record.TimestampType;
 import org.apache.pulsar.common.api.proto.PulsarApi;
 import org.apache.pulsar.common.protocol.Commands;
 
-
 /**
  * The entry formatter that uses Kafka's format.
  */
@@ -40,7 +39,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
         final ByteBuf recordsWrapper = Unpooled.wrappedBuffer(records.buffer());
         final ByteBuf buf = Commands.serializeMetadataAndPayload(
                 Commands.ChecksumType.None,
-                getMessageMetadataWithNumberMessages(numMessages, records),
+                getMessageMetadataWithNumberMessages(numMessages),
                 recordsWrapper);
         recordsWrapper.release();
         return buf;
@@ -72,8 +71,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
         return builder.build();
     }
 
-    private static PulsarApi.MessageMetadata getMessageMetadataWithNumberMessages(int numMessages,
-                                                                                  MemoryRecords records) {
+    private static PulsarApi.MessageMetadata getMessageMetadataWithNumberMessages(int numMessages) {
         final PulsarApi.MessageMetadata.Builder builder = PulsarApi.MessageMetadata.newBuilder();
         builder.addProperties(PulsarApi.KeyValue.newBuilder()
                 .setKey("entry.format")
