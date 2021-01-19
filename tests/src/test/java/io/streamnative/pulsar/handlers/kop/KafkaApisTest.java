@@ -317,8 +317,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         AbstractResponse response = responseFuture.get();
         ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
         assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
-        // TODO: this behavior is incorrect, the latest offset should be `totalMsgs`.
-        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), (totalMsgs - 1));
+        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), (totalMsgs));
         assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(0));
     }
 
