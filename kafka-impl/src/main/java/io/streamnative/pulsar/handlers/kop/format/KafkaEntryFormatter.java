@@ -82,16 +82,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
                 .build());
         builder.setProducerName("");
         builder.setSequenceId(0L);
-        boolean res = StreamSupport.stream(records.records().spliterator(), true).anyMatch(record -> {
-            if (record.timestamp() > 0) {
-                builder.setPublishTime(record.timestamp());
-                return true;
-            }
-            return false;
-        });
-        if (!res) {
-            builder.setPublishTime(System.currentTimeMillis());
-        }
+        builder.setPublishTime(System.currentTimeMillis());
         builder.setNumMessagesInBatch(numMessages);
         return builder.build();
     }

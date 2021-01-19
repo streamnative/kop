@@ -111,7 +111,7 @@ public class EntryPublishTimeKafkaFormatTest extends EntryPublishTimeTest {
         AbstractResponse response = responseFuture.get();
         ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
         assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
-        assertTrue(listOffsetResponse.responseData().get(tp).offset == 0);
+        assertEquals((long) listOffsetResponse.responseData().get(tp).offset, 0);
     }
 
     KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
