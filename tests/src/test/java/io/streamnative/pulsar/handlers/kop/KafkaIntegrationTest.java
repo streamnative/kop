@@ -156,7 +156,7 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
-
+        this.conf.setEnableTransactionCoordinator(true);
         super.resetConfig();
         // in order to access PulsarBroker when using Docker for Mac, we need to adjust things:
         // - set pulsar advertized address to host IP
