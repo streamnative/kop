@@ -13,6 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.testng.Assert.assertTrue;
+
+import java.util.concurrent.TimeUnit;
+
 import lombok.Cleanup;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
@@ -23,10 +27,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.Test;
 
-import java.util.concurrent.TimeUnit;
-
-import static org.testng.Assert.assertTrue;
-
+/**
+ * Test for publish time when entry format is pulsar.
+ */
 public class EntryPublishTimePulsarFormatTest extends EntryPublishTimeTest {
     private static final Logger log = LoggerFactory.getLogger(EntryPublishTimePulsarFormatTest.class);
 
@@ -74,7 +77,7 @@ public class EntryPublishTimePulsarFormatTest extends EntryPublishTimeTest {
                 .subscriptionName(topicName + "_sub")
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                 .subscribe();
-        for (int i = 0 ; i < totalMsgs; i ++) {
+        for (int i = 0; i < totalMsgs; i++) {
             Message<byte[]> msg = consumer.receive(100, TimeUnit.MILLISECONDS);
             assertTrue(msg.getPublishTime() < System.currentTimeMillis());
             assertTrue(msg.getPublishTime() > startTime);

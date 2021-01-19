@@ -13,10 +13,15 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+
 import com.google.common.collect.Sets;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
@@ -26,12 +31,9 @@ import org.slf4j.LoggerFactory;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-
+/**
+ * Test for entry publish time.
+ */
 public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
     private static final Logger log = LoggerFactory.getLogger(EntryPublishTimeTest.class);
 

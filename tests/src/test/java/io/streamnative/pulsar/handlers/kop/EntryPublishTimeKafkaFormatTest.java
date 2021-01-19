@@ -13,9 +13,18 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
+
+
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import java.nio.ByteBuffer;
+import java.time.Duration;
+import java.util.Collections;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import lombok.Cleanup;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -34,15 +43,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.Test;
 
-import java.nio.ByteBuffer;
-import java.time.Duration;
-import java.util.Collections;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
-
+/**
+ * Test for publish time when entry format is kafka.
+ */
 public class EntryPublishTimeKafkaFormatTest extends EntryPublishTimeTest {
     private static final Logger log = LoggerFactory.getLogger(EntryPublishTimeKafkaFormatTest.class);
 
@@ -85,7 +88,7 @@ public class EntryPublishTimeKafkaFormatTest extends EntryPublishTimeTest {
                 null, null, "KafkaEntryConsumerGroup");
         kConsumer.getConsumer().subscribe(Collections.singleton(topicName));
 
-        for (int i = 0 ; i < totalMsgs; i ++) {
+        for (int i = 0; i < totalMsgs; i++) {
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
                 assertTrue(record.timestamp() > startTime);
