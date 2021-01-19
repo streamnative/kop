@@ -104,7 +104,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         basicProduceAndConsumeTest("read-uncommitted-test", "txn-12", "read_uncommitted");
     }
 
-    public void basicProduceAndConsumeTest(String topicName, String transactionalId, String isolation) throws Exception {
+    public void basicProduceAndConsumeTest(String topicName,
+                                           String transactionalId,
+                                           String isolation) throws Exception {
         String kafkaServer = "localhost:" + getKafkaBrokerPort();
 
         Properties producerProps = new Properties();
