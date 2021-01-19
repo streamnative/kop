@@ -130,7 +130,6 @@ public class PendingProduce {
                 if (this.isTransactional) {
                     transactionCoordinator.addActivePidOffset(TopicName.get(partitionName), pid, offset);
                 }
-                log.info("publishMessages pos: {}", MessageIdUtils.getPosition(offset));
                 responseFuture.complete(new PartitionResponse(Errors.NONE, offset, -1L, -1L));
             } else {
                 log.error("publishMessages for topic partition: {} failed when write.", partitionName, e);

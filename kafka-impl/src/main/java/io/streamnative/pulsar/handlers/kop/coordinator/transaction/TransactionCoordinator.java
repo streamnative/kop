@@ -320,10 +320,6 @@ public class TransactionCoordinator {
         List<FetchResponse.AbortedTransaction> abortedTransactions = new ArrayList<>(abortedIndexList.size());
         for (AbortedIndexEntry abortedIndexEntry : abortedIndexList) {
             if (abortedIndexEntry.getLastOffset() >= fetchOffset) {
-                log.info("Fetch for aborted transaction - fetch pos: {}, first pos: {}, last pos: {}",
-                        MessageIdUtils.getPosition(fetchOffset),
-                        MessageIdUtils.getPosition(abortedIndexEntry.getFirstOffset()),
-                        MessageIdUtils.getPosition(abortedIndexEntry.getLastOffset()));
                 abortedTransactions.add(
                         new FetchResponse.AbortedTransaction(
                                 abortedIndexEntry.getPid(),

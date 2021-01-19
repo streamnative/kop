@@ -227,7 +227,7 @@ public final class MessageFetchContext {
                                 TopicName topicName = TopicName.get(KopTopic.toString(kafkaTopic));
                                 long lso = tc.getLastStableOffset(topicName);
                                 for (Entry entry : entries) {
-                                    if (lso >= MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId())) {
+                                    if (lso >= MessageIdUtils.peekBaseOffsetFromEntry(entry)) {
                                         entryList.add(entry);
                                         entriesRead.incrementAndGet();
                                         bytesRead.addAndGet(entry.getLength());
