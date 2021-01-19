@@ -350,12 +350,19 @@ public final class MessageFetchContext {
                             }
                             final MemoryRecords records = requestHandler.getEntryFormatter().decode(entries, magic);
 
+                            List<FetchResponse.AbortedTransaction> abortedTransactions;
+                            if (IsolationLevel.READ_UNCOMMITTED.equals(isolationLevel)) {
+                                abortedTransactions = null;
+                            } else {
+                                abortedTransactions = tc.getAbortedIndexList(
+                                        request.fetchData().get(kafkaPartition).fetchOffset);
+                            }
                             partitionData = new FetchResponse.PartitionData(
                                 Errors.NONE,
                                 highWatermark,
                                 highWatermark,
                                 highWatermark,
-                                tc.getAbortedIndexList(request.fetchData().get(kafkaPartition).fetchOffset),
+                                abortedTransactions,
                                 records);
                         }
                         responseData.put(kafkaPartition, partitionData);

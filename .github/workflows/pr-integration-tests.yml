@@ -1,4 +1,4 @@
-name: kop tests
+name: kop integration tests
 
 on:
   pull_request:
@@ -23,8 +23,8 @@ jobs:
     - name: Build with Maven skipTests
       run: mvn clean install -DskipTests
 
-    - name: tests module
-      run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test,!DistributedClusterTest' -pl tests
+    - name: kop integration test
+      run: mvn test '-Dtest=KafkaIntegration*Test' -pl tests
 
     - name: package surefire artifacts
       if: failure()
