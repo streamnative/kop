@@ -26,7 +26,7 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.TimestampType;
-import org.apache.pulsar.common.api.proto.PulsarApi;
+import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 
 /**
@@ -73,17 +73,16 @@ public class KafkaEntryFormatter implements EntryFormatter {
         return builder.build();
     }
 
-    private static PulsarApi.MessageMetadata getMessageMetadataWithNumberMessages(int numMessages) {
-        final PulsarApi.MessageMetadata.Builder builder = PulsarApi.MessageMetadata.newBuilder();
-        builder.addProperties(PulsarApi.KeyValue.newBuilder()
+    private static MessageMetadata getMessageMetadataWithNumberMessages(int numMessages) {
+        final MessageMetadata metadata = new MessageMetadata();
+        metadata.addProperty()
                 .setKey("entry.format")
-                .setValue(EntryFormatterFactory.EntryFormat.KAFKA.name().toLowerCase())
-                .build());
-        builder.setProducerName("");
-        builder.setSequenceId(0L);
-        builder.setPublishTime(System.currentTimeMillis());
-        builder.setNumMessagesInBatch(numMessages);
-        return builder.build();
+                .setValue(EntryFormatterFactory.EntryFormat.KAFKA.name().toLowerCase());
+        metadata.setProducerName("");
+        metadata.setSequenceId(0L);
+        metadata.setPublishTime(System.currentTimeMillis());
+        metadata.setNumMessagesInBatch(numMessages);
+        return metadata;
     }
 
 }

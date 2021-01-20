@@ -18,7 +18,9 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import io.netty.buffer.ByteBuf;
 import java.nio.ByteBuffer;
 import java.util.Base64;
-import org.apache.pulsar.common.api.proto.PulsarApi;
+
+import org.apache.pulsar.common.api.proto.MessageMetadata;
+import org.apache.pulsar.common.api.proto.SingleMessageMetadata;
 
 
 /**
@@ -26,9 +28,9 @@ import org.apache.pulsar.common.api.proto.PulsarApi;
  */
 public class ByteBufUtils {
 
-    public static ByteBuffer getKeyByteBuffer(PulsarApi.SingleMessageMetadata messageMetadata) {
+    public static ByteBuffer getKeyByteBuffer(SingleMessageMetadata messageMetadata) {
         if (messageMetadata.hasOrderingKey()) {
-            return messageMetadata.getOrderingKey().asReadOnlyByteBuffer();
+            return ByteBuffer.wrap(messageMetadata.getOrderingKey()).asReadOnlyBuffer();
         }
 
         String key = messageMetadata.getPartitionKey();
@@ -40,9 +42,9 @@ public class ByteBufUtils {
         }
     }
 
-    public static ByteBuffer getKeyByteBuffer(PulsarApi.MessageMetadata messageMetadata) {
+    public static ByteBuffer getKeyByteBuffer(MessageMetadata messageMetadata) {
         if (messageMetadata.hasOrderingKey()) {
-            return messageMetadata.getOrderingKey().asReadOnlyByteBuffer();
+            return ByteBuffer.wrap(messageMetadata.getOrderingKey()).asReadOnlyBuffer();
         }
 
         String key = messageMetadata.getPartitionKey();
