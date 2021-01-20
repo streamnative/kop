@@ -653,7 +653,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         int partition;
 
         if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.TRANSACTION) {
-            log.info("Command [handleFindCoordinatorRequest] request: {}", request);
             partition = transactionCoordinator.partitionFor(request.coordinatorKey());
             pulsarTopicName = transactionCoordinator.getTopicPartitionName(partition);
         } else if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
@@ -1453,7 +1452,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 .setSequenceId(0L)
                 .build();
         return Commands.serializeMetadataAndPayload(Commands.ChecksumType.None, messageMetadata, byteBuf);
-//        return entryFormatter.encode(memoryRecords, 1);
     }
 
     private SaslHandshakeResponse checkSaslMechanism(String mechanism) {

@@ -153,10 +153,8 @@ public class PulsarEntryFormatter implements EntryFormatter {
                                 msgMetadata.getMarkerType() == PulsarMarkers.MarkerType.TXN_COMMIT_VALUE
                                         ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0));
                 byteBuffer.put(memoryRecords.buffer());
-                log.info("Fetch for txn entry pos: {}", entry.getPosition());
                 return;
             }
-            log.info("Fetch for normal entry pos: {}", entry.getPosition());
 
             MemoryRecordsBuilder builder = new MemoryRecordsBuilder(byteBuffer, magic,
                     org.apache.kafka.common.record.CompressionType.NONE,

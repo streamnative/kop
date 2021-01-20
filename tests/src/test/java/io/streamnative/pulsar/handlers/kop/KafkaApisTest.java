@@ -469,7 +469,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         int messagesPerPartition = 9;
         int maxResponseBytes = 800;
-        int maxPartitionBytes = 1000;
+        int maxPartitionBytes = 900;
 
         List<TopicPartition> topicPartitions = createTopics(topicName, numberTopics, numberPartitions);
 

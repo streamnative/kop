@@ -51,6 +51,8 @@ public class KafkaEntryFormatter implements EntryFormatter {
         for (Entry entry : entries) {
             size += entry.getLength();
         }
+        // TODO The memory records should maintain multiple batches, one entry present one batch,
+        //  this is necessary, because one entry only belongs to one transaction.
         final MemoryRecordsBuilder builder = MemoryRecords.builder(
                 ByteBuffer.allocate(size),
                 magic,
@@ -82,23 +84,6 @@ public class KafkaEntryFormatter implements EntryFormatter {
         builder.setPublishTime(System.currentTimeMillis());
         builder.setNumMessagesInBatch(numMessages);
         return builder.build();
-    }
-
-    private MemoryRecords getBatchesMemoryRecords(List<Entry> entries, byte magic) {
-        int size = 0;
-        for (Entry entry : entries) {
-            size += entry.getLength();
-        }
-        ByteBuffer byteBuffer = ByteBuffer.allocate(size);
-
-        entries.forEach(entry ->  {
-            final ByteBuf byteBuf = entry.getDataBuffer();
-            Commands.skipMessageMetadata(byteBuf);
-            byteBuffer.put(ByteBufUtils.getNioBuffer(byteBuf));
-        });
-
-        byteBuffer.flip();
-        return MemoryRecords.readableRecords(byteBuffer);
     }
 
 }
