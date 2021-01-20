@@ -20,6 +20,7 @@ import com.google.common.collect.Sets;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
@@ -81,11 +82,13 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
 
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();
+        TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler).getTransactionCoordinator();
 
         kafkaRequestHandler = new KafkaRequestHandler(
                 pulsar,
                 (KafkaServiceConfiguration) conf,
                 groupCoordinator,
+                transactionCoordinator,
                 false,
                 getPlainEndPoint());
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);

@@ -23,6 +23,8 @@ import io.netty.channel.socket.SocketChannel;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionConfig;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
@@ -189,6 +191,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     @Getter
     private GroupCoordinator groupCoordinator;
     @Getter
+    private TransactionCoordinator transactionCoordinator;
+    @Getter
     private String bindAddress;
 
 
@@ -252,6 +256,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 log.error("initGroupCoordinator failed with", e);
             }
         }
+        if (kafkaConfig.isEnableTransactionCoordinator()) {
+            try {
+                initTransactionCoordinator();
+            } catch (Exception e) {
+                log.error("Initialized transaction coordinator failed.", e);
+            }
+        }
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
@@ -279,12 +290,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, false, advertisedEndPoint));
+                                kafkaConfig, groupCoordinator, transactionCoordinator, false, advertisedEndPoint));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, true, advertisedEndPoint));
+                                kafkaConfig, groupCoordinator, transactionCoordinator, true, advertisedEndPoint));
                         break;
                 }
             });
@@ -347,6 +358,11 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         } else {
             log.error("Failed to start group coordinator. Need init it first.");
         }
+    }
+
+    public void initTransactionCoordinator() throws Exception {
+        TransactionConfig transactionConfig = TransactionConfig.builder().build();
+        this.transactionCoordinator = TransactionCoordinator.of(transactionConfig);
     }
 
     /**

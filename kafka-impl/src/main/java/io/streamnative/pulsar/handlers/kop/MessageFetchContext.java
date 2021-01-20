@@ -19,8 +19,10 @@ import com.google.common.collect.Lists;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -50,9 +52,11 @@ import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.FetchResponse.PartitionData;
+import org.apache.kafka.common.requests.IsolationLevel;
+import org.apache.pulsar.common.naming.TopicName;
 
 /**
- * MessageFetchContext handling FetchRequest .
+ * MessageFetchContext handling FetchRequest.
  */
 @Slf4j
 public final class MessageFetchContext {
@@ -87,7 +91,8 @@ public final class MessageFetchContext {
     // handle request
     public CompletableFuture<AbstractResponse> handleFetch(
             CompletableFuture<AbstractResponse> fetchResponse,
-            KafkaHeaderAndRequest fetchRequest) {
+            KafkaHeaderAndRequest fetchRequest,
+            TransactionCoordinator transactionCoordinator) {
         LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData = new LinkedHashMap<>();
 
         // Map of partition and related tcm.
@@ -167,7 +172,7 @@ public final class MessageFetchContext {
                         .filter(x -> x != null)
                         .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
-                readMessages(fetchRequest, partitionCursor, fetchResponse, responseData);
+                readMessages(fetchRequest, partitionCursor, fetchResponse, responseData, transactionCoordinator);
             });
 
         return fetchResponse;
@@ -179,11 +184,12 @@ public final class MessageFetchContext {
     private void readMessages(KafkaHeaderAndRequest fetch,
                               Map<TopicPartition, Pair<ManagedCursor, Long>> cursors,
                               CompletableFuture<AbstractResponse> resultFuture,
-                              LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData) {
+                              LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData,
+                              TransactionCoordinator tc) {
         AtomicInteger bytesRead = new AtomicInteger(0);
         Map<TopicPartition, List<Entry>> entryValues = new ConcurrentHashMap<>();
 
-        readMessagesInternal(fetch, cursors, bytesRead, entryValues, resultFuture, responseData);
+        readMessagesInternal(fetch, cursors, bytesRead, entryValues, resultFuture, responseData, tc);
     }
 
     private void readMessagesInternal(KafkaHeaderAndRequest fetch,
@@ -191,12 +197,18 @@ public final class MessageFetchContext {
                                       AtomicInteger bytesRead,
                                       Map<TopicPartition, List<Entry>> responseValues,
                                       CompletableFuture<AbstractResponse> resultFuture,
-                                      LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData) {
+                                      LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData,
+                                      TransactionCoordinator tc) {
+
         AtomicInteger entriesRead = new AtomicInteger(0);
         // here do the real read, and in read callback put cursor back to KafkaTopicConsumerManager.
         Map<TopicPartition, CompletableFuture<List<Entry>>> readFutures = readAllCursorOnce(cursors);
         CompletableFuture.allOf(readFutures.values().stream().toArray(CompletableFuture<?>[]::new))
             .whenComplete((ignore, ex) -> {
+
+                FetchRequest request = (FetchRequest) fetch.getRequest();
+                IsolationLevel isolationLevel = request.isolationLevel();
+
                 // keep entries since all read completed.
                 readFutures.entrySet().parallelStream().forEach(kafkaTopicReadEntry -> {
                     TopicPartition kafkaTopic = kafkaTopicReadEntry.getKey();
@@ -206,13 +218,28 @@ public final class MessageFetchContext {
                         List<Entry> entryList = responseValues.computeIfAbsent(kafkaTopic, l -> Lists.newArrayList());
 
                         if (entries != null && !entries.isEmpty()) {
-                            entryList.addAll(entries);
-                            entriesRead.addAndGet(entries.size());
-                            bytesRead.addAndGet(entryList.stream().parallel().map(e ->
+                            if (isolationLevel.equals(IsolationLevel.READ_UNCOMMITTED)) {
+                                entryList.addAll(entries);
+                                entriesRead.addAndGet(entries.size());
+                                bytesRead.addAndGet(entryList.stream().parallel().map(e ->
                                         e.getLength()).reduce(0, Integer::sum));
+                            } else {
+                                TopicName topicName = TopicName.get(KopTopic.toString(kafkaTopic));
+                                long lso = tc.getLastStableOffset(topicName);
+                                for (Entry entry : entries) {
+                                    if (lso >= MessageIdUtils.peekBaseOffsetFromEntry(entry)) {
+                                        entryList.add(entry);
+                                        entriesRead.incrementAndGet();
+                                        bytesRead.addAndGet(entry.getLength());
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            }
+
                             if (log.isDebugEnabled()) {
                                 log.debug("Request {}: For topic {}, entries in list: {}.",
-                                    fetch.getHeader(), kafkaTopic.toString(), entryList.size());
+                                        fetch.getHeader(), kafkaTopic.toString(), entryList.size());
                             }
                         }
                     } catch (Exception e) {
@@ -250,7 +277,6 @@ public final class MessageFetchContext {
                     }
                 });
 
-                FetchRequest request = (FetchRequest) fetch.getRequest();
                 int maxBytes = request.maxBytes();
                 int minBytes = request.minBytes();
                 int waitTime = request.maxWait(); // in ms
@@ -324,12 +350,19 @@ public final class MessageFetchContext {
                             }
                             final MemoryRecords records = requestHandler.getEntryFormatter().decode(entries, magic);
 
+                            List<FetchResponse.AbortedTransaction> abortedTransactions;
+                            if (IsolationLevel.READ_UNCOMMITTED.equals(isolationLevel)) {
+                                abortedTransactions = null;
+                            } else {
+                                abortedTransactions = tc.getAbortedIndexList(
+                                        request.fetchData().get(kafkaPartition).fetchOffset);
+                            }
                             partitionData = new FetchResponse.PartitionData(
                                 Errors.NONE,
                                 highWatermark,
                                 highWatermark,
                                 highWatermark,
-                                null,
+                                abortedTransactions,
                                 records);
                         }
                         responseData.put(kafkaPartition, partitionData);
@@ -364,7 +397,7 @@ public final class MessageFetchContext {
                             fetch.getHeader());
                     }
                     // need do another round read
-                    readMessagesInternal(fetch, cursors, bytesRead, responseValues, resultFuture, responseData);
+                    readMessagesInternal(fetch, cursors, bytesRead, responseValues, resultFuture, responseData, tc);
                 }
             });
     }

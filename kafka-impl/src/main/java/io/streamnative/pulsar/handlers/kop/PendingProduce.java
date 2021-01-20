@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import io.netty.buffer.ByteBuf;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -21,9 +22,11 @@ import java.util.concurrent.ExecutorService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
+import org.apache.pulsar.common.naming.TopicName;
 
 /**
  * Pending context related to the produce task.
@@ -38,13 +41,17 @@ public class PendingProduce {
     private final CompletableFuture<PersistentTopic> topicFuture;
     private final CompletableFuture<ByteBuf> byteBufFuture;
     private CompletableFuture<Long> offsetFuture;
+    private final TransactionCoordinator transactionCoordinator;
+    private long pid;
+    private boolean isTransactional;
 
     public PendingProduce(CompletableFuture<PartitionResponse> responseFuture,
                           KafkaTopicManager topicManager,
                           String partitionName,
                           EntryFormatter entryFormatter,
                           MemoryRecords memoryRecords,
-                          ExecutorService executor) {
+                          ExecutorService executor,
+                          TransactionCoordinator transactionCoordinator) {
         this.responseFuture = responseFuture;
         this.topicManager = topicManager;
         this.partitionName = partitionName;
@@ -61,6 +68,11 @@ public class PendingProduce {
         });
         executor.execute(() -> byteBufFuture.complete(entryFormatter.encode(memoryRecords, numMessages)));
         this.offsetFuture = new CompletableFuture<>();
+
+        RecordBatch batch = memoryRecords.batchIterator().next();
+        this.transactionCoordinator = transactionCoordinator;
+        this.pid = batch.producerId();
+        this.isTransactional = batch.isTransactional();
     }
 
     public boolean ready() {
@@ -114,6 +126,9 @@ public class PendingProduce {
                 persistentTopic.getManagedLedger(), numMessages, System.nanoTime()));
         offsetFuture.whenComplete((offset, e) -> {
             if (e == null) {
+                if (this.isTransactional) {
+                    transactionCoordinator.addActivePidOffset(TopicName.get(partitionName), pid, offset);
+                }
                 responseFuture.complete(new PartitionResponse(Errors.NONE, offset, -1L, -1L));
             } else {
                 log.error("publishMessages for topic partition: {} failed when write.", partitionName, e);

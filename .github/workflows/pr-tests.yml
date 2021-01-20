@@ -1,4 +1,4 @@
-name: kop mvn build check and ut
+name: kop tests
 
 on:
   pull_request:
@@ -21,28 +21,11 @@ jobs:
       with:
         java-version: 1.8
 
-    - name: License check
-      run: mvn license:check
-
     - name: Build with Maven skipTests
       run: mvn clean install -DskipTests
 
-    - name: Style check
-      run: mvn checkstyle:check
-
-    - name: Spotbugs check
-      run: mvn spotbugs:check
-
-    - name: KafkaIntegrationTest
-      run: mvn test '-Dtest=KafkaIntegration*Test' -pl tests
-
-    - name: test after build
-      run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test,!DistributedClusterTest'
-
-    # The DistributedClusterTest is hard to pass in CI tests environment, we disable it first
-    # the track issue: https://github.com/streamnative/kop/issues/184
-#    - name: DistributedClusterTest
-#      run: mvn test '-Dtest=DistributedClusterTest' -pl tests
+    - name: tests module
+      run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test,!DistributedClusterTest' -pl tests
 
     - name: package surefire artifacts
       if: failure()

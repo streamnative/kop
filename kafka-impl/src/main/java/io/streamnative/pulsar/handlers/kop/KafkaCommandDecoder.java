@@ -232,6 +232,24 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     case CREATE_TOPICS:
                         handleCreateTopics(kafkaHeaderAndRequest, responseFuture);
                         break;
+                    case INIT_PRODUCER_ID:
+                        handleInitProducerId(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case ADD_PARTITIONS_TO_TXN:
+                        handleAddPartitionsToTxn(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case ADD_OFFSETS_TO_TXN:
+                        handleAddOffsetsToTxn(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case TXN_OFFSET_COMMIT:
+                        handleTxnOffsetCommit(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case END_TXN:
+                        handleEndTxn(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case WRITE_TXN_MARKERS:
+                        handleWriteTxnMarkers(kafkaHeaderAndRequest, responseFuture);
+                        break;
                     case DESCRIBE_CONFIGS:
                         handleDescribeConfigs(kafkaHeaderAndRequest, responseFuture);
                         break;
@@ -371,6 +389,24 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected abstract void
     handleDescribeConfigs(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleInitProducerId(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleAddPartitionsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleAddOffsetsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleTxnOffsetCommit(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleEndTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
     static class KafkaHeaderAndRequest implements Closeable {
 

@@ -31,6 +31,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRes
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -141,11 +142,13 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         ProtocolHandler handler1 = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler1).getGroupCoordinator();
+        TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler1).getTransactionCoordinator();
 
         handler = new KafkaRequestHandler(
             pulsar,
             (KafkaServiceConfiguration) conf,
             groupCoordinator,
+            transactionCoordinator,
             false,
             getPlainEndPoint());
     }

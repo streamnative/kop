@@ -57,6 +57,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.Data;
+import lombok.Getter;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
@@ -163,6 +164,7 @@ public class GroupMetadataManager {
 
     private final byte magicValue = RecordBatch.CURRENT_MAGIC_VALUE;
     private final CompressionType compressionType;
+    @Getter
     private final OffsetConfig offsetConfig;
     private final ConcurrentMap<String, GroupMetadata> groupMetadataCache;
     /* lock protecting access to loading and owned partition sets */
