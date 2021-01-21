@@ -47,7 +47,7 @@
     <log4j2.version>2.13.3</log4j2.version>
     <lombok.version>1.18.4</lombok.version>
     <mockito.version>2.22.0</mockito.version>
-    <pulsar.version>2.7.0.4</pulsar.version>
+    <pulsar.version>2.7.0.5-rc-202101210938</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
     <testcontainers.version>1.12.5</testcontainers.version>
