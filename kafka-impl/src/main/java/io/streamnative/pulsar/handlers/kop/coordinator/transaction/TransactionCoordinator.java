@@ -186,8 +186,6 @@ public class TransactionCoordinator {
                         new TransactionStateManager.ResponseCallback() {
                             @Override
                             public void complete() {
-                                log.info("endTxnResponse finish in process 1");
-//                                response.complete(new EndTxnResponse(0, Errors.NONE));
                             }
 
                             @Override
@@ -240,7 +238,7 @@ public class TransactionCoordinator {
                     });
         }
 
-        FutureUtil.waitForAll(list).whenComplete((ignored, throwable) -> {
+        FutureUtil.waitForAll(list).thenRun(() -> {
             List<CompletableFuture<WriteTxnMarkersResponse>> completableFutureList = new ArrayList<>();
             for (MarkerHandler markerHandler : markerHandlerMap.values()) {
                 completableFutureList.add(
@@ -254,7 +252,6 @@ public class TransactionCoordinator {
                         new TransactionStateManager.ResponseCallback() {
                             @Override
                             public void complete() {
-                                log.info("endTxnResponse finish in process 2");
                                 response.complete(new EndTxnResponse(0, Errors.NONE));
                             }
 
