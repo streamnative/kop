@@ -251,6 +251,7 @@ public class TransactionCoordinator {
 
             FutureUtil.waitForAll(writeTxnMarkersFutureList).whenComplete((ignored, throwable) -> {
                 if (throwable != null) {
+                    log.error("Write txn marks fail", throwable);
                     response.complete(new EndTxnResponse(0, Errors.COORDINATOR_NOT_AVAILABLE));
                     return;
                 }

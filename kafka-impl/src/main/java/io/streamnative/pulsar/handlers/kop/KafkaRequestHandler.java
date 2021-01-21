@@ -1399,6 +1399,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         }
         FutureUtil.waitForAll(offsetFutureList).whenComplete((ignored, throwable) -> {
+            if (throwable != null) {
+                log.error("Write txn mark fail!", throwable);
+                response.complete(new WriteTxnMarkersResponse(resultMap));
+                return;
+            }
             response.complete(new WriteTxnMarkersResponse(resultMap));
         });
     }
