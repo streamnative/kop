@@ -122,10 +122,12 @@ public class PulsarEntryFormatter implements EntryFormatter {
             ByteBuf metadataAndPayload = entry.getDataBuffer();
 
             // Uncompress the payload if necessary
+            Commands.skipBrokerEntryMetadataIfExist(metadataAndPayload);
             MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
 
-            if (msgMetadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
-                    || msgMetadata.getMarkerType() == MarkerType.TXN_ABORT_VALUE) {
+            if (msgMetadata.hasMarkerType()
+                    && (msgMetadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
+                    || msgMetadata.getMarkerType() == MarkerType.TXN_ABORT_VALUE)) {
                 MemoryRecords memoryRecords = MemoryRecords.withEndTransactionMarker(
                         baseOffset,
                         msgMetadata.getPublishTime(),
