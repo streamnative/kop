@@ -236,7 +236,11 @@ public class TransactionCoordinator {
                             }
                         });
                         completableFuture.complete(null);
-                    });
+                    }).exceptionally(e -> {
+                        log.error("EndTxn findBroker fail", e);
+                        completableFuture.completeExceptionally(e);
+                        return null;
+            });
         }
 
         FutureUtil.waitForAll(completableFutureList).thenRun(() -> {
@@ -247,6 +251,10 @@ public class TransactionCoordinator {
             }
 
             FutureUtil.waitForAll(writeTxnMarkersFutureList).whenComplete((ignored, throwable) -> {
+                if (throwable != null) {
+                    response.complete(new EndTxnResponse(0, Errors.COORDINATOR_NOT_AVAILABLE));
+                    return;
+                }
                 TransactionMetadata.TxnTransitMetadata newMetadata =
                         metadata.prepareComplete(SystemTime.SYSTEM.milliseconds());
                 txnStateManager.appendTransactionToLog(transactionalId, 0, newMetadata,
@@ -262,6 +270,9 @@ public class TransactionCoordinator {
                             }
                         });
             });
+        }).exceptionally(e -> {
+            response.complete(new EndTxnResponse(0, Errors.COORDINATOR_NOT_AVAILABLE));
+            return null;
         });
     }
 
