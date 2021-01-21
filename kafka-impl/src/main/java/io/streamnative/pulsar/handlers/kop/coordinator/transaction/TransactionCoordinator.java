@@ -186,7 +186,7 @@ public class TransactionCoordinator {
                         new TransactionStateManager.ResponseCallback() {
                             @Override
                             public void complete() {
-                                response.complete(new EndTxnResponse(0, Errors.NONE));
+//                                response.complete(new EndTxnResponse(0, Errors.NONE));
                             }
 
                             @Override
@@ -236,10 +236,10 @@ public class TransactionCoordinator {
         }
 
         List<CompletableFuture<WriteTxnMarkersResponse>> completableFutureList = new ArrayList<>();
-        for (MarkerHandler markerHandler : markerHandlerMap.values()) {
-            completableFutureList.add(
-                    markerHandler.writeTxnMarker(producerId, producerEpoch, transactionResult));
-        }
+//        for (MarkerHandler markerHandler : markerHandlerMap.values()) {
+//            completableFutureList.add(
+//                    markerHandler.writeTxnMarker(producerId, producerEpoch, transactionResult));
+//        }
 
         FutureUtil.waitForAll(completableFutureList).whenComplete((ignored, throwable) -> {
             TransactionMetadata.TxnTransitMetadata newMetadata =
