@@ -186,7 +186,7 @@ public class TransactionCoordinator {
                         new TransactionStateManager.ResponseCallback() {
                             @Override
                             public void complete() {
-
+                                response.complete(new EndTxnResponse(0, Errors.NONE));
                             }
 
                             @Override

@@ -25,7 +25,7 @@ jobs:
       run: mvn clean install -DskipTests
 
     - name: tests module
-      run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test,!DistributedClusterTest' -pl tests
+      run: mvn test -DfailIfNoTests=false -Dtest=TransactionTest -pl tests
 
     - name: package surefire artifacts
       if: failure()
