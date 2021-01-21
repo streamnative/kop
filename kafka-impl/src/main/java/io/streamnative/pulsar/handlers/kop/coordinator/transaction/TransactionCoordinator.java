@@ -210,11 +210,11 @@ public class TransactionCoordinator {
         }
 
         final Map<InetSocketAddress, MarkerHandler> markerHandlerMap = new HashMap<>();
-        final List<CompletableFuture<Void>> list = new ArrayList<>();
+        final List<CompletableFuture<Void>> completableFutureList = new ArrayList<>();
         for (TopicPartition topicPartition : metadata.getTopicPartitions()) {
-            String pulsarTopic = new KopTopic(topicPartition.topic()).getPartitionName(topicPartition.partition());
             CompletableFuture<Void> completableFuture = new CompletableFuture<>();
-            list.add(completableFuture);
+            completableFutureList.add(completableFuture);
+            String pulsarTopic = new KopTopic(topicPartition.topic()).getPartitionName(topicPartition.partition());
             requestHandler.findBroker(TopicName.get(pulsarTopic))
                     .thenAccept(partitionMetadata -> {
                         InetSocketAddress socketAddress = new InetSocketAddress(
@@ -235,17 +235,25 @@ public class TransactionCoordinator {
                             }
                         });
                         completableFuture.complete(null);
-                    });
+                    }).exceptionally(e -> {
+                log.error("EndTxn findBroker fail", e);
+                completableFuture.completeExceptionally(e);
+                return null;
+            });
         }
 
-        FutureUtil.waitForAll(list).thenRun(() -> {
-            List<CompletableFuture<WriteTxnMarkersResponse>> completableFutureList = new ArrayList<>();
+        FutureUtil.waitForAll(completableFutureList).thenRun(() -> {
+            List<CompletableFuture<WriteTxnMarkersResponse>> writeTxnMarkersFutureList = new ArrayList<>();
             for (MarkerHandler markerHandler : markerHandlerMap.values()) {
-                completableFutureList.add(
+                writeTxnMarkersFutureList.add(
                         markerHandler.writeTxnMarker(producerId, producerEpoch, transactionResult));
             }
 
-            FutureUtil.waitForAll(completableFutureList).whenComplete((ignored, throwable) -> {
+            FutureUtil.waitForAll(writeTxnMarkersFutureList).whenComplete((ignored, throwable) -> {
+                if (throwable != null) {
+                    response.complete(new EndTxnResponse(0, Errors.COORDINATOR_NOT_AVAILABLE));
+                    return;
+                }
                 TransactionMetadata.TxnTransitMetadata newMetadata =
                         metadata.prepareComplete(SystemTime.SYSTEM.milliseconds());
                 txnStateManager.appendTransactionToLog(transactionalId, 0, newMetadata,
@@ -261,6 +269,9 @@ public class TransactionCoordinator {
                             }
                         });
             });
+        }).exceptionally(e -> {
+            response.complete(new EndTxnResponse(0, Errors.COORDINATOR_NOT_AVAILABLE));
+            return null;
         });
     }
 
