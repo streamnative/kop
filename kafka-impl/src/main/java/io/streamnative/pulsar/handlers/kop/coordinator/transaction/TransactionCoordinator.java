@@ -240,13 +240,13 @@ public class TransactionCoordinator {
         }
 
         FutureUtil.waitForAll(completableFutureList).thenRun(() -> {
-            List<CompletableFuture<WriteTxnMarkersResponse>> WriteTxnMarkersFutureList = new ArrayList<>();
+            List<CompletableFuture<WriteTxnMarkersResponse>> writeTxnMarkersFutureList = new ArrayList<>();
             for (MarkerHandler markerHandler : markerHandlerMap.values()) {
-                WriteTxnMarkersFutureList.add(
+                writeTxnMarkersFutureList.add(
                         markerHandler.writeTxnMarker(producerId, producerEpoch, transactionResult));
             }
 
-            FutureUtil.waitForAll(WriteTxnMarkersFutureList).whenComplete((ignored, throwable) -> {
+            FutureUtil.waitForAll(writeTxnMarkersFutureList).whenComplete((ignored, throwable) -> {
                 TransactionMetadata.TxnTransitMetadata newMetadata =
                         metadata.prepareComplete(SystemTime.SYSTEM.milliseconds());
                 txnStateManager.appendTransactionToLog(transactionalId, 0, newMetadata,
