@@ -33,12 +33,16 @@ public class ByteBufUtils {
             return ByteBuffer.wrap(messageMetadata.getOrderingKey()).asReadOnlyBuffer();
         }
 
-        String key = messageMetadata.getPartitionKey();
-        if (messageMetadata.hasPartitionKeyB64Encoded()) {
-            return ByteBuffer.wrap(Base64.getDecoder().decode(key));
+        if (messageMetadata.hasPartitionKey()) {
+            final String key = messageMetadata.getPartitionKey();
+            if (messageMetadata.hasPartitionKeyB64Encoded()) {
+                return ByteBuffer.wrap(Base64.getDecoder().decode(key)).asReadOnlyBuffer();
+            } else {
+                // for Base64 not encoded string, convert to UTF_8 chars
+                return ByteBuffer.wrap(key.getBytes(UTF_8));
+            }
         } else {
-            // for Base64 not encoded string, convert to UTF_8 chars
-            return ByteBuffer.wrap(key.getBytes(UTF_8));
+            return ByteBuffer.allocate(0);
         }
     }
 
