@@ -382,7 +382,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);
 
         listOffsetResponse = listOffset(1, tp);
-        System.out.println("offset for timestamp=0 " + listOffsetResponse.responseData().get(tp).offset.intValue());
+        System.out.println("offset for timestamp=1 " + listOffsetResponse.responseData().get(tp).offset.intValue());
         assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
         assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);
 
