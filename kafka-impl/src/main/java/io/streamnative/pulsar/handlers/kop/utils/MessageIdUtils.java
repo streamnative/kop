@@ -22,6 +22,7 @@ import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.intercept.ManagedLedgerInterceptorImpl;
+import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.common.protocol.Commands;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,7 +45,10 @@ public class MessageIdUtils {
         return getCurrentOffset(managedLedger) + 1;
     }
 
-    public static CompletableFuture<Long> getOffsetOfPosition(ManagedLedgerImpl managedLedger, PositionImpl position) {
+    public static CompletableFuture<Long> getOffsetOfPosition(ManagedLedgerImpl managedLedger,
+                                                              PositionImpl position,
+                                                              boolean needCheckMore,
+                                                              long timestamp) {
         final CompletableFuture<Long> future = new CompletableFuture<>();
         managedLedger.asyncReadEntry(position, new AsyncCallbacks.ReadEntryCallback() {
             @Override
@@ -55,14 +59,26 @@ public class MessageIdUtils {
             @Override
             public void readEntryComplete(Entry entry, Object ctx) {
                 try {
-                   future.complete(peekBaseOffsetFromEntry(entry));
-                } catch (Exception exception) {
-                    future.completeExceptionally(exception);
+                    if (needCheckMore) {
+                        long offset = peekOffsetFromEntry(entry);
+                        MessageImpl msg = MessageImpl.deserialize(entry.getDataBuffer());
+                        if (msg.getPublishTime() >= timestamp) {
+                            future.complete(offset);
+                        } else {
+                            future.complete(offset + 1);
+                        }
+                    } else {
+                        future.complete(peekBaseOffsetFromEntry(entry));
+                    }
+
+                } catch (Exception e) {
+                    future.completeExceptionally(e);
                 } finally {
                     if (entry != null) {
                         entry.release();
                     }
                 }
+
             }
         }, null);
         return future;
