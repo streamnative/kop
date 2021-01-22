@@ -211,7 +211,10 @@ public class TransactionCoordinator {
         }
 
         final Map<InetSocketAddress, MarkerHandler> markerHandlerMap = new HashMap<>();
+        final List<CompletableFuture<Void>> completableFutureList = new ArrayList<>();
         for (TopicPartition topicPartition : metadata.getTopicPartitions()) {
+            CompletableFuture<Void> completableFuture = new CompletableFuture<>();
+            completableFutureList.add(completableFuture);
             String pulsarTopic = new KopTopic(topicPartition.topic()).getPartitionName(topicPartition.partition());
             requestHandler.findBroker(TopicName.get(pulsarTopic))
                     .thenAccept(partitionMetadata -> {
@@ -232,30 +235,44 @@ public class TransactionCoordinator {
                                 return value;
                             }
                         });
-                    });
+                        completableFuture.complete(null);
+                    }).exceptionally(e -> {
+                        log.error("EndTxn findBroker fail", e);
+                        completableFuture.completeExceptionally(e);
+                        return null;
+            });
         }
 
-        List<CompletableFuture<WriteTxnMarkersResponse>> completableFutureList = new ArrayList<>();
-        for (MarkerHandler markerHandler : markerHandlerMap.values()) {
-            completableFutureList.add(
-                    markerHandler.writeTxnMarker(producerId, producerEpoch, transactionResult));
-        }
+        FutureUtil.waitForAll(completableFutureList).thenRun(() -> {
+            List<CompletableFuture<WriteTxnMarkersResponse>> writeTxnMarkersFutureList = new ArrayList<>();
+            for (MarkerHandler markerHandler : markerHandlerMap.values()) {
+                writeTxnMarkersFutureList.add(
+                        markerHandler.writeTxnMarker(producerId, producerEpoch, transactionResult));
+            }
 
-        FutureUtil.waitForAll(completableFutureList).whenComplete((ignored, throwable) -> {
-            TransactionMetadata.TxnTransitMetadata newMetadata =
-                    metadata.prepareComplete(SystemTime.SYSTEM.milliseconds());
-            txnStateManager.appendTransactionToLog(transactionalId, 0, newMetadata,
-                    new TransactionStateManager.ResponseCallback() {
-                        @Override
-                        public void complete() {
-                            response.complete(new EndTxnResponse(0, Errors.NONE));
-                        }
+            FutureUtil.waitForAll(writeTxnMarkersFutureList).whenComplete((ignored, throwable) -> {
+                if (throwable != null) {
+                    response.complete(new EndTxnResponse(0, Errors.COORDINATOR_NOT_AVAILABLE));
+                    return;
+                }
+                TransactionMetadata.TxnTransitMetadata newMetadata =
+                        metadata.prepareComplete(SystemTime.SYSTEM.milliseconds());
+                txnStateManager.appendTransactionToLog(transactionalId, 0, newMetadata,
+                        new TransactionStateManager.ResponseCallback() {
+                            @Override
+                            public void complete() {
+                                response.complete(new EndTxnResponse(0, Errors.NONE));
+                            }
 
-                        @Override
-                        public void fail(Exception e) {
+                            @Override
+                            public void fail(Exception e) {
 
-                        }
-                    });
+                            }
+                        });
+            });
+        }).exceptionally(e -> {
+            response.complete(new EndTxnResponse(0, Errors.COORDINATOR_NOT_AVAILABLE));
+            return null;
         });
     }
 
