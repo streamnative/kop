@@ -219,10 +219,10 @@ public class TransactionCoordinator {
                     .thenAccept(partitionMetadata -> {
                         InetSocketAddress socketAddress = new InetSocketAddress(
                                 partitionMetadata.leader().host(), partitionMetadata.leader().port());
-                        CompletableFuture<TransactionMarkerChannelHandler> handlerFuture =
-                                transactionMarkerChannelManager.getChannel(socketAddress);
                         markerHandlerMap.compute(socketAddress, (key, value) -> {
                             if (value == null) {
+                                CompletableFuture<TransactionMarkerChannelHandler> handlerFuture =
+                                        transactionMarkerChannelManager.getChannel(socketAddress);
                                 List<TopicPartition> topicPartitionList = new ArrayList<>();
                                 topicPartitionList.add(topicPartition);
                                 return MarkerHandler.builder()

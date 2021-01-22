@@ -69,7 +69,10 @@ public class TransactionMarkerChannelManager {
                     .thenAccept(channel -> {
                         handlerFuture.complete(
                                 (TransactionMarkerChannelHandler) channel.pipeline().get("handler"));
-                    });
+                    }).exceptionally(e -> {
+                        handlerFuture.completeExceptionally(e);
+                        return null;
+            });
             return handlerFuture;
         });
     }

@@ -32,7 +32,7 @@ import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
 @Slf4j
 public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapter {
 
-    private ChannelHandlerContext cnx;
+    private CompletableFuture<ChannelHandlerContext> cnx = new CompletableFuture<>();
 
     private final Queue<TxnMarkerRequestResponse> requestQueue = new LinkedBlockingQueue<>();
     private final Queue<TxnMarkerRequestResponse> requestResponseQueue = new LinkedBlockingQueue<>();
@@ -51,16 +51,18 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     }
 
     public void pollRequest() {
-        log.info("poll request queue: {}", requestQueue.size());
-        TxnMarkerRequestResponse request = requestQueue.poll();
-        while (request != null) {
-            requestResponseQueue.offer(request);
-            ByteBuf byteBuf = request.getRequestData();
-            log.info("byteBuff {}", byteBuf);
-            cnx.writeAndFlush(byteBuf);
-            log.info("poll request write and flush");
-            request = requestQueue.poll();
-        }
+        this.cnx.thenAccept((cnxFuture) -> {
+            log.info("poll request queue: {}", requestQueue.size());
+            TxnMarkerRequestResponse request = requestQueue.poll();
+            while (request != null) {
+                requestResponseQueue.offer(request);
+                ByteBuf byteBuf = request.getRequestData();
+                log.info("byteBuff {}", byteBuf);
+                cnxFuture.writeAndFlush(byteBuf);
+                log.info("poll request write and flush");
+                request = requestQueue.poll();
+            }
+        });
     }
 
     private static class TxnMarkerRequestResponse {
@@ -98,7 +100,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     @Override
     public void channelActive(ChannelHandlerContext channelHandlerContext) throws Exception {
         log.info("[TransactionMarkerChannelHandler] channelActive");
-        this.cnx = channelHandlerContext;
+        this.cnx.complete(channelHandlerContext);
         super.channelActive(channelHandlerContext);
     }
 
