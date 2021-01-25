@@ -55,7 +55,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
         this.timestamp = timestamp;
         if (messageFindInProgressUpdater.compareAndSet(this, FALSE, TRUE)) {
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Starting message position find at timestamp {}",  timestamp);
+                log.debug("Starting message position find at timestamp {}", timestamp);
             }
 
             asyncFindNewestMatching(ManagedCursor.FindPositionConstraint.SearchAllAvailableEntries, entry -> {
@@ -89,11 +89,11 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
         checkArgument(ctx instanceof AsyncCallbacks.FindEntryCallback);
         AsyncCallbacks.FindEntryCallback callback = (AsyncCallbacks.FindEntryCallback) ctx;
         if (position != null) {
-            log.info("[{}][{}] Found position {} closest to provided timestamp {}", position,
+            log.info("Found position {} closest to provided timestamp {}", position,
                 timestamp);
         } else {
             if (log.isDebugEnabled()) {
-                log.debug("[{}][{}] No position found closest to provided timestamp {}", timestamp);
+                log.debug("No position found closest to provided timestamp {}", timestamp);
             }
         }
         messageFindInProgress = FALSE;
