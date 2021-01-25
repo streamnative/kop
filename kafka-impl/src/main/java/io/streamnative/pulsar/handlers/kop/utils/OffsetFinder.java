@@ -64,7 +64,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
                     msg = MessageImpl.deserialize(entry.getDataBuffer());
                     return msg.getPublishTime() <= timestamp;
                 } catch (Exception e) {
-                    log.error("[{}][{}] Error deserializing message for message position find",  e);
+                    log.error("Error deserialize message for message position find",  e);
                 } finally {
                     entry.release();
                     if (msg != null) {
@@ -75,7 +75,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
             }, this, callback);
         } else {
             if (log.isDebugEnabled()) {
-                log.debug("[{}][{}] Ignore message position find scheduled task, last find is still running");
+                log.debug("Ignore message position find scheduled task, last find is still running");
             }
             callback.findEntryFailed(
                 new ManagedLedgerException.ConcurrentFindCursorPositionException("last find is still running"),
@@ -105,7 +105,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
         checkArgument(ctx instanceof AsyncCallbacks.FindEntryCallback);
         AsyncCallbacks.FindEntryCallback callback = (AsyncCallbacks.FindEntryCallback) ctx;
         if (log.isDebugEnabled()) {
-            log.debug("[{}][{}] message position find operation failed for provided timestamp {}",
+            log.debug("Message position find operation failed for provided timestamp {}",
                 timestamp, exception);
         }
         messageFindInProgress = FALSE;
