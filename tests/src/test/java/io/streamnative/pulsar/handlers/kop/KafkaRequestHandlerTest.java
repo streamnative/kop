@@ -397,6 +397,23 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 10000)
+    public void testDeleteNotExistedTopics() throws Exception {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(props);
+        Set<String> topics = new HashSet<>();
+        topics.add("testDeleteNotExistedTopics");
+        try {
+            deleteTopicsByKafkaAdmin(kafkaAdmin, topics);
+            fail();
+        } catch (ExecutionException e) {
+            assertTrue(e.getCause() instanceof UnknownTopicOrPartitionException);
+        }
+    }
+
+    @Test(timeOut = 10000)
     public void testDescribeTopics() throws Exception {
         Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
