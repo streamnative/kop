@@ -18,6 +18,7 @@ import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaT
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getPartitionedTopicNameWithoutPartitions;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
@@ -44,7 +45,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
@@ -56,7 +57,6 @@ import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigResource;
@@ -76,6 +76,11 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.Consumer;
+import org.apache.pulsar.client.api.Message;
+import org.apache.pulsar.client.api.SubscriptionInitialPosition;
+import org.apache.pulsar.client.impl.BatchMessageIdImpl;
+import org.apache.pulsar.client.impl.TopicMessageIdImpl;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
@@ -448,6 +453,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        props.put(ProducerConfig.BATCH_SIZE_CONFIG, "100"); // avoid all messages being in the same batch
 
         @Cleanup
         KafkaProducer<Integer, String> producer = new KafkaProducer<>(props);
@@ -456,7 +462,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         final List<Long> offsets = new ArrayList<>();
         for (int i = 0; i < numMessages; i++) {
             final int index = i;
-            Future<RecordMetadata> future = producer.send(new ProducerRecord<>(topic, i, messagePrefix + i),
+            producer.send(new ProducerRecord<>(topic, i, messagePrefix + i),
                     (recordMetadata, e) -> {
                         if (e != null) {
                             log.error("Failed to send {}: {}", index, e);
@@ -466,15 +472,30 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                         }
                         latch.countDown();
                     });
-            // The first half messages are sent in batch, the second half messages are sent synchronously.
-            if (i >= numMessages / 2) {
-                future.get();
-            }
         }
         latch.await();
         final List<Long> expectedOffsets = LongStream.range(0, numMessages).boxed().collect(Collectors.toList());
         log.info("Actual offsets: {}", offsets);
         assertEquals(offsets, expectedOffsets);
+
+        @Cleanup
+        Consumer<byte[]> consumer = pulsarClient.newConsumer()
+                .topic(topic)
+                .subscriptionName("testProducerCallback")
+                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                .subscribe();
+        int numBatches = 0;
+        for (int i = 0; i < numMessages; i++) {
+            Message<byte[]> msg = consumer.receive(1, TimeUnit.SECONDS);
+            assertNotNull(msg);
+            consumer.acknowledge(msg);
+            BatchMessageIdImpl id = (BatchMessageIdImpl) ((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId();
+            if (id.getBatchIndex() == 0) {
+                numBatches++;
+            }
+        }
+        log.info("Receive {} batches", numBatches);
+        assertTrue(numBatches > 1 && numBatches < numMessages);
     }
 
     @Test(timeOut = 10000)

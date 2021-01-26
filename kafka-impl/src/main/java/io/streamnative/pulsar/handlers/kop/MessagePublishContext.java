@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
@@ -22,6 +23,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.Topic.PublishContext;
+import org.apache.pulsar.common.api.proto.BrokerEntryMetadata;
+import org.apache.pulsar.common.protocol.Commands;
 
 /**
  * Implementation for PublishContext.
@@ -34,6 +37,7 @@ public final class MessagePublishContext implements PublishContext {
     private long startTimeNs;
     private long numberOfMessages;
     private ManagedLedger managedLedger;
+    private long offset = -1L;
 
     /**
      * Executed from managed ledger thread when the message is persisted.
@@ -54,14 +58,24 @@ public final class MessagePublishContext implements PublishContext {
 
             topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.MICROSECONDS);
 
-            // In asynchronously send mode, there's a possibility that some messages' offsets are larger than the actual
-            // offsets. For example, two messages are sent concurrently, if the 1st message is completed while the 2nd
-            // message is already persisted, `MessageIdUtils.getCurrentOffset` will return the 2nd message's offset.
-            final long baseOffset = MessageIdUtils.getCurrentOffset(managedLedger) - (numberOfMessages - 1);
+            if (offset < 0) {
+                log.error("offset is {} (< 0) but no exception was thrown, use the offset from managed ledger", offset);
+                offset = MessageIdUtils.getCurrentOffset(managedLedger);
+            }
+
+            final long baseOffset = offset - (numberOfMessages - 1);
             offsetFuture.complete(baseOffset);
         }
 
         recycle();
+    }
+
+    @Override
+    public void setMetadataFromEntryData(ByteBuf entryData) {
+        final BrokerEntryMetadata metadata = Commands.peekBrokerEntryMetadataIfExist(entryData);
+        if (metadata != null && metadata.hasIndex()) {
+            offset = metadata.getIndex();
+        }
     }
 
     // recycler
