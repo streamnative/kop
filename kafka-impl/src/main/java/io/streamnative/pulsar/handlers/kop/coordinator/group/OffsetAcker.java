@@ -124,20 +124,26 @@ public class OffsetAcker implements Closeable {
     }
 
     public void close(Set<String> groupIds) {
-        groupIds.forEach(groupId -> consumers.get(groupId).values().forEach(consumerFuture -> {
-            consumerFuture.whenComplete((consumer, throwable) -> {
-                if (throwable != null) {
-                    log.warn("Error when get consumer for consumer group close:", throwable);
-                    return;
-                }
-                try {
-                    consumer.close();
-                } catch (Exception e) {
-                    log.warn("Error when close consumer topic: {}, sub: {}.",
-                        consumer.getTopic(), consumer.getSubscription(), e);
-                }
+        groupIds.forEach(groupId -> {
+            // consumers cache is empty if the broker restart.
+            if (!consumers.containsKey(groupId)) {
+                return;
+            }
+            consumers.get(groupId).values().forEach(consumerFuture -> {
+                consumerFuture.whenComplete((consumer, throwable) -> {
+                    if (throwable != null) {
+                        log.warn("Error when get consumer for consumer group close:", throwable);
+                        return;
+                    }
+                    try {
+                        consumer.close();
+                    } catch (Exception e) {
+                        log.warn("Error when close consumer topic: {}, sub: {}.",
+                                consumer.getTopic(), consumer.getSubscription(), e);
+                    }
+                });
             });
-        }));
+        });
     }
 
     @Override
