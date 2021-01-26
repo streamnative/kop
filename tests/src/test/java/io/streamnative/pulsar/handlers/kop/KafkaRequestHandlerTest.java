@@ -24,8 +24,6 @@ import static org.testng.Assert.fail;
 import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.embedded.EmbeddedChannel;
-import io.netty.util.CharsetUtil;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndResponse;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
@@ -45,11 +43,7 @@ import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
@@ -157,36 +151,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
-    }
-
-    @Test
-    public void testAutoReadEnableDisable() {
-        final ByteBuf buffer = Unpooled.copiedBuffer("Test", CharsetUtil.US_ASCII);
-        final EmbeddedChannel channel = new EmbeddedChannel(handler);
-        ByteBuf[] buffers = new ByteBuf[1000000];
-        for (int i = 0; i < buffers.length; i++) {
-            buffers[i] = buffer.duplicate().retain();
-        }
-        AtomicBoolean isChannelWritable = new AtomicBoolean(true);
-        ExecutorService service = Executors.newSingleThreadExecutor();
-
-        service.execute(() -> {
-            int count = 0;
-            while (count < 10) {
-                boolean isWritable = handler.getCtx().channel().isWritable();
-                if (!isWritable) {
-                    isChannelWritable.set(false);
-                    break;
-                }
-                count += 1;
-                try {
-                    TimeUnit.MILLISECONDS.sleep(50);
-                } catch (Exception ignored) {}
-
-            }
-        });
-        channel.writeOutbound(buffers);
-        Assert.assertFalse(isChannelWritable.get());
     }
 
     @Test
