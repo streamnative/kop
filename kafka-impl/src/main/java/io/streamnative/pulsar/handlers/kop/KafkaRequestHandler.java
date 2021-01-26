@@ -1521,6 +1521,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 if (matchBrokers.isEmpty()) {
                     log.error("No node for broker {} under zk://loadbalance", pulsarAddress);
                     returnFuture.complete(Optional.empty());
+                    topicManager.removeTopicManagerCache(topic.toString());
                     return;
                 }
 
@@ -1538,6 +1539,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             if (th != null) {
                                 log.error("Error in getDataAsync() for {}", pulsarAddress, th);
                                 returnFuture.complete(Optional.empty());
+                                topicManager.removeTopicManagerCache(topic.toString());
                                 return;
                             }
 
@@ -1561,6 +1563,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             } catch (Exception e) {
                                 log.error("Error in {} lookupFuture get: ", pulsarAddress, e);
                                 returnFuture.complete(Optional.empty());
+                                topicManager.removeTopicManagerCache(topic.toString());
                                 return;
                             }
 
