@@ -34,7 +34,7 @@ public class EntryPublishTimePulsarFormatTest extends EntryPublishTimeTest {
     private static final Logger log = LoggerFactory.getLogger(EntryPublishTimePulsarFormatTest.class);
 
 
-    public EntryPublishTimePulsarFormatTest(String format) {
+    public EntryPublishTimePulsarFormatTest() {
         super("pulsar");
     }
 
