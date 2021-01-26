@@ -55,7 +55,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
         this.timestamp = timestamp;
         if (messageFindInProgressUpdater.compareAndSet(this, FALSE, TRUE)) {
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Starting message position find at timestamp {}",  timestamp);
+                log.debug("[{}] Starting message position find at timestamp {}", managedLedger.getName(), timestamp);
             }
 
             asyncFindNewestMatching(ManagedCursor.FindPositionConstraint.SearchAllAvailableEntries, entry -> {
@@ -64,7 +64,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
                     msg = MessageImpl.deserialize(entry.getDataBuffer());
                     return msg.getPublishTime() <= timestamp;
                 } catch (Exception e) {
-                    log.error("[{}][{}] Error deserializing message for message position find",  e);
+                    log.error("[{}] Error deserialize message for message position find", managedLedger.getName(), e);
                 } finally {
                     entry.release();
                     if (msg != null) {
@@ -75,7 +75,8 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
             }, this, callback);
         } else {
             if (log.isDebugEnabled()) {
-                log.debug("[{}][{}] Ignore message position find scheduled task, last find is still running");
+                log.debug("[{}] Ignore message position find scheduled task, last find is still running",
+                        managedLedger.getName());
             }
             callback.findEntryFailed(
                 new ManagedLedgerException.ConcurrentFindCursorPositionException("last find is still running"),
@@ -89,11 +90,12 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
         checkArgument(ctx instanceof AsyncCallbacks.FindEntryCallback);
         AsyncCallbacks.FindEntryCallback callback = (AsyncCallbacks.FindEntryCallback) ctx;
         if (position != null) {
-            log.info("[{}][{}] Found position {} closest to provided timestamp {}", position,
-                timestamp);
+            log.info("[{}] Found position {} closest to provided timestamp {}",
+                    managedLedger.getName(), position, timestamp);
         } else {
             if (log.isDebugEnabled()) {
-                log.debug("[{}][{}] No position found closest to provided timestamp {}", timestamp);
+                log.debug("[{}] No position found closest to provided timestamp {}",
+                        managedLedger.getName(), timestamp);
             }
         }
         messageFindInProgress = FALSE;
@@ -105,8 +107,8 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
         checkArgument(ctx instanceof AsyncCallbacks.FindEntryCallback);
         AsyncCallbacks.FindEntryCallback callback = (AsyncCallbacks.FindEntryCallback) ctx;
         if (log.isDebugEnabled()) {
-            log.debug("[{}][{}] message position find operation failed for provided timestamp {}",
-                timestamp, exception);
+            log.debug("[{}] Message position find operation failed for provided timestamp {}",
+                    managedLedger.getName(), timestamp, exception);
         }
         messageFindInProgress = FALSE;
         callback.findEntryFailed(exception, position, null);
