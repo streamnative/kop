@@ -19,6 +19,7 @@ import static com.google.common.base.Preconditions.checkState;
 import com.google.common.base.Predicate;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.FindEntryCallback;
@@ -29,7 +30,6 @@ import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
-import org.apache.pulsar.client.impl.MessageImpl;
 
 /**
  * given a timestamp find the first message (position) (published) at or before the timestamp.
@@ -59,17 +59,15 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
             }
 
             asyncFindNewestMatching(ManagedCursor.FindPositionConstraint.SearchAllAvailableEntries, entry -> {
-                MessageImpl msg = null;
+                if (entry == null) {
+                    return false;
+                }
                 try {
-                    msg = MessageImpl.deserialize(entry.getDataBuffer());
-                    return msg.getPublishTime() <= timestamp;
+                    return MessageIdUtils.getPublishTime(entry.getDataBuffer()) <= timestamp;
                 } catch (Exception e) {
                     log.error("[{}] Error deserialize message for message position find", managedLedger.getName(), e);
                 } finally {
                     entry.release();
-                    if (msg != null) {
-                        msg.recycle();
-                    }
                 }
                 return false;
             }, this, callback);

@@ -41,11 +41,10 @@ import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.client.impl.TypedMessageBuilderImpl;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
-import org.apache.pulsar.common.api.proto.PulsarApi;
-import org.apache.pulsar.common.api.proto.PulsarApi.KeyValue;
-import org.apache.pulsar.common.api.proto.PulsarApi.MessageMetadata;
-import org.apache.pulsar.common.api.proto.PulsarApi.SingleMessageMetadata;
-import org.apache.pulsar.common.api.proto.PulsarMarkers;
+import org.apache.pulsar.common.api.proto.KeyValue;
+import org.apache.pulsar.common.api.proto.MarkerType;
+import org.apache.pulsar.common.api.proto.MessageMetadata;
+import org.apache.pulsar.common.api.proto.SingleMessageMetadata;
 import org.apache.pulsar.common.compression.CompressionCodec;
 import org.apache.pulsar.common.compression.CompressionCodecProvider;
 import org.apache.pulsar.common.protocol.Commands;
@@ -69,31 +68,27 @@ public class PulsarEntryFormatter implements EntryFormatter {
         int numMessagesInBatch = 0;
 
         long sequenceId = -1;
-        // TODO: handle different compression type
-        PulsarApi.CompressionType compressionType = PulsarApi.CompressionType.NONE;
 
         ByteBuf batchedMessageMetadataAndPayload = PulsarByteBufAllocator.DEFAULT
                 .buffer(Math.min(INITIAL_BATCH_BUFFER_SIZE, MAX_MESSAGE_BATCH_SIZE_BYTES));
         List<MessageImpl<byte[]>> messages = Lists.newArrayListWithExpectedSize(numMessages);
-        MessageMetadata.Builder messageMetaBuilder = MessageMetadata.newBuilder();
+        final MessageMetadata msgMetadata = new MessageMetadata();
 
         records.batches().forEach(recordBatch -> {
             StreamSupport.stream(recordBatch.spliterator(), true).forEachOrdered(record -> {
                 MessageImpl<byte[]> message = recordToEntry(record);
                 messages.add(message);
-                if (messageMetaBuilder.getPublishTime() <= 0) {
-                    messageMetaBuilder.setPublishTime(message.getPublishTime());
-                }
                 if (recordBatch.isTransactional()) {
-                    messageMetaBuilder.setTxnidMostBits(recordBatch.producerId());
-                    messageMetaBuilder.setTxnidLeastBits(recordBatch.producerEpoch());
+                    msgMetadata.setTxnidMostBits(recordBatch.producerId());
+                    msgMetadata.setTxnidLeastBits(recordBatch.producerEpoch());
                 }
             });
         });
 
         for (MessageImpl<byte[]> message : messages) {
             if (++numMessagesInBatch == 1) {
-                sequenceId = Commands.initBatchMessageMetadata(messageMetaBuilder, message.getMessageBuilder());
+                // msgMetadata will set publish time here
+                sequenceId = Commands.initBatchMessageMetadata(msgMetadata, message.getMessageBuilder());
             }
             currentBatchSizeBytes += message.getDataBuffer().readableBytes();
             if (log.isDebugEnabled()) {
@@ -101,29 +96,17 @@ public class PulsarEntryFormatter implements EntryFormatter {
                         sequenceId, numMessagesInBatch, currentBatchSizeBytes);
             }
 
-            PulsarApi.MessageMetadata.Builder msgBuilder = message.getMessageBuilder();
+            final MessageMetadata msgBuilder = message.getMessageBuilder();
             batchedMessageMetadataAndPayload = Commands.serializeSingleMessageInBatchWithPayload(msgBuilder,
                     message.getDataBuffer(), batchedMessageMetadataAndPayload);
-            msgBuilder.recycle();
         }
 
-        int uncompressedSize = batchedMessageMetadataAndPayload.readableBytes();
-
-        if (PulsarApi.CompressionType.NONE != compressionType) {
-            messageMetaBuilder.setCompression(compressionType);
-            messageMetaBuilder.setUncompressedSize(uncompressedSize);
-        }
-
-        messageMetaBuilder.setNumMessagesInBatch(numMessagesInBatch);
-
-        MessageMetadata msgMetadata = messageMetaBuilder.build();
+        msgMetadata.setNumMessagesInBatch(numMessagesInBatch);
 
         ByteBuf buf = Commands.serializeMetadataAndPayload(ChecksumType.Crc32c,
                 msgMetadata,
                 batchedMessageMetadataAndPayload);
 
-        messageMetaBuilder.recycle();
-        msgMetadata.recycle();
         batchedMessageMetadataAndPayload.release();
 
         return buf;
@@ -138,11 +121,12 @@ public class PulsarEntryFormatter implements EntryFormatter {
             // each entry is a batched message
             ByteBuf metadataAndPayload = entry.getDataBuffer();
 
-            // Uncompress the payload if necessary
+            Commands.skipBrokerEntryMetadataIfExist(metadataAndPayload);
             MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
 
-            if (msgMetadata.getMarkerType() == PulsarMarkers.MarkerType.TXN_COMMIT_VALUE
-                    || msgMetadata.getMarkerType() == PulsarMarkers.MarkerType.TXN_ABORT_VALUE) {
+            if (msgMetadata.hasMarkerType()
+                    && (msgMetadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
+                    || msgMetadata.getMarkerType() == MarkerType.TXN_ABORT_VALUE)) {
                 MemoryRecords memoryRecords = MemoryRecords.withEndTransactionMarker(
                         baseOffset,
                         msgMetadata.getPublishTime(),
@@ -150,7 +134,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
                         msgMetadata.getTxnidMostBits(),
                         (short) msgMetadata.getTxnidLeastBits(),
                         new EndTransactionMarker(
-                                msgMetadata.getMarkerType() == PulsarMarkers.MarkerType.TXN_COMMIT_VALUE
+                                msgMetadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
                                         ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0));
                 byteBuffer.put(memoryRecords.buffer());
                 return;
@@ -204,15 +188,13 @@ public class PulsarEntryFormatter implements EntryFormatter {
                         log.debug(" processing message num - {} in batch", i);
                     }
                     try {
-                        SingleMessageMetadata.Builder singleMessageMetadataBuilder = SingleMessageMetadata
-                                .newBuilder();
+                        final SingleMessageMetadata singleMessageMetadata = new SingleMessageMetadata();
                         ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(payload,
-                                singleMessageMetadataBuilder, i, numMessages);
+                                singleMessageMetadata, i, numMessages);
 
-                        SingleMessageMetadata singleMessageMetadata = singleMessageMetadataBuilder.build();
                         Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
 
-                        final ByteBuffer value = (singleMessageMetadata.getNullValue())
+                        final ByteBuffer value = (singleMessageMetadata.isNullValue())
                                 ? null
                                 : ByteBufUtils.getNioBuffer(singleMessagePayload);
                         builder.appendWithOffset(
@@ -223,7 +205,6 @@ public class PulsarEntryFormatter implements EntryFormatter {
                                 value,
                                 headers);
                         singleMessagePayload.release();
-                        singleMessageMetadataBuilder.recycle();
                     } catch (IOException e) {
                         log.error("Meet IOException: {}", e);
                         throw new UncheckedIOException(e);
@@ -240,7 +221,6 @@ public class PulsarEntryFormatter implements EntryFormatter {
                         headers);
             }
 
-            msgMetadata.recycle();
             payload.release();
             entry.release();
 
@@ -276,9 +256,13 @@ public class PulsarEntryFormatter implements EntryFormatter {
             builder.value(null);
         }
 
-        // sequence
+        // Following fields are required in `Commands.initBatchMessageMetadata`, but since we write to
+        // bookie directly, broker won't make use of them. So here we just set trivial values.
+        builder.getMetadataBuilder().setProducerName("");
         if (record.sequence() >= 0) {
             builder.sequenceId(record.sequence());
+        } else {
+            builder.sequenceId(0L);
         }
 
         // timestamp

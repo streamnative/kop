@@ -14,7 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import org.apache.bookkeeper.mledger.Entry;
-import org.apache.pulsar.common.api.proto.PulsarApi;
+import org.apache.pulsar.common.api.proto.BrokerEntryMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
@@ -34,7 +34,7 @@ public class OffsetSearchPredicate implements com.google.common.base.Predicate<E
     @Override
     public boolean apply(@Nullable Entry entry) {
         try {
-            PulsarApi.BrokerEntryMetadata brokerEntryMetadata =
+            BrokerEntryMetadata brokerEntryMetadata =
                     Commands.parseBrokerEntryMetadataIfExist(entry.getDataBuffer());
             return brokerEntryMetadata.getIndex() < indexToSearch;
         } catch (Exception e) {

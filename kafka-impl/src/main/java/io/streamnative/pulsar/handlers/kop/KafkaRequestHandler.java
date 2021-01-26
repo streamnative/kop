@@ -136,8 +136,8 @@ import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.common.api.proto.PulsarApi;
-import org.apache.pulsar.common.api.proto.PulsarMarkers;
+import org.apache.pulsar.common.api.proto.MarkerType;
+import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
@@ -1438,26 +1438,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private ByteBuf generateTxnMarker(TransactionResult transactionResult, long producerId, short producerEpoch) {
         ControlRecordType controlRecordType;
-        PulsarMarkers.MarkerType markerType;
+        MarkerType markerType;
         if (transactionResult.equals(TransactionResult.COMMIT)) {
-            markerType = PulsarMarkers.MarkerType.TXN_COMMIT;
+            markerType = MarkerType.TXN_COMMIT;
             controlRecordType = ControlRecordType.COMMIT;
         } else {
-            markerType = PulsarMarkers.MarkerType.TXN_ABORT;
+            markerType = MarkerType.TXN_ABORT;
             controlRecordType = ControlRecordType.ABORT;
         }
         EndTransactionMarker marker = new EndTransactionMarker(controlRecordType, 0);
         MemoryRecords memoryRecords = MemoryRecords.withEndTransactionMarker(producerId, producerEpoch, marker);
 
         ByteBuf byteBuf = Unpooled.wrappedBuffer(memoryRecords.buffer());
-        PulsarApi.MessageMetadata messageMetadata = PulsarApi.MessageMetadata.newBuilder()
+        MessageMetadata messageMetadata = new MessageMetadata()
                 .setTxnidMostBits(producerId)
                 .setTxnidLeastBits(producerEpoch)
-                .setMarkerType(markerType.getNumber())
+                .setMarkerType(markerType.getValue())
                 .setPublishTime(SystemTime.SYSTEM.milliseconds())
                 .setProducerName("")
-                .setSequenceId(0L)
-                .build();
+                .setSequenceId(0L);
         return Commands.serializeMetadataAndPayload(Commands.ChecksumType.None, messageMetadata, byteBuf);
     }
 

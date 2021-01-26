@@ -455,7 +455,7 @@ public final class MessageFetchContext {
 
                         readFuture.completeExceptionally(e);
                     }
-                }, null);
+                }, null, PositionImpl.latest);
 
             readFutures.putIfAbsent(cursorOffsetPair.getKey(), readFuture);
         });

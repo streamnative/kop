@@ -13,8 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import io.netty.buffer.ByteBuf;
+
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedLedger;
@@ -22,7 +25,7 @@ import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.intercept.ManagedLedgerInterceptorImpl;
-import org.apache.pulsar.client.impl.MessageImpl;
+import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +48,14 @@ public class MessageIdUtils {
         return getCurrentOffset(managedLedger) + 1;
     }
 
+    public static long getPublishTime(final ByteBuf byteBuf) {
+        final int readerIndex = byteBuf.readerIndex();
+        Commands.skipBrokerEntryMetadataIfExist(byteBuf);
+        final MessageMetadata metadata = Commands.parseMessageMetadata(byteBuf);
+        byteBuf.readerIndex(readerIndex);
+        return metadata.getPublishTime();
+    }
+
     public static CompletableFuture<Long> getOffsetOfPosition(ManagedLedgerImpl managedLedger,
                                                               PositionImpl position,
                                                               boolean needCheckMore,
@@ -61,8 +72,8 @@ public class MessageIdUtils {
                 try {
                     if (needCheckMore) {
                         long offset = peekOffsetFromEntry(entry);
-                        MessageImpl msg = MessageImpl.deserialize(entry.getDataBuffer());
-                        if (msg.getPublishTime() >= timestamp) {
+                        final long publishTime = getPublishTime(entry.getDataBuffer());
+                        if (publishTime >= timestamp) {
                             future.complete(offset);
                         } else {
                             future.complete(offset + 1);
