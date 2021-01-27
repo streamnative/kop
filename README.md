@@ -152,5 +152,5 @@ See [Implementation](docs/implementation.md) for the implementation details, inc
 
 ## Maintainers from community
 
-- [@aloyszhang](https://github.com/aloyszhang)
-- [@dockerzhang](https://github.com/dockerzhang)
+-   [@aloyszhang](https://github.com/aloyszhang)
+-   [@dockerzhang](https://github.com/dockerzhang)
