@@ -59,7 +59,9 @@ public final class MessagePublishContext implements PublishContext {
             topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.MICROSECONDS);
 
             if (offset < 0) {
-                log.error("offset is {} (< 0) but no exception was thrown, use the offset from managed ledger", offset);
+                if (offset != -1L) {
+                    log.error("offset was changed to {} (< 0) but no exception was thrown", offset);
+                }
                 offset = MessageIdUtils.getCurrentOffset(managedLedger);
             }
 
@@ -72,6 +74,10 @@ public final class MessagePublishContext implements PublishContext {
 
     @Override
     public void setMetadataFromEntryData(ByteBuf entryData) {
+        if (entryData == null) {
+            // When the managed ledger was closed, the `entryData` is null.
+            return;
+        }
         final BrokerEntryMetadata metadata = Commands.peekBrokerEntryMetadataIfExist(entryData);
         if (metadata != null && metadata.hasIndex()) {
             offset = metadata.getIndex();
