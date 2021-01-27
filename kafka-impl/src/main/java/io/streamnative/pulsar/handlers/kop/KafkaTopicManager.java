@@ -31,7 +31,6 @@ import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.client.impl.Backoff;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.TopicName;
 
@@ -184,12 +183,7 @@ public class KafkaTopicManager {
                     requestHandler.ctx.channel(), topicName);
             }
             CompletableFuture<InetSocketAddress> returnFuture = new CompletableFuture<>();
-            Backoff backoff = new Backoff(
-                100, TimeUnit.MILLISECONDS,
-                30, TimeUnit.SECONDS,
-                30, TimeUnit.SECONDS
-                );
-            lookupBroker(topicName, backoff, returnFuture);
+            lookupBroker(topicName, returnFuture);
             return returnFuture;
         });
     }
@@ -201,7 +195,6 @@ public class KafkaTopicManager {
     // this method do the real lookup into Pulsar broker.
     // retFuture will be completed with null when meet error.
     private void lookupBroker(String topicName,
-                              Backoff backoff,
                               CompletableFuture<InetSocketAddress> retFuture) {
         try {
             // If channel is closing, complete a null to avoid brings in further handling.
@@ -226,20 +219,9 @@ public class KafkaTopicManager {
                     retFuture.complete(pair.getLeft());
                 })
                 .exceptionally(th -> {
-                    long waitTimeMs = backoff.next();
-
-                    if (backoff.isMandatoryStopMade()) {
-                        log.warn("[{}] getBroker for topic {} failed, retried too many times {}, return null."
-                                        + " throwable: ", requestHandler.ctx.channel(), topicName, waitTimeMs, th);
-                        retFuture.complete(null);
-                    } else {
-                        log.warn("[{}] getBroker for topic failed, will retry in {} ms. throwable: ",
-                            topicName, waitTimeMs, th);
-                        requestHandler.getPulsarService().getExecutor()
-                            .schedule(() -> lookupBroker(topicName, backoff, retFuture),
-                                waitTimeMs,
-                                TimeUnit.MILLISECONDS);
-                    }
+                    log.warn("[{}] getBroker for topic failed. throwable: ",
+                            topicName, th);
+                    retFuture.complete(null);
                     return null;
                 });
         } catch (PulsarServerException e) {
