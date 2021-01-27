@@ -39,6 +39,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -316,7 +317,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertEquals(localName, getKafkaTopicNameFromPulsarTopicname(topicNamePartition));
     }
 
-    void createTopicsByKafkaAdmin(AdminClient admin, Map<String, Integer> topicToNumPartitions)
+    private void createTopicsByKafkaAdmin(AdminClient admin, Map<String, Integer> topicToNumPartitions)
             throws ExecutionException, InterruptedException {
         final short replicationFactor = 1; // replication factor will be ignored
         admin.createTopics(topicToNumPartitions.entrySet().stream().map(entry -> {
@@ -326,7 +327,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         }).collect(Collectors.toList())).all().get();
     }
 
-    void verifyTopicsByPulsarAdmin(Map<String, Integer> topicToNumPartitions)
+    private void verifyTopicsCreatedByPulsarAdmin(Map<String, Integer> topicToNumPartitions)
             throws PulsarAdminException {
         for (Map.Entry<String, Integer> entry : topicToNumPartitions.entrySet()) {
             final String topic = entry.getKey();
@@ -335,8 +336,22 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         }
     }
 
+    private void verifyTopicsDeletedByPulsarAdmin(Map<String, Integer> topicToNumPartitions)
+            throws PulsarAdminException {
+        for (Map.Entry<String, Integer> entry : topicToNumPartitions.entrySet()) {
+            final String topic = entry.getKey();
+            assertEquals(this.admin.topics().getPartitionedTopicMetadata(topic).partitions, 0);
+        }
+    }
+
+    private void deleteTopicsByKafkaAdmin(AdminClient admin, Set<String> topicsToDelete)
+            throws ExecutionException, InterruptedException {
+        admin.deleteTopics(topicsToDelete).all().get();
+    }
+
+
     @Test(timeOut = 10000)
-    public void testCreateTopics() throws Exception {
+    public void testCreateAndDeleteTopics() throws Exception {
         Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
 
@@ -348,8 +363,12 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             put("my-tenant/my-ns/testCreateTopics-2", 1);
             put("persistent://my-tenant/my-ns/testCreateTopics-3", 5);
         }};
+        // create
         createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
-        verifyTopicsByPulsarAdmin(topicToNumPartitions);
+        verifyTopicsCreatedByPulsarAdmin(topicToNumPartitions);
+        // delete
+        deleteTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions.keySet());
+        verifyTopicsDeletedByPulsarAdmin(topicToNumPartitions);
     }
 
     @Test(timeOut = 10000)
@@ -370,6 +389,23 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             log.info("Failed to create topics: {} caused by {}", topicToNumPartitions, e.getCause());
             final Throwable cause = e.getCause();
             assertTrue(cause instanceof TimeoutException || cause instanceof UnknownServerException);
+        }
+    }
+
+    @Test(timeOut = 10000)
+    public void testDeleteNotExistedTopics() throws Exception {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(props);
+        Set<String> topics = new HashSet<>();
+        topics.add("testDeleteNotExistedTopics");
+        try {
+            deleteTopicsByKafkaAdmin(kafkaAdmin, topics);
+            fail();
+        } catch (ExecutionException e) {
+            assertTrue(e.getCause() instanceof UnknownTopicOrPartitionException);
         }
     }
 

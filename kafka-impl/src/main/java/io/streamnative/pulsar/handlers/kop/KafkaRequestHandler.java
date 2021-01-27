@@ -77,6 +77,8 @@ import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteGroupsRequest;
 import org.apache.kafka.common.requests.DeleteGroupsResponse;
+import org.apache.kafka.common.requests.DeleteTopicsRequest;
+import org.apache.kafka.common.requests.DeleteTopicsResponse;
 import org.apache.kafka.common.requests.DescribeConfigsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsRequest;
@@ -1205,6 +1207,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             resultFuture.complete(new DescribeConfigsResponse(0, configResourceConfigMap));
             return null;
         });
+    }
+
+    @Override
+    protected void handleDeleteTopics(KafkaHeaderAndRequest deleteTopics,
+                                      CompletableFuture<AbstractResponse> resultFuture) {
+        checkArgument(deleteTopics.getRequest() instanceof DeleteTopicsRequest);
+        DeleteTopicsRequest request = (DeleteTopicsRequest) deleteTopics.getRequest();
+        Set<String> topicsToDelete = request.topics();
+        resultFuture.complete(new DeleteTopicsResponse(adminManager.deleteTopics(topicsToDelete)));
     }
 
     private SaslHandshakeResponse checkSaslMechanism(String mechanism) {

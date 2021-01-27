@@ -235,6 +235,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     case DESCRIBE_CONFIGS:
                         handleDescribeConfigs(kafkaHeaderAndRequest, responseFuture);
                         break;
+                    case DELETE_TOPICS:
+                        handleDeleteTopics(kafkaHeaderAndRequest, responseFuture);
+                        break;
                     default:
                         handleError(kafkaHeaderAndRequest, responseFuture);
                 }
@@ -371,6 +374,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected abstract void
     handleDescribeConfigs(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleDeleteTopics(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
     static class KafkaHeaderAndRequest implements Closeable {
 
