@@ -355,7 +355,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
             fail("create a invalid topic should fail");
         } catch (Exception e) {
-            log.info("Failed to create topics: {}", topicToNumPartitions);
+            log.info("Failed to create topics: {} caused by {}", topicToNumPartitions, e.getCause());
             assertTrue(e.getCause() instanceof TimeoutException);
         }
     }
