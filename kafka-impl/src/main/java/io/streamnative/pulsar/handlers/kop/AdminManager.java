@@ -38,6 +38,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 
 @Slf4j
 class AdminManager {
@@ -170,5 +171,21 @@ class AdminManager {
             ));
         });
         return resultFuture;
+    }
+
+    public Map<String, Errors> deleteTopics(Set<String> topicsToDelete) {
+        Map<String, Errors> result = new ConcurrentHashMap<>();
+        topicsToDelete.forEach(topic -> {
+            try {
+                String topicFullName = new KopTopic(topic).getFullName();
+                admin.topics().deletePartitionedTopic(topicFullName);
+                result.put(topic, Errors.NONE);
+                log.info("delete topic {} successfully.", topicFullName);
+            } catch (PulsarAdminException e) {
+                log.error("delete topic {} failed, exception: ", topic, e);
+                result.put(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+            }
+        });
+        return result;
     }
 }
