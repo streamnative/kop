@@ -29,8 +29,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -304,8 +302,7 @@ public final class MessageFetchContext {
                             fetch.getHeader(), entriesRead.get(), allSize);
                     }
 
-                    AtomicBoolean allPartitionsNoEntry = new AtomicBoolean(true);
-                    responseValues.entrySet().parallelStream().forEach(responseEntries -> {
+                    responseValues.entrySet().forEach(responseEntries -> {
                         final PartitionData partitionData;
                         TopicPartition kafkaPartition = responseEntries.getKey();
                         List<Entry> entries = responseEntries.getValue();
@@ -334,8 +331,6 @@ public final class MessageFetchContext {
                                 null,
                                 MemoryRecords.EMPTY);
                         } else {
-                            allPartitionsNoEntry.set(false);
-
                             ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) cursors
                                     .get(kafkaPartition).getLeft().getManagedLedger();
                             long highWatermark = MessageIdUtils.getHighWatermark(managedLedger);
@@ -368,29 +363,13 @@ public final class MessageFetchContext {
                         responseData.put(kafkaPartition, partitionData);
                     });
 
-                    if (allPartitionsNoEntry.get()) {
-                        if (log.isDebugEnabled()) {
-                            log.debug("Request {}: All partitions for request read 0 entry",
-                                fetch.getHeader());
-                        }
-
-                        requestHandler.getPulsarService().getExecutor().schedule(() -> {
-                            resultFuture.complete(
-                                new FetchResponse(Errors.NONE,
+                    resultFuture.complete(
+                            new FetchResponse(
+                                    Errors.NONE,
                                     responseData,
                                     ((Integer) THROTTLE_TIME_MS.defaultValue),
                                     ((FetchRequest) fetch.getRequest()).metadata().sessionId()));
-                            this.recycle();
-                        }, waitTime, TimeUnit.MILLISECONDS);
-                    } else {
-                        resultFuture.complete(
-                            new FetchResponse(
-                                Errors.NONE,
-                                responseData,
-                                ((Integer) THROTTLE_TIME_MS.defaultValue),
-                                ((FetchRequest) fetch.getRequest()).metadata().sessionId()));
-                        this.recycle();
-                    }
+                    this.recycle();
                 } else {
                     if (log.isDebugEnabled()) {
                         log.debug("Request {}: Read time or size not reach, do another round of read before return.",
