@@ -303,7 +303,6 @@ public final class MessageFetchContext {
                             fetch.getHeader(), entriesRead.get(), allSize);
                     }
 
-                    AtomicBoolean allPartitionsNoEntry = new AtomicBoolean(true);
                     responseValues.entrySet().forEach(responseEntries -> {
                         final PartitionData partitionData;
                         TopicPartition kafkaPartition = responseEntries.getKey();
