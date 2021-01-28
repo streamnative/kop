@@ -61,6 +61,8 @@ public final class MessagePublishContext implements PublishContext {
             if (offset < 0) {
                 if (offset != -1L) {
                     log.error("offset was changed to {} (< 0) but no exception was thrown", offset);
+                } else {
+                    log.error("There's no valid BrokerEntryData in entry ({}, {})", ledgerId, entryId);
                 }
                 offset = MessageIdUtils.getCurrentOffset(managedLedger);
             }
