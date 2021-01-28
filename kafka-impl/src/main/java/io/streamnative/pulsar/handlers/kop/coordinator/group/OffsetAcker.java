@@ -34,6 +34,7 @@ import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.ConsumerBuilder;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
+import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 
@@ -152,7 +153,7 @@ public class OffsetAcker implements Closeable {
         close(consumers.keySet());
     }
 
-    private CompletableFuture<Consumer<byte[]>> getConsumer(String groupId, TopicPartition topicPartition) {
+    public CompletableFuture<Consumer<byte[]>> getConsumer(String groupId, TopicPartition topicPartition) {
         Map<TopicPartition, CompletableFuture<Consumer<byte[]>>> group = consumers
             .computeIfAbsent(groupId, gid -> new ConcurrentHashMap<>());
         return group.computeIfAbsent(
@@ -164,6 +165,7 @@ public class OffsetAcker implements Closeable {
         KopTopic kopTopic = new KopTopic(topicPartition.topic());
         return consumerBuilder.clone()
                 .topic(kopTopic.getPartitionName(topicPartition.partition()))
+                .subscriptionType(SubscriptionType.Shared)
                 .subscriptionName(groupId)
                 .subscribeAsync();
     }

@@ -20,8 +20,10 @@ import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -51,6 +53,7 @@ import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.FetchResponse.PartitionData;
 import org.apache.kafka.common.requests.IsolationLevel;
+import org.apache.pulsar.broker.service.Consumer;
 import org.apache.pulsar.common.naming.TopicName;
 
 /**
@@ -343,7 +346,23 @@ public final class MessageFetchContext {
                             } else if (apiVersion <= 3) {
                                 magic = RecordBatch.MAGIC_VALUE_V1;
                             }
+                            // get group and consumer
+                            String clientHost = fetch.getClientHost();
+                            String groupName = requestHandler
+                                    .getCurrentConnectedGroup().computeIfAbsent(clientHost, ignored -> {
+                                String zkSubPath = ZooKeeperUtils.groupIdPathFormat(clientHost,
+                                        fetch.getHeader().clientId());
+                                String groupId = ZooKeeperUtils.getData(requestHandler.getPulsarService().getZkClient(),
+                                        requestHandler.getGroupIdStoredPath(), zkSubPath);
+                                log.info("get group name from zk for current connection:{} groupId:{}",
+                                        clientHost, groupId);
+                                return groupId;
+                            });
+                            CompletableFuture<Consumer> consumerFuture = requestHandler.getTopicManager()
+                                    .getGroupConsumers(groupName, kafkaPartition);
                             final MemoryRecords records = requestHandler.getEntryFormatter().decode(entries, magic);
+                            // collect consumer metrics
+                            EntryFormatter.updateConsumerStats(records, consumerFuture);
 
                             List<FetchResponse.AbortedTransaction> abortedTransactions;
                             if (IsolationLevel.READ_UNCOMMITTED.equals(isolationLevel)) {

@@ -209,9 +209,9 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
         kConsumerA.getConsumer().commitSync();
         verifyBacklogInTopicStats(topicRef, 6000);
 
-        // 2 consumers acked, consumed 30 X 100. expected backlog 6000 - 3000
+        // 2 consumers acked. still expected backlog 6000
         kConsumerB.getConsumer().commitSync();
-        verifyBacklogInTopicStats(topicRef, 6000 - 3000);
+        verifyBacklogInTopicStats(topicRef, 6000);
 
         // 2 consumers consumed and acked all messages, expected backlog 0.
         ConsumerRecords<Integer, String> recordsA = kConsumerA.getConsumer().poll(Duration.ofMillis(200));
@@ -228,7 +228,7 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
 
         // wait for offsetAcker ack finished
         Thread.sleep(3000);
-        verifyBacklogInTopicStats(topicRef, 0);
+        verifyBacklogInTopicStats(topicRef, 6000);
     }
 
 

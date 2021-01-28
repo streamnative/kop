@@ -39,9 +39,11 @@ import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
+import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -176,6 +178,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final String advertisedListeners;
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
+    public final ConcurrentHashMap<String, String> currentConnectedGroup;
+    public final String groupIdStoredPath;
     @Getter
     private final EntryFormatter entryFormatter;
 
@@ -208,6 +212,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
+        this.currentConnectedGroup = new ConcurrentHashMap<>();
+        this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
     }
 
     @Override
@@ -236,6 +242,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             writeAndFlushWhenInactiveChannel(ctx.channel());
             ctx.close();
             topicManager.close();
+            String clientHost = ctx.channel().remoteAddress().toString();
+            if (currentConnectedGroup.containsKey(clientHost)){
+                log.info("currentConnectedGroup remove {}", clientHost);
+                currentConnectedGroup.remove(clientHost);
+            }
         }
     }
 
@@ -664,6 +675,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             throw new NotImplementedException("FindCoordinatorRequest not support TRANSACTION type "
                 + request.coordinatorType());
         }
+        // store group name to zk for current client
+        String groupId = request.coordinatorKey();
+        String zkSubPath = ZooKeeperUtils.groupIdPathFormat(findCoordinator.getClientHost(),
+                findCoordinator.getHeader().clientId());
+        byte[] groupIdBytes = groupId.getBytes(Charset.forName("UTF-8"));
+        ZooKeeperUtils.createPath(pulsarService.getZkClient(), groupIdStoredPath,
+                zkSubPath, groupIdBytes);
 
         findBroker(TopicName.get(pulsarTopicName))
                 .whenComplete((node, t) -> {
