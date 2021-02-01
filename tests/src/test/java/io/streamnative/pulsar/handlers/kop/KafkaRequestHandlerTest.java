@@ -58,6 +58,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
@@ -362,8 +363,9 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
             fail("create a invalid topic should fail");
         } catch (Exception e) {
-            log.info("Failed to create topics: {}", topicToNumPartitions);
-            assertTrue(e.getCause() instanceof TimeoutException);
+            log.info("Failed to create topics: {} caused by {}", topicToNumPartitions, e.getCause());
+            final Throwable cause = e.getCause();
+            assertTrue(cause instanceof TimeoutException || cause instanceof UnknownServerException);
         }
     }
 
