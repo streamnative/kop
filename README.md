@@ -149,3 +149,8 @@ For details, see [Secure KoP](docs/security.md).
 ## Implementation
 
 See [Implementation](docs/implementation.md) for the implementation details, including some difference of basic concepts between Kafka and Pulsar, and how the conversion is done.
+
+## Maintainers from community
+
+-   [@aloyszhang](https://github.com/aloyszhang)
+-   [@dockerzhang](https://github.com/dockerzhang)
