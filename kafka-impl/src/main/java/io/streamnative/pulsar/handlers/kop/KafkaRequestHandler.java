@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
@@ -328,7 +329,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final String offsetsTopicName = new KopTopic(String.join("/",
                 kafkaConfig.getKafkaMetadataTenant(),
                 kafkaConfig.getKafkaMetadataNamespace(),
-                Topic.GROUP_METADATA_TOPIC_NAME)
+                GROUP_METADATA_TOPIC_NAME)
         ).getFullName();
         admin.tenants().getTenantsAsync().thenApply(tenants -> {
             if (tenants.isEmpty()) {
@@ -1344,8 +1345,30 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleTxnOffsetCommit(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         TxnOffsetCommitRequest request = (TxnOffsetCommitRequest) kafkaHeaderAndRequest.getRequest();
-        log.info("handleTxnOffsetCommit transactionalId: {}", request.transactionalId());
-        response.complete(new TxnOffsetCommitResponse(0, Collections.EMPTY_MAP));
+        groupCoordinator.handleTxnCommitOffsets(
+                request.consumerGroupId(),
+                request.producerId(),
+                request.producerEpoch(),
+                convertTxnOffsets(request.offsets())).whenComplete((resultMap, throwable) -> {
+            response.complete(new TxnOffsetCommitResponse(0, resultMap));
+        });
+    }
+
+    private Map<TopicPartition, OffsetAndMetadata> convertTxnOffsets(Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> offsetsMap) {
+        long currentTimestamp = SystemTime.SYSTEM.milliseconds();
+        Map<TopicPartition, OffsetAndMetadata> offsetAndMetadataMap = new HashMap<>();
+        for (Map.Entry<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> entry : offsetsMap.entrySet()) {
+            TxnOffsetCommitRequest.CommittedOffset partitionData = entry.getValue();
+            String metadata;
+            if (partitionData.metadata() == null) {
+                metadata = OffsetAndMetadata.NoMetadata;
+            } else {
+                metadata = partitionData.metadata();
+            }
+            offsetAndMetadataMap.put(entry.getKey(),
+                    OffsetAndMetadata.apply(partitionData.offset(), metadata, currentTimestamp, -1));
+        }
+        return offsetAndMetadataMap;
     }
 
     @Override
@@ -1366,21 +1389,44 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                          CompletableFuture<AbstractResponse> response) {
         WriteTxnMarkersRequest request = (WriteTxnMarkersRequest) kafkaHeaderAndRequest.getRequest();
         Map<Long, Map<TopicPartition, Errors>> resultMap = new HashMap<>();
-        List<CompletableFuture<Long>> offsetFutureList = new ArrayList<>();
+        List<CompletableFuture<Void>> resultFutureList = new ArrayList<>();
         for (WriteTxnMarkersRequest.TxnMarkerEntry txnMarkerEntry : request.markers()) {
-            resultMap.compute(txnMarkerEntry.producerId(), (key, value) -> {
-                if (value == null) {
-                    value = new HashMap<>();
-                }
-                for (TopicPartition topicPartition : txnMarkerEntry.partitions()) {
-                    CompletableFuture<Long> completableFuture = writeTxnMarker(
-                            topicPartition,
-                            txnMarkerEntry.transactionResult(),
-                            txnMarkerEntry.producerId(),
-                            txnMarkerEntry.producerEpoch());
-                    completableFuture.whenComplete((offset, throwable) -> {
-                        String fullPartitionName = KopTopic.toString(topicPartition);
+            Map<TopicPartition, Errors> partitionErrorsMap =
+                    resultMap.computeIfAbsent(txnMarkerEntry.producerId(), pid -> new HashMap<>());
 
+            for (TopicPartition topicPartition : txnMarkerEntry.partitions()) {
+                CompletableFuture<Void> resultFuture = new CompletableFuture<>();
+                CompletableFuture<Long> completableFuture = writeTxnMarker(
+                        topicPartition,
+                        txnMarkerEntry.transactionResult(),
+                        txnMarkerEntry.producerId(),
+                        txnMarkerEntry.producerEpoch());
+                completableFuture.whenComplete((offset, throwable) -> {
+                    if (throwable != null) {
+                        log.error("Failed to write txn marker for partition {}", topicPartition, throwable);
+                        partitionErrorsMap.put(topicPartition, Errors.forException(throwable));
+                        return;
+                    }
+
+                    CompletableFuture<Void> handleGroupFuture;
+                    if (TopicName.get(topicPartition.topic()).getLocalName().equals(GROUP_METADATA_TOPIC_NAME)) {
+                        handleGroupFuture = groupCoordinator.scheduleHandleTxnCompletion(
+                                txnMarkerEntry.producerId(),
+                                Lists.newArrayList(topicPartition).stream(),
+                                txnMarkerEntry.transactionResult());
+                    } else {
+                        handleGroupFuture = CompletableFuture.completedFuture(null);
+                    }
+
+                    handleGroupFuture.whenComplete((ignored, handleGroupThrowable) -> {
+                        if (handleGroupThrowable != null) {
+                            log.error("Failed to handle group end txn for partition {}",
+                                    topicPartition, handleGroupThrowable);
+                            partitionErrorsMap.put(topicPartition, Errors.forException(handleGroupThrowable));
+                            resultFuture.completeExceptionally(handleGroupThrowable);
+                            return;
+                        }
+                        String fullPartitionName = KopTopic.toString(topicPartition);
                         TopicName topicName = TopicName.get(fullPartitionName);
                         long firstOffset = transactionCoordinator.removeActivePidOffset(
                                 topicName, txnMarkerEntry.producerId());
@@ -1395,14 +1441,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     .lastStableOffset(lastStableOffset)
                                     .build());
                         }
+                        partitionErrorsMap.put(topicPartition, Errors.NONE);
+                        resultFuture.complete(null);
                     });
-                    offsetFutureList.add(completableFuture);
-                    value.put(topicPartition, Errors.NONE);
-                }
-                return value;
-            });
+                });
+                resultFutureList.add(resultFuture);
+            }
         }
-        FutureUtil.waitForAll(offsetFutureList).whenComplete((ignored, throwable) -> {
+        FutureUtil.waitForAll(resultFutureList).whenComplete((ignored, throwable) -> {
             if (throwable != null) {
                 log.error("Write txn mark fail!", throwable);
                 response.complete(new WriteTxnMarkersResponse(resultMap));
@@ -1435,14 +1481,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         TopicName topicName = TopicName.get(fullPartitionName);
         topicManager.getTopic(topicName.toString())
                 .thenAccept(persistentTopic -> {
-                    persistentTopic.publishMessage(
-                            generateTxnMarker(transactionResult, producerId, producerEpoch),
-                            MessagePublishContext.get(
-                                    offsetFuture,
-                                    persistentTopic,
-                                    persistentTopic.getManagedLedger(),
-                                    1,
-                                    SystemTime.SYSTEM.milliseconds()));
+                    persistentTopic.publishMessage(generateTxnMarker(transactionResult, producerId, producerEpoch),
+                            MessagePublishContext.get(offsetFuture, persistentTopic,
+                                    persistentTopic.getManagedLedger(), 1, SystemTime.SYSTEM.milliseconds()));
                 });
         return offsetFuture;
     }
@@ -1589,7 +1630,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private boolean isOffsetTopic(String topic) {
         String offsetsTopic = kafkaConfig.getKafkaMetadataTenant() + "/"
             + kafkaConfig.getKafkaMetadataNamespace()
-            + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
+            + "/" + GROUP_METADATA_TOPIC_NAME;
 
         return topic.contains(offsetsTopic);
     }

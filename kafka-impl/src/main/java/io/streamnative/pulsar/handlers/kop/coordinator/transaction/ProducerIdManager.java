@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.zookeeper.ZooKeeper;
 
 /**
  * This class used to manage producer id.
@@ -21,6 +22,12 @@ import java.util.concurrent.atomic.AtomicLong;
 public class ProducerIdManager {
 
     private final AtomicLong producerId = new AtomicLong(0);
+
+    private ZooKeeper zkClient;
+
+    public ProducerIdManager(ZooKeeper zkClient) {
+        this.zkClient = zkClient;
+    }
 
     public long generateProducerId() {
         // TODO generate unique producer id

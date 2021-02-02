@@ -360,9 +360,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
     }
 
-    public void initTransactionCoordinator() throws Exception {
+    public void initTransactionCoordinator() {
         TransactionConfig transactionConfig = TransactionConfig.builder().build();
-        this.transactionCoordinator = TransactionCoordinator.of(transactionConfig);
+        this.transactionCoordinator = TransactionCoordinator.of(
+                transactionConfig, brokerService.getPulsar().getZkClient());
     }
 
     /**

@@ -820,20 +820,15 @@ public class GroupCoordinator {
         return result;
     }
 
-    public Future<?> scheduleHandleTxnCompletion(
+    public CompletableFuture<Void> scheduleHandleTxnCompletion(
         long producerId,
         Stream<TopicPartition> offsetsPartitions,
         TransactionResult transactionResult
     ) {
-        Stream<TopicPartition> validatedOffsetsPartitions =
-            offsetsPartitions.map(tp -> {
-                checkArgument(tp.topic().equals(Topic.GROUP_METADATA_TOPIC_NAME));
-                return tp;
-            });
         boolean isCommit = TransactionResult.COMMIT == transactionResult;
         return groupManager.scheduleHandleTxnCompletion(
             producerId,
-            validatedOffsetsPartitions.map(TopicPartition::partition)
+            offsetsPartitions.map(TopicPartition::partition)
                 .collect(Collectors.toSet()),
             isCommit
         );

@@ -1290,21 +1290,28 @@ public class GroupMetadataManager {
      * more group metadata locks to handle transaction completion, this operation is scheduled on
      * the scheduler thread to avoid deadlocks.
      */
-    public Future<?> scheduleHandleTxnCompletion(long producerId,
+    public CompletableFuture<Void> scheduleHandleTxnCompletion(long producerId,
                                                  Set<Integer> completedPartitions,
                                                  boolean isCommit) {
-        return scheduler.submit(() -> handleTxnCompletion(producerId, completedPartitions, isCommit));
+        CompletableFuture<Void> completableFuture = new CompletableFuture<>();
+        scheduler.submit(() -> handleTxnCompletion(producerId, completedPartitions, isCommit, completableFuture));
+        return completableFuture;
     }
 
-    void handleTxnCompletion(long producerId, Set<Integer> completedPartitions, boolean isCommit) {
+    void handleTxnCompletion(long producerId, Set<Integer> completedPartitions,
+                             boolean isCommit, CompletableFuture<Void> completableFuture) {
+        List<CompletableFuture<Void>> groupFutureList = new ArrayList<>();
         Set<String> pendingGroups = groupsBelongingToPartitions(producerId, completedPartitions);
         pendingGroups.forEach(groupId -> {
+            CompletableFuture<Void> groupFuture = new CompletableFuture<>();
+            groupFutureList.add(groupFuture);
             getGroup(groupId).map(group -> {
                 return group.inLock(() -> {
                     if (!group.is(GroupState.Dead)) {
                         group.completePendingTxnOffsetCommit(producerId, isCommit);
                         removeProducerGroup(producerId, groupId);
                     }
+                    groupFuture.complete(null);
                     return null;
                 });
             }).orElseGet(() -> {
@@ -1312,8 +1319,17 @@ public class GroupMetadataManager {
                         + " but before the cache was updated. The cache on the new group owner will be updated"
                         + " instead.",
                     groupId);
+                groupFuture.complete(null);
                 return null;
             });
+        });
+        FutureUtil.waitForAll(groupFutureList).whenComplete((ignored, throwable) -> {
+            if (throwable != null) {
+                log.error("Failed to handle txn completion.");
+                completableFuture.completeExceptionally(throwable);
+            } else {
+                completableFuture.complete(null);
+            }
         });
     }
 

@@ -46,6 +46,7 @@ import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
+import org.apache.zookeeper.ZooKeeper;
 
 /**
  * Transaction coordinator.
@@ -63,15 +64,15 @@ public class TransactionCoordinator {
     private final Map<TopicName, ConcurrentHashMap<Long, Long>> activePidOffsetMap = new HashMap<>();
     private final List<AbortedIndexEntry> abortedIndexList = new ArrayList<>();
 
-    private TransactionCoordinator(TransactionConfig transactionConfig) {
+    private TransactionCoordinator(TransactionConfig transactionConfig, ZooKeeper zkClient) {
         this.transactionConfig = transactionConfig;
         this.txnStateManager = new TransactionStateManager(transactionConfig);
-        this.producerIdManager = new ProducerIdManager();
+        this.producerIdManager = new ProducerIdManager(zkClient);
         this.transactionMarkerChannelManager = new TransactionMarkerChannelManager(null, null, false);
     }
 
-    public static TransactionCoordinator of(TransactionConfig transactionConfig) {
-        return new TransactionCoordinator(transactionConfig);
+    public static TransactionCoordinator of(TransactionConfig transactionConfig, ZooKeeper zkClient) {
+        return new TransactionCoordinator(transactionConfig, zkClient);
     }
 
     public int partitionFor(String transactionalId) {
