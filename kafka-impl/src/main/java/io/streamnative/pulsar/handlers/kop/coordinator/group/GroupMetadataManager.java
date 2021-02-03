@@ -1297,8 +1297,8 @@ public class GroupMetadataManager {
         return completableFuture;
     }
 
-    void handleTxnCompletion(long producerId, Set<Integer> completedPartitions,
-                             boolean isCommit, CompletableFuture<Void> completableFuture) {
+    protected void handleTxnCompletion(long producerId, Set<Integer> completedPartitions,
+                                       boolean isCommit, CompletableFuture<Void> completableFuture) {
         List<CompletableFuture<Void>> groupFutureList = new ArrayList<>();
         Set<String> pendingGroups = groupsBelongingToPartitions(producerId, completedPartitions);
         pendingGroups.forEach(groupId -> {

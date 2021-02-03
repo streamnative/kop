@@ -13,8 +13,13 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
+import lombok.AllArgsConstructor;
+import org.apache.zookeeper.AsyncCallback;
+import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.data.Stat;
 
 /**
  * This class used to manage producer id.
@@ -22,7 +27,7 @@ import org.apache.zookeeper.ZooKeeper;
 public class ProducerIdManager {
 
     private final AtomicLong producerId = new AtomicLong(0);
-
+    private final String PidBlockZNode = "/kop_latest_producer_id_block";
     private final ZooKeeper zkClient;
 
     public ProducerIdManager(ZooKeeper zkClient) {
@@ -32,6 +37,27 @@ public class ProducerIdManager {
     public long generateProducerId() {
         // TODO generate unique producer id
         return producerId.incrementAndGet();
+    }
+
+    public CompletableFuture<DataAndVersion> getPidDataAndVersion() {
+        CompletableFuture<DataAndVersion> future = new CompletableFuture<>();
+        zkClient.getData(PidBlockZNode, null, new AsyncCallback.DataCallback() {
+            @Override
+            public void processResult(int rc, String path, Object ctx, byte[] data, Stat stat) {
+                if (rc != KeeperException.Code.OK.intValue()) {
+                    future.complete(new DataAndVersion(data, stat.getVersion()));
+                } else {
+                    future.complete(null);
+                }
+            }
+        }, null);
+        return future;
+    }
+
+    @AllArgsConstructor
+    private static class DataAndVersion {
+        private byte[] data;
+        private int zkVersion;
     }
 
 }
