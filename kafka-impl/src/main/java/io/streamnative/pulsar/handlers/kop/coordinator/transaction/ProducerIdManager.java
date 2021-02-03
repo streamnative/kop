@@ -22,9 +22,6 @@ public class ProducerIdManager {
 
     private final AtomicLong producerId = new AtomicLong(0);
 
-    public ProducerIdManager() {
-    }
-
     public long generateProducerId() {
         // TODO generate unique producer id
         return producerId.incrementAndGet();
