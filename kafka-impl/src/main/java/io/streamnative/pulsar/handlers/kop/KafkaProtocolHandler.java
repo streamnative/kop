@@ -362,8 +362,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     public void initTransactionCoordinator() {
         TransactionConfig transactionConfig = TransactionConfig.builder().build();
-        this.transactionCoordinator = TransactionCoordinator.of(
-                transactionConfig, brokerService.getPulsar().getZkClient());
+        this.transactionCoordinator = TransactionCoordinator.of(transactionConfig);
     }
 
     /**
