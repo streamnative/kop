@@ -27,7 +27,7 @@ import org.apache.zookeeper.data.Stat;
 public class ProducerIdManager {
 
     private final AtomicLong producerId = new AtomicLong(0);
-    private final String PidBlockZNode = "/kop_latest_producer_id_block";
+    private final String pidBlockZNode = "/kop_latest_producer_id_block";
     private final ZooKeeper zkClient;
 
     public ProducerIdManager(ZooKeeper zkClient) {
@@ -41,7 +41,7 @@ public class ProducerIdManager {
 
     public CompletableFuture<DataAndVersion> getPidDataAndVersion() {
         CompletableFuture<DataAndVersion> future = new CompletableFuture<>();
-        zkClient.getData(PidBlockZNode, null, new AsyncCallback.DataCallback() {
+        zkClient.getData(pidBlockZNode, null, new AsyncCallback.DataCallback() {
             @Override
             public void processResult(int rc, String path, Object ctx, byte[] data, Stat stat) {
                 if (rc != KeeperException.Code.OK.intValue()) {
