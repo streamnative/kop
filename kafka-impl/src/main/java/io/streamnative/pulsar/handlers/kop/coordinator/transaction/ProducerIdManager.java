@@ -23,7 +23,7 @@ public class ProducerIdManager {
 
     private final AtomicLong producerId = new AtomicLong(0);
 
-    private ZooKeeper zkClient;
+    private final ZooKeeper zkClient;
 
     public ProducerIdManager(ZooKeeper zkClient) {
         this.zkClient = zkClient;

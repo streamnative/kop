@@ -73,7 +73,7 @@ public class OffsetAndMetadata {
     private final OffsetMetadata offsetMetadata;
     private final long commitTimestamp;
     private final long expireTimestamp;
-    public final static String NoMetadata = "";
+    public static final String NoMetadata = "";
 
     @SuppressWarnings("deprecation")
     private OffsetAndMetadata(OffsetMetadata offsetMetadata) {

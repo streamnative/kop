@@ -289,7 +289,10 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         }
     }
 
-    private List<String> prepareData(String sourceTopicName, String kafkaServer, String messageContent, int messageCount) throws ExecutionException, InterruptedException {
+    private List<String> prepareData(String sourceTopicName,
+                                     String kafkaServer,
+                                     String messageContent,
+                                     int messageCount) throws ExecutionException, InterruptedException {
         // producer
         Properties producerProps = new Properties();
         producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
@@ -311,10 +314,11 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     private static void resetToLastCommittedPositions(KafkaConsumer<Integer, String> consumer) {
         consumer.assignment().forEach(tp -> {
             OffsetAndMetadata offsetAndMetadata = consumer.committed(tp);
-            if (offsetAndMetadata != null)
+            if (offsetAndMetadata != null) {
                 consumer.seek(tp, offsetAndMetadata.offset());
-            else
+            } else {
                 consumer.seekToBeginning(Collections.singleton(tp));
+            }
         });
     }
 

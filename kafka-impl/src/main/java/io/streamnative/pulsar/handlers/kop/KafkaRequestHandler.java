@@ -70,7 +70,6 @@ import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
-import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.ControlRecordType;
@@ -1354,7 +1353,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
-    private Map<TopicPartition, OffsetAndMetadata> convertTxnOffsets(Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> offsetsMap) {
+    private Map<TopicPartition, OffsetAndMetadata> convertTxnOffsets(
+                        Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> offsetsMap) {
         long currentTimestamp = SystemTime.SYSTEM.milliseconds();
         Map<TopicPartition, OffsetAndMetadata> offsetAndMetadataMap = new HashMap<>();
         for (Map.Entry<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> entry : offsetsMap.entrySet()) {
