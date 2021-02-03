@@ -146,6 +146,12 @@ KoP supports TLS encryption and integrates with Pulsar's authentication and auth
 
 For details, see [Secure KoP](docs/security.md).
 
+## Manage KoP
+
+### Envoy proxy for KoP
+
+You can use [Envoy](https://www.envoyproxy.io) as a proxy for KoP. For more information, see [here](docs/envoy-proxy.md).
+
 ## Implementation
 
 See [Implementation](docs/implementation.md) for the implementation details, including some difference of basic concepts between Kafka and Pulsar, and how the conversion is done.
