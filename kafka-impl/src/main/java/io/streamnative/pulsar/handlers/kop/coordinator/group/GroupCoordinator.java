@@ -200,10 +200,6 @@ public class GroupCoordinator {
         log.info("Shutdown group coordinator completely.");
     }
 
-    public OffsetAcker getoffsetAcker() {
-        return offsetAcker;
-    }
-
     public int partitionFor(String coordinatorKey) {
         return groupManager.partitionFor(coordinatorKey);
     }

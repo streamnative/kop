@@ -382,7 +382,7 @@ public class KafkaTopicManager {
         // make sure internal consumer existed
         CompletableFuture<Consumer> consumerFuture = new CompletableFuture<>();
         if (!requestHandler.getGroupCoordinator()
-                .getoffsetAcker().getConsumer(groupId, kafkaPartition).isDone()) {
+                .getOffsetAcker().getConsumer(groupId, kafkaPartition).isDone()) {
             log.warn("not get consumer for group {} this time", groupId);
             consumerFuture.complete(null);
             return consumerFuture;
