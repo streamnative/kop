@@ -179,8 +179,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
     // store the group name for current connected client.
-    public final ConcurrentHashMap<String, String> currentConnectedGroup;
-    public final String groupIdStoredPath;
+    private final ConcurrentHashMap<String, String> currentConnectedGroup;
+    private final String groupIdStoredPath;
     @Getter
     private final EntryFormatter entryFormatter;
 

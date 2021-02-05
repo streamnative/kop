@@ -47,7 +47,7 @@ public class ZooKeeperUtils {
     }
 
     public static String getData(ZooKeeper zooKeeper, String zkPath, String subPath) {
-        String data = "";
+        String data = null;
         try {
             String addSubPath = zkPath + subPath;
             Stat zkStat = zooKeeper.exists(addSubPath, true);
