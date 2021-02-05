@@ -50,7 +50,7 @@
     <pulsar.version>2.8.0-rc-202101252233</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
-    <testcontainers.version>1.12.5</testcontainers.version>
+    <testcontainers.version>1.15.1</testcontainers.version>
     <testng.version>6.14.3</testng.version>
     <!-- plugin dependencies -->
     <dockerfile-maven.version>1.4.9</dockerfile-maven.version>
