@@ -684,7 +684,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         groupMetadataManager.handleTxnCompletion(
             producerId,
             Sets.newHashSet(groupPartitionId),
-            true);
+            true, new CompletableFuture<>());
         assertFalse(group.hasPendingOffsetCommitsFromProducer(producerId));
         pendingOffsets.forEach((tp, offset) ->
             assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset)));
