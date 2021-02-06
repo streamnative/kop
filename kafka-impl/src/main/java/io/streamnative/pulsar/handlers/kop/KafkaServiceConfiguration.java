@@ -141,6 +141,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private long offsetsRetentionCheckIntervalMs = OffsetConfig.DefaultOffsetsRetentionCheckIntervalMs;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Zookeeper path for storing kop consumer group"
+    )
+    private String groupIdZooKeeperPath = "/client_group_id";
+
     @Deprecated
     @FieldContext(
         category = CATEGORY_KOP,
@@ -287,6 +293,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             doc = "The format of an entry. Default: pulsar. Optional: [pulsar, kafka]"
     )
     private String entryFormat = "pulsar";
+
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
             doc = "Flag to enable transaction coordinator"
