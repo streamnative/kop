@@ -26,6 +26,7 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 
 import java.util.Date;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -209,10 +210,15 @@ public final class MessageFetchContext {
 
                 FetchRequest request = (FetchRequest) fetch.getRequest();
                 IsolationLevel isolationLevel = request.isolationLevel();
+                Map<TopicPartition, Long> highWaterMarkMap = new HashMap<>();
 
                 // keep entries since all read completed.
                 readFutures.entrySet().parallelStream().forEach(kafkaTopicReadEntry -> {
                     TopicPartition kafkaTopic = kafkaTopicReadEntry.getKey();
+                    ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) cursors
+                            .get(kafkaTopic).getLeft().getManagedLedger();
+                    long highWatermark = MessageIdUtils.getHighWatermark(managedLedger);
+                    highWaterMarkMap.put(kafkaTopic, highWatermark);
                     CompletableFuture<List<Entry>> readEntry = kafkaTopicReadEntry.getValue();
                     try {
                         List<Entry> entries = readEntry.get();
@@ -226,7 +232,7 @@ public final class MessageFetchContext {
                                         e.getLength()).reduce(0, Integer::sum));
                             } else {
                                 TopicName topicName = TopicName.get(KopTopic.toString(kafkaTopic));
-                                long lso = tc.getLastStableOffset(topicName);
+                                long lso = tc.getLastStableOffset(topicName, highWatermark);
                                 for (Entry entry : entries) {
                                     if (lso >= MessageIdUtils.peekBaseOffsetFromEntry(entry)) {
                                         entryList.add(entry);
@@ -334,9 +340,7 @@ public final class MessageFetchContext {
                                 null,
                                 MemoryRecords.EMPTY);
                         } else {
-                            ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) cursors
-                                    .get(kafkaPartition).getLeft().getManagedLedger();
-                            long highWatermark = MessageIdUtils.getHighWatermark(managedLedger);
+                            long highWatermark = highWaterMarkMap.get(kafkaPartition);
 
                             // use compatible magic value by apiVersion
                             short apiVersion = fetch.getHeader().apiVersion();
