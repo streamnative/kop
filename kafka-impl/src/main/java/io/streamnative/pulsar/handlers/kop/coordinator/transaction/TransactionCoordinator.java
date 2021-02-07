@@ -317,7 +317,7 @@ public class TransactionCoordinator {
 
     public long getLastStableOffset(TopicName topicName, long highWaterMark) {
         NavigableMap<Long, Long> map = activeOffsetPidMap.getOrDefault(topicName, null);
-        if (map == null || map.size() == 0) {
+        if (map == null || map.isEmpty()) {
             return highWaterMark;
         }
         return map.firstKey();
