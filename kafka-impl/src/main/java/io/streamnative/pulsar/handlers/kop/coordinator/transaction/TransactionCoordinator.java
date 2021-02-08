@@ -46,6 +46,7 @@ import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
+import org.apache.zookeeper.ZooKeeper;
 
 /**
  * Transaction coordinator.
@@ -63,15 +64,19 @@ public class TransactionCoordinator {
     private final Map<TopicName, ConcurrentHashMap<Long, Long>> activePidOffsetMap = new HashMap<>();
     private final List<AbortedIndexEntry> abortedIndexList = new ArrayList<>();
 
-    private TransactionCoordinator(TransactionConfig transactionConfig) {
+    private TransactionCoordinator(TransactionConfig transactionConfig, Integer brokerId, ZooKeeper zkClient) {
         this.transactionConfig = transactionConfig;
         this.txnStateManager = new TransactionStateManager(transactionConfig);
-        this.producerIdManager = new ProducerIdManager();
+        this.producerIdManager = new ProducerIdManager(brokerId, zkClient);
         this.transactionMarkerChannelManager = new TransactionMarkerChannelManager(null, null, false);
     }
 
-    public static TransactionCoordinator of(TransactionConfig transactionConfig) {
-        return new TransactionCoordinator(transactionConfig);
+    public static TransactionCoordinator of(TransactionConfig transactionConfig, Integer brokerId, ZooKeeper zkClient) {
+        return new TransactionCoordinator(transactionConfig, brokerId, zkClient);
+    }
+
+    public CompletableFuture<Void> startup() {
+        return this.producerIdManager.initialize();
     }
 
     public int partitionFor(String transactionalId) {
@@ -94,9 +99,14 @@ public class TransactionCoordinator {
         if (transactionalId == null) {
             // if the transactional id is null, then always blindly accept the request
             // and return a new producerId from the producerId manager
-            long producerId = producerIdManager.generateProducerId();
-            short producerEpoch = 0;
-            response.complete(new InitProducerIdResponse(0, Errors.NONE, producerId, producerEpoch));
+            producerIdManager.generateProducerId().whenComplete((pid, throwable) -> {
+                short producerEpoch = 0;
+                if (throwable != null) {
+                    response.complete(new InitProducerIdResponse(0, Errors.UNKNOWN_SERVER_ERROR, pid, producerEpoch));
+                    return;
+                }
+                response.complete(new InitProducerIdResponse(0, Errors.NONE, pid, producerEpoch));
+            });
         } else if (StringUtils.isEmpty(transactionalId)) {
             // if transactional id is empty then return error as invalid request. This is
             // to make TransactionCoordinator's behavior consistent with producer client
@@ -107,18 +117,24 @@ public class TransactionCoordinator {
         } else {
             TransactionMetadata metadata = txnStateManager.getTransactionState(transactionalId);
             if (metadata == null) {
-                long producerId = producerIdManager.generateProducerId();
-                short producerEpoch = 0;
-                metadata = TransactionMetadata.builder()
-                        .transactionalId(transactionalId)
-                        .producerId(producerId)
-                        .producerEpoch(producerEpoch)
-                        .state(TransactionState.EMPTY)
-                        .topicPartitions(new HashSet<>())
-                        .build();
-                txnStateManager.putTransactionStateIfNotExists(transactionalId, metadata);
-                response.complete(new InitProducerIdResponse(
-                        0, Errors.NONE, metadata.getProducerId(), metadata.getProducerEpoch()));
+                producerIdManager.generateProducerId().whenComplete((pid, throwable) -> {
+                    short producerEpoch = 0;
+                    if (throwable != null) {
+                        response.complete(new InitProducerIdResponse(
+                                0, Errors.UNKNOWN_SERVER_ERROR, -1, producerEpoch));
+                        return;
+                    }
+                    TransactionMetadata newMetadata = TransactionMetadata.builder()
+                            .transactionalId(transactionalId)
+                            .producerId(pid)
+                            .producerEpoch(producerEpoch)
+                            .state(TransactionState.EMPTY)
+                            .topicPartitions(new HashSet<>())
+                            .build();
+                    txnStateManager.putTransactionStateIfNotExists(transactionalId, newMetadata);
+                    response.complete(new InitProducerIdResponse(
+                            0, Errors.NONE, newMetadata.getProducerId(), newMetadata.getProducerEpoch()));
+                });
             } else {
                 // TODO generate monotonically increasing epoch
                 // TODO conflict resolve

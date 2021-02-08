@@ -259,6 +259,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         if (kafkaConfig.isEnableTransactionCoordinator()) {
             try {
                 initTransactionCoordinator();
+                startTransactionCoordinator();
             } catch (Exception e) {
                 log.error("Initialized transaction coordinator failed.", e);
             }
@@ -362,7 +363,16 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     public void initTransactionCoordinator() {
         TransactionConfig transactionConfig = TransactionConfig.builder().build();
-        this.transactionCoordinator = TransactionCoordinator.of(transactionConfig);
+        this.transactionCoordinator = TransactionCoordinator.of(
+                transactionConfig, kafkaConfig.getBrokerId(), brokerService.getPulsar().getZkClient());
+    }
+
+    public void startTransactionCoordinator() throws Exception {
+        if (this.transactionCoordinator != null) {
+            this.transactionCoordinator.startup().get();
+        } else {
+            log.error("Failed to start transaction coordinator. Need init it first.");
+        }
     }
 
     /**
