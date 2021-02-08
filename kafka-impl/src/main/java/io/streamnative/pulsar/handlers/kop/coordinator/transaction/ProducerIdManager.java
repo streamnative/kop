@@ -39,10 +39,10 @@ import org.apache.zookeeper.data.Stat;
 @Slf4j
 public class ProducerIdManager {
 
-    private final static Long currentVersion = 1L;
-    public final static Long pidBlockSize = 1000L;
-    public final static String kopPidBlockZNode = "/kop_latest_producer_id_block";
-    private final static ObjectMapper objectMapper = new ObjectMapper();
+    private static final Long currentVersion = 1L;
+    public static final Long PID_BLOCK_SIZE = 1000L;
+    public static final String KOP_PID_BLOCK_ZNODE = "/kop_latest_producer_id_block";
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final Integer brokerId;
     private final ZooKeeper zkClient;
@@ -83,7 +83,7 @@ public class ProducerIdManager {
                 return;
             }
             if (dataAndVersion == null) {
-                currentProducerIdBlock = new ProducerIdBlock(brokerId, 0L, pidBlockSize - 1);
+                currentProducerIdBlock = new ProducerIdBlock(brokerId, 0L, PID_BLOCK_SIZE - 1);
             } else {
                 ProducerIdBlock currProducerIdBlock;
                 try {
@@ -93,7 +93,7 @@ public class ProducerIdManager {
                     setDataFuture.completeExceptionally(e);
                     return;
                 }
-                if (currProducerIdBlock.blockEndId > Long.MAX_VALUE - pidBlockSize) {
+                if (currProducerIdBlock.blockEndId > Long.MAX_VALUE - PID_BLOCK_SIZE) {
                     log.error("Exhausted all producerIds as the next block's end producerId "
                             + "is will has exceeded long type limit (current block end producerId is {})",
                             currProducerIdBlock.blockEndId);
@@ -102,9 +102,9 @@ public class ProducerIdManager {
                 }
                 currentProducerIdBlock = new ProducerIdBlock(brokerId,
                         currProducerIdBlock.blockEndId + 1,
-                        currProducerIdBlock.blockEndId + pidBlockSize);
+                        currProducerIdBlock.blockEndId + PID_BLOCK_SIZE);
             }
-            
+
             try {
                 byte[] newProducerIdBlockData = ProducerIdManager.generateProducerIdBlockJson(currentProducerIdBlock);
                 conditionalSetData(newProducerIdBlockData, dataAndVersion == null ? -1 : dataAndVersion.zkVersion)
@@ -129,7 +129,7 @@ public class ProducerIdManager {
     public CompletableFuture<DataAndVersion> getDataAndVersion() {
         CompletableFuture<DataAndVersion> currentPidData = new CompletableFuture<>();
         try {
-            zkClient.getData(kopPidBlockZNode, null, new AsyncCallback.DataCallback() {
+            zkClient.getData(KOP_PID_BLOCK_ZNODE, null, new AsyncCallback.DataCallback() {
                 @Override
                 public void processResult(int rc, String path, Object ctx, byte[] data, Stat stat) {
                     if (rc == KeeperException.Code.OK.intValue() && data != null) {
@@ -148,7 +148,7 @@ public class ProducerIdManager {
 
     private CompletableFuture<SetDataResult> conditionalSetData(byte[] data, int version) {
         CompletableFuture<SetDataResult> updateFuture = new CompletableFuture<>();
-        zkClient.setData(kopPidBlockZNode, data, version, new AsyncCallback.StatCallback() {
+        zkClient.setData(KOP_PID_BLOCK_ZNODE, data, version, new AsyncCallback.StatCallback() {
             @Override
             public void processResult(int rc, String path, Object ctx, Stat stat) {
                 if (rc == KeeperException.Code.OK.intValue()) {
@@ -163,13 +163,13 @@ public class ProducerIdManager {
                                 }
                             });
                 } else if (rc == KeeperException.Code.NONODE.intValue()){
-                    log.error("Update of path {} with data {} and expected version {} failed due to {}", 
-                            kopPidBlockZNode, getProducerIdBlockStr(data), stat.getVersion(),
-                            "NoNode for path " + kopPidBlockZNode);
-                    updateFuture.completeExceptionally(new Exception("NoNode for path " + kopPidBlockZNode));
+                    log.error("Update of path {} with data {} and expected version {} failed due to {}",
+                            KOP_PID_BLOCK_ZNODE, getProducerIdBlockStr(data), stat.getVersion(),
+                            "NoNode for path " + KOP_PID_BLOCK_ZNODE);
+                    updateFuture.completeExceptionally(new Exception("NoNode for path " + KOP_PID_BLOCK_ZNODE));
                 } else {
                     log.error("Update of path {} with data {} and expected version {} keeperException code {}",
-                            kopPidBlockZNode, getProducerIdBlockStr(data), stat.getVersion(), rc);
+                            KOP_PID_BLOCK_ZNODE, getProducerIdBlockStr(data), stat.getVersion(), rc);
                     updateFuture.completeExceptionally(new Exception("KeeperException code " + rc));
                 }
             }
@@ -181,7 +181,7 @@ public class ProducerIdManager {
         CompletableFuture<SetDataResult> resultFuture = new CompletableFuture<>();
         try {
             ProducerIdBlock expectedPidBlock = ProducerIdManager.parseProducerIdBlockData(expectedData);
-            zkClient.getData(kopPidBlockZNode, null, new AsyncCallback.DataCallback() {
+            zkClient.getData(KOP_PID_BLOCK_ZNODE, null, new AsyncCallback.DataCallback() {
                 @Override
                 public void processResult(int rc, String path, Object o, byte[] bytes, Stat stat) {
                     try {
@@ -199,7 +199,7 @@ public class ProducerIdManager {
             }, null);
         } catch (Exception e) {
             log.error("Error while checking for producerId block Zk data on path {}: expected data {}",
-                    kopPidBlockZNode, getProducerIdBlockStr(expectedData), e);
+                    KOP_PID_BLOCK_ZNODE, getProducerIdBlockStr(expectedData), e);
             resultFuture.completeExceptionally(e);
         }
         return resultFuture;
@@ -218,10 +218,10 @@ public class ProducerIdManager {
 
     private CompletableFuture<Void> makeSurePathExists() {
         CompletableFuture<Void> completableFuture = new CompletableFuture<>();
-        zkClient.create(kopPidBlockZNode, null, null, CreateMode.PERSISTENT, (rc, path, ctx, name) -> {
+        zkClient.create(KOP_PID_BLOCK_ZNODE, null, null, CreateMode.PERSISTENT, (rc, path, ctx, name) -> {
             if (rc != KeeperException.Code.OK.intValue() && rc != KeeperException.Code.NODEEXISTS.intValue()) {
                 completableFuture.completeExceptionally(
-                        new Exception("Failed to create path " + kopPidBlockZNode + " keeperException code " + rc));
+                        new Exception("Failed to create path " + KOP_PID_BLOCK_ZNODE + " keeperException code " + rc));
                 return;
             }
             completableFuture.complete(null);
@@ -264,6 +264,9 @@ public class ProducerIdManager {
         return nextProducerIdFuture;
     }
 
+    /**
+     * ProducerId block.
+     */
     @Builder
     @Data
     @AllArgsConstructor
@@ -275,8 +278,12 @@ public class ProducerIdManager {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
             ProducerIdBlock that = (ProducerIdBlock) o;
             return Objects.equals(brokerId, that.brokerId)
                     && Objects.equals(blockStartId, that.blockStartId)
@@ -288,9 +295,9 @@ public class ProducerIdManager {
             return Objects.hash(brokerId, blockStartId, blockEndId);
         }
     }
-    
+
     private String getProducerIdBlockStr(byte[] bytes) {
-        return new String(bytes, StandardCharsets.UTF_8); 
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
 }
