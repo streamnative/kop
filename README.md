@@ -159,6 +159,7 @@ See [Implementation](docs/implementation.md) for the implementation details, inc
 ## Project Maintainers
 
 -   [@aloyszhang](https://github.com/aloyszhang)
--   [@dockerzhang](https://github.com/dockerzhang)
 -   [@BewareMyPower](https://github.com/BewareMyPower)
+-   [@dockerzhang](https://github.com/dockerzhang)
 -   [@jiazhai](https://github.com/jiazhai)
+-   [@PierreZ](https://github.com/PierreZ)
