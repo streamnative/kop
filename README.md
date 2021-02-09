@@ -160,3 +160,5 @@ See [Implementation](docs/implementation.md) for the implementation details, inc
 
 -   [@aloyszhang](https://github.com/aloyszhang)
 -   [@dockerzhang](https://github.com/dockerzhang)
+-   [@BewareMyPower](https://github.com/BewareMyPower)
+-   [@jiazhai](https://github.com/jiazhai)
