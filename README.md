@@ -17,9 +17,9 @@ The following figure illustrates how is the Kafka-on-Pulsar protocol handler was
 
 ## Prerequisite
 
-Check the following requirements before using KoP.
+From 2.6.2.0 on, KoP `x.y.z.m` is based on Pulsar `x.y.z`, while `m` is the patch version number. See [here](integrations/README.md) for supported Kafka clients.
 
-Currently, KoP supports **[Kafka Client 1.x and 2.x](integrations/README.md)** and it is build based on **[Pulsar 2.6.1](http://pulsar.apache.org/en/download/)**.
+Before KoP 2.6.2.0, check the following requirements.
 
 | KoP version | Kafka client version | Pulsar version |
 | :---------- | :------------------- | :------------- |
