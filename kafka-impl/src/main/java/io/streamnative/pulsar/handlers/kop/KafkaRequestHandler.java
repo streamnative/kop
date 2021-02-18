@@ -1449,7 +1449,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         TopicName topicName = TopicName.get(fullPartitionName);
                         long firstOffset = transactionCoordinator.removeActivePidOffset(
                                 topicName, txnMarkerEntry.producerId());
-                        long lastStableOffset = transactionCoordinator.getLastStableOffset(topicName);
+                        long lastStableOffset = transactionCoordinator.getLastStableOffset(topicName, offset);
 
                         if (txnMarkerEntry.transactionResult().equals(TransactionResult.ABORT)) {
                             transactionCoordinator.addAbortedIndex(AbortedIndexEntry.builder()

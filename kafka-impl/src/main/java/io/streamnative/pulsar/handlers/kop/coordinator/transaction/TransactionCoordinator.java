@@ -315,15 +315,10 @@ public class TransactionCoordinator {
         return offset;
     }
 
-    public long getLastStableOffset(TopicName topicName) {
+    public long getLastStableOffset(TopicName topicName, long highWaterMark) {
         NavigableMap<Long, Long> map = activeOffsetPidMap.getOrDefault(topicName, null);
-        if (map == null) {
-            log.warn("[activeOffsetPidMap] size: {} the topic {} map is null last",
-                    activeOffsetPidMap.size(), topicName);
-            return Long.MAX_VALUE;
-        }
-        if (map.size() == 0) {
-            return Long.MAX_VALUE;
+        if (map == null || map.isEmpty()) {
+            return highWaterMark;
         }
         return map.firstKey();
     }

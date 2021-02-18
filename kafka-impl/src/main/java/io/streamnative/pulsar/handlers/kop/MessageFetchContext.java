@@ -40,7 +40,6 @@ import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
-import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.NonDurableCursorImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.tuple.Pair;
@@ -110,6 +109,7 @@ public final class MessageFetchContext {
                 })
                 .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
+        Map<TopicPartition, Long> highWaterMarkMap = new ConcurrentHashMap<>();
         // wait to get all the cursor, then readMessages
         CompletableFuture
             .allOf(topicsAndCursor.entrySet().stream().map(Map.Entry::getValue).toArray(CompletableFuture<?>[]::new))
@@ -168,12 +168,16 @@ public final class MessageFetchContext {
                                 return null;
                             }
 
+                            highWaterMarkMap.put(pair.getKey(),
+                                    MessageIdUtils.getHighWatermark(cursorLongPair.getLeft().getManagedLedger()));
+
                             return Pair.of(pair.getKey(), cursorLongPair);
                         })
                         .filter(x -> x != null)
                         .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
-                readMessages(fetchRequest, partitionCursor, fetchResponse, responseData, transactionCoordinator);
+                readMessages(fetchRequest, partitionCursor, fetchResponse, responseData,
+                        transactionCoordinator, highWaterMarkMap);
             });
 
         return fetchResponse;
@@ -186,11 +190,12 @@ public final class MessageFetchContext {
                               Map<TopicPartition, Pair<ManagedCursor, Long>> cursors,
                               CompletableFuture<AbstractResponse> resultFuture,
                               LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData,
-                              TransactionCoordinator tc) {
+                              TransactionCoordinator tc,
+                              Map<TopicPartition, Long> highWaterMarkMap) {
         AtomicInteger bytesRead = new AtomicInteger(0);
         Map<TopicPartition, List<Entry>> entryValues = new ConcurrentHashMap<>();
 
-        readMessagesInternal(fetch, cursors, bytesRead, entryValues, resultFuture, responseData, tc);
+        readMessagesInternal(fetch, cursors, bytesRead, entryValues, resultFuture, responseData, tc, highWaterMarkMap);
     }
 
     private void readMessagesInternal(KafkaHeaderAndRequest fetch,
@@ -199,7 +204,8 @@ public final class MessageFetchContext {
                                       Map<TopicPartition, List<Entry>> responseValues,
                                       CompletableFuture<AbstractResponse> resultFuture,
                                       LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData,
-                                      TransactionCoordinator tc) {
+                                      TransactionCoordinator tc,
+                                      Map<TopicPartition, Long> highWaterMarkMap) {
 
         AtomicInteger entriesRead = new AtomicInteger(0);
         // here do the real read, and in read callback put cursor back to KafkaTopicConsumerManager.
@@ -226,7 +232,7 @@ public final class MessageFetchContext {
                                         e.getLength()).reduce(0, Integer::sum));
                             } else {
                                 TopicName topicName = TopicName.get(KopTopic.toString(kafkaTopic));
-                                long lso = tc.getLastStableOffset(topicName);
+                                long lso = tc.getLastStableOffset(topicName, highWaterMarkMap.get(kafkaTopic));
                                 for (Entry entry : entries) {
                                     if (lso >= MessageIdUtils.peekBaseOffsetFromEntry(entry)) {
                                         entryList.add(entry);
@@ -334,9 +340,7 @@ public final class MessageFetchContext {
                                 null,
                                 MemoryRecords.EMPTY);
                         } else {
-                            ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) cursors
-                                    .get(kafkaPartition).getLeft().getManagedLedger();
-                            long highWatermark = MessageIdUtils.getHighWatermark(managedLedger);
+                            long highWatermark = highWaterMarkMap.get(kafkaPartition);
 
                             // use compatible magic value by apiVersion
                             short apiVersion = fetch.getHeader().apiVersion();
@@ -395,7 +399,8 @@ public final class MessageFetchContext {
                             fetch.getHeader());
                     }
                     // need do another round read
-                    readMessagesInternal(fetch, cursors, bytesRead, responseValues, resultFuture, responseData, tc);
+                    readMessagesInternal(fetch, cursors, bytesRead, responseValues, resultFuture, responseData,
+                            tc, highWaterMarkMap);
                 }
             });
     }
