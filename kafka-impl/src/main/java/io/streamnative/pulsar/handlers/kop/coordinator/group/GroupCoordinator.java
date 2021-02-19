@@ -1192,7 +1192,7 @@ public class GroupCoordinator {
                 maybePrepareRebalance(group);
                 break;
             case PreparingRebalance:
-                // joinPurgatory.checkAndComplete(GroupKey(group.groupId))
+                joinPurgatory.checkAndComplete(new GroupKey(group.groupId()));
                 break;
             default:
                 break;
