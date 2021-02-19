@@ -97,14 +97,14 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
         final AtomicLong backlog = new AtomicLong(0);
         retryStrategically(
             ((test) -> {
-                backlog.set(persistentTopic.getStats(true).backlogSize);
+                backlog.set(persistentTopic.getStats(true, true).backlogSize);
                 return backlog.get() == expected;
             }),
             5,
             200);
 
         if (log.isDebugEnabled()) {
-            TopicStats topicStats = persistentTopic.getStats(true);
+            TopicStats topicStats = persistentTopic.getStats(true, true);
             log.info(" dump topicStats for topic : {}, storageSize: {}, backlogSize: {}, expected: {}",
                 persistentTopic.getName(),
                 topicStats.storageSize, topicStats.backlogSize, expected);
