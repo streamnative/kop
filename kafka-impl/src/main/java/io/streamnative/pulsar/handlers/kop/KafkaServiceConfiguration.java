@@ -162,10 +162,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private String kafkaListeners;
 
-    public String getListeners() {
-        return (kafkaListeners != null) ? kafkaListeners : listeners;
-    }
-
     @FieldContext(
         category = CATEGORY_KOP,
         doc = "Listeners to publish to ZooKeeper for clients to use.\n"
@@ -173,16 +169,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private String kafkaAdvertisedListeners;
 
-    public @NonNull String getKafkaAdvertisedListeners() {
-        if (kafkaAdvertisedListeners != null) {
-            return kafkaAdvertisedListeners;
-        } else {
-            if (getListeners() == null) {
-                throw new IllegalStateException("listeners or kafkaListeners is required");
-            }
-            return getListeners();
-        }
-    }
 
     // Kafka SSL configs
     @FieldContext(
@@ -295,9 +281,30 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private String entryFormat = "pulsar";
 
     @FieldContext(
+        category = CATEGORY_KOP,
+        doc = "The broker id, default is 1"
+    )
+    private int brokerId = 1;
+
+    @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
             doc = "Flag to enable transaction coordinator"
     )
     private boolean enableTransactionCoordinator = false;
+
+    public @NonNull String getKafkaAdvertisedListeners() {
+        if (kafkaAdvertisedListeners != null) {
+            return kafkaAdvertisedListeners;
+        } else {
+            if (getListeners() == null) {
+                throw new IllegalStateException("listeners or kafkaListeners is required");
+            }
+            return getListeners();
+        }
+    }
+
+    public String getListeners() {
+        return (kafkaListeners != null) ? kafkaListeners : listeners;
+    }
 
 }
