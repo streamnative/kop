@@ -361,10 +361,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
     }
 
-    public void initTransactionCoordinator() {
+    public void initTransactionCoordinator() throws Exception {
         TransactionConfig transactionConfig = TransactionConfig.builder().build();
+        transactionConfig.setTransactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions());
         this.transactionCoordinator = TransactionCoordinator.of(
                 transactionConfig, kafkaConfig.getBrokerId(), brokerService.getPulsar().getZkClient());
+
+        loadTxnLogTopics(transactionCoordinator);
     }
 
     public void startTransactionCoordinator() throws Exception {
@@ -405,6 +408,39 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             FutureUtil.waitForAll(lists).get();
         } else {
             log.info("Current broker: {} does not own any of the offset topic partitions", currentBroker);
+        }
+    }
+
+    /**
+     * This method discovers ownership of offset topic partitions and attempts to load offset topics
+     * assigned to this broker.
+     */
+    private void loadTxnLogTopics(TransactionCoordinator txnCoordinator) throws Exception {
+        Lookup lookupService = brokerService.pulsar().getAdminClient().lookups();
+        String currentBroker = brokerService.pulsar().getBrokerServiceUrl();
+        String topicBase = MetadataUtils.constructTxnLogTopicBaseName(kafkaConfig);
+        int numPartitions = kafkaConfig.getTxnLogTopicNumPartitions();
+
+        Map<String, List<Integer>> mapBrokerToPartition = new HashMap<>();
+
+        for (int i = 0; i < numPartitions; i++) {
+            String broker = lookupService.lookupTopic(topicBase + PARTITIONED_TOPIC_SUFFIX + i);
+            mapBrokerToPartition.putIfAbsent(broker, new ArrayList<>());
+            mapBrokerToPartition.get(broker).add(i);
+        }
+
+        mapBrokerToPartition.forEach(
+                (key, value) -> log.info("Discovered broker: {} owns txn log topic partitions: {} ", key, value));
+
+        List<Integer> partitionsOwnedByCurrentBroker = mapBrokerToPartition.get(currentBroker);
+
+        if (null != partitionsOwnedByCurrentBroker && !partitionsOwnedByCurrentBroker.isEmpty()) {
+            List<CompletableFuture<Void>> lists = partitionsOwnedByCurrentBroker.stream().map(
+                (partition) -> txnCoordinator.loadTransactionMetadata(partition)).collect(Collectors.toList());
+
+            FutureUtil.waitForAll(lists).get();
+        } else {
+            log.info("Current broker: {} does not own any of the txn log topic partitions", currentBroker);
         }
     }
 }

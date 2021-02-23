@@ -40,6 +40,7 @@ import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
+import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 
 import java.net.InetSocketAddress;
@@ -1335,7 +1336,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         CompletableFuture<AbstractResponse> response) {
         InitProducerIdRequest request = (InitProducerIdRequest) kafkaHeaderAndRequest.getRequest();
         transactionCoordinator.handleInitProducerId(
-                request.transactionalId(), request.transactionTimeoutMs(), response);
+                request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(), this, response);
     }
 
     @Override

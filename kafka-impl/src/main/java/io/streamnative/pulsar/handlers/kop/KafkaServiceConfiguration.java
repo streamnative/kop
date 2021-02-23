@@ -45,6 +45,8 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     // offset configuration
     private static final int OffsetsRetentionMinutes = 7 * 24 * 60;
     public static final int DefaultOffsetsTopicNumPartitions = 8;
+    // txn configuration
+    public static final int DefaultTxnLogTopicNumPartitions = 8;
 
     public static final String DEFAULT_OAUTH2_CONFIG_FILE = "kop-oauth2.properties";
 
@@ -299,6 +301,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             doc = "Flag to enable transaction coordinator"
     )
     private boolean enableTransactionCoordinator = false;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "Number of partitions for the transaction log topic"
+    )
+    private int txnLogTopicNumPartitions = DefaultTxnLogTopicNumPartitions;
 
     @FieldContext(
             category = CATEGORY_KOP,

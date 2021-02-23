@@ -18,6 +18,7 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
  */
 public class TransactionLog {
 
-
+    // log-level config default values and enforced values
+    public static final int DefaultNumPartitions = 50;
 
 }
