@@ -43,7 +43,6 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.Errors;
@@ -766,22 +765,9 @@ public class TransactionCoordinator {
                             return;
                         }
 
-                        txnManager.appendTransactionToLog(
-                                transactionalId,
-                                coordinatorEpoch,
+                        sendTxnResultMarker(epochAndTxnMetadata.getTransactionMetadata(),
                                 preSendResult.getData().getTxnTransitMetadata(),
-                                new TransactionStateManager.ResponseCallback() {
-                                    @Override
-                                    public void complete() {
-                                        sendTxnResultMarker(preSendResult.getData().getTxnTransitMetadata(),
-                                                txnMarkerResult, requestHandler, callback);
-                                    }
-
-                                    @Override
-                                    public void fail(Errors errors) {
-
-                                    }
-                                }, errors -> true);
+                                txnMarkerResult, requestHandler, callback);
                     }
         
                     @Override
@@ -815,13 +801,14 @@ public class TransactionCoordinator {
                 }, errors1 -> true);
     }
 
-    private void sendTxnResultMarker(TxnTransitMetadata newMetadata,
+    private void sendTxnResultMarker(TransactionMetadata metadata,
+                                     TxnTransitMetadata newMetadata,
                                      TransactionResult transactionResult,
                                      KafkaRequestHandler requestHandler,
                                      EndTxnCallback callback) {
         final Map<InetSocketAddress, MarkerHandler> markerHandlerMap = new HashMap<>();
         final List<CompletableFuture<Void>> completableFutureList = new ArrayList<>();
-        for (TopicPartition topicPartition : newMetadata.getTopicPartitions()) {
+        for (TopicPartition topicPartition : metadata.getTopicPartitions()) {
             CompletableFuture<Void> completableFuture = new CompletableFuture<>();
             completableFutureList.add(completableFuture);
             String pulsarTopic = new KopTopic(topicPartition.topic()).getPartitionName(topicPartition.partition());
@@ -864,6 +851,7 @@ public class TransactionCoordinator {
                     callback.complete(Errors.COORDINATOR_NOT_AVAILABLE);
                     return;
                 }
+                metadata.completeTransitionTo(newMetadata);
                 callback.complete(Errors.NONE);
             });
         }).exceptionally(e -> {

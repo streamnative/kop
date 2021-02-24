@@ -210,7 +210,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         txnOffsetTest("txn-offset-commit-test", 10, true);
     }
 
-    @Test(timeOut = 1000 * 5)
+    @Test(timeOut = 1000 * 15)
     public void offsetAbortTest() throws Exception {
         txnOffsetTest("txn-offset-abort-test", 10, false);
     }
