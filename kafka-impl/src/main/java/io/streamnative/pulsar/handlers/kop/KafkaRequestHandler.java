@@ -760,7 +760,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     log.debug("Get earliest position for topic {} time {}. result: {}",
                         perTopic.getName(), timestamp, position);
                 }
-                if (position.compareTo(lac) > 0 || MessageIdUtils.getCurrentOffset(managedLedger) < 0) {
+                if (position.compareTo(lac) >= 0 || MessageIdUtils.getCurrentOffset(managedLedger) < 0) {
                     long offset = Math.max(0, MessageIdUtils.getCurrentOffset(managedLedger));
                     fetchOffsetForTimestampSuccess(partitionData, legacyMode, offset);
                 } else {
@@ -802,7 +802,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 perTopic.getName(), timestamp, finalPosition);
                         }
 
-                        if (finalPosition.compareTo(lac) > 0 || MessageIdUtils.getCurrentOffset(managedLedger) < 0) {
+                        if (finalPosition.compareTo(lac) >= 0 || MessageIdUtils.getCurrentOffset(managedLedger) < 0) {
                             long offset = Math.max(0, MessageIdUtils.getCurrentOffset(managedLedger));
                             fetchOffsetForTimestampSuccess(partitionData, legacyMode, offset);
                         } else {
