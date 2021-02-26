@@ -239,7 +239,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         PersistentTopic persistentTopic = (PersistentTopic)
                 pulsar.getBrokerService().getTopicReference(pulsarPartitionName).get();
 
-        long backlogSize = persistentTopic.getStats(true).backlogSize;
+        long backlogSize = persistentTopic.getStats(true, true).backlogSize;
         verifyBacklogAndNumCursor(persistentTopic, backlogSize, 3);
 
         // simulate a read complete;
@@ -271,14 +271,14 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         AtomicInteger cursorCount = new AtomicInteger(0);
         retryStrategically(
             ((test) -> {
-                backlog.set(persistentTopic.getStats(true).backlogSize);
+                backlog.set(persistentTopic.getStats(true, true).backlogSize);
                 return backlog.get() == expectedBacklog;
             }),
             5,
             200);
 
         if (log.isDebugEnabled()) {
-            TopicStats topicStats = persistentTopic.getStats(true);
+            TopicStats topicStats = persistentTopic.getStats(true, true);
             log.info(" dump topicStats for topic : {}, storageSize: {}, backlogSize: {}, expected: {}",
                 persistentTopic.getName(),
                 topicStats.storageSize, topicStats.backlogSize, expectedBacklog);

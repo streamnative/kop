@@ -116,8 +116,9 @@ public class KafkaService extends PulsarService {
 
             BookKeeperClientFactory bkClientFactory = newBookKeeperClientFactory();
             setBkClientFactory(bkClientFactory);
-            setManagedLedgerClientFactory(
-                new ManagedLedgerClientFactory(kafkaConfig, getZkClient(), bkClientFactory));
+            final ManagedLedgerClientFactory managedLedgerClientFactory = new ManagedLedgerClientFactory();
+            managedLedgerClientFactory.initialize(kafkaConfig, getZkClient(), bkClientFactory);
+            setManagedLedgerClientFactory(managedLedgerClientFactory);
             setBrokerService(new BrokerService(this));
 
             // Start load management service (even if load balancing is disabled)
@@ -157,6 +158,7 @@ public class KafkaService extends PulsarService {
                 new ServletHolder(
                     new PrometheusMetricsServlet(
                         this,
+                        false,
                         kafkaConfig.isExposeTopicLevelMetricsInPrometheus(),
                         kafkaConfig.isExposeConsumerLevelMetricsInPrometheus())),
                 false, attributeMap);
