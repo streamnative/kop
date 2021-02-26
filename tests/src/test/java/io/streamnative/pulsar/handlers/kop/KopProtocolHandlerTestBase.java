@@ -328,6 +328,7 @@ public abstract class KopProtocolHandlerTestBase {
         doReturn(mockZooKeeperClientFactory).when(pulsar).getZooKeeperClientFactory();
         doReturn(mockBookKeeperClientFactory).when(pulsar).newBookKeeperClientFactory();
         doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createLocalMetadataStore();
+        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createConfigurationMetadataStore();
 
         Supplier<NamespaceService> namespaceServiceSupplier = () -> spy(new NamespaceService(pulsar));
         doReturn(namespaceServiceSupplier).when(pulsar).getNamespaceServiceProvider();
