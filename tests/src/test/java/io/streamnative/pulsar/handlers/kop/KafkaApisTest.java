@@ -687,8 +687,11 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         int numberTopics = 5;
         int numberPartitions = 6;
 
-        List<TopicPartition> topicPartitions = createTopics(topicName, numberTopics, numberPartitions);
         List<String> kafkaTopics = getCreatedTopics(topicName, numberTopics);
+        for (String topic : kafkaTopics) {
+            admin.topics().createPartitionedTopic(topic, numberPartitions);
+        }
+
         KafkaHeaderAndRequest metadataRequest = createTopicMetadataRequest(kafkaTopics);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         kafkaRequestHandler.handleTopicMetadataRequest(metadataRequest, responseFuture);
