@@ -109,9 +109,9 @@ public class TransactionStateManager {
     private static class TransactionalIdCoordinatorEpochAndTransitMetadata {
         private final String transactionalId;
         private int coordinatorEpoch;
-        TransactionResult result;
-        TransactionMetadata txnMetadata;
-        TransactionMetadata.TxnTransitMetadata transitMetadata;
+        private TransactionResult result;
+        private TransactionMetadata txnMetadata;
+        private TransactionMetadata.TxnTransitMetadata transitMetadata;
     }
 
     public void appendTransactionToLog(String transactionalId,
@@ -151,9 +151,6 @@ public class TransactionStateManager {
                     // the coordinator epoch has changed, reply to client immediately with NOT_COORDINATOR
                     responseCallback.fail(Errors.NOT_COORDINATOR);
                     return null;
-                } else {
-                    // do not need to check the metadata object itself since no concurrent thread should be able to
-                    // modify it under the same coordinator epoch, so directly append to txn log now
                 }
                 // append log
                 Map<TopicPartition, ProduceResponse.PartitionResponse> partitionResponseMap = new HashMap<>();
@@ -183,36 +180,7 @@ public class TransactionStateManager {
         }
 
         ProduceResponse.PartitionResponse status = responseStatus.get(topicPartition);
-        ErrorsAndData<Void> result = new ErrorsAndData<>();
-        if (status.error == Errors.NONE) {
-            result.setErrors(Errors.NONE);
-        } else {
-            if (log.isDebugEnabled()) {
-                log.debug("Appending {}'s new metadata {} failed due to {}",
-                        transactionalId, newMetadata, status.error.exceptionName());
-            }
-
-            // transform the log append error code to the corresponding coordinator error code
-            switch (status.error) {
-                case UNKNOWN_TOPIC_OR_PARTITION:
-                case NOT_ENOUGH_REPLICAS:
-                case NOT_ENOUGH_REPLICAS_AFTER_APPEND:
-                case REQUEST_TIMED_OUT:
-                    // note that for timed out request we return NOT_AVAILABLE error code to let client retry
-                    result.setErrors(Errors.COORDINATOR_NOT_AVAILABLE);
-                    break;
-//                case Errors.NOT_LEADER_OR_FOLLOWER:
-                case KAFKA_STORAGE_ERROR:
-                    result.setErrors(Errors.NOT_COORDINATOR);
-                    break;
-                case MESSAGE_TOO_LARGE:
-                case RECORD_LIST_TOO_LARGE:
-                    result.setErrors(Errors.UNKNOWN_SERVER_ERROR);
-                    break;
-                default:
-                    result.setErrors(Errors.UNKNOWN_SERVER_ERROR);
-            }
-        }
+        ErrorsAndData<Void> result = statusCheck(transactionalId, newMetadata, status);
 
         if (!result.hasErrors()) {
             // now try to update the cache: we need to update the status in-place instead of
@@ -313,6 +281,42 @@ public class TransactionStateManager {
         } else {
             responseCallback.complete();
         }
+    }
+
+    private ErrorsAndData<Void> statusCheck(String transactionalId,
+                                      TransactionMetadata.TxnTransitMetadata newMetadata,
+                                      ProduceResponse.PartitionResponse status) {
+        ErrorsAndData<Void> result = new ErrorsAndData();
+        if (status.error == Errors.NONE) {
+            result.setErrors(Errors.NONE);
+        } else {
+            if (log.isDebugEnabled()) {
+                log.debug("Appending {}'s new metadata {} failed due to {}",
+                        transactionalId, newMetadata, status.error.exceptionName());
+            }
+
+            // transform the log append error code to the corresponding coordinator error code
+            switch (status.error) {
+                case UNKNOWN_TOPIC_OR_PARTITION:
+                case NOT_ENOUGH_REPLICAS:
+                case NOT_ENOUGH_REPLICAS_AFTER_APPEND:
+                case REQUEST_TIMED_OUT:
+                    // note that for timed out request we return NOT_AVAILABLE error code to let client retry
+                    result.setErrors(Errors.COORDINATOR_NOT_AVAILABLE);
+                    break;
+//                case Errors.NOT_LEADER_OR_FOLLOWER:
+                case KAFKA_STORAGE_ERROR:
+                    result.setErrors(Errors.NOT_COORDINATOR);
+                    break;
+                case MESSAGE_TOO_LARGE:
+                case RECORD_LIST_TOO_LARGE:
+                    result.setErrors(Errors.UNKNOWN_SERVER_ERROR);
+                    break;
+                default:
+                    result.setErrors(Errors.UNKNOWN_SERVER_ERROR);
+            }
+        }
+        return result;
     }
 
     /**
@@ -427,6 +431,8 @@ public class TransactionStateManager {
     private Map<String, TransactionMetadata> loadTransactionMetadata(TopicPartition topicPartition,
                                                                      int coordinatorEpoch) {
         // TODO recover transaction metadata
+        log.info("load transaction metadata for topicPartition: {}, coordinatorEpoch: {}",
+                topicPartition, coordinatorEpoch);
         Map<String, TransactionMetadata> loadedTransactions = new HashMap<>();
         return loadedTransactions;
     }

@@ -244,8 +244,8 @@ public class TransactionCoordinator {
 
     @AllArgsConstructor
     private static class EpochAndTxnTransitMetadata {
-        int coordinatorEpoch;
-        TxnTransitMetadata txnTransitMetadata;
+        private final int coordinatorEpoch;
+        private final TxnTransitMetadata txnTransitMetadata;
     }
 
     private boolean isValidProducerId(TransactionMetadata txnMetadata, ProducerIdAndEpoch producerIdAndEpoch) {
@@ -335,6 +335,9 @@ public class TransactionCoordinator {
                                     + "This is illegal as we should never have transitioned to this state.",
                             transactionalId, txnMetadata.getState());
                     resultFuture.completeExceptionally(new IllegalStateException(errorMsg));
+                    break;
+                default:
+                    // no op
             }
         }
         return resultFuture;
@@ -435,127 +438,13 @@ public class TransactionCoordinator {
                                      CompletableFuture<AbstractResponse> response) {
         endTransaction(transactionalId, producerId, producerEpoch, transactionResult, true,
                 requestHandler, errors -> response.complete(new EndTxnResponse(0, errors)));
-//        ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> errorsAndData =
-//                txnManager.getTransactionState(transactionalId);
-//        TransactionMetadata metadata = errorsAndData.getData().get().getTransactionMetadata();
-//        switch (metadata.getState()) {
-//            case ONGOING:
-//                TransactionState nextState;
-//                if (transactionResult == TransactionResult.COMMIT) {
-//                    nextState = PREPARE_COMMIT;
-//                } else {
-//                    nextState = TransactionState.PREPARE_ABORT;
-//                }
-//
-//                if (nextState == TransactionState.PREPARE_ABORT && metadata.getPendingState().isPresent()
-//                        && metadata.getPendingState().get().equals(TransactionState.PREPARE_EPOCH_FENCE)) {
-//                    // We should clear the pending state to make way for the transition to PrepareAbort and also bump
-//                    // the epoch in the transaction metadata we are about to append.
-//                    metadata.setPendingState(Optional.empty());
-//                    metadata.setProducerEpoch(producerEpoch);
-//                }
-//
-//                TxnTransitMetadata newMetadata =
-//                        metadata.prepareAbortOrCommit(nextState, SystemTime.SYSTEM.milliseconds());
-//                txnManager.appendTransactionToLog(transactionalId, 0, newMetadata,
-//                        new TransactionStateManager.ResponseCallback() {
-//                            @Override
-//                            public void complete() {
-//
-//                            }
-//
-//                            @Override
-//                            public void fail(Errors errors) {
-//
-//                            }
-//                        }, errors -> true);
-//                break;
-//            case COMPLETE_COMMIT:
-//                break;
-//            case COMPLETE_ABORT:
-//                break;
-//            case PREPARE_COMMIT:
-//                break;
-//            case PREPARE_ABORT:
-//                break;
-//            case EMPTY:
-//                break;
-//            case DEAD:
-//            case PREPARE_EPOCH_FENCE:
-//                break;
-//        }
-//
-//        final Map<InetSocketAddress, MarkerHandler> markerHandlerMap = new HashMap<>();
-//        final List<CompletableFuture<Void>> completableFutureList = new ArrayList<>();
-//        for (TopicPartition topicPartition : metadata.getTopicPartitions()) {
-//            CompletableFuture<Void> completableFuture = new CompletableFuture<>();
-//            completableFutureList.add(completableFuture);
-//            String pulsarTopic = new KopTopic(topicPartition.topic()).getPartitionName(topicPartition.partition());
-//            requestHandler.findBroker(TopicName.get(pulsarTopic))
-//                    .thenAccept(partitionMetadata -> {
-//                        InetSocketAddress socketAddress = new InetSocketAddress(
-//                                partitionMetadata.leader().host(), partitionMetadata.leader().port());
-//                        CompletableFuture<TransactionMarkerChannelHandler> handlerFuture =
-//                                transactionMarkerChannelManager.getChannel(socketAddress);
-//                        markerHandlerMap.compute(socketAddress, (key, value) -> {
-//                            if (value == null) {
-//                                List<TopicPartition> topicPartitionList = new ArrayList<>();
-//                                topicPartitionList.add(topicPartition);
-//                                return MarkerHandler.builder()
-//                                        .topicPartitionList(topicPartitionList)
-//                                        .handlerFuture(handlerFuture)
-//                                        .build();
-//                            } else {
-//                                value.topicPartitionList.add(topicPartition);
-//                                return value;
-//                            }
-//                        });
-//                        completableFuture.complete(null);
-//                    }).exceptionally(e -> {
-//                        log.error("EndTxn findBroker fail", e);
-//                        completableFuture.completeExceptionally(e);
-//                        return null;
-//            });
-//        }
-//
-//        FutureUtil.waitForAll(completableFutureList).thenRun(() -> {
-//            List<CompletableFuture<WriteTxnMarkersResponse>> writeTxnMarkersFutureList = new ArrayList<>();
-//            for (MarkerHandler markerHandler : markerHandlerMap.values()) {
-//                writeTxnMarkersFutureList.add(
-//                        markerHandler.writeTxnMarker(producerId, producerEpoch, transactionResult));
-//            }
-//
-//            FutureUtil.waitForAll(writeTxnMarkersFutureList).whenComplete((ignored, throwable) -> {
-//                if (throwable != null) {
-//                    response.complete(new EndTxnResponse(0, Errors.COORDINATOR_NOT_AVAILABLE));
-//                    return;
-//                }
-//                TxnTransitMetadata newMetadata =
-//                        metadata.prepareComplete(SystemTime.SYSTEM.milliseconds());
-//                txnManager.appendTransactionToLog(transactionalId, 0, newMetadata,
-//                        new TransactionStateManager.ResponseCallback() {
-//                            @Override
-//                            public void complete() {
-//                                response.complete(new EndTxnResponse(0, Errors.NONE));
-//                            }
-//
-//                            @Override
-//                            public void fail(Errors errors) {
-//
-//                            }
-//                        }, errors -> true);
-//            });
-//        }).exceptionally(e -> {
-//            response.complete(new EndTxnResponse(0, Errors.COORDINATOR_NOT_AVAILABLE));
-//            return null;
-//        });
     }
 
     @AllArgsConstructor
     @Data
     private static class PreSendResult {
-        TransactionMetadata transactionMetadata;
-        TxnTransitMetadata txnTransitMetadata;
+        private TransactionMetadata transactionMetadata;
+        private TxnTransitMetadata txnTransitMetadata;
     }
 
     private void endTransaction(String transactionalId,
@@ -606,11 +495,11 @@ public class TransactionCoordinator {
                     if (txnMarkerResult == TransactionResult.COMMIT) {
                         nextState = PREPARE_COMMIT;
                     } else {
-                        nextState = TransactionState.PREPARE_ABORT;
+                        nextState = PREPARE_ABORT;
                     }
 
-                    if (nextState == TransactionState.PREPARE_ABORT && txnMetadata.getPendingState().isPresent()
-                            && txnMetadata.getPendingState().get().equals(TransactionState.PREPARE_EPOCH_FENCE)) {
+                    if (nextState == PREPARE_ABORT && txnMetadata.getPendingState().isPresent()
+                            && txnMetadata.getPendingState().get().equals(PREPARE_EPOCH_FENCE)) {
                         // We should clear the pending state to make way for the transition to PrepareAbort and also
                         // bump the epoch in the transaction metadata we are about to append.
                         isEpochFence.set(true);
@@ -680,91 +569,7 @@ public class TransactionCoordinator {
                 new TransactionStateManager.ResponseCallback() {
                     @Override
                     public void complete() {
-                        ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> errorsAndData =
-                                txnManager.getTransactionState(transactionalId);
-
-                        if (!errorsAndData.getData().isPresent()) {
-                            String errorMsg = String.format("The coordinator still owns the transaction partition for "
-                                    + "%s, but there is no metadata in the cache; this is not expected",
-                                    transactionalId);
-                            log.error(errorMsg);
-                            throw new IllegalStateException(errorMsg);
-                        }
-
-                        ErrorsAndData<PreSendResult> preSendResult = new ErrorsAndData<>();
-                        CoordinatorEpochAndTxnMetadata epochAndTxnMetadata = errorsAndData.getData().get();
-                        if (epochAndTxnMetadata.getCoordinatorEpoch() == coordinatorEpoch) {
-                            TransactionMetadata txnMetadata = epochAndTxnMetadata.getTransactionMetadata();
-                            txnMetadata.inLock(() -> {
-                                if (txnMetadata.getProducerId() != producerId) {
-                                    preSendResult.setErrors(Errors.INVALID_PRODUCER_ID_MAPPING);
-                                } else if (txnMetadata.getProducerEpoch() != producerEpoch) {
-                                    preSendResult.setErrors(producerEpochFenceErrors());
-                                } else if (txnMetadata.getPendingState().isPresent()) {
-                                    preSendResult.setErrors(Errors.CONCURRENT_TRANSACTIONS);
-                                } else {
-                                    switch (txnMetadata.getState()) {
-                                        case EMPTY:
-                                        case ONGOING:
-                                        case COMPLETE_ABORT:
-                                        case COMPLETE_COMMIT:
-                                            preSendResult.setErrors(logInvalidStateTransitionAndReturnError(
-                                                    transactionalId, txnMetadata.getState(), txnMarkerResult));
-                                            break;
-                                        case PREPARE_COMMIT:
-                                            if (txnMarkerResult != TransactionResult.COMMIT) {
-                                                preSendResult.setErrors(logInvalidStateTransitionAndReturnError(
-                                                        transactionalId, txnMetadata.getState(), txnMarkerResult));
-                                            } else {
-                                                TxnTransitMetadata txnTransitMetadata =
-                                                        txnMetadata.prepareComplete(SystemTime.SYSTEM.milliseconds());
-                                                preSendResult.setData(
-                                                        new PreSendResult(txnMetadata, txnTransitMetadata));
-                                            }
-                                            break;
-                                        case PREPARE_ABORT:
-                                            if (txnMarkerResult != TransactionResult.ABORT) {
-                                                preSendResult.setErrors(logInvalidStateTransitionAndReturnError(
-                                                        transactionalId, txnMetadata.getState(), txnMarkerResult));
-
-                                            } else {
-                                                TxnTransitMetadata txnTransitMetadata =
-                                                        txnMetadata.prepareComplete(SystemTime.SYSTEM.milliseconds());
-                                                preSendResult.setData(
-                                                        new PreSendResult(txnMetadata, txnTransitMetadata));
-                                            }
-                                            break;
-                                        case DEAD:
-                                        case PREPARE_EPOCH_FENCE:
-                                            String errorMsg = String.format("Found transactionalId %s with state %s. "
-                                                    + "This is illegal as we should never have transitioned to "
-                                                    + "this state.", transactionalId, txnMetadata.getState());
-                                            log.error(errorMsg);
-                                            throw new IllegalStateException(errorMsg);
-                                    }
-                                }
-                                return null;
-                            });
-                        } else {
-                            if (log.isDebugEnabled()) {
-                                log.debug("The transaction coordinator epoch has changed to {} after {} was "
-                                        + "successfully appended to the log for {} with old epoch {}",
-                                        epochAndTxnMetadata.getCoordinatorEpoch(), txnMarkerResult, transactionalId,
-                                        coordinatorEpoch);
-                            }
-                            preSendResult.setErrors(Errors.NOT_COORDINATOR);
-                        }
-
-                        if (preSendResult.hasErrors()) {
-                            log.info("Aborting sending of transaction markers after appended {} to transaction log "
-                                    + "and returning {} error to client for $transactionalId's EndTransaction request",
-                                    txnMarkerResult, preSendResult.getErrors());
-                            callback.complete(preSendResult.getErrors());
-                            return;
-                        }
-
-                        sendTxnResultMarker(epochAndTxnMetadata.getTransactionMetadata(),
-                                preSendResult.getData().getTxnTransitMetadata(),
+                        completeEndTxn(transactionalId, coordinatorEpoch, producerId, producerEpoch,
                                 txnMarkerResult, requestHandler, callback);
                     }
 
@@ -781,21 +586,112 @@ public class TransactionCoordinator {
                             if (!errorsAndData.getData().isPresent()) {
                                 log.warn("The coordinator still owns the transaction partition for {}, but there "
                                         + "is no metadata in the cache; this is not expected", transactionalId);
-                            } else if (errorsAndData.getData().isPresent()) {
-                                if (epochAndMetadata.get().getCoordinatorEpoch() == coordinatorEpoch) {
+                            } else if (errorsAndData.getData().isPresent()
+                                    && epochAndMetadata.get().getCoordinatorEpoch() == coordinatorEpoch) {
                                     // This was attempted epoch fence that failed, so mark this state on the metadata
                                     epochAndMetadata.get().getTransactionMetadata().setHasFailedEpochFence(true);
                                     log.warn("The coordinator failed to write an epoch fence transition for producer "
                                             + "{} to the transaction log with error {}. The epoch was increased to ${} "
                                             + "but not returned to the client", transactionalId, errors,
                                             preAppendResult.getData().getProducerEpoch());
-                                }
                             }
                         }
 
                         callback.complete(errors);
                     }
                 }, errors1 -> true);
+    }
+
+    private void completeEndTxn(String transactionalId, int coordinatorEpoch, long producerId,
+                                int producerEpoch, TransactionResult txnMarkerResult,
+                                KafkaRequestHandler requestHandler, EndTxnCallback callback) {
+
+        ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> errorsAndData =
+                txnManager.getTransactionState(transactionalId);
+
+        if (!errorsAndData.getData().isPresent()) {
+            String errorMsg = String.format("The coordinator still owns the transaction partition for "
+                            + "%s, but there is no metadata in the cache; this is not expected",
+                    transactionalId);
+            log.error(errorMsg);
+            throw new IllegalStateException(errorMsg);
+        }
+
+        ErrorsAndData<PreSendResult> preSendResult = new ErrorsAndData<>();
+        CoordinatorEpochAndTxnMetadata epochAndTxnMetadata = errorsAndData.getData().get();
+        if (epochAndTxnMetadata.getCoordinatorEpoch() == coordinatorEpoch) {
+            TransactionMetadata txnMetadata = epochAndTxnMetadata.getTransactionMetadata();
+            txnMetadata.inLock(() -> {
+                if (txnMetadata.getProducerId() != producerId) {
+                    preSendResult.setErrors(Errors.INVALID_PRODUCER_ID_MAPPING);
+                } else if (txnMetadata.getProducerEpoch() != producerEpoch) {
+                    preSendResult.setErrors(producerEpochFenceErrors());
+                } else if (txnMetadata.getPendingState().isPresent()) {
+                    preSendResult.setErrors(Errors.CONCURRENT_TRANSACTIONS);
+                } else {
+                    switch (txnMetadata.getState()) {
+                        case EMPTY:
+                        case ONGOING:
+                        case COMPLETE_ABORT:
+                        case COMPLETE_COMMIT:
+                            preSendResult.setErrors(logInvalidStateTransitionAndReturnError(
+                                    transactionalId, txnMetadata.getState(), txnMarkerResult));
+                            break;
+                        case PREPARE_COMMIT:
+                            if (txnMarkerResult != TransactionResult.COMMIT) {
+                                preSendResult.setErrors(logInvalidStateTransitionAndReturnError(
+                                        transactionalId, txnMetadata.getState(), txnMarkerResult));
+                            } else {
+                                TxnTransitMetadata txnTransitMetadata =
+                                        txnMetadata.prepareComplete(SystemTime.SYSTEM.milliseconds());
+                                preSendResult.setData(
+                                        new PreSendResult(txnMetadata, txnTransitMetadata));
+                            }
+                            break;
+                        case PREPARE_ABORT:
+                            if (txnMarkerResult != TransactionResult.ABORT) {
+                                preSendResult.setErrors(logInvalidStateTransitionAndReturnError(
+                                        transactionalId, txnMetadata.getState(), txnMarkerResult));
+
+                            } else {
+                                TxnTransitMetadata txnTransitMetadata =
+                                        txnMetadata.prepareComplete(SystemTime.SYSTEM.milliseconds());
+                                preSendResult.setData(
+                                        new PreSendResult(txnMetadata, txnTransitMetadata));
+                            }
+                            break;
+                        case DEAD:
+                        case PREPARE_EPOCH_FENCE:
+                            String errorMsg = String.format("Found transactionalId %s with state %s. "
+                                    + "This is illegal as we should never have transitioned to "
+                                    + "this state.", transactionalId, txnMetadata.getState());
+                            log.error(errorMsg);
+                            throw new IllegalStateException(errorMsg);
+                    }
+                }
+                return null;
+            });
+        } else {
+            if (log.isDebugEnabled()) {
+                log.debug("The transaction coordinator epoch has changed to {} after {} was "
+                                + "successfully appended to the log for {} with old epoch {}",
+                        epochAndTxnMetadata.getCoordinatorEpoch(), txnMarkerResult, transactionalId,
+                        coordinatorEpoch);
+            }
+            preSendResult.setErrors(Errors.NOT_COORDINATOR);
+        }
+
+        if (preSendResult.hasErrors()) {
+            log.info("Aborting sending of transaction markers after appended {} to transaction log "
+                            + "and returning {} error to client for $transactionalId's EndTransaction request",
+                    txnMarkerResult, preSendResult.getErrors());
+            callback.complete(preSendResult.getErrors());
+            return;
+        }
+
+        sendTxnResultMarker(epochAndTxnMetadata.getTransactionMetadata(),
+                preSendResult.getData().getTxnTransitMetadata(),
+                txnMarkerResult, requestHandler, callback);
     }
 
     private void sendTxnResultMarker(TransactionMetadata metadata,

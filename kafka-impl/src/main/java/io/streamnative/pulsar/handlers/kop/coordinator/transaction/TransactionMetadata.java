@@ -378,8 +378,8 @@ public class TransactionMetadata {
 
     @AllArgsConstructor
     private static class BumpEpochResult {
-        short bumpedEpoch;
-        short lastEpoch;
+        private final short bumpedEpoch;
+        private final short lastEpoch;
     }
 
     public TxnTransitMetadata prepareProducerIdRotation(Long newProducerId,
