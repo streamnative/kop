@@ -40,7 +40,6 @@ import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
-import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 
 import java.net.InetSocketAddress;

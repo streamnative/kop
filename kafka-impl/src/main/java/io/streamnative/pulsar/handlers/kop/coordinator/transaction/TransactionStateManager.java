@@ -51,13 +51,13 @@ public class TransactionStateManager {
     private final Map<String, TransactionMetadata> transactionStateMap;
     private ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
 
-    /** number of partitions for the transaction log topic */
+    // Number of partitions for the transaction log topic.
     private int transactionTopicPartitionCount;
 
-    /** partitions of transaction topic that are being loaded, state lock should be called BEFORE accessing this set */
+    // Partitions of transaction topic that are being loaded, state lock should be called BEFORE accessing this set.
     private Set<TransactionPartitionAndLeaderEpoch> loadingPartitions = new HashSet<>();
 
-    /** transaction metadata cache indexed by assigned transaction topic partition ids */
+    // Transaction metadata cache indexed by assigned transaction topic partition ids
     private Map<Integer, TxnMetadataCacheEntry> transactionMetadataCache = new HashMap<>();
 
     public TransactionStateManager(TransactionConfig transactionConfig) {
@@ -66,6 +66,9 @@ public class TransactionStateManager {
         this.transactionTopicPartitionCount = transactionConfig.getTransactionLogNumPartitions();
     }
 
+    /**
+     * TxnMetadataCacheEntry.
+     */
     @AllArgsConstructor
     private static class TxnMetadataCacheEntry {
         private Integer coordinatorEpoch;
@@ -73,13 +76,16 @@ public class TransactionStateManager {
 
         @Override
         public String toString() {
-            return "TxnMetadataCacheEntry{" +
-                    "coordinatorEpoch=" + coordinatorEpoch +
-                    ", numTransactionalEntries=" + metadataPerTransactionalId.size() +
-                    '}';
+            return "TxnMetadataCacheEntry{"
+                    + "coordinatorEpoch=" + coordinatorEpoch
+                    + ", numTransactionalEntries=" + metadataPerTransactionalId.size()
+                    + '}';
         }
     }
 
+    /**
+     * CoordinatorEpoch and TxnMetadata.
+     */
     @Data
     @AllArgsConstructor
     public static class CoordinatorEpochAndTxnMetadata {
@@ -87,15 +93,21 @@ public class TransactionStateManager {
         private TransactionMetadata transactionMetadata;
     }
 
+    /**
+     * TransactionPartition and leader epoch.
+     */
     @AllArgsConstructor
-    private class TransactionPartitionAndLeaderEpoch {
+    private static class TransactionPartitionAndLeaderEpoch {
         private Integer txnPartitionId;
-        private Integer coordinatorEpoch;
+        private final Integer coordinatorEpoch;
     }
 
+    /**
+     * TransactionalId, coordinatorEpoch and TransitMetadata.
+     */
     @AllArgsConstructor
-    private class TransactionalIdCoordinatorEpochAndTransitMetadata {
-        private String transactionalId;
+    private static class TransactionalIdCoordinatorEpochAndTransitMetadata {
+        private final String transactionalId;
         private int coordinatorEpoch;
         TransactionResult result;
         TransactionMetadata txnMetadata;
@@ -114,10 +126,11 @@ public class TransactionStateManager {
 
         CoreUtils.inReadLock(stateLock, () -> {
             // we need to hold the read lock on the transaction metadata cache until appending to local log returns;
-            // this is to avoid the case where an emigration followed by an immigration could have completed after the check
-            // returns and before appendRecords() is called, since otherwise entries with a high coordinator epoch could have
-            // been appended to the log in between these two events, and therefore appendRecords() would append entries with
-            // an old coordinator epoch that can still be successfully replicated on followers and make the log in a bad state.
+            // this is to avoid the case where an emigration followed by an immigration could have completed after the
+            // check returns and before appendRecords() is called, since otherwise entries with a high coordinator epoch
+            // could have been appended to the log in between these two events, and therefore appendRecords() would
+            // append entries with an old coordinator epoch that can still be successfully replicated on followers
+            // and make the log in a bad state.
             ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> errorsAndData =
                     getTransactionState(transactionalId);
 
@@ -139,8 +152,8 @@ public class TransactionStateManager {
                     responseCallback.fail(Errors.NOT_COORDINATOR);
                     return null;
                 } else {
-                    // do not need to check the metadata object itself since no concurrent thread should be able to modify it
-                    // under the same coordinator epoch, so directly append to txn log now
+                    // do not need to check the metadata object itself since no concurrent thread should be able to
+                    // modify it under the same coordinator epoch, so directly append to txn log now
                 }
                 // append log
                 Map<TopicPartition, ProduceResponse.PartitionResponse> partitionResponseMap = new HashMap<>();
@@ -164,9 +177,10 @@ public class TransactionStateManager {
                                      ResponseCallback responseCallback,
                                      RetryOnError retryOnError) {
         // the append response should only contain the topics partition
-        if (responseStatus.size() != 1 || !responseStatus.containsKey(topicPartition))
+        if (responseStatus.size() != 1 || !responseStatus.containsKey(topicPartition)) {
             throw new IllegalStateException(String.format("Append status %s should only have one partition %s",
                     responseStatus, topicPartition));
+        }
 
         ProduceResponse.PartitionResponse status = responseStatus.get(topicPartition);
         ErrorsAndData<Void> result = new ErrorsAndData<>();
@@ -183,7 +197,8 @@ public class TransactionStateManager {
                 case UNKNOWN_TOPIC_OR_PARTITION:
                 case NOT_ENOUGH_REPLICAS:
                 case NOT_ENOUGH_REPLICAS_AFTER_APPEND:
-                case REQUEST_TIMED_OUT: // note that for timed out request we return NOT_AVAILABLE error code to let client retry
+                case REQUEST_TIMED_OUT:
+                    // note that for timed out request we return NOT_AVAILABLE error code to let client retry
                     result.setErrors(Errors.COORDINATOR_NOT_AVAILABLE);
                     break;
 //                case Errors.NOT_LEADER_OR_FOLLOWER:
@@ -211,11 +226,12 @@ public class TransactionStateManager {
                         transactionalId, errorsAndData.getErrors());
                 result.setErrors(errorsAndData.getErrors());
             } else if (!errorsAndData.getData().isPresent()) {
-                // this transactional id no longer exists, maybe the corresponding partition has already been migrated out.
-                // return NOT_COORDINATOR to let the client re-discover the transaction coordinator
+                // this transactional id no longer exists, maybe the corresponding partition has already been migrated
+                // out. return NOT_COORDINATOR to let the client re-discover the transaction coordinator
                 log.info("The cached coordinator metadata does not exist in the cache anymore for {} after appended "
-                                + "its new metadata {} to the transaction log (txn topic partition {}) while it was {} before "
-                                + "appending; " + "aborting transition to the new metadata and returning {} in the callback",
+                                + "its new metadata {} to the transaction log (txn topic partition {}) while it was {}"
+                                + " before appending; " + "aborting transition to the new metadata and returning {} "
+                                + "in the callback",
                         transactionalId, newMetadata, partitionFor(transactionalId), coordinatorEpoch,
                         Errors.NOT_COORDINATOR);
                 result.setErrors(Errors.NOT_COORDINATOR);
@@ -225,10 +241,12 @@ public class TransactionStateManager {
                 metadata.inLock(() -> {
                     if (errorsAndData.getData().get().coordinatorEpoch != coordinatorEpoch) {
                         // the cache may have been changed due to txn topic partition emigration and immigration,
-                        // in this case directly return NOT_COORDINATOR to client and let it to re-discover the transaction coordinator
+                        // in this case directly return NOT_COORDINATOR to client and let it to re-discover the
+                        // transaction coordinator
                         log.info("The cached coordinator epoch for {} has changed to {} after appended its new "
-                                        + "metadata {} to the transaction log (txn topic partition {}) while it was {} before "
-                                        + "appending; aborting transition to the new metadata and returning {} in the callback",
+                                        + "metadata {} to the transaction log (txn topic partition {}) while it was "
+                                        + "{} before appending; aborting transition to the new metadata and returning "
+                                        + "{} in the callback",
                                 transactionalId, coordinatorEpoch, newMetadata, partitionFor(transactionalId),
                                 coordinatorEpoch, Errors.NOT_CONTROLLER);
                         result.setErrors(Errors.NOT_COORDINATOR);
@@ -247,12 +265,13 @@ public class TransactionStateManager {
             ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> errorsAndData =
                     getTransactionState(transactionalId);
 
-            // Reset the pending state when returning an error, since there is no active transaction for the transactional id at this point.
+            // Reset the pending state when returning an error, since there is no active transaction for the
+            // transactional id at this point.
             if (errorsAndData.hasErrors()) {
                 // Do nothing here, since we want to return the original append error to the user.
                 log.info("TransactionalId {} append transaction log for {} transition failed due to {}, aborting state "
-                                + "transition and returning the error in the callback since retrieving metadata returned {}",
-                        transactionalId, newMetadata, result.getErrors(), errorsAndData.getErrors());
+                        + "transition and returning the error in the callback since retrieving metadata "
+                        + "returned {}", transactionalId, newMetadata, result.getErrors(), errorsAndData.getErrors());
 
             } else if (!errorsAndData.getData().isPresent()) {
                 // Do nothing here, since we want to return the original append error to the user.
@@ -265,20 +284,22 @@ public class TransactionStateManager {
                     if (errorsAndData.getData().get().coordinatorEpoch == coordinatorEpoch) {
                         if (retryOnError.retry(result.getErrors())) {
                             log.info("TransactionalId {} append transaction log for {} transition failed due to {}, "
-                                            + "not resetting pending state {} but just returning the error in the callback to "
-                                            + "let the caller retry", metadata.getTransactionalId(), newMetadata,
-                                    result.getErrors(), metadata.getPendingState());
+                                    + "not resetting pending state {} but just returning the error in the callback "
+                                    + "to let the caller retry",
+                                    metadata.getTransactionalId(), newMetadata, result.getErrors(),
+                                    metadata.getPendingState());
                         } else {
                             log.info("TransactionalId {} append transaction log for {} transition failed due to {}, "
-                                            + "resetting pending state from {}, aborting state transition and returning {} in "
-                                            + "the callback", metadata.getTransactionalId(), newMetadata, result.getErrors(),
+                                    + "resetting pending state from {}, aborting state transition and returning {} in "
+                                    + "the callback",
+                                    metadata.getTransactionalId(), newMetadata, result.getErrors(),
                                     metadata.getPendingState(), result.getErrors());
                             metadata.setPendingState(Optional.empty());
                         }
                     } else {
                         log.info("TransactionalId {} append transaction log for {} transition failed due to {}, "
-                                        + "aborting state transition and returning the error in the callback since the "
-                                        + "coordinator epoch has changed from {} to {}", metadata.getTransactionalId(),
+                                + "aborting state transition and returning the error in the callback since the "
+                                + "coordinator epoch has changed from {} to {}", metadata.getTransactionalId(),
                                 newMetadata, result.getErrors(), errorsAndData.getData().get().coordinatorEpoch,
                                 coordinatorEpoch);
                     }
@@ -302,6 +323,9 @@ public class TransactionStateManager {
         void fail(Errors errors);
     }
 
+    /**
+     * Retry on error.
+     */
     public interface RetryOnError {
         boolean retry(Errors errors);
     }
@@ -344,19 +368,18 @@ public class TransactionStateManager {
     /**
      * Get the transaction metadata associated with the given transactional id, or an error if
      * the coordinator does not own the transaction partition or is still loading it; if not found
-     * either return None or create a new metadata and added to the cache
-     *
-     * This function is covered by the state read lock
+     * either return None or create a new metadata and added to the cache.
+     * This function is covered by the state read lock.
      */
     private ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> getAndMaybeAddTransactionState(
             String transactionalId,
             Optional<TransactionMetadata> createdTxnMetadataOpt) {
         return CoreUtils.inReadLock(stateLock, () -> {
             int partitionId = partitionFor(transactionalId);
-            if (loadingPartitions.stream().anyMatch(txnPartitionAndEpoch ->
-                    txnPartitionAndEpoch.txnPartitionId == partitionId))
+            if (loadingPartitions.stream().anyMatch(
+                    txnPartitionAndEpoch -> txnPartitionAndEpoch.txnPartitionId == partitionId)) {
                 return new ErrorsAndData<>(Errors.CONCURRENT_TRANSACTIONS);
-            else {
+            } else {
                 TxnMetadataCacheEntry cacheEntry = transactionMetadataCache.get(partitionId);
                 if (cacheEntry == null) {
                     return new ErrorsAndData<>(Errors.NOT_COORDINATOR);
@@ -364,18 +387,21 @@ public class TransactionStateManager {
                 Optional<TransactionMetadata> txnMetadata;
                 TransactionMetadata txnMetadataCache = cacheEntry.metadataPerTransactionalId.get(transactionalId);
                 if (txnMetadataCache == null) {
-                    txnMetadata = createdTxnMetadataOpt.map(metadata ->
-                            cacheEntry.metadataPerTransactionalId.putIfAbsent(transactionalId, metadata));
+                    if (createdTxnMetadataOpt.isPresent()) {
+                        cacheEntry.metadataPerTransactionalId.put(transactionalId, createdTxnMetadataOpt.get());
+                        txnMetadata = createdTxnMetadataOpt;
+                    } else {
+                        txnMetadata = Optional.empty();
+                    }
                 } else {
                     txnMetadata = Optional.of(txnMetadataCache);
                 }
 
-                if (txnMetadata.isPresent()) {
-                    return new ErrorsAndData<>(Optional.of(
-                            new CoordinatorEpochAndTxnMetadata(cacheEntry.coordinatorEpoch, txnMetadata.get())));
-                } else {
-                    return new ErrorsAndData<>(Optional.empty());
-                }
+                return txnMetadata
+                        .map(metadata ->
+                                new ErrorsAndData<>(Optional.of(
+                                        new CoordinatorEpochAndTxnMetadata(cacheEntry.coordinatorEpoch, metadata))))
+                        .orElseGet(() -> new ErrorsAndData<>(Optional.empty()));
             }
         });
     }
@@ -385,7 +411,7 @@ public class TransactionStateManager {
     }
 
     /**
-     * Add a transaction topic partition into the cache
+     * Add a transaction topic partition into the cache.
      */
     private void addLoadedTransactionsToCache(int txnTopicPartition,
                                               int coordinatorEpoch,
@@ -406,9 +432,9 @@ public class TransactionStateManager {
     }
 
     /**
-     * When this broker becomes a leader for a transaction log partition, load this partition and populate the transaction
-     * metadata cache with the transactional ids. This operation must be resilient to any partial state left off from
-     * the previous loading / unloading operation.
+     * When this broker becomes a leader for a transaction log partition, load this partition and populate the
+     * transaction metadata cache with the transactional ids. This operation must be resilient to any partial state
+     * left off from the previous loading / unloading operation.
      */
     public CompletableFuture<Void> loadTransactionsForTxnTopicPartition(
                                                                 int partitionId,
@@ -474,14 +500,17 @@ public class TransactionStateManager {
                                                 txnMetadata,
                                                 txnMetadata.prepareComplete(SystemTime.SYSTEM.milliseconds())
                                         ));
+                                break;
+                            default:
+                                // no op
                         }
                         return null;
                     });
                 }
 
-                // we first remove the partition from loading partition then send out the markers for those pending to
+                // We first remove the partition from loading partition then send out the markers for those pending to
                 // be completed transactions, so that when the markers get sent the attempt of appending the complete
-                // transaction log would not be blocked by the coordinator loading error
+                // transaction log would not be blocked by the coordinator loading error.
                 loadingPartitions.remove(partitionAndLeaderEpoch);
 
                 transactionsPendingForCompletion.forEach(pendingTxn -> {
