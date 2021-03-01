@@ -23,6 +23,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import org.apache.bookkeeper.stats.NullStatsLogger;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
@@ -90,7 +91,8 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
                 groupCoordinator,
                 transactionCoordinator,
                 false,
-                getPlainEndPoint());
+                getPlainEndPoint(),
+                NullStatsLogger.INSTANCE);
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();

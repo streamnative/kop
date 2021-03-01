@@ -321,6 +321,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private String kopOauth2ConfigFile;
 
+    @FieldContext(
+        category = CATEGORY_KOP,
+        doc = "KOP Prometheus stats rollover latency"
+    )
+    private int kopPrometheusStatsLatencyRolloverSeconds = 60;
+
     public @NonNull String getKafkaAdvertisedListeners() {
         if (kafkaAdvertisedListeners != null) {
             return kafkaAdvertisedListeners;

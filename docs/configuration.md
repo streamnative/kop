@@ -47,4 +47,5 @@ The following table lists all KoP configurations.
 |kopSslTrustmanagerAlgorithm| Kafka SSL configuration map with: SSL_TRUSTMANAGER_ALGORITHM_CONFIG = ssl.trustmanager.algorithm |SunX509|
 |kopSslSecureRandomImplementation| Kafka SSL configuration map with: SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG = ssl.secure.random.implementation  | N/A|
 |saslAllowedMechanisms| Supported SASL mechanisms exposed by the broker |N/A|
+|kopPrometheusStatsLatencyRolloverSeconds|Kop metrics expose to prometheus rollover latency | 60 |
 

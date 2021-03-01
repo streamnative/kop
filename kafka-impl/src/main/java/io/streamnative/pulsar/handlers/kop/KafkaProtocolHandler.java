@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
@@ -39,6 +40,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
@@ -66,6 +68,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public static final String PROTOCOL_NAME = "kafka";
     public static final String TLS_HANDLER = "tls";
 
+    private StatsLogger rootStatsLogger;
+    private StatsProviderService statsProviderService;
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
      */
@@ -223,6 +227,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
         this.bindAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(kafkaConfig.getBindAddress());
         KopTopic.initialize(kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace());
+
+        statsProviderService = new StatsProviderService(kafkaConfig);
+        rootStatsLogger = statsProviderService.getStatsProvider().getStatsLogger("");
     }
 
     // This method is called after initialize
@@ -264,6 +271,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 log.error("Initialized transaction coordinator failed.", e);
             }
         }
+
+        statsProviderService.start();
+
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
@@ -291,12 +301,14 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, transactionCoordinator, false, advertisedEndPoint));
+                                kafkaConfig, groupCoordinator, transactionCoordinator, false,
+                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE)));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, transactionCoordinator, true, advertisedEndPoint));
+                                kafkaConfig, groupCoordinator, transactionCoordinator, true,
+                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE)));
                         break;
                 }
             });

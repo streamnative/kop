@@ -44,6 +44,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.stats.NullStatsLogger;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -141,7 +142,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             groupCoordinator,
             transactionCoordinator,
             false,
-            getPlainEndPoint());
+            getPlainEndPoint(),
+            NullStatsLogger.INSTANCE);
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();

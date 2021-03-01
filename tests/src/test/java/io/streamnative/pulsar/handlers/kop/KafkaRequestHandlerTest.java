@@ -50,6 +50,7 @@ import java.util.stream.LongStream;
 
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.stats.NullStatsLogger;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -146,7 +147,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             groupCoordinator,
             transactionCoordinator,
             false,
-            getPlainEndPoint());
+            getPlainEndPoint(),
+            NullStatsLogger.INSTANCE);
     }
 
     @AfterMethod
