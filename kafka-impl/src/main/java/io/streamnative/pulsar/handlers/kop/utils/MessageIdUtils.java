@@ -13,82 +13,109 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
-import static com.google.common.base.Preconditions.checkArgument;
+import io.netty.buffer.ByteBuf;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+
+import org.apache.bookkeeper.mledger.AsyncCallbacks;
+import org.apache.bookkeeper.mledger.Entry;
+import org.apache.bookkeeper.mledger.ManagedLedger;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
-import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.impl.MessageIdImpl;
+import org.apache.pulsar.broker.intercept.ManagedLedgerInterceptorImpl;
+import org.apache.pulsar.common.api.proto.MessageMetadata;
+import org.apache.pulsar.common.protocol.Commands;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Utils for Pulsar MessageId.
  */
 public class MessageIdUtils {
-    // use 28 bits for ledgerId,
-    // 32 bits for entryId,
-    // 12 bits for batchIndex.
-    public static final int LEDGER_BITS = 20;
-    public static final int ENTRY_BITS = 32;
-    public static final int BATCH_BITS = 12;
+    private static final Logger log = LoggerFactory.getLogger(MessageIdUtils.class);
 
-    public static final long getOffset(long ledgerId, long entryId) {
-        // Combine ledger id and entry id to form offset
-        checkArgument(ledgerId >= 0, "Expected ledgerId >= 0, but get " + ledgerId);
-        checkArgument(entryId >= 0, "Expected entryId >= 0, but get " + entryId);
-
-        long offset = (ledgerId << (ENTRY_BITS + BATCH_BITS) | (entryId << BATCH_BITS));
-        return offset;
+    public static long getCurrentOffset(ManagedLedger managedLedger) {
+        return ((ManagedLedgerInterceptorImpl) managedLedger.getManagedLedgerInterceptor()).getIndex();
     }
 
-    public static final long getOffset(long ledgerId, long entryId, int batchIndex) {
-        checkArgument(ledgerId >= 0, "Expected ledgerId >= 0, but get " + ledgerId);
-        checkArgument(entryId >= 0, "Expected entryId >= 0, but get " + entryId);
-        checkArgument(batchIndex >= 0, "Expected batchIndex >= 0, but get " + batchIndex);
-        checkArgument(batchIndex < (1 << BATCH_BITS),
-            "Expected batchIndex only take " + BATCH_BITS + " bits, but it is " + batchIndex);
-
-        long offset = (ledgerId << (ENTRY_BITS + BATCH_BITS) | (entryId << BATCH_BITS)) + batchIndex;
-        return offset;
+    public static long getHighWatermark(ManagedLedger managedLedger) {
+        return getCurrentOffset(managedLedger) + 1;
     }
 
-    public static final MessageId getMessageId(long offset) {
-        // De-multiplex ledgerId and entryId from offset
-        checkArgument(offset > 0, "Expected Offset > 0, but get " + offset);
-
-        long ledgerId = offset >>> (ENTRY_BITS + BATCH_BITS);
-        long entryId = (offset & 0x0F_FF_FF_FF_FF_FFL) >>> BATCH_BITS;
-
-        return new MessageIdImpl(ledgerId, entryId, -1);
+    public static long getLogEndOffset(ManagedLedger managedLedger) {
+        return getCurrentOffset(managedLedger) + 1;
     }
 
-    public static final PositionImpl getPosition(long offset) {
-        // De-multiplex ledgerId and entryId from offset
-        checkArgument(offset >= 0, "Expected Offset >= 0, but get " + offset);
-
-        long ledgerId = offset >>> (ENTRY_BITS + BATCH_BITS);
-        long entryId = (offset & 0x0F_FF_FF_FF_FF_FFL) >>> BATCH_BITS;
-
-        return new PositionImpl(ledgerId, entryId);
+    public static long getPublishTime(final ByteBuf byteBuf) {
+        final int readerIndex = byteBuf.readerIndex();
+        Commands.skipBrokerEntryMetadataIfExist(byteBuf);
+        final MessageMetadata metadata = Commands.parseMessageMetadata(byteBuf);
+        byteBuf.readerIndex(readerIndex);
+        return metadata.getPublishTime();
     }
 
-    // get the batchIndex contained in offset.
-    public static final int getBatchIndex(long offset) {
-        checkArgument(offset >= 0, "Expected Offset >= 0, but get " + offset);
+    public static CompletableFuture<Long> getOffsetOfPosition(ManagedLedgerImpl managedLedger,
+                                                              PositionImpl position,
+                                                              boolean needCheckMore,
+                                                              long timestamp) {
+        final CompletableFuture<Long> future = new CompletableFuture<>();
+        managedLedger.asyncReadEntry(position, new AsyncCallbacks.ReadEntryCallback() {
+            @Override
+            public void readEntryFailed(ManagedLedgerException exception, Object ctx) {
+                future.completeExceptionally(exception);
+            }
 
-        return (int) (offset & 0x0F_FF);
+            @Override
+            public void readEntryComplete(Entry entry, Object ctx) {
+                try {
+                    if (needCheckMore) {
+                        long offset = peekOffsetFromEntry(entry);
+                        final long publishTime = getPublishTime(entry.getDataBuffer());
+                        if (publishTime >= timestamp) {
+                            future.complete(offset);
+                        } else {
+                            future.complete(offset + 1);
+                        }
+                    } else {
+                        future.complete(peekBaseOffsetFromEntry(entry));
+                    }
+
+                } catch (Exception e) {
+                    future.completeExceptionally(e);
+                } finally {
+                    if (entry != null) {
+                        entry.release();
+                    }
+                }
+
+            }
+        }, null);
+        return future;
     }
 
-    // get next offset that after batch Index.
-    // In TopicConsumerManager, next read offset is updated after each entry reads,
-    // if it read a batched message previously, the next offset waiting read is next entry.
-    public static final long offsetAfterBatchIndex(long offset) {
-        // De-multiplex ledgerId and entryId from offset
-        checkArgument(offset >= 0, "Expected Offset >= 0, but get " + offset);
-
-        int batchIndex = getBatchIndex(offset);
-        // this is a for
-        if (batchIndex != 0) {
-            return (offset - batchIndex) + (1 << BATCH_BITS);
+    public static PositionImpl getPositionForOffset(ManagedLedger managedLedger, Long offset) {
+        try {
+            return (PositionImpl) managedLedger.asyncFindPosition(new OffsetSearchPredicate(offset)).get();
+        } catch (InterruptedException | ExecutionException e) {
+            log.error("[{}] Failed to find position for offset {}", managedLedger.getName(), offset);
+            throw new RuntimeException(managedLedger.getName() + " failed to find position for offset " + offset);
         }
-        return offset;
+    }
+
+    public static long peekOffsetFromEntry(Entry entry) {
+        return Commands.peekBrokerEntryMetadataIfExist(entry.getDataBuffer()).getIndex();
+    }
+
+    public static long peekBaseOffsetFromEntry(Entry entry) {
+
+        return peekOffsetFromEntry(entry)
+                - Commands.peekMessageMetadata(entry.getDataBuffer(), null, 0)
+                    .getNumMessagesInBatch() + 1;
+    }
+
+    public static long getMockOffset(long ledgerId, long entryId) {
+        return ledgerId + entryId;
     }
 }

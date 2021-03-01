@@ -97,14 +97,14 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
         final AtomicLong backlog = new AtomicLong(0);
         retryStrategically(
             ((test) -> {
-                backlog.set(persistentTopic.getStats(true).backlogSize);
+                backlog.set(persistentTopic.getStats(true, true).backlogSize);
                 return backlog.get() == expected;
             }),
             5,
             200);
 
         if (log.isDebugEnabled()) {
-            TopicStats topicStats = persistentTopic.getStats(true);
+            TopicStats topicStats = persistentTopic.getStats(true, true);
             log.info(" dump topicStats for topic : {}, storageSize: {}, backlogSize: {}, expected: {}",
                 persistentTopic.getName(),
                 topicStats.storageSize, topicStats.backlogSize, expected);
@@ -173,14 +173,14 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
         }
 
         int i = 0;
-        while (i < totalMsgs / 2) {
+        while (i < totalMsgs / 2 - 1) {
             if (log.isDebugEnabled()) {
                 log.debug("start poll message from cgA: {}", i);
             }
             ConsumerRecords<Integer, String> records = kConsumerA.getConsumer().poll(Duration.ofMillis(200));
             for (ConsumerRecord<Integer, String> record : records) {
                 if (log.isDebugEnabled()) {
-                    log.debug("Kafka Consumer Received message: {}, {} at offset {}",
+                    log.debug("Kafka ConsumerA Received message: {}, {} at offset {}",
                         record.key(), record.value(), record.offset());
                 }
                 i++;
@@ -188,14 +188,14 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
         }
 
         i = 0;
-        while (i < totalMsgs / 2) {
+        while (i < totalMsgs / 2 - 1) {
             if (log.isDebugEnabled()) {
                 log.debug("start poll message from cgB: {}", i);
             }
             ConsumerRecords<Integer, String> records = kConsumerB.getConsumer().poll(Duration.ofMillis(200));
             for (ConsumerRecord<Integer, String> record : records) {
                 if (log.isDebugEnabled()) {
-                    log.debug("Kafka Consumer Received message: {}, {} at offset {}",
+                    log.debug("Kafka ConsumerB Received message: {}, {} at offset {}",
                         record.key(), record.value(), record.offset());
                 }
                 i++;
@@ -225,6 +225,9 @@ public class CommitOffsetBacklogTest extends KopProtocolHandlerTestBase {
         }
         kConsumerA.getConsumer().commitSync();
         kConsumerB.getConsumer().commitSync();
+
+        // wait for offsetAcker ack finished
+        Thread.sleep(3000);
         verifyBacklogInTopicStats(topicRef, 0);
     }
 

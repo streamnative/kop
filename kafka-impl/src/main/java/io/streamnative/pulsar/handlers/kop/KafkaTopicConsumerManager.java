@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils.offsetAfterBatchIndex;
 
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.Closeable;
@@ -95,8 +94,8 @@ public class KafkaTopicConsumerManager implements Closeable {
 
         if (pair != null) {
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Cursor timed out for offset: {} - {}, cursors cache size: {}",
-                    requestHandler.ctx.channel(), offset, MessageIdUtils.getPosition(offset), consumers.size());
+                log.debug("[{}] Cursor timed out for offset: {}, cursors cache size: {}",
+                    requestHandler.ctx.channel(), offset, consumers.size());
             }
 
             ManagedCursor managedCursor = pair.getKey();
@@ -146,8 +145,8 @@ public class KafkaTopicConsumerManager implements Closeable {
 
         if (cursor != null) {
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Get cursor for offset: {} - {} in cache. cache size: {}",
-                    requestHandler.ctx.channel(), offset, MessageIdUtils.getPosition(offset), consumers.size());
+                log.debug("[{}] Get cursor for offset: {} in cache. cache size: {}",
+                    requestHandler.ctx.channel(), offset, consumers.size());
             }
             return cursor;
         }
@@ -156,8 +155,6 @@ public class KafkaTopicConsumerManager implements Closeable {
     }
 
     private Pair<ManagedCursor, Long> createCursorIfNotExists(long offset) {
-        // This is for read a new entry, first check if offset is from a batched message request.
-        offset = offsetAfterBatchIndex(offset);
 
         Pair<ManagedCursor, Long> cursor;
 
@@ -170,14 +167,15 @@ public class KafkaTopicConsumerManager implements Closeable {
             consumers.computeIfAbsent(
                 offset,
                 off -> {
-                    PositionImpl position = MessageIdUtils.getPosition(off);
+                    ManagedLedgerImpl ledger = (ManagedLedgerImpl) topic.getManagedLedger();
+
+                    PositionImpl position = MessageIdUtils.getPositionForOffset(ledger, off);
 
                     String cursorName = "kop-consumer-cursor-" + topic.getName()
                         + "-" + position.getLedgerId() + "-" + position.getEntryId()
                         + "-" + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 10);
 
                     // get previous position, because NonDurableCursor is read from next position.
-                    ManagedLedgerImpl ledger = (ManagedLedgerImpl) topic.getManagedLedger();
                     PositionImpl previous = ledger.getPreviousPosition(position);
                     if (log.isDebugEnabled()) {
                         log.debug("[{}] Create cursor {} for offset: {}. position: {}, previousPosition: {}",
@@ -231,8 +229,8 @@ public class KafkaTopicConsumerManager implements Closeable {
         lastAccessTimes.put(offset, System.currentTimeMillis());
 
         if (log.isDebugEnabled()) {
-            log.debug("[{}] Add cursor back {} for offset: {} - {}",
-                requestHandler.ctx.channel(), pair.getLeft().getName(), offset, MessageIdUtils.getPosition(offset));
+            log.debug("[{}] Add cursor back {} for offset: {}",
+                requestHandler.ctx.channel(), pair.getLeft().getName(), offset);
         }
     }
 

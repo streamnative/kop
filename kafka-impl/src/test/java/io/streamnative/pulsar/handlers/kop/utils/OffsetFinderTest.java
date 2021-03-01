@@ -36,9 +36,8 @@ import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.test.MockedBookKeeperTestCase;
 import org.apache.pulsar.broker.service.persistent.PersistentMessageExpiryMonitor;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
-import org.apache.pulsar.common.api.proto.PulsarApi;
+import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.ByteBufPair;
-import org.apache.pulsar.common.util.protobuf.ByteBufCodedOutputStream;
 import org.testng.annotations.Test;
 
 /**
@@ -47,11 +46,10 @@ import org.testng.annotations.Test;
 public class OffsetFinderTest extends MockedBookKeeperTestCase {
 
     public static byte[] createMessageWrittenToLedger(String msg) throws Exception {
-        PulsarApi.MessageMetadata.Builder messageMetadataBuilder = PulsarApi.MessageMetadata.newBuilder();
-        messageMetadataBuilder.setPublishTime(System.currentTimeMillis());
-        messageMetadataBuilder.setProducerName("createMessageWrittenToLedger");
-        messageMetadataBuilder.setSequenceId(1);
-        PulsarApi.MessageMetadata messageMetadata = messageMetadataBuilder.build();
+        final MessageMetadata messageMetadata = new MessageMetadata();
+        messageMetadata.setPublishTime(System.currentTimeMillis());
+        messageMetadata.setProducerName("createMessageWrittenToLedger");
+        messageMetadata.setSequenceId(1);
         ByteBuf data = UnpooledByteBufAllocator.DEFAULT.heapBuffer().writeBytes(msg.getBytes());
 
         int msgMetadataSize = messageMetadata.getSerializedSize();
@@ -59,9 +57,8 @@ public class OffsetFinderTest extends MockedBookKeeperTestCase {
         int totalSize = 4 + msgMetadataSize + payloadSize;
 
         ByteBuf headers = PulsarByteBufAllocator.DEFAULT.heapBuffer(totalSize, totalSize);
-        ByteBufCodedOutputStream outStream = ByteBufCodedOutputStream.get(headers);
         headers.writeInt(msgMetadataSize);
-        messageMetadata.writeTo(outStream);
+        messageMetadata.writeTo(headers);
         ByteBuf headersAndPayload = ByteBufPair.coalesce(ByteBufPair.get(headers, data));
         byte[] byteMessage = headersAndPayload.nioBuffer().array();
         headersAndPayload.release();

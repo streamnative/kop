@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.kafka.common.protocol.ApiKeys.API_VERSIONS;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Queues;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
@@ -84,15 +83,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         if (log.isDebugEnabled()) {
             log.debug("Channel writability has changed to: {}", ctx.channel().isWritable());
         }
-        if (ctx.channel().isWritable()) {
-            // set auto read to true if channel is writable.
-            ctx.channel().config().setAutoRead(true);
-        } else {
-            log.debug("channel is not writable, disable auto reading for back pressing");
-            ctx.channel().config().setAutoRead(false);
-            ctx.flush();
-        }
-        ctx.fireChannelWritabilityChanged();
     }
 
     // turn input ByteBuf msg, which send from client side, into KafkaHeaderAndRequest
@@ -232,8 +222,29 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     case CREATE_TOPICS:
                         handleCreateTopics(kafkaHeaderAndRequest, responseFuture);
                         break;
+                    case INIT_PRODUCER_ID:
+                        handleInitProducerId(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case ADD_PARTITIONS_TO_TXN:
+                        handleAddPartitionsToTxn(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case ADD_OFFSETS_TO_TXN:
+                        handleAddOffsetsToTxn(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case TXN_OFFSET_COMMIT:
+                        handleTxnOffsetCommit(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case END_TXN:
+                        handleEndTxn(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case WRITE_TXN_MARKERS:
+                        handleWriteTxnMarkers(kafkaHeaderAndRequest, responseFuture);
+                        break;
                     case DESCRIBE_CONFIGS:
                         handleDescribeConfigs(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case DELETE_TOPICS:
+                        handleDeleteTopics(kafkaHeaderAndRequest, responseFuture);
                         break;
                     default:
                         handleError(kafkaHeaderAndRequest, responseFuture);
@@ -372,6 +383,27 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected abstract void
     handleDescribeConfigs(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
+    protected abstract void
+    handleInitProducerId(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleAddPartitionsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleAddOffsetsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleTxnOffsetCommit(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleEndTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleDeleteTopics(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
     static class KafkaHeaderAndRequest implements Closeable {
 
         private static final String DEFAULT_CLIENT_HOST = "";
@@ -490,10 +522,5 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             this.responseFuture = response;
             this.request = request;
         }
-    }
-
-    @VisibleForTesting
-    public ChannelHandlerContext getCtx() {
-        return ctx;
     }
 }

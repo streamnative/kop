@@ -45,7 +45,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
@@ -63,6 +62,7 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
@@ -81,6 +81,7 @@ import org.apache.pulsar.common.util.FutureUtil;
 public class GroupCoordinator {
 
     public static GroupCoordinator of(
+        BrokerService brokerService,
         PulsarClientImpl pulsarClient,
         GroupConfig groupConfig,
         OffsetConfig offsetConfig,
@@ -119,7 +120,7 @@ public class GroupCoordinator {
                 .timeoutTimer(timer)
                 .build();
 
-        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient);
+        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient, brokerService);
         return new GroupCoordinator(
             groupConfig,
             metadataManager,
@@ -216,6 +217,14 @@ public class GroupCoordinator {
 
     public GroupMetadataManager getGroupManager() {
         return groupManager;
+    }
+
+    public GroupConfig groupConfig() {
+        return groupConfig;
+    }
+
+    public OffsetConfig offsetConfig() {
+        return groupManager.offsetConfig();
     }
 
     public CompletableFuture<JoinGroupResult> handleJoinGroup(
@@ -810,20 +819,15 @@ public class GroupCoordinator {
         return result;
     }
 
-    public Future<?> scheduleHandleTxnCompletion(
+    public CompletableFuture<Void> scheduleHandleTxnCompletion(
         long producerId,
         Stream<TopicPartition> offsetsPartitions,
         TransactionResult transactionResult
     ) {
-        Stream<TopicPartition> validatedOffsetsPartitions =
-            offsetsPartitions.map(tp -> {
-                checkArgument(tp.topic().equals(Topic.GROUP_METADATA_TOPIC_NAME));
-                return tp;
-            });
         boolean isCommit = TransactionResult.COMMIT == transactionResult;
         return groupManager.scheduleHandleTxnCompletion(
             producerId,
-            validatedOffsetsPartitions.map(TopicPartition::partition)
+            offsetsPartitions.map(TopicPartition::partition)
                 .collect(Collectors.toSet()),
             isCommit
         );
@@ -1188,7 +1192,7 @@ public class GroupCoordinator {
                 maybePrepareRebalance(group);
                 break;
             case PreparingRebalance:
-                // joinPurgatory.checkAndComplete(GroupKey(group.groupId))
+                joinPurgatory.checkAndComplete(new GroupKey(group.groupId()));
                 break;
             default:
                 break;

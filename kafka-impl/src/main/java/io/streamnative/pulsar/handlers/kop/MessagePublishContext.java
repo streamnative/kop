@@ -19,6 +19,7 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.Topic.PublishContext;
 
@@ -31,6 +32,8 @@ public final class MessagePublishContext implements PublishContext {
     private CompletableFuture<Long> offsetFuture;
     private Topic topic;
     private long startTimeNs;
+    private long numberOfMessages;
+    private ManagedLedger managedLedger;
 
     /**
      * Executed from managed ledger thread when the message is persisted.
@@ -51,7 +54,11 @@ public final class MessagePublishContext implements PublishContext {
 
             topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.MICROSECONDS);
 
-            offsetFuture.complete(MessageIdUtils.getOffset(ledgerId, entryId));
+            // In asynchronously send mode, there's a possibility that some messages' offsets are larger than the actual
+            // offsets. For example, two messages are sent concurrently, if the 1st message is completed while the 2nd
+            // message is already persisted, `MessageIdUtils.getCurrentOffset` will return the 2nd message's offset.
+            final long baseOffset = MessageIdUtils.getCurrentOffset(managedLedger) - (numberOfMessages - 1);
+            offsetFuture.complete(baseOffset);
         }
 
         recycle();
@@ -60,10 +67,27 @@ public final class MessagePublishContext implements PublishContext {
     // recycler
     public static MessagePublishContext get(CompletableFuture<Long> offsetFuture,
                                             Topic topic,
+                                            long numberOfMessages,
                                             long startTimeNs) {
         MessagePublishContext callback = RECYCLER.get();
         callback.offsetFuture = offsetFuture;
         callback.topic = topic;
+        callback.numberOfMessages = numberOfMessages;
+        callback.startTimeNs = startTimeNs;
+        return callback;
+    }
+
+    // recycler
+    public static MessagePublishContext get(CompletableFuture<Long> offsetFuture,
+                                            Topic topic,
+                                            ManagedLedger managedLedger,
+                                            long numberOfMessages,
+                                            long startTimeNs) {
+        MessagePublishContext callback = RECYCLER.get();
+        callback.offsetFuture = offsetFuture;
+        callback.topic = topic;
+        callback.managedLedger = managedLedger;
+        callback.numberOfMessages = numberOfMessages;
         callback.startTimeNs = startTimeNs;
         return callback;
     }
@@ -80,10 +104,16 @@ public final class MessagePublishContext implements PublishContext {
         }
     };
 
+    @Override
+    public long getNumberOfMessages() {
+        return numberOfMessages;
+    }
+
     public void recycle() {
         offsetFuture = null;
         topic = null;
         startTimeNs = -1;
+        numberOfMessages = 0;
         recyclerHandle.recycle(this);
     }
 }

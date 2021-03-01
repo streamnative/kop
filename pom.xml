@@ -41,16 +41,16 @@
     <commons-lang3.version>3.4</commons-lang3.version>
     <guava.version>21.0</guava.version>
     <grpc.version>1.18.0</grpc.version>
-    <jackson.version>2.10.3</jackson.version>
+    <jackson.version>2.12.1</jackson.version>
     <jcommander.version>1.48</jcommander.version>
     <kafka.version>2.0.0</kafka.version>
     <log4j2.version>2.13.3</log4j2.version>
     <lombok.version>1.18.4</lombok.version>
     <mockito.version>2.22.0</mockito.version>
-    <pulsar.version>2.8.0-rc-202012272229</pulsar.version>
+    <pulsar.version>2.8.0-rc-202102252222</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
-    <testcontainers.version>1.12.5</testcontainers.version>
+    <testcontainers.version>1.15.1</testcontainers.version>
     <testng.version>6.14.3</testng.version>
     <!-- plugin dependencies -->
     <dockerfile-maven.version>1.4.9</dockerfile-maven.version>

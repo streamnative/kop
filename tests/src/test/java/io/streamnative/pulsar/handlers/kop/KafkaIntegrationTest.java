@@ -26,8 +26,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.PLAINTEXT_PREFIX;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.SSL_PREFIX;
 import static org.testng.AssertJUnit.assertFalse;
 import static org.testng.AssertJUnit.assertTrue;
 
@@ -158,17 +156,18 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
-
         super.resetConfig();
+        this.conf.setEnableTransactionCoordinator(true);
         // in order to access PulsarBroker when using Docker for Mac, we need to adjust things:
         // - set pulsar advertized address to host IP
         // - use the `host.testcontainers.internal` address exposed by testcontainers
         final String ip = getSiteLocalAddress();
-        System.out.println("exposing Pulsar broker on " + ip);
-        conf.setAdvertisedAddress(ip);
+        System.out.println("Bind Pulsar broker/KoP on " + ip);
         ((KafkaServiceConfiguration) conf).setListeners(
                 PLAINTEXT_PREFIX + ip + ":" + kafkaBrokerPort + ","
                         + SSL_PREFIX + ip + ":" + kafkaBrokerPortTls);
+        conf.setKafkaAdvertisedListeners(PLAINTEXT_PREFIX + "127.0.0.1:" + kafkaBrokerPort
+                + "," + SSL_PREFIX + "127.0.0.1:" + kafkaBrokerPortTls);
         super.internalSetup();
 
 

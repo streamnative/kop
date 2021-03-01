@@ -28,6 +28,12 @@ import lombok.experimental.Accessors;
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public class OffsetAndMetadata {
 
+    public static final String NoMetadata = "";
+
+    private final OffsetMetadata offsetMetadata;
+    private final long commitTimestamp;
+    private final long expireTimestamp;
+
     public static OffsetAndMetadata apply(
         long offset,
         String metadata,
@@ -69,10 +75,6 @@ public class OffsetAndMetadata {
             new OffsetMetadata(offset, OffsetMetadata.NO_METADATA)
         );
     }
-
-    private final OffsetMetadata offsetMetadata;
-    private final long commitTimestamp;
-    private final long expireTimestamp;
 
     @SuppressWarnings("deprecation")
     private OffsetAndMetadata(OffsetMetadata offsetMetadata) {

@@ -58,6 +58,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
@@ -683,7 +684,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         groupMetadataManager.handleTxnCompletion(
             producerId,
             Sets.newHashSet(groupPartitionId),
-            true);
+            true, new CompletableFuture<>());
         assertFalse(group.hasPendingOffsetCommitsFromProducer(producerId));
         pendingOffsets.forEach((tp, offset) ->
             assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset)));
@@ -847,7 +848,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         // group is not owned
         assertFalse(groupMetadataManager.groupNotExists(groupId));
 
-        groupMetadataManager.addPartitionOwnership(groupPartitionId);
+        int tmpGroupPartitionId = MathUtils.signSafeMod(groupId.hashCode(), offsetConfig.offsetsTopicNumPartitions());
+        groupMetadataManager.addPartitionOwnership(tmpGroupPartitionId);
         // group is owned but does not exist yet
         assertTrue(groupMetadataManager.groupNotExists(groupId));
 

@@ -19,16 +19,18 @@ import com.google.common.collect.Lists;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
+
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -49,9 +51,12 @@ import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.FetchResponse.PartitionData;
+import org.apache.kafka.common.requests.IsolationLevel;
+import org.apache.pulsar.broker.service.Consumer;
+import org.apache.pulsar.common.naming.TopicName;
 
 /**
- * MessageFetchContext handling FetchRequest .
+ * MessageFetchContext handling FetchRequest.
  */
 @Slf4j
 public final class MessageFetchContext {
@@ -86,7 +91,8 @@ public final class MessageFetchContext {
     // handle request
     public CompletableFuture<AbstractResponse> handleFetch(
             CompletableFuture<AbstractResponse> fetchResponse,
-            KafkaHeaderAndRequest fetchRequest) {
+            KafkaHeaderAndRequest fetchRequest,
+            TransactionCoordinator transactionCoordinator) {
         LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData = new LinkedHashMap<>();
 
         // Map of partition and related tcm.
@@ -103,6 +109,7 @@ public final class MessageFetchContext {
                 })
                 .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
+        Map<TopicPartition, Long> highWaterMarkMap = new ConcurrentHashMap<>();
         // wait to get all the cursor, then readMessages
         CompletableFuture
             .allOf(topicsAndCursor.entrySet().stream().map(Map.Entry::getValue).toArray(CompletableFuture<?>[]::new))
@@ -139,8 +146,8 @@ public final class MessageFetchContext {
                                 .get(pair.getKey()).fetchOffset;
 
                             if (log.isDebugEnabled()) {
-                                log.debug("Fetch for {}: remove tcm to get cursor for fetch offset: {} - {}.",
-                                    pair.getKey(), offset, MessageIdUtils.getPosition(offset));
+                                log.debug("Fetch for {}: remove tcm to get cursor for fetch offset: {} .",
+                                    pair.getKey(), offset);
                             }
 
                             Pair<ManagedCursor, Long> cursorLongPair = tcm.remove(offset);
@@ -161,12 +168,16 @@ public final class MessageFetchContext {
                                 return null;
                             }
 
+                            highWaterMarkMap.put(pair.getKey(),
+                                    MessageIdUtils.getHighWatermark(cursorLongPair.getLeft().getManagedLedger()));
+
                             return Pair.of(pair.getKey(), cursorLongPair);
                         })
                         .filter(x -> x != null)
                         .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
-                readMessages(fetchRequest, partitionCursor, fetchResponse, responseData);
+                readMessages(fetchRequest, partitionCursor, fetchResponse, responseData,
+                        transactionCoordinator, highWaterMarkMap);
             });
 
         return fetchResponse;
@@ -178,11 +189,13 @@ public final class MessageFetchContext {
     private void readMessages(KafkaHeaderAndRequest fetch,
                               Map<TopicPartition, Pair<ManagedCursor, Long>> cursors,
                               CompletableFuture<AbstractResponse> resultFuture,
-                              LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData) {
+                              LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData,
+                              TransactionCoordinator tc,
+                              Map<TopicPartition, Long> highWaterMarkMap) {
         AtomicInteger bytesRead = new AtomicInteger(0);
         Map<TopicPartition, List<Entry>> entryValues = new ConcurrentHashMap<>();
 
-        readMessagesInternal(fetch, cursors, bytesRead, entryValues, resultFuture, responseData);
+        readMessagesInternal(fetch, cursors, bytesRead, entryValues, resultFuture, responseData, tc, highWaterMarkMap);
     }
 
     private void readMessagesInternal(KafkaHeaderAndRequest fetch,
@@ -190,12 +203,19 @@ public final class MessageFetchContext {
                                       AtomicInteger bytesRead,
                                       Map<TopicPartition, List<Entry>> responseValues,
                                       CompletableFuture<AbstractResponse> resultFuture,
-                                      LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData) {
+                                      LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData,
+                                      TransactionCoordinator tc,
+                                      Map<TopicPartition, Long> highWaterMarkMap) {
+
         AtomicInteger entriesRead = new AtomicInteger(0);
         // here do the real read, and in read callback put cursor back to KafkaTopicConsumerManager.
         Map<TopicPartition, CompletableFuture<List<Entry>>> readFutures = readAllCursorOnce(cursors);
         CompletableFuture.allOf(readFutures.values().stream().toArray(CompletableFuture<?>[]::new))
             .whenComplete((ignore, ex) -> {
+
+                FetchRequest request = (FetchRequest) fetch.getRequest();
+                IsolationLevel isolationLevel = request.isolationLevel();
+
                 // keep entries since all read completed.
                 readFutures.entrySet().parallelStream().forEach(kafkaTopicReadEntry -> {
                     TopicPartition kafkaTopic = kafkaTopicReadEntry.getKey();
@@ -205,13 +225,28 @@ public final class MessageFetchContext {
                         List<Entry> entryList = responseValues.computeIfAbsent(kafkaTopic, l -> Lists.newArrayList());
 
                         if (entries != null && !entries.isEmpty()) {
-                            entryList.addAll(entries);
-                            entriesRead.addAndGet(entries.size());
-                            bytesRead.addAndGet(entryList.stream().parallel().map(e ->
+                            if (isolationLevel.equals(IsolationLevel.READ_UNCOMMITTED)) {
+                                entryList.addAll(entries);
+                                entriesRead.addAndGet(entries.size());
+                                bytesRead.addAndGet(entryList.stream().parallel().map(e ->
                                         e.getLength()).reduce(0, Integer::sum));
+                            } else {
+                                TopicName topicName = TopicName.get(KopTopic.toString(kafkaTopic));
+                                long lso = tc.getLastStableOffset(topicName, highWaterMarkMap.get(kafkaTopic));
+                                for (Entry entry : entries) {
+                                    if (lso >= MessageIdUtils.peekBaseOffsetFromEntry(entry)) {
+                                        entryList.add(entry);
+                                        entriesRead.incrementAndGet();
+                                        bytesRead.addAndGet(entry.getLength());
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            }
+
                             if (log.isDebugEnabled()) {
                                 log.debug("Request {}: For topic {}, entries in list: {}.",
-                                    fetch.getHeader(), kafkaTopic.toString(), entryList.size());
+                                        fetch.getHeader(), kafkaTopic.toString(), entryList.size());
                             }
                         }
                     } catch (Exception e) {
@@ -249,7 +284,6 @@ public final class MessageFetchContext {
                     }
                 });
 
-                FetchRequest request = (FetchRequest) fetch.getRequest();
                 int maxBytes = request.maxBytes();
                 int minBytes = request.minBytes();
                 int waitTime = request.maxWait(); // in ms
@@ -277,11 +311,10 @@ public final class MessageFetchContext {
                             fetch.getHeader(), entriesRead.get(), allSize);
                     }
 
-                    AtomicBoolean allPartitionsNoEntry = new AtomicBoolean(true);
-                    responseValues.entrySet().parallelStream().forEach(responseEntrys -> {
+                    responseValues.entrySet().forEach(responseEntries -> {
                         final PartitionData partitionData;
-                        TopicPartition kafkaPartition = responseEntrys.getKey();
-                        List<Entry> entries = responseEntrys.getValue();
+                        TopicPartition kafkaPartition = responseEntries.getKey();
+                        List<Entry> entries = responseEntries.getValue();
                         // Add cursor and offset back to TCM when all the read completed.
                         Pair<ManagedCursor, Long> pair = cursors.get(kafkaPartition);
                         requestHandler.getTopicManager()
@@ -307,11 +340,7 @@ public final class MessageFetchContext {
                                 null,
                                 MemoryRecords.EMPTY);
                         } else {
-                            allPartitionsNoEntry.set(false);
-                            Entry entry = entries.get(entries.size() - 1);
-                            long entryOffset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
-                            long highWatermark = entryOffset
-                                + cursors.get(kafkaPartition).getLeft().getNumberOfEntries();
+                            long highWatermark = highWaterMarkMap.get(kafkaPartition);
 
                             // use compatible magic value by apiVersion
                             short apiVersion = fetch.getHeader().apiVersion();
@@ -321,49 +350,57 @@ public final class MessageFetchContext {
                             } else if (apiVersion <= 3) {
                                 magic = RecordBatch.MAGIC_VALUE_V1;
                             }
+                            // get group and consumer
+                            String clientHost = fetch.getClientHost();
+                            String groupName = requestHandler
+                                    .getCurrentConnectedGroup().computeIfAbsent(clientHost, ignored -> {
+                                String zkSubPath = ZooKeeperUtils.groupIdPathFormat(clientHost,
+                                        fetch.getHeader().clientId());
+                                String groupId = ZooKeeperUtils.getData(requestHandler.getPulsarService().getZkClient(),
+                                        requestHandler.getGroupIdStoredPath(), zkSubPath);
+                                log.info("get group name from zk for current connection:{} groupId:{}",
+                                        clientHost, groupId);
+                                return groupId;
+                            });
+                            CompletableFuture<Consumer> consumerFuture = requestHandler.getTopicManager()
+                                    .getGroupConsumers(groupName, kafkaPartition);
                             final MemoryRecords records = requestHandler.getEntryFormatter().decode(entries, magic);
+                            // collect consumer metrics
+                            EntryFormatter.updateConsumerStats(records, consumerFuture);
 
+                            List<FetchResponse.AbortedTransaction> abortedTransactions;
+                            if (IsolationLevel.READ_UNCOMMITTED.equals(isolationLevel)) {
+                                abortedTransactions = null;
+                            } else {
+                                abortedTransactions = tc.getAbortedIndexList(
+                                        request.fetchData().get(kafkaPartition).fetchOffset);
+                            }
                             partitionData = new FetchResponse.PartitionData(
                                 Errors.NONE,
                                 highWatermark,
                                 highWatermark,
                                 highWatermark,
-                                null,
+                                abortedTransactions,
                                 records);
                         }
                         responseData.put(kafkaPartition, partitionData);
                     });
 
-                    if (allPartitionsNoEntry.get()) {
-                        if (log.isDebugEnabled()) {
-                            log.debug("Request {}: All partitions for request read 0 entry",
-                                fetch.getHeader());
-                        }
-
-                        requestHandler.getPulsarService().getExecutor().schedule(() -> {
-                            resultFuture.complete(
-                                new FetchResponse(Errors.NONE,
+                    resultFuture.complete(
+                            new FetchResponse(
+                                    Errors.NONE,
                                     responseData,
                                     ((Integer) THROTTLE_TIME_MS.defaultValue),
                                     ((FetchRequest) fetch.getRequest()).metadata().sessionId()));
-                            this.recycle();
-                        }, waitTime, TimeUnit.MILLISECONDS);
-                    } else {
-                        resultFuture.complete(
-                            new FetchResponse(
-                                Errors.NONE,
-                                responseData,
-                                ((Integer) THROTTLE_TIME_MS.defaultValue),
-                                ((FetchRequest) fetch.getRequest()).metadata().sessionId()));
-                        this.recycle();
-                    }
+                    this.recycle();
                 } else {
                     if (log.isDebugEnabled()) {
                         log.debug("Request {}: Read time or size not reach, do another round of read before return.",
                             fetch.getHeader());
                     }
                     // need do another round read
-                    readMessagesInternal(fetch, cursors, bytesRead, responseValues, resultFuture, responseData);
+                    readMessagesInternal(fetch, cursors, bytesRead, responseValues, resultFuture, responseData,
+                            tc, highWaterMarkMap);
                 }
             });
     }
@@ -388,19 +425,14 @@ public final class MessageFetchContext {
 
                             if (!list.isEmpty()) {
                                 StreamSupport.stream(list.spliterator(), true).forEachOrdered(entry -> {
-                                    long offset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
+                                    long offset = MessageIdUtils.peekOffsetFromEntry(entry);
                                     PositionImpl currentPosition = PositionImpl
                                             .get(entry.getLedgerId(), entry.getEntryId());
 
                                     // commit the offset, so backlog not affect by this cursor.
                                     commitOffset((NonDurableCursorImpl) cursor, currentPosition);
 
-                                    // get next offset
-                                    PositionImpl nextPosition = ((NonDurableCursorImpl) cursor)
-                                            .getNextAvailablePosition(currentPosition);
-
-                                    long nextOffset = MessageIdUtils
-                                            .getOffset(nextPosition.getLedgerId(), nextPosition.getEntryId());
+                                    long nextOffset = offset + 1;
 
                                     // put next offset in to passed in cursors map.
                                     // and add back to TCM when all read complete.
@@ -409,10 +441,10 @@ public final class MessageFetchContext {
                                     if (log.isDebugEnabled()) {
                                         log.debug("Topic {} success read entry: ledgerId: {}, entryId: {}, size: {},"
                                                         + " ConsumerManager original offset: {}, entryOffset: {} - {}, "
-                                                        + "nextOffset: {} - {}",
+                                                        + "nextOffset: {}",
                                                 fullPartitionName, entry.getLedgerId(), entry.getEntryId(),
                                                 entry.getLength(), currentOffset, offset, currentPosition,
-                                                nextOffset, nextPosition);
+                                                nextOffset);
                                     }
                                 });
                             }
@@ -426,7 +458,7 @@ public final class MessageFetchContext {
 
                         readFuture.completeExceptionally(e);
                     }
-                }, null);
+                }, null, PositionImpl.latest);
 
             readFutures.putIfAbsent(cursorOffsetPair.getKey(), readFuture);
         });

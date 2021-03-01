@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkState;
 
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.Optional;
@@ -26,13 +27,15 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerService;
+import org.apache.pulsar.broker.service.Consumer;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.client.impl.Backoff;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
+import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.TopicName;
 
 /**
@@ -73,6 +76,10 @@ public class KafkaTopicManager {
 
     public static final ConcurrentHashMap<String, CompletableFuture<Optional<String>>>
             KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
+
+    // cache for consumers for collect metrics: <groupId, Consumer>
+    public static final ConcurrentHashMap<String, CompletableFuture<Consumer>>
+            CONSUMERS_CACHE = new ConcurrentHashMap<>();
 
     KafkaTopicManager(KafkaRequestHandler kafkaRequestHandler) {
         this.requestHandler = kafkaRequestHandler;
@@ -136,6 +143,7 @@ public class KafkaTopicManager {
     public static void removeTopicManagerCache(String topicName) {
         LOOKUP_CACHE.remove(topicName);
         KOP_ADDRESS_CACHE.remove(topicName);
+        CONSUMERS_CACHE.clear();
     }
 
     public static void clearTopicManagerCache() {
@@ -184,12 +192,7 @@ public class KafkaTopicManager {
                     requestHandler.ctx.channel(), topicName);
             }
             CompletableFuture<InetSocketAddress> returnFuture = new CompletableFuture<>();
-            Backoff backoff = new Backoff(
-                100, TimeUnit.MILLISECONDS,
-                30, TimeUnit.SECONDS,
-                30, TimeUnit.SECONDS
-                );
-            lookupBroker(topicName, backoff, returnFuture);
+            lookupBroker(topicName, returnFuture);
             return returnFuture;
         });
     }
@@ -201,7 +204,6 @@ public class KafkaTopicManager {
     // this method do the real lookup into Pulsar broker.
     // retFuture will be completed with null when meet error.
     private void lookupBroker(String topicName,
-                              Backoff backoff,
                               CompletableFuture<InetSocketAddress> retFuture) {
         try {
             // If channel is closing, complete a null to avoid brings in further handling.
@@ -226,20 +228,9 @@ public class KafkaTopicManager {
                     retFuture.complete(pair.getLeft());
                 })
                 .exceptionally(th -> {
-                    long waitTimeMs = backoff.next();
-
-                    if (backoff.isMandatoryStopMade()) {
-                        log.warn("[{}] getBroker for topic {} failed, retried too many times {}, return null."
-                                        + " throwable: ", requestHandler.ctx.channel(), topicName, waitTimeMs, th);
-                        retFuture.complete(null);
-                    } else {
-                        log.warn("[{}] getBroker for topic failed, will retry in {} ms. throwable: ",
-                            topicName, waitTimeMs, th);
-                        requestHandler.getPulsarService().getExecutor()
-                            .schedule(() -> lookupBroker(topicName, backoff, retFuture),
-                                waitTimeMs,
-                                TimeUnit.MILLISECONDS);
-                    }
+                    log.warn("[{}] getBroker for topic failed. throwable: ",
+                            topicName, th);
+                    retFuture.complete(null);
                     return null;
                 });
         } catch (PulsarServerException e) {
@@ -387,4 +378,33 @@ public class KafkaTopicManager {
         }
     }
 
+    public CompletableFuture<Consumer> getGroupConsumers(String groupId, TopicPartition kafkaPartition) {
+        // make sure internal consumer existed
+        CompletableFuture<Consumer> consumerFuture = new CompletableFuture<>();
+        if (groupId == null || groupId.isEmpty() || !requestHandler.getGroupCoordinator()
+                .getOffsetAcker().getConsumer(groupId, kafkaPartition).isDone()) {
+            log.warn("not get consumer for group {} this time", groupId);
+            consumerFuture.complete(null);
+            return consumerFuture;
+        }
+        return CONSUMERS_CACHE.computeIfAbsent(groupId, group -> {
+            try {
+                TopicName topicName = TopicName.get(KopTopic.toString(kafkaPartition));
+                NamespaceBundle namespaceBundle = pulsarService.getBrokerService()
+                        .pulsar().getNamespaceService().getBundle(topicName);
+                PersistentTopic persistentTopic = (PersistentTopic) pulsarService
+                        .getBrokerService().getMultiLayerTopicsMap()
+                        .get(topicName.getNamespace()).get(namespaceBundle.toString())
+                        .get(topicName.toString());
+                // only one consumer existed for internal subscription
+                Consumer consumer = persistentTopic.getSubscriptions()
+                        .get(groupId).getDispatcher().getConsumers().get(0);
+                consumerFuture.complete(consumer);
+            } catch (Exception e) {
+                log.error("get topic error", e);
+                consumerFuture.complete(null);
+            }
+            return consumerFuture;
+        });
+    }
 }

@@ -17,7 +17,6 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
@@ -30,7 +29,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
-import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -40,7 +39,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -72,16 +70,12 @@ import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
-import org.apache.pulsar.client.api.Consumer;
-import org.apache.pulsar.client.api.Message;
-import org.apache.pulsar.client.api.SubscriptionInitialPosition;
-import org.apache.pulsar.client.impl.MessageIdImpl;
-import org.apache.pulsar.client.impl.TopicMessageIdImpl;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 /**
@@ -92,6 +86,13 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
     KafkaRequestHandler kafkaRequestHandler;
     SocketAddress serviceAddress;
+
+    @Override
+    protected void resetConfig() {
+        super.resetConfig();
+        this.conf.setKafkaAdvertisedListeners(PLAINTEXT_PREFIX + "127.0.0.1:" + kafkaBrokerPort + ","
+                + SSL_PREFIX + "127.0.0.1:" + kafkaBrokerPortTls);
+    }
 
     @BeforeMethod
     @Override
@@ -132,12 +133,15 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();
+        TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler).getTransactionCoordinator();
 
         kafkaRequestHandler = new KafkaRequestHandler(
             pulsar,
             (KafkaServiceConfiguration) conf,
             groupCoordinator,
-            false);
+            transactionCoordinator,
+            false,
+            getPlainEndPoint());
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
@@ -227,9 +231,6 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         String topicName = "testReadUncommittedConsumerListOffsetEarliest";
         TopicPartition tp = new TopicPartition(topicName, 0);
 
-        // use producer to create some message to get Limit Offset.
-        String pulsarTopicName = "persistent://public/default/" + topicName;
-
         // create partitioned topic.
         admin.topics().createPartitionedTopic(topicName, 1);
 
@@ -251,20 +252,6 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                 .get();
             log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
         }
-
-        @Cleanup
-        Consumer<byte[]> consumer = pulsarClient.newConsumer()
-            .topic(pulsarTopicName)
-            .subscriptionName(topicName + "_sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
-        Message<byte[]> msg = consumer.receive(100, TimeUnit.MILLISECONDS);
-        assertNotNull(msg);
-        MessageIdImpl messageId = (MessageIdImpl) ((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId();
-        // first entry should be the limit offset.
-        long limitOffset = MessageIdUtils.getOffset(messageId.getLedgerId(), 0);
-        log.info("After create {} messages, get messageId: {} expected earliest limit: {}",
-            totalMsgs, messageId, limitOffset);
 
         // 2. real test, for ListOffset request verify Earliest get earliest
         Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
@@ -281,7 +268,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         AbstractResponse response = responseFuture.get();
         ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
         assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(listOffsetResponse.responseData().get(tp).offset, Long.valueOf(limitOffset));
+        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);
         assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(0));
     }
 
@@ -294,9 +281,6 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     public void testConsumerListOffsetLatest() throws Exception {
         String topicName = "testConsumerListOffsetLatest";
         TopicPartition tp = new TopicPartition(topicName, 0);
-
-        // use producer to create some message to get Limit Offset.
-        String pulsarTopicName = "persistent://public/default/" + topicName;
 
         // create partitioned topic.
         admin.topics().createPartitionedTopic(topicName, 1);
@@ -319,20 +303,6 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                 .get();
             log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
         }
-
-        @Cleanup
-        Consumer<byte[]> consumer = pulsarClient.newConsumer()
-            .topic(pulsarTopicName)
-            .subscriptionName(topicName + "_sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
-        Message<byte[]> msg = consumer.receive(100, TimeUnit.MILLISECONDS);
-        assertNotNull(msg);
-        MessageIdImpl messageId = (MessageIdImpl) ((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId();
-        // LAC entry should be the limit offset.
-        long limitOffset = MessageIdUtils.getOffset(messageId.getLedgerId(), totalMsgs - 1);
-        log.info("After create {} messages, get messageId: {} expected latest limit: {}",
-            totalMsgs, messageId, limitOffset);
 
         // 2. real test, for ListOffset request verify Earliest get earliest
         Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
@@ -350,8 +320,125 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         AbstractResponse response = responseFuture.get();
         ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
         assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(listOffsetResponse.responseData().get(tp).offset, Long.valueOf(limitOffset));
+        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), (totalMsgs));
         assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(0));
+    }
+
+    @Test(timeOut = 80000)
+    public void testConsumerListOffset() throws Exception {
+        String topicName = "listOffset";
+        TopicPartition tp = new TopicPartition(topicName, 0);
+
+        // create partitioned topic.
+        admin.topics().createPartitionedTopic(topicName, 1);
+
+        // 1. prepare topic:
+        @Cleanup
+        KProducer kProducer = new KProducer(topicName, false, getKafkaBrokerPort());
+        int totalMsgs = 10;
+        String messageStrPrefix = topicName + "_message_";
+
+        // produce 10 message with offset and timestamp :
+        //  message               timestamp        offset
+        // listOffset_message_0   2                0
+        // listOffset_message_1   4                1
+        // listOffset_message_2   6                2
+        // listOffset_message_3   8                3
+        // listOffset_message_4   10               4
+        // listOffset_message_5   12               5
+        // listOffset_message_6   14               6
+        // listOffset_message_7   16               7
+        // listOffset_message_8   18               8
+        // listOffset_message_9   20               9
+
+        long[] timestamps = new long[totalMsgs];
+
+        for (int i = 0; i < totalMsgs; i++) {
+            String messageStr = messageStrPrefix + i;
+            long timestamp = (i + 1) * 2;
+            timestamps[i] = timestamp;
+            kProducer.getProducer()
+                    .send(new ProducerRecord<>(
+                            topicName,
+                            0,
+                            timestamp,
+                            i,
+                            messageStr))
+                    .get();
+            log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+        }
+
+        // 2. real test, test earliest
+        ListOffsetResponse listOffsetResponse = listOffset(ListOffsetRequest.EARLIEST_TIMESTAMP, tp);
+        System.out.println("offset for earliest " + listOffsetResponse.responseData().get(tp).offset.intValue());
+        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);
+
+        listOffsetResponse = listOffset(ListOffsetRequest.LATEST_TIMESTAMP, tp);
+        System.out.println("offset for latest " + listOffsetResponse.responseData().get(tp).offset.intValue());
+        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), totalMsgs);
+
+        listOffsetResponse = listOffset(0, tp);
+        System.out.println("offset for timestamp=0 " + listOffsetResponse.responseData().get(tp).offset.intValue());
+        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);
+
+        listOffsetResponse = listOffset(1, tp);
+        System.out.println("offset for timestamp=1 " + listOffsetResponse.responseData().get(tp).offset.intValue());
+        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);
+
+        // when handle listOffset, result should be like:
+        //  timestamp        offset
+        //  2                0
+        //  3                1
+        //  4                1
+        //  5                2
+        //  6                2
+        //  7                3
+        //  8                3
+        //  9                4
+        //  10               4
+        //  11               5
+        //  12               5
+        //  13               6
+        //  14               6
+        //  15               7
+        //  16               7
+        //  17               8
+        //  18               8
+        //  19               9
+        //  20               9
+        //  21               10
+
+        for (int i = 0; i < totalMsgs; i++) {
+            long searchTime = timestamps[i];
+            listOffsetResponse = listOffset(searchTime, tp);
+            assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
+            assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), i);
+
+            searchTime++;
+            listOffsetResponse = listOffset(searchTime, tp);
+            assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), i + 1);
+        }
+    }
+
+    private ListOffsetResponse listOffset(long timestamp, TopicPartition tp) throws Exception {
+        Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
+        targetTimes.put(tp, timestamp);
+
+        ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
+                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
+                .setTargetTimes(targetTimes);
+
+        KafkaHeaderAndRequest request = buildRequest(builder);
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        kafkaRequestHandler
+                .handleListOffsetRequest(request, responseFuture);
+
+        AbstractResponse response = responseFuture.get();
+        return (ListOffsetResponse) response;
     }
 
     /// Add test for FetchRequest
@@ -490,6 +577,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         }
     }
 
+    @Ignore
     @Test(timeOut = 20000)
     public void testBrokerRespectsPartitionsOrderAndSizeLimits() throws Exception {
         String topicName = "kopBrokerRespectsPartitionsOrderAndSizeLimits";
@@ -599,8 +687,11 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         int numberTopics = 5;
         int numberPartitions = 6;
 
-        List<TopicPartition> topicPartitions = createTopics(topicName, numberTopics, numberPartitions);
         List<String> kafkaTopics = getCreatedTopics(topicName, numberTopics);
+        for (String topic : kafkaTopics) {
+            admin.topics().createPartitionedTopic(topic, numberPartitions);
+        }
+
         KafkaHeaderAndRequest metadataRequest = createTopicMetadataRequest(kafkaTopics);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         kafkaRequestHandler.handleTopicMetadataRequest(metadataRequest, responseFuture);
@@ -609,7 +700,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         // verify all served by same broker : localhost:port
         assertEquals(metadataResponse.brokers().size(), 1);
-        assertEquals(metadataResponse.brokers().iterator().next().host(), "localhost");
+        // NOTE: the listener's hostname is "localhost", but the advertised listener's hostname is "127.0.0.1"
+        assertEquals(metadataResponse.brokers().iterator().next().host(), "127.0.0.1");
 
         // check metadata response
         Collection<TopicMetadata> topicMetadatas = metadataResponse.topicMetadata();

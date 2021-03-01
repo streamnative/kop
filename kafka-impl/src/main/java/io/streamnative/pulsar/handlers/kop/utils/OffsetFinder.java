@@ -19,6 +19,7 @@ import static com.google.common.base.Preconditions.checkState;
 import com.google.common.base.Predicate;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.FindEntryCallback;
@@ -29,7 +30,6 @@ import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
-import org.apache.pulsar.client.impl.MessageImpl;
 
 /**
  * given a timestamp find the first message (position) (published) at or before the timestamp.
@@ -55,27 +55,26 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
         this.timestamp = timestamp;
         if (messageFindInProgressUpdater.compareAndSet(this, FALSE, TRUE)) {
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Starting message position find at timestamp {}",  timestamp);
+                log.debug("[{}] Starting message position find at timestamp {}", managedLedger.getName(), timestamp);
             }
 
             asyncFindNewestMatching(ManagedCursor.FindPositionConstraint.SearchAllAvailableEntries, entry -> {
-                MessageImpl msg = null;
+                if (entry == null) {
+                    return false;
+                }
                 try {
-                    msg = MessageImpl.deserialize(entry.getDataBuffer());
-                    return msg.getPublishTime() <= timestamp;
+                    return MessageIdUtils.getPublishTime(entry.getDataBuffer()) <= timestamp;
                 } catch (Exception e) {
-                    log.error("[{}][{}] Error deserializing message for message position find",  e);
+                    log.error("[{}] Error deserialize message for message position find", managedLedger.getName(), e);
                 } finally {
                     entry.release();
-                    if (msg != null) {
-                        msg.recycle();
-                    }
                 }
                 return false;
             }, this, callback);
         } else {
             if (log.isDebugEnabled()) {
-                log.debug("[{}][{}] Ignore message position find scheduled task, last find is still running");
+                log.debug("[{}] Ignore message position find scheduled task, last find is still running",
+                        managedLedger.getName());
             }
             callback.findEntryFailed(
                 new ManagedLedgerException.ConcurrentFindCursorPositionException("last find is still running"),
@@ -89,11 +88,12 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
         checkArgument(ctx instanceof AsyncCallbacks.FindEntryCallback);
         AsyncCallbacks.FindEntryCallback callback = (AsyncCallbacks.FindEntryCallback) ctx;
         if (position != null) {
-            log.info("[{}][{}] Found position {} closest to provided timestamp {}", position,
-                timestamp);
+            log.info("[{}] Found position {} closest to provided timestamp {}",
+                    managedLedger.getName(), position, timestamp);
         } else {
             if (log.isDebugEnabled()) {
-                log.debug("[{}][{}] No position found closest to provided timestamp {}", timestamp);
+                log.debug("[{}] No position found closest to provided timestamp {}",
+                        managedLedger.getName(), timestamp);
             }
         }
         messageFindInProgress = FALSE;
@@ -105,8 +105,8 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
         checkArgument(ctx instanceof AsyncCallbacks.FindEntryCallback);
         AsyncCallbacks.FindEntryCallback callback = (AsyncCallbacks.FindEntryCallback) ctx;
         if (log.isDebugEnabled()) {
-            log.debug("[{}][{}] message position find operation failed for provided timestamp {}",
-                timestamp, exception);
+            log.debug("[{}] Message position find operation failed for provided timestamp {}",
+                    managedLedger.getName(), timestamp, exception);
         }
         messageFindInProgress = FALSE;
         callback.findEntryFailed(exception, position, null);

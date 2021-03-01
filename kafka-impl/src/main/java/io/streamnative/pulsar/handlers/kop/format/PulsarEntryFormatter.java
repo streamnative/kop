@@ -22,6 +22,7 @@ import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
@@ -29,20 +30,21 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
+import org.apache.kafka.common.record.ControlRecordType;
+import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.TimestampType;
-import org.apache.kafka.common.utils.ByteBufferOutputStream;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.client.impl.TypedMessageBuilderImpl;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
-import org.apache.pulsar.common.api.proto.PulsarApi;
-import org.apache.pulsar.common.api.proto.PulsarApi.KeyValue;
-import org.apache.pulsar.common.api.proto.PulsarApi.MessageMetadata;
-import org.apache.pulsar.common.api.proto.PulsarApi.SingleMessageMetadata;
+import org.apache.pulsar.common.api.proto.KeyValue;
+import org.apache.pulsar.common.api.proto.MarkerType;
+import org.apache.pulsar.common.api.proto.MessageMetadata;
+import org.apache.pulsar.common.api.proto.SingleMessageMetadata;
 import org.apache.pulsar.common.compression.CompressionCodec;
 import org.apache.pulsar.common.compression.CompressionCodecProvider;
 import org.apache.pulsar.common.protocol.Commands;
@@ -66,25 +68,27 @@ public class PulsarEntryFormatter implements EntryFormatter {
         int numMessagesInBatch = 0;
 
         long sequenceId = -1;
-        // TODO: handle different compression type
-        PulsarApi.CompressionType compressionType = PulsarApi.CompressionType.NONE;
 
         ByteBuf batchedMessageMetadataAndPayload = PulsarByteBufAllocator.DEFAULT
                 .buffer(Math.min(INITIAL_BATCH_BUFFER_SIZE, MAX_MESSAGE_BATCH_SIZE_BYTES));
         List<MessageImpl<byte[]>> messages = Lists.newArrayListWithExpectedSize(numMessages);
-        MessageMetadata.Builder messageMetaBuilder = MessageMetadata.newBuilder();
+        final MessageMetadata msgMetadata = new MessageMetadata();
 
-        StreamSupport.stream(records.records().spliterator(), true).forEachOrdered(record -> {
-            MessageImpl<byte[]> message = recordToEntry(record);
-            messages.add(message);
-            if (messageMetaBuilder.getPublishTime() <= 0) {
-                messageMetaBuilder.setPublishTime(message.getPublishTime());
-            }
+        records.batches().forEach(recordBatch -> {
+            StreamSupport.stream(recordBatch.spliterator(), true).forEachOrdered(record -> {
+                MessageImpl<byte[]> message = recordToEntry(record);
+                messages.add(message);
+                if (recordBatch.isTransactional()) {
+                    msgMetadata.setTxnidMostBits(recordBatch.producerId());
+                    msgMetadata.setTxnidLeastBits(recordBatch.producerEpoch());
+                }
+            });
         });
 
         for (MessageImpl<byte[]> message : messages) {
             if (++numMessagesInBatch == 1) {
-                sequenceId = Commands.initBatchMessageMetadata(messageMetaBuilder, message.getMessageBuilder());
+                // msgMetadata will set publish time here
+                sequenceId = Commands.initBatchMessageMetadata(msgMetadata, message.getMessageBuilder());
             }
             currentBatchSizeBytes += message.getDataBuffer().readableBytes();
             if (log.isDebugEnabled()) {
@@ -92,29 +96,17 @@ public class PulsarEntryFormatter implements EntryFormatter {
                         sequenceId, numMessagesInBatch, currentBatchSizeBytes);
             }
 
-            PulsarApi.MessageMetadata.Builder msgBuilder = message.getMessageBuilder();
+            final MessageMetadata msgBuilder = message.getMessageBuilder();
             batchedMessageMetadataAndPayload = Commands.serializeSingleMessageInBatchWithPayload(msgBuilder,
                     message.getDataBuffer(), batchedMessageMetadataAndPayload);
-            msgBuilder.recycle();
         }
 
-        int uncompressedSize = batchedMessageMetadataAndPayload.readableBytes();
-
-        if (PulsarApi.CompressionType.NONE != compressionType) {
-            messageMetaBuilder.setCompression(compressionType);
-            messageMetaBuilder.setUncompressedSize(uncompressedSize);
-        }
-
-        messageMetaBuilder.setNumMessagesInBatch(numMessagesInBatch);
-
-        MessageMetadata msgMetadata = messageMetaBuilder.build();
+        msgMetadata.setNumMessagesInBatch(numMessagesInBatch);
 
         ByteBuf buf = Commands.serializeMetadataAndPayload(ChecksumType.Crc32c,
                 msgMetadata,
                 batchedMessageMetadataAndPayload);
 
-        messageMetaBuilder.recycle();
-        msgMetadata.recycle();
         batchedMessageMetadataAndPayload.release();
 
         return buf;
@@ -122,99 +114,121 @@ public class PulsarEntryFormatter implements EntryFormatter {
 
     @Override
     public MemoryRecords decode(final List<Entry> entries, final byte magic) {
-        try (ByteBufferOutputStream outputStream = new ByteBufferOutputStream(DEFAULT_FETCH_BUFFER_SIZE)) {
-            MemoryRecordsBuilder builder = new MemoryRecordsBuilder(outputStream, magic,
+        ByteBuffer byteBuffer = ByteBuffer.allocate(DEFAULT_FETCH_BUFFER_SIZE);
+
+        entries.parallelStream().forEachOrdered(entry -> {
+            long baseOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
+            // each entry is a batched message
+            ByteBuf metadataAndPayload = entry.getDataBuffer();
+
+            Commands.skipBrokerEntryMetadataIfExist(metadataAndPayload);
+            MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
+
+            if (msgMetadata.hasMarkerType()
+                    && (msgMetadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
+                    || msgMetadata.getMarkerType() == MarkerType.TXN_ABORT_VALUE)) {
+                MemoryRecords memoryRecords = MemoryRecords.withEndTransactionMarker(
+                        baseOffset,
+                        msgMetadata.getPublishTime(),
+                        0,
+                        msgMetadata.getTxnidMostBits(),
+                        (short) msgMetadata.getTxnidLeastBits(),
+                        new EndTransactionMarker(
+                                msgMetadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
+                                        ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0));
+                byteBuffer.put(memoryRecords.buffer());
+                return;
+            }
+
+            MemoryRecordsBuilder builder = new MemoryRecordsBuilder(byteBuffer, magic,
                     org.apache.kafka.common.record.CompressionType.NONE,
                     TimestampType.CREATE_TIME,
                     // using the first entry, index 0 as base offset
-                    MessageIdUtils.getOffset(entries.get(0).getLedgerId(), entries.get(0).getEntryId(), 0),
-                    RecordBatch.NO_TIMESTAMP,
+                    baseOffset,
+                    msgMetadata.getPublishTime(),
                     RecordBatch.NO_PRODUCER_ID,
                     RecordBatch.NO_PRODUCER_EPOCH,
                     RecordBatch.NO_SEQUENCE,
-                    false, false,
+                    msgMetadata.hasTxnidMostBits() && msgMetadata.hasTxnidLeastBits(),
+                    false,
                     RecordBatch.NO_PARTITION_LEADER_EPOCH,
                     MAX_RECORDS_BUFFER_SIZE);
 
-            entries.parallelStream().forEachOrdered(entry -> {
-                // each entry is a batched message
-                ByteBuf metadataAndPayload = entry.getDataBuffer();
+            CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(msgMetadata.getCompression());
+            int uncompressedSize = msgMetadata.getUncompressedSize();
+            ByteBuf payload;
+            try {
+                payload = codec.decode(metadataAndPayload, uncompressedSize);
+            } catch (IOException ioe) {
+                log.error("Meet IOException: {}", ioe);
+                throw new UncheckedIOException(ioe);
+            }
+            int numMessages = msgMetadata.getNumMessagesInBatch();
+            boolean notBatchMessage = (numMessages == 1 && !msgMetadata.hasNumMessagesInBatch());
 
-                // Uncompress the payload if necessary
-                MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
-                CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(msgMetadata.getCompression());
-                int uncompressedSize = msgMetadata.getUncompressedSize();
-                ByteBuf payload;
-                try {
-                    payload = codec.decode(metadataAndPayload, uncompressedSize);
-                } catch (IOException ioe) {
-                    log.error("Meet IOException: {}", ioe);
-                    throw new UncheckedIOException(ioe);
-                }
-                int numMessages = msgMetadata.getNumMessagesInBatch();
-                boolean notBatchMessage = (numMessages == 1 && !msgMetadata.hasNumMessagesInBatch());
+            if (log.isDebugEnabled()) {
+                log.debug("entriesToRecords.  NumMessagesInBatch: {}, isBatchMessage: {}, entries in list: {}."
+                                + " new entryId {}:{}, readerIndex: {},  writerIndex: {}",
+                        numMessages, !notBatchMessage, entries.size(), entry.getLedgerId(),
+                        entry.getEntryId(), payload.readerIndex(), payload.writerIndex());
+            }
 
-                if (log.isDebugEnabled()) {
-                    log.debug("entriesToRecords.  NumMessagesInBatch: {}, isBatchMessage: {}, entries in list: {}."
-                                    + " new entryId {}:{}, readerIndex: {},  writerIndex: {}",
-                            numMessages, !notBatchMessage, entries.size(), entry.getLedgerId(),
-                            entry.getEntryId(), payload.readerIndex(), payload.writerIndex());
-                }
+            // need handle encryption
+            checkState(msgMetadata.getEncryptionKeysCount() == 0);
 
-                // need handle encryption
-                checkState(msgMetadata.getEncryptionKeysCount() == 0);
+            if (msgMetadata.hasTxnidMostBits()) {
+                builder.setProducerState(
+                        msgMetadata.getTxnidMostBits(),
+                        (short) msgMetadata.getTxnidLeastBits(), 0, true);
+            }
 
-                if (!notBatchMessage) {
-                    IntStream.range(0, numMessages).parallel().forEachOrdered(i -> {
-                        if (log.isDebugEnabled()) {
-                            log.debug(" processing message num - {} in batch", i);
-                        }
-                        try {
-                            SingleMessageMetadata.Builder singleMessageMetadataBuilder = SingleMessageMetadata
-                                    .newBuilder();
-                            ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(payload,
-                                    singleMessageMetadataBuilder, i, numMessages);
+            if (!notBatchMessage) {
+                IntStream.range(0, numMessages).parallel().forEachOrdered(i -> {
+                    if (log.isDebugEnabled()) {
+                        log.debug(" processing message num - {} in batch", i);
+                    }
+                    try {
+                        final SingleMessageMetadata singleMessageMetadata = new SingleMessageMetadata();
+                        ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(payload,
+                                singleMessageMetadata, i, numMessages);
 
-                            SingleMessageMetadata singleMessageMetadata = singleMessageMetadataBuilder.build();
-                            Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
+                        Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
 
-                            builder.appendWithOffset(
-                                    MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId(), i),
-                                    msgMetadata.getEventTime() > 0
-                                            ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
-                                    ByteBufUtils.getKeyByteBuffer(singleMessageMetadata),
-                                    ByteBufUtils.getNioBuffer(singleMessagePayload),
-                                    headers);
-                            singleMessagePayload.release();
-                            singleMessageMetadataBuilder.recycle();
-                        } catch (IOException e) {
-                            log.error("Meet IOException: {}", e);
-                            throw new UncheckedIOException(e);
-                        }
-                    });
-                } else {
-                    Header[] headers = getHeadersFromMetadata(msgMetadata.getPropertiesList());
+                        final ByteBuffer value = (singleMessageMetadata.isNullValue())
+                                ? null
+                                : ByteBufUtils.getNioBuffer(singleMessagePayload);
+                        builder.appendWithOffset(
+                                baseOffset + i,
+                                msgMetadata.getEventTime() > 0
+                                        ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
+                                ByteBufUtils.getKeyByteBuffer(singleMessageMetadata),
+                                value,
+                                headers);
+                        singleMessagePayload.release();
+                    } catch (IOException e) {
+                        log.error("Meet IOException: {}", e);
+                        throw new UncheckedIOException(e);
+                    }
+                });
+            } else {
+                Header[] headers = getHeadersFromMetadata(msgMetadata.getPropertiesList());
 
-                    builder.appendWithOffset(
-                            MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId()),
-                            msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
-                            ByteBufUtils.getKeyByteBuffer(msgMetadata),
-                            ByteBufUtils.getNioBuffer(payload),
-                            headers);
-                }
+                builder.appendWithOffset(
+                        baseOffset,
+                        msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
+                        ByteBufUtils.getKeyByteBuffer(msgMetadata),
+                        ByteBufUtils.getNioBuffer(payload),
+                        headers);
+            }
 
-                msgMetadata.recycle();
-                payload.release();
-                entry.release();
-            });
-            return builder.build();
-        } catch (IOException ioe){
-            log.error("Meet IOException: {}", ioe);
-            throw new UncheckedIOException(ioe);
-        } catch (Exception e){
-            log.error("Meet exception: {}", e);
-            throw e;
-        }
+            payload.release();
+            entry.release();
+
+            builder.close();
+        });
+
+        byteBuffer.flip();
+        return MemoryRecords.readableRecords(byteBuffer);
     }
 
     // convert kafka Record to Pulsar Message.
@@ -239,12 +253,16 @@ public class PulsarEntryFormatter implements EntryFormatter {
             record.value().get(value);
             builder.value(value);
         } else {
-            builder.value(new byte[0]);
+            builder.value(null);
         }
 
-        // sequence
+        // Following fields are required in `Commands.initBatchMessageMetadata`, but since we write to
+        // bookie directly, broker won't make use of them. So here we just set trivial values.
+        builder.getMetadataBuilder().setProducerName("");
         if (record.sequence() >= 0) {
             builder.sequenceId(record.sequence());
+        } else {
+            builder.sequenceId(0L);
         }
 
         // timestamp

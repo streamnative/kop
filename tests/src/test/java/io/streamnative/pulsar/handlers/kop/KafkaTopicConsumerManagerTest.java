@@ -22,20 +22,23 @@ import static org.testng.Assert.assertTrue;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
-import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.IntegerSerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.ProducerBuilder;
-import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.common.policies.data.TopicStats;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -58,12 +61,15 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
 
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();
+        TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler).getTransactionCoordinator();
 
         kafkaRequestHandler = new KafkaRequestHandler(
             pulsar,
             (KafkaServiceConfiguration) conf,
             groupCoordinator,
-            false);
+            transactionCoordinator,
+            false,
+            getPlainEndPoint());
 
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
@@ -110,26 +116,24 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         String topicName = "persistent://public/default/testTopicConsumerManagerRemoveAndAdd";
         admin.lookups().lookupTopic(topicName);
 
-        ProducerBuilder<byte[]> producerBuilder = pulsarClient.newProducer()
-            .topic(topicName)
-            .enableBatching(false);
+        final Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
 
-        Producer<byte[]> producer = producerBuilder.create();
-        MessageIdImpl messageId = null;
+        final KafkaProducer<Integer, String> producer = new KafkaProducer<>(props);
+
+        KProducer kProducer = new KProducer(topicName, true, getKafkaBrokerPort());
         int i = 0;
         String messagePrefix = "testTopicConsumerManagerRemoveAndAdd_message_";
+        long offset = -1L;
         for (; i < 5; i++) {
             String message = messagePrefix + i;
-            messageId = (MessageIdImpl) producer.newMessage()
-                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
-                .value(message.getBytes())
-                .send();
+            offset = producer.send(new ProducerRecord<>(topicName, i, message)).get().offset();
         }
 
         CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager.getTopicConsumerManager(topicName);
         KafkaTopicConsumerManager topicConsumerManager = tcm.get();
-
-        long offset = MessageIdUtils.getOffset(messageId.getLedgerId(), messageId.getEntryId());
 
         // before a read, first get cursor of offset.
         Pair<ManagedCursor, Long> cursorPair = topicConsumerManager.remove(offset);
@@ -138,14 +142,11 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(cursorPair.getRight(), Long.valueOf(offset));
 
         // another write.
-        producer.newMessage()
-            .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
-            .value((messagePrefix + i).getBytes())
-            .send();
+        producer.send(new ProducerRecord<>(topicName, i, messagePrefix + i)).get();
         i++;
 
         // simulate a read complete;
-        offset += 1 << MessageIdUtils.BATCH_BITS;
+        offset++;
         topicConsumerManager.add(offset, Pair.of(cursor, offset));
         assertEquals(topicConsumerManager.getConsumers().size(), 1);
 
@@ -154,25 +155,21 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(topicConsumerManager.getConsumers().size(), 0);
         ManagedCursor cursor2 = cursorPair.getLeft();
 
-        assertTrue(cursor2 == cursor);
+        assertEquals(cursor2, cursor);
         assertEquals(cursor2.getName(), cursor.getName());
         assertEquals(cursorPair.getRight(), Long.valueOf(offset));
 
         // simulate a read complete, add back offset.
-        offset += 1 << MessageIdUtils.BATCH_BITS;
+        offset++;
         topicConsumerManager.add(offset, Pair.of(cursor2, offset));
 
         // produce another 3 message
         for (; i < 10; i++) {
             String message = messagePrefix + i;
-            messageId = (MessageIdImpl) producer.newMessage()
-                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
-                .value(message.getBytes())
-                .send();
+            offset = producer.send(new ProducerRecord<>(topicName, i, message)).get().offset();
         }
 
         // try read last messages, so read not continuous
-        offset = MessageIdUtils.getOffset(messageId.getLedgerId(), messageId.getEntryId());
         cursorPair = topicConsumerManager.remove(offset);
         // since above remove will use a new cursor. there should be one in the map.
         assertEquals(topicConsumerManager.getConsumers().size(), 1);
@@ -190,56 +187,40 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         // create partitioned topic with 1 partition.
         admin.topics().createPartitionedTopic(kafkaTopicName, 1);
 
-        ProducerBuilder<byte[]> producerBuilder = pulsarClient.newProducer()
-            .topic(pulsarTopicName)
-            .enableBatching(false);
-        Producer<byte[]> producer = producerBuilder.create();
-        PersistentTopic persistentTopic = (PersistentTopic)
-            pulsar.getBrokerService().getTopicReference(pulsarPartitionName).get();
+        final Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
 
-        MessageIdImpl messageId1 = null;
+        final KafkaProducer<Integer, String> producer = new KafkaProducer<>(props);
+
         int i = 0;
         String messagePrefix = "testTopicConsumerManagerRemoveCursor_message_XXXXXX_";
 
+        long offset1 = -1L;
         for (; i < 5; i++) {
             String message = messagePrefix + i % 10;
-            messageId1 = (MessageIdImpl) producer.newMessage()
-                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
-                .value(message.getBytes())
-                .send();
+            offset1 = producer.send(new ProducerRecord<>(kafkaTopicName, i, message)).get().offset();
         }
 
         // produce another 5 message
-        MessageIdImpl messageId2 = null;
+        long offset2 = -1L;
         for (; i < 10; i++) {
             String message = messagePrefix + i % 10;
-            messageId2 = (MessageIdImpl) producer.newMessage()
-                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
-                .value(message.getBytes())
-                .send();
+            offset2 = producer.send(new ProducerRecord<>(kafkaTopicName, i, message)).get().offset();
         }
 
         // produce another 5 message
-        MessageIdImpl messageId3 = null;
+        long offset3 = -1L;
         for (; i < 15; i++) {
             String message = messagePrefix + i % 10;
-            messageId3 = (MessageIdImpl) producer.newMessage()
-                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
-                .value(message.getBytes())
-                .send();
+            offset3 = producer.send(new ProducerRecord<>(kafkaTopicName, i, message)).get().offset();
         }
 
         for (; i < 20; i++) {
             String message = messagePrefix + i % 10;
-            producer.newMessage()
-                .keyBytes(kafkaIntSerialize(Integer.valueOf(i)))
-                .value(message.getBytes())
-                .send();
+            producer.send(new ProducerRecord<>(kafkaTopicName, i, message)).get();
         }
-
-        long offset1 = MessageIdUtils.getOffset(messageId1.getLedgerId(), messageId1.getEntryId());
-        long offset2 = MessageIdUtils.getOffset(messageId2.getLedgerId(), messageId2.getEntryId());
-        long offset3 = MessageIdUtils.getOffset(messageId3.getLedgerId(), messageId3.getEntryId());
 
         CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager
             .getTopicConsumerManager(pulsarPartitionName);
@@ -255,13 +236,16 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         ManagedCursor cursor2 = cursorPair2.getLeft();
         ManagedCursor cursor3 = cursorPair3.getLeft();
 
-        long backlogSize = persistentTopic.getStats(true).backlogSize;
+        PersistentTopic persistentTopic = (PersistentTopic)
+                pulsar.getBrokerService().getTopicReference(pulsarPartitionName).get();
+
+        long backlogSize = persistentTopic.getStats(true, true).backlogSize;
         verifyBacklogAndNumCursor(persistentTopic, backlogSize, 3);
 
         // simulate a read complete;
-        offset1 += 1 << MessageIdUtils.BATCH_BITS;
-        offset2 += 1 << MessageIdUtils.BATCH_BITS;
-        offset3 += 1 << MessageIdUtils.BATCH_BITS;
+        offset1++;
+        offset2++;
+        offset3++;
 
         topicConsumerManager.add(offset1, Pair.of(cursor1, offset1));
         topicConsumerManager.add(offset2, Pair.of(cursor2, offset2));
@@ -287,14 +271,14 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         AtomicInteger cursorCount = new AtomicInteger(0);
         retryStrategically(
             ((test) -> {
-                backlog.set(persistentTopic.getStats(true).backlogSize);
+                backlog.set(persistentTopic.getStats(true, true).backlogSize);
                 return backlog.get() == expectedBacklog;
             }),
             5,
             200);
 
         if (log.isDebugEnabled()) {
-            TopicStats topicStats = persistentTopic.getStats(true);
+            TopicStats topicStats = persistentTopic.getStats(true, true);
             log.info(" dump topicStats for topic : {}, storageSize: {}, backlogSize: {}, expected: {}",
                 persistentTopic.getName(),
                 topicStats.storageSize, topicStats.backlogSize, expectedBacklog);

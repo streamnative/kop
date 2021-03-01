@@ -19,28 +19,30 @@ import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.nio.ByteBuffer;
 import java.util.List;
+
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.TimestampType;
+import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
-
 
 /**
  * The entry formatter that uses Kafka's format.
  */
 public class KafkaEntryFormatter implements EntryFormatter {
-    private final KafkaEntryFormatterHeader header = new KafkaEntryFormatterHeader();
 
     @Override
     public ByteBuf encode(MemoryRecords records, int numMessages) {
-        return Commands.serializeMetadataAndPayload(
+        final ByteBuf recordsWrapper = Unpooled.wrappedBuffer(records.buffer());
+        final ByteBuf buf = Commands.serializeMetadataAndPayload(
                 Commands.ChecksumType.None,
-                header.getMessageMetadata(),
-                Unpooled.wrappedBuffer(records.buffer())
-        );
+                getMessageMetadataWithNumberMessages(numMessages),
+                recordsWrapper);
+        recordsWrapper.release();
+        return buf;
     }
 
     @Override
@@ -49,23 +51,38 @@ public class KafkaEntryFormatter implements EntryFormatter {
         for (Entry entry : entries) {
             size += entry.getLength();
         }
+        // TODO The memory records should maintain multiple batches, one entry present one batch,
+        //  this is necessary, because one entry only belongs to one transaction.
         final MemoryRecordsBuilder builder = MemoryRecords.builder(
                 ByteBuffer.allocate(size),
                 magic,
                 CompressionType.NONE,
                 TimestampType.CREATE_TIME,
-                MessageIdUtils.getOffset(entries.get(0).getLedgerId(), entries.get(0).getEntryId()));
+                MessageIdUtils.peekBaseOffsetFromEntry(entries.get(0)));
         entries.forEach(entry -> {
+            long startOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
             final ByteBuf byteBuf = entry.getDataBuffer();
             Commands.skipMessageMetadata(byteBuf);
             final MemoryRecords records = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
-            long offset = MessageIdUtils.getOffset(entry.getLedgerId(), entry.getEntryId());
             for (Record record : records.records()) {
-                builder.appendWithOffset(offset, record);
-                offset++;
+                builder.appendWithOffset(startOffset, record);
+                startOffset++;
             }
             entry.release();
         });
         return builder.build();
     }
+
+    private static MessageMetadata getMessageMetadataWithNumberMessages(int numMessages) {
+        final MessageMetadata metadata = new MessageMetadata();
+        metadata.addProperty()
+                .setKey("entry.format")
+                .setValue(EntryFormatterFactory.EntryFormat.KAFKA.name().toLowerCase());
+        metadata.setProducerName("");
+        metadata.setSequenceId(0L);
+        metadata.setPublishTime(System.currentTimeMillis());
+        metadata.setNumMessagesInBatch(numMessages);
+        return metadata;
+    }
+
 }

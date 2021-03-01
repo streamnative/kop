@@ -13,8 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.PLAINTEXT_PREFIX;
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.SSL_PREFIX;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
 
@@ -35,10 +33,12 @@ import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -59,6 +59,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.errors.SerializationException;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.BookKeeperClientFactory;
@@ -70,6 +71,7 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.compaction.Compactor;
+import org.apache.pulsar.metadata.impl.ZKMetadataStore;
 import org.apache.pulsar.zookeeper.ZooKeeperClientFactory;
 import org.apache.pulsar.zookeeper.ZookeeperClientFactoryImpl;
 import org.apache.zookeeper.CreateMode;
@@ -123,6 +125,9 @@ public abstract class KopProtocolHandlerTestBase {
 
     private final String entryFormat;
 
+    protected static final String PLAINTEXT_PREFIX = SecurityProtocol.PLAINTEXT.name() + "://";
+    protected static final String SSL_PREFIX = SecurityProtocol.SSL.name() + "://";
+
     public KopProtocolHandlerTestBase() {
         this.entryFormat = "pulsar";
         resetConfig();
@@ -133,8 +138,13 @@ public abstract class KopProtocolHandlerTestBase {
         resetConfig();
     }
 
+    protected EndPoint getPlainEndPoint() {
+        return new EndPoint(PLAINTEXT_PREFIX + "127.0.0.1:" + kafkaBrokerPort);
+    }
+
     protected void resetConfig() {
         KafkaServiceConfiguration kafkaConfig = new KafkaServiceConfiguration();
+        addBrokerEntryMetadataInterceptors(kafkaConfig);
         kafkaConfig.setBrokerServicePort(Optional.ofNullable(brokerPort));
         kafkaConfig.setAdvertisedAddress("localhost");
         kafkaConfig.setWebServicePort(Optional.ofNullable(brokerWebservicePort));
@@ -150,7 +160,7 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setAuthenticationEnabled(false);
         kafkaConfig.setAuthorizationEnabled(false);
         kafkaConfig.setAllowAutoTopicCreation(true);
-        kafkaConfig.setAllowAutoTopicCreationType("non-partitioned");
+        kafkaConfig.setAllowAutoTopicCreationType("partitioned");
         kafkaConfig.setBrokerDeleteInactiveTopicsEnabled(false);
 
         kafkaConfig.setKafkaMetadataTenant(tenant);
@@ -159,9 +169,9 @@ public abstract class KopProtocolHandlerTestBase {
         // kafka related settings.
         kafkaConfig.setEnableGroupCoordinator(true);
         kafkaConfig.setOffsetsTopicNumPartitions(1);
-        kafkaConfig.setListeners(
-            PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort + ","
-                + SSL_PREFIX + "localhost:" + kafkaBrokerPortTls);
+        kafkaConfig.setKafkaListeners(
+                PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort + ","
+                        + SSL_PREFIX + "localhost:" + kafkaBrokerPortTls);
         kafkaConfig.setEntryFormat(entryFormat);
 
         // set protocol related config
@@ -302,8 +312,8 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     protected PulsarService startBroker(ServiceConfiguration conf) throws Exception {
+        addBrokerEntryMetadataInterceptors(conf);
         PulsarService pulsar = spy(new PulsarService(conf));
-
         setupBrokerMocks(pulsar);
         pulsar.start();
 
@@ -317,6 +327,8 @@ public abstract class KopProtocolHandlerTestBase {
         // Override default providers with mocked ones
         doReturn(mockZooKeeperClientFactory).when(pulsar).getZooKeeperClientFactory();
         doReturn(mockBookKeeperClientFactory).when(pulsar).newBookKeeperClientFactory();
+        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createLocalMetadataStore();
+        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createConfigurationMetadataStore();
 
         Supplier<NamespaceService> namespaceServiceSupplier = () -> spy(new NamespaceService(pulsar));
         doReturn(namespaceServiceSupplier).when(pulsar).getNamespaceServiceProvider();
@@ -622,6 +634,12 @@ public abstract class KopProtocolHandlerTestBase {
         }
     }
 
+    public static void addBrokerEntryMetadataInterceptors(ServiceConfiguration configuration) {
+        Set<String> interceptorNames = new HashSet<>();
+        interceptorNames.add("org.apache.pulsar.common.intercept.AppendBrokerTimestampMetadataInterceptor");
+        interceptorNames.add("org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor");
+        configuration.setBrokerEntryMetadataInterceptors(interceptorNames);
+    }
 
     public static Integer kafkaIntDeserialize(byte[] data) {
         if (data == null) {
