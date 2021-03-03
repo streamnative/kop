@@ -160,7 +160,6 @@ import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 import org.apache.pulsar.zookeeper.ZooKeeperCache;
 import org.apache.pulsar.zookeeper.ZooKeeperCache.Deserializer;
-import org.inferred.freebuilder.shaded.org.openjdk.tools.javac.util.MatchingUtils;
 
 /**
  * This class contains all the request handling methods.
