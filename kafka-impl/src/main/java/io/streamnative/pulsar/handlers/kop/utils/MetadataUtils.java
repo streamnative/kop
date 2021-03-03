@@ -13,8 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
-import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
-
 import com.google.common.collect.Sets;
 
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
@@ -71,7 +69,7 @@ public class MetadataUtils {
         String kafkaMetadataTenant = conf.getKafkaMetadataTenant();
         String kafkaMetadataNamespace = kafkaMetadataTenant + "/" + conf.getKafkaMetadataNamespace();
 
-        String offsetsTopic = constructOffsetsTopicBaseName(conf);
+        final KopTopic offsetsTopic = new KopTopic(constructOffsetsTopicBaseName(conf));
 
         boolean clusterExists, tenantExists, namespaceExists, offsetsTopicExists;
         clusterExists = tenantExists = namespaceExists = offsetsTopicExists = false;
@@ -128,34 +126,31 @@ public class MetadataUtils {
 
             // Check if the offsets topic exists and create it if not
             Topics topics = pulsarAdmin.topics();
-            PartitionedTopicMetadata offsetsTopicMetadata = topics.getPartitionedTopicMetadata(offsetsTopic);
+            PartitionedTopicMetadata offsetsTopicMetadata =
+                    topics.getPartitionedTopicMetadata(offsetsTopic.getFullName());
 
             Set<String> offsetPartitionSet = new HashSet<String>(conf.getOffsetsTopicNumPartitions());
             for (int i = 0; i < conf.getOffsetsTopicNumPartitions(); i++) {
-                offsetPartitionSet.add(offsetsTopic + PARTITIONED_TOPIC_SUFFIX + i);
+                offsetPartitionSet.add(offsetsTopic.getPartitionName(i));
             }
 
             if (offsetsTopicMetadata.partitions <= 0) {
                 log.info("Kafka group metadata topic {} doesn't exist. Creating it ...", offsetsTopic);
 
                 topics.createPartitionedTopic(
-                        offsetsTopic,
+                        offsetsTopic.getFullName(),
                         conf.getOffsetsTopicNumPartitions()
                 );
-
-                for (String partition : offsetPartitionSet) {
-                    topics.createNonPartitionedTopic(partition);
-                }
 
                 log.info("Successfully created group metadata topic {} with {} partitions.",
                         offsetsTopic, conf.getOffsetsTopicNumPartitions());
             } else {
                 // Check to see if the partitions all exist
                 offsetPartitionSet.removeAll(
-                topics.getList(kafkaMetadataNamespace).stream()
-                .filter((topic) -> {
-                    return topic.startsWith(offsetsTopic + PARTITIONED_TOPIC_SUFFIX);
-                }).collect(Collectors.toList()));
+                        topics.getList(kafkaMetadataNamespace).stream()
+                                .filter((topic) -> topic.startsWith(offsetsTopic.getFullName()))
+                                .collect(Collectors.toList())
+                );
 
                 if (!offsetPartitionSet.isEmpty()) {
                     log.info("Identified missing offset topic partitions: {}", offsetPartitionSet);
@@ -176,8 +171,9 @@ public class MetadataUtils {
             throw e;
         } finally {
             log.info("Current state of kafka metadata, cluster: {} exists: {}, tenant: {} exists: {},"
-                + " namespace: {} exists: {}, topic: {} exists: {}", cluster, clusterExists, kafkaMetadataTenant,
-                tenantExists, kafkaMetadataNamespace, namespaceExists, offsetsTopic, offsetsTopicExists);
+                            + " namespace: {} exists: {}, topic: {} exists: {}",
+                    cluster, clusterExists, kafkaMetadataTenant, tenantExists, kafkaMetadataNamespace, namespaceExists,
+                    offsetsTopic.getOriginalName(), offsetsTopicExists);
         }
     }
 }
