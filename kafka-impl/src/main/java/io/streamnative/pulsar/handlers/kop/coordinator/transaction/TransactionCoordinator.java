@@ -554,6 +554,8 @@ public class TransactionCoordinator {
                             transactionalId, txnMetadata.getState());
                     log.error(errorMsg);
                     throw new IllegalStateException(errorMsg);
+                default:
+                    // no op
             }
             return null;
         });
