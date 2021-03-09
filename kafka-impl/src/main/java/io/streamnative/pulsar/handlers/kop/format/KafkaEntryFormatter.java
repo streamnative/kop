@@ -13,21 +13,20 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import static org.apache.kafka.common.record.Records.MAGIC_OFFSET;
+import static org.apache.kafka.common.record.Records.OFFSET_OFFSET;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+import java.nio.ByteBuffer;
+import java.util.List;
+import java.util.stream.Collectors;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
-
-import java.nio.ByteBuffer;
-import java.util.List;
-import java.util.stream.Collectors;
-
-import static org.apache.kafka.common.record.Records.MAGIC_OFFSET;
-import static org.apache.kafka.common.record.Records.OFFSET_OFFSET;
 
 /**
  * The entry formatter that uses Kafka's format.
@@ -59,7 +58,6 @@ public class KafkaEntryFormatter implements EntryFormatter {
             records.buffer().putLong(p + OFFSET_OFFSET, startOffset);
             records.buffer().put(p + MAGIC_OFFSET, magic);
 
-            entry.release();
             return records;
         }).collect(Collectors.toList());
 
@@ -73,6 +71,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
         batchedBuffer.flip();
 
         MemoryRecords batchedMemoryRecords = MemoryRecords.readableRecords(batchedBuffer);
+        entries.forEach(Entry::release);
         return batchedMemoryRecords;
     }
 
