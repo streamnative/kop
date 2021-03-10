@@ -148,6 +148,9 @@ public class SaslAuthenticator {
             // TODO: support more mechanisms, see https://github.com/streamnative/kop/issues/235
             if (mechanism.equals(PlainSaslServer.PLAIN_MECHANISM)) {
                 saslServer = new PlainSaslServer(authenticationService, admin);
+            } else if (mechanism.equals(OAuthBearerSaslServer.OAUTHBEARER_MECHANISM)) {
+                // TODO: use real constructor
+                saslServer = new OAuthBearerSaslServer();
             } else {
                 AuthenticationException e =
                         new AuthenticationException("KoP doesn't support '" + mechanism + "' mechanism");
