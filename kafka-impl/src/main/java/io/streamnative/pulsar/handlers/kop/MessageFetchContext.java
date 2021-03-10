@@ -225,12 +225,8 @@ public final class MessageFetchContext {
                         List<Entry> entryList = responseValues.computeIfAbsent(kafkaTopic, l -> Lists.newArrayList());
 
                         if (entries != null && !entries.isEmpty()) {
-                            if (isolationLevel.equals(IsolationLevel.READ_UNCOMMITTED)) {
-                                entryList.addAll(entries);
-                                entriesRead.addAndGet(entries.size());
-                                bytesRead.addAndGet(entryList.stream().parallel().map(e ->
-                                        e.getLength()).reduce(0, Integer::sum));
-                            } else {
+                            if (requestHandler.getKafkaConfig().isEnableTransactionCoordinator()
+                                    && isolationLevel.equals(IsolationLevel.READ_COMMITTED)) {
                                 TopicName topicName = TopicName.get(KopTopic.toString(kafkaTopic));
                                 long lso = tc.getLastStableOffset(topicName, highWaterMarkMap.get(kafkaTopic));
                                 for (Entry entry : entries) {
@@ -242,6 +238,11 @@ public final class MessageFetchContext {
                                         break;
                                     }
                                 }
+                            } else {
+                                entryList.addAll(entries);
+                                entriesRead.addAndGet(entries.size());
+                                bytesRead.addAndGet(entryList.stream().parallel().map(e ->
+                                        e.getLength()).reduce(0, Integer::sum));
                             }
 
                             if (log.isDebugEnabled()) {
@@ -369,11 +370,12 @@ public final class MessageFetchContext {
                             EntryFormatter.updateConsumerStats(records, consumerFuture);
 
                             List<FetchResponse.AbortedTransaction> abortedTransactions;
-                            if (IsolationLevel.READ_UNCOMMITTED.equals(isolationLevel)) {
-                                abortedTransactions = null;
-                            } else {
+                            if (requestHandler.getKafkaConfig().isEnableTransactionCoordinator()
+                                    && isolationLevel.equals(IsolationLevel.READ_COMMITTED)) {
                                 abortedTransactions = tc.getAbortedIndexList(
                                         request.fetchData().get(kafkaPartition).fetchOffset);
+                            } else {
+                                abortedTransactions = null;
                             }
                             partitionData = new FetchResponse.PartitionData(
                                 Errors.NONE,
