@@ -337,7 +337,7 @@ public class TransactionCoordinator {
                     resultFuture.completeExceptionally(new IllegalStateException(errorMsg));
                     break;
                 default:
-                    // no op
+                    // no-op
             }
         }
         return resultFuture;
@@ -468,8 +468,62 @@ public class TransactionCoordinator {
             return;
         }
 
-        TransactionMetadata txnMetadata = epochAndMetadata.get().getTransactionMetadata();
+        ErrorsAndData<TxnTransitMetadata> preAppendResult = preAppend(epochAndMetadata, transactionalId, producerId,
+                isFromClient, producerEpoch, txnMarkerResult, isEpochFence);
+
+        if (preAppendResult.hasErrors()) {
+            log.error("Aborting append of {} to transaction log with coordinator and returning {} error to client "
+                    + "for {}'s EndTransaction request", txnMarkerResult, preAppendResult.getErrors(), transactionalId);
+            callback.complete(preAppendResult.getErrors());
+            return;
+        }
+
         int coordinatorEpoch = epochAndMetadata.get().getCoordinatorEpoch();
+        txnManager.appendTransactionToLog(transactionalId, coordinatorEpoch, preAppendResult.getData(),
+                new TransactionStateManager.ResponseCallback() {
+                    @Override
+                    public void complete() {
+                        completeEndTxn(transactionalId, coordinatorEpoch, producerId, producerEpoch,
+                                txnMarkerResult, requestHandler, callback);
+                    }
+
+                    @Override
+                    public void fail(Errors errors) {
+                        log.info("Aborting sending of transaction markers and returning {} error to client for {}'s "
+                                + "EndTransaction request of {}, since appending {} to transaction log with "
+                                + "coordinator epoch {} failed", errors, transactionalId, txnMarkerResult,
+                                preAppendResult.getData(), coordinatorEpoch);
+
+                        if (isEpochFence.get()) {
+                            ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>>
+                                    errorsAndData = txnManager.getTransactionState(transactionalId);
+                            if (!errorsAndData.getData().isPresent()) {
+                                log.warn("The coordinator still owns the transaction partition for {}, but there "
+                                        + "is no metadata in the cache; this is not expected", transactionalId);
+                            } else if (errorsAndData.getData().isPresent()
+                                    && epochAndMetadata.get().getCoordinatorEpoch() == coordinatorEpoch) {
+                                    // This was attempted epoch fence that failed, so mark this state on the metadata
+                                    epochAndMetadata.get().getTransactionMetadata().setHasFailedEpochFence(true);
+                                    log.warn("The coordinator failed to write an epoch fence transition for producer "
+                                            + "{} to the transaction log with error {}. The epoch was increased to ${} "
+                                            + "but not returned to the client", transactionalId, errors,
+                                            preAppendResult.getData().getProducerEpoch());
+                            }
+                        }
+
+                        callback.complete(errors);
+                    }
+                }, retryErrors -> true);
+    }
+
+    private ErrorsAndData<TxnTransitMetadata> preAppend(Optional<CoordinatorEpochAndTxnMetadata> epochAndMetadata,
+                                                        String transactionalId,
+                                                        long producerId,
+                                                        boolean isFromClient,
+                                                        short producerEpoch,
+                                                        TransactionResult txnMarkerResult,
+                                                        AtomicBoolean isEpochFence) {
+        TransactionMetadata txnMetadata = epochAndMetadata.get().getTransactionMetadata();
 
         ErrorsAndData<TxnTransitMetadata> preAppendResult = new ErrorsAndData<>();
         txnMetadata.inLock(() -> {
@@ -550,58 +604,16 @@ public class TransactionCoordinator {
                 case DEAD:
                 case PREPARE_EPOCH_FENCE:
                     String errorMsg = String.format("Found transactionalId %s with state %s. "
-                            + "This is illegal as we should never have transitioned to this state.",
+                                    + "This is illegal as we should never have transitioned to this state.",
                             transactionalId, txnMetadata.getState());
                     log.error(errorMsg);
                     throw new IllegalStateException(errorMsg);
                 default:
-                    // no op
+                    // no-op
             }
             return null;
         });
-
-        if (preAppendResult.hasErrors()) {
-            log.error("Aborting append of {} to transaction log with coordinator and returning {} error to client "
-                    + "for {}'s EndTransaction request", txnMarkerResult, preAppendResult.getErrors(), transactionalId);
-            callback.complete(preAppendResult.getErrors());
-            return;
-        }
-
-        txnManager.appendTransactionToLog(transactionalId, coordinatorEpoch, preAppendResult.getData(),
-                new TransactionStateManager.ResponseCallback() {
-                    @Override
-                    public void complete() {
-                        completeEndTxn(transactionalId, coordinatorEpoch, producerId, producerEpoch,
-                                txnMarkerResult, requestHandler, callback);
-                    }
-
-                    @Override
-                    public void fail(Errors errors) {
-                        log.info("Aborting sending of transaction markers and returning {} error to client for {}'s "
-                                + "EndTransaction request of {}, since appending {} to transaction log with "
-                                + "coordinator epoch {} failed", errors, transactionalId, txnMarkerResult,
-                                preAppendResult.getData(), coordinatorEpoch);
-
-                        if (isEpochFence.get()) {
-                            ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>>
-                                    errorsAndData = txnManager.getTransactionState(transactionalId);
-                            if (!errorsAndData.getData().isPresent()) {
-                                log.warn("The coordinator still owns the transaction partition for {}, but there "
-                                        + "is no metadata in the cache; this is not expected", transactionalId);
-                            } else if (errorsAndData.getData().isPresent()
-                                    && epochAndMetadata.get().getCoordinatorEpoch() == coordinatorEpoch) {
-                                    // This was attempted epoch fence that failed, so mark this state on the metadata
-                                    epochAndMetadata.get().getTransactionMetadata().setHasFailedEpochFence(true);
-                                    log.warn("The coordinator failed to write an epoch fence transition for producer "
-                                            + "{} to the transaction log with error {}. The epoch was increased to ${} "
-                                            + "but not returned to the client", transactionalId, errors,
-                                            preAppendResult.getData().getProducerEpoch());
-                            }
-                        }
-
-                        callback.complete(errors);
-                    }
-                }, errors1 -> true);
+        return preAppendResult;
     }
 
     private void completeEndTxn(String transactionalId, int coordinatorEpoch, long producerId,
@@ -669,6 +681,8 @@ public class TransactionCoordinator {
                                     + "this state.", transactionalId, txnMetadata.getState());
                             log.error(errorMsg);
                             throw new IllegalStateException(errorMsg);
+                        default:
+                            // no-op
                     }
                 }
                 return null;
