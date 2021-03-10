@@ -30,6 +30,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.zookeeper.AsyncCallback;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.Stat;
 
@@ -218,14 +219,15 @@ public class ProducerIdManager {
 
     private CompletableFuture<Void> makeSurePathExists() {
         CompletableFuture<Void> completableFuture = new CompletableFuture<>();
-        zkClient.create(KOP_PID_BLOCK_ZNODE, null, null, CreateMode.PERSISTENT, (rc, path, ctx, name) -> {
-            if (rc != KeeperException.Code.OK.intValue() && rc != KeeperException.Code.NODEEXISTS.intValue()) {
-                completableFuture.completeExceptionally(
-                        new Exception("Failed to create path " + KOP_PID_BLOCK_ZNODE + " keeperException code " + rc));
-                return;
-            }
-            completableFuture.complete(null);
-        }, null);
+        zkClient.create(KOP_PID_BLOCK_ZNODE, null, ZooDefs.Ids.OPEN_ACL_UNSAFE,
+                CreateMode.PERSISTENT, (rc, path, ctx, name) -> {
+                    if (rc != KeeperException.Code.OK.intValue() && rc != KeeperException.Code.NODEEXISTS.intValue()) {
+                        completableFuture.completeExceptionally(
+                                new Exception("Failed to create path " + KOP_PID_BLOCK_ZNODE + " keeperException code " + rc));
+                        return;
+                    }
+                    completableFuture.complete(null);
+                }, null);
         return completableFuture;
     }
 
