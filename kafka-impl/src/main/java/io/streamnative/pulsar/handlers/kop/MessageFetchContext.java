@@ -226,7 +226,8 @@ public final class MessageFetchContext {
 
                         if (entries != null && !entries.isEmpty()) {
                             if (requestHandler.getKafkaConfig().isEnableTransactionCoordinator()
-                                    && isolationLevel.equals(IsolationLevel.READ_COMMITTED)) {
+                                    && isolationLevel.equals(IsolationLevel.READ_COMMITTED)
+                                    && tc != null) {
                                 TopicName topicName = TopicName.get(KopTopic.toString(kafkaTopic));
                                 long lso = tc.getLastStableOffset(topicName, highWaterMarkMap.get(kafkaTopic));
                                 for (Entry entry : entries) {
@@ -371,7 +372,8 @@ public final class MessageFetchContext {
 
                             List<FetchResponse.AbortedTransaction> abortedTransactions;
                             if (requestHandler.getKafkaConfig().isEnableTransactionCoordinator()
-                                    && isolationLevel.equals(IsolationLevel.READ_COMMITTED)) {
+                                    && isolationLevel.equals(IsolationLevel.READ_COMMITTED)
+                                    && tc != null) {
                                 abortedTransactions = tc.getAbortedIndexList(
                                         request.fetchData().get(kafkaPartition).fetchOffset);
                             } else {
