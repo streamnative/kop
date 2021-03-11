@@ -1399,6 +1399,7 @@ public class GroupMetadataManager {
                 }
                 return metadataTopicReaderBuilder.clone()
                     .topic(offsetConfig.offsetsTopicName() + PARTITIONED_TOPIC_SUFFIX + partitionId)
+                    .readCompacted(true)
                     .createAsync();
             });
     }

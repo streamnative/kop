@@ -43,6 +43,8 @@ import org.apache.pulsar.common.policies.data.TenantInfo;
  */
 @Slf4j
 public class MetadataUtils {
+    // trigger compaction when the offset backlog reaches 100MB
+    public static final int MAX_COMPACTION_THRESHOLD = 100 * 1024 * 1024;
 
     public static String constructOffsetsTopicBaseName(KafkaServiceConfiguration conf) {
         return conf.getKafkaMetadataTenant() + "/" + conf.getKafkaMetadataNamespace()
@@ -112,6 +114,7 @@ public class MetadataUtils {
                 namespaces.setNamespaceReplicationClusters(kafkaMetadataNamespace, replicationClusters);
                 namespaces.setRetention(kafkaMetadataNamespace,
                     new RetentionPolicies(-1, -1));
+                namespaces.setCompactionThreshold(kafkaMetadataNamespace, MAX_COMPACTION_THRESHOLD);
             } else {
                 List<String> replicationClusters = namespaces.getNamespaceReplicationClusters(kafkaMetadataNamespace);
                 if (!replicationClusters.contains(cluster)) {
