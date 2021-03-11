@@ -203,7 +203,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final boolean authenticationEnabled = pulsarService.getBrokerService().isAuthenticationEnabled()
                 && !kafkaConfig.getSaslAllowedMechanisms().isEmpty();
         this.authenticator = authenticationEnabled
-                ? new SaslAuthenticator(pulsarService, kafkaConfig.getSaslAllowedMechanisms())
+                ? new SaslAuthenticator(pulsarService, kafkaConfig.getSaslAllowedMechanisms(), kafkaConfig)
                 : null;
         this.adminManager = new AdminManager(admin);
         this.tlsEnabled = tlsEnabled;
