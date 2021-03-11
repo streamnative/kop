@@ -57,6 +57,15 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 @Slf4j
 public class SaslAuthenticator {
 
+    private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
+
+    private final AuthenticationService authenticationService;
+    private final PulsarAdmin admin;
+    private final Set<String> allowedMechanisms;
+    private final AuthenticateCallbackHandler oauth2CallbackHandler;
+    private State state = State.HANDSHAKE_OR_VERSIONS_REQUEST;
+    private SaslServer saslServer;
+
     private enum State {
         HANDSHAKE_OR_VERSIONS_REQUEST,
         HANDSHAKE_REQUEST,
@@ -83,15 +92,6 @@ public class SaslAuthenticator {
             super("SASL mechanism '" + mechanism + "' requested by client is not supported");
         }
     }
-
-    private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
-
-    private final AuthenticationService authenticationService;
-    private final PulsarAdmin admin;
-    private final Set<String> allowedMechanisms;
-    private final AuthenticateCallbackHandler oauth2CallbackHandler;
-    private State state = State.HANDSHAKE_OR_VERSIONS_REQUEST;
-    private SaslServer saslServer;
 
     public SaslAuthenticator(PulsarService pulsarService,
                              Set<String> allowedMechanisms,
