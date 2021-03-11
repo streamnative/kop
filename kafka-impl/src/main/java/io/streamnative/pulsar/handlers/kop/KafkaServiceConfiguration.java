@@ -16,8 +16,14 @@ package io.streamnative.pulsar.handlers.kop;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
@@ -329,15 +335,18 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         return (kafkaListeners != null) ? kafkaListeners : listeners;
     }
 
+    private InputStream getKopOauth2ConfigInputStream() throws FileNotFoundException {
+        if (kopOauth2ConfigFile == null) {
+            return KafkaServiceConfiguration.class.getClassLoader().getResourceAsStream(DEFAULT_OAUTH2_CONFIG_FILE);
+        } else {
+            return new FileInputStream(kopOauth2ConfigFile);
+        }
+    }
+
     public @NonNull Properties getKopOauth2Properties() {
         final Properties props = new Properties();
-        try {
-            if (kopOauth2ConfigFile == null) {
-                props.load(KafkaServiceConfiguration.class.getClassLoader()
-                        .getResourceAsStream(DEFAULT_OAUTH2_CONFIG_FILE));
-            } else {
-                props.load(new FileReader(kopOauth2ConfigFile));
-            }
+        try (InputStream inputStream = getKopOauth2ConfigInputStream()) {
+            props.load(inputStream);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.security;
 
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashMap;
@@ -151,7 +152,6 @@ public class SaslAuthenticator {
             try {
                 Class<?> clazz = Class.forName(className);
                 handler = (AuthenticateCallbackHandler) clazz.newInstance();
-                return (AuthenticateCallbackHandler) clazz.newInstance();
             } catch (ClassNotFoundException e) {
                 throw new RuntimeException("Failed to load class " + className + ": " + e.getMessage());
             } catch (IllegalAccessException | InstantiationException e) {
