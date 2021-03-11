@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop.security;
 
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashMap;
