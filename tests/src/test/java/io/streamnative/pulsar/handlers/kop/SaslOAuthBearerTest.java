@@ -31,7 +31,6 @@ import java.util.concurrent.ExecutionException;
 import javax.crypto.SecretKey;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -39,8 +38,6 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.errors.TimeoutException;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -64,22 +61,19 @@ public class SaslOAuthBearerTest extends KopProtocolHandlerTestBase {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
-        final SecretKey secretKey = AuthTokenUtils.createSecretKey(SignatureAlgorithm.HS256);
-
         super.resetConfig();
         conf.setAuthenticationEnabled(true);
         conf.setAuthorizationEnabled(true);
         conf.setAuthenticationProviders(Sets.newHashSet(AuthenticationProviderToken.class.getName()));
 
         conf.setBrokerClientAuthenticationPlugin(AuthenticationToken.class.getName());
+        final SecretKey secretKey = AuthTokenUtils.createSecretKey(SignatureAlgorithm.HS256);
         conf.setBrokerClientAuthenticationParameters(
                 "token:" + AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty()));
         conf.setSuperUserRoles(Sets.newHashSet(ADMIN_USER));
         final Properties properties = new Properties();
         properties.setProperty("tokenSecretKey", AuthTokenUtils.encodeKeyBase64(secretKey));
         conf.setProperties(properties);
-
-        conf.setKopOauth2ConfigFile("src/test/resources/kop-oauth2.properties");
 
         conf.setSaslAllowedMechanisms(Sets.newHashSet("OAUTHBEARER"));
         super.internalSetup();
@@ -106,14 +100,14 @@ public class SaslOAuthBearerTest extends KopProtocolHandlerTestBase {
         final String topic = "testSimpleProduceConsume";
         final String message = "hello";
 
-        final Properties producerProps = newProducerProperties();
+        final Properties producerProps = newKafkaProducerProperties();
         configureOauth2(producerProps);
         @Cleanup
         final KafkaProducer<String, String> producer = new KafkaProducer<>(producerProps);
         RecordMetadata metadata = producer.send(new ProducerRecord<>(topic, message)).get();
         log.info("Send to {}-partition-{}@{}", metadata.topic(), metadata.partition(), metadata.offset());
 
-        final Properties consumerProps = newConsumerProperties();
+        final Properties consumerProps = newKafkaConsumerProperties();
         configureOauth2(consumerProps);
         @Cleanup
         final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerProps);
@@ -135,7 +129,7 @@ public class SaslOAuthBearerTest extends KopProtocolHandlerTestBase {
     public void testProduceWithoutAuth() throws Exception {
         final String topic = "testProduceWithoutAuth";
 
-        final Properties producerProps = newProducerProperties();
+        final Properties producerProps = newKafkaProducerProperties();
         producerProps.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 3000);
 
         @Cleanup
@@ -147,24 +141,6 @@ public class SaslOAuthBearerTest extends KopProtocolHandlerTestBase {
             assertTrue(e.getCause() instanceof TimeoutException);
             assertTrue(e.getMessage().contains("Failed to update metadata"));
         }
-    }
-
-    private Properties newProducerProperties() {
-        final Properties props = new Properties();
-        props.setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
-        props.setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        props.setProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        return props;
-    }
-
-    private Properties newConsumerProperties() {
-        final Properties props = new Properties();
-        props.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
-        props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "my-group");
-        props.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        return props;
     }
 
     private void configureOauth2(final Properties props) {
