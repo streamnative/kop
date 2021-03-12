@@ -15,7 +15,13 @@ package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
+
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.HashSet;
+import java.util.Properties;
 import java.util.Set;
 import lombok.Getter;
 import lombok.NonNull;
@@ -39,6 +45,8 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     // offset configuration
     private static final int OffsetsRetentionMinutes = 7 * 24 * 60;
     public static final int DefaultOffsetsTopicNumPartitions = 8;
+
+    public static final String DEFAULT_OAUTH2_CONFIG_FILE = "kop-oauth2.properties";
 
     @Category
     private static final String CATEGORY_KOP = "Kafka on Pulsar";
@@ -292,6 +300,22 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private boolean enableTransactionCoordinator = false;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "The fully qualified name of a SASL server callback handler class that implements the "
+                    + "AuthenticateCallbackHandler interface, which is used for OAuth2 authentication. "
+                    + "If it's not set, the class will be Kafka's default server callback handler for "
+                    + "OAUTHBEARER mechanism: OAuthBearerUnsecuredValidatorCallbackHandler."
+    )
+    private String kopOauth2AuthenticateCallbackHandler;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "The properties configuration file of OAuth2 authentication. If it's not specified, use"
+                    + " kop-oauth2.properties file under resource directory"
+    )
+    private String kopOauth2ConfigFile;
+
     public @NonNull String getKafkaAdvertisedListeners() {
         if (kafkaAdvertisedListeners != null) {
             return kafkaAdvertisedListeners;
@@ -307,4 +331,21 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         return (kafkaListeners != null) ? kafkaListeners : listeners;
     }
 
+    private InputStream getKopOauth2ConfigInputStream() throws FileNotFoundException {
+        if (kopOauth2ConfigFile == null) {
+            return KafkaServiceConfiguration.class.getClassLoader().getResourceAsStream(DEFAULT_OAUTH2_CONFIG_FILE);
+        } else {
+            return new FileInputStream(kopOauth2ConfigFile);
+        }
+    }
+
+    public @NonNull Properties getKopOauth2Properties() {
+        final Properties props = new Properties();
+        try (InputStream inputStream = getKopOauth2ConfigInputStream()) {
+            props.load(inputStream);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return props;
+    }
 }

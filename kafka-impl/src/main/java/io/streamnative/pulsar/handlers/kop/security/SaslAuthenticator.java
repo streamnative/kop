@@ -13,18 +13,21 @@
  */
 package io.streamnative.pulsar.handlers.kop.security;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 
-import io.streamnative.pulsar.handlers.kop.SaslAuth;
-import io.streamnative.pulsar.handlers.kop.utils.SaslUtils;
-
-import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import javax.naming.AuthenticationException;
+import javax.security.auth.login.AppConfigurationEntry;
+import javax.security.sasl.SaslException;
+import javax.security.sasl.SaslServer;
 
-import lombok.Getter;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -38,23 +41,30 @@ import org.apache.kafka.common.requests.SaslAuthenticateRequest;
 import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SaslHandshakeRequest;
 import org.apache.kafka.common.requests.SaslHandshakeResponse;
+import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
+import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
+import org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerSaslServer;
+import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerUnsecuredValidatorCallbackHandler;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
-import org.apache.pulsar.broker.authentication.AuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
-import org.apache.pulsar.broker.authentication.AuthenticationState;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.common.api.AuthData;
-import org.apache.pulsar.common.policies.data.AuthAction;
 
 /**
  * The SASL authenticator.
  */
 @Slf4j
 public class SaslAuthenticator {
+
+    private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
+
+    private final AuthenticationService authenticationService;
+    private final PulsarAdmin admin;
+    private final Set<String> allowedMechanisms;
+    private final AuthenticateCallbackHandler oauth2CallbackHandler;
+    private State state = State.HANDSHAKE_OR_VERSIONS_REQUEST;
+    private SaslServer saslServer;
 
     private enum State {
         HANDSHAKE_OR_VERSIONS_REQUEST,
@@ -83,21 +93,13 @@ public class SaslAuthenticator {
         }
     }
 
-    private final AuthenticationService authenticationService;
-    private final PulsarAdmin admin;
-    private final Set<String> allowedMechanisms;
-    private State state = State.HANDSHAKE_OR_VERSIONS_REQUEST;
-    @Getter
-    private AuthenticationState authState = null;
-    @Getter
-    private AuthenticationDataSource authDataSource = null;
-    @Getter
-    private String authRole = null;
-
-    public SaslAuthenticator(PulsarService pulsarService, Set<String> allowedMechanisms) throws PulsarServerException {
+    public SaslAuthenticator(PulsarService pulsarService,
+                             Set<String> allowedMechanisms,
+                             KafkaServiceConfiguration config) throws PulsarServerException {
         this.authenticationService = pulsarService.getBrokerService().getAuthenticationService();
         this.admin = pulsarService.getAdminClient();
         this.allowedMechanisms = allowedMechanisms;
+        this.oauth2CallbackHandler = createOauth2CallbackHandler(config);
     }
 
     public void authenticate(RequestHeader header,
@@ -110,6 +112,9 @@ public class SaslAuthenticator {
                 break;
             case AUTHENTICATE:
                 handleAuthenticate(header, request, response);
+                if (saslServer.isComplete()) {
+                    setState(State.COMPLETE);
+                }
                 break;
             default:
                 break;
@@ -122,15 +127,61 @@ public class SaslAuthenticator {
 
     public void reset() {
         state = State.HANDSHAKE_OR_VERSIONS_REQUEST;
-        authState = null;
-        authDataSource = null;
-        authRole = null;
+        if (saslServer != null) {
+            try {
+                saslServer.dispose();
+            } catch (SaslException ignored) {
+            }
+            saslServer = null;
+        }
     }
 
     private void setState(State state) {
         this.state = state;
         if (log.isDebugEnabled()) {
             log.debug("Set SaslAuthenticator's state to {}", state);
+        }
+    }
+
+    private @NonNull AuthenticateCallbackHandler createOauth2CallbackHandler(
+            @NonNull final KafkaServiceConfiguration config) {
+        AuthenticateCallbackHandler handler;
+        if (config.getKopOauth2AuthenticateCallbackHandler() != null) {
+            final String className = config.getKopOauth2AuthenticateCallbackHandler();
+            try {
+                Class<?> clazz = Class.forName(className);
+                handler = (AuthenticateCallbackHandler) clazz.newInstance();
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException("Failed to load class " + className + ": " + e.getMessage());
+            } catch (IllegalAccessException | InstantiationException e) {
+                throw new RuntimeException("Failed to create new instance of " + className + ": " + e.getMessage());
+            } catch (ClassCastException e) {
+                throw new RuntimeException("Failed to cast " + className + ": " + e.getMessage());
+            }
+        } else {
+            handler = new OAuthBearerUnsecuredValidatorCallbackHandler();
+        }
+
+        final Properties props = config.getKopOauth2Properties();
+        final Map<String, String> oauth2Configs = new HashMap<>();
+        props.forEach((key, value) -> oauth2Configs.put(key.toString(), value.toString()));
+        final AppConfigurationEntry appConfigurationEntry = new AppConfigurationEntry(
+                "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule",
+                AppConfigurationEntry.LoginModuleControlFlag.REQUIRED,
+                oauth2Configs);
+        handler.configure(null, OAuthBearerLoginModule.OAUTHBEARER_MECHANISM,
+                Collections.singletonList(appConfigurationEntry));
+        return handler;
+    }
+
+    private void createSaslServer(final String mechanism) throws AuthenticationException {
+        // TODO: support more mechanisms, see https://github.com/streamnative/kop/issues/235
+        if (mechanism.equals(PlainSaslServer.PLAIN_MECHANISM)) {
+            saslServer = new PlainSaslServer(authenticationService, admin);
+        } else if (mechanism.equals(OAuthBearerLoginModule.OAUTHBEARER_MECHANISM)) {
+            saslServer = new OAuthBearerSaslServer(oauth2CallbackHandler);
+        } else {
+            throw new AuthenticationException("KoP doesn't support '" + mechanism + "' mechanism");
         }
     }
 
@@ -150,7 +201,15 @@ public class SaslAuthenticator {
                 responseFuture.complete(request.getErrorResponse(e));
                 throw e;
             }
-            handleHandshakeRequest((SaslHandshakeRequest) request, responseFuture);
+            final String mechanism = handleHandshakeRequest((SaslHandshakeRequest) request, responseFuture);
+            try {
+                createSaslServer(mechanism);
+            } catch (AuthenticationException e) {
+                responseFuture.complete(request.getErrorResponse(e));
+                throw e;
+            }
+
+            setState(State.AUTHENTICATE);
         } else {
             throw new AuthenticationException("Unexpected Kafka request of type " + apiKey + " during SASL handshake");
         }
@@ -172,52 +231,14 @@ public class SaslAuthenticator {
         }
 
         SaslAuthenticateRequest saslAuthenticateRequest = (SaslAuthenticateRequest) request;
-        SaslAuth saslAuth;
+
         try {
-            saslAuth = SaslUtils.parseSaslAuthBytes(Utils.toArray(saslAuthenticateRequest.saslAuthBytes()));
-        } catch (IOException e) {
+            byte[] responseToken = saslServer.evaluateResponse(Utils.toArray(saslAuthenticateRequest.saslAuthBytes()));
+            ByteBuffer responseBuf = (responseToken == null) ? EMPTY_BUFFER : ByteBuffer.wrap(responseToken);
+            responseFuture.complete(new SaslAuthenticateResponse(Errors.NONE, null, responseBuf));
+        } catch (SaslException e) {
             responseFuture.complete(new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()));
-            return;
-        }
-
-        AuthenticationProvider authenticationProvider =
-                authenticationService.getAuthenticationProvider(saslAuth.getAuthMethod());
-        if (authenticationProvider == null) {
-            AuthenticationException e = new AuthenticationException(
-                    "No AuthenticationProvider found for method " + saslAuth.getAuthMethod());
-            responseFuture.complete(request.getErrorResponse(e));
-            throw e;
-        }
-
-        try {
-            authState = authenticationProvider.newAuthState(
-                    AuthData.of(saslAuth.getAuthData().getBytes(UTF_8)), null, null);
-        } catch (AuthenticationException e) {
-            responseFuture.complete(new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()));
-            return;
-        }
-        authDataSource = authState.getAuthDataSource();
-        authRole = authState.getAuthRole();
-
-        // TODO: we need to let KafkaRequestHandler do the authorization works. Here we just check the permissions
-        //  of the namespace, which is the namespace. See https://github.com/streamnative/kop/issues/236
-        final String namespace = saslAuth.getUsername();
-        try {
-            Map<String, Set<AuthAction>> permissions = admin.namespaces().getPermissions(namespace);
-            if (permissions.containsKey(authRole)) {
-                responseFuture.complete(new SaslAuthenticateResponse(Errors.NONE, ""));
-                setState(State.COMPLETE);
-            } else {
-                responseFuture.complete(new SaslAuthenticateResponse(
-                        Errors.SASL_AUTHENTICATION_FAILED,
-                        "Role: " + authRole + " is not allowed on namespace " + namespace));
-            }
-        } catch (PulsarAdminException e) {
-            AuthenticationException authException =
-                    new AuthenticationException("Failed to get permissions of " + namespace + ": " + e.getMessage());
-            responseFuture.complete(
-                    new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, authException.getMessage()));
-            responseFuture.complete(request.getErrorResponse(authException));
+            throw new AuthenticationException(e.getMessage());
         }
     }
 
@@ -237,14 +258,13 @@ public class SaslAuthenticator {
         }
     }
 
-    private void handleHandshakeRequest(SaslHandshakeRequest request,
-                                        CompletableFuture<AbstractResponse> responseFuture)
+    private @NonNull String handleHandshakeRequest(SaslHandshakeRequest request,
+                                                   CompletableFuture<AbstractResponse> responseFuture)
             throws AuthenticationException {
 
         final String mechanism = request.mechanism();
-        if (mechanism != null && !mechanism.equals("PLAIN")) {
-            // TODO: support more mechanisms, see https://github.com/streamnative/kop/issues/235
-            AuthenticationException e = new AuthenticationException("KoP only support PLAIN mechanism");
+        if (mechanism == null) {
+            AuthenticationException e = new AuthenticationException("client's mechanism is null");
             responseFuture.complete(request.getErrorResponse(e));
             throw e;
         }
@@ -253,7 +273,7 @@ public class SaslAuthenticator {
                 log.debug("Using SASL mechanism '{}' provided by client", mechanism);
             }
             responseFuture.complete(new SaslHandshakeResponse(Errors.NONE, allowedMechanisms));
-            setState(State.AUTHENTICATE);
+            return mechanism;
         } else {
             if (log.isDebugEnabled()) {
                 log.debug("SASL mechanism '{}' requested by client is not supported", mechanism);
