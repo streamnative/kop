@@ -520,6 +520,7 @@ public class TransactionCoordinator {
                             }
                         }
 
+
                         callback.complete(errors);
                     }
                 }, retryErrors -> true);
@@ -558,36 +559,20 @@ public class TransactionCoordinator {
                     getOnGoingResult(txnMarkerResult, txnMetadata, isEpochFence, producerEpoch, preAppendResult);
                     break;
                 case COMPLETE_COMMIT:
-                    if (txnMarkerResult == TransactionResult.COMMIT) {
-                        preAppendResult.setErrors(Errors.NONE);
-                    } else {
-                        preAppendResult.setErrors(logInvalidStateTransitionAndReturnError(
-                                transactionalId, txnMetadata.getState(), txnMarkerResult));
-                    }
+                    setPreEndTxnErrors(txnMarkerResult, TransactionResult.COMMIT, Errors.NONE,
+                            preAppendResult, transactionalId, txnMetadata);
                     break;
                 case COMPLETE_ABORT:
-                    if (txnMarkerResult == TransactionResult.ABORT) {
-                        preAppendResult.setErrors(Errors.NONE);
-                    } else {
-                        preAppendResult.setErrors(logInvalidStateTransitionAndReturnError(
-                                transactionalId, txnMetadata.getState(), txnMarkerResult));
-                    }
+                    setPreEndTxnErrors(txnMarkerResult, TransactionResult.ABORT, Errors.NONE,
+                            preAppendResult, transactionalId, txnMetadata);
                     break;
                 case PREPARE_COMMIT:
-                    if (txnMarkerResult == TransactionResult.COMMIT) {
-                        preAppendResult.setErrors(Errors.CONCURRENT_TRANSACTIONS);
-                    } else {
-                        preAppendResult.setErrors(logInvalidStateTransitionAndReturnError(
-                                transactionalId, txnMetadata.getState(), txnMarkerResult));
-                    }
+                    setPreEndTxnErrors(txnMarkerResult, TransactionResult.COMMIT, Errors.CONCURRENT_TRANSACTIONS,
+                            preAppendResult, transactionalId, txnMetadata);
                     break;
                 case PREPARE_ABORT:
-                    if (txnMarkerResult == TransactionResult.ABORT) {
-                        preAppendResult.setErrors(Errors.CONCURRENT_TRANSACTIONS);
-                    } else {
-                        preAppendResult.setErrors(logInvalidStateTransitionAndReturnError(
-                                transactionalId, txnMetadata.getState(), txnMarkerResult));
-                    }
+                    setPreEndTxnErrors(txnMarkerResult, TransactionResult.ABORT, Errors.CONCURRENT_TRANSACTIONS,
+                            preAppendResult, transactionalId, txnMetadata);
                     break;
                 case EMPTY:
                     preAppendResult.setErrors(logInvalidStateTransitionAndReturnError(
@@ -632,7 +617,17 @@ public class TransactionCoordinator {
 
         preAppendResult.setData(
                 txnMetadata.prepareAbortOrCommit(nextState, SystemTime.SYSTEM.milliseconds()));
+    }
 
+    private void setPreEndTxnErrors(TransactionResult txnMarkerResult, TransactionResult compareResult,
+                                Errors errors, ErrorsAndData<TxnTransitMetadata> preAppendResult,
+                                String transactionalId, TransactionMetadata txnMetadata) {
+        if (txnMarkerResult == compareResult) {
+            preAppendResult.setErrors(errors);
+        } else {
+            preAppendResult.setErrors(logInvalidStateTransitionAndReturnError(
+                    transactionalId, txnMetadata.getState(), txnMarkerResult));
+        }
     }
 
     private void completeEndTxn(String transactionalId, int coordinatorEpoch, long producerId,
