@@ -226,6 +226,7 @@ public class TransactionStateManager {
                     break;
                 default:
                     result.setErrors(Errors.UNKNOWN_SERVER_ERROR);
+                    break;
             }
         }
         return result;
@@ -316,8 +317,8 @@ public class TransactionStateManager {
                                 metadata.getPendingState());
                     } else {
                         log.info("TransactionalId {} append transaction log for {} transition failed due to {}, "
-                                        + "resetting pending state from {}, aborting state transition and returning {} in "
-                                        + "the callback",
+                                    + "resetting pending state from {}, aborting state transition and returning {} in "
+                                    + "the callback",
                                 metadata.getTransactionalId(), newMetadata, result.getErrors(),
                                 metadata.getPendingState(), result.getErrors());
                         metadata.setPendingState(Optional.empty());

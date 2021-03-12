@@ -163,8 +163,6 @@ public class TransactionCoordinator {
                     epochAndTxnMetaFuture.complete(txnManager.putTransactionStateIfNotExists(newMetadata));
                 });
             } else {
-                // TODO generate monotonically increasing epoch
-                // TODO conflict resolve
                 epochAndTxnMetaFuture.complete(existMeta);
             }
 
@@ -182,58 +180,68 @@ public class TransactionCoordinator {
                                 expectedProducerIdAndEpoch);
 
                     prepareInitProducerIdResult.whenComplete((errorsAndData, prepareThrowable) -> {
-                        if (errorsAndData.hasErrors()) {
-                            initTransactionError(response, errorsAndData.getErrors());
-                            return;
-                        }
-                        if (prepareThrowable != null) {
-                            log.error("Failed to init producerId.", prepareThrowable);
-                            initTransactionError(response, Errors.forException(prepareThrowable));
-                            return;
-                        }
-                        TxnTransitMetadata newMetadata = errorsAndData.getData().txnTransitMetadata;
-                        if (errorsAndData.getData().txnTransitMetadata.getTxnState() == PREPARE_EPOCH_FENCE) {
-                            endTransaction(transactionalId,
-                                    newMetadata.getProducerId(),
-                                    newMetadata.getProducerEpoch(),
-                                    TransactionResult.ABORT,
-                                    false,
-                                    requestHandler,
-                                    errors -> {
-                                        if (errors != Errors.NONE) {
-                                            initTransactionError(response, errors);
-                                        } else {
-                                            initTransactionError(response, Errors.CONCURRENT_TRANSACTIONS);
-                                        }
-                                    });
-                        } else {
-                            txnManager.appendTransactionToLog(transactionalId, coordinatorEpoch, newMetadata,
-                                    new TransactionStateManager.ResponseCallback() {
-                                        @Override
-                                        public void complete() {
-                                            log.info("Initialized transactionalId {} with producerId {} and producer "
-                                                    + "epoch {} on partition {}-{}", transactionalId,
-                                                    newMetadata.getProducerId(), newMetadata.getProducerEpoch(),
-                                                    Topic.TRANSACTION_STATE_TOPIC_NAME,
-                                                    txnManager.partitionFor(transactionalId));
-                                            response.complete(new InitProducerIdResponse(
-                                                    0, Errors.NONE, newMetadata.getProducerId(),
-                                                    newMetadata.getProducerEpoch()));
-                                        }
-
-                                        @Override
-                                        public void fail(Errors errors) {
-                                            log.info("Returning {} error code to client for {}'s InitProducerId "
-                                                    + "request", errors, transactionalId);
-                                            initTransactionError(response, errors);
-                                        }
-                                    }, errors -> true);
-                                }
+                        completeInitProducer(transactionalId, coordinatorEpoch, errorsAndData, prepareThrowable,
+                                requestHandler, response);
                     });
                     return null;
                 });
             });
 
+        }
+    }
+
+    private void completeInitProducer(String transactionalId,
+                                      int coordinatorEpoch,
+                                      ErrorsAndData<EpochAndTxnTransitMetadata> errorsAndData,
+                                      Throwable prepareInitPidThrowable,
+                                      KafkaRequestHandler requestHandler,
+                                      CompletableFuture<AbstractResponse> response) {
+        if (errorsAndData.hasErrors()) {
+            initTransactionError(response, errorsAndData.getErrors());
+            return;
+        }
+        if (prepareInitPidThrowable != null) {
+            log.error("Failed to init producerId.", prepareInitPidThrowable);
+            initTransactionError(response, Errors.forException(prepareInitPidThrowable));
+            return;
+        }
+        TxnTransitMetadata newMetadata = errorsAndData.getData().txnTransitMetadata;
+        if (errorsAndData.getData().txnTransitMetadata.getTxnState() == PREPARE_EPOCH_FENCE) {
+            endTransaction(transactionalId,
+                    newMetadata.getProducerId(),
+                    newMetadata.getProducerEpoch(),
+                    TransactionResult.ABORT,
+                    false,
+                    requestHandler,
+                    errors -> {
+                        if (errors != Errors.NONE) {
+                            initTransactionError(response, errors);
+                        } else {
+                            initTransactionError(response, Errors.CONCURRENT_TRANSACTIONS);
+                        }
+                    });
+        } else {
+            txnManager.appendTransactionToLog(transactionalId, coordinatorEpoch, newMetadata,
+                    new TransactionStateManager.ResponseCallback() {
+                        @Override
+                        public void complete() {
+                            log.info("Initialized transactionalId {} with producerId {} and producer "
+                                            + "epoch {} on partition {}-{}", transactionalId,
+                                    newMetadata.getProducerId(), newMetadata.getProducerEpoch(),
+                                    Topic.TRANSACTION_STATE_TOPIC_NAME,
+                                    txnManager.partitionFor(transactionalId));
+                            response.complete(new InitProducerIdResponse(
+                                    0, Errors.NONE, newMetadata.getProducerId(),
+                                    newMetadata.getProducerEpoch()));
+                        }
+
+                        @Override
+                        public void fail(Errors errors) {
+                            log.info("Returning {} error code to client for {}'s InitProducerId "
+                                    + "request", errors, transactionalId);
+                            initTransactionError(response, errors);
+                        }
+                    }, errors -> true);
         }
     }
 
@@ -468,8 +476,9 @@ public class TransactionCoordinator {
             return;
         }
 
-        ErrorsAndData<TxnTransitMetadata> preAppendResult = preAppend(epochAndMetadata, transactionalId, producerId,
-                isFromClient, producerEpoch, txnMarkerResult, isEpochFence);
+        ErrorsAndData<TxnTransitMetadata> preAppendResult = endTxnPreAppend(
+                epochAndMetadata, transactionalId, producerId, isFromClient, producerEpoch,
+                txnMarkerResult, isEpochFence);
 
         if (preAppendResult.hasErrors()) {
             log.error("Aborting append of {} to transaction log with coordinator and returning {} error to client "
@@ -516,7 +525,8 @@ public class TransactionCoordinator {
                 }, retryErrors -> true);
     }
 
-    private ErrorsAndData<TxnTransitMetadata> preAppend(Optional<CoordinatorEpochAndTxnMetadata> epochAndMetadata,
+    private ErrorsAndData<TxnTransitMetadata> endTxnPreAppend(
+                                                        Optional<CoordinatorEpochAndTxnMetadata> epochAndMetadata,
                                                         String transactionalId,
                                                         long producerId,
                                                         boolean isFromClient,
@@ -545,25 +555,7 @@ public class TransactionCoordinator {
 
             switch(txnMetadata.getState()) {
                 case ONGOING:
-                    TransactionState nextState;
-                    if (txnMarkerResult == TransactionResult.COMMIT) {
-                        nextState = PREPARE_COMMIT;
-                    } else {
-                        nextState = PREPARE_ABORT;
-                    }
-
-                    if (nextState == PREPARE_ABORT && txnMetadata.getPendingState().isPresent()
-                            && txnMetadata.getPendingState().get().equals(PREPARE_EPOCH_FENCE)) {
-                        // We should clear the pending state to make way for the transition to PrepareAbort and also
-                        // bump the epoch in the transaction metadata we are about to append.
-                        isEpochFence.set(true);
-                        txnMetadata.setPendingState(Optional.empty());
-                        txnMetadata.setProducerEpoch(producerEpoch);
-                        txnMetadata.setLastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH);
-                    }
-
-                    preAppendResult.setData(
-                            txnMetadata.prepareAbortOrCommit(nextState, SystemTime.SYSTEM.milliseconds()));
+                    getOnGoingResult(txnMarkerResult, txnMetadata, isEpochFence, producerEpoch, preAppendResult);
                     break;
                 case COMPLETE_COMMIT:
                     if (txnMarkerResult == TransactionResult.COMMIT) {
@@ -614,6 +606,33 @@ public class TransactionCoordinator {
             return null;
         });
         return preAppendResult;
+    }
+
+    private void getOnGoingResult(TransactionResult txnMarkerResult,
+                                  TransactionMetadata txnMetadata,
+                                  AtomicBoolean isEpochFence,
+                                  short producerEpoch,
+                                  ErrorsAndData<TxnTransitMetadata> preAppendResult) {
+        TransactionState nextState;
+        if (txnMarkerResult == TransactionResult.COMMIT) {
+            nextState = PREPARE_COMMIT;
+        } else {
+            nextState = PREPARE_ABORT;
+        }
+
+        if (nextState == PREPARE_ABORT && txnMetadata.getPendingState().isPresent()
+                && txnMetadata.getPendingState().get().equals(PREPARE_EPOCH_FENCE)) {
+            // We should clear the pending state to make way for the transition to PrepareAbort and also
+            // bump the epoch in the transaction metadata we are about to append.
+            isEpochFence.set(true);
+            txnMetadata.setPendingState(Optional.empty());
+            txnMetadata.setProducerEpoch(producerEpoch);
+            txnMetadata.setLastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH);
+        }
+
+        preAppendResult.setData(
+                txnMetadata.prepareAbortOrCommit(nextState, SystemTime.SYSTEM.milliseconds()));
+
     }
 
     private void completeEndTxn(String transactionalId, int coordinatorEpoch, long producerId,
