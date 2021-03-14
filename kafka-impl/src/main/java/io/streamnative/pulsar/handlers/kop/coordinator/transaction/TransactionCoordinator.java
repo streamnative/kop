@@ -554,50 +554,59 @@ public class TransactionCoordinator {
                 return null;
             }
 
-            switch(txnMetadata.getState()) {
-                case ONGOING:
-                    getOnGoingResult(txnMarkerResult, txnMetadata, isEpochFence, producerEpoch, preAppendResult);
-                    break;
-                case COMPLETE_COMMIT:
-                    setPreEndTxnErrors(txnMarkerResult, TransactionResult.COMMIT, Errors.NONE,
-                            preAppendResult, transactionalId, txnMetadata);
-                    break;
-                case COMPLETE_ABORT:
-                    setPreEndTxnErrors(txnMarkerResult, TransactionResult.ABORT, Errors.NONE,
-                            preAppendResult, transactionalId, txnMetadata);
-                    break;
-                case PREPARE_COMMIT:
-                    setPreEndTxnErrors(txnMarkerResult, TransactionResult.COMMIT, Errors.CONCURRENT_TRANSACTIONS,
-                            preAppendResult, transactionalId, txnMetadata);
-                    break;
-                case PREPARE_ABORT:
-                    setPreEndTxnErrors(txnMarkerResult, TransactionResult.ABORT, Errors.CONCURRENT_TRANSACTIONS,
-                            preAppendResult, transactionalId, txnMetadata);
-                    break;
-                case EMPTY:
-                    preAppendResult.setErrors(logInvalidStateTransitionAndReturnError(
-                            transactionalId, txnMetadata.getState(), txnMarkerResult));
-                    break;
-                case DEAD:
-                case PREPARE_EPOCH_FENCE:
-                    String errorMsg = String.format("Found transactionalId %s with state %s. "
-                                    + "This is illegal as we should never have transitioned to this state.",
-                            transactionalId, txnMetadata.getState());
-                    log.error(errorMsg);
-                    throw new IllegalStateException(errorMsg);
-                default:
-                    // no-op
-            }
+            endTxnByStatus(transactionalId, txnMarkerResult, txnMetadata, isEpochFence, producerEpoch, preAppendResult);
             return null;
         });
         return preAppendResult;
     }
 
-    private void getOnGoingResult(TransactionResult txnMarkerResult,
-                                  TransactionMetadata txnMetadata,
-                                  AtomicBoolean isEpochFence,
-                                  short producerEpoch,
-                                  ErrorsAndData<TxnTransitMetadata> preAppendResult) {
+    private void endTxnByStatus(String transactionalId,
+                                TransactionResult txnMarkerResult,
+                                TransactionMetadata txnMetadata,
+                                AtomicBoolean isEpochFence,
+                                short producerEpoch,
+                                ErrorsAndData<TxnTransitMetadata> preAppendResult) {
+        switch(txnMetadata.getState()) {
+            case ONGOING:
+                endTxnOnGoingResult(txnMarkerResult, txnMetadata, isEpochFence, producerEpoch, preAppendResult);
+                break;
+            case COMPLETE_COMMIT:
+                setPreEndTxnErrors(txnMarkerResult, TransactionResult.COMMIT, Errors.NONE,
+                        preAppendResult, transactionalId, txnMetadata);
+                break;
+            case COMPLETE_ABORT:
+                setPreEndTxnErrors(txnMarkerResult, TransactionResult.ABORT, Errors.NONE,
+                        preAppendResult, transactionalId, txnMetadata);
+                break;
+            case PREPARE_COMMIT:
+                setPreEndTxnErrors(txnMarkerResult, TransactionResult.COMMIT, Errors.CONCURRENT_TRANSACTIONS,
+                        preAppendResult, transactionalId, txnMetadata);
+                break;
+            case PREPARE_ABORT:
+                setPreEndTxnErrors(txnMarkerResult, TransactionResult.ABORT, Errors.CONCURRENT_TRANSACTIONS,
+                        preAppendResult, transactionalId, txnMetadata);
+                break;
+            case EMPTY:
+                preAppendResult.setErrors(logInvalidStateTransitionAndReturnError(
+                        transactionalId, txnMetadata.getState(), txnMarkerResult));
+                break;
+            case DEAD:
+            case PREPARE_EPOCH_FENCE:
+                String errorMsg = String.format("Found transactionalId %s with state %s. "
+                                + "This is illegal as we should never have transitioned to this state.",
+                        transactionalId, txnMetadata.getState());
+                log.error(errorMsg);
+                throw new IllegalStateException(errorMsg);
+            default:
+                // no-op
+        }
+    }
+
+    private void endTxnOnGoingResult(TransactionResult txnMarkerResult,
+                                     TransactionMetadata txnMetadata,
+                                     AtomicBoolean isEpochFence,
+                                     short producerEpoch,
+                                     ErrorsAndData<TxnTransitMetadata> preAppendResult) {
         TransactionState nextState;
         if (txnMarkerResult == TransactionResult.COMMIT) {
             nextState = PREPARE_COMMIT;
@@ -622,7 +631,7 @@ public class TransactionCoordinator {
     private void setPreEndTxnErrors(TransactionResult txnMarkerResult, TransactionResult compareResult,
                                 Errors errors, ErrorsAndData<TxnTransitMetadata> preAppendResult,
                                 String transactionalId, TransactionMetadata txnMetadata) {
-        if (txnMarkerResult == compareResult) {
+        if (txnMarkerResult.equals(compareResult)) {
             preAppendResult.setErrors(errors);
         } else {
             preAppendResult.setErrors(logInvalidStateTransitionAndReturnError(
