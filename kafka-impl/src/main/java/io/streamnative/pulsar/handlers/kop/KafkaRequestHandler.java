@@ -1786,7 +1786,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             || (data.getWebServiceUrlTls() != null && data.getWebServiceUrlTls().contains(hostAndPort));
     }
 
-    static MemoryRecords validateRecords(short version, TopicPartition topicPartition, MemoryRecords records) {
+    private static MemoryRecords validateRecords(short version, TopicPartition topicPartition, MemoryRecords records) {
         if (version >= 3) {
             Iterator<MutableRecordBatch> iterator = records.batches().iterator();
             if (!iterator.hasNext()) {
