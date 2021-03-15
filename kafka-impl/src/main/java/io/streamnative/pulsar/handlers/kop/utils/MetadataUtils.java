@@ -51,6 +51,11 @@ public class MetadataUtils {
             + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
     }
 
+    public static String constructTxnLogTopicBaseName(KafkaServiceConfiguration conf) {
+        return conf.getKafkaMetadataTenant() + "/" + conf.getKafkaMetadataNamespace()
+                + "/" + Topic.TRANSACTION_STATE_TOPIC_NAME;
+    }
+
    /**
      * This method creates the Kafka metadata tenant and namespace if they are not currently present.
      * <ul>

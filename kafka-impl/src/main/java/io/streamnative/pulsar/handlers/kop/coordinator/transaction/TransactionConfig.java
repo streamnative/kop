@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import java.util.concurrent.TimeUnit;
 import lombok.Builder;
 import lombok.Builder.Default;
 import lombok.Data;
@@ -25,14 +26,24 @@ import lombok.Data;
 public class TransactionConfig {
 
     public static final String DefaultTransactionMetadataTopicName = "public/default/__transaction_state";
-    public static final int DefaultTransactionMetadataTopicPartition = 1;
-    public static final int DefaultTransactionMaxTimieoutMs = 1000 * 60 * 60 * 24;
+    public static final long DefaultTransactionsMaxTimeoutMs = TimeUnit.MINUTES.toMillis(15);
+    public static final long DefaultTransactionalIdExpirationMs = TimeUnit.DAYS.toMillis(7);
+    public static final long DefaultAbortTimedOutTransactionsIntervalMs = TimeUnit.SECONDS.toMillis(10);
+    public static final long DefaultRemoveExpiredTransactionalIdsIntervalMs = TimeUnit.HOURS.toMillis(1);
 
     @Default
     private String transactionMetadataTopicName = DefaultTransactionMetadataTopicName;
     @Default
-    private int transactionMetadataTopicPartition = DefaultTransactionMetadataTopicPartition;
+    private long transactionMaxTimeoutMs = DefaultTransactionsMaxTimeoutMs;
     @Default
-    private int transactionMaxTimeoutMs = DefaultTransactionMaxTimieoutMs;
+    private long transactionalIdExpirationMs = DefaultTransactionalIdExpirationMs;
+    @Default
+    private int transactionLogNumPartitions = TransactionLog.DefaultNumPartitions;
+    @Default
+    private long abortTimedOutTransactionsIntervalMs = DefaultAbortTimedOutTransactionsIntervalMs;
+    @Default
+    private long removeExpiredTransactionalIdsIntervalMs = DefaultRemoveExpiredTransactionalIdsIntervalMs;
+    @Default
+    private long requestTimeoutMs = 30000;
 
 }

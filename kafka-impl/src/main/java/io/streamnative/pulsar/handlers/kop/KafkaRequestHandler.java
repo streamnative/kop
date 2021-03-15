@@ -1346,7 +1346,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         CompletableFuture<AbstractResponse> response) {
         InitProducerIdRequest request = (InitProducerIdRequest) kafkaHeaderAndRequest.getRequest();
         transactionCoordinator.handleInitProducerId(
-                request.transactionalId(), request.transactionTimeoutMs(), response);
+                request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(), this, response);
     }
 
     @Override

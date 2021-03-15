@@ -14,15 +14,21 @@
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
 import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.record.RecordBatch;
 import org.inferred.freebuilder.shaded.com.google.common.collect.Maps;
 
 /**
@@ -35,34 +41,47 @@ public class TransactionMetadata {
 
     private static final int DefaultTxnTimeOutMs = 1000 * 60;
 
-    // transactional id
+    // Transactional id
     private String transactionalId;
 
-    //producer id
+    // Producer id
     private long producerId;
 
-    // current epoch of the producer
+    // Last producer id assigned to the producer
+    private long lastProducerId;
+
+    // Current epoch of the producer
     private short producerEpoch;
 
-    // timeout to be used to abort long running transactions
+    // Last epoch of the producer
+    private short lastProducerEpoch;
+
+    // Timeout to be used to abort long running transactions
     private int txnTimeoutMs = DefaultTxnTimeOutMs;
 
-    // current state of the transaction
+    // Current state of the transaction
     private TransactionState state;
 
-    // current set of partitions that are part of this transaction
+    // Current set of partitions that are part of this transaction
     private Set<TopicPartition> topicPartitions;
 
-    // time the transaction was started, i.e., when first partition is added
+    // Time the transaction was started, i.e., when first partition is added
     private long txnStartTimestamp;
 
-    // updated when any operation updates the TransactionMetadata. To be used for expiration
+    // Updated when any operation updates the TransactionMetadata. To be used for expiration
     private long txnLastUpdateTimestamp;
 
-    // pending state is used to indicate the state that this transaction is going to
+    // Pending state is used to indicate the state that this transaction is going to
     // transit to, and for blocking future attempts to transit it again if it is not legal;
     // initialized as the same as the current state
-    private TransactionState pendingState;
+    @Builder.Default
+    private Optional<TransactionState> pendingState = Optional.empty();
+
+    // Indicates that during a previous attempt to fence a producer, the bumped epoch may not have been
+    // successfully written to the log. If this is true, we will not bump the epoch again when fencing
+    private boolean hasFailedEpochFence = false;
+
+    private final ReentrantLock lock = new ReentrantLock();
 
     private static Map<TransactionState, Set<TransactionState>> validPreviousStates;
 
@@ -101,16 +120,21 @@ public class TransactionMetadata {
                 TransactionState.ONGOING));
     }
 
+    public <T> T inLock(Supplier<T> supplier) {
+        return CoreUtils.inLock(lock, supplier);
+    }
+
     public TxnTransitMetadata prepareTransitionTo(TransactionState newState,
                                      long newProducerId,
                                      short newEpoch,
+                                     short newLastEpoch,
                                      int newTxnTimeoutMs,
                                      Set<TopicPartition> newTopicPartitions,
                                      long newTxnStartTimestamp,
                                      long updateTimestamp) {
-        if (pendingState != null) {
+        if (pendingState.isPresent()) {
             throw new IllegalStateException("Preparing transaction state transition to " + newState
-                    + " while it already a pending state " + pendingState);
+                    + " while it already a pending state " + pendingState.get());
         }
 
         if (newProducerId < 0) {
@@ -123,9 +147,22 @@ public class TransactionMetadata {
 
         // check that the new state transition is valid and update the pending state if necessary
         if (validPreviousStates.get(newState).contains(state)) {
-            pendingState = newState;
-            return new TxnTransitMetadata(newProducerId, newEpoch, newTxnTimeoutMs, newState,
-                    newTopicPartitions, newTxnStartTimestamp, updateTimestamp);
+            TxnTransitMetadata txnTransitMetadata = TxnTransitMetadata.builder()
+                    .producerId(newProducerId)
+                    .lastProducerId(producerId)
+                    .producerEpoch(newEpoch)
+                    .lastProducerEpoch(newLastEpoch)
+                    .txnTimeoutMs(newTxnTimeoutMs)
+                    .txnState(newState)
+                    .topicPartitions(newTopicPartitions)
+                    .txnStartTimestamp(newTxnStartTimestamp)
+                    .txnLastUpdateTimestamp(updateTimestamp).build();
+            if (log.isDebugEnabled()) {
+                log.debug("TransactionalId {} prepare transition from {} to {}",
+                        transactionalId, state, txnTransitMetadata);
+            }
+            pendingState = Optional.of(newState);
+            return txnTransitMetadata;
         } else {
             throw new IllegalStateException("Preparing transaction state transition to " + newState
                     + "failed since the target state" + newState
@@ -136,11 +173,14 @@ public class TransactionMetadata {
     /**
      * Transaction transit metadata.
      */
+    @Builder
     @AllArgsConstructor
     @Data
     public static class TxnTransitMetadata {
         private long producerId;
+        private long lastProducerId;
         private short producerEpoch;
+        private short lastProducerEpoch;
         private int txnTimeoutMs;
         private TransactionState txnState;
         private Set<TopicPartition> topicPartitions;
@@ -148,7 +188,7 @@ public class TransactionMetadata {
         private long txnLastUpdateTimestamp;
     }
 
-    public void completeTransitionTo(TxnTransitMetadata transitMetadata) throws Exception {
+    public void completeTransitionTo(TxnTransitMetadata transitMetadata) {
         // metadata transition is valid only if all the following conditions are met:
         //
         // 1. the new state is already indicated in the pending state.
@@ -161,7 +201,11 @@ public class TransactionMetadata {
         //
         // if valid, transition is done via overwriting the whole object to ensure synchronization
 
-        TransactionState toState = pendingState;
+        if (!pendingState.isPresent()) {
+            throw new IllegalStateException("TransactionalId " + transactionalId
+                    + "completing transaction state transition while it does not have a pending state");
+        }
+        TransactionState toState = pendingState.get();
 
         if (toState != transitMetadata.txnState) {
             throwStateTransitionFailure(transitMetadata);
@@ -169,7 +213,7 @@ public class TransactionMetadata {
             switch(toState) {
                 case EMPTY: // from initPid
                     if ((producerEpoch != transitMetadata.producerEpoch && !validProducerEpochBump(transitMetadata))
-                            || transitMetadata.topicPartitions.isEmpty()
+                            || !transitMetadata.topicPartitions.isEmpty()
                             || transitMetadata.txnStartTimestamp != -1) {
 
                         throwStateTransitionFailure(transitMetadata);
@@ -235,7 +279,7 @@ public class TransactionMetadata {
 
             log.info("TransactionalId {} complete transition from {} to {}", transactionalId, state, transitMetadata);
             this.txnLastUpdateTimestamp = transitMetadata.txnLastUpdateTimestamp;
-            this.pendingState = null;
+            this.pendingState = Optional.empty();
             this.state = toState;
         }
     }
@@ -250,6 +294,125 @@ public class TransactionMetadata {
         short transitEpoch = transitMetadata.producerEpoch;
         long transitProducerId = transitMetadata.producerId;
         return transitEpoch == producerEpoch + 1 || (transitEpoch == 0 && transitProducerId != producerId);
+    }
+
+    public TxnTransitMetadata prepareFenceProducerEpoch() {
+        if (producerEpoch == Short.MAX_VALUE) {
+            throw new IllegalStateException("Cannot fence producer with epoch equal to Short.MAX_VALUE "
+                    + "since this would overflow");
+        }
+
+        // If we've already failed to fence an epoch (because the write to the log failed), we don't increase it again.
+        // This is safe because we never return the epoch to client if we fail to fence the epoch
+        short bumpedEpoch;
+        if (hasFailedEpochFence) {
+            bumpedEpoch = producerEpoch;
+        } else {
+            bumpedEpoch = (short) (producerEpoch + 1);
+        }
+
+        return prepareTransitionTo(
+                TransactionState.PREPARE_EPOCH_FENCE,
+                producerId,
+                bumpedEpoch,
+                RecordBatch.NO_PRODUCER_EPOCH,
+                txnTimeoutMs,
+                topicPartitions,
+                txnStartTimestamp,
+                txnLastUpdateTimestamp);
+    }
+
+    public ErrorsAndData<TxnTransitMetadata> prepareIncrementProducerEpoch(Integer newTxnTimeoutMs,
+                                                            Optional<Short> expectedProducerEpoch,
+                                                            Long updateTimestamp) {
+        if (isProducerEpochExhausted()) {
+            throw new IllegalStateException("Cannot allocate any more producer epochs for producerId $producerId");
+        }
+
+        short bumpedEpoch = (short) (producerEpoch + 1);
+
+        ErrorsAndData<BumpEpochResult> epochBumpResult;
+        if (!expectedProducerEpoch.isPresent()) {
+            // If no expected epoch was provided by the producer, bump the current epoch and set the last epoch to -1
+            // In the case of a new producer, producerEpoch will be -1 and bumpedEpoch will be 0
+            epochBumpResult = new ErrorsAndData<>(new BumpEpochResult(bumpedEpoch, RecordBatch.NO_PRODUCER_EPOCH));
+        } else {
+            if (producerEpoch == RecordBatch.NO_PRODUCER_EPOCH || expectedProducerEpoch.get() == producerEpoch) {
+                // If the expected epoch matches the current epoch, or if there is no current epoch, the producer is
+                // attempting to continue after an error and no other producer has been initialized. Bump the current
+                // and last epochs. The no current epoch case means this is a new producer; producerEpoch will be -1
+                // and bumpedEpoch will be 0
+                epochBumpResult = new ErrorsAndData<>(new BumpEpochResult(bumpedEpoch, producerEpoch));
+            } else if (expectedProducerEpoch.get() == lastProducerEpoch) {
+                // If the expected epoch matches the previous epoch, it is a retry of a successful call, so just return
+                // the current epoch without bumping. There is no danger of this producer being fenced, because a new
+                // producer calling InitProducerId would have caused the last epoch to be set to -1.
+                // Note that if the IBP is prior to 2.4.IV1, the lastProducerId and lastProducerEpoch will not be
+                // written to the transaction log, so a retry that spans a coordinator change will fail. We expect
+                // this to be a rare case.
+                epochBumpResult = new ErrorsAndData<>(new BumpEpochResult(producerEpoch, lastProducerEpoch));
+            } else {
+                // Otherwise, the producer has a fenced epoch and should receive an PRODUCER_FENCED error
+                log.info("Expected producer epoch $expectedEpoch does not match current "
+                        + "producer epoch $producerEpoch or previous producer epoch $lastProducerEpoch");
+                // TODO the error should be Errors.PRODUCER_FENCED
+                epochBumpResult = new ErrorsAndData<>(Errors.UNKNOWN_SERVER_ERROR);
+            }
+        }
+
+        if (epochBumpResult.hasErrors()) {
+            return new ErrorsAndData<TxnTransitMetadata>(epochBumpResult.getErrors());
+        } else {
+            return new ErrorsAndData<>(
+                    prepareTransitionTo(
+                            TransactionState.EMPTY,
+                            producerId,
+                            epochBumpResult.getData().bumpedEpoch,
+                            epochBumpResult.getData().lastEpoch,
+                            newTxnTimeoutMs,
+                            Collections.emptySet(),
+                            -1,
+                            updateTimestamp));
+        }
+    }
+
+    @AllArgsConstructor
+    private static class BumpEpochResult {
+        private final short bumpedEpoch;
+        private final short lastEpoch;
+    }
+
+    public TxnTransitMetadata prepareProducerIdRotation(Long newProducerId,
+                                  Integer newTxnTimeoutMs,
+                                  Long updateTimestamp,
+                                  Boolean recordLastEpoch) {
+        if (hasPendingTransaction()) {
+            throw new IllegalStateException("Cannot rotate producer ids while a transaction is still pending");
+        }
+
+        return prepareTransitionTo(
+                TransactionState.EMPTY,
+                newProducerId,
+                (short) 0,
+                recordLastEpoch ? producerEpoch : RecordBatch.NO_PRODUCER_EPOCH,
+                newTxnTimeoutMs,
+                Collections.emptySet(),
+                -1,
+                updateTimestamp);
+    }
+
+    private boolean hasPendingTransaction() {
+        boolean flag = false;
+        switch (state) {
+            case ONGOING:
+            case PREPARE_ABORT:
+            case PREPARE_COMMIT:
+                flag = true;
+                break;
+            default:
+                // no op
+        }
+        return flag;
     }
 
     public TxnTransitMetadata prepareAddPartitions(Set<TopicPartition> addedTopicPartitions, Long updateTimestamp) {
@@ -268,12 +431,12 @@ public class TransactionMetadata {
             newPartitionSet.addAll(topicPartitions);
         }
         newPartitionSet.addAll(new HashSet<>(addedTopicPartitions));
-        return prepareTransitionTo(TransactionState.ONGOING, producerId, producerEpoch,
+        return prepareTransitionTo(TransactionState.ONGOING, producerId, producerEpoch, lastProducerEpoch,
                 txnTimeoutMs, newPartitionSet, newTxnStartTimestamp, updateTimestamp);
     }
 
     public TxnTransitMetadata prepareAbortOrCommit(TransactionState newState, Long updateTimestamp) {
-        return prepareTransitionTo(newState, producerId, producerEpoch,
+        return prepareTransitionTo(newState, producerId, producerEpoch, lastProducerEpoch,
                 txnTimeoutMs, topicPartitions, txnStartTimestamp, updateTimestamp);
     }
 
@@ -284,7 +447,10 @@ public class TransactionMetadata {
         } else {
             newState = TransactionState.COMPLETE_ABORT;
         }
-        return prepareTransitionTo(newState, producerId, producerEpoch,
+        // Since the state change was successfully written to the log, unset the flag for a failed epoch fence
+        hasFailedEpochFence = false;
+
+        return prepareTransitionTo(newState, producerId, producerEpoch, lastProducerEpoch,
                 txnTimeoutMs, Collections.emptySet(), txnStartTimestamp, updateTimestamp);
     }
 
@@ -293,5 +459,14 @@ public class TransactionMetadata {
         throw new IllegalStateException("TransactionalId " + transactionalId + " failed transition to state "
                 + txnTransitMetadata + "due to unexpected metadata");
     }
+
+    public boolean isProducerEpochExhausted() {
+        return isEpochExhausted(producerEpoch);
+    }
+
+    public boolean isEpochExhausted(short producerEpoch) {
+        return producerEpoch >= Short.MAX_VALUE - 1;
+    }
+
 
 }
