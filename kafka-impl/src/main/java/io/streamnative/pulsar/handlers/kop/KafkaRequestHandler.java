@@ -49,6 +49,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -71,12 +72,16 @@ import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.ApiException;
+import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
+import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.requests.AbstractRequest;
@@ -620,24 +625,30 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         //     nonExistingTopicResponses += topicPartition -> new PartitionResponse(Errors.UNKNOWN_TOPIC_OR_PARTITION)
         for (Map.Entry<TopicPartition, ? extends Records> entry : produceRequest.partitionRecordsOrFail().entrySet()) {
             TopicPartition topicPartition = entry.getKey();
+            try {
+                MemoryRecords validRecords = validateRecords(produceHar.getHeader().apiVersion(),
+                    topicPartition, (MemoryRecords) entry.getValue());
 
-            CompletableFuture<PartitionResponse> partitionResponse = new CompletableFuture<>();
-            responsesFutures.put(topicPartition, partitionResponse);
+                CompletableFuture<PartitionResponse> partitionResponse = new CompletableFuture<>();
+                responsesFutures.put(topicPartition, partitionResponse);
 
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Request {}: Produce messages for topic {} partition {}, request size: {} ",
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Request {}: Produce messages for topic {} partition {}, request size: {} ",
                         ctx.channel(), produceHar.getHeader(),
                         topicPartition.topic(), topicPartition.partition(), responsesSize);
-            }
+                }
 
-            MemoryRecords records = (MemoryRecords) entry.getValue();
-            String fullPartitionName = KopTopic.toString(topicPartition);
-            PendingProduce pendingProduce = new PendingProduce(partitionResponse, topicManager, fullPartitionName,
-                    entryFormatter, records, executor, transactionCoordinator);
-            PendingProduceQueue queue =
+                String fullPartitionName = KopTopic.toString(topicPartition);
+                PendingProduce pendingProduce = new PendingProduce(partitionResponse, topicManager, fullPartitionName,
+                    entryFormatter, validRecords, executor, transactionCoordinator);
+                PendingProduceQueue queue =
                     pendingProduceQueueMap.computeIfAbsent(topicPartition, ignored -> new PendingProduceQueue());
-            queue.add(pendingProduce);
-            pendingProduce.whenComplete(queue::sendCompletedProduces);
+                queue.add(pendingProduce);
+                pendingProduce.whenComplete(queue::sendCompletedProduces);
+            } catch (ApiException e) {
+                responsesFutures.put(topicPartition,
+                    CompletableFuture.completedFuture(new PartitionResponse(Errors.forException(e))));
+            }
         }
 
         CompletableFuture.allOf(responsesFutures.values().toArray(new CompletableFuture<?>[responsesSize]))
@@ -1773,5 +1784,54 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             || (data.getPulsarServiceUrlTls() != null && data.getPulsarServiceUrlTls().contains(hostAndPort))
             || (data.getWebServiceUrl() != null && data.getWebServiceUrl().contains(hostAndPort))
             || (data.getWebServiceUrlTls() != null && data.getWebServiceUrlTls().contains(hostAndPort));
+    }
+
+    static MemoryRecords validateRecords(short version, TopicPartition topicPartition, MemoryRecords records) {
+        if (version >= 3) {
+            Iterator<MutableRecordBatch> iterator = records.batches().iterator();
+            if (!iterator.hasNext()) {
+                throw new InvalidRecordException("Produce requests with version " + version + " must have at least "
+                    + "one record batch");
+            }
+
+            MutableRecordBatch entry = iterator.next();
+            if (entry.magic() != RecordBatch.MAGIC_VALUE_V2) {
+                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
+                    + "contain record batches with magic version 2");
+            }
+
+            if (iterator.hasNext()) {
+                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
+                    + "contain exactly one record batch");
+            }
+        }
+
+        int validBytesCount = 0;
+        for (RecordBatch batch : records.batches()) {
+            if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2 && batch.baseOffset() != 0) {
+                throw new InvalidRecordException("The baseOffset of the record batch in the append to "
+                    + topicPartition + " should be 0, but it is " + batch.baseOffset());
+            }
+
+            batch.ensureValid();
+            validBytesCount += batch.sizeInBytes();
+        }
+
+        if (validBytesCount < 0) {
+            throw new CorruptRecordException("Cannot append record batch with illegal length "
+                + validBytesCount + " to log for " + topicPartition
+                + ". A possible cause is corrupted produce request.");
+        }
+
+        MemoryRecords validRecords;
+        if (validBytesCount == records.sizeInBytes()) {
+            validRecords = records;
+        } else {
+            ByteBuffer validByteBuffer = records.buffer().duplicate();
+            validByteBuffer.limit(validBytesCount);
+            validRecords = MemoryRecords.readableRecords(validByteBuffer);
+        }
+
+        return validRecords;
     }
 }
