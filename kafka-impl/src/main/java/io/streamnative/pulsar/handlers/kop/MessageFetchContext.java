@@ -123,7 +123,7 @@ public final class MessageFetchContext {
                                 tcm = pair.getValue().get();
                                 if (tcm == null) {
                                     // remove null future cache from consumerTopicManagers
-                                    requestHandler.getTopicManager().getConsumerTopicManagers()
+                                    KafkaTopicManager.getConsumerTopicManagers()
                                             .remove(KopTopic.toString(pair.getKey()));
                                     throw new NullPointerException("topic not owned, and return null TCM in fetch.");
                                 }
@@ -239,7 +239,7 @@ public final class MessageFetchContext {
                                                 "cursor.readEntry fail. deleteCursor");
                                     } else {
                                         // remove null future cache from consumerTopicManagers
-                                        requestHandler.getTopicManager().getConsumerTopicManagers()
+                                        KafkaTopicManager.getConsumerTopicManagers()
                                                 .remove(KopTopic.toString(kafkaTopic));
                                         log.warn("Cursor deleted while TCM close.");
                                     }
@@ -329,8 +329,8 @@ public final class MessageFetchContext {
                                     cm.add(pair.getRight(), pair);
                                 } else {
                                     // remove null future cache from consumerTopicManagers
-                                    requestHandler.getTopicManager().getConsumerTopicManagers()
-                                            .remove(KopTopic.toString(kafkaPartition));
+                                    KafkaTopicManager.getConsumerTopicManagers()
+                                        .remove(KopTopic.toString(kafkaPartition));
                                     log.warn("Cursor deleted while TCM close, failed to add cursor back to TCM.");
                                 }
                             });
