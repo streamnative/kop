@@ -170,6 +170,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                 groupCoordinator.handleGroupEmigration(name.getPartitionIndex());
                             }
                             // deReference topic when unload
+                            KopBrokerLookupManager.removeTopicManagerCache(name.toString());
                             KafkaTopicManager.deReference(name.toString());
                         }
                     } else {
@@ -348,6 +349,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
         KafkaTopicManager.LOOKUP_CACHE.clear();
         KopBrokerLookupManager.clear();
+        KafkaTopicManager.getConsumerTopicManagers().clear();
+        KafkaTopicManager.getReferences().clear();
+        KafkaTopicManager.getTopics().clear();
         statsProvider.stop();
     }
 

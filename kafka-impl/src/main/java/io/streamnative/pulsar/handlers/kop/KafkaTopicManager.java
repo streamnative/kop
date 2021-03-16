@@ -59,9 +59,11 @@ public class KafkaTopicManager {
         consumerTopicManagers = new ConcurrentHashMap<>();
 
     // cache for topics: <topicName, persistentTopic>, for removing producer
+    @Getter
     private static final ConcurrentHashMap<String, CompletableFuture<PersistentTopic>>
         topics = new ConcurrentHashMap<>();
     // cache for references in PersistentTopic: <topicName, producer>
+    @Getter
     private static final ConcurrentHashMap<String, Producer>
         references = new ConcurrentHashMap<>();
 
