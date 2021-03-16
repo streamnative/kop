@@ -169,9 +169,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                 }
                                 groupCoordinator.handleGroupEmigration(name.getPartitionIndex());
                             }
-                            // remove cache when unload
-                            KafkaTopicManager.removeTopicManagerCache(name.toString());
-                            KopBrokerLookupManager.removeTopicManagerCache(name.toString());
+                            // deReference topic when unload
+                            KafkaTopicManager.deReference(name.toString());
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
