@@ -17,7 +17,7 @@ import static org.mockito.Mockito.spy;
 
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
-import io.streamnative.pulsar.handlers.kop.security.oauthbearer.OauthLoginCallbackHandler;
+import io.streamnative.pulsar.handlers.kop.security.OauthLoginCallbackHandler;
 import java.nio.file.Paths;
 import java.util.Optional;
 import java.util.Properties;

@@ -74,6 +74,7 @@
   <modules>
     <module>kafka-impl</module>
     <module>tests</module>
+    <module>oauth-client</module>
   </modules>
 
   <!-- dependency definitions -->
