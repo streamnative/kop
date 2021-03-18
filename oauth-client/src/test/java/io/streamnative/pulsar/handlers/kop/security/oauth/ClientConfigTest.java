@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop.security.oauth;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.bookkeeper.tools.framework.Cli;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
@@ -82,7 +81,7 @@ public class ClientConfigTest {
             new ClientConfig(configs);
         } catch (IllegalArgumentException e) {
             System.out.println(e.getMessage());
-            Assert.assertTrue(e.getMessage().startsWith("invalid " + ClientConfig.OAUTH_CREDENTIALS_URL+ " \"xxx\""));
+            Assert.assertTrue(e.getMessage().startsWith("invalid " + ClientConfig.OAUTH_CREDENTIALS_URL + " \"xxx\""));
         }
     }
 }
