@@ -17,14 +17,11 @@ import static org.mockito.Mockito.spy;
 
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
-import io.streamnative.pulsar.handlers.kop.security.OauthLoginCallbackHandler;
-import java.nio.file.Paths;
+
 import java.util.Optional;
 import java.util.Properties;
 import javax.crypto.SecretKey;
-import lombok.Cleanup;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerRecord;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -34,15 +31,15 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
 /**
- * Testing the SASL-OAUTHBEARER features on KoP with KoP's own login callback handler and server callback handler.
+ * Testing the SASL-OAUTHBEARER features on KoP with default login and validate callback handlers.
+ *
+ * @see org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerUnsecuredLoginCallbackHandler
+ * @see org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerUnsecuredValidatorCallbackHandler
  */
-public class SaslOauthKopHandlerTest extends KopProtocolHandlerTestBase {
+@Slf4j
+public class SaslOauthDefaultHandlersTest extends SaslOauthBearerTestBase {
 
     private static final String ADMIN_USER = "admin_user";
-
-    public SaslOauthKopHandlerTest() {
-        super("kafka");
-    }
 
     @BeforeClass
     @Override
@@ -62,9 +59,6 @@ public class SaslOauthKopHandlerTest extends KopProtocolHandlerTestBase {
         conf.setProperties(properties);
 
         conf.setSaslAllowedMechanisms(Sets.newHashSet("OAUTHBEARER"));
-
-        // TODO: Use the real callback handler.
-
         super.internalSetup();
     }
 
@@ -84,27 +78,22 @@ public class SaslOauthKopHandlerTest extends KopProtocolHandlerTestBase {
                 .build());
     }
 
-    @Test
+    @Test(timeOut = 15000)
     public void testSimpleProduceConsume() throws Exception {
-        final String topic = "test";
-        final Properties producerProps = newKafkaProducerProperties();
-        producerProps.setProperty("sasl.login.callback.handler.class", OauthLoginCallbackHandler.class.getName());
-        producerProps.setProperty("security.protocol", "SASL_PLAINTEXT");
-        producerProps.setProperty("sasl.mechanism", "OAUTHBEARER");
+        super.testSimpleProduceConsume();
+    }
 
-        final String jassTemplate = "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required"
-                + " oauth.issuer.url=\"%s\""
-                + " oauth.credentials.url=\"%s\""
-                + " oauth.audience=\"%s\";";
-        producerProps.setProperty("sasl.jaas.config", String.format(jassTemplate,
-                "https://dev-kt-aa9ne.us.auth0.com",
-                "file://" + Paths.get("./src/test/resources/credentials_file.json").toAbsolutePath(),
-                "https://dev-kt-aa9ne.us.auth0.com/api/v2/"
-        ));
+    @Test(timeOut = 15000)
+    public void testProduceWithoutAuth() throws Exception {
+        super.testProduceWithoutAuth();
+    }
 
-        @Cleanup
-        final KafkaProducer<String, String> producer = new KafkaProducer<>(producerProps);
-        producer.send(new ProducerRecord<>(topic, "", "hello")).get();
-        producer.close();
+    @Override
+    protected void configureOauth2(final Properties props) {
+        final String jaasTemplate = "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule"
+                + " required unsecuredLoginStringClaim_sub=\"%s\";";
+        props.setProperty("security.protocol", "SASL_PLAINTEXT");
+        props.setProperty("sasl.mechanism", "OAUTHBEARER");
+        props.setProperty("sasl.jaas.config", String.format(jaasTemplate, "user"));
     }
 }

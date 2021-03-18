@@ -27,6 +27,7 @@ import javax.security.auth.login.AppConfigurationEntry;
 import javax.security.sasl.SaslException;
 import javax.security.sasl.SaslServer;
 
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
@@ -59,12 +60,15 @@ public class SaslAuthenticator {
 
     private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
 
-    private final AuthenticationService authenticationService;
+    @Getter
+    private static volatile AuthenticationService authenticationService = null;
     private final PulsarAdmin admin;
     private final Set<String> allowedMechanisms;
     private final AuthenticateCallbackHandler oauth2CallbackHandler;
     private State state = State.HANDSHAKE_OR_VERSIONS_REQUEST;
     private SaslServer saslServer;
+    @Getter
+    private String role = null;
 
     private enum State {
         HANDSHAKE_OR_VERSIONS_REQUEST,
@@ -96,7 +100,9 @@ public class SaslAuthenticator {
     public SaslAuthenticator(PulsarService pulsarService,
                              Set<String> allowedMechanisms,
                              KafkaServiceConfiguration config) throws PulsarServerException {
-        this.authenticationService = pulsarService.getBrokerService().getAuthenticationService();
+        if (authenticationService == null) {
+            authenticationService = pulsarService.getBrokerService().getAuthenticationService();
+        }
         this.admin = pulsarService.getAdminClient();
         this.allowedMechanisms = allowedMechanisms;
         this.oauth2CallbackHandler = createOauth2CallbackHandler(config);
@@ -235,6 +241,7 @@ public class SaslAuthenticator {
         try {
             byte[] responseToken = saslServer.evaluateResponse(Utils.toArray(saslAuthenticateRequest.saslAuthBytes()));
             ByteBuffer responseBuf = (responseToken == null) ? EMPTY_BUFFER : ByteBuffer.wrap(responseToken);
+            this.role = saslServer.getAuthorizationID();
             responseFuture.complete(new SaslAuthenticateResponse(Errors.NONE, null, responseBuf));
         } catch (SaslException e) {
             responseFuture.complete(new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()));
