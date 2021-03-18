@@ -13,12 +13,33 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
-/**
- * Transaction log.
- */
-public class TransactionLog {
+import lombok.Data;
+import org.apache.kafka.common.protocol.Errors;
 
-    // log-level config default values and enforced values
-    public static final int DefaultNumPartitions = 50;
+/**
+ * Errors and data.
+ */
+@Data
+public class ErrorsAndData<T> {
+
+    private Errors errors;
+    private T data;
+
+    public ErrorsAndData() {
+
+    }
+
+    public ErrorsAndData(Errors errors) {
+        this.errors = errors;
+        this.data = null;
+    }
+
+    public ErrorsAndData(T data) {
+        this.data = data;
+    }
+
+    public boolean hasErrors() {
+        return errors != null && errors != Errors.NONE;
+    }
 
 }

@@ -220,68 +220,72 @@ public final class MessageFetchContext {
                 readFutures.entrySet().parallelStream().forEach(kafkaTopicReadEntry -> {
                     TopicPartition kafkaTopic = kafkaTopicReadEntry.getKey();
                     CompletableFuture<List<Entry>> readEntry = kafkaTopicReadEntry.getValue();
+                    List<Entry> entries = null;
                     try {
-                        List<Entry> entries = readEntry.get();
-                        List<Entry> entryList = responseValues.computeIfAbsent(kafkaTopic, l -> Lists.newArrayList());
-
-                        if (entries != null && !entries.isEmpty()) {
-                            if (isolationLevel.equals(IsolationLevel.READ_UNCOMMITTED)) {
-                                entryList.addAll(entries);
-                                entriesRead.addAndGet(entries.size());
-                                bytesRead.addAndGet(entryList.stream().parallel().map(e ->
-                                        e.getLength()).reduce(0, Integer::sum));
-                            } else {
-                                TopicName topicName = TopicName.get(KopTopic.toString(kafkaTopic));
-                                long lso = tc.getLastStableOffset(topicName, highWaterMarkMap.get(kafkaTopic));
-                                for (Entry entry : entries) {
-                                    if (lso >= MessageIdUtils.peekBaseOffsetFromEntry(entry)) {
-                                        entryList.add(entry);
-                                        entriesRead.incrementAndGet();
-                                        bytesRead.addAndGet(entry.getLength());
-                                    } else {
-                                        break;
-                                    }
-                                }
-                            }
-
-                            if (log.isDebugEnabled()) {
-                                log.debug("Request {}: For topic {}, entries in list: {}.",
-                                        fetch.getHeader(), kafkaTopic.toString(), entryList.size());
-                            }
-                        }
+                        entries = readEntry.get();
                     } catch (Exception e) {
                         // readEntry.get failed because of readEntriesFailed. return error for this partition
                         log.error("Request {}: Failed readEntry.get for topic: {}. ",
-                            fetch.getHeader(), kafkaTopic, e);
+                                fetch.getHeader(), kafkaTopic, e);
 
                         // delete related cursor in TCM
                         requestHandler.getTopicManager()
-                            .getTopicConsumerManager(KopTopic.toString(kafkaTopic))
-                            .thenAccept(cm -> {
-                                // Notice, channel may be close, then TCM would be null.
-                                if (cm != null) {
-                                    cm.deleteOneCursorAsync(
-                                        cursors.get(kafkaTopic).getLeft(),
-                                        "cursor.readEntry fail. deleteCursor");
-                                } else {
-                                    // remove null future cache from consumerTopicManagers
-                                    requestHandler.getTopicManager().getConsumerTopicManagers()
-                                            .remove(KopTopic.toString(kafkaTopic));
-                                    log.warn("Cursor deleted while TCM close.");
-                                }
-                            });
+                                .getTopicConsumerManager(KopTopic.toString(kafkaTopic))
+                                .thenAccept(cm -> {
+                                    // Notice, channel may be close, then TCM would be null.
+                                    if (cm != null) {
+                                        cm.deleteOneCursorAsync(
+                                                cursors.get(kafkaTopic).getLeft(),
+                                                "cursor.readEntry fail. deleteCursor");
+                                    } else {
+                                        // remove null future cache from consumerTopicManagers
+                                        requestHandler.getTopicManager().getConsumerTopicManagers()
+                                                .remove(KopTopic.toString(kafkaTopic));
+                                        log.warn("Cursor deleted while TCM close.");
+                                    }
+                                });
 
                         cursors.remove(kafkaTopic);
 
                         responseData.put(kafkaTopic,
-                            new FetchResponse.PartitionData(
-                            Errors.NONE,
-                            FetchResponse.INVALID_HIGHWATERMARK,
-                            FetchResponse.INVALID_LAST_STABLE_OFFSET,
-                            FetchResponse.INVALID_LOG_START_OFFSET,
-                            null,
-                            MemoryRecords.EMPTY));
+                                new FetchResponse.PartitionData(
+                                        Errors.NONE,
+                                        FetchResponse.INVALID_HIGHWATERMARK,
+                                        FetchResponse.INVALID_LAST_STABLE_OFFSET,
+                                        FetchResponse.INVALID_LOG_START_OFFSET,
+                                        null,
+                                        MemoryRecords.EMPTY));
                     }
+                    List<Entry> entryList = responseValues.computeIfAbsent(kafkaTopic, l -> Lists.newArrayList());
+
+                    if (entries != null && !entries.isEmpty()) {
+                        if (requestHandler.getKafkaConfig().isEnableTransactionCoordinator()
+                                && isolationLevel.equals(IsolationLevel.READ_COMMITTED)
+                                && tc != null) {
+                            TopicName topicName = TopicName.get(KopTopic.toString(kafkaTopic));
+                            long lso = tc.getLastStableOffset(topicName, highWaterMarkMap.get(kafkaTopic));
+                            for (Entry entry : entries) {
+                                if (lso >= MessageIdUtils.peekBaseOffsetFromEntry(entry)) {
+                                    entryList.add(entry);
+                                    entriesRead.incrementAndGet();
+                                    bytesRead.addAndGet(entry.getLength());
+                                } else {
+                                    break;
+                                }
+                            }
+                        } else {
+                            entryList.addAll(entries);
+                            entriesRead.addAndGet(entries.size());
+                            bytesRead.addAndGet(entryList.stream().parallel().map(e ->
+                                    e.getLength()).reduce(0, Integer::sum));
+                        }
+
+                        if (log.isDebugEnabled()) {
+                            log.debug("Request {}: For topic {}, entries in list: {}.",
+                                    fetch.getHeader(), kafkaTopic.toString(), entryList.size());
+                        }
+                    }
+
                 });
 
                 int maxBytes = request.maxBytes();
@@ -369,11 +373,13 @@ public final class MessageFetchContext {
                             EntryFormatter.updateConsumerStats(records, consumerFuture);
 
                             List<FetchResponse.AbortedTransaction> abortedTransactions;
-                            if (IsolationLevel.READ_UNCOMMITTED.equals(isolationLevel)) {
-                                abortedTransactions = null;
-                            } else {
+                            if (requestHandler.getKafkaConfig().isEnableTransactionCoordinator()
+                                    && isolationLevel.equals(IsolationLevel.READ_COMMITTED)
+                                    && tc != null) {
                                 abortedTransactions = tc.getAbortedIndexList(
                                         request.fetchData().get(kafkaPartition).fetchOffset);
+                            } else {
+                                abortedTransactions = null;
                             }
                             partitionData = new FetchResponse.PartitionData(
                                 Errors.NONE,

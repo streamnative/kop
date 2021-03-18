@@ -13,8 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
-import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
-
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.eq;
@@ -49,6 +47,7 @@ public class MetadataUtilsTest {
 
     @Test(timeOut = 20000)
     public void testCreateKafkaMetadataIfMissing() throws Exception {
+        KopTopic.initialize("public/default");
         KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
         conf.setClusterName("test");
         conf.setKafkaMetadataTenant("public");
@@ -56,7 +55,7 @@ public class MetadataUtilsTest {
         conf.setSuperUserRoles(Sets.newHashSet("admin"));
         conf.setOffsetsTopicNumPartitions(8);
 
-        String offsetsTopic = MetadataUtils.constructOffsetsTopicBaseName(conf);
+        final KopTopic offsetsTopic = new KopTopic(MetadataUtils.constructOffsetsTopicBaseName(conf));
 
         List<String> emptyList = Lists.newArrayList();
 
@@ -72,7 +71,7 @@ public class MetadataUtilsTest {
 
         PartitionedTopicMetadata offsetTopicMetadata = new PartitionedTopicMetadata();
         Topics mockTopics = mock(Topics.class);
-        doReturn(offsetTopicMetadata).when(mockTopics).getPartitionedTopicMetadata(eq(offsetsTopic));
+        doReturn(offsetTopicMetadata).when(mockTopics).getPartitionedTopicMetadata(eq(offsetsTopic.getFullName()));
 
         PulsarAdmin mockPulsarAdmin = mock(PulsarAdmin.class);
 
@@ -90,8 +89,8 @@ public class MetadataUtilsTest {
             + "/" + conf.getKafkaMetadataNamespace()), any(Set.class));
         verify(mockNamespaces, times(1)).setRetention(eq(conf.getKafkaMetadataTenant() + "/"
             + conf.getKafkaMetadataNamespace()), any(RetentionPolicies.class));
-        verify(mockTopics, times(1)).createPartitionedTopic(eq(offsetsTopic), eq(conf.getOffsetsTopicNumPartitions()));
-        verify(mockTopics, times(conf.getOffsetsTopicNumPartitions())).createNonPartitionedTopic(any(String.class));
+        verify(mockTopics, times(1)).createPartitionedTopic(
+                eq(offsetsTopic.getFullName()), eq(conf.getOffsetsTopicNumPartitions()));
 
         // Test that cluster is added to existing Tenant if missing
         // Test that the cluster is added to the namespace replication cluster list if it is missing
@@ -112,9 +111,10 @@ public class MetadataUtilsTest {
 
         List<String> incompleteOffsetPartitionList = new ArrayList<String>(conf.getOffsetsTopicNumPartitions());
         for (int i = 0; i < conf.getOffsetsTopicNumPartitions() - 2; i++) {
-            incompleteOffsetPartitionList.add(offsetsTopic + PARTITIONED_TOPIC_SUFFIX + i);
+            incompleteOffsetPartitionList.add(offsetsTopic.getPartitionName(i));
         }
-        doReturn(new PartitionedTopicMetadata(8)).when(mockTopics).getPartitionedTopicMetadata(eq(offsetsTopic));
+        doReturn(new PartitionedTopicMetadata(8)).when(mockTopics)
+                .getPartitionedTopicMetadata(eq(offsetsTopic.getFullName()));
         doReturn(incompleteOffsetPartitionList).when(mockTopics).getList(eq(conf.getKafkaMetadataTenant()
             + "/" + conf.getKafkaMetadataNamespace()));
 
