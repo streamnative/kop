@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop.security;
+package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import java.net.MalformedURLException;
 import java.net.URL;

@@ -14,7 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.collect.Sets;
-import io.streamnative.pulsar.handlers.kop.security.OauthLoginCallbackHandler;
+import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
 
 import java.net.URL;
