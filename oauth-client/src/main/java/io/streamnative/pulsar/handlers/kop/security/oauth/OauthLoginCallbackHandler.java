@@ -65,6 +65,7 @@ public class OauthLoginCallbackHandler implements AuthenticateCallbackHandler {
 
     @Override
     public void close() {
+        // empty
     }
 
     @Override

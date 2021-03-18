@@ -50,6 +50,7 @@ import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
+import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 
 /**
@@ -62,6 +63,7 @@ public class SaslAuthenticator {
 
     @Getter
     private static volatile AuthenticationService authenticationService = null;
+    private final BrokerService brokerService;
     private final PulsarAdmin admin;
     private final Set<String> allowedMechanisms;
     private final AuthenticateCallbackHandler oauth2CallbackHandler;
@@ -100,9 +102,7 @@ public class SaslAuthenticator {
     public SaslAuthenticator(PulsarService pulsarService,
                              Set<String> allowedMechanisms,
                              KafkaServiceConfiguration config) throws PulsarServerException {
-        if (authenticationService == null) {
-            authenticationService = pulsarService.getBrokerService().getAuthenticationService();
-        }
+        this.brokerService = pulsarService.getBrokerService();
         this.admin = pulsarService.getAdminClient();
         this.allowedMechanisms = allowedMechanisms;
         this.oauth2CallbackHandler = createOauth2CallbackHandler(config);
@@ -111,6 +111,9 @@ public class SaslAuthenticator {
     public void authenticate(RequestHeader header,
                              AbstractRequest request,
                              CompletableFuture<AbstractResponse> response) throws AuthenticationException {
+        if (authenticationService == null) {
+            authenticationService = brokerService.getAuthenticationService();
+        }
         switch (state) {
             case HANDSHAKE_OR_VERSIONS_REQUEST:
             case HANDSHAKE_REQUEST:

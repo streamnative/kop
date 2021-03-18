@@ -62,6 +62,7 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
 
     @Override
     public void close() {
+        // empty
     }
 
     @Override
@@ -88,12 +89,12 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
             throw new IllegalArgumentException("Callback has null token value!");
         }
         if (SaslAuthenticator.getAuthenticationService() == null) {
-            throw new RuntimeException("AuthenticationService is null during token validation");
+            throw new IllegalStateException("AuthenticationService is null during token validation");
         }
         final AuthenticationProvider authenticationProvider =
                 SaslAuthenticator.getAuthenticationService().getAuthenticationProvider(config.getValidateMethod());
         if (authenticationProvider == null) {
-            throw new RuntimeException("No AuthenticationProvider found for method " + config.getValidateMethod());
+            throw new IllegalStateException("No AuthenticationProvider found for method " + config.getValidateMethod());
         }
 
         final String token = callback.tokenValue();
