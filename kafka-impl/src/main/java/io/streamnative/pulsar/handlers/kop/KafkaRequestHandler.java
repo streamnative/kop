@@ -267,6 +267,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (authenticator != null) {
             authenticator.authenticate(
                     kafkaHeaderAndRequest.getHeader(), kafkaHeaderAndRequest.getRequest(), responseFuture);
+            final String role = authenticator.getRole();
+            if (role == null) {
+                return;
+            }
+            // TODO: role is used for authorization, but KoP doesn't support authorization currently.
+            //  See https://github.com/streamnative/kop/issues/236
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] has authenticated successfully with role {}",
+                        getRemoteAddress(), authenticator.getRole());
+            }
         }
     }
 
