@@ -32,15 +32,12 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 public class TransactionMarkerChannelInitializer extends ChannelInitializer<SocketChannel> {
 
     private final KafkaServiceConfiguration kafkaConfig;
-    private final PulsarService pulsarService;
     private final boolean enableTls;
     private final SslContextFactory sslContextFactory;
 
     public TransactionMarkerChannelInitializer(KafkaServiceConfiguration kafkaConfig,
-                                               PulsarService pulsarService,
                                                boolean enableTls) {
         this.kafkaConfig = kafkaConfig;
-        this.pulsarService = pulsarService;
         this.enableTls = enableTls;
         if (enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);

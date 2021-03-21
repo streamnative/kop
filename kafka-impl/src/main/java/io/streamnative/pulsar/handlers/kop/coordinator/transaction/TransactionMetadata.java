@@ -468,5 +468,12 @@ public class TransactionMetadata {
         return producerEpoch >= Short.MAX_VALUE - 1;
     }
 
+    public void removePartition(TopicPartition topicPartition) {
+        if (state != TransactionState.PREPARE_COMMIT && state != TransactionState.PREPARE_ABORT)
+            throw new IllegalStateException(
+                String.format("Transaction metadata's current state is %s, and its pending state is %s while trying to "
+                        + "remove partitions whose txn marker has been sent, this is not expected", state, pendingState));
+        topicPartitions.remove(topicPartition);
+    }
 
 }

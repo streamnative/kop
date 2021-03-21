@@ -20,6 +20,7 @@ import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.RequestUtils;
@@ -37,9 +38,11 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     private final Queue<TxnMarkerRequestResponse> requestQueue = new LinkedBlockingQueue<>();
     private final Queue<TxnMarkerRequestResponse> requestResponseQueue = new LinkedBlockingQueue<>();
 
-    public CompletableFuture<WriteTxnMarkersResponse> enqueueRequest(WriteTxnMarkersRequest request) {
+    public CompletableFuture<WriteTxnMarkersResponse> enqueueRequest(
+            WriteTxnMarkersRequest request, TransactionMarkerRequestCompletionHandler requestCompletionHandler) {
         log.info("enqueueRequest");
-        TxnMarkerRequestResponse txnMarkerRequestResponse = new TxnMarkerRequestResponse(request);
+        TxnMarkerRequestResponse txnMarkerRequestResponse =
+                new TxnMarkerRequestResponse(request, requestCompletionHandler);
         if (requestQueue.offer(txnMarkerRequestResponse)) {
             pollRequest();
             return txnMarkerRequestResponse.responseFuture;
@@ -68,9 +71,12 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     private static class TxnMarkerRequestResponse {
         private final WriteTxnMarkersRequest request;
         private final CompletableFuture<WriteTxnMarkersResponse> responseFuture = new CompletableFuture<>();
+        private final TransactionMarkerRequestCompletionHandler requestCompletionHandler;
 
-        public TxnMarkerRequestResponse(WriteTxnMarkersRequest request) {
+        public TxnMarkerRequestResponse(WriteTxnMarkersRequest request,
+                                        TransactionMarkerRequestCompletionHandler requestCompletionHandler) {
             this.request = request;
+            this.requestCompletionHandler = requestCompletionHandler;
         }
 
         public ByteBuf getRequestData() {
@@ -81,7 +87,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
         public void onComplete(ByteBuf byteBuf) {
             WriteTxnMarkersResponse response = WriteTxnMarkersResponse
                     .parse(byteBuf.skipBytes(4).nioBuffer(), ApiKeys.WRITE_TXN_MARKERS.latestVersion());
-            responseFuture.complete(response);
+            requestCompletionHandler.onComplete(response);
         }
     }
 
@@ -139,7 +145,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     @Override
     public void exceptionCaught(ChannelHandlerContext channelHandlerContext, Throwable throwable) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] exceptionCaught");
+        log.error("[TransactionMarkerChannelHandler] exceptionCaught", throwable);
         super.exceptionCaught(channelHandlerContext, throwable);
     }
 

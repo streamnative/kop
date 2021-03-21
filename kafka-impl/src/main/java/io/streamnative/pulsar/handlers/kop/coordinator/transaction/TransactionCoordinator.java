@@ -20,6 +20,7 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.Transa
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.collect.Lists;
+import io.streamnative.pulsar.handlers.kop.BrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.KafkaRequestHandler;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
@@ -76,15 +77,22 @@ public class TransactionCoordinator {
     private final Map<TopicName, ConcurrentHashMap<Long, Long>> activePidOffsetMap = new HashMap<>();
     private final List<AbortedIndexEntry> abortedIndexList = new ArrayList<>();
 
-    private TransactionCoordinator(TransactionConfig transactionConfig, Integer brokerId, ZooKeeper zkClient) {
+    private TransactionCoordinator(TransactionConfig transactionConfig,
+                                   Integer brokerId,
+                                   ZooKeeper zkClient,
+                                   BrokerLookupManager brokerLookupManager) {
         this.transactionConfig = transactionConfig;
         this.txnManager = new TransactionStateManager(transactionConfig);
         this.producerIdManager = new ProducerIdManager(brokerId, zkClient);
-        this.transactionMarkerChannelManager = new TransactionMarkerChannelManager(null, null, false);
+        this.transactionMarkerChannelManager =
+                new TransactionMarkerChannelManager(null, txnManager, brokerLookupManager, false);
     }
 
-    public static TransactionCoordinator of(TransactionConfig transactionConfig, Integer brokerId, ZooKeeper zkClient) {
-        return new TransactionCoordinator(transactionConfig, brokerId, zkClient);
+    public static TransactionCoordinator of(TransactionConfig transactionConfig,
+                                            Integer brokerId,
+                                            ZooKeeper zkClient,
+                                            BrokerLookupManager brokerLookupManager) {
+        return new TransactionCoordinator(transactionConfig, brokerId, zkClient, brokerLookupManager);
     }
 
     interface EndTxnCallback {
@@ -728,9 +736,10 @@ public class TransactionCoordinator {
             return;
         }
 
-        sendTxnResultMarker(epochAndTxnMetadata.getTransactionMetadata(),
-                preSendResult.getData().getTxnTransitMetadata(),
-                txnMarkerResult, requestHandler, callback);
+        callback.complete(Errors.NONE);
+        transactionMarkerChannelManager.addTxnMarkersToSend(
+                coordinatorEpoch, txnMarkerResult, epochAndTxnMetadata.getTransactionMetadata(),
+                preSendResult.getData().getTxnTransitMetadata());
     }
 
     private void sendTxnResultMarker(TransactionMetadata metadata,
@@ -883,7 +892,7 @@ public class TransactionCoordinator {
                     topicPartitionList);
             WriteTxnMarkersRequest txnMarkersRequest =
                     new WriteTxnMarkersRequest.Builder(Lists.newArrayList(txnMarkerEntry)).build();
-            return handlerFuture.thenCompose(handler -> handler.enqueueRequest(txnMarkersRequest));
+            return handlerFuture.thenCompose(handler -> handler.enqueueRequest(txnMarkersRequest, null));
         }
     }
 
