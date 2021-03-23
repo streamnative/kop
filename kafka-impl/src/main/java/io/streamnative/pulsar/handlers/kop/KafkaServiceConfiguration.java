@@ -48,8 +48,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     // txn configuration
     public static final int DefaultTxnLogTopicNumPartitions = 8;
 
-    public static final String DEFAULT_OAUTH2_CONFIG_FILE = "kop-oauth2.properties";
-
     @Category
     private static final String CATEGORY_KOP = "Kafka on Pulsar";
 
@@ -319,8 +317,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "The properties configuration file of OAuth2 authentication. If it's not specified, use"
-                    + " kop-oauth2.properties file under resource directory"
+            doc = "The properties configuration file of OAuth2 authentication."
     )
     private String kopOauth2ConfigFile;
 
@@ -339,18 +336,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         return (kafkaListeners != null) ? kafkaListeners : listeners;
     }
 
-    private InputStream getKopOauth2ConfigInputStream() throws FileNotFoundException {
-        if (kopOauth2ConfigFile == null) {
-            return KafkaServiceConfiguration.class.getClassLoader().getResourceAsStream(DEFAULT_OAUTH2_CONFIG_FILE);
-        } else {
-            return new FileInputStream(kopOauth2ConfigFile);
-        }
-    }
-
     public @NonNull Properties getKopOauth2Properties() {
         final Properties props = new Properties();
-        try (InputStream inputStream = getKopOauth2ConfigInputStream()) {
+        try (InputStream inputStream = new FileInputStream(kopOauth2ConfigFile)) {
             props.load(inputStream);
+        } catch (FileNotFoundException e) {
+            return props;
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
