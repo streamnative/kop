@@ -338,6 +338,9 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     public @NonNull Properties getKopOauth2Properties() {
         final Properties props = new Properties();
+        if (kopOauth2ConfigFile == null) {
+            return props;
+        }
         try (InputStream inputStream = new FileInputStream(kopOauth2ConfigFile)) {
             props.load(inputStream);
         } catch (FileNotFoundException e) {
