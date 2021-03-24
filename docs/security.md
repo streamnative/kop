@@ -84,7 +84,7 @@ If you want to enable the authentication feature for KoP using the `PLAIN` mecha
     `password`|`password` must be your token authentication parameters from Pulsar.<br><br>The token can be created by Pulsar token tools. The role is the `subject` for the token. It is embedded in the created token and the broker can get `role` by parsing this token.<br><br> **Note**: make sure the role of `password` has the permission to produce or consume the namespace of `username`. For more information, see [Authorization](http://pulsar.apache.org/docs/en/security-jwt/#authorization).|`token:xxx`
 
     ```properties
-    security.protocol=SASL_PLAINTEXT # or SASL_SSL if SSL connection is used
+    security.protocol=SASL_PLAINTEXT  # or security.protocol=SASL_SSL if SSL connection is used
     sasl.mechanism=PLAIN
     sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule \
     required username="public/default" password="token:xxx";
