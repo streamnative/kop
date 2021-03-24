@@ -72,10 +72,10 @@ public class TransactionMarkerChannelManager {
 
     @AllArgsConstructor
     private static class PendingCompleteTxn {
-        String transactionalId;
-        Integer coordinatorEpoch;
-        TransactionMetadata txnMetadata;
-        TransactionMetadata.TxnTransitMetadata newMetadata;
+        private final String transactionalId;
+        private final Integer coordinatorEpoch;
+        private final TransactionMetadata txnMetadata;
+        private final TransactionMetadata.TxnTransitMetadata newMetadata;
     }
 
     /**
@@ -84,21 +84,21 @@ public class TransactionMarkerChannelManager {
     @Data
     @AllArgsConstructor
     protected static class TxnIdAndMarkerEntry {
-        final String transactionalId;
-        final TxnMarkerEntry entry;
+        private final String transactionalId;
+        private final TxnMarkerEntry entry;
     }
 
     private static class TxnMarkerQueue {
 
-        private InetSocketAddress address;
+        private final InetSocketAddress address;
+
+        // keep track of the requests per txn topic partition so we can easily clear the queue
+        // during partition emigration
+        private final Map<Integer, BlockingQueue<TxnIdAndMarkerEntry>> markersPerPartition = new ConcurrentHashMap<>();
 
         public TxnMarkerQueue(InetSocketAddress address) {
             this.address = address;
         }
-
-        // keep track of the requests per txn topic partition so we can easily clear the queue
-        // during partition emigration
-        private Map<Integer, BlockingQueue<TxnIdAndMarkerEntry>> markersPerPartition = new ConcurrentHashMap<>();
 
         public BlockingQueue<TxnIdAndMarkerEntry> removeMarkersForTxnTopicPartition(Integer partition) {
             return markersPerPartition.remove(partition);

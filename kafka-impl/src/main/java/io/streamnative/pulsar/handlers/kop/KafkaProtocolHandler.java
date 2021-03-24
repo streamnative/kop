@@ -66,6 +66,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public static final String PROTOCOL_NAME = "kafka";
     public static final String TLS_HANDLER = "tls";
 
+    private KoPBrokerLookupManager koPBrokerLookupManager;
+
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
      */
@@ -194,8 +196,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     private TransactionCoordinator transactionCoordinator;
     @Getter
     private String bindAddress;
-
-    private KoPBrokerLookupManager koPBrokerLookupManager;
 
     @Override
     public String protocolName() {
