@@ -194,7 +194,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
     }
 
 
-    @AfterMethod
+    @AfterMethod(timeOut = 30000)
     @Override
     public void cleanup() throws Exception {
         log.info("--- Shutting down ---");
@@ -388,6 +388,12 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         assertTrue(records.isEmpty());
         records = kConsumer4.getConsumer().poll(Duration.ofMillis(200));
         assertTrue(records.isEmpty());
+
+        kProducer.close();
+        kConsumer1.close();
+        kConsumer2.close();
+        kConsumer3.close();
+        kConsumer4.close();
     }
 
     // Unit test for unload / reload user topic bundle, verify it works well.
@@ -436,6 +442,10 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
         kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
         kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
+
+        kProducer.close();
+        kConsumer1.close();
+        kConsumer2.close();
     }
 
     @Test(timeOut = 30000)
@@ -482,5 +492,9 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
         kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
         kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
+
+        kProducer.close();
+        kConsumer1.close();
+        kConsumer2.close();
     }
 }
