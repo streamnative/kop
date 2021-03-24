@@ -23,7 +23,6 @@ import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslHandler;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
-import org.apache.pulsar.broker.PulsarService;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 /**
@@ -54,6 +53,6 @@ public class TransactionMarkerChannelInitializer extends ChannelInitializer<Sock
         ch.pipeline().addLast(new LengthFieldPrepender(4));
         ch.pipeline().addLast("frameDecoder",
                 new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
-        ch.pipeline().addLast("handler", new TransactionMarkerChannelHandler());
+        ch.pipeline().addLast("txnHandler", new TransactionMarkerChannelHandler());
     }
 }

@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
-import com.google.common.collect.Lists;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -35,8 +34,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
-
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -48,7 +45,6 @@ import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.ChannelFutures;
 import org.eclipse.jetty.util.BlockingArrayQueue;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
-
 
 /**
  * Transaction marker channel manager.
@@ -153,11 +149,11 @@ public class TransactionMarkerChannelManager {
             ChannelFutures.toCompletableFuture(bootstrap.connect(socketAddress))
                     .thenAccept(channel -> {
                         handlerFuture.complete(
-                                (TransactionMarkerChannelHandler) channel.pipeline().get("handler"));
+                                (TransactionMarkerChannelHandler) channel.pipeline().get("txnHandler"));
                     }).exceptionally(e -> {
-                handlerFuture.completeExceptionally(e);
-                return null;
-            });
+                        handlerFuture.completeExceptionally(e);
+                        return null;
+                    });
             return handlerFuture;
         });
     }
@@ -207,18 +203,19 @@ public class TransactionMarkerChannelManager {
         Map<InetSocketAddress, List<TopicPartition>> addressAndPartitionMap = new ConcurrentHashMap<>();
         List<TopicPartition> unknownBrokerTopicList = new ArrayList<>();
 
-        List<CompletableFuture<InetSocketAddress>> addressFutureList = new ArrayList<>();
+        List<CompletableFuture<Void>> addressFutureList = new ArrayList<>();
         for (TopicPartition topicPartition : topicPartitions) {
             String pulsarTopic = new KopTopic(topicPartition.topic()).getPartitionName(topicPartition.partition());
             CompletableFuture<InetSocketAddress> addressFuture = brokerLookupManager.findBroker(pulsarTopic);
-            addressFutureList.add(addressFuture);
+            CompletableFuture<Void> addFuture = new CompletableFuture<>();
+            addressFutureList.add(addFuture);
             addressFuture.whenComplete((address, throwable) -> {
                 if (throwable != null) {
                     log.warn("Failed to find broker for topic partition {}", topicPartition, throwable);
                     unknownBrokerTopicList.add(topicPartition);
+                    addFuture.completeExceptionally(throwable);
                     return;
                 }
-                getChannel(address);
                 addressAndPartitionMap.compute(address, (key, set) -> {
                     if (set == null) {
                         set = new ArrayList<>();
@@ -226,13 +223,14 @@ public class TransactionMarkerChannelManager {
                     set.add(topicPartition);
                     return set;
                 });
+                addFuture.complete(null);
             });
         }
         FutureUtil.waitForAll(addressFutureList).whenComplete((ignored, throwable) -> {
             addressAndPartitionMap.forEach((address, partitions) -> {
                 WriteTxnMarkersRequest.TxnMarkerEntry entry = new WriteTxnMarkersRequest.TxnMarkerEntry(producerId, producerEpoch, coordinatorEpoch, result, partitions);
                 TxnMarkerQueue markerQueue =
-                        markersQueuePerBroker.computeIfAbsent(address, key -> new TxnMarkerQueue(address));
+                        markersQueuePerBroker.computeIfAbsent(new InetSocketAddress("localhost", 15101), key -> new TxnMarkerQueue(address));
                 markerQueue.addMarkers(txnTopicPartition, new TxnIdAndMarkerEntry(transactionalId, entry));
             });
             if (unknownBrokerTopicList.size() > 0) {

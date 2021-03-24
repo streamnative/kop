@@ -20,7 +20,6 @@ import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.RequestUtils;
@@ -33,8 +32,7 @@ import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
 @Slf4j
 public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapter {
 
-    private CompletableFuture<ChannelHandlerContext> cnx = new CompletableFuture<>();
-
+    private final CompletableFuture<ChannelHandlerContext> cnx = new CompletableFuture<>();
     private final Queue<TxnMarkerRequestResponse> requestQueue = new LinkedBlockingQueue<>();
     private final Queue<TxnMarkerRequestResponse> requestResponseQueue = new LinkedBlockingQueue<>();
 
