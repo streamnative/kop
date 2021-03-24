@@ -117,6 +117,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                         name, service.pulsar().getBrokerServiceUrl());
                                 }
                                 groupCoordinator.handleGroupImmigration(name.getPartitionIndex());
+                                continue;
                             }
                             KafkaTopicManager.removeTopicManagerCache(name.toString());
                             KopBrokerLookupManager.removeTopicManagerCache(name.toString());
@@ -168,6 +169,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                         name, service.pulsar().getBrokerServiceUrl());
                                 }
                                 groupCoordinator.handleGroupEmigration(name.getPartitionIndex());
+                                continue;
                             }
                             // deReference topic when unload
                             KopBrokerLookupManager.removeTopicManagerCache(name.toString());
