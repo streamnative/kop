@@ -17,8 +17,8 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.streamnative.pulsar.handlers.kop.BrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.KoPBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import java.net.InetSocketAddress;
@@ -41,10 +41,12 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
+import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.ChannelFutures;
 import org.eclipse.jetty.util.BlockingArrayQueue;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
+
 
 /**
  * Transaction marker channel manager.
@@ -56,7 +58,7 @@ public class TransactionMarkerChannelManager {
     private final EventLoopGroup eventLoopGroup;
     private final boolean enableTls;
     private final SslContextFactory sslContextFactory;
-    private final BrokerLookupManager brokerLookupManager;
+    private final KoPBrokerLookupManager koPBrokerLookupManager;
 
     private final Bootstrap bootstrap;
 
@@ -76,11 +78,14 @@ public class TransactionMarkerChannelManager {
         TransactionMetadata.TxnTransitMetadata newMetadata;
     }
 
+    /**
+     * Txn id and TxnMarkerEntry.
+     */
     @Data
     @AllArgsConstructor
     protected static class TxnIdAndMarkerEntry {
         final String transactionalId;
-        final WriteTxnMarkersRequest.TxnMarkerEntry entry;
+        final TxnMarkerEntry entry;
     }
 
     private static class TxnMarkerQueue {
@@ -93,20 +98,20 @@ public class TransactionMarkerChannelManager {
 
         // keep track of the requests per txn topic partition so we can easily clear the queue
         // during partition emigration
-        private Map<Integer, BlockingQueue<TxnIdAndMarkerEntry>> markersPerTxnTopicPartition = new ConcurrentHashMap<>();
+        private Map<Integer, BlockingQueue<TxnIdAndMarkerEntry>> markersPerPartition = new ConcurrentHashMap<>();
 
         public BlockingQueue<TxnIdAndMarkerEntry> removeMarkersForTxnTopicPartition(Integer partition) {
-            return markersPerTxnTopicPartition.remove(partition);
+            return markersPerPartition.remove(partition);
         }
 
         public void addMarkers(Integer txnTopicPartition, TxnIdAndMarkerEntry txnIdAndMarker) {
             BlockingQueue<TxnIdAndMarkerEntry> markersQueue =
-                    markersPerTxnTopicPartition.computeIfAbsent(txnTopicPartition, k -> new BlockingArrayQueue<>());
+                    markersPerPartition.computeIfAbsent(txnTopicPartition, k -> new BlockingArrayQueue<>());
             markersQueue.add(txnIdAndMarker);
         }
 
         public void getMarkerEntries(List<TxnIdAndMarkerEntry> list) {
-            for (BlockingQueue<TxnIdAndMarkerEntry> partitionQueue : markersPerTxnTopicPartition.values()) {
+            for (BlockingQueue<TxnIdAndMarkerEntry> partitionQueue : markersPerPartition.values()) {
                 partitionQueue.drainTo(list);
             }
         }
@@ -114,11 +119,11 @@ public class TransactionMarkerChannelManager {
 
     public TransactionMarkerChannelManager(KafkaServiceConfiguration kafkaConfig,
                                            TransactionStateManager txnStateManager,
-                                           BrokerLookupManager brokerLookupManager,
+                                           KoPBrokerLookupManager koPBrokerLookupManager,
                                            boolean enableTls) {
         this.kafkaConfig = kafkaConfig;
         this.txnStateManager = txnStateManager;
-        this.brokerLookupManager = brokerLookupManager;
+        this.koPBrokerLookupManager = koPBrokerLookupManager;
         this.enableTls = enableTls;
         if (this.enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
@@ -186,8 +191,8 @@ public class TransactionMarkerChannelManager {
 
     public void maybeWriteTxnCompletion(String transactionalId) {
         PendingCompleteTxn pendingCompleteTxn = transactionsWithPendingMarkers.get(transactionalId);
-        if (!hasPendingMarkersToWrite(pendingCompleteTxn.txnMetadata) &&
-                transactionsWithPendingMarkers.remove(transactionalId, pendingCompleteTxn)) {
+        if (!hasPendingMarkersToWrite(pendingCompleteTxn.txnMetadata)
+                && transactionsWithPendingMarkers.remove(transactionalId, pendingCompleteTxn)) {
             writeTxnCompletion(pendingCompleteTxn);
         }
     }
@@ -206,7 +211,7 @@ public class TransactionMarkerChannelManager {
         List<CompletableFuture<Void>> addressFutureList = new ArrayList<>();
         for (TopicPartition topicPartition : topicPartitions) {
             String pulsarTopic = new KopTopic(topicPartition.topic()).getPartitionName(topicPartition.partition());
-            CompletableFuture<InetSocketAddress> addressFuture = brokerLookupManager.findBroker(pulsarTopic);
+            CompletableFuture<InetSocketAddress> addressFuture = koPBrokerLookupManager.findBroker(pulsarTopic);
             CompletableFuture<Void> addFuture = new CompletableFuture<>();
             addressFutureList.add(addFuture);
             addressFuture.whenComplete((address, throwable) -> {
@@ -228,15 +233,17 @@ public class TransactionMarkerChannelManager {
         }
         FutureUtil.waitForAll(addressFutureList).whenComplete((ignored, throwable) -> {
             addressAndPartitionMap.forEach((address, partitions) -> {
-                WriteTxnMarkersRequest.TxnMarkerEntry entry = new WriteTxnMarkersRequest.TxnMarkerEntry(producerId, producerEpoch, coordinatorEpoch, result, partitions);
+                TxnMarkerEntry entry = new TxnMarkerEntry(
+                        producerId, producerEpoch, coordinatorEpoch, result, partitions);
                 TxnMarkerQueue markerQueue =
-                        markersQueuePerBroker.computeIfAbsent(new InetSocketAddress("localhost", 15101), key -> new TxnMarkerQueue(address));
+                        markersQueuePerBroker.computeIfAbsent(address, key -> new TxnMarkerQueue(address));
                 markerQueue.addMarkers(txnTopicPartition, new TxnIdAndMarkerEntry(transactionalId, entry));
             });
             if (unknownBrokerTopicList.size() > 0) {
-                WriteTxnMarkersRequest.TxnMarkerEntry entry = new WriteTxnMarkersRequest.TxnMarkerEntry(
+                TxnMarkerEntry entry = new TxnMarkerEntry(
                         producerId, producerEpoch, coordinatorEpoch, result, unknownBrokerTopicList);
-                markersQueueForUnknownBroker.addMarkers(txnTopicPartition, new TxnIdAndMarkerEntry(transactionalId, entry));
+                markersQueueForUnknownBroker.addMarkers(
+                        txnTopicPartition, new TxnIdAndMarkerEntry(transactionalId, entry));
             }
         });
     }
@@ -289,7 +296,8 @@ public class TransactionMarkerChannelManager {
 
     private void tryAppendToLog(PendingCompleteTxn txnLogAppend) {
         // try to append to the transaction log
-        txnStateManager.appendTransactionToLog(txnLogAppend.transactionalId, txnLogAppend.coordinatorEpoch, txnLogAppend.newMetadata, new TransactionStateManager.ResponseCallback() {
+        txnStateManager.appendTransactionToLog(txnLogAppend.transactionalId, txnLogAppend.coordinatorEpoch,
+                txnLogAppend.newMetadata, new TransactionStateManager.ResponseCallback() {
             @Override
             public void complete() {
                 log.info("Completed transaction for {} with coordinator epoch {}, final state after commit: {}",
@@ -364,13 +372,14 @@ public class TransactionMarkerChannelManager {
             if (!txnIdAndMarkerEntries.isEmpty()) {
                 getChannel(txnMarkerQueue.address).whenComplete((channelHandler, throwable) -> {
 
-                    List<WriteTxnMarkersRequest.TxnMarkerEntry> sendEntries = new ArrayList<>();
+                    List<TxnMarkerEntry> sendEntries = new ArrayList<>();
                     for (TxnIdAndMarkerEntry txnIdAndMarkerEntry : txnIdAndMarkerEntries) {
                         sendEntries.add(txnIdAndMarkerEntry.entry);
                     }
                     channelHandler.enqueueRequest(
                             new WriteTxnMarkersRequest.Builder(sendEntries).build(),
-                            new TransactionMarkerRequestCompletionHandler(0, txnStateManager, this, txnIdAndMarkerEntries));
+                            new TransactionMarkerRequestCompletionHandler(
+                                    0, txnStateManager, this, txnIdAndMarkerEntries));
                 });
             }
         }

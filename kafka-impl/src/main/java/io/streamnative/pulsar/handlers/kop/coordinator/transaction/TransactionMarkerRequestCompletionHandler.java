@@ -46,9 +46,10 @@ public class TransactionMarkerRequestCompletionHandler {
             WriteTxnMarkersRequest.TxnMarkerEntry txnMarker = txnIdAndMarker.getEntry();
             Map<TopicPartition, Errors> errors = writeTxnMarkerResponse.errors(txnMarker.producerId());
 
-            if (errors == null)
+            if (errors == null) {
                 throw new IllegalStateException("WriteTxnMarkerResponse does not contain expected error map for "
                         + "producer id " + txnMarker.producerId());
+            }
 
             ErrorsAndData<Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>> errorsAndData =
                     txnStateManager.getTransactionState(transactionalId);

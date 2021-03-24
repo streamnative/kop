@@ -40,7 +40,7 @@ import org.apache.pulsar.zookeeper.ZooKeeperCache;
  * Broker lookup manager.
  */
 @Slf4j
-public class BrokerLookupManager {
+public class KoPBrokerLookupManager {
 
     private final PulsarService pulsarService;
     private final Boolean tlsEnabled;
@@ -53,7 +53,7 @@ public class BrokerLookupManager {
 
     private final Map<String, CompletableFuture<InetSocketAddress>> cacheMap = new HashMap<>();
 
-    public BrokerLookupManager(PulsarService pulsarService, Boolean tlsEnabled, String advertisedListeners) {
+    public KoPBrokerLookupManager(PulsarService pulsarService, Boolean tlsEnabled, String advertisedListeners) {
         this.pulsarService = pulsarService;
         this.tlsEnabled = tlsEnabled;
         this.advertisedListeners = advertisedListeners;
@@ -80,8 +80,8 @@ public class BrokerLookupManager {
 
                     // It's the `kafkaAdvertisedListeners` config that's written to ZK
                     final String listeners = stringOptional.get();
-                    final EndPoint endPoint =
-                            (tlsEnabled ? EndPoint.getSslEndPoint(listeners) : EndPoint.getPlainTextEndPoint(listeners));
+                    final EndPoint endPoint = tlsEnabled
+                            ? EndPoint.getSslEndPoint(listeners) : EndPoint.getPlainTextEndPoint(listeners);
 
                     if (log.isDebugEnabled()) {
                         log.debug("Found broker localListeners: {} for topicName: {}, "
@@ -143,7 +143,8 @@ public class BrokerLookupManager {
         return future;
     }
 
-    private CompletableFuture<Optional<String>> getProtocolDataToAdvertise(InetSocketAddress pulsarAddress, TopicName topic) {
+    private CompletableFuture<Optional<String>> getProtocolDataToAdvertise(
+            InetSocketAddress pulsarAddress, TopicName topic) {
 
         CompletableFuture<Optional<String>> returnFuture = new CompletableFuture<>();
 
@@ -195,50 +196,49 @@ public class BrokerLookupManager {
                     // Get a list of ServiceLookupData for each matchBroker.
                     List<CompletableFuture<Optional<ServiceLookupData>>> list = matchBrokers.stream()
                             .map(matchBroker ->
-                                    zkCache.getDataAsync(
-                                            String.format("%s/%s", LoadManager.LOADBALANCE_BROKERS_ROOT, matchBroker),
-                                            (ZooKeeperCache.Deserializer<ServiceLookupData>)
-                                                    pulsarService.getLoadManager().get().getLoadReportDeserializer()))
+                                zkCache.getDataAsync(
+                                    String.format("%s/%s", LoadManager.LOADBALANCE_BROKERS_ROOT, matchBroker),
+                                    (ZooKeeperCache.Deserializer<ServiceLookupData>)
+                                            pulsarService.getLoadManager().get().getLoadReportDeserializer()))
                             .collect(Collectors.toList());
 
                     FutureUtil.waitForAll(list)
-                            .whenComplete((ignore, th) -> {
-                                        if (th != null) {
-                                            log.error("Error in getDataAsync() for {}", pulsarAddress, th);
-                                            returnFuture.complete(Optional.empty());
-                                            removeTopicManagerCache(topic.toString());
-                                            return;
-                                        }
+                        .whenComplete((ignore, th) -> {
+                            if (th != null) {
+                                log.error("Error in getDataAsync() for {}", pulsarAddress, th);
+                                returnFuture.complete(Optional.empty());
+                                removeTopicManagerCache(topic.toString());
+                                return;
+                            }
 
-                                        try {
-                                            for (CompletableFuture<Optional<ServiceLookupData>> lookupData : list) {
-                                                ServiceLookupData data = lookupData.get().get();
-                                                if (log.isDebugEnabled()) {
-                                                    log.debug("Handle getProtocolDataToAdvertise for {}, pulsarUrl: {}, "
-                                                                    + "pulsarUrlTls: {}, webUrl: {}, webUrlTls: {} kafka: {}",
-                                                            topic, data.getPulsarServiceUrl(), data.getPulsarServiceUrlTls(),
-                                                            data.getWebServiceUrl(), data.getWebServiceUrlTls(),
-                                                            data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
-                                                }
-
-                                                if (lookupDataContainsAddress(data, hostAndPort)) {
-                                                    KOP_ADDRESS_CACHE.put(topic.toString(), returnFuture);
-                                                    returnFuture.complete(data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
-                                                    return;
-                                                }
-                                            }
-                                        } catch (Exception e) {
-                                            log.error("Error in {} lookupFuture get: ", pulsarAddress, e);
-                                            returnFuture.complete(Optional.empty());
-                                            removeTopicManagerCache(topic.toString());
-                                            return;
-                                        }
-
-                                        // no matching lookup data in all matchBrokers.
-                                        log.error("Not able to search {} in all child of zk://loadbalance", pulsarAddress);
-                                        returnFuture.complete(Optional.empty());
+                            try {
+                                for (CompletableFuture<Optional<ServiceLookupData>> lookupData : list) {
+                                    ServiceLookupData data = lookupData.get().get();
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("Handle getProtocolDataToAdvertise for {}, pulsarUrl: {}, "
+                                                        + "pulsarUrlTls: {}, webUrl: {}, webUrlTls: {} kafka: {}",
+                                                topic, data.getPulsarServiceUrl(), data.getPulsarServiceUrlTls(),
+                                                data.getWebServiceUrl(), data.getWebServiceUrlTls(),
+                                                data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
                                     }
-                            );
+
+                                    if (lookupDataContainsAddress(data, hostAndPort)) {
+                                        KOP_ADDRESS_CACHE.put(topic.toString(), returnFuture);
+                                        returnFuture.complete(data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
+                                        return;
+                                    }
+                                }
+                            } catch (Exception e) {
+                                log.error("Error in {} lookupFuture get: ", pulsarAddress, e);
+                                returnFuture.complete(Optional.empty());
+                                removeTopicManagerCache(topic.toString());
+                                return;
+                            }
+
+                            // no matching lookup data in all matchBrokers.
+                            log.error("Not able to search {} in all child of zk://loadbalance", pulsarAddress);
+                            returnFuture.complete(Optional.empty());
+                        });
                 });
         return returnFuture;
     }

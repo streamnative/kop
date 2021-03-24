@@ -19,14 +19,11 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.Transa
 import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState.PREPARE_EPOCH_FENCE;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
-import com.google.common.collect.Lists;
-import io.streamnative.pulsar.handlers.kop.BrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.KafkaRequestHandler;
+import io.streamnative.pulsar.handlers.kop.KoPBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
-import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
-import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -39,7 +36,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
@@ -54,12 +50,10 @@ import org.apache.kafka.common.requests.EndTxnResponse;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.InitProducerIdResponse;
 import org.apache.kafka.common.requests.TransactionResult;
-import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
-import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.zookeeper.ZooKeeper;
+
 
 /**
  * Transaction coordinator.
@@ -80,19 +74,19 @@ public class TransactionCoordinator {
     private TransactionCoordinator(TransactionConfig transactionConfig,
                                    Integer brokerId,
                                    ZooKeeper zkClient,
-                                   BrokerLookupManager brokerLookupManager) {
+                                   KoPBrokerLookupManager koPBrokerLookupManager) {
         this.transactionConfig = transactionConfig;
         this.txnManager = new TransactionStateManager(transactionConfig);
         this.producerIdManager = new ProducerIdManager(brokerId, zkClient);
         this.transactionMarkerChannelManager =
-                new TransactionMarkerChannelManager(null, txnManager, brokerLookupManager, false);
+                new TransactionMarkerChannelManager(null, txnManager, koPBrokerLookupManager, false);
     }
 
     public static TransactionCoordinator of(TransactionConfig transactionConfig,
                                             Integer brokerId,
                                             ZooKeeper zkClient,
-                                            BrokerLookupManager brokerLookupManager) {
-        return new TransactionCoordinator(transactionConfig, brokerId, zkClient, brokerLookupManager);
+                                            KoPBrokerLookupManager koPBrokerLookupManager) {
+        return new TransactionCoordinator(transactionConfig, brokerId, zkClient, koPBrokerLookupManager);
     }
 
     interface EndTxnCallback {
@@ -742,66 +736,6 @@ public class TransactionCoordinator {
                 preSendResult.getData().getTxnTransitMetadata());
     }
 
-    private void sendTxnResultMarker(TransactionMetadata metadata,
-                                     TxnTransitMetadata newMetadata,
-                                     TransactionResult transactionResult,
-                                     KafkaRequestHandler requestHandler,
-                                     EndTxnCallback callback) {
-        final Map<InetSocketAddress, MarkerHandler> markerHandlerMap = new HashMap<>();
-        final List<CompletableFuture<Void>> completableFutureList = new ArrayList<>();
-        for (TopicPartition topicPartition : metadata.getTopicPartitions()) {
-            CompletableFuture<Void> completableFuture = new CompletableFuture<>();
-            completableFutureList.add(completableFuture);
-            String pulsarTopic = new KopTopic(topicPartition.topic()).getPartitionName(topicPartition.partition());
-            requestHandler.findBroker(TopicName.get(pulsarTopic))
-                    .thenAccept(partitionMetadata -> {
-                        InetSocketAddress socketAddress = new InetSocketAddress(
-                                partitionMetadata.leader().host(), partitionMetadata.leader().port());
-                        CompletableFuture<TransactionMarkerChannelHandler> handlerFuture =
-                                transactionMarkerChannelManager.getChannel(socketAddress);
-                        markerHandlerMap.compute(socketAddress, (key, value) -> {
-                            if (value == null) {
-                                List<TopicPartition> topicPartitionList = new ArrayList<>();
-                                topicPartitionList.add(topicPartition);
-                                return MarkerHandler.builder()
-                                        .topicPartitionList(topicPartitionList)
-                                        .handlerFuture(handlerFuture)
-                                        .build();
-                            } else {
-                                value.topicPartitionList.add(topicPartition);
-                                return value;
-                            }
-                        });
-                        completableFuture.complete(null);
-                    }).exceptionally(e -> {
-                log.error("EndTxn findBroker fail", e);
-                completableFuture.completeExceptionally(e);
-                return null;
-            });
-        }
-
-        FutureUtil.waitForAll(completableFutureList).thenRun(() -> {
-            List<CompletableFuture<WriteTxnMarkersResponse>> writeTxnMarkersFutureList = new ArrayList<>();
-            for (MarkerHandler markerHandler : markerHandlerMap.values()) {
-                writeTxnMarkersFutureList.add(
-                        markerHandler.writeTxnMarker(
-                                newMetadata.getProducerId(), newMetadata.getProducerEpoch(), transactionResult));
-            }
-
-            FutureUtil.waitForAll(writeTxnMarkersFutureList).whenComplete((ignored, throwable) -> {
-                if (throwable != null) {
-                    callback.complete(Errors.COORDINATOR_NOT_AVAILABLE);
-                    return;
-                }
-                metadata.completeTransitionTo(newMetadata);
-                callback.complete(Errors.NONE);
-            });
-        }).exceptionally(e -> {
-            callback.complete(Errors.COORDINATOR_NOT_AVAILABLE);
-            return null;
-        });
-    }
-
     private Errors logInvalidStateTransitionAndReturnError(String transactionalId,
                                                          TransactionState transactionState,
                                                          TransactionResult transactionResult) {
@@ -872,28 +806,6 @@ public class TransactionCoordinator {
             }
         }
         return abortedTransactions;
-    }
-
-    @Builder
-    @Data
-    private static class MarkerHandler {
-
-        private CompletableFuture<TransactionMarkerChannelHandler> handlerFuture;
-        private List<TopicPartition> topicPartitionList;
-
-        public CompletableFuture<WriteTxnMarkersResponse> writeTxnMarker(long producerId,
-                                                                         short producerEpoch,
-                                                                         TransactionResult transactionResult) {
-            WriteTxnMarkersRequest.TxnMarkerEntry txnMarkerEntry = new WriteTxnMarkersRequest.TxnMarkerEntry(
-                    producerId,
-                    producerEpoch,
-                    1,
-                    transactionResult,
-                    topicPartitionList);
-            WriteTxnMarkersRequest txnMarkersRequest =
-                    new WriteTxnMarkersRequest.Builder(Lists.newArrayList(txnMarkerEntry)).build();
-            return handlerFuture.thenCompose(handler -> handler.enqueueRequest(txnMarkersRequest, null));
-        }
     }
 
 }

@@ -195,7 +195,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     @Getter
     private String bindAddress;
 
-    private BrokerLookupManager brokerLookupManager;
+    private KoPBrokerLookupManager koPBrokerLookupManager;
 
     @Override
     public String protocolName() {
@@ -235,7 +235,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     @Override
     public void start(BrokerService service) {
         brokerService = service;
-        brokerLookupManager = new BrokerLookupManager(
+        koPBrokerLookupManager = new KoPBrokerLookupManager(
                 brokerService.getPulsar(), false, kafkaConfig.getKafkaAdvertisedListeners());
 
         log.info("Starting KafkaProtocolHandler, kop version is: '{}'", KopVersion.getVersion());
@@ -371,7 +371,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 transactionConfig,
                 kafkaConfig.getBrokerId(),
                 brokerService.getPulsar().getZkClient(),
-                brokerLookupManager);
+                koPBrokerLookupManager);
 
         loadTxnLogTopics(transactionCoordinator);
     }
