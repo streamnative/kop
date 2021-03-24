@@ -105,7 +105,8 @@ public class SaslAuthenticator {
         this.brokerService = pulsarService.getBrokerService();
         this.admin = pulsarService.getAdminClient();
         this.allowedMechanisms = allowedMechanisms;
-        this.oauth2CallbackHandler = createOauth2CallbackHandler(config);
+        this.oauth2CallbackHandler = allowedMechanisms.contains(OAuthBearerLoginModule.OAUTHBEARER_MECHANISM)
+                ? createOauth2CallbackHandler(config) : null;
     }
 
     public void authenticate(RequestHeader header,
@@ -188,6 +189,10 @@ public class SaslAuthenticator {
         if (mechanism.equals(PlainSaslServer.PLAIN_MECHANISM)) {
             saslServer = new PlainSaslServer(authenticationService, admin);
         } else if (mechanism.equals(OAuthBearerLoginModule.OAUTHBEARER_MECHANISM)) {
+            if (this.oauth2CallbackHandler == null) {
+                throw new IllegalArgumentException("No OAuth2CallbackHandler found when mechanism is "
+                        + OAuthBearerLoginModule.OAUTHBEARER_MECHANISM);
+            }
             saslServer = new OAuthBearerSaslServer(oauth2CallbackHandler);
         } else {
             throw new AuthenticationException("KoP doesn't support '" + mechanism + "' mechanism");

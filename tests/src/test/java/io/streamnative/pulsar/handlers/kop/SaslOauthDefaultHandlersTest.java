@@ -59,6 +59,7 @@ public class SaslOauthDefaultHandlersTest extends SaslOauthBearerTestBase {
         conf.setProperties(properties);
 
         conf.setSaslAllowedMechanisms(Sets.newHashSet("OAUTHBEARER"));
+        conf.setKopOauth2ConfigFile("src/test/resources/kop-default-oauth2.properties");
         super.internalSetup();
     }
 
