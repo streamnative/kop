@@ -165,24 +165,24 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
     For stable releases, the `pulsar.version` is the same to the `kop.version`.
 
     ```xml
-        <dependency>
-        <groupId>io.streamnative.pulsar.handlers</groupId>
-        <artifactId>oauth-client</artifactId>
-        <version>${kop.version}</version>
-        <exclusions>
-            <exclusion>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-slf4j-impl</artifactId>
-            </exclusion>
-        </exclusions>
-        </dependency>
+    <dependency>
+      <groupId>io.streamnative.pulsar.handlers</groupId>
+      <artifactId>oauth-client</artifactId>
+      <version>${kop.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.apache.logging.log4j</groupId>
+          <artifactId>log4j-slf4j-impl</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
 
-        <!-- KoP's login callback handler has a pulsar-client dependency -->
-        <dependency>
-        <groupId>org.apache.pulsar</groupId>
-        <artifactId>pulsar-client</artifactId>
-        <version>${pulsar.version}</version>
-        </dependency>
+    <!-- KoP's login callback handler has a pulsar-client dependency -->
+    <dependency>
+      <groupId>org.apache.pulsar</groupId>
+      <artifactId>pulsar-client</artifactId>
+      <version>${pulsar.version}</version>
+    </dependency>
     ```
 
     (3) Configure the producer or consumer with the following **required** properties.
@@ -325,4 +325,3 @@ The following example shows how to connect KoP through SSL.
 
     > **Tip**
     > For more information, see [Configure Kafka client](https://kafka.apache.org/documentation/#security_configclients).
-
