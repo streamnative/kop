@@ -16,7 +16,9 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -26,6 +28,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +36,11 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.protocol.types.ArrayOf;
+import org.apache.kafka.common.protocol.types.Field;
+import org.apache.kafka.common.protocol.types.Schema;
+import org.apache.kafka.common.protocol.types.Struct;
+import org.apache.kafka.common.protocol.types.Type;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.RequestUtils;
@@ -114,6 +122,167 @@ public class TransactionStateManager {
         private TransactionMetadata.TxnTransitMetadata transitMetadata;
     }
 
+    @AllArgsConstructor
+    private static class TransactionLogKey {
+
+        private final String transactionId;
+
+        private static final String TXN_ID_FIELD = "transactional_id";
+
+        public static final Schema SCHEMA_0 =
+                new Schema(
+                        new Field(TXN_ID_FIELD, Type.STRING, "")
+                );
+
+        public static final Schema[] SCHEMAS = new Schema[] {
+                SCHEMA_0
+        };
+
+        public Schema getSchema(short schemaVersion) {
+            return SCHEMAS[schemaVersion];
+        }
+
+        public static final short LOWEST_SUPPORTED_VERSION = 0;
+        public static final short HIGHEST_SUPPORTED_VERSION = 0;
+
+        public byte[] toBytes(short schemaVersion) {
+            Struct struct = new Struct(getSchema(schemaVersion));
+            struct.set(TXN_ID_FIELD, transactionId);
+
+            ByteBuffer byteBuffer = ByteBuffer.allocate(2 /* version */ + struct.sizeOf());
+            byteBuffer.putShort(schemaVersion);
+            struct.writeTo(byteBuffer);
+            return byteBuffer.array();
+        }
+
+        public TransactionLogKey decode(ByteBuf byteBuf, short schemaVersion) {
+            Schema schema = getSchema(schemaVersion);
+            Struct struct = schema.read(byteBuf.nioBuffer());
+            return new TransactionLogKey(
+                    struct.getString(TXN_ID_FIELD)
+            );
+        }
+    }
+
+    @AllArgsConstructor
+    private static class TransactionLogValue {
+
+        private final long producerId;
+        private final short producerEpoch;
+        private final int transactionTimeoutMs;
+        private final byte transactionStatus;
+        private final List<PartitionsSchema> transactionPartitions;
+        private final long transactionLastUpdateTimestampMs;
+        private final long transactionStartTimestampMs;
+
+        private static final String PRODUCER_ID_FIELD = "producer_id";
+        private static final String PRODUCER_EPOCH_FIELD = "producer_epoch";
+        private static final String TXN_TIMEOUT_MS_FIELD = "transaction_timeout_ms";
+        private static final String TXN_STATUS_FIELD = "transaction_status";
+        private static final String TXN_PARTITIONS_FIELD = "transaction_partitions";
+        private static final String TXN_LAST_UPDATE_TIMESTAMP_FIELD = "transaction_last_update_timestamp_ms";
+        private static final String TXN_START_TIMESTAMP_FIELD = "transaction_start_timestamp_ms";
+
+        public static final Schema SCHEMA_0 =
+                new Schema(
+                        new Field(PRODUCER_ID_FIELD, Type.INT64, "Producer id in use by the transactional id"),
+                        new Field(PRODUCER_EPOCH_FIELD, Type.INT16, "Epoch associated with the producer id"),
+                        new Field(TXN_TIMEOUT_MS_FIELD, Type.INT32, "Transaction timeout in milliseconds"),
+                        new Field(TXN_STATUS_FIELD, Type.INT8, "TransactionState the transaction is in"),
+                        new Field(TXN_PARTITIONS_FIELD, ArrayOf.nullable(PartitionsSchema.SCHEMA_0),
+                                "Set of partitions involved in the transaction"),
+                        new Field(TXN_LAST_UPDATE_TIMESTAMP_FIELD, Type.INT64, "Time the transaction was last updated"),
+                        new Field(TXN_START_TIMESTAMP_FIELD, Type.INT64, "Time the transaction was started")
+                );
+
+        public static final Schema[] SCHEMAS = new Schema[] {
+                SCHEMA_0
+        };
+
+        public Schema getSchema(short schemaVersion) {
+            return SCHEMAS[schemaVersion];
+        }
+
+        public static final short LOWEST_SUPPORTED_VERSION = 0;
+        public static final short HIGHEST_SUPPORTED_VERSION = 0;
+
+        public byte[] toBytes() {
+            Struct struct = new Struct(SCHEMA_0);
+            struct.set(PRODUCER_ID_FIELD, producerId);
+            struct.set(PRODUCER_EPOCH_FIELD, producerEpoch);
+            struct.set(TXN_TIMEOUT_MS_FIELD, transactionTimeoutMs);
+            struct.set(TXN_STATUS_FIELD, transactionStatus);
+            struct.set(TXN_PARTITIONS_FIELD, transactionPartitions);
+            struct.set(TXN_LAST_UPDATE_TIMESTAMP_FIELD, transactionLastUpdateTimestampMs);
+            struct.set(TXN_START_TIMESTAMP_FIELD, transactionStartTimestampMs);
+
+            ByteBuffer byteBuffer = ByteBuffer.allocate(2 /* version */ + struct.sizeOf());
+            byteBuffer.putShort(HIGHEST_SUPPORTED_VERSION);
+            struct.writeTo(byteBuffer);
+            return byteBuffer.array();
+        }
+
+        public TransactionLogValue decode(ByteBuf byteBuf, short schemaVersion) {
+            Schema schema = getSchema(schemaVersion);
+            short version = byteBuf.readShort();
+            Struct struct = schema.read(byteBuf.nioBuffer());
+
+            List<PartitionsSchema> partitionsSchemas =
+                    Arrays.stream(struct.getArray(TXN_PARTITIONS_FIELD))
+                            .map(obj -> (PartitionsSchema) obj)
+                            .collect(Collectors.toList());
+
+            return new TransactionLogValue(
+                    struct.getLong(PRODUCER_ID_FIELD),
+                    struct.getShort(PRODUCER_EPOCH_FIELD),
+                    struct.getInt(TXN_TIMEOUT_MS_FIELD),
+                    struct.getByte(TXN_STATUS_FIELD),
+                    partitionsSchemas,
+                    struct.getLong(TXN_LAST_UPDATE_TIMESTAMP_FIELD),
+                    struct.getLong(TXN_START_TIMESTAMP_FIELD)
+            );
+        }
+
+    }
+
+    public static class PartitionsSchema {
+
+        private String topic;
+        private List<Integer> partitionIds;
+
+        private static final String TOPIC_FIELD = "topic";
+        private static final String PARTITION_IDS_FIELD = "partition_ids";
+
+        public static final Schema SCHEMA_0 =
+                new Schema(
+                        new Field(TOPIC_FIELD, Type.STRING, ""),
+                        new Field(PARTITION_IDS_FIELD, new ArrayOf(Type.INT32), "")
+                );
+
+        public static final Schema[] SCHEMAS = new Schema[] {
+                SCHEMA_0
+        };
+
+        public Schema getSchema(short schemaVersion) {
+            return SCHEMAS[schemaVersion];
+        }
+
+        public static final short LOWEST_SUPPORTED_VERSION = 0;
+        public static final short HIGHEST_SUPPORTED_VERSION = 0;
+
+        public byte[] toBytes(short schemaVersion) {
+            Struct struct = new Struct(getSchema(schemaVersion));
+            struct.set(TOPIC_FIELD, topic);
+            struct.set(PARTITION_IDS_FIELD, partitionIds);
+
+            ByteBuffer byteBuffer = ByteBuffer.allocate(2 /* versoin */ + struct.sizeOf());
+            byteBuffer.putShort(schemaVersion);
+            struct.writeTo(byteBuffer);
+            return byteBuffer.array();
+        }
+    }
+
+
     public void appendTransactionToLog(String transactionalId,
                                        int coordinatorEpoch,
                                        TransactionMetadata.TxnTransitMetadata newMetadata,
@@ -152,7 +321,7 @@ public class TransactionStateManager {
                     responseCallback.fail(Errors.NOT_COORDINATOR);
                     return null;
                 }
-                // append log
+                // TODO append log
                 Map<TopicPartition, ProduceResponse.PartitionResponse> partitionResponseMap = new HashMap<>();
                 partitionResponseMap.put(topicPartition, new ProduceResponse.PartitionResponse(Errors.NONE));
                 updateCacheCallback(transactionalId, newMetadata, topicPartition, coordinatorEpoch,
