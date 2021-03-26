@@ -363,17 +363,16 @@ public class KafkaTopicManager {
             removeTopicManagerCache(topicName);
 
             if (consumerTopicManagers.containsKey(topicName)) {
-                CompletableFuture<KafkaTopicConsumerManager> manager = consumerTopicManagers.get(topicName);
-                manager.get().close();
-                consumerTopicManagers.remove(topicName);
+                consumerTopicManagers.remove(topicName).get().close();
             }
 
             if (!topics.containsKey(topicName)) {
                 return;
             }
             PersistentTopic persistentTopic = topics.get(topicName).get();
-            if (persistentTopic != null) {
-                persistentTopic.removeProducer(references.get(topicName));
+            Producer producer = references.get(topicName);
+            if (persistentTopic != null && producer != null) {
+                persistentTopic.removeProducer(producer);
             }
             topics.remove(topicName);
         } catch (Exception e) {
