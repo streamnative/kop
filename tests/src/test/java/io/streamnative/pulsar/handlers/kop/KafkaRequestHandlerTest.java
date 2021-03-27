@@ -483,7 +483,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                     positionInSendResponse, positionReceived);
             // The result of MessageIdUtils#getMessageId only contains ledger id and entry id, so we need to cut the
             // extra bytes of positionInSendResponse.
-            assertEquals(positionInSendResponse, Arrays.copyOf(positionReceived, positionInSendResponse.length));
+            assertEquals(Arrays.copyOf(positionInSendResponse, 4), Arrays.copyOf(positionReceived, 4));
         }
     }
 }
