@@ -17,40 +17,32 @@ import io.prometheus.client.Collector;
 import io.prometheus.client.Collector.MetricFamilySamples;
 import io.prometheus.client.Collector.MetricFamilySamples.Sample;
 import io.prometheus.client.CollectorRegistry;
-import java.io.IOException;
-import java.io.Writer;
 import java.util.Enumeration;
 import org.apache.bookkeeper.stats.Counter;
+import org.apache.pulsar.common.util.SimpleTextOutputStream;
 
 /**
  * Logic to write metrics in Prometheus text format.
  */
 public class PrometheusTextFormatUtil {
-    static void writeGauge(Writer w, String name, SimpleGauge<? extends Number> gauge) {
+    static void writeGauge(SimpleTextOutputStream w, String name, SimpleGauge<? extends Number> gauge) {
         // Example:
         // # TYPE bookie_storage_entries_count gauge
         // bookie_storage_entries_count 519
-        try {
-            w.append("# TYPE ").append(name).append(" gauge\n");
-            w.append(name).append(' ').append(gauge.getSample().toString()).append('\n');
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        w.write("# TYPE ").write(name).write(" gauge\n");
+        w.write(name).write(' ').write(gauge.getSample().toString()).write('\n');
+
     }
 
-    static void writeCounter(Writer w, String name, Counter counter) {
+    static void writeCounter(SimpleTextOutputStream w, String name, Counter counter) {
         // Example:
         // # TYPE jvm_threads_started_total counter
         // jvm_threads_started_total 59
-        try {
-            w.append("# TYPE ").append(name).append(" counter\n");
-            w.append(name).append(' ').append(counter.get().toString()).append('\n');
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        w.write("# TYPE ").write(name).write(" counter\n");
+        w.write(name).write(' ').write(counter.get().toString()).write('\n');
     }
 
-    static void writeOpStat(Writer w, String name, DataSketchesOpStatsLogger opStat) {
+    static void writeOpStat(SimpleTextOutputStream w, String name, DataSketchesOpStatsLogger opStat) {
         // Example:
         // # TYPE bookie_journal_JOURNAL_ADD_ENTRY summary
         // bookie_journal_JOURNAL_ADD_ENTRY{success="false",quantile="0.5",} NaN
@@ -71,53 +63,49 @@ public class PrometheusTextFormatUtil {
         // bookie_journal_JOURNAL_ADD_ENTRY{success="true",quantile="1.0",} 10.902
         // bookie_journal_JOURNAL_ADD_ENTRY_count{success="true",} 658.0
         // bookie_journal_JOURNAL_ADD_ENTRY_sum{success="true",} 1265.0800000000002
-        try {
-            w.append("# TYPE ").append(name).append(" summary\n");
-            writeQuantile(w, opStat, name, false, 0.5);
-            writeQuantile(w, opStat, name, false, 0.75);
-            writeQuantile(w, opStat, name, false, 0.95);
-            writeQuantile(w, opStat, name, false, 0.99);
-            writeQuantile(w, opStat, name, false, 0.999);
-            writeQuantile(w, opStat, name, false, 0.9999);
-            writeQuantile(w, opStat, name, false, 1.0);
-            writeCount(w, opStat, name, false);
-            writeSum(w, opStat, name, false);
+        w.write("# TYPE ").write(name).write(" summary\n");
+        writeQuantile(w, opStat, name, false, 0.5);
+        writeQuantile(w, opStat, name, false, 0.75);
+        writeQuantile(w, opStat, name, false, 0.95);
+        writeQuantile(w, opStat, name, false, 0.99);
+        writeQuantile(w, opStat, name, false, 0.999);
+        writeQuantile(w, opStat, name, false, 0.9999);
+        writeQuantile(w, opStat, name, false, 1.0);
+        writeCount(w, opStat, name, false);
+        writeSum(w, opStat, name, false);
 
-            writeQuantile(w, opStat, name, true, 0.5);
-            writeQuantile(w, opStat, name, true, 0.75);
-            writeQuantile(w, opStat, name, true, 0.95);
-            writeQuantile(w, opStat, name, true, 0.99);
-            writeQuantile(w, opStat, name, true, 0.999);
-            writeQuantile(w, opStat, name, true, 0.9999);
-            writeQuantile(w, opStat, name, true, 1.0);
-            writeCount(w, opStat, name, true);
-            writeSum(w, opStat, name, true);
+        writeQuantile(w, opStat, name, true, 0.5);
+        writeQuantile(w, opStat, name, true, 0.75);
+        writeQuantile(w, opStat, name, true, 0.95);
+        writeQuantile(w, opStat, name, true, 0.99);
+        writeQuantile(w, opStat, name, true, 0.999);
+        writeQuantile(w, opStat, name, true, 0.9999);
+        writeQuantile(w, opStat, name, true, 1.0);
+        writeCount(w, opStat, name, true);
+        writeSum(w, opStat, name, true);
 
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
     }
 
-    private static void writeQuantile(Writer w, DataSketchesOpStatsLogger opStat, String name, Boolean success,
-                                      double quantile) throws IOException {
-        w.append(name).append("{success=\"").append(success.toString()).append("\",quantile=\"")
-                .append(Double.toString(quantile)).append("\"} ")
-                .append(Double.toString(opStat.getQuantileValue(success, quantile))).append('\n');
+    private static void writeQuantile(SimpleTextOutputStream w, DataSketchesOpStatsLogger opStat, String name,
+                                      Boolean success, double quantile) {
+        w.write(name).write("{success=\"").write(success.toString()).write("\",quantile=\"")
+                .write(Double.toString(quantile)).write("\"} ")
+                .write(Double.toString(opStat.getQuantileValue(success, quantile))).write('\n');
     }
 
-    private static void writeCount(Writer w, DataSketchesOpStatsLogger opStat, String name, Boolean success)
-            throws IOException {
-        w.append(name).append("_count{success=\"").append(success.toString()).append("\"} ")
-                .append(Long.toString(opStat.getCount(success))).append('\n');
+    private static void writeCount(SimpleTextOutputStream w, DataSketchesOpStatsLogger opStat, String name,
+                                   Boolean success) {
+        w.write(name).write("_count{success=\"").write(success.toString()).write("\"} ")
+                .write(Long.toString(opStat.getCount(success))).write('\n');
     }
 
-    private static void writeSum(Writer w, DataSketchesOpStatsLogger opStat, String name, Boolean success)
-            throws IOException {
-        w.append(name).append("_sum{success=\"").append(success.toString()).append("\"} ")
-                .append(Double.toString(opStat.getSum(success))).append('\n');
+    private static void writeSum(SimpleTextOutputStream w, DataSketchesOpStatsLogger opStat, String name,
+                                 Boolean success) {
+        w.write(name).write("_sum{success=\"").write(success.toString()).write("\"} ")
+                .write(Double.toString(opStat.getSum(success))).write('\n');
     }
 
-    static void writeMetricsCollectedByPrometheusClient(Writer w, CollectorRegistry registry) throws IOException {
+    static void writeMetricsCollectedByPrometheusClient(SimpleTextOutputStream w, CollectorRegistry registry) {
         Enumeration<MetricFamilySamples> metricFamilySamples = registry.metricFamilySamples();
         while (metricFamilySamples.hasMoreElements()) {
             MetricFamilySamples metricFamily = metricFamilySamples.nextElement();

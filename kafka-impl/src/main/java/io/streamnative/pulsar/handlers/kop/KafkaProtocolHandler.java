@@ -26,6 +26,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
@@ -41,6 +42,8 @@ import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.stats.StatsLogger;
+import org.apache.commons.configuration.Configuration;
+import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
@@ -69,7 +72,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public static final String TLS_HANDLER = "tls";
 
     private StatsLogger rootStatsLogger;
-    private StatsProviderService statsProviderService;
+    private PrometheusMetricsProvider statsProvider;
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
      */
@@ -228,8 +231,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         this.bindAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(kafkaConfig.getBindAddress());
         KopTopic.initialize(kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace());
 
-        statsProviderService = new StatsProviderService(kafkaConfig);
-        rootStatsLogger = statsProviderService.getStatsProvider().getStatsLogger("");
+        statsProvider = new PrometheusMetricsProvider();
+        rootStatsLogger = statsProvider.getStatsLogger("");
     }
 
     // This method is called after initialize
@@ -272,8 +275,11 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             }
         }
 
-        statsProviderService.start();
-
+        Configuration conf = new PropertiesConfiguration();
+        conf.addProperty("prometheusStatsLatencyRolloverSeconds",
+            kafkaConfig.getKopPrometheusStatsLatencyRolloverSeconds());
+        statsProvider.start(conf);
+        brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
