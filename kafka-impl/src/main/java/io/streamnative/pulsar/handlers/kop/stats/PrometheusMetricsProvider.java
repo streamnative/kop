@@ -129,15 +129,4 @@ public class PrometheusMetricsProvider implements PrometheusRawMetricsProvider {
             metric.rotateLatencyCollection();
         });
     }
-
-    private void registerMetrics(Collector collector) {
-        try {
-            collector.register(registry);
-        } catch (Exception e) {
-            // Ignore if these were already registered
-            if (log.isDebugEnabled()) {
-                log.debug("Failed to register Prometheus collector exports", e);
-            }
-        }
-    }
 }
