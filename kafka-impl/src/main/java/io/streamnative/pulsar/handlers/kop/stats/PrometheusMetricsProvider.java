@@ -29,21 +29,15 @@ import org.apache.commons.configuration.Configuration;
 import org.apache.commons.lang.StringUtils;
 import org.apache.pulsar.broker.stats.prometheus.PrometheusRawMetricsProvider;
 import org.apache.pulsar.common.util.SimpleTextOutputStream;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * A <i>Prometheus</i> based {@link StatsProvider} implementation.
  */
 public class PrometheusMetricsProvider implements PrometheusRawMetricsProvider {
-    private static final Logger log = LoggerFactory.getLogger(PrometheusMetricsProvider.class);
-
     private ScheduledExecutorService executor;
 
     public static final String PROMETHEUS_STATS_LATENCY_ROLLOVER_SECONDS = "prometheusStatsLatencyRolloverSeconds";
     public static final int DEFAULT_PROMETHEUS_STATS_LATENCY_ROLLOVER_SECONDS = 60;
-
-    private final CollectorRegistry registry;
 
     private final CachingStatsProvider cachingStatsProvider;
 
@@ -54,12 +48,8 @@ public class PrometheusMetricsProvider implements PrometheusRawMetricsProvider {
     public final ConcurrentMap<String, SimpleGauge<? extends Number>> gauges = new ConcurrentSkipListMap<>();
     public final ConcurrentMap<String, DataSketchesOpStatsLogger> opStats = new ConcurrentSkipListMap<>();
 
-    public PrometheusMetricsProvider() {
-        this(CollectorRegistry.defaultRegistry);
-    }
 
-    public PrometheusMetricsProvider(CollectorRegistry registry) {
-        this.registry = registry;
+    public PrometheusMetricsProvider() {
         this.cachingStatsProvider = new CachingStatsProvider(new StatsProvider() {
             @Override
             public void start(Configuration conf) {
