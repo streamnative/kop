@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop.stats;
 import com.google.common.annotations.VisibleForTesting;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import io.prometheus.client.Collector;
-import io.prometheus.client.CollectorRegistry;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.Executors;
