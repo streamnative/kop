@@ -25,7 +25,7 @@ import org.apache.pulsar.common.util.SimpleTextOutputStream;
  * Logic to write metrics in Prometheus text format.
  */
 public class PrometheusTextFormatUtil {
-    static void writeGauge(SimpleTextOutputStream w, String name, SimpleGauge<? extends Number> gauge) {
+    public static void writeGauge(SimpleTextOutputStream w, String name, SimpleGauge<? extends Number> gauge) {
         // Example:
         // # TYPE bookie_storage_entries_count gauge
         // bookie_storage_entries_count 519
@@ -34,7 +34,7 @@ public class PrometheusTextFormatUtil {
 
     }
 
-    static void writeCounter(SimpleTextOutputStream w, String name, Counter counter) {
+    public static void writeCounter(SimpleTextOutputStream w, String name, Counter counter) {
         // Example:
         // # TYPE jvm_threads_started_total counter
         // jvm_threads_started_total 59
@@ -42,7 +42,7 @@ public class PrometheusTextFormatUtil {
         w.write(name).write(' ').write(counter.get().toString()).write('\n');
     }
 
-    static void writeOpStat(SimpleTextOutputStream w, String name, DataSketchesOpStatsLogger opStat) {
+    public static void writeOpStat(SimpleTextOutputStream w, String name, DataSketchesOpStatsLogger opStat) {
         // Example:
         // # TYPE bookie_journal_JOURNAL_ADD_ENTRY summary
         // bookie_journal_JOURNAL_ADD_ENTRY{success="false",quantile="0.5",} NaN
@@ -105,7 +105,7 @@ public class PrometheusTextFormatUtil {
                 .write(Double.toString(opStat.getSum(success))).write('\n');
     }
 
-    static void writeMetricsCollectedByPrometheusClient(SimpleTextOutputStream w, CollectorRegistry registry) {
+    public static void writeMetricsCollectedByPrometheusClient(SimpleTextOutputStream w, CollectorRegistry registry) {
         Enumeration<MetricFamilySamples> metricFamilySamples = registry.metricFamilySamples();
         while (metricFamilySamples.hasMoreElements()) {
             MetricFamilySamples metricFamily = metricFamilySamples.nextElement();

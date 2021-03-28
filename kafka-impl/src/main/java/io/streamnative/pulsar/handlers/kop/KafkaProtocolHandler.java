@@ -332,6 +332,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             groupCoordinator.shutdown();
         }
         KafkaTopicManager.LOOKUP_CACHE.clear();
+        statsProvider.stop();
     }
 
     public void initGroupCoordinator(BrokerService service) throws Exception {

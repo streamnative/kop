@@ -31,6 +31,9 @@ import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
+/**
+ * test for kop prometheus metrics.
+ */
 @Slf4j
 public class MetricsProviderTest extends KopProtocolHandlerTestBase{
 
@@ -115,7 +118,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         BufferedReader reader = new BufferedReader(isReader);
         StringBuffer sb = new StringBuffer();
         String str;
-        while((str = reader.readLine()) != null){
+        while ((str = reader.readLine()) != null) {
             sb.append(str);
         }
         Assert.assertTrue(sb.toString().contains("kop_server_HANDLE_PRODUCE_REQUEST"));

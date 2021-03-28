@@ -36,22 +36,23 @@ import org.slf4j.LoggerFactory;
  * A <i>Prometheus</i> based {@link StatsProvider} implementation.
  */
 public class PrometheusMetricsProvider implements PrometheusRawMetricsProvider {
+    private static final Logger log = LoggerFactory.getLogger(PrometheusMetricsProvider.class);
 
     private ScheduledExecutorService executor;
 
     public static final String PROMETHEUS_STATS_LATENCY_ROLLOVER_SECONDS = "prometheusStatsLatencyRolloverSeconds";
     public static final int DEFAULT_PROMETHEUS_STATS_LATENCY_ROLLOVER_SECONDS = 60;
 
-    final CollectorRegistry registry;
+    private final CollectorRegistry registry;
 
     private final CachingStatsProvider cachingStatsProvider;
 
     /*
      * These acts a registry of the metrics defined in this provider
      */
-    final ConcurrentMap<String, LongAdderCounter> counters = new ConcurrentSkipListMap<>();
-    final ConcurrentMap<String, SimpleGauge<? extends Number>> gauges = new ConcurrentSkipListMap<>();
-    final ConcurrentMap<String, DataSketchesOpStatsLogger> opStats = new ConcurrentSkipListMap<>();
+    private final ConcurrentMap<String, LongAdderCounter> counters = new ConcurrentSkipListMap<>();
+    private final ConcurrentMap<String, SimpleGauge<? extends Number>> gauges = new ConcurrentSkipListMap<>();
+    private final ConcurrentMap<String, DataSketchesOpStatsLogger> opStats = new ConcurrentSkipListMap<>();
 
     public PrometheusMetricsProvider() {
         this(CollectorRegistry.defaultRegistry);
@@ -139,6 +140,4 @@ public class PrometheusMetricsProvider implements PrometheusRawMetricsProvider {
             }
         }
     }
-
-    private static final Logger log = LoggerFactory.getLogger(PrometheusMetricsProvider.class);
 }
