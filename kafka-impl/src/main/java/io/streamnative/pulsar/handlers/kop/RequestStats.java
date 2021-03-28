@@ -13,11 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import lombok.Getter;
-import org.apache.bookkeeper.stats.OpStatsLogger;
-import org.apache.bookkeeper.stats.StatsLogger;
-import org.apache.bookkeeper.stats.annotations.StatsDoc;
-
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.CATEGORY_SERVER;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.HANDLE_PRODUCE_REQUEST;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_PUBLISH;
@@ -25,6 +20,14 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_QUEUED_
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_ENCODE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 
+import lombok.Getter;
+import org.apache.bookkeeper.stats.OpStatsLogger;
+import org.apache.bookkeeper.stats.StatsLogger;
+import org.apache.bookkeeper.stats.annotations.StatsDoc;
+
+/**
+ * Kop request stats metric for prometheus metrics.
+ */
 @StatsDoc(
     name = SERVER_SCOPE,
     category = CATEGORY_SERVER,
