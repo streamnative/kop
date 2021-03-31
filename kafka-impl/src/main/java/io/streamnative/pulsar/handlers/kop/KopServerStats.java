@@ -21,8 +21,6 @@ public interface KopServerStats {
 
     String SERVER_SCOPE = "kop_server";
 
-    String SERVER_STATUS = "SERVER_STATUS";
-
     /**
      * PRODUCE STATS.
      */
