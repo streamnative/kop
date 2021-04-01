@@ -57,6 +57,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -64,11 +65,13 @@ import javax.naming.AuthenticationException;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
@@ -190,13 +193,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final EntryFormatter entryFormatter;
 
     private final Map<TopicPartition, PendingProduceQueue> pendingProduceQueueMap = new ConcurrentHashMap<>();
+    private final StatsLogger statsLogger;
+    private final RequestStats requestStats;
 
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
                                GroupCoordinator groupCoordinator,
                                TransactionCoordinator transactionCoordinator,
                                Boolean tlsEnabled,
-                               EndPoint advertisedEndPoint) throws Exception {
+                               EndPoint advertisedEndPoint,
+                               StatsLogger statsLogger) throws Exception {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -220,6 +226,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
         this.currentConnectedGroup = new ConcurrentHashMap<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
+        this.statsLogger = statsLogger;
+        this.requestStats = new RequestStats(statsLogger);
     }
 
     @Override
@@ -618,6 +626,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected void handleProduceRequest(KafkaHeaderAndRequest produceHar,
                                         CompletableFuture<AbstractResponse> resultFuture) {
+        final long startProduceNanos = MathUtils.nowInNano();
+
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
         if (produceRequest.transactionalId() != null) {
@@ -650,7 +660,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                 String fullPartitionName = KopTopic.toString(topicPartition);
                 PendingProduce pendingProduce = new PendingProduce(partitionResponse, topicManager, fullPartitionName,
-                    entryFormatter, validRecords, executor, transactionCoordinator);
+                    entryFormatter, validRecords, executor, transactionCoordinator, requestStats);
                 PendingProduceQueue queue =
                     pendingProduceQueueMap.computeIfAbsent(topicPartition, ignored -> new PendingProduceQueue());
                 queue.add(pendingProduce);
@@ -675,6 +685,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         log.debug("[{}] Request {}: Complete handle produce.",
                                 ctx.channel(), produceHar.toString());
                     }
+
+                    if (ex != null) {
+                        requestStats.getHandleProduceRequestStats()
+                            .registerFailedEvent(MathUtils.elapsedNanos(startProduceNanos), TimeUnit.NANOSECONDS);
+                    } else {
+                        requestStats.getHandleProduceRequestStats()
+                            .registerSuccessfulEvent(MathUtils.elapsedNanos(startProduceNanos), TimeUnit.NANOSECONDS);
+                    }
+
                     resultFuture.complete(new ProduceResponse(responses));
                 });
     }
