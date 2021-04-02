@@ -94,7 +94,6 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kConfig.setLoadBalancerEnabled(false);
         kConfig.setLoadBalancerSheddingEnabled(false);
         kConfig.setLoadBalancerAutoBundleSplitEnabled(false);
-        kConfig.setMessagingProtocols(Sets.newHashSet("kafka"));
 
         // set protocol related config
         URL testHandlerUrl = this.getClass().getClassLoader().getResource("test-protocol-handler.nar");

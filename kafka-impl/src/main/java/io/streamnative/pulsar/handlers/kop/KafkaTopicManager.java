@@ -375,6 +375,8 @@ public class KafkaTopicManager {
                 persistentTopic.removeProducer(producer);
             }
             topics.remove(topicName);
+
+            OffsetAcker.removeOffsetAcker(topicName);
         } catch (Exception e) {
             log.error("Failed to close reference for individual topic {}. exception:", topicName, e);
         }

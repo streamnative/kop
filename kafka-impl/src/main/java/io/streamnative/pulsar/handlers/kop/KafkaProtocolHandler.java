@@ -23,6 +23,7 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetAcker;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
@@ -117,7 +118,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                         name, service.pulsar().getBrokerServiceUrl());
                                 }
                                 groupCoordinator.handleGroupImmigration(name.getPartitionIndex());
-                                continue;
                             }
                             KafkaTopicManager.removeTopicManagerCache(name.toString());
                             KopBrokerLookupManager.removeTopicManagerCache(name.toString());
@@ -169,7 +169,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                         name, service.pulsar().getBrokerServiceUrl());
                                 }
                                 groupCoordinator.handleGroupEmigration(name.getPartitionIndex());
-                                continue;
                             }
                             // deReference topic when unload
                             KopBrokerLookupManager.removeTopicManagerCache(name.toString());
@@ -354,6 +353,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         KafkaTopicManager.getConsumerTopicManagers().clear();
         KafkaTopicManager.getReferences().clear();
         KafkaTopicManager.getTopics().clear();
+        OffsetAcker.CONSUMERS.clear();
         statsProvider.stop();
     }
 
