@@ -19,7 +19,6 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.Transa
 import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState.PREPARE_EPOCH_FENCE;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
-import io.streamnative.pulsar.handlers.kop.KafkaRequestHandler;
 import io.streamnative.pulsar.handlers.kop.KoPBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
@@ -34,11 +33,13 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
+import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
@@ -51,6 +52,7 @@ import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.InitProducerIdResponse;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.SystemTime;
+import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.zookeeper.ZooKeeper;
 
@@ -72,32 +74,63 @@ public class TransactionCoordinator {
     private final List<AbortedIndexEntry> abortedIndexList = new ArrayList<>();
 
     private TransactionCoordinator(TransactionConfig transactionConfig,
+                                   PulsarClient pulsarClient,
                                    Integer brokerId,
                                    ZooKeeper zkClient,
-                                   KoPBrokerLookupManager koPBrokerLookupManager) {
+                                   KoPBrokerLookupManager koPBrokerLookupManager,
+                                   ScheduledExecutorService executor) {
         this.transactionConfig = transactionConfig;
-        this.txnManager = new TransactionStateManager(transactionConfig);
+        this.txnManager = new TransactionStateManager(transactionConfig, pulsarClient, executor);
         this.producerIdManager = new ProducerIdManager(brokerId, zkClient);
         this.transactionMarkerChannelManager =
                 new TransactionMarkerChannelManager(null, txnManager, koPBrokerLookupManager, false);
     }
 
     public static TransactionCoordinator of(TransactionConfig transactionConfig,
+                                            PulsarClient pulsarClient,
                                             Integer brokerId,
                                             ZooKeeper zkClient,
                                             KoPBrokerLookupManager koPBrokerLookupManager) {
-        return new TransactionCoordinator(transactionConfig, brokerId, zkClient, koPBrokerLookupManager);
+        ScheduledExecutorService executor = OrderedScheduler.newSchedulerBuilder()
+                .name("transaction-coordinator-executor")
+                .build();
+
+        return new TransactionCoordinator(
+                transactionConfig, pulsarClient, brokerId, zkClient, koPBrokerLookupManager, executor);
     }
 
     interface EndTxnCallback {
         void complete(Errors errors);
     }
 
-    public CompletableFuture<Void> loadTransactionMetadata(int partition) {
-        return txnManager.loadTransactionsForTxnTopicPartition(partition, -1,
-                (coordinatorEpoch, transactionResult, transactionMetadata, txnTransitMetadata) -> {
-            // TODO finish pending completion txn
+    /**
+     * Load state from the given partition and begin handling requests for groups which map to this partition.
+     *
+     * @param partition The partition that we are now leading
+     */
+    public CompletableFuture<Void> handleTxnImmigration(int partition) {
+        log.info("Elected as the txn coordinator for partition {}.", partition);
+        // The operations performed during immigration must be resilient to any previous errors we saw or partial state we
+        // left off during the unloading phase. Ensure we remove all associated state for this partition before we continue
+        // loading it.
+        transactionMarkerChannelManager.removeMarkersForTxnTopicPartition(partition);
+
+        return txnManager.loadTransactionsForTxnTopicPartition(partition,
+                (transactionResult, transactionMetadata, txnTransitMetadata) -> {
+            transactionMarkerChannelManager.addTxnMarkersToSend(
+                    -1, transactionResult, transactionMetadata, txnTransitMetadata);
         });
+    }
+
+    /**
+     * Clear coordinator caches for the given partition after giving up leadership.
+     *
+     * @param partition The partition that we are no longer leading
+     */
+    public void handleTxnEmigration(int partition) {
+        log.info("Resigned as the txn coordinator for partition {}.", partition);
+        txnManager.removeTransactionsForTxnTopicPartition(partition);
+        transactionMarkerChannelManager.removeMarkersForTxnTopicPartition(partition);
     }
 
     public CompletableFuture<Void> startup() {
@@ -119,9 +152,9 @@ public class TransactionCoordinator {
         return getTopicPartitionName() + PARTITIONED_TOPIC_SUFFIX + partitionId;
     }
 
-    public void handleInitProducerId(String transactionalId, int transactionTimeoutMs,
+    public void handleInitProducerId(String transactionalId,
+                                     int transactionTimeoutMs,
                                      Optional<ProducerIdAndEpoch> expectedProducerIdAndEpoch,
-                                     KafkaRequestHandler requestHandler,
                                      CompletableFuture<AbstractResponse> response) {
         if (transactionalId == null) {
             // if the transactional id is null, then always blindly accept the request
@@ -182,8 +215,8 @@ public class TransactionCoordinator {
                                 expectedProducerIdAndEpoch);
 
                     prepareInitProducerIdResult.whenComplete((errorsAndData, prepareThrowable) -> {
-                        completeInitProducer(transactionalId, coordinatorEpoch, errorsAndData, prepareThrowable,
-                                requestHandler, response);
+                        completeInitProducer(
+                                transactionalId, coordinatorEpoch, errorsAndData, prepareThrowable, response);
                     });
                     return null;
                 });
@@ -196,7 +229,6 @@ public class TransactionCoordinator {
                                       int coordinatorEpoch,
                                       ErrorsAndData<EpochAndTxnTransitMetadata> errorsAndData,
                                       Throwable prepareInitPidThrowable,
-                                      KafkaRequestHandler requestHandler,
                                       CompletableFuture<AbstractResponse> response) {
         if (errorsAndData.hasErrors()) {
             initTransactionError(response, errorsAndData.getErrors());
@@ -214,7 +246,6 @@ public class TransactionCoordinator {
                     newMetadata.getProducerEpoch(),
                     TransactionResult.ABORT,
                     false,
-                    requestHandler,
                     errors -> {
                         if (errors != Errors.NONE) {
                             initTransactionError(response, errors);
@@ -444,10 +475,9 @@ public class TransactionCoordinator {
                                      long producerId,
                                      short producerEpoch,
                                      TransactionResult transactionResult,
-                                     KafkaRequestHandler requestHandler,
                                      CompletableFuture<AbstractResponse> response) {
         endTransaction(transactionalId, producerId, producerEpoch, transactionResult, true,
-                requestHandler, errors -> response.complete(new EndTxnResponse(0, errors)));
+                errors -> response.complete(new EndTxnResponse(0, errors)));
     }
 
     @AllArgsConstructor
@@ -462,7 +492,6 @@ public class TransactionCoordinator {
                                 Short producerEpoch,
                                 TransactionResult txnMarkerResult,
                                 Boolean isFromClient,
-                                KafkaRequestHandler requestHandler,
                                 EndTxnCallback callback) {
         AtomicBoolean isEpochFence = new AtomicBoolean(false);
         if (transactionalId == null || transactionalId.isEmpty()) {
@@ -495,7 +524,7 @@ public class TransactionCoordinator {
                     @Override
                     public void complete() {
                         completeEndTxn(transactionalId, coordinatorEpoch, producerId, producerEpoch,
-                                txnMarkerResult, requestHandler, callback);
+                                txnMarkerResult, callback);
                     }
 
                     @Override
@@ -641,9 +670,12 @@ public class TransactionCoordinator {
         }
     }
 
-    private void completeEndTxn(String transactionalId, int coordinatorEpoch, long producerId,
-                                int producerEpoch, TransactionResult txnMarkerResult,
-                                KafkaRequestHandler requestHandler, EndTxnCallback callback) {
+    private void completeEndTxn(String transactionalId,
+                                int coordinatorEpoch,
+                                long producerId,
+                                int producerEpoch,
+                                TransactionResult txnMarkerResult,
+                                EndTxnCallback callback) {
 
         ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> errorsAndData =
                 txnManager.getTransactionState(transactionalId);

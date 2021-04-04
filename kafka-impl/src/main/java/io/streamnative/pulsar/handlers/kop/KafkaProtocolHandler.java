@@ -75,13 +75,17 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         final NamespaceName kafkaMetaNs;
         final NamespaceName kafkaTopicNs;
         final GroupCoordinator groupCoordinator;
+        final TransactionCoordinator transactionCoordinator;
+
         public OffsetAndTopicListener(BrokerService service,
-                                   KafkaServiceConfiguration kafkaConfig,
-                                   GroupCoordinator groupCoordinator) {
+                                      KafkaServiceConfiguration kafkaConfig,
+                                      GroupCoordinator groupCoordinator,
+                                      TransactionCoordinator transactionCoordinator) {
             this.service = service;
             this.kafkaMetaNs = NamespaceName
                 .get(kafkaConfig.getKafkaMetadataTenant(), kafkaConfig.getKafkaMetadataNamespace());
             this.groupCoordinator = groupCoordinator;
+            this.transactionCoordinator = transactionCoordinator;
             this.kafkaTopicNs = NamespaceName
                     .get(kafkaConfig.getKafkaTenant(), kafkaConfig.getKafkaNamespace());
         }
@@ -106,6 +110,16 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                         name, service.pulsar().getBrokerServiceUrl());
                                 }
                                 groupCoordinator.handleGroupImmigration(name.getPartitionIndex());
+                            } else if (Topic.TRANSACTION_STATE_TOPIC_NAME.equals(
+                                    getKafkaTopicNameFromPulsarTopicname(name))) {
+                                checkState(name.isPartitioned(),
+                                        "TxnTopic should be partitioned in onLoad, but get " + name);
+
+                                if (log.isDebugEnabled()) {
+                                    log.debug("New transaction partition load:  {}, broker: {}",
+                                            name, service.pulsar().getBrokerServiceUrl());
+                                }
+                                transactionCoordinator.handleTxnImmigration(name.getPartitionIndex());
                             }
                             KafkaTopicManager.removeTopicManagerCache(name.toString());
                             // update lookup cache when onload
@@ -155,6 +169,16 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                         name, service.pulsar().getBrokerServiceUrl());
                                 }
                                 groupCoordinator.handleGroupEmigration(name.getPartitionIndex());
+                            } else if (Topic.TRANSACTION_STATE_TOPIC_NAME
+                                    .equals(getKafkaTopicNameFromPulsarTopicname(name))) {
+                                checkState(name.isPartitioned(),
+                                        "TxnTopic should be partitioned in unLoad, but get " + name);
+
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Txn partition unload:  {}, broker: {}",
+                                            name, service.pulsar().getBrokerServiceUrl());
+                                }
+                                transactionCoordinator.handleTxnEmigration(name.getPartitionIndex());
                             }
                             // remove cache when unload
                             KafkaTopicManager.removeTopicManagerCache(name.toString());
@@ -254,7 +278,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 brokerService.pulsar()
                     .getNamespaceService()
                     .addNamespaceBundleOwnershipListener(
-                        new OffsetAndTopicListener(brokerService, kafkaConfig, groupCoordinator));
+                        new OffsetAndTopicListener(brokerService, kafkaConfig, groupCoordinator, transactionCoordinator));
             } catch (Exception e) {
                 log.error("initGroupCoordinator failed with", e);
             }
@@ -338,7 +362,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             .build();
 
         PulsarAdmin pulsarAdmin = service.pulsar().getAdminClient();
-        MetadataUtils.createKafkaMetadataIfMissing(pulsarAdmin, kafkaConfig);
+        MetadataUtils.createOffsetMetadataIfMissing(pulsarAdmin, kafkaConfig);
 
 
         this.groupCoordinator = GroupCoordinator.of(
@@ -365,10 +389,17 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     }
 
     public void initTransactionCoordinator() throws Exception {
-        TransactionConfig transactionConfig = TransactionConfig.builder().build();
-        transactionConfig.setTransactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions());
+        TransactionConfig transactionConfig = TransactionConfig.builder()
+                .transactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions())
+                .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(kafkaConfig))
+                .build();
+
+        PulsarAdmin pulsarAdmin = brokerService.getPulsar().getAdminClient();
+        MetadataUtils.createTxnMetadataIfMissing(pulsarAdmin, kafkaConfig);
+
         this.transactionCoordinator = TransactionCoordinator.of(
                 transactionConfig,
+                brokerService.getPulsar().getClient(),
                 kafkaConfig.getBrokerId(),
                 brokerService.getPulsar().getZkClient(),
                 koPBrokerLookupManager);
@@ -418,7 +449,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     }
 
     /**
-     * This method discovers ownership of offset topic partitions and attempts to load offset topics
+     * This method discovers ownership of offset topic partitions and attempts to load transaction topics
      * assigned to this broker.
      */
     private void loadTxnLogTopics(TransactionCoordinator txnCoordinator) throws Exception {
@@ -442,9 +473,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
         if (null != partitionsOwnedByCurrentBroker && !partitionsOwnedByCurrentBroker.isEmpty()) {
             List<CompletableFuture<Void>> lists = partitionsOwnedByCurrentBroker.stream().map(
-                (partition) -> txnCoordinator.loadTransactionMetadata(partition)).collect(Collectors.toList());
+                (partition) -> txnCoordinator.handleTxnImmigration(partition)).collect(Collectors.toList());
 
             FutureUtil.waitForAll(lists).get();
+            log.info("Current broker: {} complete load transaction metadata.", currentBroker);
         } else {
             log.info("Current broker: {} does not own any of the txn log topic partitions", currentBroker);
         }

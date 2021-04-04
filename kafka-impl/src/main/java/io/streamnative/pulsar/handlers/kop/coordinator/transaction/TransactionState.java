@@ -23,7 +23,7 @@ public enum TransactionState {
      * transition: received AddPartitionsToTxnRequest => Ongoing
      *             received AddOffsetsToTxnRequest => Ongoing
      */
-    EMPTY,
+    EMPTY((byte) 0),
 
     /**
      * Transaction has started and ongoing.
@@ -32,40 +32,75 @@ public enum TransactionState {
      *             received AddPartitionsToTxnRequest => Ongoing
      *             received AddOffsetsToTxnRequest => Ongoing
      */
-    ONGOING,
+    ONGOING((byte) 1),
 
     /**
      * Group is preparing to commit.
      * transition: received acks from all partitions => CompleteCommit
      */
-    PREPARE_COMMIT,
+    PREPARE_COMMIT((byte) 2),
 
     /**
      * Group is preparing to abort.
      * transition: received acks from all partitions => CompleteAbort
      */
-    PREPARE_ABORT,
+    PREPARE_ABORT((byte) 3),
 
     /**
      * Group has completed commit.
      * Will soon be removed from the ongoing transaction cache
      */
-    COMPLETE_COMMIT,
+    COMPLETE_COMMIT((byte) 4),
 
     /**
      * Group has completed abort.
      * Will soon be removed from the ongoing transaction cache
      */
-    COMPLETE_ABORT,
+    COMPLETE_ABORT((byte) 5),
 
     /**
      * TransactionalId has expired and is about to be removed from the transaction cache.
      */
-    DEAD,
+    DEAD((byte) 6),
 
     /**
      * We are in the middle of bumping the epoch and fencing out older producers.
      */
-    PREPARE_EPOCH_FENCE;
+    PREPARE_EPOCH_FENCE((byte) 7);
+
+    private final byte value;
+
+    TransactionState(byte value) {
+        this.value = value;
+    }
+
+    public byte getValue() {
+        return value;
+    }
+
+    public static TransactionState byteToState(byte value) {
+        switch (value) {
+            case 0:
+                return EMPTY;
+            case 1:
+                return ONGOING;
+            case 2:
+                return PREPARE_COMMIT;
+            case 3:
+                return PREPARE_ABORT;
+            case 4:
+                return COMPLETE_COMMIT;
+            case 5:
+                return COMPLETE_ABORT;
+            case 6:
+                return DEAD;
+            case 7:
+                return PREPARE_EPOCH_FENCE;
+            default:
+                throw new IllegalStateException(
+                        "Unknown transaction state byte " + value + " from the transaction status message");
+        }
+    }
+
 
 }
