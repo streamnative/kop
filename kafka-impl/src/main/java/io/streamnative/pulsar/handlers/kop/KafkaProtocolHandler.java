@@ -354,7 +354,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             .build();
 
         PulsarAdmin pulsarAdmin = service.pulsar().getAdminClient();
-        MetadataUtils.createKafkaMetadataIfMissing(pulsarAdmin, kafkaConfig);
+        MetadataUtils.createOffsetMetadataIfMissing(pulsarAdmin, kafkaConfig);
 
 
         this.groupCoordinator = GroupCoordinator.of(
@@ -381,8 +381,14 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     }
 
     public void initTransactionCoordinator() throws Exception {
-        TransactionConfig transactionConfig = TransactionConfig.builder().build();
-        transactionConfig.setTransactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions());
+        TransactionConfig transactionConfig = TransactionConfig.builder()
+                .transactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions())
+                .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(kafkaConfig))
+                .build();
+
+        PulsarAdmin pulsarAdmin = brokerService.getPulsar().getAdminClient();
+        MetadataUtils.createTxnMetadataIfMissing(pulsarAdmin, kafkaConfig);
+
         this.transactionCoordinator = TransactionCoordinator.of(
                 transactionConfig, kafkaConfig.getBrokerId(), brokerService.getPulsar().getZkClient());
 
