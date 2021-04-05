@@ -255,6 +255,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (isActive.getAndSet(false)) {
             log.info("close channel {}", ctx.channel());
             writeAndFlushWhenInactiveChannel(ctx.channel());
+            groupCoordinator.getOffsetAcker().close(groupIds);
             ctx.close();
             topicManager.close();
             String clientHost = ctx.channel().remoteAddress().toString();
@@ -262,7 +263,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 log.info("currentConnectedGroup remove {}", clientHost);
                 currentConnectedGroup.remove(clientHost);
             }
-            groupCoordinator.getOffsetAcker().close(groupIds);
         }
     }
 

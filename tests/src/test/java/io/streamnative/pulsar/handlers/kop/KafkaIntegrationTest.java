@@ -77,15 +77,7 @@ import org.testng.annotations.Test;
 public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
 
     public KafkaIntegrationTest(final String entryFormat) {
-        super(entryFormat);
-    }
-
-    @Factory
-    public static Object[] instances() {
-        return new Object[] {
-                new KafkaIntegrationTest("pulsar"),
-                new KafkaIntegrationTest("kafka")
-        };
+        super("kafka");
     }
 
     @DataProvider
@@ -166,8 +158,8 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
         ((KafkaServiceConfiguration) conf).setListeners(
                 PLAINTEXT_PREFIX + ip + ":" + kafkaBrokerPort + ","
                         + SSL_PREFIX + ip + ":" + kafkaBrokerPortTls);
-        conf.setKafkaAdvertisedListeners(PLAINTEXT_PREFIX + "127.0.0.1:" + kafkaBrokerPort
-                + "," + SSL_PREFIX + "127.0.0.1:" + kafkaBrokerPortTls);
+        conf.setKafkaAdvertisedListeners(PLAINTEXT_PREFIX + ip + ":" + kafkaBrokerPort
+                + "," + SSL_PREFIX + ip + ":" + kafkaBrokerPortTls);
         super.internalSetup();
 
 
