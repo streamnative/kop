@@ -129,7 +129,7 @@ public class OffsetAcker implements Closeable {
             if (!consumers.containsKey(groupId)) {
                 return;
             }
-            consumers.get(groupId).values().forEach(consumerFuture -> {
+            consumers.remove(groupId).values().forEach(consumerFuture -> {
                 consumerFuture.whenComplete((consumer, throwable) -> {
                     if (throwable != null) {
                         log.warn("Error when get consumer for consumer group close:", throwable);

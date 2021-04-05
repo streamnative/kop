@@ -195,6 +195,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final Map<TopicPartition, PendingProduceQueue> pendingProduceQueueMap = new ConcurrentHashMap<>();
     private final StatsLogger statsLogger;
     private final RequestStats requestStats;
+    private final Set<String> groupIds = new HashSet<>();
 
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
@@ -261,6 +262,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 log.info("currentConnectedGroup remove {}", clientHost);
                 currentConnectedGroup.remove(clientHost);
             }
+            groupCoordinator.getOffsetAcker().close(groupIds);
         }
     }
 
@@ -1179,6 +1181,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(syncGroup.getRequest() instanceof SyncGroupRequest);
         SyncGroupRequest request = (SyncGroupRequest) syncGroup.getRequest();
 
+        groupIds.add(request.groupId());
         groupCoordinator.handleSyncGroup(
             request.groupId(),
             request.generationId(),
