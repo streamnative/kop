@@ -42,7 +42,7 @@ public class TransactionLogKey {
                     new Field(TXN_ID_FIELD, Type.STRING, "")
             );
 
-    static final Schema[] SCHEMAS = new Schema[] {
+    private static final Schema[] SCHEMAS = new Schema[] {
             SCHEMA_0
     };
 

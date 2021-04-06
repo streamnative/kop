@@ -58,7 +58,7 @@ public class TransactionLogValue {
     private static final String TXN_LAST_UPDATE_TIMESTAMP_FIELD = "transaction_last_update_timestamp_ms";
     private static final String TXN_START_TIMESTAMP_FIELD = "transaction_start_timestamp_ms";
 
-    protected static final Schema SCHEMA_0 =
+    private static final Schema SCHEMA_0 =
             new Schema(
                     new Field(PRODUCER_ID_FIELD, Type.INT64, "Producer id in use by the transactional id"),
                     new Field(PRODUCER_EPOCH_FIELD, Type.INT16, "Epoch associated with the producer id"),
@@ -70,7 +70,7 @@ public class TransactionLogValue {
                     new Field(TXN_START_TIMESTAMP_FIELD, Type.INT64, "Time the transaction was started")
             );
 
-    static final Schema[] SCHEMAS = new Schema[] {
+    private static final Schema[] SCHEMAS = new Schema[] {
             SCHEMA_0
     };
 
@@ -181,28 +181,28 @@ public class TransactionLogValue {
     @AllArgsConstructor
     public static class PartitionsSchema {
 
+        public static final short LOWEST_SUPPORTED_VERSION = 0;
+        public static final short HIGHEST_SUPPORTED_VERSION = 0;
+
         private String topic;
         private List<Integer> partitionIds;
 
         private static final String TOPIC_FIELD = "topic";
         private static final String PARTITION_IDS_FIELD = "partition_ids";
 
-        protected static final Schema SCHEMA_0 =
+        private static final Schema SCHEMA_0 =
                 new Schema(
                         new Field(TOPIC_FIELD, Type.STRING, ""),
                         new Field(PARTITION_IDS_FIELD, new ArrayOf(Type.INT32), "")
                 );
 
-        static final Schema[] SCHEMAS = new Schema[] {
+        private static final Schema[] SCHEMAS = new Schema[] {
                 SCHEMA_0
         };
 
         public static Schema getSchema(short schemaVersion) {
             return SCHEMAS[schemaVersion];
         }
-
-        public static final short LOWEST_SUPPORTED_VERSION = 0;
-        public static final short HIGHEST_SUPPORTED_VERSION = 0;
 
         public Struct toStruct() {
             Struct struct = new Struct(getSchema(HIGHEST_SUPPORTED_VERSION));
