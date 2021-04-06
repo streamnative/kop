@@ -14,12 +14,15 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import lombok.Cleanup;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.testng.annotations.Test;
 
 /**
@@ -46,5 +49,42 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
         List<String> kafkaReceives = receiveMessages(kafkaConsumer, expectedMessages.size());
         assertEquals(kafkaReceives, expectedMessages);
+    }
+
+    @Test(timeOut = 20000)
+    public void testDeleteClosedTopics() throws Exception {
+        final String topic = "test-delete-closed-topics";
+        final List<String> expectedMessages = Collections.singletonList("msg");
+
+        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        sendSingleMessages(kafkaProducer, topic, expectedMessages);
+
+        try {
+            admin.topics().deletePartitionedTopic(topic);
+        } catch (PulsarAdminException e) {
+            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
+        }
+
+        final KafkaConsumer<String, String> kafkaConsumer1 = newKafkaConsumer(topic, "sub-1");
+        assertEquals(receiveMessages(kafkaConsumer1, expectedMessages.size()), expectedMessages);
+        try {
+            admin.topics().deletePartitionedTopic(topic);
+        } catch (PulsarAdminException e) {
+            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
+        }
+
+        final KafkaConsumer<String, String> kafkaConsumer2 = newKafkaConsumer(topic, "sub-2");
+        assertEquals(receiveMessages(kafkaConsumer2, expectedMessages.size()), expectedMessages);
+
+        kafkaProducer.close();
+        kafkaConsumer1.close();
+        try {
+            admin.topics().deletePartitionedTopic(topic);
+        } catch (PulsarAdminException e) {
+            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
+        }
+
+        kafkaConsumer2.close();
+        admin.topics().deletePartitionedTopic(topic);
     }
 }
