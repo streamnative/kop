@@ -300,7 +300,8 @@ public class TransactionMetadata {
 
     // this is visible for test only
     public TxnTransitMetadata prepareNoTransit() {
-        // do not call transitTo as it will set the pending state, a follow-up call to abort the transaction will set its pending state
+        // do not call transitTo as it will set the pending state,
+        // a follow-up call to abort the transaction will set its pending state
         return new TxnTransitMetadata(producerId, lastProducerId, producerEpoch, lastProducerEpoch, txnTimeoutMs,
                 state, topicPartitions, txnStartTimestamp, txnLastUpdateTimestamp);
     }

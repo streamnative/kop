@@ -58,7 +58,7 @@ public class TransactionLogValue {
     private static final String TXN_LAST_UPDATE_TIMESTAMP_FIELD = "transaction_last_update_timestamp_ms";
     private static final String TXN_START_TIMESTAMP_FIELD = "transaction_start_timestamp_ms";
 
-    public static final Schema SCHEMA_0 =
+    protected static final Schema SCHEMA_0 =
             new Schema(
                     new Field(PRODUCER_ID_FIELD, Type.INT64, "Producer id in use by the transactional id"),
                     new Field(PRODUCER_EPOCH_FIELD, Type.INT16, "Epoch associated with the producer id"),
@@ -70,7 +70,7 @@ public class TransactionLogValue {
                     new Field(TXN_START_TIMESTAMP_FIELD, Type.INT64, "Time the transaction was started")
             );
 
-    public static final Schema[] SCHEMAS = new Schema[] {
+    static final Schema[] SCHEMAS = new Schema[] {
             SCHEMA_0
     };
 
@@ -174,6 +174,9 @@ public class TransactionLogValue {
         return metadata;
     }
 
+    /**
+     * Partition schema.
+     */
     @Data
     @AllArgsConstructor
     public static class PartitionsSchema {
@@ -184,13 +187,13 @@ public class TransactionLogValue {
         private static final String TOPIC_FIELD = "topic";
         private static final String PARTITION_IDS_FIELD = "partition_ids";
 
-        public static final Schema SCHEMA_0 =
+        protected static final Schema SCHEMA_0 =
                 new Schema(
                         new Field(TOPIC_FIELD, Type.STRING, ""),
                         new Field(PARTITION_IDS_FIELD, new ArrayOf(Type.INT32), "")
                 );
 
-        public static final Schema[] SCHEMAS = new Schema[] {
+        static final Schema[] SCHEMAS = new Schema[] {
                 SCHEMA_0
         };
 
