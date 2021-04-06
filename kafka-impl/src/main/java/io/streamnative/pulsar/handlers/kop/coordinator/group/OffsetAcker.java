@@ -35,7 +35,6 @@ import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.ConsumerBuilder;
-import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
@@ -190,10 +189,7 @@ public class OffsetAcker implements Closeable {
         if (consumerFuture != null) {
             consumerFuture.whenComplete((consumer, e) -> {
                 if (e == null) {
-                    try {
-                        consumer.close();
-                    } catch (PulsarClientException ignored) {
-                    }
+                    consumer.closeAsync();
                 } else {
                     log.error("Failed to create consumer for [group={}] [topic={}]: {}",
                             groupId, topicPartition, e.getMessage());
