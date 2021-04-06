@@ -383,7 +383,9 @@ public class KafkaTopicManager {
 
     public CompletableFuture<Consumer> getGroupConsumers(String groupId, TopicPartition kafkaPartition) {
         if (StringUtils.isEmpty(groupId)) {
-            log.warn("Try to get group consumers with an empty group id");
+            if (log.isDebugEnabled()) {
+                log.debug("Try to get group consumers with an empty group id");
+            }
             return CompletableFuture.completedFuture(null);
         }
 
@@ -392,7 +394,9 @@ public class KafkaTopicManager {
         final CompletableFuture<org.apache.pulsar.client.api.Consumer<byte[]>> offsetConsumerFuture =
                 offsetAcker.getConsumer(groupId, kafkaPartition);
         if (offsetConsumerFuture == null) {
-            log.warn("No offset consumer for [group={}] [topic={}]", groupId, kafkaPartition);
+            if (log.isDebugEnabled()) {
+                log.debug("No offset consumer for [group={}] [topic={}]", groupId, kafkaPartition);
+            }
             return CompletableFuture.completedFuture(null);
         }
 
