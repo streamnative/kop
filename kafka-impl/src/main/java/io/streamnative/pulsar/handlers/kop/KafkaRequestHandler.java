@@ -196,6 +196,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final Map<TopicPartition, PendingProduceQueue> pendingProduceQueueMap = new ConcurrentHashMap<>();
     private final StatsLogger statsLogger;
     private final RequestStats requestStats;
+    private final Set<String> groupIds = new HashSet<>();
 
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
@@ -255,6 +256,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (isActive.getAndSet(false)) {
             log.info("close channel {}", ctx.channel());
             writeAndFlushWhenInactiveChannel(ctx.channel());
+            groupCoordinator.getOffsetAcker().close(groupIds);
             ctx.close();
             topicManager.close();
             String clientHost = ctx.channel().remoteAddress().toString();
@@ -1185,6 +1187,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(syncGroup.getRequest() instanceof SyncGroupRequest);
         SyncGroupRequest request = (SyncGroupRequest) syncGroup.getRequest();
 
+        groupIds.add(request.groupId());
         groupCoordinator.handleSyncGroup(
             request.groupId(),
             request.generationId(),
