@@ -138,7 +138,12 @@ public class OffsetAcker implements Closeable {
 
     public void close(Set<String> groupIds) {
         for (String groupId : groupIds) {
-            consumers.remove(groupId).forEach((topicPartition, consumerFuture) -> {
+            final Map<TopicPartition, CompletableFuture<Consumer<byte[]>>>
+                    consumersToRemove = consumers.remove(groupId);
+            if (consumersToRemove == null) {
+                continue;
+            }
+            consumersToRemove.forEach((topicPartition, consumerFuture) -> {
                 if (!consumerFuture.isDone()) {
                     log.warn("Consumer of [group={}] [topic={}] is not done while being closed",
                             groupId, topicPartition);
