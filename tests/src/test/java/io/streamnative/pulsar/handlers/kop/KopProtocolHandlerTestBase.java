@@ -170,6 +170,10 @@ public abstract class KopProtocolHandlerTestBase {
         // kafka related settings.
         kafkaConfig.setEnableGroupCoordinator(true);
         kafkaConfig.setOffsetsTopicNumPartitions(1);
+
+        kafkaConfig.setEnableTransactionCoordinator(true);
+        kafkaConfig.setTxnLogTopicNumPartitions(1);
+
         kafkaConfig.setKafkaListeners(
                 PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort + ","
                         + SSL_PREFIX + "localhost:" + kafkaBrokerPortTls);
