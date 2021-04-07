@@ -79,7 +79,7 @@ public class KoPBrokerLookupManager {
                     // It's the `kafkaAdvertisedListeners` config that's written to ZK
                     final EndPoint endPoint =
                             tlsEnabled ? EndPoint.getSslEndPoint(listeners.get())
-                                    : EndPoint.getPlainTextEndPoint(listeners.get());;
+                                    : EndPoint.getPlainTextEndPoint(listeners.get());
 
                     // here we found topic broker: broker2, but this is in broker1,
                     // how to clean the lookup cache?
