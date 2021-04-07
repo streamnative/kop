@@ -91,8 +91,6 @@ public class MetadataUtils {
         String kafkaMetadataTenant = conf.getKafkaMetadataTenant();
         String kafkaMetadataNamespace = kafkaMetadataTenant + "/" + conf.getKafkaMetadataNamespace();
 
-//        final KopTopic offsetsTopic = new KopTopic(constructOffsetsTopicBaseName(conf));
-
         boolean clusterExists, tenantExists, namespaceExists, offsetsTopicExists;
         clusterExists = tenantExists = namespaceExists = offsetsTopicExists = false;
 
@@ -149,7 +147,8 @@ public class MetadataUtils {
 
             // Check if the offsets topic exists and create it if not
             Topics topics = pulsarAdmin.topics();
-            PartitionedTopicMetadata topicMetadata = topics.getPartitionedTopicMetadata(kopTopic.getFullName());
+            PartitionedTopicMetadata topicMetadata =
+                    topics.getPartitionedTopicMetadata(kopTopic.getFullName());
 
             Set<String> partitionSet = new HashSet<>(partitionNum);
             for (int i = 0; i < partitionNum; i++) {
@@ -159,7 +158,10 @@ public class MetadataUtils {
             if (topicMetadata.partitions <= 0) {
                 log.info("Kafka group metadata topic {} doesn't exist. Creating it ...", kopTopic.getFullName());
 
-                topics.createPartitionedTopic(kopTopic.getFullName(), partitionNum);
+                topics.createPartitionedTopic(
+                        kopTopic.getFullName(),
+                        partitionNum
+                );
 
                 log.info("Successfully created kop metadata topic {} with {} partitions.",
                         kopTopic.getFullName(), partitionNum);

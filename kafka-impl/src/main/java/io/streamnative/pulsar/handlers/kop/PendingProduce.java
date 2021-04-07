@@ -19,7 +19,9 @@ import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordBatch;
@@ -44,6 +46,8 @@ public class PendingProduce {
     private final TransactionCoordinator transactionCoordinator;
     private long pid;
     private boolean isTransactional;
+    private RequestStats requestStats;
+    private final long enqueueTimestamp;
 
     public PendingProduce(CompletableFuture<PartitionResponse> responseFuture,
                           KafkaTopicManager topicManager,
@@ -51,7 +55,9 @@ public class PendingProduce {
                           EntryFormatter entryFormatter,
                           MemoryRecords memoryRecords,
                           ExecutorService executor,
-                          TransactionCoordinator transactionCoordinator) {
+                          TransactionCoordinator transactionCoordinator,
+                          RequestStats requestStats) {
+        this.enqueueTimestamp = MathUtils.nowInNano();
         this.responseFuture = responseFuture;
         this.topicManager = topicManager;
         this.partitionName = partitionName;
@@ -67,12 +73,15 @@ public class PendingProduce {
             return null;
         });
         executor.execute(() -> byteBufFuture.complete(entryFormatter.encode(memoryRecords, numMessages)));
+        requestStats.getProduceEncodeStats()
+            .registerSuccessfulEvent(MathUtils.elapsedNanos(enqueueTimestamp), TimeUnit.NANOSECONDS);
         this.offsetFuture = new CompletableFuture<>();
 
         RecordBatch batch = memoryRecords.batchIterator().next();
         this.transactionCoordinator = transactionCoordinator;
         this.pid = batch.producerId();
         this.isTransactional = batch.isTransactional();
+        this.requestStats = requestStats;
     }
 
     public boolean ready() {
@@ -103,6 +112,10 @@ public class PendingProduce {
         if (!ready()) {
             throw new RuntimeException("Try to send while PendingProduce is not ready");
         }
+
+        requestStats.getMessageQueuedLatencyStats()
+            .registerSuccessfulEvent(MathUtils.elapsedNanos(enqueueTimestamp), TimeUnit.NANOSECONDS);
+
         PersistentTopic persistentTopic;
         ByteBuf byteBuf;
         try {
@@ -129,9 +142,15 @@ public class PendingProduce {
                 if (this.isTransactional) {
                     transactionCoordinator.addActivePidOffset(TopicName.get(partitionName), pid, offset);
                 }
+                requestStats.getMessagePublishStats().registerSuccessfulEvent(
+                    MathUtils.elapsedNanos(enqueueTimestamp), TimeUnit.NANOSECONDS);
+
                 responseFuture.complete(new PartitionResponse(Errors.NONE, offset, -1L, -1L));
             } else {
                 log.error("publishMessages for topic partition: {} failed when write.", partitionName, e);
+                requestStats.getMessagePublishStats()
+                    .registerFailedEvent(MathUtils.elapsedNanos(enqueueTimestamp), TimeUnit.NANOSECONDS);
+
                 responseFuture.complete(new PartitionResponse(Errors.KAFKA_STORAGE_ERROR));
             }
             byteBuf.release();

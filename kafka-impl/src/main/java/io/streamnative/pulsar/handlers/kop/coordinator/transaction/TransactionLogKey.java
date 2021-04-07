@@ -37,12 +37,12 @@ public class TransactionLogKey {
 
     private static final String TXN_ID_FIELD = "transactional_id";
 
-    public static final Schema SCHEMA_0 =
+    protected static final Schema SCHEMA_0 =
             new Schema(
                     new Field(TXN_ID_FIELD, Type.STRING, "")
             );
 
-    public static final Schema[] SCHEMAS = new Schema[] {
+    private static final Schema[] SCHEMAS = new Schema[] {
             SCHEMA_0
     };
 

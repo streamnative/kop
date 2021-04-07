@@ -46,25 +46,16 @@ import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
-import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 /**
  * Unit test for Different kafka produce messages.
  */
 @Slf4j
-public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
+public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBase {
 
-    public KafkaMessageOrderTest(final String entryFormat) {
+    public KafkaMessageOrderTestBase(final String entryFormat) {
         super(entryFormat);
-    }
-
-    @Factory
-    public static Object[] instances() {
-        return new Object[] {
-                new KafkaMessageOrderTest("pulsar"),
-                new KafkaMessageOrderTest("kafka")
-        };
     }
 
     @DataProvider(name = "batchSizeList")

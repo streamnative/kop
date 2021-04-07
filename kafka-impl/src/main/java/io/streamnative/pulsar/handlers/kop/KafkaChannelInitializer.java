@@ -24,6 +24,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import lombok.Getter;
+import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.pulsar.broker.PulsarService;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
@@ -48,13 +49,16 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final EndPoint advertisedEndPoint;
     @Getter
     private final SslContextFactory sslContextFactory;
+    @Getter
+    private final StatsLogger statsLogger;
 
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
                                    GroupCoordinator groupCoordinator,
                                    TransactionCoordinator transactionCoordinator,
                                    boolean enableTLS,
-                                   EndPoint advertisedEndPoint) {
+                                   EndPoint advertisedEndPoint,
+                                   StatsLogger statsLogger) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -62,6 +66,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.transactionCoordinator = transactionCoordinator;
         this.enableTls = enableTLS;
         this.advertisedEndPoint = advertisedEndPoint;
+        this.statsLogger = statsLogger;
 
         if (enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
@@ -80,7 +85,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
             new KafkaRequestHandler(pulsarService, kafkaConfig,
-                    groupCoordinator, transactionCoordinator, enableTls, advertisedEndPoint));
+                    groupCoordinator, transactionCoordinator, enableTls, advertisedEndPoint, statsLogger));
     }
 
 }

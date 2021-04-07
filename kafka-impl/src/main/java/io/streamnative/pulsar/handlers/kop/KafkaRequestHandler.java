@@ -17,6 +17,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
+import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
@@ -57,6 +58,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -64,11 +66,13 @@ import javax.naming.AuthenticationException;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
@@ -190,13 +194,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final EntryFormatter entryFormatter;
 
     private final Map<TopicPartition, PendingProduceQueue> pendingProduceQueueMap = new ConcurrentHashMap<>();
+    private final StatsLogger statsLogger;
+    private final RequestStats requestStats;
+    private final Set<String> groupIds = new HashSet<>();
 
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
                                GroupCoordinator groupCoordinator,
                                TransactionCoordinator transactionCoordinator,
                                Boolean tlsEnabled,
-                               EndPoint advertisedEndPoint) throws Exception {
+                               EndPoint advertisedEndPoint,
+                               StatsLogger statsLogger) throws Exception {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -220,6 +228,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
         this.currentConnectedGroup = new ConcurrentHashMap<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
+        this.statsLogger = statsLogger;
+        this.requestStats = new RequestStats(statsLogger);
     }
 
     @Override
@@ -246,6 +256,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (isActive.getAndSet(false)) {
             log.info("close channel {}", ctx.channel());
             writeAndFlushWhenInactiveChannel(ctx.channel());
+            groupCoordinator.getOffsetAcker().close(groupIds);
             ctx.close();
             topicManager.close();
             String clientHost = ctx.channel().remoteAddress().toString();
@@ -345,7 +356,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return admin.topics().getPartitionedTopicMetadataAsync(topicName);
     }
 
-    // Get all topics exclude `__consumer_offsets`, the result of `topicMapFuture` is a map:
+    // Get all topics exclude `__consumer_offsets` and `__transaction_state`, the result of `topicMapFuture` is a map:
     //   key: the full topic name without partition suffix, e.g. persistent://public/default/my-topic
     //   value: the partitions associated with the key, e.g. for a topic with 3 partitions,
     //     persistent://public/default/my-topic-partition-0
@@ -356,6 +367,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 kafkaConfig.getKafkaMetadataTenant(),
                 kafkaConfig.getKafkaMetadataNamespace(),
                 GROUP_METADATA_TOPIC_NAME)
+        ).getFullName();
+        final String txnTopicName = new KopTopic(String.join("/",
+                kafkaConfig.getKafkaMetadataTenant(),
+                kafkaConfig.getKafkaMetadataNamespace(),
+                TRANSACTION_STATE_TOPIC_NAME)
         ).getFullName();
         admin.tenants().getTenantsAsync().thenApply(tenants -> {
             if (tenants.isEmpty()) {
@@ -378,8 +394,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     for (String topic : topics) {
                                         TopicName topicName = TopicName.get(topic);
                                         String key = topicName.getPartitionedTopicName();
-                                        // ignore the `__consumer_offsets` topic
-                                        if (key.equals(offsetsTopicName)) {
+                                        // ignore the `__consumer_offsets` and `__transaction_state` topic
+                                        if (key.equals(offsetsTopicName) || key.equals(txnTopicName)) {
                                             continue;
                                         }
                                         topicMap.computeIfAbsent(KopTopic.removeDefaultNamespacePrefix(key), ignored ->
@@ -618,6 +634,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected void handleProduceRequest(KafkaHeaderAndRequest produceHar,
                                         CompletableFuture<AbstractResponse> resultFuture) {
+        final long startProduceNanos = MathUtils.nowInNano();
+
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
         if (produceRequest.transactionalId() != null) {
@@ -650,7 +668,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                 String fullPartitionName = KopTopic.toString(topicPartition);
                 PendingProduce pendingProduce = new PendingProduce(partitionResponse, topicManager, fullPartitionName,
-                    entryFormatter, validRecords, executor, transactionCoordinator);
+                    entryFormatter, validRecords, executor, transactionCoordinator, requestStats);
                 PendingProduceQueue queue =
                     pendingProduceQueueMap.computeIfAbsent(topicPartition, ignored -> new PendingProduceQueue());
                 queue.add(pendingProduce);
@@ -675,6 +693,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         log.debug("[{}] Request {}: Complete handle produce.",
                                 ctx.channel(), produceHar.toString());
                     }
+
+                    if (ex != null) {
+                        requestStats.getHandleProduceRequestStats()
+                            .registerFailedEvent(MathUtils.elapsedNanos(startProduceNanos), TimeUnit.NANOSECONDS);
+                    } else {
+                        requestStats.getHandleProduceRequestStats()
+                            .registerSuccessfulEvent(MathUtils.elapsedNanos(startProduceNanos), TimeUnit.NANOSECONDS);
+                    }
+
                     resultFuture.complete(new ProduceResponse(responses));
                 });
     }
@@ -1160,6 +1187,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(syncGroup.getRequest() instanceof SyncGroupRequest);
         SyncGroupRequest request = (SyncGroupRequest) syncGroup.getRequest();
 
+        groupIds.add(request.groupId());
         groupCoordinator.handleSyncGroup(
             request.groupId(),
             request.generationId(),
