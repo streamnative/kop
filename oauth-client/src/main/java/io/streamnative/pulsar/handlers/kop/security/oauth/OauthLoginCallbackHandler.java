@@ -86,16 +86,15 @@ public class OauthLoginCallbackHandler implements AuthenticateCallbackHandler {
         }
     }
 
-    private void handleCallback(OAuthBearerTokenCallback callback) {
+    private void handleCallback(OAuthBearerTokenCallback callback) throws IOException {
         if (callback.token() != null) {
             throw new IllegalArgumentException("Callback had a token already");
         }
-        final Authentication authentication = AuthenticationFactoryOAuth2.clientCredentials(
+        try (Authentication authentication = AuthenticationFactoryOAuth2.clientCredentials(
                 clientConfig.getIssuerUrl(),
                 clientConfig.getCredentialsUrl(),
                 clientConfig.getAudience()
-        );
-        try {
+        )) {
             authentication.start();
             final AuthenticationDataProvider provider = authentication.getAuthData();
             final AuthData authData = provider.authenticate(AuthData.INIT_AUTH_DATA);

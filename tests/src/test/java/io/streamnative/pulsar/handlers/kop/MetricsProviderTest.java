@@ -13,43 +13,36 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-
 import com.google.common.collect.Sets;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelHandlerContext;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
-import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-import org.apache.bookkeeper.stats.NullStatsLogger;
-import org.apache.pulsar.broker.protocol.ProtocolHandler;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
 
 /**
- * Test for entry publish time.
+ * test for kop prometheus metrics.
  */
-public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
-    private static final Logger log = LoggerFactory.getLogger(EntryPublishTimeTest.class);
-
-    KafkaRequestHandler kafkaRequestHandler;
-    SocketAddress serviceAddress;
-
-    public EntryPublishTimeTest(String format) {
-        super(format);
-    }
+@Slf4j
+public class MetricsProviderTest extends KopProtocolHandlerTestBase{
 
     @BeforeMethod
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
+        log.info("success internal setup");
+
         if (!admin.clusters().getClusters().contains(configClusterName)) {
             // so that clients can test short names
             admin.clusters().createCluster(configClusterName,
@@ -78,32 +71,59 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
             admin.namespaces().setRetention("public/__kafka",
                     new RetentionPolicies(-1, -1));
         }
-
-        log.info("created namespaces, init handler");
-
-        ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
-        GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();
-        TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler).getTransactionCoordinator();
-
-        kafkaRequestHandler = new KafkaRequestHandler(
-                pulsar,
-                (KafkaServiceConfiguration) conf,
-                groupCoordinator,
-                transactionCoordinator,
-                false,
-                getPlainEndPoint(),
-                NullStatsLogger.INSTANCE);
-        ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
-        Channel mockChannel = mock(Channel.class);
-        doReturn(mockChannel).when(mockCtx).channel();
-        kafkaRequestHandler.ctx = mockCtx;
-
-        serviceAddress = new InetSocketAddress(pulsar.getBindAddress(), kafkaBrokerPort);
     }
 
     @AfterMethod
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
+    }
+
+
+    @Test(timeOut = 30000)
+    public void testMetricsProvider() throws Exception {
+        int partitionNumber = 3;
+        String kafkaTopicName = "kopKafkaProducePulsarMetrics" + partitionNumber;
+
+        // create partitioned topic.
+        admin.topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
+
+        // 1. produce message with Kafka producer.
+        KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort());
+
+        int totalMsgs = 10;
+
+        String messageStrPrefix = "Message_Kop_KafkaProducePulsarConsume_"  + partitionNumber + "_";
+
+        for (int i = 0; i < totalMsgs; i++) {
+            String messageStr = messageStrPrefix + i;
+            ProducerRecord record = new ProducerRecord<>(
+                    kafkaTopicName,
+                    i,
+                    messageStr);
+
+            kProducer.getProducer().send(record).get();
+
+            if (log.isDebugEnabled()) {
+                log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+            }
+        }
+
+
+        HttpClient httpClient = HttpClientBuilder.create().build();
+        final String metricsEndPoint = pulsar.getWebServiceAddress() + "/metrics";
+        HttpResponse response = httpClient.execute(new HttpGet(metricsEndPoint));
+        InputStream inputStream = response.getEntity().getContent();
+        InputStreamReader isReader = new InputStreamReader(inputStream);
+        BufferedReader reader = new BufferedReader(isReader);
+        StringBuffer sb = new StringBuffer();
+        String str;
+        while ((str = reader.readLine()) != null) {
+            sb.append(str);
+        }
+        Assert.assertTrue(sb.toString().contains("kop_server_HANDLE_PRODUCE_REQUEST"));
+        Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_ENCODE"));
+        Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_PUBLISH"));
+        Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_QUEUED_LATENCY"));
     }
 }

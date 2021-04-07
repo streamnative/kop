@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
@@ -25,6 +26,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
@@ -39,6 +41,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.stats.StatsLogger;
+import org.apache.commons.configuration.Configuration;
+import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
@@ -66,6 +71,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public static final String PROTOCOL_NAME = "kafka";
     public static final String TLS_HANDLER = "tls";
 
+    private StatsLogger rootStatsLogger;
+    private PrometheusMetricsProvider statsProvider;
     private KoPBrokerLookupManager koPBrokerLookupManager;
 
     /**
@@ -224,6 +231,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
         this.bindAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(kafkaConfig.getBindAddress());
         KopTopic.initialize(kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace());
+
+        statsProvider = new PrometheusMetricsProvider();
+        rootStatsLogger = statsProvider.getStatsLogger("");
     }
 
     // This method is called after initialize
@@ -267,6 +277,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 log.error("Initialized transaction coordinator failed.", e);
             }
         }
+
+        Configuration conf = new PropertiesConfiguration();
+        conf.addProperty("prometheusStatsLatencyRolloverSeconds",
+            kafkaConfig.getKopPrometheusStatsLatencyRolloverSeconds());
+        statsProvider.start(conf);
+        brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
@@ -294,12 +310,14 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, transactionCoordinator, false, advertisedEndPoint));
+                                kafkaConfig, groupCoordinator, transactionCoordinator, false,
+                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE)));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, transactionCoordinator, true, advertisedEndPoint));
+                                kafkaConfig, groupCoordinator, transactionCoordinator, true,
+                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE)));
                         break;
                 }
             });
@@ -317,6 +335,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             groupCoordinator.shutdown();
         }
         KafkaTopicManager.LOOKUP_CACHE.clear();
+        statsProvider.stop();
     }
 
     public void initGroupCoordinator(BrokerService service) throws Exception {
