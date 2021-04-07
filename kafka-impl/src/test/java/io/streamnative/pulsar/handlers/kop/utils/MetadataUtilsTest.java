@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.eq;
@@ -45,7 +46,7 @@ import org.testng.annotations.Test;
 */
 public class MetadataUtilsTest {
 
-    @Test(timeOut = 20000)
+    @Test()
     public void testCreateKafkaMetadataIfMissing() throws Exception {
         KopTopic.initialize("public/default");
         KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
@@ -56,6 +57,7 @@ public class MetadataUtilsTest {
         conf.setOffsetsTopicNumPartitions(8);
 
         final KopTopic offsetsTopic = new KopTopic(MetadataUtils.constructOffsetsTopicBaseName(conf));
+        final KopTopic txnTopic = new KopTopic(MetadataUtils.constructTxnLogTopicBaseName(conf));
 
         List<String> emptyList = Lists.newArrayList();
 
@@ -72,6 +74,7 @@ public class MetadataUtilsTest {
         PartitionedTopicMetadata offsetTopicMetadata = new PartitionedTopicMetadata();
         Topics mockTopics = mock(Topics.class);
         doReturn(offsetTopicMetadata).when(mockTopics).getPartitionedTopicMetadata(eq(offsetsTopic.getFullName()));
+        doReturn(offsetTopicMetadata).when(mockTopics).getPartitionedTopicMetadata(eq(txnTopic.getFullName()));
 
         PulsarAdmin mockPulsarAdmin = mock(PulsarAdmin.class);
 
@@ -80,7 +83,19 @@ public class MetadataUtilsTest {
         doReturn(mockNamespaces).when(mockPulsarAdmin).namespaces();
         doReturn(mockTopics).when(mockPulsarAdmin).topics();
 
-        MetadataUtils.createKafkaMetadataIfMissing(mockPulsarAdmin, conf);
+        TenantInfo partialTenant = new TenantInfo();
+        doReturn(partialTenant).when(mockTenants).getTenantInfo(eq(conf.getKafkaMetadataTenant()));
+
+        MetadataUtils.createOffsetMetadataIfMissing(mockPulsarAdmin, conf);
+
+        // After call the createOffsetMetadataIfMissing, these methods should return expected data.
+        doReturn(Lists.newArrayList(conf.getKafkaMetadataTenant())).when(mockTenants).getTenants();
+        String namespace = conf.getKafkaMetadataTenant() + "/" + conf.getKafkaMetadataNamespace();
+        doReturn(Lists.newArrayList(namespace)).when(mockNamespaces).getNamespaces(conf.getKafkaMetadataTenant());
+        doReturn(Lists.newArrayList(conf.getClusterName())).when(mockNamespaces)
+                .getNamespaceReplicationClusters(eq(namespace));
+
+        MetadataUtils.createTxnMetadataIfMissing(mockPulsarAdmin, conf);
 
         verify(mockTenants, times(1)).createTenant(eq(conf.getKafkaMetadataTenant()), any(TenantInfo.class));
         verify(mockNamespaces, times(1)).createNamespace(eq(conf.getKafkaMetadataTenant() + "/"
@@ -91,6 +106,8 @@ public class MetadataUtilsTest {
             + conf.getKafkaMetadataNamespace()), any(RetentionPolicies.class));
         verify(mockTopics, times(1)).createPartitionedTopic(
                 eq(offsetsTopic.getFullName()), eq(conf.getOffsetsTopicNumPartitions()));
+        verify(mockTopics, times(1)).createPartitionedTopic(
+                eq(txnTopic.getFullName()), eq(conf.getTxnLogTopicNumPartitions()));
 
         // Test that cluster is added to existing Tenant if missing
         // Test that the cluster is added to the namespace replication cluster list if it is missing
@@ -102,27 +119,35 @@ public class MetadataUtilsTest {
 
         doReturn(Lists.newArrayList("public")).when(mockTenants).getTenants();
 
-        TenantInfo partialTenant = new TenantInfo(Sets.newHashSet(conf.getSuperUserRoles()),
+        partialTenant = new TenantInfo(Sets.newHashSet(conf.getSuperUserRoles()),
             Sets.newHashSet("other-cluster"));
         doReturn(partialTenant).when(mockTenants).getTenantInfo(eq(conf.getKafkaMetadataTenant()));
 
         doReturn(Lists.newArrayList("test")).when(mockNamespaces).getNamespaces("public");
         doReturn(emptyList).when(mockNamespaces).getNamespaceReplicationClusters(eq(conf.getKafkaMetadataTenant()));
 
-        List<String> incompleteOffsetPartitionList = new ArrayList<String>(conf.getOffsetsTopicNumPartitions());
+        List<String> incompletePartitionList = new ArrayList<String>(conf.getOffsetsTopicNumPartitions());
         for (int i = 0; i < conf.getOffsetsTopicNumPartitions() - 2; i++) {
-            incompleteOffsetPartitionList.add(offsetsTopic.getPartitionName(i));
+            incompletePartitionList.add(offsetsTopic.getPartitionName(i));
         }
+        for (int i = 0; i < conf.getTxnLogTopicNumPartitions() - 2; i++) {
+            incompletePartitionList.add(txnTopic.getPartitionName(i));
+        }
+
         doReturn(new PartitionedTopicMetadata(8)).when(mockTopics)
                 .getPartitionedTopicMetadata(eq(offsetsTopic.getFullName()));
-        doReturn(incompleteOffsetPartitionList).when(mockTopics).getList(eq(conf.getKafkaMetadataTenant()
+        doReturn(new PartitionedTopicMetadata(8)).when(mockTopics)
+                .getPartitionedTopicMetadata(eq(txnTopic.getFullName()));
+        doReturn(incompletePartitionList).when(mockTopics).getList(eq(conf.getKafkaMetadataTenant()
             + "/" + conf.getKafkaMetadataNamespace()));
 
-        MetadataUtils.createKafkaMetadataIfMissing(mockPulsarAdmin, conf);
+        MetadataUtils.createOffsetMetadataIfMissing(mockPulsarAdmin, conf);
+        MetadataUtils.createTxnMetadataIfMissing(mockPulsarAdmin, conf);
 
         verify(mockTenants, times(1)).updateTenant(eq(conf.getKafkaMetadataTenant()), any(TenantInfo.class));
-        verify(mockNamespaces, times(1)).setNamespaceReplicationClusters(eq(conf.getKafkaMetadataTenant()
+        verify(mockNamespaces, times(2)).setNamespaceReplicationClusters(eq(conf.getKafkaMetadataTenant()
             + "/" + conf.getKafkaMetadataNamespace()), any(Set.class));
-        verify(mockTopics, times(2)).createNonPartitionedTopic(any(String.class));
+        verify(mockTopics, times(2)).createNonPartitionedTopic(contains(offsetsTopic.getOriginalName()));
+        verify(mockTopics, times(2)).createNonPartitionedTopic(contains(txnTopic.getOriginalName()));
     }
 }
