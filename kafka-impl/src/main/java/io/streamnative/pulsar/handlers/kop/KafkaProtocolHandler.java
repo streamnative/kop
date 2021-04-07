@@ -117,6 +117,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                 groupCoordinator.handleGroupImmigration(name.getPartitionIndex());
                             }
                             KafkaTopicManager.removeTopicManagerCache(name.toString());
+                            KoPBrokerLookupManager.removeTopicManagerCache(name.toString());
                             // update lookup cache when onload
                             try {
                                 CompletableFuture<InetSocketAddress> retFuture = new CompletableFuture<>();
@@ -131,6 +132,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                             retFuture.complete(pair.getLeft());
                                         });
                                 KafkaTopicManager.LOOKUP_CACHE.put(topic, retFuture);
+                                KoPBrokerLookupManager.updateTopicManagerCache(topic, retFuture);
                             } catch (PulsarServerException e) {
                                 log.error("onLoad PulsarServerException ", e);
                             }
@@ -167,6 +169,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                             }
                             // remove cache when unload
                             KafkaTopicManager.removeTopicManagerCache(name.toString());
+                            KoPBrokerLookupManager.removeTopicManagerCache(name.toString());
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
@@ -335,6 +338,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             groupCoordinator.shutdown();
         }
         KafkaTopicManager.LOOKUP_CACHE.clear();
+        KoPBrokerLookupManager.clear();
         statsProvider.stop();
     }
 

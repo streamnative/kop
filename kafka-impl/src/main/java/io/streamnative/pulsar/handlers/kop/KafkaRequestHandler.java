@@ -1725,8 +1725,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         listeners, topic, advertisedListeners, listeners);
                 }
 
-                // here we found topic broker: broker2, but this is in broker1,
-                // how to clean the lookup cache?
                 if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
                     topicManager.removeTopicManagerCache(topic.toString());
                 }

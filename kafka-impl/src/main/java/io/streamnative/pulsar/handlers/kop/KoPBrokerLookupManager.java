@@ -18,9 +18,7 @@ import static io.streamnative.pulsar.handlers.kop.KafkaRequestHandler.lookupData
 
 import com.google.common.collect.Lists;
 import java.net.InetSocketAddress;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,6 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
+import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
@@ -51,102 +50,120 @@ public class KoPBrokerLookupManager {
     public static final ConcurrentHashMap<String, CompletableFuture<Optional<String>>>
             KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
 
-    private final Map<String, CompletableFuture<InetSocketAddress>> cacheMap = new HashMap<>();
-
     public KoPBrokerLookupManager(PulsarService pulsarService, Boolean tlsEnabled, String advertisedListeners) {
         this.pulsarService = pulsarService;
         this.tlsEnabled = tlsEnabled;
         this.advertisedListeners = advertisedListeners;
     }
 
-    public CompletableFuture<InetSocketAddress> findBroker(String topicPartition) {
-        return cacheMap.computeIfAbsent(topicPartition, key -> lookup(TopicName.get(topicPartition)));
-    }
-
-    public CompletableFuture<InetSocketAddress> lookup(TopicName topic) {
+    public CompletableFuture<InetSocketAddress> findBroker(String topic) {
         if (log.isDebugEnabled()) {
-            log.debug("Handle Lookup for {}", topic);
+            log.debug("Handle Lookup for topic {}", topic);
         }
-        CompletableFuture<InetSocketAddress> returnFuture = new CompletableFuture<>();
 
-        getTopicBroker(topic.toString())
-                .thenCompose(pair -> getProtocolDataToAdvertise(pair, topic))
-                .whenComplete((stringOptional, throwable) -> {
-                    if (!stringOptional.isPresent() || throwable != null) {
+        CompletableFuture<InetSocketAddress> returnFuture = new CompletableFuture<>();
+        getTopicBroker(topic)
+                .thenCompose(pair -> getProtocolDataToAdvertise(pair, TopicName.get(topic)))
+                .whenComplete((listeners, throwable) -> {
+                    if (!listeners.isPresent() || throwable != null) {
                         log.error("Not get advertise data for Kafka topic:{}. throwable", topic, throwable);
                         returnFuture.complete(null);
                         return;
                     }
 
-                    // It's the `kafkaAdvertisedListeners` config that's written to ZK
-                    final String listeners = stringOptional.get();
-                    final EndPoint endPoint = tlsEnabled
-                            ? EndPoint.getSslEndPoint(listeners) : EndPoint.getPlainTextEndPoint(listeners);
-
                     if (log.isDebugEnabled()) {
-                        log.debug("Found broker localListeners: {} for topicName: {}, "
-                                        + "localListeners: {}, found Listeners: {}",
-                                listeners, topic, advertisedListeners, listeners);
+                        log.debug("Found broker localListeners: {} for topicName: {}, localListeners: {}",
+                                listeners.get(), topic, advertisedListeners);
                     }
+
+                    // It's the `kafkaAdvertisedListeners` config that's written to ZK
+                    final EndPoint endPoint =
+                            tlsEnabled ? EndPoint.getSslEndPoint(listeners.get())
+                                    : EndPoint.getPlainTextEndPoint(listeners.get());;
 
                     // here we found topic broker: broker2, but this is in broker1,
                     // how to clean the lookup cache?
                     if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
-                        removeTopicManagerCache(topic.toString());
-                    }
-
-                    if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
+                        removeTopicManagerCache(topic);
                         returnFuture.complete(endPoint.getInetAddress());
                         return;
                     }
 
-                    getTopicBroker(topic.toString()).whenComplete((persistentTopic, exception) -> {
-                        if (exception != null || persistentTopic == null) {
-                            log.warn("findBroker: Failed to getOrCreateTopic {}. broker:{}, exception:",
-                                    topic.toString(), endPoint.getOriginalListener(), exception);
-                            // remove cache when topic is null
-                            removeTopicManagerCache(topic.toString());
-                            returnFuture.complete(null);
-                            return;
-                        }
-
-                        if (log.isDebugEnabled()) {
-                            log.debug("Add topic: {} into TopicManager while findBroker.", topic.toString());
-                        }
-                        returnFuture.complete(endPoint.getInetAddress());
-                    });
+                    checkTopicOwner(returnFuture, topic, endPoint);
                 });
         return returnFuture;
     }
 
     // this method do the real lookup into Pulsar broker.
     // retFuture will be completed with null when meet error.
-    public CompletableFuture<InetSocketAddress> getTopicBroker(String topicPartition) {
-        CompletableFuture<InetSocketAddress> future = new CompletableFuture<>();
-        try {
-            ((PulsarClientImpl) pulsarService.getClient()).getLookup()
-                    .getBroker(TopicName.get(topicPartition))
-                    .thenAccept(pair -> {
-                        checkState(pair.getLeft().equals(pair.getRight()));
-                        future.complete(pair.getLeft());
-                    })
-                    .exceptionally(th -> {
-                        log.warn("[{}] getBroker for topic failed. throwable: ", topicPartition, th);
-                        future.completeExceptionally(th);
-                        return null;
-                    });
-        } catch (PulsarServerException e) {
-            log.error("GetTopicBroker for topic {} failed get pulsar client, return null. throwable: ",
-                    topicPartition, e);
-            future.completeExceptionally(e);
-        }
-        return future;
+    private CompletableFuture<InetSocketAddress> getTopicBroker(String topicPartition) {
+        return LOOKUP_CACHE.computeIfAbsent(topicPartition, key -> {
+            CompletableFuture<InetSocketAddress> future = new CompletableFuture<>();
+            try {
+                ((PulsarClientImpl) pulsarService.getClient()).getLookup()
+                        .getBroker(TopicName.get(topicPartition))
+                        .thenAccept(pair -> {
+                            checkState(pair.getLeft().equals(pair.getRight()));
+                            future.complete(pair.getLeft());
+                        })
+                        .exceptionally(th -> {
+                            log.warn("[{}] getBroker for topic failed. throwable: ", topicPartition, th);
+                            future.completeExceptionally(th);
+                            return null;
+                        });
+            } catch (PulsarServerException e) {
+                log.error("GetTopicBroker for topic {} failed get pulsar client, return null. throwable: ",
+                        topicPartition, e);
+                future.completeExceptionally(e);
+            }
+            return future;
+        });
+    }
+
+    private void checkTopicOwner(CompletableFuture<InetSocketAddress> future, String topic, EndPoint endPoint) {
+        getTopic(topic).whenComplete((persistentTopic, exception) -> {
+            if (exception != null || persistentTopic == null) {
+                log.warn("findBroker: Failed to getOrCreateTopic {}. broker:{}, exception:",
+                        topic, endPoint.getOriginalListener(), exception);
+                // remove cache when topic is null
+                removeTopicManagerCache(topic);
+                future.complete(null);
+                return;
+            }
+
+            if (log.isDebugEnabled()) {
+                log.debug("Add topic: {} into TopicManager while findBroker.", topic);
+            }
+            future.complete(endPoint.getInetAddress());
+        });
+    }
+
+    private CompletableFuture<PersistentTopic> getTopic(String topicName) {
+        CompletableFuture<PersistentTopic> topicCompletableFuture = new CompletableFuture<>();
+        pulsarService.getBrokerService()
+                .getTopic(topicName, pulsarService.getBrokerService().isAllowAutoTopicCreation(topicName))
+                .whenComplete((topic, throwable) -> {
+                    if (throwable != null) {
+                        log.error("Failed to getTopic {}. exception:", topicName, throwable);
+                        // failed to getTopic from current broker, remove cache, which added in getTopicBroker.
+                        removeTopicManagerCache(topicName);
+                        topicCompletableFuture.complete(null);
+                        return;
+                    }
+                    if (topic.isPresent()) {
+                        topicCompletableFuture.complete((PersistentTopic) topic.get());
+                    } else {
+                        log.error("Get empty topic for name {}", topicName);
+                        topicCompletableFuture.complete(null);
+                    }
+                });
+        return topicCompletableFuture;
     }
 
     private CompletableFuture<Optional<String>> getProtocolDataToAdvertise(
             InetSocketAddress pulsarAddress, TopicName topic) {
 
-        CompletableFuture<Optional<String>> returnFuture = new CompletableFuture<>();
+        CompletableFuture<Optional<String>> kopAddressFuture = new CompletableFuture<>();
 
         if (pulsarAddress == null) {
             log.error("[{}] failed get pulsar address, returned null.", topic.toString());
@@ -154,12 +171,12 @@ public class KoPBrokerLookupManager {
             // getTopicBroker returns null. topic should be removed from LookupCache.
             removeTopicManagerCache(topic.toString());
 
-            returnFuture.complete(Optional.empty());
-            return returnFuture;
+            kopAddressFuture.complete(Optional.empty());
+            return kopAddressFuture;
         }
 
         if (log.isDebugEnabled()) {
-            log.debug("Found broker for topic {} puslarAddress: {}", topic, pulsarAddress);
+            log.debug("Find broker for topic {} pulsarAddress: {}", topic, pulsarAddress);
         }
 
         // get kop address from cache to prevent query zk each time.
@@ -173,7 +190,7 @@ public class KoPBrokerLookupManager {
                 .whenComplete((set, throwable) -> {
                     if (throwable != null) {
                         log.error("Error in getChildrenAsync(zk://loadbalance) for {}", pulsarAddress, throwable);
-                        returnFuture.complete(Optional.empty());
+                        kopAddressFuture.complete(Optional.empty());
                         return;
                     }
 
@@ -188,7 +205,7 @@ public class KoPBrokerLookupManager {
 
                     if (matchBrokers.isEmpty()) {
                         log.error("No node for broker {} under zk://loadbalance", pulsarAddress);
-                        returnFuture.complete(Optional.empty());
+                        kopAddressFuture.complete(Optional.empty());
                         removeTopicManagerCache(topic.toString());
                         return;
                     }
@@ -202,50 +219,67 @@ public class KoPBrokerLookupManager {
                                             pulsarService.getLoadManager().get().getLoadReportDeserializer()))
                             .collect(Collectors.toList());
 
-                    FutureUtil.waitForAll(list)
-                        .whenComplete((ignore, th) -> {
-                            if (th != null) {
-                                log.error("Error in getDataAsync() for {}", pulsarAddress, th);
-                                returnFuture.complete(Optional.empty());
-                                removeTopicManagerCache(topic.toString());
-                                return;
-                            }
-
-                            try {
-                                for (CompletableFuture<Optional<ServiceLookupData>> lookupData : list) {
-                                    ServiceLookupData data = lookupData.get().get();
-                                    if (log.isDebugEnabled()) {
-                                        log.debug("Handle getProtocolDataToAdvertise for {}, pulsarUrl: {}, "
-                                                        + "pulsarUrlTls: {}, webUrl: {}, webUrlTls: {} kafka: {}",
-                                                topic, data.getPulsarServiceUrl(), data.getPulsarServiceUrlTls(),
-                                                data.getWebServiceUrl(), data.getWebServiceUrlTls(),
-                                                data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
-                                    }
-
-                                    if (lookupDataContainsAddress(data, hostAndPort)) {
-                                        KOP_ADDRESS_CACHE.put(topic.toString(), returnFuture);
-                                        returnFuture.complete(data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
-                                        return;
-                                    }
-                                }
-                            } catch (Exception e) {
-                                log.error("Error in {} lookupFuture get: ", pulsarAddress, e);
-                                returnFuture.complete(Optional.empty());
-                                removeTopicManagerCache(topic.toString());
-                                return;
-                            }
-
-                            // no matching lookup data in all matchBrokers.
-                            log.error("Not able to search {} in all child of zk://loadbalance", pulsarAddress);
-                            returnFuture.complete(Optional.empty());
-                        });
+                    getKopAddress(list, pulsarAddress, kopAddressFuture, topic, hostAndPort);
                 });
-        return returnFuture;
+        return kopAddressFuture;
+    }
+
+    private void getKopAddress(List<CompletableFuture<Optional<ServiceLookupData>>> list,
+                               InetSocketAddress pulsarAddress,
+                               CompletableFuture<Optional<String>> kopAddressFuture,
+                               TopicName topic,
+                               String hostAndPort) {
+        FutureUtil.waitForAll(list)
+                .whenComplete((ignore, th) -> {
+                    if (th != null) {
+                        log.error("Error in getDataAsync() for {}", pulsarAddress, th);
+                        kopAddressFuture.complete(Optional.empty());
+                        removeTopicManagerCache(topic.toString());
+                        return;
+                    }
+
+                    try {
+                        for (CompletableFuture<Optional<ServiceLookupData>> lookupData : list) {
+                            ServiceLookupData data = lookupData.get().get();
+                            if (log.isDebugEnabled()) {
+                                log.debug("Handle getProtocolDataToAdvertise for {}, pulsarUrl: {}, "
+                                                + "pulsarUrlTls: {}, webUrl: {}, webUrlTls: {} kafka: {}",
+                                        topic, data.getPulsarServiceUrl(), data.getPulsarServiceUrlTls(),
+                                        data.getWebServiceUrl(), data.getWebServiceUrlTls(),
+                                        data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
+                            }
+
+                            if (lookupDataContainsAddress(data, hostAndPort)) {
+                                KOP_ADDRESS_CACHE.put(topic.toString(), kopAddressFuture);
+                                kopAddressFuture.complete(data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
+                                return;
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.error("Error in {} lookupFuture get: ", pulsarAddress, e);
+                        kopAddressFuture.complete(Optional.empty());
+                        removeTopicManagerCache(topic.toString());
+                        return;
+                    }
+
+                    // no matching lookup data in all matchBrokers.
+                    log.error("Not able to search {} in all child of zk://loadbalance", pulsarAddress);
+                    kopAddressFuture.complete(Optional.empty());
+                });
     }
 
     public static void removeTopicManagerCache(String topicName) {
         LOOKUP_CACHE.remove(topicName);
         KOP_ADDRESS_CACHE.remove(topicName);
+    }
+
+    public static void updateTopicManagerCache(String topicName, CompletableFuture<InetSocketAddress> addressFuture) {
+        LOOKUP_CACHE.put(topicName, addressFuture);
+    }
+
+    public static void clear() {
+        LOOKUP_CACHE.clear();
+        KOP_ADDRESS_CACHE.clear();
     }
 
 }
