@@ -71,7 +71,6 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         try {
             admin.topics().deletePartitionedTopic(topic);
         } catch (PulsarAdminException e) {
-            log.info("Failed to delete topic: {}", e.getMessage());
             assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
         }
 
@@ -80,7 +79,6 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         try {
             admin.topics().deletePartitionedTopic(topic);
         } catch (PulsarAdminException e) {
-            log.info("Failed to delete topic: {}", e.getMessage());
             assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
         }
 
@@ -92,7 +90,6 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         try {
             admin.topics().deletePartitionedTopic(topic);
         } catch (PulsarAdminException e) {
-            log.info("Failed to delete topic: {}", e.getMessage());
             assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
         }
 
