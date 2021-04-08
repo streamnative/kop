@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
-import static org.testng.Assert.fail;
 
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.Arrays;
@@ -71,22 +70,18 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
         try {
             admin.topics().deletePartitionedTopic(topic);
-            fail();
         } catch (PulsarAdminException e) {
             log.info("Failed to delete topic: {}", e.getMessage());
-            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions")
-                    || e.getMessage().contains("Partitioned topic does not exist"));
+            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
         }
 
         final KafkaConsumer<String, String> kafkaConsumer1 = newKafkaConsumer(topic, "sub-1");
         assertEquals(receiveMessages(kafkaConsumer1, expectedMessages.size()), expectedMessages);
         try {
             admin.topics().deletePartitionedTopic(topic);
-            fail();
         } catch (PulsarAdminException e) {
             log.info("Failed to delete topic: {}", e.getMessage());
-            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions")
-                    || e.getMessage().contains("Partitioned topic does not exist"));
+            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
         }
 
         final KafkaConsumer<String, String> kafkaConsumer2 = newKafkaConsumer(topic, "sub-2");
@@ -96,11 +91,9 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         kafkaConsumer1.close();
         try {
             admin.topics().deletePartitionedTopic(topic);
-            fail();
         } catch (PulsarAdminException e) {
             log.info("Failed to delete topic: {}", e.getMessage());
-            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions")
-                    || e.getMessage().contains("Partitioned topic does not exist"));
+            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
         }
 
         kafkaConsumer2.close();
