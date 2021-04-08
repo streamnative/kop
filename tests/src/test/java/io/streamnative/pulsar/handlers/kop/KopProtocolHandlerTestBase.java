@@ -170,6 +170,10 @@ public abstract class KopProtocolHandlerTestBase {
         // kafka related settings.
         kafkaConfig.setEnableGroupCoordinator(true);
         kafkaConfig.setOffsetsTopicNumPartitions(1);
+
+        kafkaConfig.setEnableTransactionCoordinator(true);
+        kafkaConfig.setTxnLogTopicNumPartitions(1);
+
         kafkaConfig.setKafkaListeners(
                 PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort + ","
                         + SSL_PREFIX + "localhost:" + kafkaBrokerPortTls);
@@ -235,7 +239,8 @@ public abstract class KopProtocolHandlerTestBase {
 
         createAdmin();
 
-        MetadataUtils.createKafkaMetadataIfMissing(admin, this.conf);
+        MetadataUtils.createOffsetMetadataIfMissing(admin, this.conf);
+        MetadataUtils.createTxnMetadataIfMissing(admin, this.conf);
 
         if (enableSchemaRegistry) {
             admin.topics().createPartitionedTopic(KAFKASTORE_TOPIC, 1);

@@ -21,8 +21,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.zookeeper.data.Stat;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
-import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 /**
@@ -43,7 +43,7 @@ public class ProducerIdManagerTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    @AfterMethod
+    @BeforeMethod
     protected void cleanZNode() throws Exception {
         Stat stat = mockZooKeeper.exists(ProducerIdManager.KOP_PID_BLOCK_ZNODE, null);
         if (stat != null) {

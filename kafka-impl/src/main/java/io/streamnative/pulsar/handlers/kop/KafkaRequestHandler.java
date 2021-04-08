@@ -17,6 +17,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
+import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
@@ -355,7 +356,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return admin.topics().getPartitionedTopicMetadataAsync(topicName);
     }
 
-    // Get all topics exclude `__consumer_offsets`, the result of `topicMapFuture` is a map:
+    // Get all topics exclude `__consumer_offsets` and `__transaction_state`, the result of `topicMapFuture` is a map:
     //   key: the full topic name without partition suffix, e.g. persistent://public/default/my-topic
     //   value: the partitions associated with the key, e.g. for a topic with 3 partitions,
     //     persistent://public/default/my-topic-partition-0
@@ -366,6 +367,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 kafkaConfig.getKafkaMetadataTenant(),
                 kafkaConfig.getKafkaMetadataNamespace(),
                 GROUP_METADATA_TOPIC_NAME)
+        ).getFullName();
+        final String txnTopicName = new KopTopic(String.join("/",
+                kafkaConfig.getKafkaMetadataTenant(),
+                kafkaConfig.getKafkaMetadataNamespace(),
+                TRANSACTION_STATE_TOPIC_NAME)
         ).getFullName();
         admin.tenants().getTenantsAsync().thenApply(tenants -> {
             if (tenants.isEmpty()) {
@@ -388,8 +394,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     for (String topic : topics) {
                                         TopicName topicName = TopicName.get(topic);
                                         String key = topicName.getPartitionedTopicName();
-                                        // ignore the `__consumer_offsets` topic
-                                        if (key.equals(offsetsTopicName)) {
+                                        // ignore the `__consumer_offsets` and `__transaction_state` topic
+                                        if (key.equals(offsetsTopicName) || key.equals(txnTopicName)) {
                                             continue;
                                         }
                                         topicMap.computeIfAbsent(KopTopic.removeDefaultNamespacePrefix(key), ignored ->

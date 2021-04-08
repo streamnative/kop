@@ -810,12 +810,6 @@ public class GroupCoordinator {
                     });
             });
 
-        result.whenCompleteAsync((ignore, e) ->{
-            if (e == null){
-                offsetAcker.ackOffsets(groupId, offsetMetadata);
-            }
-        });
-
         return result;
     }
 
@@ -850,6 +844,7 @@ public class GroupCoordinator {
                 // The group is only using Kafka to store offsets.
                 // Also, for transactional offset commits we don't need to validate group membership
                 // and the generation.
+                offsetAcker.ackOffsets(group.groupId(), offsetMetadata);
                 return groupManager.storeOffsets(group, memberId, offsetMetadata, producerId, producerEpoch);
             } else if (group.is(CompletingRebalance)) {
                 return CompletableFuture.completedFuture(
@@ -866,6 +861,7 @@ public class GroupCoordinator {
             } else {
                 MemberMetadata member = group.get(memberId);
                 completeAndScheduleNextHeartbeatExpiration(group, member);
+                offsetAcker.ackOffsets(group.groupId(), offsetMetadata);
                 return groupManager.storeOffsets(
                     group, memberId, offsetMetadata
                 );
