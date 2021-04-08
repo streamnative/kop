@@ -15,11 +15,13 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import lombok.Cleanup;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.pulsar.client.admin.PulsarAdminException;
@@ -28,6 +30,7 @@ import org.testng.annotations.Test;
 /**
  * Basic end-to-end test with `entryFormat=kafka`.
  */
+@Slf4j
 public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
     public BasicEndToEndKafkaTest() {
@@ -61,16 +64,22 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
         try {
             admin.topics().deletePartitionedTopic(topic);
+            fail();
         } catch (PulsarAdminException e) {
-            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
+            log.info("Failed to delete partitioned topic \"{}\": {}", topic, e.getMessage());
+            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions")
+                    || e.getMessage().contains("Partitioned topic does not exist"));
         }
 
         final KafkaConsumer<String, String> kafkaConsumer1 = newKafkaConsumer(topic, "sub-1");
         assertEquals(receiveMessages(kafkaConsumer1, expectedMessages.size()), expectedMessages);
         try {
             admin.topics().deletePartitionedTopic(topic);
+            fail();
         } catch (PulsarAdminException e) {
-            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
+            log.info("Failed to delete partitioned topic \"{}\": {}", topic, e.getMessage());
+            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions")
+                    || e.getMessage().contains("Partitioned topic does not exist"));
         }
 
         final KafkaConsumer<String, String> kafkaConsumer2 = newKafkaConsumer(topic, "sub-2");
@@ -80,8 +89,11 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         kafkaConsumer1.close();
         try {
             admin.topics().deletePartitionedTopic(topic);
+            fail();
         } catch (PulsarAdminException e) {
-            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
+            log.info("Failed to delete partitioned topic \"{}\": {}", topic, e.getMessage());
+            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions")
+                    || e.getMessage().contains("Partitioned topic does not exist"));
         }
 
         kafkaConsumer2.close();
