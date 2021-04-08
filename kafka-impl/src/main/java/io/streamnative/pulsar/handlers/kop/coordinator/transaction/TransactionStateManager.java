@@ -16,8 +16,6 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import com.google.common.collect.Maps;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
-
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -28,6 +26,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -54,7 +53,8 @@ public class TransactionStateManager {
 
     private final TransactionConfig transactionConfig;
     private final PulsarClient pulsarClient;
-    private ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
+    private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
+    private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
 
     // Number of partitions for the transaction log topic.
     private final int transactionTopicPartitionCount;
@@ -472,6 +472,13 @@ public class TransactionStateManager {
                                      MessageId lastMessageId,
                                      CompletableFuture<Void> loadFuture,
                                      Map<String, TransactionMetadata> transactionMetadataMap) {
+
+        if (shuttingDown.get()) {
+            loadFuture.completeExceptionally(
+                    new Exception("Transaction metadata manager is shutting down."));
+            return;
+        }
+
         reader.readNextAsync().whenComplete((message, throwable) -> {
             if (throwable != null) {
                 log.error("Failed to load transaction log.", throwable);
@@ -518,7 +525,6 @@ public class TransactionStateManager {
             if (loadingPartitions.contains(topicPartition.partition())) {
                 List<TransactionalIdAndTransitMetadata> transactionsPendingForCompletion = new ArrayList<>();
 
-                transactionMetadataCache.get(topicPartition.partition());
                 for (Map.Entry<String, TransactionMetadata> entry : loadedTransactions.entrySet()) {
                     TransactionMetadata txnMetadata = entry.getValue();
                     txnMetadata.inLock(() -> {
@@ -629,6 +635,14 @@ public class TransactionStateManager {
             return pulsarClient.newReader().topic(topic)
                     .startMessageId(MessageId.earliest).readCompacted(true).createAsync();
         });
+    }
+
+    public void shutdown() {
+        shuttingDown.set(true);
+        loadingPartitions.clear();
+        transactionMetadataCache.clear();
+        executor.shutdown();
+        log.info("Shutdown transaction state manager complete.");
     }
 
 }

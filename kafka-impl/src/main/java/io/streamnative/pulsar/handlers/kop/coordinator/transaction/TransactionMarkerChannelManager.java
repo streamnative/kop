@@ -336,7 +336,8 @@ public class TransactionMarkerChannelManager {
 
     public void removeMarkersForTxnTopicPartition(Integer txnTopicPartitionId) {
         BlockingQueue<TxnIdAndMarkerEntry> unKnownBrokerMarkerEntries;
-        unKnownBrokerMarkerEntries = markersQueueForUnknownBroker.removeMarkersForTxnTopicPartition(txnTopicPartitionId);
+        unKnownBrokerMarkerEntries =
+                markersQueueForUnknownBroker.removeMarkersForTxnTopicPartition(txnTopicPartitionId);
         if (unKnownBrokerMarkerEntries != null) {
             unKnownBrokerMarkerEntries.forEach(markerEntry -> {
                 removeMarkersForTxnId(markerEntry.getTransactionalId());

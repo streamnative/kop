@@ -37,6 +37,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
@@ -65,8 +66,11 @@ public class TransactionCoordinator {
 
     private final TransactionConfig transactionConfig;
     private final ProducerIdManager producerIdManager;
+    @Getter
     private final TransactionStateManager txnManager;
     private final TransactionMarkerChannelManager transactionMarkerChannelManager;
+    private final ScheduledExecutorService scheduler;
+    private final AtomicBoolean isActive = new AtomicBoolean(false);
 
     // map from topic to the map from initial offset to producerId
     private final Map<TopicName, NavigableMap<Long, Long>> activeOffsetPidMap = new HashMap<>();
@@ -78,12 +82,14 @@ public class TransactionCoordinator {
                                    Integer brokerId,
                                    ZooKeeper zkClient,
                                    KoPBrokerLookupManager koPBrokerLookupManager,
-                                   ScheduledExecutorService executor) {
+                                   ScheduledExecutorService txnCoordinatorScheduler,
+                                   ScheduledExecutorService txnStateManagerScheduler) {
         this.transactionConfig = transactionConfig;
-        this.txnManager = new TransactionStateManager(transactionConfig, pulsarClient, executor);
+        this.txnManager = new TransactionStateManager(transactionConfig, pulsarClient, txnStateManagerScheduler);
         this.producerIdManager = new ProducerIdManager(brokerId, zkClient);
         this.transactionMarkerChannelManager =
                 new TransactionMarkerChannelManager(null, txnManager, koPBrokerLookupManager, false);
+        this.scheduler = txnCoordinatorScheduler;
     }
 
     public static TransactionCoordinator of(TransactionConfig transactionConfig,
@@ -91,12 +97,19 @@ public class TransactionCoordinator {
                                             Integer brokerId,
                                             ZooKeeper zkClient,
                                             KoPBrokerLookupManager koPBrokerLookupManager) {
-        ScheduledExecutorService executor = OrderedScheduler.newSchedulerBuilder()
+        ScheduledExecutorService txnCoordinatorScheduler = OrderedScheduler.newSchedulerBuilder()
                 .name("transaction-coordinator-executor")
+                .numThreads(transactionConfig.getTransactionCoordinatorSchedulerNum())
+                .build();
+
+        ScheduledExecutorService txnStateManagerScheduler = OrderedScheduler.newSchedulerBuilder()
+                .name("transaction-stage-manager-executor")
+                .numThreads(transactionConfig.getTransactionStateManagerSchedulerNum())
                 .build();
 
         return new TransactionCoordinator(
-                transactionConfig, pulsarClient, brokerId, zkClient, koPBrokerLookupManager, executor);
+                transactionConfig, pulsarClient, brokerId, zkClient, koPBrokerLookupManager,
+                txnCoordinatorScheduler, txnStateManagerScheduler);
     }
 
     interface EndTxnCallback {
@@ -110,9 +123,9 @@ public class TransactionCoordinator {
      */
     public CompletableFuture<Void> handleTxnImmigration(int partition) {
         log.info("Elected as the txn coordinator for partition {}.", partition);
-        // The operations performed during immigration must be resilient to any previous errors we saw or partial state we
-        // left off during the unloading phase. Ensure we remove all associated state for this partition before we continue
-        // loading it.
+        // The operations performed during immigration must be resilient to any previous errors we saw or partial state
+        // we left off during the unloading phase. Ensure we remove all associated state for this partition before we
+        // continue loading it.
         transactionMarkerChannelManager.removeMarkersForTxnTopicPartition(partition);
 
         return txnManager.loadTransactionsForTxnTopicPartition(partition,
@@ -131,10 +144,6 @@ public class TransactionCoordinator {
         log.info("Resigned as the txn coordinator for partition {}.", partition);
         txnManager.removeTransactionsForTxnTopicPartition(partition);
         transactionMarkerChannelManager.removeMarkersForTxnTopicPartition(partition);
-    }
-
-    public CompletableFuture<Void> startup() {
-        return this.producerIdManager.initialize();
     }
 
     public int partitionFor(String transactionalId) {
@@ -774,6 +783,36 @@ public class TransactionCoordinator {
         log.debug("TransactionalId: {}'s state is {}, but received transaction marker result to send: {}",
                 transactionalId, transactionState, transactionResult);
         return Errors.INVALID_TXN_STATE;
+    }
+
+    /**
+     * Startup logic executed at the same time when the server starts up.
+     */
+    public CompletableFuture<Void> startup() {
+        log.info("Starting up transaction coordinator ...");
+
+        // TODO abort timeout transactions
+        // TODO transaction id expiration
+        isActive.set(true);
+
+        return this.producerIdManager.initialize().thenCompose(ignored -> {
+            log.info("Startup transaction coordinator complete.");
+            return CompletableFuture.completedFuture(null);
+        });
+    }
+
+    /**
+     * Shutdown logic executed at the same time when server shuts down.
+     * Ordering of actions should be reversed from the startup process.
+     */
+    public void shutdown() {
+        log.info("Shutting down transaction coordinator ...");
+        isActive.set(false);
+        scheduler.shutdown();
+        producerIdManager.shutdown();
+        txnManager.shutdown();
+        // TODO shutdown txn
+        log.info("Shutdown transaction coordinator complete.");
     }
 
     public void addActivePidOffset(TopicName topicName, long pid, long offset) {

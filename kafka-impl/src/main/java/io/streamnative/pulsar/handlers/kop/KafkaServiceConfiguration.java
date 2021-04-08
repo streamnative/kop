@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
-
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -47,6 +46,8 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     public static final int DefaultOffsetsTopicNumPartitions = 8;
     // txn configuration
     public static final int DefaultTxnLogTopicNumPartitions = 8;
+    public static final int DefaultTxnCoordinatorSchedulerNum = 1;
+    public static final int DefaultTxnStateManagerSchedulerNum = 1;
 
     @Category
     private static final String CATEGORY_KOP = "Kafka on Pulsar";
@@ -305,6 +306,18 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             doc = "Number of partitions for the transaction log topic"
     )
     private int txnLogTopicNumPartitions = DefaultTxnLogTopicNumPartitions;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "Transaction coordinator scheduler threads num, used to handle timeout transactions."
+    )
+    private int txnCoordinatorSchedulerNum = DefaultTxnCoordinatorSchedulerNum;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "Transaction state manager scheduler threads num, used to handle async operations."
+    )
+    private int txnStateManagerSchedulerNum = DefaultTxnStateManagerSchedulerNum;
 
     @FieldContext(
             category = CATEGORY_KOP,

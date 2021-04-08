@@ -287,8 +287,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 // and listener for Offset topics load/unload
                 brokerService.pulsar()
                     .getNamespaceService()
-                    .addNamespaceBundleOwnershipListener(
-                        new OffsetAndTopicListener(brokerService, kafkaConfig, groupCoordinator, transactionCoordinator));
+                    .addNamespaceBundleOwnershipListener(new OffsetAndTopicListener(
+                            brokerService, kafkaConfig, groupCoordinator, transactionCoordinator));
             } catch (Exception e) {
                 log.error("initGroupCoordinator failed with", e);
             }
@@ -357,6 +357,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public void close() {
         if (groupCoordinator != null) {
             groupCoordinator.shutdown();
+        }
+        if (transactionCoordinator != null) {
+            transactionCoordinator.shutdown();
         }
         KafkaTopicManager.LOOKUP_CACHE.clear();
         statsProvider.stop();
