@@ -15,19 +15,29 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Properties;
 import lombok.Cleanup;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.policies.data.ConsumerStats;
 import org.testng.annotations.Test;
 
 /**
  * Basic end-to-end test with `entryFormat=kafka`.
  */
+@Slf4j
 public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
     public BasicEndToEndKafkaTest() {
@@ -56,21 +66,28 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         final String topic = "test-delete-closed-topics";
         final List<String> expectedMessages = Collections.singletonList("msg");
 
+        admin.topics().createPartitionedTopic(topic, 1);
         final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
         sendSingleMessages(kafkaProducer, topic, expectedMessages);
 
         try {
             admin.topics().deletePartitionedTopic(topic);
+            fail();
         } catch (PulsarAdminException e) {
-            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
+            log.info("Failed to delete partitioned topic \"{}\": {}", topic, e.getMessage());
+            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions")
+                    || e.getMessage().contains("Partitioned topic does not exist"));
         }
 
         final KafkaConsumer<String, String> kafkaConsumer1 = newKafkaConsumer(topic, "sub-1");
         assertEquals(receiveMessages(kafkaConsumer1, expectedMessages.size()), expectedMessages);
         try {
             admin.topics().deletePartitionedTopic(topic);
+            fail();
         } catch (PulsarAdminException e) {
-            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
+            log.info("Failed to delete partitioned topic \"{}\": {}", topic, e.getMessage());
+            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions")
+                    || e.getMessage().contains("Partitioned topic does not exist"));
         }
 
         final KafkaConsumer<String, String> kafkaConsumer2 = newKafkaConsumer(topic, "sub-2");
@@ -80,11 +97,47 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         kafkaConsumer1.close();
         try {
             admin.topics().deletePartitionedTopic(topic);
+            fail();
         } catch (PulsarAdminException e) {
-            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions"));
+            log.info("Failed to delete partitioned topic \"{}\": {}", topic, e.getMessage());
+            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions")
+                    || e.getMessage().contains("Partitioned topic does not exist"));
         }
 
         kafkaConsumer2.close();
+        Thread.sleep(500); // Wait for consumers closed
         admin.topics().deletePartitionedTopic(topic);
+    }
+
+    @Test(timeOut = 20000)
+    public void testKafkaConsumerMetrics() throws Exception {
+        final String topic = "test-kafka-consumer-metrics";
+        final String group = "group-test-kafka-consumer-metrics";
+        final List<String> expectedMessages = Arrays.asList("A", "B", "C");
+
+        @Cleanup
+        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        sendSingleMessages(kafkaProducer, topic, expectedMessages);
+
+        final Properties consumerProps = newKafkaConsumerProperties();
+        consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, group);
+        @Cleanup
+        final KafkaConsumer<String, String> kafkaConsumer = new KafkaConsumer<>(consumerProps);
+        kafkaConsumer.subscribe(Collections.singleton(topic));
+        List<String> kafkaReceives = receiveMessages(kafkaConsumer, expectedMessages.size());
+        assertEquals(kafkaReceives, expectedMessages);
+
+        // Check stats
+        final TopicName topicName = TopicName.get(KopTopic.toString(new TopicPartition(topic, 0)));
+        final PersistentTopic persistentTopic = (PersistentTopic) pulsar.getBrokerService().getMultiLayerTopicsMap()
+                .get(topicName.getNamespace())
+                .get(pulsar.getNamespaceService().getBundle(topicName).toString())
+                .get(topicName.toString());
+        final ConsumerStats stats =
+                persistentTopic.getSubscriptions().get(group).getDispatcher().getConsumers().get(0).getStats();
+        log.info("Consumer stats: [msgOutCounter={}] [bytesOutCounter={}]",
+                stats.msgOutCounter, stats.bytesOutCounter);
+        assertEquals(stats.msgOutCounter, expectedMessages.size());
+        assertTrue(stats.bytesOutCounter > 0);
     }
 }

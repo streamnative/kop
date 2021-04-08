@@ -18,12 +18,14 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetSearchPredicate;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.kafka.clients.consumer.internals.ConsumerProtocol;
@@ -43,8 +45,20 @@ import org.apache.pulsar.client.impl.PulsarClientImpl;
 @Slf4j
 public class OffsetAcker implements Closeable {
 
+    private static final Map<TopicPartition, CompletableFuture<Consumer<byte[]>>> EMPTY_CONSUMERS = new HashMap<>();
+
     private final ConsumerBuilder<byte[]> consumerBuilder;
     private final BrokerService brokerService;
+
+    // A map whose
+    //   key is group id,
+    //   value is a map whose
+    //     key is the partition,
+    //     value is the created future of consumer.
+    // The consumer, whose subscription is the group id, is used for acknowledging message id cumulatively.
+    // This behavior is equivalent to committing offsets in Kafka.
+    private final Map<String, Map<TopicPartition, CompletableFuture<Consumer<byte[]>>>>
+            consumers = new ConcurrentHashMap<>();
 
     public OffsetAcker(PulsarClientImpl pulsarClient) {
         this.consumerBuilder = pulsarClient.newConsumer()
@@ -60,16 +74,13 @@ public class OffsetAcker implements Closeable {
         this.brokerService = brokerService;
     }
 
-    // map off consumser: <groupId, consumers>
-    Map<String, Map<TopicPartition, CompletableFuture<Consumer<byte[]>>>> consumers = new ConcurrentHashMap<>();
-
     public void addOffsetsTracker(String groupId, byte[] assignment) {
         ByteBuffer assignBuffer = ByteBuffer.wrap(assignment);
         Assignment assign = ConsumerProtocol.deserializeAssignment(assignBuffer);
         if (log.isDebugEnabled()) {
             log.debug(" Add offsets after sync group: {}", assign.toString());
         }
-        assign.partitions().forEach(topicPartition -> getConsumer(groupId, topicPartition));
+        assign.partitions().forEach(topicPartition -> getOrCreateConsumer(groupId, topicPartition));
     }
 
     public void ackOffsets(String groupId, Map<TopicPartition, OffsetAndMetadata> offsetMetadata) {
@@ -81,11 +92,13 @@ public class OffsetAcker implements Closeable {
         }
         offsetMetadata.forEach(((topicPartition, offsetAndMetadata) -> {
             // 1. get consumer, then do ackCumulative
-            CompletableFuture<Consumer<byte[]>> consumerFuture = getConsumer(groupId, topicPartition);
+            CompletableFuture<Consumer<byte[]>> consumerFuture = getOrCreateConsumer(groupId, topicPartition);
 
             consumerFuture.whenComplete((consumer, throwable) -> {
                 if (throwable != null) {
-                    log.warn("Error when get consumer for offset ack:", throwable);
+                    log.warn("Failed to create offset consumer for [group={}] [topic={}]: {}",
+                            groupId, topicPartition, throwable.getMessage());
+                    removeConsumer(groupId, topicPartition);
                     return;
                 }
                 KopTopic kopTopic = new KopTopic(topicPartition.topic());
@@ -125,7 +138,12 @@ public class OffsetAcker implements Closeable {
 
     public void close(Set<String> groupIds) {
         for (String groupId : groupIds) {
-            consumers.remove(groupId).forEach((topicPartition, consumerFuture) -> {
+            final Map<TopicPartition, CompletableFuture<Consumer<byte[]>>>
+                    consumersToRemove = consumers.remove(groupId);
+            if (consumersToRemove == null) {
+                continue;
+            }
+            consumersToRemove.forEach((topicPartition, consumerFuture) -> {
                 if (!consumerFuture.isDone()) {
                     log.warn("Consumer of [group={}] [topic={}] is not done while being closed",
                             groupId, topicPartition);
@@ -148,7 +166,8 @@ public class OffsetAcker implements Closeable {
         close(consumers.keySet());
     }
 
-    public CompletableFuture<Consumer<byte[]>> getConsumer(String groupId, TopicPartition topicPartition) {
+    @NonNull
+    public CompletableFuture<Consumer<byte[]>> getOrCreateConsumer(String groupId, TopicPartition topicPartition) {
         Map<TopicPartition, CompletableFuture<Consumer<byte[]>>> group = consumers
             .computeIfAbsent(groupId, gid -> new ConcurrentHashMap<>());
         return group.computeIfAbsent(
@@ -156,6 +175,7 @@ public class OffsetAcker implements Closeable {
             partition -> createConsumer(groupId, partition));
     }
 
+    @NonNull
     private CompletableFuture<Consumer<byte[]>> createConsumer(String groupId, TopicPartition topicPartition) {
         KopTopic kopTopic = new KopTopic(topicPartition.topic());
         return consumerBuilder.clone()
@@ -164,4 +184,22 @@ public class OffsetAcker implements Closeable {
                 .subscribeAsync();
     }
 
+    public CompletableFuture<Consumer<byte[]>> getConsumer(String groupId, TopicPartition topicPartition) {
+        return consumers.getOrDefault(groupId, EMPTY_CONSUMERS).get(topicPartition);
+    }
+
+    public void removeConsumer(String groupId, TopicPartition topicPartition) {
+        final CompletableFuture<Consumer<byte[]>> consumerFuture =
+                consumers.getOrDefault(groupId, EMPTY_CONSUMERS).remove(topicPartition);
+        if (consumerFuture != null) {
+            consumerFuture.whenComplete((consumer, e) -> {
+                if (e == null) {
+                    consumer.closeAsync();
+                } else {
+                    log.error("Failed to create consumer for [group={}] [topic={}]: {}",
+                            groupId, topicPartition, e.getMessage());
+                }
+            });
+        }
+    }
 }
