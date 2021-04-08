@@ -105,6 +105,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         }
 
         kafkaConsumer2.close();
+        Thread.sleep(500); // Wait for consumers closed
         admin.topics().deletePartitionedTopic(topic);
     }
 
