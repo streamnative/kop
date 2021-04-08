@@ -177,7 +177,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                 }
                                 groupCoordinator.handleGroupEmigration(name.getPartitionIndex());
                             } else if (Topic.TRANSACTION_STATE_TOPIC_NAME
-                                    .equals(getKafkaTopicNameFromPulsarTopicname(name))) {
+                                    .equals(getKafkaTopicNameFromPulsarTopicname(name))
+                                    && transactionCoordinator != null) {
                                 checkState(name.isPartitioned(),
                                         "TxnTopic should be partitioned in unLoad, but get " + name);
 
