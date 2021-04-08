@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
@@ -210,7 +211,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         txnOffsetTest("txn-offset-commit-test", 10, true);
     }
 
-    @Test(timeOut = 1000 * 5)
+    @Test(timeOut = 1000 * 10)
     public void offsetAbortTest() throws Exception {
         txnOffsetTest("txn-offset-abort-test", 10, false);
     }
@@ -264,6 +265,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         if (isCommit) {
             producer.commitTransaction();
+            waitForTxnMarkerWriteComplete(offsets, consumer);
         } else {
             producer.abortTransaction();
         }
@@ -309,6 +311,27 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             producer.send(new ProducerRecord<>(sourceTopicName, i, msg)).get();
         }
         return sendMsgs;
+    }
+
+    private void waitForTxnMarkerWriteComplete(Map<TopicPartition, OffsetAndMetadata> offsets,
+                                  KafkaConsumer<Integer, String> consumer) throws InterruptedException {
+        AtomicBoolean flag = new AtomicBoolean();
+        for (int i = 0; i < 5; i++) {
+            flag.set(true);
+            consumer.assignment().forEach(tp -> {
+                OffsetAndMetadata offsetAndMetadata = consumer.committed(tp);
+                if (offsetAndMetadata == null || !offsetAndMetadata.equals(offsets.get(tp))) {
+                    flag.set(false);
+                }
+            });
+            if (flag.get()) {
+                break;
+            }
+            Thread.sleep(200);
+        }
+        if (!flag.get()) {
+            Assert.fail("The txn markers are not wrote.");
+        }
     }
 
     private static void resetToLastCommittedPositions(KafkaConsumer<Integer, String> consumer) {

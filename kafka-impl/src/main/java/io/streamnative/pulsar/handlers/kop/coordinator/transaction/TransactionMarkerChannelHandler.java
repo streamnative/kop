@@ -16,15 +16,18 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
-import java.util.Queue;
+import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.RequestUtils;
+import org.apache.kafka.common.requests.ResponseHeader;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
+
 
 /**
  * Transaction marker channel handler.
@@ -32,74 +35,53 @@ import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
 @Slf4j
 public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapter {
 
-    private CompletableFuture<ChannelHandlerContext> cnx = new CompletableFuture<>();
+    private final CompletableFuture<ChannelHandlerContext> cnx = new CompletableFuture<>();
+    private final ConcurrentLongHashMap<InFlightRequest> inFlightRequestMap = new ConcurrentLongHashMap<>();
 
-    private final Queue<TxnMarkerRequestResponse> requestQueue = new LinkedBlockingQueue<>();
-    private final Queue<TxnMarkerRequestResponse> requestResponseQueue = new LinkedBlockingQueue<>();
+    private final AtomicInteger correlationId = new AtomicInteger(0);
 
-    public CompletableFuture<WriteTxnMarkersResponse> enqueueRequest(WriteTxnMarkersRequest request) {
-        log.info("enqueueRequest");
-        TxnMarkerRequestResponse txnMarkerRequestResponse = new TxnMarkerRequestResponse(request);
-        if (requestQueue.offer(txnMarkerRequestResponse)) {
-            pollRequest();
-            return txnMarkerRequestResponse.responseFuture;
-        } else {
-            txnMarkerRequestResponse.responseFuture.completeExceptionally(
-                    new Exception("The transaction markers queue is full"));
-            return txnMarkerRequestResponse.responseFuture;
-        }
-    }
-
-    public void pollRequest() {
-        log.info("poll request queue: {}", requestQueue.size());
+    public void enqueueRequest(WriteTxnMarkersRequest request,
+                               TransactionMarkerRequestCompletionHandler requestCompletionHandler) {
         this.cnx.thenAccept(cnxFuture -> {
-            TxnMarkerRequestResponse request = requestQueue.poll();
-            while (request != null) {
-                requestResponseQueue.offer(request);
-                ByteBuf byteBuf = request.getRequestData();
-                log.info("byteBuff {}", byteBuf);
-                cnxFuture.writeAndFlush(byteBuf);
-                log.info("poll request write and flush");
-                request = requestQueue.poll();
-            }
+            InFlightRequest inFlightRequest = new InFlightRequest(request, requestCompletionHandler);
+            inFlightRequestMap.put(inFlightRequest.requestId, inFlightRequest);
+            ByteBuf byteBuf = inFlightRequest.getRequestData();
+            cnxFuture.writeAndFlush(byteBuf);
         });
     }
 
-    private static class TxnMarkerRequestResponse {
-        private final WriteTxnMarkersRequest request;
-        private final CompletableFuture<WriteTxnMarkersResponse> responseFuture = new CompletableFuture<>();
+    private class InFlightRequest {
 
-        public TxnMarkerRequestResponse(WriteTxnMarkersRequest request) {
+        private final long requestId;
+        private final WriteTxnMarkersRequest request;
+        private final TransactionMarkerRequestCompletionHandler requestCompletionHandler;
+
+        public InFlightRequest(WriteTxnMarkersRequest request,
+                               TransactionMarkerRequestCompletionHandler requestCompletionHandler) {
             this.request = request;
+            this.requestCompletionHandler = requestCompletionHandler;
+            this.requestId = correlationId.incrementAndGet();
         }
 
         public ByteBuf getRequestData() {
-            RequestHeader requestHeader = new RequestHeader(ApiKeys.WRITE_TXN_MARKERS, request.version(), "", -1);
+            RequestHeader requestHeader = new RequestHeader(
+                    ApiKeys.WRITE_TXN_MARKERS, request.version(), "", (int) requestId);
             return RequestUtils.serializeRequest(request.version(), requestHeader, request);
         }
 
-        public void onComplete(ByteBuf byteBuf) {
+        public void onComplete(ByteBuffer nio) {
             WriteTxnMarkersResponse response = WriteTxnMarkersResponse
-                    .parse(byteBuf.skipBytes(4).nioBuffer(), ApiKeys.WRITE_TXN_MARKERS.latestVersion());
-            responseFuture.complete(response);
+                    .parse(nio, ApiKeys.WRITE_TXN_MARKERS.latestVersion());
+            requestCompletionHandler.onComplete(response);
         }
-    }
 
-    @Override
-    public void channelRegistered(ChannelHandlerContext channelHandlerContext) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] channelRegistered");
-        super.channelRegistered(channelHandlerContext);
-    }
-
-    @Override
-    public void channelUnregistered(ChannelHandlerContext channelHandlerContext) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] channelUnregistered");
-        super.channelUnregistered(channelHandlerContext);
     }
 
     @Override
     public void channelActive(ChannelHandlerContext channelHandlerContext) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] channelActive");
+        if (log.isDebugEnabled()) {
+            log.debug("channelActive");
+        }
         this.cnx.complete(channelHandlerContext);
         super.channelActive(channelHandlerContext);
     }
@@ -112,47 +94,20 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     @Override
     public void channelRead(ChannelHandlerContext channelHandlerContext, Object o) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] channelRead");
-        TxnMarkerRequestResponse requestResponse = requestResponseQueue.poll();
-        if (requestResponse != null) {
-            requestResponse.onComplete((ByteBuf) o);
+        ByteBuffer nio = ((ByteBuf) o).nioBuffer();
+        ResponseHeader responseHeader = ResponseHeader.parse(nio);
+        InFlightRequest inFlightRequest = inFlightRequestMap.get(responseHeader.correlationId());
+        if (inFlightRequest == null) {
+            log.error("Miss the inFlightRequest with correlationId {}.", responseHeader.correlationId());
+            return;
         }
-    }
-
-    @Override
-    public void channelReadComplete(ChannelHandlerContext channelHandlerContext) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] channelReadComplete");
-        super.channelReadComplete(channelHandlerContext);
-    }
-
-    @Override
-    public void userEventTriggered(ChannelHandlerContext channelHandlerContext, Object o) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] userEventTriggered");
-        super.userEventTriggered(channelHandlerContext, o);
-    }
-
-    @Override
-    public void channelWritabilityChanged(ChannelHandlerContext channelHandlerContext) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] channelWritabilityChanged");
-        super.channelWritabilityChanged(channelHandlerContext);
+        inFlightRequest.onComplete(nio);
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext channelHandlerContext, Throwable throwable) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] exceptionCaught");
+        log.error("Transaction marker channel handler caught exception.", throwable);
         super.exceptionCaught(channelHandlerContext, throwable);
-    }
-
-    @Override
-    public void handlerAdded(ChannelHandlerContext channelHandlerContext) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] handlerAdded");
-        super.handlerAdded(channelHandlerContext);
-    }
-
-    @Override
-    public void handlerRemoved(ChannelHandlerContext channelHandlerContext) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] handlerRemoved");
-        super.handlerRemoved(channelHandlerContext);
     }
 
 }
