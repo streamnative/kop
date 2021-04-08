@@ -20,7 +20,7 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.Transa
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import io.streamnative.pulsar.handlers.kop.KafkaRequestHandler;
-import io.streamnative.pulsar.handlers.kop.KoPBrokerLookupManager;
+import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
@@ -74,19 +74,19 @@ public class TransactionCoordinator {
     private TransactionCoordinator(TransactionConfig transactionConfig,
                                    Integer brokerId,
                                    ZooKeeper zkClient,
-                                   KoPBrokerLookupManager koPBrokerLookupManager) {
+                                   KopBrokerLookupManager kopBrokerLookupManager) {
         this.transactionConfig = transactionConfig;
         this.txnManager = new TransactionStateManager(transactionConfig);
         this.producerIdManager = new ProducerIdManager(brokerId, zkClient);
         this.transactionMarkerChannelManager =
-                new TransactionMarkerChannelManager(null, txnManager, koPBrokerLookupManager, false);
+                new TransactionMarkerChannelManager(null, txnManager, kopBrokerLookupManager, false);
     }
 
     public static TransactionCoordinator of(TransactionConfig transactionConfig,
                                             Integer brokerId,
                                             ZooKeeper zkClient,
-                                            KoPBrokerLookupManager koPBrokerLookupManager) {
-        return new TransactionCoordinator(transactionConfig, brokerId, zkClient, koPBrokerLookupManager);
+                                            KopBrokerLookupManager kopBrokerLookupManager) {
+        return new TransactionCoordinator(transactionConfig, brokerId, zkClient, kopBrokerLookupManager);
     }
 
     interface EndTxnCallback {

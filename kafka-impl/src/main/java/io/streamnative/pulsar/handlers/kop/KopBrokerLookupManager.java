@@ -39,7 +39,7 @@ import org.apache.pulsar.zookeeper.ZooKeeperCache;
  * Broker lookup manager.
  */
 @Slf4j
-public class KoPBrokerLookupManager {
+public class KopBrokerLookupManager {
 
     private final PulsarService pulsarService;
     private final Boolean tlsEnabled;
@@ -50,7 +50,7 @@ public class KoPBrokerLookupManager {
     public static final ConcurrentHashMap<String, CompletableFuture<Optional<String>>>
             KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
 
-    public KoPBrokerLookupManager(PulsarService pulsarService, Boolean tlsEnabled, String advertisedListeners) {
+    public KopBrokerLookupManager(PulsarService pulsarService, Boolean tlsEnabled, String advertisedListeners) {
         this.pulsarService = pulsarService;
         this.tlsEnabled = tlsEnabled;
         this.advertisedListeners = advertisedListeners;
