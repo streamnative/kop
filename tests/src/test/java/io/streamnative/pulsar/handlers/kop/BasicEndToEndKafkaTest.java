@@ -66,6 +66,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         final String topic = "test-delete-closed-topics";
         final List<String> expectedMessages = Collections.singletonList("msg");
 
+        admin.topics().createPartitionedTopic(topic, 1);
         final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
         sendSingleMessages(kafkaProducer, topic, expectedMessages);
 
