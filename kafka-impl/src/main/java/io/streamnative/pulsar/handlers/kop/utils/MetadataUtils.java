@@ -141,9 +141,15 @@ public class MetadataUtils {
                 }
             }
             // set namespace config if namespace existed
-            namespaces.setRetention(kafkaMetadataNamespace,
-                    new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), -1));
-            namespaces.setCompactionThreshold(kafkaMetadataNamespace, MAX_COMPACTION_THRESHOLD);
+            int retentionMinutes = (int) conf.getOffsetsRetentionMinutes();
+            RetentionPolicies retentionPolicies = namespaces.getRetention(kafkaMetadataNamespace);
+            if (retentionPolicies == null || retentionPolicies.getRetentionTimeInMinutes() != retentionMinutes) {
+                namespaces.setRetention(kafkaMetadataNamespace,
+                        new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), -1));
+            }
+            if (namespaces.getCompactionThreshold(kafkaMetadataNamespace) != MAX_COMPACTION_THRESHOLD) {
+                namespaces.setCompactionThreshold(kafkaMetadataNamespace, MAX_COMPACTION_THRESHOLD);
+            }
 
             namespaceExists = true;
 

@@ -102,7 +102,7 @@ public class MetadataUtilsTest {
             + conf.getKafkaMetadataNamespace()), any(Set.class));
         verify(mockNamespaces, times(1)).setNamespaceReplicationClusters(eq(conf.getKafkaMetadataTenant()
             + "/" + conf.getKafkaMetadataNamespace()), any(Set.class));
-        verify(mockNamespaces, times(1)).setRetention(eq(conf.getKafkaMetadataTenant() + "/"
+        verify(mockNamespaces, times(2)).setRetention(eq(conf.getKafkaMetadataTenant() + "/"
             + conf.getKafkaMetadataNamespace()), any(RetentionPolicies.class));
         verify(mockTopics, times(1)).createPartitionedTopic(
                 eq(offsetsTopic.getFullName()), eq(conf.getOffsetsTopicNumPartitions()));
