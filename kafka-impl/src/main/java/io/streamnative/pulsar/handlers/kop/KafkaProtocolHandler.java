@@ -429,7 +429,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 brokerService.getPulsar().getClient(),
                 kafkaConfig.getBrokerId(),
                 brokerService.getPulsar().getZkClient(),
-                koPBrokerLookupManager);
+                kopBrokerLookupManager);
 
         loadTxnLogTopics(transactionCoordinator);
     }

@@ -19,7 +19,7 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.Transa
 import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState.PREPARE_EPOCH_FENCE;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
-import io.streamnative.pulsar.handlers.kop.KoPBrokerLookupManager;
+import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
@@ -81,14 +81,14 @@ public class TransactionCoordinator {
                                    PulsarClient pulsarClient,
                                    Integer brokerId,
                                    ZooKeeper zkClient,
-                                   KoPBrokerLookupManager koPBrokerLookupManager,
+                                   KopBrokerLookupManager kopBrokerLookupManager,
                                    ScheduledExecutorService txnCoordinatorScheduler,
                                    ScheduledExecutorService txnStateManagerScheduler) {
         this.transactionConfig = transactionConfig;
         this.txnManager = new TransactionStateManager(transactionConfig, pulsarClient, txnStateManagerScheduler);
         this.producerIdManager = new ProducerIdManager(brokerId, zkClient);
         this.transactionMarkerChannelManager =
-                new TransactionMarkerChannelManager(null, txnManager, koPBrokerLookupManager, false);
+                new TransactionMarkerChannelManager(null, txnManager, kopBrokerLookupManager, false);
         this.scheduler = txnCoordinatorScheduler;
     }
 
@@ -96,7 +96,7 @@ public class TransactionCoordinator {
                                             PulsarClient pulsarClient,
                                             Integer brokerId,
                                             ZooKeeper zkClient,
-                                            KoPBrokerLookupManager koPBrokerLookupManager) {
+                                            KopBrokerLookupManager kopBrokerLookupManager) {
         ScheduledExecutorService txnCoordinatorScheduler = OrderedScheduler.newSchedulerBuilder()
                 .name("transaction-coordinator-executor")
                 .numThreads(transactionConfig.getTransactionCoordinatorSchedulerNum())
@@ -108,7 +108,7 @@ public class TransactionCoordinator {
                 .build();
 
         return new TransactionCoordinator(
-                transactionConfig, pulsarClient, brokerId, zkClient, koPBrokerLookupManager,
+                transactionConfig, pulsarClient, brokerId, zkClient, kopBrokerLookupManager,
                 txnCoordinatorScheduler, txnStateManagerScheduler);
     }
 

@@ -36,7 +36,7 @@ import org.apache.pulsar.zookeeper.ZooKeeperCache;
 
 
 /**
- * Broker lookup manager.
+ * Kop broker lookup manager.
  */
 @Slf4j
 public class KopBrokerLookupManager {

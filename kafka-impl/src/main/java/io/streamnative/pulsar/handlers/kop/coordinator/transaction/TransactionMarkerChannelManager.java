@@ -18,7 +18,7 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
-import io.streamnative.pulsar.handlers.kop.KoPBrokerLookupManager;
+import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import java.net.InetSocketAddress;
@@ -58,7 +58,7 @@ public class TransactionMarkerChannelManager {
     private final EventLoopGroup eventLoopGroup;
     private final boolean enableTls;
     private final SslContextFactory sslContextFactory;
-    private final KoPBrokerLookupManager koPBrokerLookupManager;
+    private final KopBrokerLookupManager kopBrokerLookupManager;
 
     private final Bootstrap bootstrap;
 
@@ -72,10 +72,10 @@ public class TransactionMarkerChannelManager {
 
     @AllArgsConstructor
     private static class PendingCompleteTxn {
-        String transactionalId;
-        Integer coordinatorEpoch;
-        TransactionMetadata txnMetadata;
-        TransactionMetadata.TxnTransitMetadata newMetadata;
+        private final String transactionalId;
+        private final Integer coordinatorEpoch;
+        private final TransactionMetadata txnMetadata;
+        private final TransactionMetadata.TxnTransitMetadata newMetadata;
     }
 
     /**
@@ -84,21 +84,21 @@ public class TransactionMarkerChannelManager {
     @Data
     @AllArgsConstructor
     protected static class TxnIdAndMarkerEntry {
-        final String transactionalId;
-        final TxnMarkerEntry entry;
+        private final String transactionalId;
+        private final TxnMarkerEntry entry;
     }
 
     private static class TxnMarkerQueue {
 
-        private InetSocketAddress address;
+        private final InetSocketAddress address;
+
+        // keep track of the requests per txn topic partition so we can easily clear the queue
+        // during partition emigration
+        private final Map<Integer, BlockingQueue<TxnIdAndMarkerEntry>> markersPerPartition = new ConcurrentHashMap<>();
 
         public TxnMarkerQueue(InetSocketAddress address) {
             this.address = address;
         }
-
-        // keep track of the requests per txn topic partition so we can easily clear the queue
-        // during partition emigration
-        private Map<Integer, BlockingQueue<TxnIdAndMarkerEntry>> markersPerPartition = new ConcurrentHashMap<>();
 
         public BlockingQueue<TxnIdAndMarkerEntry> removeMarkersForTxnTopicPartition(Integer partition) {
             return markersPerPartition.remove(partition);
@@ -119,11 +119,11 @@ public class TransactionMarkerChannelManager {
 
     public TransactionMarkerChannelManager(KafkaServiceConfiguration kafkaConfig,
                                            TransactionStateManager txnStateManager,
-                                           KoPBrokerLookupManager koPBrokerLookupManager,
+                                           KopBrokerLookupManager kopBrokerLookupManager,
                                            boolean enableTls) {
         this.kafkaConfig = kafkaConfig;
         this.txnStateManager = txnStateManager;
-        this.koPBrokerLookupManager = koPBrokerLookupManager;
+        this.kopBrokerLookupManager = kopBrokerLookupManager;
         this.enableTls = enableTls;
         if (this.enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
@@ -211,7 +211,7 @@ public class TransactionMarkerChannelManager {
         List<CompletableFuture<Void>> addressFutureList = new ArrayList<>();
         for (TopicPartition topicPartition : topicPartitions) {
             String pulsarTopic = new KopTopic(topicPartition.topic()).getPartitionName(topicPartition.partition());
-            CompletableFuture<InetSocketAddress> addressFuture = koPBrokerLookupManager.findBroker(pulsarTopic);
+            CompletableFuture<InetSocketAddress> addressFuture = kopBrokerLookupManager.findBroker(pulsarTopic);
             CompletableFuture<Void> addFuture = new CompletableFuture<>();
             addressFutureList.add(addFuture);
             addressFuture.whenComplete((address, throwable) -> {
