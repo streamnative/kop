@@ -130,9 +130,6 @@ public class MetadataUtils {
                 Set<String> replicationClusters = Sets.newHashSet(cluster);
                 namespaces.createNamespace(kafkaMetadataNamespace, replicationClusters);
                 namespaces.setNamespaceReplicationClusters(kafkaMetadataNamespace, replicationClusters);
-                namespaces.setRetention(kafkaMetadataNamespace,
-                    new RetentionPolicies(-1, -1));
-                namespaces.setCompactionThreshold(kafkaMetadataNamespace, MAX_COMPACTION_THRESHOLD);
             } else {
                 List<String> replicationClusters = namespaces.getNamespaceReplicationClusters(kafkaMetadataNamespace);
                 if (!replicationClusters.contains(cluster)) {
@@ -143,6 +140,11 @@ public class MetadataUtils {
                     namespaces.setNamespaceReplicationClusters(kafkaMetadataNamespace, newReplicationClusters);
                 }
             }
+            // set namespace config if namespace existed
+            namespaces.setRetention(kafkaMetadataNamespace,
+                    new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), -1));
+            namespaces.setCompactionThreshold(kafkaMetadataNamespace, MAX_COMPACTION_THRESHOLD);
+
             namespaceExists = true;
 
             // Check if the offsets topic exists and create it if not
