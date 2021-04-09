@@ -73,6 +73,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     private StatsLogger rootStatsLogger;
     private PrometheusMetricsProvider statsProvider;
+    private KopBrokerLookupManager kopBrokerLookupManager;
+
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
      */
@@ -129,6 +131,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                 transactionCoordinator.handleTxnImmigration(name.getPartitionIndex());
                             }
                             KafkaTopicManager.removeTopicManagerCache(name.toString());
+                            KopBrokerLookupManager.removeTopicManagerCache(name.toString());
                             // update lookup cache when onload
                             try {
                                 CompletableFuture<InetSocketAddress> retFuture = new CompletableFuture<>();
@@ -143,6 +146,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                             retFuture.complete(pair.getLeft());
                                         });
                                 KafkaTopicManager.LOOKUP_CACHE.put(topic, retFuture);
+                                KopBrokerLookupManager.updateTopicManagerCache(topic, retFuture);
                             } catch (PulsarServerException e) {
                                 log.error("onLoad PulsarServerException ", e);
                             }
@@ -190,6 +194,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                             }
                             // remove cache when unload
                             KafkaTopicManager.removeTopicManagerCache(name.toString());
+                            KopBrokerLookupManager.removeTopicManagerCache(name.toString());
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
@@ -226,8 +231,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     private TransactionCoordinator transactionCoordinator;
     @Getter
     private String bindAddress;
-
-    private KoPBrokerLookupManager koPBrokerLookupManager;
 
     @Override
     public String protocolName() {
@@ -270,7 +273,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     @Override
     public void start(BrokerService service) {
         brokerService = service;
-        koPBrokerLookupManager = new KoPBrokerLookupManager(
+        kopBrokerLookupManager = new KopBrokerLookupManager(
                 brokerService.getPulsar(), false, kafkaConfig.getKafkaAdvertisedListeners());
 
         log.info("Starting KafkaProtocolHandler, kop version is: '{}'", KopVersion.getVersion());
@@ -363,6 +366,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             transactionCoordinator.shutdown();
         }
         KafkaTopicManager.LOOKUP_CACHE.clear();
+        KopBrokerLookupManager.clear();
         statsProvider.stop();
     }
 
@@ -499,7 +503,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 (partition) -> txnCoordinator.handleTxnImmigration(partition)).collect(Collectors.toList());
 
             FutureUtil.waitForAll(lists).get();
-            log.info("Current broker: {} complete load transaction metadata.", currentBroker);
         } else {
             log.info("Current broker: {} does not own any of the txn log topic partitions", currentBroker);
         }

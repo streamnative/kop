@@ -265,7 +265,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         if (isCommit) {
             producer.commitTransaction();
-            waitForTxnMarker(offsets, consumer);
+            waitForTxnMarkerWriteComplete(offsets, consumer);
         } else {
             producer.abortTransaction();
         }
@@ -313,7 +313,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         return sendMsgs;
     }
 
-    private void waitForTxnMarker(Map<TopicPartition, OffsetAndMetadata> offsets,
+    private void waitForTxnMarkerWriteComplete(Map<TopicPartition, OffsetAndMetadata> offsets,
                                   KafkaConsumer<Integer, String> consumer) throws InterruptedException {
         AtomicBoolean flag = new AtomicBoolean();
         for (int i = 0; i < 5; i++) {

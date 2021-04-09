@@ -38,6 +38,11 @@ public class TransactionMarkerRequestCompletionHandler {
     private TransactionMarkerChannelManager txnMarkerChannelManager;
     private List<TransactionMarkerChannelManager.TxnIdAndMarkerEntry> txnIdAndMarkerEntries;
 
+    private static class AbortSendingRetryPartitions {
+        private AtomicBoolean abortSending = new AtomicBoolean(false);
+        private Set<TopicPartition> retryPartitions = new HashSet<>();
+    }
+
     public void onComplete(WriteTxnMarkersResponse writeTxnMarkerResponse) {
         log.info("Received WriteTxnMarker response from node with correlation id $correlationId");
 
@@ -79,77 +84,14 @@ public class TransactionMarkerRequestCompletionHandler {
                         + transactionalId + ", but there is no metadata in the cache; this is not expected");
             }
 
-            TransactionStateManager.CoordinatorEpochAndTxnMetadata epochAndMetadata = errorsAndData.getData().get();
-            TransactionMetadata txnMetadata = epochAndMetadata.getTransactionMetadata();
-            Set<TopicPartition> retryPartitions = new HashSet<>();
-            AtomicBoolean abortSending = new AtomicBoolean(false);
+            AbortSendingRetryPartitions abortSendOrRetryPartitions =
+                    hasAbortSendOrRetryPartitions(transactionalId, txnMarker, errorsAndData, errors);
 
-            if (epochAndMetadata.getCoordinatorEpoch() != txnMarker.coordinatorEpoch()) {
-                // coordinator epoch has changed, just cancel it from the purgatory
-                log.info("Transaction coordinator epoch for {} has changed from {} to {}; cancel sending transaction "
-                        + "markers {} to the brokers", transactionalId, txnMarker.coordinatorEpoch(),
-                        epochAndMetadata.getCoordinatorEpoch(), txnMarker);
-                txnMarkerChannelManager.removeMarkersForTxnId(transactionalId);
-                abortSending.set(true);
-            } else {
-                txnMetadata.inLock(() -> {
-                    for (Map.Entry<TopicPartition, Errors> errorsEntry : errors.entrySet()) {
-                        TopicPartition topicPartition = errorsEntry.getKey();
-                        Errors error = errorsEntry.getValue();
-                        switch (error) {
-                            case NONE:
-                                txnMetadata.removePartition(topicPartition);
-                                break;
-                            case CORRUPT_MESSAGE:
-                            case MESSAGE_TOO_LARGE:
-                            case RECORD_LIST_TOO_LARGE:
-                            case INVALID_REQUIRED_ACKS: // these are all unexpected and fatal errors
-                                throw new IllegalStateException("Received fatal error " + error.exceptionName()
-                                        + " while sending txn marker for " + transactionalId);
-                            case UNKNOWN_TOPIC_OR_PARTITION:
-//                            case NOT_LEADER_OR_FOLLOWER:
-                            case NOT_ENOUGH_REPLICAS:
-                            case NOT_ENOUGH_REPLICAS_AFTER_APPEND:
-                            case REQUEST_TIMED_OUT:
-                            case KAFKA_STORAGE_ERROR: // these are retriable errors
-                                log.info("Sending {}'s transaction marker for partition {} has failed with error {}, "
-                                        + "retrying with current coordinator epoch {}", transactionalId, topicPartition,
-                                        error.exceptionName(), epochAndMetadata.getCoordinatorEpoch());
-                                retryPartitions.add(topicPartition);
-                                break;
-                            case INVALID_PRODUCER_EPOCH:
-                            // producer or coordinator epoch has changed, this txn can now be ignored
-                            case TRANSACTION_COORDINATOR_FENCED:
-                                log.info("Sending {}'s transaction marker for partition {} has permanently failed "
-                                        + "with error {} with the current coordinator epoch {}; cancel sending any "
-                                        + "more transaction markers {} to the brokers", transactionalId, topicPartition,
-                                        error.exceptionName(), epochAndMetadata.getCoordinatorEpoch(), txnMarker);
-                                txnMarkerChannelManager.removeMarkersForTxnId(transactionalId);
-                                abortSending.set(true);
-                                break;
-                            case UNSUPPORTED_FOR_MESSAGE_FORMAT:
-                            case UNSUPPORTED_VERSION:
-                                // The producer would have failed to send data to the failed topic so we can safely
-                                // remove the partition from the set waiting for markers
-                                log.info("Sending {}'s transaction marker from partition {} has failed with  {}. "
-                                        + "This partition will be removed from the set of partitions waiting for "
-                                        + "completion", transactionalId, topicPartition, error.name());
-                                txnMetadata.removePartition(topicPartition);
-                                break;
-                            default:
-                                throw new IllegalStateException("Unexpected error " + error.exceptionName()
-                                        + " while sending txn marker for $transactionalId");
-                        }
-                    }
-                    return null;
-                });
-            }
-
-            if (abortSending.get()) {
+            if (abortSendOrRetryPartitions.abortSending.get()) {
                 return;
             }
 
-            if (retryPartitions.isEmpty()) {
+            if (abortSendOrRetryPartitions.retryPartitions.isEmpty()) {
                 txnMarkerChannelManager.maybeWriteTxnCompletion(transactionalId);
                 return;
             }
@@ -166,8 +108,85 @@ public class TransactionMarkerRequestCompletionHandler {
                     txnMarker.producerEpoch(),
                     txnMarker.transactionResult(),
                     txnMarker.coordinatorEpoch(),
-                    retryPartitions);
+                    abortSendOrRetryPartitions.retryPartitions);
         }
     }
+
+    private AbortSendingRetryPartitions hasAbortSendOrRetryPartitions(
+            String transactionalId,
+            WriteTxnMarkersRequest.TxnMarkerEntry txnMarker,
+            ErrorsAndData<Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>> errorsAndData,
+            Map<TopicPartition, Errors> errors) {
+
+        TransactionStateManager.CoordinatorEpochAndTxnMetadata epochAndMetadata = errorsAndData.getData().get();
+        TransactionMetadata txnMetadata = epochAndMetadata.getTransactionMetadata();
+
+        AbortSendingRetryPartitions abortSendingAndRetryPartitions = new AbortSendingRetryPartitions();
+
+        if (epochAndMetadata.getCoordinatorEpoch() != txnMarker.coordinatorEpoch()) {
+            // coordinator epoch has changed, just cancel it from the purgatory
+            log.info("Transaction coordinator epoch for {} has changed from {} to {}; cancel sending transaction "
+                            + "markers {} to the brokers", transactionalId, txnMarker.coordinatorEpoch(),
+                    epochAndMetadata.getCoordinatorEpoch(), txnMarker);
+            txnMarkerChannelManager.removeMarkersForTxnId(transactionalId);
+            abortSendingAndRetryPartitions.abortSending.set(true);
+        } else {
+            txnMetadata.inLock(() -> {
+                for (Map.Entry<TopicPartition, Errors> errorsEntry : errors.entrySet()) {
+                    TopicPartition topicPartition = errorsEntry.getKey();
+                    Errors error = errorsEntry.getValue();
+                    switch (error) {
+                        case NONE:
+                            txnMetadata.removePartition(topicPartition);
+                            break;
+                        case CORRUPT_MESSAGE:
+                        case MESSAGE_TOO_LARGE:
+                        case RECORD_LIST_TOO_LARGE:
+                        case INVALID_REQUIRED_ACKS: // these are all unexpected and fatal errors
+                            throw new IllegalStateException("Received fatal error " + error.exceptionName()
+                                    + " while sending txn marker for " + transactionalId);
+                        case UNKNOWN_TOPIC_OR_PARTITION:
+                        // this error was introduced in newer kafka client version,
+                        // recover this condition after bump the kafka client version
+                        // case NOT_LEADER_OR_FOLLOWER:
+                        case NOT_ENOUGH_REPLICAS:
+                        case NOT_ENOUGH_REPLICAS_AFTER_APPEND:
+                        case REQUEST_TIMED_OUT:
+                        case KAFKA_STORAGE_ERROR: // these are retriable errors
+                            log.info("Sending {}'s transaction marker for partition {} has failed with error {}, "
+                                    + "retrying with current coordinator epoch {}", transactionalId, topicPartition,
+                                    error.exceptionName(), epochAndMetadata.getCoordinatorEpoch());
+                            abortSendingAndRetryPartitions.retryPartitions.add(topicPartition);
+                            break;
+                        case INVALID_PRODUCER_EPOCH:
+                            // producer or coordinator epoch has changed, this txn can now be ignored
+                        case TRANSACTION_COORDINATOR_FENCED:
+                            log.info("Sending {}'s transaction marker for partition {} has permanently failed "
+                                    + "with error {} with the current coordinator epoch {}; cancel sending any "
+                                    + "more transaction markers {} to the brokers", transactionalId, topicPartition,
+                                    error.exceptionName(), epochAndMetadata.getCoordinatorEpoch(), txnMarker);
+                            txnMarkerChannelManager.removeMarkersForTxnId(transactionalId);
+                            abortSendingAndRetryPartitions.abortSending.set(true);
+                            break;
+                        case UNSUPPORTED_FOR_MESSAGE_FORMAT:
+                        case UNSUPPORTED_VERSION:
+                            // The producer would have failed to send data to the failed topic so we can safely
+                            // remove the partition from the set waiting for markers
+                            log.info("Sending {}'s transaction marker from partition {} has failed with  {}. "
+                                    + "This partition will be removed from the set of partitions waiting for "
+                                    + "completion", transactionalId, topicPartition, error.name());
+                            txnMetadata.removePartition(topicPartition);
+                            break;
+                        default:
+                            throw new IllegalStateException("Unexpected error " + error.exceptionName()
+                                    + " while sending txn marker for $transactionalId");
+                    }
+                }
+                return null;
+            });
+        }
+        return abortSendingAndRetryPartitions;
+    }
+
 
 }
