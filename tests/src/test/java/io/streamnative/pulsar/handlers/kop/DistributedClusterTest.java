@@ -495,4 +495,59 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
         kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
     }
+
+    @Test(timeOut = 30000)
+    public void testPollEmptyTopic() throws Exception {
+        int partitionNumber = 50;
+        String kafkaTopic = "kopPollEmptyTopic" + partitionNumber;
+        String pulsarTopicName = "persistent://public/default/" + kafkaTopic;
+
+        pulsarService1.getAdminClient().topics().createPartitionedTopic(pulsarTopicName, partitionNumber);
+        int totalMsg = 500;
+
+        String msgStrPrefix = "Message_kop_KafkaProduceAndConsume_" + partitionNumber + "_";
+        @Cleanup
+        KProducer kProducer = new KProducer(kafkaTopic, false, getKafkaBrokerPort(), true);
+        kafkaPublishMessage(kProducer, totalMsg, msgStrPrefix);
+
+        @Cleanup
+        KConsumer kConsumer1 = new KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-1");
+        @Cleanup
+        KConsumer kConsumer2 = new KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-2");
+        @Cleanup
+        KConsumer kConsumer3 = new KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-3");
+        @Cleanup
+        KConsumer kConsumer4 = new KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-4");
+        @Cleanup
+        KConsumer kConsumer5 = new KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-5");
+
+        List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
+            .mapToObj(i -> new TopicPartition(kafkaTopic, i)).collect(Collectors.toList());
+
+        kafkaConsumeCommitMessage(kConsumer1, totalMsg, msgStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer2, totalMsg, msgStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer3, totalMsg, msgStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer4, totalMsg, msgStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer5, totalMsg, msgStrPrefix, topicPartitions);
+
+        ConsumerRecords<Integer, String> records = kConsumer1.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+        records = kConsumer2.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+        records = kConsumer3.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+        records = kConsumer4.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+        records = kConsumer5.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+
+        kafkaPublishMessage(kProducer, totalMsg, msgStrPrefix);
+
+        kafkaConsumeCommitMessage(kConsumer1, totalMsg, msgStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer2, totalMsg, msgStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer3, totalMsg, msgStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer4, totalMsg, msgStrPrefix, topicPartitions);
+        kafkaConsumeCommitMessage(kConsumer5, totalMsg, msgStrPrefix, topicPartitions);
+
+    }
 }
