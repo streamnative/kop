@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.junit.Assert.assertEquals;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -44,7 +46,6 @@ import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
-import static org.junit.Assert.assertEquals;
 
 /**
  * Basic end-to-end test.
