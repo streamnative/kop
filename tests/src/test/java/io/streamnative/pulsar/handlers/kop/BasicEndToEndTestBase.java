@@ -25,11 +25,13 @@ import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.client.api.Consumer;
@@ -42,6 +44,7 @@ import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
+import static org.junit.Assert.assertEquals;
 
 /**
  * Basic end-to-end test.
@@ -201,4 +204,63 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
         }
         return values;
     }
+
+    protected int kafkaPublishMessage(KProducer kProducer, int numMessages, String messageStrPrefix) throws Exception {
+        int i = 0;
+        for (; i < numMessages; i++) {
+            String messageStr = messageStrPrefix + i;
+            ProducerRecord record = new ProducerRecord<>(
+                kProducer.getTopic(),
+                i,
+                messageStr);
+
+            kProducer.getProducer()
+                .send(record)
+                .get();
+            if (log.isDebugEnabled()) {
+                log.debug("Kafka Producer {} Sent message with header: ({}, {})",
+                    kProducer.getTopic(), i, messageStr);
+            }
+        }
+        return i;
+    }
+
+    protected void kafkaConsumeCommitMessage(KConsumer kConsumer,
+                                             int numMessages,
+                                             String messageStrPrefix,
+                                             List<TopicPartition> topicPartitions) {
+        kConsumer.getConsumer().assign(topicPartitions);
+        int i = 0;
+        while (i < numMessages) {
+            if (log.isDebugEnabled()) {
+                log.debug("kConsumer {} start poll message: {}",
+                    kConsumer.getTopic() + kConsumer.getConsumerGroup(), i);
+            }
+            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<Integer, String> record : records) {
+                Integer key = record.key();
+                assertEquals(messageStrPrefix + key.toString(), record.value());
+
+                if (log.isDebugEnabled()) {
+                    log.debug("Kafka consumer get message: {}, key: {} at offset {}",
+                        record.key(), record.value(), record.offset());
+                }
+                i++;
+            }
+        }
+
+        assertEquals(i, numMessages);
+
+        try {
+            kConsumer.getConsumer().commitSync(Duration.ofSeconds(1));
+        } catch (Exception e) {
+            log.error("Commit offset failed: ", e);
+        }
+
+        if (log.isDebugEnabled()) {
+            log.debug("kConsumer {} finished poll and commit message: {}",
+                kConsumer.getTopic() + kConsumer.getConsumerGroup(), i);
+        }
+    }
+
 }
