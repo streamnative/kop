@@ -55,7 +55,7 @@ class AdminManager {
         this.admin = admin;
     }
 
-    void shutdown() {
+    public void shutdown() {
         topicPurgatory.shutdown();
     }
 

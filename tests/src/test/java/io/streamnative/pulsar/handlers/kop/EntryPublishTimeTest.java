@@ -41,7 +41,7 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
 
     KafkaRequestHandler kafkaRequestHandler;
     SocketAddress serviceAddress;
-    AdminManager adminManager;
+    private AdminManager adminManager;
 
     public EntryPublishTimeTest(String format) {
         super(format);

@@ -87,7 +87,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
     KafkaRequestHandler kafkaRequestHandler;
     SocketAddress serviceAddress;
-    AdminManager adminManager;
+    private AdminManager adminManager;
 
     @Override
     protected void resetConfig() {
