@@ -64,7 +64,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
         // Concatenate multiple batch into one single MemoryRecords object
         // In this mode, batch and entry have a one-to-one correspondence
         int totalSize = orderedRecord.stream().mapToInt(MemoryRecords::sizeInBytes).sum();
-        ByteBuffer batchedBuffer = ByteBuffer.allocate(totalSize);
+        ByteBuffer batchedBuffer = ByteBuffer.allocateDirect(totalSize);
         for (MemoryRecords records : orderedRecord) {
             batchedBuffer.put(records.buffer());
         }
