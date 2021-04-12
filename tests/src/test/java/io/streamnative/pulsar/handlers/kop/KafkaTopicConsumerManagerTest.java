@@ -50,6 +50,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     private KafkaTopicManager kafkaTopicManager;
     private KafkaRequestHandler kafkaRequestHandler;
     private SocketAddress serviceAddress;
+    private AdminManager adminManager;
 
     @BeforeMethod
     @Override
@@ -59,10 +60,12 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();
 
+        adminManager = new AdminManager(pulsar.getAdminClient());
         kafkaRequestHandler = new KafkaRequestHandler(
             pulsar,
             (KafkaServiceConfiguration) conf,
             groupCoordinator,
+            adminManager,
             false,
             getPlainEndPoint());
 
@@ -79,6 +82,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     @AfterMethod
     @Override
     protected void cleanup() throws Exception {
+        adminManager.shutdown();
         super.internalCleanup();
     }
 

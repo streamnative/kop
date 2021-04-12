@@ -39,6 +39,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final KafkaServiceConfiguration kafkaConfig;
     @Getter
     private final GroupCoordinator groupCoordinator;
+    private final AdminManager adminManager;
     @Getter
     private final boolean enableTls;
     @Getter
@@ -49,12 +50,14 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
                                    GroupCoordinator groupCoordinator,
+                                   AdminManager adminManager,
                                    boolean enableTLS,
                                    EndPoint advertisedEndPoint) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
         this.groupCoordinator = groupCoordinator;
+        this.adminManager = adminManager;
         this.enableTls = enableTLS;
         this.advertisedEndPoint = advertisedEndPoint;
 
@@ -74,7 +77,9 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         ch.pipeline().addLast("frameDecoder",
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
-            new KafkaRequestHandler(pulsarService, kafkaConfig, groupCoordinator, enableTls, advertisedEndPoint));
+            new KafkaRequestHandler(pulsarService, kafkaConfig,
+                    groupCoordinator, adminManager,
+                    enableTls, advertisedEndPoint));
     }
 
 }

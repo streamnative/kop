@@ -91,6 +91,7 @@ import org.testng.annotations.Test;
 public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
     private KafkaRequestHandler handler;
+    private AdminManager adminManager;
 
     @BeforeMethod
     @Override
@@ -136,10 +137,12 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         ProtocolHandler handler1 = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler1).getGroupCoordinator();
 
+        adminManager = new AdminManager(pulsar.getAdminClient());
         handler = new KafkaRequestHandler(
             pulsar,
             (KafkaServiceConfiguration) conf,
             groupCoordinator,
+            adminManager,
             false,
             getPlainEndPoint());
     }
@@ -147,6 +150,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     @AfterMethod
     @Override
     protected void cleanup() throws Exception {
+        adminManager.shutdown();
         super.internalCleanup();
     }
 

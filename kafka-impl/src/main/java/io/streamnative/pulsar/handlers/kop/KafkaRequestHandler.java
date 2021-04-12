@@ -159,6 +159,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
                                GroupCoordinator groupCoordinator,
+                               AdminManager adminManager,
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint) throws Exception {
         super();
@@ -173,7 +174,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.authenticator = authenticationEnabled
                 ? new SaslAuthenticator(pulsarService, kafkaConfig.getSaslAllowedMechanisms())
                 : null;
-        this.adminManager = new AdminManager(admin);
+        this.adminManager = adminManager;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
         this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
