@@ -92,6 +92,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
     KafkaRequestHandler kafkaRequestHandler;
     SocketAddress serviceAddress;
+    private AdminManager adminManager;
 
     @Override
     protected void resetConfig() {
@@ -140,10 +141,12 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();
 
+        adminManager = new AdminManager(pulsar.getAdminClient());
         kafkaRequestHandler = new KafkaRequestHandler(
             pulsar,
             (KafkaServiceConfiguration) conf,
             groupCoordinator,
+            adminManager,
             false,
             getPlainEndPoint());
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
@@ -157,6 +160,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     @AfterMethod
     @Override
     protected void cleanup() throws Exception {
+        adminManager.shutdown();
         super.internalCleanup();
     }
 

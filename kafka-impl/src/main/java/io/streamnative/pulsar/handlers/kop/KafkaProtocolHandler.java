@@ -64,6 +64,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public static final String PROTOCOL_NAME = "kafka";
     public static final String TLS_HANDLER = "tls";
 
+    private AdminManager adminManager = null;
+
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
      */
@@ -238,6 +240,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             KopVersion.getBuildHost(),
             KopVersion.getBuildTime());
 
+        try {
+            adminManager = new AdminManager(brokerService.getPulsar().getAdminClient());
+        } catch (PulsarServerException e) {
+            log.error("Failed to create PulsarAdmin: {}", e.getMessage());
+            throw new IllegalStateException(e);
+        }
+
         // init and start group coordinator
         if (kafkaConfig.isEnableGroupCoordinator()) {
             try {
@@ -279,12 +288,14 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, false, advertisedEndPoint));
+                                kafkaConfig, groupCoordinator, adminManager, false,
+                                advertisedEndPoint));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, true, advertisedEndPoint));
+                                kafkaConfig, groupCoordinator, adminManager, true,
+                                advertisedEndPoint));
                         break;
                 }
             });
@@ -298,6 +309,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     @Override
     public void close() {
+        adminManager.shutdown();
         if (groupCoordinator != null) {
             groupCoordinator.shutdown();
         }
