@@ -74,6 +74,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     private StatsLogger rootStatsLogger;
     private PrometheusMetricsProvider statsProvider;
     private KopBrokerLookupManager kopBrokerLookupManager;
+    private AdminManager adminManager = null;
 
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
@@ -258,6 +259,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             KopVersion.getBuildHost(),
             KopVersion.getBuildTime());
 
+        try {
+            adminManager = new AdminManager(brokerService.getPulsar().getAdminClient());
+        } catch (PulsarServerException e) {
+            log.error("Failed to create PulsarAdmin: {}", e.getMessage());
+            throw new IllegalStateException(e);
+        }
+
         // init and start group coordinator
         if (kafkaConfig.isEnableGroupCoordinator()) {
             try {
@@ -313,13 +321,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, transactionCoordinator, false,
+                                kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, false,
                             advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE)));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, transactionCoordinator, true,
+                                kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, true,
                             advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE)));
                         break;
                 }
@@ -334,6 +342,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     @Override
     public void close() {
+        adminManager.shutdown();
         if (groupCoordinator != null) {
             groupCoordinator.shutdown();
         }

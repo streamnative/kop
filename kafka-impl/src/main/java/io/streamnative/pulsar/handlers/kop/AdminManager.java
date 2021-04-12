@@ -55,6 +55,10 @@ class AdminManager {
         this.admin = admin;
     }
 
+    public void shutdown() {
+        topicPurgatory.shutdown();
+    }
+
     CompletableFuture<Map<String, ApiError>> createTopicsAsync(Map<String, TopicDetails> createInfo, int timeoutMs) {
         final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();
         final AtomicInteger numTopics = new AtomicInteger(createInfo.size());
