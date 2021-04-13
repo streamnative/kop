@@ -22,6 +22,13 @@ public interface KopServerStats {
     String SERVER_SCOPE = "kop_server";
 
     /**
+     * Request stats.
+     */
+    String REQUEST_QUEUE_SIZE = "REQUEST_QUEUE_SIZE";
+    String REQUEST_QUEUED_LATENCY = "REQUEST_QUEUED_LATENCY";
+    String REQUEST_PARSE = "REQUEST_PARSE";
+
+    /**
      * PRODUCE STATS.
      */
     String HANDLE_PRODUCE_REQUEST = "HANDLE_PRODUCE_REQUEST";

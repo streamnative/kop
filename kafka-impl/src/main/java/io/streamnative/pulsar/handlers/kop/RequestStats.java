@@ -18,9 +18,13 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.HANDLE_PRODUCE_
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_PUBLISH;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_QUEUED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_ENCODE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_PARSE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_QUEUED_LATENCY;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_QUEUE_SIZE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 
 import lombok.Getter;
+import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.stats.annotations.StatsDoc;
@@ -36,6 +40,24 @@ import org.apache.bookkeeper.stats.annotations.StatsDoc;
 
 @Getter
 public class RequestStats {
+    @StatsDoc(
+            name = REQUEST_QUEUE_SIZE,
+            help = "request queue's size"
+    )
+    private final Counter requestQueueSize;
+
+    @StatsDoc(
+            name = REQUEST_QUEUED_LATENCY,
+            help = "latency from request enqueued to dequeued"
+    )
+    private final OpStatsLogger requestQueuedLatencyStats;
+
+    @StatsDoc(
+            name = REQUEST_PARSE,
+            help = "parse request to ByteBuf"
+    )
+    private final OpStatsLogger requestParseStats;
+
     @StatsDoc(
         name = HANDLE_PRODUCE_REQUEST,
         help = "handle produce request stats of Kop"
@@ -61,6 +83,9 @@ public class RequestStats {
     private final OpStatsLogger messageQueuedLatencyStats;
 
     public RequestStats(StatsLogger statsLogger) {
+        this.requestQueueSize = statsLogger.getCounter(REQUEST_QUEUE_SIZE);
+        this.requestQueuedLatencyStats = statsLogger.getOpStatsLogger(REQUEST_QUEUED_LATENCY);
+        this.requestParseStats = statsLogger.getOpStatsLogger(REQUEST_PARSE);
         this.handleProduceRequestStats = statsLogger.getOpStatsLogger(HANDLE_PRODUCE_REQUEST);
         this.produceEncodeStats = statsLogger.getOpStatsLogger(PRODUCE_ENCODE);
         this.messagePublishStats = statsLogger.getOpStatsLogger(MESSAGE_PUBLISH);

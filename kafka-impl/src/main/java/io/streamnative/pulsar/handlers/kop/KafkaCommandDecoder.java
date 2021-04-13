@@ -26,11 +26,14 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.naming.AuthenticationException;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
+import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.types.Struct;
@@ -56,7 +59,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     // Queue to make request get responseFuture in order.
     private Queue<ResponseAndRequest> requestsQueue;
 
-    public KafkaCommandDecoder() {
+    protected final RequestStats requestStats;
+
+    public KafkaCommandDecoder(StatsLogger statsLogger) {
+        this.requestStats = new RequestStats(statsLogger);
     }
 
     @Override
@@ -141,7 +147,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             remoteAddress = channel.remoteAddress();
         }
 
+        final long timeBeforeParse = MathUtils.nowInNano();
         KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress);
+        requestStats.getRequestParseStats().registerSuccessfulEvent(
+                MathUtils.elapsedNanos(timeBeforeParse), TimeUnit.NANOSECONDS);
         try {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Received kafka cmd {}, the request content is: {}",
@@ -157,6 +166,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             });
 
             requestsQueue.add(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
+            requestStats.getRequestQueueSize().inc();
 
             if (!isActive.get()) {
                 handleInactive(kafkaHeaderAndRequest, responseFuture);
@@ -269,6 +279,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         while (requestsQueue != null && requestsQueue.peek() != null
             && requestsQueue.peek().getResponseFuture().isDone() && isActive.get()) {
             ResponseAndRequest response = requestsQueue.remove();
+            requestStats.getRequestQueueSize().dec();
             try {
                 if (log.isDebugEnabled()) {
                     log.debug("Write kafka cmd response back to client. \n"
@@ -295,6 +306,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         while (requestsQueue != null && requestsQueue.peek() != null) {
             try {
                 ResponseAndRequest pair = requestsQueue.remove();
+                requestStats.getRequestQueueSize().dec();
+                requestStats.getRequestQueuedLatencyStats().registerSuccessfulEvent(
+                        MathUtils.elapsedNanos(pair.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
 
                 if (log.isDebugEnabled()) {
                     log.debug("Channel Closing! Write kafka cmd responseFuture back to client. request: {}",
@@ -509,9 +523,11 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
      */
     static class ResponseAndRequest {
         @Getter
-        private CompletableFuture<AbstractResponse> responseFuture;
+        private final CompletableFuture<AbstractResponse> responseFuture;
         @Getter
-        private KafkaHeaderAndRequest request;
+        private final KafkaHeaderAndRequest request;
+        @Getter
+        private final long createdTimestamp;
 
         public static ResponseAndRequest of(CompletableFuture<AbstractResponse> response,
                                             KafkaHeaderAndRequest request) {
@@ -521,6 +537,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         ResponseAndRequest(CompletableFuture<AbstractResponse> response, KafkaHeaderAndRequest request) {
             this.responseFuture = response;
             this.request = request;
+            this.createdTimestamp = MathUtils.nowInNano();
         }
     }
 }

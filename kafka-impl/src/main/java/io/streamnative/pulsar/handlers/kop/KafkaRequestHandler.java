@@ -194,8 +194,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final EntryFormatter entryFormatter;
 
     private final Map<TopicPartition, PendingProduceQueue> pendingProduceQueueMap = new ConcurrentHashMap<>();
-    private final StatsLogger statsLogger;
-    private final RequestStats requestStats;
     private final Set<String> groupIds = new HashSet<>();
 
     public KafkaRequestHandler(PulsarService pulsarService,
@@ -206,7 +204,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
                                StatsLogger statsLogger) throws Exception {
-        super();
+        super(statsLogger);
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
         this.groupCoordinator = groupCoordinator;
@@ -229,8 +227,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
         this.currentConnectedGroup = new ConcurrentHashMap<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
-        this.statsLogger = statsLogger;
-        this.requestStats = new RequestStats(statsLogger);
     }
 
     @Override
