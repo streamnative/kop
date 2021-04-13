@@ -45,11 +45,10 @@ public final class MessagePublishContext implements PublishContext {
                         "There's no BrokerEntryData, check if your broker configured brokerEntryMetadataInterceptors");
             }
             baseOffset = brokerEntryMetadata.getIndex() - (numberOfMessages - 1);
+        } catch (IllegalStateException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Failed to set metadata from entry", e);
-            if (e instanceof IllegalStateException) {
-                throw e;
-            }
         }
     }
 
