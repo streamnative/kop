@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
+import static org.junit.Assert.assertTrue;
 import static org.testng.Assert.assertEquals;
 
 import com.google.common.collect.Lists;
@@ -350,7 +351,6 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         log.info("Unload offset namespace, this will trigger another reload. After reload verify offset.");
         pulsarService1.getAdminClient().namespaces().unload(offsetNs);
 
-        /*
         // verify offset be kept and no more records could read.
         ConsumerRecords<Integer, String> records = kConsumer1.getConsumer().poll(Duration.ofMillis(200));
         assertTrue(records.isEmpty());
@@ -360,7 +360,6 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         assertTrue(records.isEmpty());
         records = kConsumer4.getConsumer().poll(Duration.ofMillis(200));
         assertTrue(records.isEmpty());
-        */
 
         // 5. another round publish and consume after ns unload.
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
@@ -383,7 +382,6 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         log.info("Unload offset namespace, this will trigger another reload");
         pulsarService1.getAdminClient().namespaces().unload(offsetNs);
 
-        /*
         // verify offset be kept and no more records could read.
         records = kConsumer1.getConsumer().poll(Duration.ofMillis(200));
         assertTrue(records.isEmpty());
@@ -393,7 +391,6 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         assertTrue(records.isEmpty());
         records = kConsumer4.getConsumer().poll(Duration.ofMillis(200));
         assertTrue(records.isEmpty());
-        */
 
         kProducer.close();
         kConsumer1.close();
