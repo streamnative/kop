@@ -280,6 +280,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             && requestsQueue.peek().getResponseFuture().isDone() && isActive.get()) {
             ResponseAndRequest response = requestsQueue.remove();
             requestStats.getRequestQueueSize().dec();
+            requestStats.getRequestQueuedLatencyStats().registerSuccessfulEvent(
+                    MathUtils.elapsedNanos(response.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
             try {
                 if (log.isDebugEnabled()) {
                     log.debug("Write kafka cmd response back to client. \n"
