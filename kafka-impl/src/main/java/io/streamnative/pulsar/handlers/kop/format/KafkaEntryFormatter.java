@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 
@@ -64,14 +65,14 @@ public class KafkaEntryFormatter implements EntryFormatter {
         // Concatenate multiple batch into one single MemoryRecords object
         // In this mode, batch and entry have a one-to-one correspondence
         int totalSize = orderedRecord.stream().mapToInt(MemoryRecords::sizeInBytes).sum();
-        ByteBuffer batchedBuffer = ByteBuffer.allocateDirect(totalSize);
+        ByteBuf byteBuf = PulsarByteBufAllocator.DEFAULT.buffer(totalSize);
         for (MemoryRecords records : orderedRecord) {
-            batchedBuffer.put(records.buffer());
+            byteBuf.writeBytes(records.buffer());
         }
-        batchedBuffer.flip();
 
-        MemoryRecords batchedMemoryRecords = MemoryRecords.readableRecords(batchedBuffer);
+        MemoryRecords batchedMemoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
         entries.forEach(Entry::release);
+        byteBuf.release();
         return batchedMemoryRecords;
     }
 
