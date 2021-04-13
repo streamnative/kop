@@ -13,15 +13,16 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
-import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.Topic.PublishContext;
+import org.apache.pulsar.common.api.proto.BrokerEntryMetadata;
+import org.apache.pulsar.common.protocol.Commands;
 
 /**
  * Implementation for PublishContext.
@@ -33,7 +34,24 @@ public final class MessagePublishContext implements PublishContext {
     private Topic topic;
     private long startTimeNs;
     private long numberOfMessages;
-    private ManagedLedger managedLedger;
+    private long baseOffset = -1L;
+
+    @Override
+    public void setMetadataFromEntryData(ByteBuf entryData) {
+        try {
+            final BrokerEntryMetadata brokerEntryMetadata = Commands.peekBrokerEntryMetadataIfExist(entryData);
+            if (brokerEntryMetadata == null) {
+                throw new IllegalStateException(
+                        "There's no BrokerEntryData, check if your broker configured brokerEntryMetadataInterceptors");
+            }
+            baseOffset = brokerEntryMetadata.getIndex() - (numberOfMessages - 1);
+        } catch (Exception e) {
+            log.error("Failed to set metadata from entry", e);
+            if (e instanceof IllegalStateException) {
+                throw e;
+            }
+        }
+    }
 
     /**
      * Executed from managed ledger thread when the message is persisted.
@@ -53,11 +71,10 @@ public final class MessagePublishContext implements PublishContext {
             }
 
             topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.MICROSECONDS);
-
-            // In asynchronously send mode, there's a possibility that some messages' offsets are larger than the actual
-            // offsets. For example, two messages are sent concurrently, if the 1st message is completed while the 2nd
-            // message is already persisted, `MessageIdUtils.getCurrentOffset` will return the 2nd message's offset.
-            final long baseOffset = MessageIdUtils.getCurrentOffset(managedLedger) - (numberOfMessages - 1);
+            // setMetadataFromEntryData() was called before completed() is called so that baseOffset could be set
+            if (baseOffset < 0) {
+                log.error("Failed to get offset for ({}, {})", ledgerId, entryId);
+            }
             offsetFuture.complete(baseOffset);
         }
 
@@ -72,21 +89,6 @@ public final class MessagePublishContext implements PublishContext {
         MessagePublishContext callback = RECYCLER.get();
         callback.offsetFuture = offsetFuture;
         callback.topic = topic;
-        callback.numberOfMessages = numberOfMessages;
-        callback.startTimeNs = startTimeNs;
-        return callback;
-    }
-
-    // recycler
-    public static MessagePublishContext get(CompletableFuture<Long> offsetFuture,
-                                            Topic topic,
-                                            ManagedLedger managedLedger,
-                                            long numberOfMessages,
-                                            long startTimeNs) {
-        MessagePublishContext callback = RECYCLER.get();
-        callback.offsetFuture = offsetFuture;
-        callback.topic = topic;
-        callback.managedLedger = managedLedger;
         callback.numberOfMessages = numberOfMessages;
         callback.startTimeNs = startTimeNs;
         return callback;
