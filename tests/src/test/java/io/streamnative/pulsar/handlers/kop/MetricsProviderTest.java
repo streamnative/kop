@@ -121,6 +121,9 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         while ((str = reader.readLine()) != null) {
             sb.append(str);
         }
+        Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_QUEUE_SIZE"));
+        Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_QUEUED_LATENCY"));
+        Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_PARSE"));
         Assert.assertTrue(sb.toString().contains("kop_server_HANDLE_PRODUCE_REQUEST"));
         Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_ENCODE"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_PUBLISH"));
