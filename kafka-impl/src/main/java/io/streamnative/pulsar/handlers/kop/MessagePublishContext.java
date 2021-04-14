@@ -41,8 +41,12 @@ public final class MessagePublishContext implements PublishContext {
         try {
             final BrokerEntryMetadata brokerEntryMetadata = Commands.peekBrokerEntryMetadataIfExist(entryData);
             if (brokerEntryMetadata == null) {
-                throw new IllegalStateException(
-                        "There's no BrokerEntryData, check if your broker configured brokerEntryMetadataInterceptors");
+                throw new IllegalStateException("There's no BrokerEntryData, "
+                        + "check if your broker has configured brokerEntryMetadataInterceptors");
+            }
+            if (!brokerEntryMetadata.hasIndex()) {
+                throw new IllegalStateException("The BrokerEntryData has no 'index' field, check if "
+                        + "your broker configured AppendIndexMetadataInterceptor");
             }
             baseOffset = brokerEntryMetadata.getIndex() - (numberOfMessages - 1);
         } catch (IllegalStateException e) {
