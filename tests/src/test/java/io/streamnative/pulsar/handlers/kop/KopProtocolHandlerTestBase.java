@@ -71,6 +71,7 @@ import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.compaction.Compactor;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
 import org.apache.pulsar.zookeeper.ZooKeeperClientFactory;
@@ -231,6 +232,8 @@ public abstract class KopProtocolHandlerTestBase {
         String brokerServiceUrl = "pulsar://" + this.conf.getAdvertisedAddress() + ":" + brokerPort;
         String brokerServiceUrlTls = null; // TLS not supported at this time
 
+        ClusterData clusterData = new ClusterData(serviceUrl, serviceUrlTls, brokerServiceUrl, null);
+
         mockZooKeeper = createMockZooKeeper(configClusterName, serviceUrl, serviceUrlTls, brokerServiceUrl,
             brokerServiceUrlTls);
         mockBookKeeper = createMockBookKeeper(mockZooKeeper, bkExecutor);
@@ -239,8 +242,8 @@ public abstract class KopProtocolHandlerTestBase {
 
         createAdmin();
 
-        MetadataUtils.createOffsetMetadataIfMissing(admin, this.conf);
-        MetadataUtils.createTxnMetadataIfMissing(admin, this.conf);
+        MetadataUtils.createOffsetMetadataIfMissing(admin, clusterData, this.conf);
+        MetadataUtils.createTxnMetadataIfMissing(admin, clusterData, this.conf);
 
         if (enableSchemaRegistry) {
             admin.topics().createPartitionedTopic(KAFKASTORE_TOPIC, 1);

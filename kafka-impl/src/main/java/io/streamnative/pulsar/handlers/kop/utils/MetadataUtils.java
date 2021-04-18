@@ -25,7 +25,6 @@ import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 
 import org.apache.kafka.common.internals.Topic;
-import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.client.admin.Clusters;
 import org.apache.pulsar.client.admin.Namespaces;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -56,16 +55,20 @@ public class MetadataUtils {
                 + "/" + Topic.TRANSACTION_STATE_TOPIC_NAME;
     }
 
-    public static void createOffsetMetadataIfMissing(PulsarAdmin pulsarAdmin, KafkaServiceConfiguration conf)
-            throws PulsarServerException, PulsarAdminException {
+    public static void createOffsetMetadataIfMissing(PulsarAdmin pulsarAdmin,
+                                                     ClusterData clusterData,
+                                                     KafkaServiceConfiguration conf)
+            throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructOffsetsTopicBaseName(conf));
-        createKafkaMetadataIfMissing(pulsarAdmin, conf, kopTopic, conf.getOffsetsTopicNumPartitions());
+        createKafkaMetadataIfMissing(pulsarAdmin, clusterData, conf, kopTopic, conf.getOffsetsTopicNumPartitions());
     }
 
-    public static void createTxnMetadataIfMissing(PulsarAdmin pulsarAdmin, KafkaServiceConfiguration conf)
-            throws PulsarServerException, PulsarAdminException {
+    public static void createTxnMetadataIfMissing(PulsarAdmin pulsarAdmin,
+                                                  ClusterData clusterData,
+                                                  KafkaServiceConfiguration conf)
+            throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructTxnLogTopicBaseName(conf));
-        createKafkaMetadataIfMissing(pulsarAdmin, conf, kopTopic, conf.getTxnLogTopicNumPartitions());
+        createKafkaMetadataIfMissing(pulsarAdmin, clusterData, conf, kopTopic, conf.getTxnLogTopicNumPartitions());
     }
 
     /**
@@ -83,10 +86,11 @@ public class MetadataUtils {
      * </ul>
      */
     private static void createKafkaMetadataIfMissing(PulsarAdmin pulsarAdmin,
-                                                    KafkaServiceConfiguration conf,
-                                                    KopTopic kopTopic,
-                                                    int partitionNum)
-        throws PulsarServerException, PulsarAdminException {
+                                                     ClusterData clusterData,
+                                                     KafkaServiceConfiguration conf,
+                                                     KopTopic kopTopic,
+                                                     int partitionNum)
+        throws PulsarAdminException {
         String cluster = conf.getClusterName();
         String kafkaMetadataTenant = conf.getKafkaMetadataTenant();
         String kafkaMetadataNamespace = kafkaMetadataTenant + "/" + conf.getKafkaMetadataNamespace();
@@ -97,12 +101,21 @@ public class MetadataUtils {
         try {
             Clusters clusters = pulsarAdmin.clusters();
             if (!clusters.getClusters().contains(cluster)) {
-                throw new PulsarServerException.NotFoundException("Configured cluster does not exist");
+                try {
+                    pulsarAdmin.clusters().createCluster(cluster, clusterData);
+                } catch (PulsarAdminException e) {
+                    if (e instanceof ConflictException) {
+                        log.info("Attempted to create cluster {} however it was created concurrently.", cluster);
+                    } else {
+                        // Re-throw all other exceptions
+                        throw e;
+                    }
+                }
             } else {
                 ClusterData configuredClusterData = clusters.getCluster(cluster);
                 log.info("Cluster {} found: {}", cluster, configuredClusterData);
-                clusterExists = true;
             }
+            clusterExists = true;
 
             // Check if the metadata tenant exists and create it if not
             Tenants tenants = pulsarAdmin.tenants();

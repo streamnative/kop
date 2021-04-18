@@ -60,6 +60,7 @@ import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.util.FutureUtil;
 
 /**
@@ -370,7 +371,11 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             .build();
 
         PulsarAdmin pulsarAdmin = service.pulsar().getAdminClient();
-        MetadataUtils.createOffsetMetadataIfMissing(pulsarAdmin, kafkaConfig);
+        ClusterData clusterData = new ClusterData(service.getPulsar().getWebServiceAddress(),
+                                                  service.getPulsar().getWebServiceAddressTls(),
+                                                  service.getPulsar().getBrokerServiceUrl(),
+                                                  service.getPulsar().getBrokerServiceUrlTls());
+        MetadataUtils.createOffsetMetadataIfMissing(pulsarAdmin, clusterData, kafkaConfig);
 
 
         this.groupCoordinator = GroupCoordinator.of(
@@ -403,7 +408,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 .build();
 
         PulsarAdmin pulsarAdmin = brokerService.getPulsar().getAdminClient();
-        MetadataUtils.createTxnMetadataIfMissing(pulsarAdmin, kafkaConfig);
+        ClusterData clusterData = new ClusterData(brokerService.getPulsar().getWebServiceAddress(),
+                                                  brokerService.getPulsar().getWebServiceAddressTls(),
+                                                  brokerService.getPulsar().getBrokerServiceUrl(),
+                                                  brokerService.getPulsar().getBrokerServiceUrlTls());
+
+        MetadataUtils.createTxnMetadataIfMissing(pulsarAdmin, clusterData, kafkaConfig);
 
         this.transactionCoordinator = TransactionCoordinator.of(
                 transactionConfig,
