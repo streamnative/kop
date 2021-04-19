@@ -38,6 +38,7 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Factory;
+import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 /**
@@ -104,6 +105,7 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
         return new KafkaConsumer<>(props);
     }
 
+    @Ignore
     @Test(timeOut = 40000)
     public void testAvroProduceAndConsume() throws Exception {
         String topic = "SchemaRegistryTest-testAvroProduceAndConsume";

@@ -1548,7 +1548,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 .thenAccept(persistentTopic -> {
                     persistentTopic.publishMessage(generateTxnMarker(transactionResult, producerId, producerEpoch),
                             MessagePublishContext.get(offsetFuture, persistentTopic,
-                                    persistentTopic.getManagedLedger(), 1, SystemTime.SYSTEM.milliseconds()));
+                                    1, SystemTime.SYSTEM.milliseconds()));
                 });
         return offsetFuture;
     }

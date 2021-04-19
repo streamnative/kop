@@ -136,7 +136,7 @@ public class PendingProduce {
         producer.getTopic().incrementPublishCount(numMessages, byteBuf.readableBytes());
         // publish
         persistentTopic.publishMessage(byteBuf, MessagePublishContext.get(offsetFuture, persistentTopic,
-                persistentTopic.getManagedLedger(), numMessages, System.nanoTime()));
+                numMessages, System.nanoTime()));
         offsetFuture.whenComplete((offset, e) -> {
             if (e == null) {
                 if (this.isTransactional) {
