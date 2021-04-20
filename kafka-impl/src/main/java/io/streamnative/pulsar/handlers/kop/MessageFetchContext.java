@@ -398,6 +398,14 @@ public final class MessageFetchContext {
                                     responseData,
                                     ((Integer) THROTTLE_TIME_MS.defaultValue),
                                     ((FetchRequest) fetch.getRequest()).metadata().sessionId()));
+                    resultFuture.whenComplete((r, e) -> {
+                        // ATTENTION: Please note that the release of entries should be placed after
+                        // future complete operation to ensure that the data has been successfully
+                        // written to the network channel
+                        responseValues.entrySet().forEach(topicPartitionListEntry -> {
+                            topicPartitionListEntry.getValue().forEach(Entry::release);
+                        });
+                    });
                     this.recycle();
                 } else {
                     if (log.isDebugEnabled()) {
