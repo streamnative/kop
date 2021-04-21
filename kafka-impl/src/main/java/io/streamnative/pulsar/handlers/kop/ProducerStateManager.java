@@ -340,12 +340,10 @@ public class ProducerStateManager {
             log.info("append data batch checkSequence producerEpoch: {}, appendFirstSeq: {}",
                     producerEpoch, appendFirstSeq);
             if (!producerEpoch.equals(updatedEntry.producerEpoch)) {
-                if (appendFirstSeq != 0) {
-                    if (updatedEntry.producerEpoch != RecordBatch.NO_PRODUCER_EPOCH) {
-                        String msg = String.format("Invalid sequence number for new epoch in partition %s: %s "
-                                + "(request epoch), %s (seq. number)", topicPartition, producerEpoch, appendFirstSeq);
-                        throw new OutOfOrderSequenceException(msg);
-                    }
+                if (appendFirstSeq != 0 && updatedEntry.producerEpoch != RecordBatch.NO_PRODUCER_EPOCH) {
+                    String msg = String.format("Invalid sequence number for new epoch in partition %s: %s "
+                            + "(request epoch), %s (seq. number)", topicPartition, producerEpoch, appendFirstSeq);
+                    throw new OutOfOrderSequenceException(msg);
                 }
             } else {
                 int currentLastSeq;
