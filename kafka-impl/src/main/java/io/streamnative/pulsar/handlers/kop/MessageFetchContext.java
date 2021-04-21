@@ -376,7 +376,11 @@ public final class MessageFetchContext {
                             if (requestHandler.getKafkaConfig().isEnableTransactionCoordinator()
                                     && isolationLevel.equals(IsolationLevel.READ_COMMITTED)
                                     && tc != null) {
-                                abortedTransactions = tc.getAbortedIndexList(
+
+                                ProducerStateManager producerStateManager =
+                                        requestHandler.getBrokerProducerStateManager()
+                                                .getProducerStateManager(kafkaPartition);
+                                abortedTransactions = producerStateManager.getAbortedIndexList(
                                         request.fetchData().get(kafkaPartition).fetchOffset);
                             } else {
                                 abortedTransactions = null;

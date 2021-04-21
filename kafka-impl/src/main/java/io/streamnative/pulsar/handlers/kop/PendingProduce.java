@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -28,7 +29,6 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.common.naming.TopicName;
 
 /**
  * Pending context related to the produce task.
@@ -43,11 +43,12 @@ public class PendingProduce {
     private final CompletableFuture<PersistentTopic> topicFuture;
     private final CompletableFuture<ByteBuf> byteBufFuture;
     private CompletableFuture<Long> offsetFuture;
-    private final TransactionCoordinator transactionCoordinator;
     private long pid;
     private boolean isTransactional;
     private RequestStats requestStats;
     private final long enqueueTimestamp;
+    private ProducerStateManager producerStateManager;
+    private ProducerStateManager.AnalyzeResult analyzeResult;
 
     public PendingProduce(CompletableFuture<PartitionResponse> responseFuture,
                           KafkaTopicManager topicManager,
@@ -56,12 +57,14 @@ public class PendingProduce {
                           MemoryRecords memoryRecords,
                           ExecutorService executor,
                           TransactionCoordinator transactionCoordinator,
-                          RequestStats requestStats) {
+                          RequestStats requestStats,
+                          ProducerStateManager producerStateManager) {
         this.enqueueTimestamp = MathUtils.nowInNano();
         this.responseFuture = responseFuture;
         this.topicManager = topicManager;
         this.partitionName = partitionName;
         this.numMessages = EntryFormatter.parseNumMessages(memoryRecords);
+        this.producerStateManager = producerStateManager;
 
         this.topicFuture = topicManager.getTopic(partitionName).exceptionally(e -> {
             log.error("Failed to getTopic for partition '{}': {}", partitionName, e);
@@ -72,13 +75,16 @@ public class PendingProduce {
             log.error("Failed to compute ByteBuf for partition '{}': {}", partitionName, e);
             return null;
         });
+
         executor.execute(() -> byteBufFuture.complete(entryFormatter.encode(memoryRecords, numMessages)));
         requestStats.getProduceEncodeStats()
             .registerSuccessfulEvent(MathUtils.elapsedNanos(enqueueTimestamp), TimeUnit.NANOSECONDS);
         this.offsetFuture = new CompletableFuture<>();
 
+        analyzeResult = producerStateManager.analyzeAndValidateProducerState(memoryRecords, Optional.empty(),
+                ProducerStateManager.AppendOrigin.Client);
+
         RecordBatch batch = memoryRecords.batchIterator().next();
-        this.transactionCoordinator = transactionCoordinator;
         this.pid = batch.producerId();
         this.isTransactional = batch.isTransactional();
         this.requestStats = requestStats;
@@ -140,7 +146,10 @@ public class PendingProduce {
         offsetFuture.whenComplete((offset, e) -> {
             if (e == null) {
                 if (this.isTransactional) {
-                    transactionCoordinator.addActivePidOffset(TopicName.get(partitionName), pid, offset);
+                    ProducerStateManager.ProducerAppendInfo appendInfo = analyzeResult.getAppendInfoMap().get(pid);
+                    appendInfo.resetOffset(offset, true);
+                    producerStateManager.update(appendInfo);
+                    producerStateManager.updateMapEndOffset(offset + 1);
                 }
                 requestStats.getMessagePublishStats().registerSuccessfulEvent(
                     MathUtils.elapsedNanos(enqueueTimestamp), TimeUnit.NANOSECONDS);

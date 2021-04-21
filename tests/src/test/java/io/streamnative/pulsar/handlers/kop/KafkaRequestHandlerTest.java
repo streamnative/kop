@@ -141,6 +141,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         ProtocolHandler handler1 = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler1).getGroupCoordinator();
         TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler1).getTransactionCoordinator();
+        BrokerProducerStateManager brokerProducerStateManager =
+                ((KafkaProtocolHandler) handler1).getBrokerProducerStateManager();
 
         adminManager = new AdminManager(pulsar.getAdminClient());
         handler = new KafkaRequestHandler(
@@ -151,7 +153,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             adminManager,
             false,
             getPlainEndPoint(),
-            NullStatsLogger.INSTANCE);
+            NullStatsLogger.INSTANCE,
+            brokerProducerStateManager);
     }
 
     @AfterMethod

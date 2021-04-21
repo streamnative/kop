@@ -76,6 +76,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     private PrometheusMetricsProvider statsProvider;
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
+    @Getter
+    private BrokerProducerStateManager brokerProducerStateManager;
 
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
@@ -252,6 +254,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         brokerService = service;
         kopBrokerLookupManager = new KopBrokerLookupManager(
                 brokerService.getPulsar(), false, kafkaConfig.getKafkaAdvertisedListeners());
+        brokerProducerStateManager = new BrokerProducerStateManager(kafkaConfig.getMaxProducerIdExpirationMs());
 
         log.info("Starting KafkaProtocolHandler, kop version is: '{}'", KopVersion.getVersion());
         log.info("Git Revision {}", KopVersion.getGitSha());
@@ -323,13 +326,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, false,
-                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE)));
+                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), brokerProducerStateManager));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, true,
-                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE)));
+                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), brokerProducerStateManager));
                         break;
                 }
             });

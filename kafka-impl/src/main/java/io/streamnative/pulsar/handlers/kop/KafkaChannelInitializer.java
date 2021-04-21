@@ -52,6 +52,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final SslContextFactory sslContextFactory;
     @Getter
     private final StatsLogger statsLogger;
+    @Getter
+    private final BrokerProducerStateManager brokerProducerStateManager;
 
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
@@ -60,7 +62,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    AdminManager adminManager,
                                    boolean enableTLS,
                                    EndPoint advertisedEndPoint,
-                                   StatsLogger statsLogger) {
+                                   StatsLogger statsLogger,
+                                   BrokerProducerStateManager brokerProducerStateManager) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -70,6 +73,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.enableTls = enableTLS;
         this.advertisedEndPoint = advertisedEndPoint;
         this.statsLogger = statsLogger;
+        this.brokerProducerStateManager = brokerProducerStateManager;
 
         if (enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
@@ -88,8 +92,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
             new KafkaRequestHandler(pulsarService, kafkaConfig,
-                    groupCoordinator, transactionCoordinator, adminManager,
-                    enableTls, advertisedEndPoint, statsLogger));
+                    groupCoordinator, transactionCoordinator, adminManager, enableTls, advertisedEndPoint, statsLogger,
+                    brokerProducerStateManager));
     }
 
 }

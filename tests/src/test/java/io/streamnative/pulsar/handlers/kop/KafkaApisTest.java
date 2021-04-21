@@ -136,6 +136,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();
         TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler).getTransactionCoordinator();
+        BrokerProducerStateManager brokerProducerStateManager =
+                ((KafkaProtocolHandler) handler).getBrokerProducerStateManager();
 
         adminManager = new AdminManager(pulsar.getAdminClient());
         kafkaRequestHandler = new KafkaRequestHandler(
@@ -146,7 +148,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             adminManager,
             false,
             getPlainEndPoint(),
-            NullStatsLogger.INSTANCE);
+            NullStatsLogger.INSTANCE,
+            brokerProducerStateManager);
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();

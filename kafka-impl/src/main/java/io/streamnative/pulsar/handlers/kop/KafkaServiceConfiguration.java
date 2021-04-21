@@ -327,6 +327,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private int kopPrometheusStatsLatencyRolloverSeconds = 60;
 
+    @FieldContext(
+        category = CATEGORY_KOP,
+        doc = "Max producer id expiration millisecond."
+    )
+    private int maxProducerIdExpirationMs = 60 * 60 * 1000;
+
     public @NonNull String getKafkaAdvertisedListeners() {
         if (kafkaAdvertisedListeners != null) {
             return kafkaAdvertisedListeners;
