@@ -32,7 +32,6 @@ import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.utils.SystemTime;
 import org.mockito.Mockito;
-import org.testng.Assert;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 import org.testng.collections.Lists;
@@ -311,7 +310,6 @@ public class ProducerStateManagerTest {
     @Test
     public void testLastStableOffsetCompletedTxn() {
         short producerEpoch = 0;
-        long segmentBaseOffset = 990000L;
 
         long producerId1 = producerId;
         long startOffset1 = 992342L;
@@ -461,7 +459,7 @@ public class ProducerStateManagerTest {
         // next append is invalid since we expect the sequence to be reset
         try {
             append(stateManager, producerId, bumpedEpoch, 2, 2L, SystemTime.SYSTEM.milliseconds(), true);
-            Assert.fail("Next append is invalid since we expect the sequence to be reset.");
+            fail("Next append is invalid since we expect the sequence to be reset.");
         } catch (OutOfOrderSequenceException e) {
             log.info("Expected behavior.");
         }
@@ -469,7 +467,7 @@ public class ProducerStateManagerTest {
         try {
             append(stateManager, producerId, (short) (bumpedEpoch + 1), 2, 2L,
                     SystemTime.SYSTEM.milliseconds(), true);
-            Assert.fail("[2] Next append is invalid since we expect the sequence to be reset.");
+            fail("[2] Next append is invalid since we expect the sequence to be reset.");
         } catch (OutOfOrderSequenceException e) {
             log.info("Expected behavior.");
         }
