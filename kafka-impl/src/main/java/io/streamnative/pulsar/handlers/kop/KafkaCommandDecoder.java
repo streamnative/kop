@@ -41,6 +41,7 @@ import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.RequestHeader;
+import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.kafka.common.requests.ResponseHeader;
 import org.apache.kafka.common.requests.ResponseUtils;
 
@@ -298,6 +299,14 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             } catch (Exception e) {
                 // should not comes here.
                 log.error("error to get Response ByteBuf:", e);
+            } finally {
+                try {
+                    if (response.getResponseFuture().get() instanceof ResponseCallbackWrapper) {
+                        ((ResponseCallbackWrapper) response.getResponseFuture().get()).responseComplete();
+                    }
+                } catch (Exception e) {
+                    log.error("Error in executing callback after sending response, ", e);
+                }
             }
         }
     }
