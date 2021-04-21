@@ -97,6 +97,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
     private final Map<String, KopEventManager> kopEventManagerByTenant = new ConcurrentHashMap<>();
 
+    @Getter
+    private BrokerProducerStateManager brokerProducerStateManager;
+
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
         return groupCoordinatorsByTenant.computeIfAbsent(tenant, this::createAndBootGroupCoordinator);
@@ -313,6 +316,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         brokerService = service;
         kopBrokerLookupManager = new KopBrokerLookupManager(
                 brokerService.getPulsar(), false, kafkaConfig.getKafkaAdvertisedListeners());
+        brokerProducerStateManager = new BrokerProducerStateManager(kafkaConfig.getMaxProducerIdExpirationMs());
 
         log.info("Starting KafkaProtocolHandler, kop version is: '{}'", KopVersion.getVersion());
         log.info("Git Revision {}", KopVersion.getGitSha());
@@ -455,13 +459,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, this, adminManager, false,
-                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache));
+                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache, brokerProducerStateManager));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, this, adminManager, true,
-                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache));
+                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache, brokerProducerStateManager));
                         break;
                 }
             });

@@ -453,8 +453,20 @@ public final class MessageFetchContext {
                 entries.size(),
                 groupName);
 
-        final List<FetchResponse.AbortedTransaction> abortedTransactions =
-                (readCommitted ? tc.getAbortedIndexList(partitionData.fetchOffset) : null);
+        List<FetchResponse.AbortedTransaction> abortedTransactions;
+        if (requestHandler.getKafkaConfig().isEnableTransactionCoordinator()
+                && readCommitted
+                && tc != null) {
+
+            ProducerStateManager producerStateManager =
+                    requestHandler.getBrokerProducerStateManager()
+                            .getProducerStateManager(topicPartition);
+            abortedTransactions = producerStateManager.getAbortedIndexList(
+                    partitionData.fetchOffset);
+        } else {
+            abortedTransactions = null;
+        }
+
         responseData.put(topicPartition, new PartitionData<>(
                 Errors.NONE,
                 highWatermark,

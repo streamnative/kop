@@ -34,7 +34,6 @@ import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
-import io.streamnative.pulsar.handlers.kop.coordinator.transaction.AbortedIndexEntry;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
@@ -192,6 +191,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
     private final TenantContextManager tenantContextManager;
+    private final BrokerProducerStateManager brokerProducerStateManager;
 
     private final String clusterName;
     private final ScheduledExecutorService executor;
@@ -279,7 +279,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                MetadataCache<LocalBrokerData> localBrokerDataCache,
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
-                               StatsLogger statsLogger) throws Exception {
+                               StatsLogger statsLogger,
+                               BrokerProducerStateManager brokerProducerStateManager) throws Exception {
         super(statsLogger, kafkaConfig);
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
@@ -310,6 +311,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
         this.failedAuthenticationDelayMs = kafkaConfig.getFailedAuthenticationDelayMs();
+        this.brokerProducerStateManager = brokerProducerStateManager;
 
         // update alive channel count stats
         RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
@@ -2008,6 +2010,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     resultMap.computeIfAbsent(txnMarkerEntry.producerId(), pid -> new HashMap<>());
 
             for (TopicPartition topicPartition : txnMarkerEntry.partitions()) {
+                String fullPartitionName = KopTopic.toString(topicPartition);
+                ProducerStateManager producerStateManager =
+                        brokerProducerStateManager.getProducerStateManager(fullPartitionName);
+                ProducerStateManager.AnalyzeResult analyzeResult;
+                try {
+                    analyzeResult = validateTxnMarker(txnMarkerEntry, producerStateManager);
+                } catch (Throwable t) {
+                    partitionErrorsMap.put(topicPartition, Errors.forException(t));
+                    continue;
+                }
+
                 CompletableFuture<Void> resultFuture = new CompletableFuture<>();
                 CompletableFuture<Long> completableFuture = writeTxnMarker(
                         topicPartition,
@@ -2032,7 +2045,21 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 Lists.newArrayList(topicPartition).stream(),
                                 txnMarkerEntry.transactionResult());
                     } else {
-                        handleGroupFuture = CompletableFuture.completedFuture(null);
+                        try {
+                            ProducerStateManager.ProducerAppendInfo appendInfo =
+                                    analyzeResult.getAppendInfoMap().get(txnMarkerEntry.producerId());
+                            producerStateManager.update(appendInfo);
+                            if (!analyzeResult.getCompletedTxnList().isEmpty()) {
+                                ProducerStateManager.CompletedTxn completedTxn =
+                                        analyzeResult.getCompletedTxnList().get(0);
+                                completedTxn.setLastOffset(offset);
+                                producerStateManager.completeTxn(completedTxn);
+                            }
+                            producerStateManager.updateMapEndOffset(offset + 1);
+                            handleGroupFuture = CompletableFuture.completedFuture(null);
+                        } catch (Exception e) {
+                            handleGroupFuture = FutureUtil.failedFuture(e);
+                        }
                     }
 
                     handleGroupFuture.whenComplete((ignored, handleGroupThrowable) -> {
@@ -2042,22 +2069,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             partitionErrorsMap.put(topicPartition, Errors.forException(handleGroupThrowable));
                             resultFuture.completeExceptionally(handleGroupThrowable);
                             return;
-                        }
-                        String fullPartitionName = KopTopic.toString(topicPartition);
-                        TopicName topicName = TopicName.get(fullPartitionName);
-
-                        long firstOffset = transactionCoordinator.removeActivePidOffset(
-                                topicName, txnMarkerEntry.producerId());
-                        long lastStableOffset = transactionCoordinator.getLastStableOffset(topicName, offset);
-
-                        if (txnMarkerEntry.transactionResult().equals(TransactionResult.ABORT)) {
-                            transactionCoordinator.addAbortedIndex(AbortedIndexEntry.builder()
-                                    .version(request.version())
-                                    .pid(txnMarkerEntry.producerId())
-                                    .firstOffset(firstOffset)
-                                    .lastOffset(offset)
-                                    .lastStableOffset(lastStableOffset)
-                                    .build());
                         }
                         partitionErrorsMap.put(topicPartition, Errors.NONE);
                         resultFuture.complete(null);
@@ -2074,6 +2085,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
             response.complete(new WriteTxnMarkersResponse(resultMap));
         });
+    }
+
+    private ProducerStateManager.AnalyzeResult validateTxnMarker(
+            WriteTxnMarkersRequest.TxnMarkerEntry txnMarkerEntry, ProducerStateManager producerStateManager) {
+        ControlRecordType controlRecordType =
+                txnMarkerEntry.transactionResult().equals(TransactionResult.COMMIT)
+                        ? ControlRecordType.COMMIT : ControlRecordType.ABORT;
+        EndTransactionMarker marker = new EndTransactionMarker(
+                controlRecordType, txnMarkerEntry.coordinatorEpoch());
+        MemoryRecords memoryRecords = MemoryRecords.withEndTransactionMarker(
+                txnMarkerEntry.producerId(), txnMarkerEntry.producerEpoch(), marker);
+        return producerStateManager.analyzeAndValidateProducerState(memoryRecords, Optional.empty(),
+                ProducerStateManager.AppendOrigin.Client);
     }
 
     @Override

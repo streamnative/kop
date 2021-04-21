@@ -389,6 +389,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private Set<String> kopAllowedNamespaces;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Max producer id expiration millisecond."
+    )
+    private int maxProducerIdExpirationMs = 60 * 60 * 1000;
+
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();
         for (String listener : advertisedListeners.split(END_POINT_SEPARATOR)) {
