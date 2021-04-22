@@ -1,0 +1,167 @@
+package io.streamnative.pulsar.handlers.kop;
+
+import com.google.common.collect.Sets;
+import java.net.URL;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Optional;
+import java.util.Properties;
+
+import lombok.Cleanup;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.common.policies.data.RetentionPolicies;
+import org.apache.pulsar.common.policies.data.TenantInfo;
+import org.testng.Assert;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+@Slf4j
+public class InnerTopicProtectionTest extends KopProtocolHandlerTestBase {
+
+    protected int offsetsTopicNumPartitions;
+
+    protected KafkaServiceConfiguration resetConfig(int brokerPort, int webPort, int kafkaPort) {
+        KafkaServiceConfiguration kConfig = new KafkaServiceConfiguration();
+        kConfig.setBrokerServicePort(Optional.ofNullable(brokerPort));
+        kConfig.setWebServicePort(Optional.ofNullable(webPort));
+        kConfig.setListeners(PLAINTEXT_PREFIX + "localhost:" + kafkaPort);
+
+        kConfig.setOffsetsTopicNumPartitions(offsetsTopicNumPartitions);
+        kConfig.setEnableGroupCoordinator(true);
+
+        kConfig.setAdvertisedAddress("localhost");
+        kConfig.setClusterName(configClusterName);
+        kConfig.setManagedLedgerCacheSizeMB(8);
+        kConfig.setActiveConsumerFailoverDelayTimeMillis(0);
+        kConfig.setDefaultNumberOfNamespaceBundles(2);
+        kConfig.setZookeeperServers("localhost:2181");
+        kConfig.setConfigurationStoreServers("localhost:3181");
+        kConfig.setEnableGroupCoordinator(true);
+        kConfig.setAuthenticationEnabled(false);
+        kConfig.setAuthorizationEnabled(false);
+        kConfig.setAllowAutoTopicCreation(true);
+        kConfig.setAllowAutoTopicCreationType("partitioned");
+        kConfig.setBrokerDeleteInactiveTopicsEnabled(false);
+        //kConfig.setSystemTopicEnabled(true);
+        //kConfig.setTopicLevelPoliciesEnabled(true);
+
+        // set protocol related config
+        URL testHandlerUrl = this.getClass().getClassLoader().getResource("test-protocol-handler.nar");
+        Path handlerPath;
+        try {
+            handlerPath = Paths.get(testHandlerUrl.toURI());
+        } catch (Exception e) {
+            log.error("failed to get handler Path, handlerUrl: {}. Exception: ", testHandlerUrl, e);
+            return null;
+        }
+
+        String protocolHandlerDir = handlerPath.toFile().getParent();
+
+        kConfig.setProtocolHandlerDirectory(
+            protocolHandlerDir
+        );
+        kConfig.setMessagingProtocols(Sets.newHashSet("kafka"));
+
+        return kConfig;
+    }
+
+    @Override
+    protected void resetConfig() {
+        offsetsTopicNumPartitions = 16;
+        conf = resetConfig(
+            brokerPort,
+            brokerWebservicePort,
+            kafkaBrokerPort);
+
+        log.info("Ports --  broker: {}, brokerWeb:{}, kafka: {}",
+            brokerPort, brokerWebservicePort, kafkaBrokerPort);
+    }
+
+    @BeforeMethod
+    @Override
+    protected void setup() throws Exception {
+        super.internalSetup();
+        log.info("success internal setup");
+
+        if (!admin.clusters().getClusters().contains(configClusterName)) {
+            // so that clients can test short names
+            admin.clusters().createCluster(configClusterName,
+                new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
+        } else {
+            admin.clusters().updateCluster(configClusterName,
+                new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
+        }
+
+        if (!admin.tenants().getTenants().contains("public")) {
+            admin.tenants().createTenant("public",
+                new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
+        } else {
+            admin.tenants().updateTenant("public",
+                new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
+        }
+        if (!admin.namespaces().getNamespaces("public").contains("public/default")) {
+            admin.namespaces().createNamespace("public/default");
+            admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
+            admin.namespaces().setRetention("public/default",
+                new RetentionPolicies(60, 1000));
+        }
+        if (!admin.namespaces().getNamespaces("public").contains("public/__kafka")) {
+            admin.namespaces().createNamespace("public/__kafka");
+            admin.namespaces().setNamespaceReplicationClusters("public/__kafka", Sets.newHashSet("test"));
+            admin.namespaces().setRetention("public/__kafka",
+                new RetentionPolicies(-1, -1));
+        }
+    }
+
+    @AfterMethod
+    @Override
+    protected void cleanup() throws Exception {
+        super.internalCleanup();
+    }
+
+    @Test(timeOut = 30000)
+    public void testInnerTopicProduce() throws Exception {
+        final String offsetTopic = "public/__kafka/__consumer_offsets";
+        final String transactionTopic = "public/__kafka/__transaction_state";
+        final String systemTopic = "__change_events";
+        final String commonTopic = "normal-topic";
+
+        // test inner topic produce
+        @Cleanup
+        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        final String msg = "test-inner-topic-produce-and-consume";
+        assertProduceMessage(kafkaProducer, offsetTopic, msg, true);
+        assertProduceMessage(kafkaProducer, transactionTopic, msg, true);
+        assertProduceMessage(kafkaProducer, commonTopic, msg, false);
+    }
+
+    private void assertProduceMessage(KafkaProducer producer, final String topic, final String value,
+                                      boolean assertException) {
+        try {
+            producer.send(new ProducerRecord<>(topic, value), ((metadata, exception) -> {
+                if (assertException) {
+                    Assert.assertNotNull(exception);
+                } else {
+                    Assert.assertNull(exception);
+                }
+            })).get();
+        } catch (Exception e) {
+
+        }
+    }
+
+    protected KafkaProducer<String, String> newKafkaProducer() {
+        final Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000);
+        return new KafkaProducer<>(props);
+    }
+}

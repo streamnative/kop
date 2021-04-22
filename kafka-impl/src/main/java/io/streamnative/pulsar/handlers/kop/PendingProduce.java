@@ -126,6 +126,12 @@ public class PendingProduce {
             throw new RuntimeException(e);
         }
 
+        if (persistentTopic.isSystemTopic()) {
+            log.error("Not support produce message to system topic: {}", persistentTopic);
+            responseFuture.complete(new PartitionResponse(Errors.INVALID_TOPIC_EXCEPTION));
+            return;
+        }
+
         if (log.isDebugEnabled()) {
             log.debug("publishMessages for topic partition: {}, records size is {}", partitionName, numMessages);
         }
