@@ -13,14 +13,14 @@
  */
 package org.apache.kafka.common.requests;
 
+import java.util.Map;
+
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.Struct;
 
-import java.util.Map;
-
 /**
  * A wrapper for {@link org.apache.kafka.common.requests.AbstractResponse} that
- * can perform some cleanup tasks after writing to the channel
+ * can perform some cleanup tasks after writing to the channel.
  */
 public class ResponseCallbackWrapper extends AbstractResponse {
 

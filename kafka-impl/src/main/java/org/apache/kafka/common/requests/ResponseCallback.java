@@ -14,12 +14,12 @@
 package org.apache.kafka.common.requests;
 
 /**
- * Callback for cleaning-up after writing to channel
+ * Callback for cleaning-up after writing to channel.
  */
 public interface ResponseCallback {
 
     /**
-     * Callback for asynchronous call to cleanup
+     * Callback for asynchronous call to cleanup.
      */
     void responseComplete();
 }
