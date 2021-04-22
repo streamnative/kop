@@ -1,3 +1,16 @@
+/**
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.collect.Sets;
@@ -13,6 +26,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
@@ -21,6 +35,9 @@ import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
+/**
+ * Inner topic protection test.
+ */
 @Slf4j
 public class InnerTopicProtectionTest extends KopProtocolHandlerTestBase {
 
@@ -126,12 +143,13 @@ public class InnerTopicProtectionTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 30000)
-    public void testInnerTopicProduce() throws Exception {
+    public void testInnerTopicProduce() throws PulsarAdminException {
         final String offsetTopic = "public/__kafka/__consumer_offsets";
         final String transactionTopic = "public/__kafka/__transaction_state";
         final String systemTopic = "__change_events";
         final String commonTopic = "normal-topic";
 
+        admin.topics().createPartitionedTopic(commonTopic, 3);
         // test inner topic produce
         @Cleanup
         final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();

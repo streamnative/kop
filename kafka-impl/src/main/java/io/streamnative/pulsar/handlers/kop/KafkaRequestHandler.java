@@ -1708,7 +1708,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     protected boolean isTransactionTopic(String topic) {
-        String transactionTopic = kafkaConfig.getKafkaMetadataNamespace() + "/"
+        String transactionTopic = kafkaConfig.getKafkaMetadataTenant() + "/"
             + kafkaConfig.getKafkaMetadataNamespace()
             + "/" + TRANSACTION_STATE_TOPIC_NAME;
 
