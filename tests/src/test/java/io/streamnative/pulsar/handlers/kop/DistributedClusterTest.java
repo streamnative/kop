@@ -91,9 +91,6 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kConfig.setAllowAutoTopicCreation(true);
         kConfig.setAllowAutoTopicCreationType("partitioned");
         kConfig.setBrokerDeleteInactiveTopicsEnabled(false);
-        kConfig.setLoadBalancerEnabled(false);
-        kConfig.setLoadBalancerSheddingEnabled(false);
-        kConfig.setLoadBalancerAutoBundleSplitEnabled(false);
 
         // set protocol related config
         URL testHandlerUrl = this.getClass().getClassLoader().getResource("test-protocol-handler.nar");
