@@ -52,6 +52,7 @@ import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.FetchResponse.PartitionData;
 import org.apache.kafka.common.requests.IsolationLevel;
+import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.pulsar.broker.service.Consumer;
 import org.apache.pulsar.common.naming.TopicName;
 
@@ -393,11 +394,17 @@ public final class MessageFetchContext {
                     });
 
                     resultFuture.complete(
-                            new FetchResponse(
-                                    Errors.NONE,
-                                    responseData,
-                                    ((Integer) THROTTLE_TIME_MS.defaultValue),
-                                    ((FetchRequest) fetch.getRequest()).metadata().sessionId()));
+                            new ResponseCallbackWrapper(
+                                    new FetchResponse(
+                                            Errors.NONE,
+                                            responseData,
+                                            ((Integer) THROTTLE_TIME_MS.defaultValue),
+                                            ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
+                                    () -> {
+                                        responseValues.entrySet().forEach(topicPartitionListEntry -> {
+                                            topicPartitionListEntry.getValue().forEach(Entry::release);
+                                        });
+                                    }));
                     this.recycle();
                 } else {
                     if (log.isDebugEnabled()) {
