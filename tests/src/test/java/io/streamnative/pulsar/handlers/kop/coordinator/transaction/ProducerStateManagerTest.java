@@ -553,8 +553,14 @@ public class ProducerStateManagerTest {
         assertEquals(Optional.empty(), stateManager.firstUndecidedOffset());
 
         append(stateManager, producerId, epoch, sequence, 99L, SystemTime.SYSTEM.milliseconds(), true);
-        appendEndTxnMarker(stateManager, producerId, (short) 3, ControlRecordType.COMMIT, 100L,
-                -1, SystemTime.SYSTEM.milliseconds());
+        try {
+            appendEndTxnMarker(stateManager, producerId, (short) 3, ControlRecordType.COMMIT, 100L,
+                    -1, SystemTime.SYSTEM.milliseconds());
+            fail("The control record with old epoch.");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("which is smaller than the last seen"));
+            log.info("Expected behavior.");
+        }
     }
 
     @Test
