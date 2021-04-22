@@ -45,7 +45,7 @@ import org.apache.pulsar.client.impl.PulsarClientImpl;
 @Slf4j
 public class OffsetAcker implements Closeable {
 
-    private static final Map<TopicPartition, CompletableFuture<Consumer<byte[]>>> EMPTY_CONSUMERS = new HashMap<>();
+    private static final Map<String, CompletableFuture<Consumer<byte[]>>> EMPTY_CONSUMERS = new HashMap<>();
 
     private final ConsumerBuilder<byte[]> consumerBuilder;
     private final BrokerService brokerService;
@@ -57,8 +57,8 @@ public class OffsetAcker implements Closeable {
     //     value is the created future of consumer.
     // The consumer, whose subscription is the group id, is used for acknowledging message id cumulatively.
     // This behavior is equivalent to committing offsets in Kafka.
-    private final Map<String, Map<TopicPartition, CompletableFuture<Consumer<byte[]>>>>
-            consumers = new ConcurrentHashMap<>();
+    public static final Map<String, Map<String, CompletableFuture<Consumer<byte[]>>>>
+            CONSUMERS = new ConcurrentHashMap<>();
 
     public OffsetAcker(PulsarClientImpl pulsarClient) {
         this.consumerBuilder = pulsarClient.newConsumer()
@@ -138,8 +138,8 @@ public class OffsetAcker implements Closeable {
 
     public void close(Set<String> groupIds) {
         for (String groupId : groupIds) {
-            final Map<TopicPartition, CompletableFuture<Consumer<byte[]>>>
-                    consumersToRemove = consumers.remove(groupId);
+            final Map<String, CompletableFuture<Consumer<byte[]>>>
+                    consumersToRemove = CONSUMERS.remove(groupId);
             if (consumersToRemove == null) {
                 continue;
             }
@@ -151,9 +151,7 @@ public class OffsetAcker implements Closeable {
                 }
                 final Consumer<byte[]> consumer = consumerFuture.getNow(null);
                 if (consumer != null) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Try to close consumer of [group={}] [topic={}]", groupId, topicPartition.toString());
-                    }
+                    log.debug("Try to close consumer of [group={}] [topic={}]", groupId, topicPartition);
                     consumer.closeAsync();
                 }
             });
@@ -162,35 +160,41 @@ public class OffsetAcker implements Closeable {
 
     @Override
     public void close() {
-        log.info("close OffsetAcker with {} groupIds", consumers.size());
-        close(consumers.keySet());
+        log.info("close OffsetAcker with {} groupIds", CONSUMERS.size());
+        close(CONSUMERS.keySet());
     }
 
     @NonNull
     public CompletableFuture<Consumer<byte[]>> getOrCreateConsumer(String groupId, TopicPartition topicPartition) {
-        Map<TopicPartition, CompletableFuture<Consumer<byte[]>>> group = consumers
+        Map<String, CompletableFuture<Consumer<byte[]>>> group = CONSUMERS
             .computeIfAbsent(groupId, gid -> new ConcurrentHashMap<>());
+        KopTopic kopTopic = new KopTopic(topicPartition.topic());
+        String topicName = kopTopic.getPartitionName((topicPartition.partition()));
         return group.computeIfAbsent(
-            topicPartition,
-            partition -> createConsumer(groupId, partition));
+            topicName,
+            name -> createConsumer(groupId, name));
     }
 
     @NonNull
-    private CompletableFuture<Consumer<byte[]>> createConsumer(String groupId, TopicPartition topicPartition) {
-        KopTopic kopTopic = new KopTopic(topicPartition.topic());
+    private CompletableFuture<Consumer<byte[]>> createConsumer(String groupId, String topicName) {
         return consumerBuilder.clone()
-                .topic(kopTopic.getPartitionName(topicPartition.partition()))
+                .topic(topicName)
                 .subscriptionName(groupId)
                 .subscribeAsync();
     }
 
     public CompletableFuture<Consumer<byte[]>> getConsumer(String groupId, TopicPartition topicPartition) {
-        return consumers.getOrDefault(groupId, EMPTY_CONSUMERS).get(topicPartition);
+        KopTopic kopTopic = new KopTopic(topicPartition.topic());
+        String topicName = kopTopic.getPartitionName((topicPartition.partition()));
+        return CONSUMERS.getOrDefault(groupId, EMPTY_CONSUMERS).get(topicName);
     }
 
     public void removeConsumer(String groupId, TopicPartition topicPartition) {
+        KopTopic kopTopic = new KopTopic(topicPartition.topic());
+        String topicName = kopTopic.getPartitionName((topicPartition.partition()));
+
         final CompletableFuture<Consumer<byte[]>> consumerFuture =
-                consumers.getOrDefault(groupId, EMPTY_CONSUMERS).remove(topicPartition);
+                CONSUMERS.getOrDefault(groupId, EMPTY_CONSUMERS).remove(topicName);
         if (consumerFuture != null) {
             consumerFuture.whenComplete((consumer, e) -> {
                 if (e == null) {
@@ -201,5 +205,19 @@ public class OffsetAcker implements Closeable {
                 }
             });
         }
+    }
+
+    public static void removeOffsetAcker(String topicName) {
+        CONSUMERS.forEach((groupId, group) -> {
+            CompletableFuture<Consumer<byte[]> > consumerCompletableFuture = group.remove(topicName);
+            if (consumerCompletableFuture != null) {
+                consumerCompletableFuture.thenApply(Consumer::closeAsync).whenCompleteAsync((ignore, t) -> {
+                    if (t != null) {
+                        log.error("Failed to close offsetAcker consumer when remove partition {}.",
+                            topicName);
+                    }
+                });
+            }
+        });
     }
 }

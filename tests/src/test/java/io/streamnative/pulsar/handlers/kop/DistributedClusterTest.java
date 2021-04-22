@@ -15,8 +15,8 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
+import static org.junit.Assert.assertTrue;
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -31,7 +31,6 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import lombok.Cleanup;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -195,7 +194,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
     }
 
 
-    @AfterMethod
+    @AfterMethod(timeOut = 30000)
     @Override
     public void cleanup() throws Exception {
         log.info("--- Shutting down ---");
@@ -298,19 +297,14 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         // 1. produce message with Kafka producer.
         int totalMsgs = 50;
         String messageStrPrefix = "Message_Kop_KafkaProduceKafkaConsume_" + partitionNumber + "_";
-        @Cleanup
         KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort(), true);
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
 
         // 2. create 4 kafka consumer from different consumer groups.
         //    consume data and commit offsets for 4 consumer group.
-        @Cleanup
         KConsumer kConsumer1 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-1");
-        @Cleanup
         KConsumer kConsumer2 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-2");
-        @Cleanup
         KConsumer kConsumer3 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-3");
-        @Cleanup
         KConsumer kConsumer4 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-4");
 
         List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
@@ -394,6 +388,12 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         assertTrue(records.isEmpty());
         records = kConsumer4.getConsumer().poll(Duration.ofMillis(200));
         assertTrue(records.isEmpty());
+
+        kProducer.close();
+        kConsumer1.close();
+        kConsumer2.close();
+        kConsumer3.close();
+        kConsumer4.close();
     }
 
     // Unit test for unload / reload user topic bundle, verify it works well.
@@ -421,15 +421,12 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         // 2. produce consume message with Kafka producer.
         int totalMsgs = 50;
         String messageStrPrefix = "Message_" + kafkaTopicName + "_";
-        @Cleanup
         KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort(), true);
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
 
         List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
             .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
-        @Cleanup
         KConsumer kConsumer1 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-1");
-        @Cleanup
         KConsumer kConsumer2 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-2");
         log.info("Partition size: {}, will consume and commitOffset for 2 consumers",
             topicPartitions.size());
@@ -445,6 +442,10 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
         kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
         kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
+
+        kProducer.close();
+        kConsumer1.close();
+        kConsumer2.close();
     }
 
     @Test(timeOut = 30000)
@@ -470,15 +471,12 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         // 2. produce consume message with Kafka producer.
         int totalMsgs = 50;
         String messageStrPrefix = "Message_" + kafkaTopicName + "_";
-        @Cleanup
         KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort(), true);
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
 
         List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
             .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
-        @Cleanup
         KConsumer kConsumer1 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-1");
-        @Cleanup
         KConsumer kConsumer2 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-2");
         log.info("Partition size: {}, will consume and commitOffset for 2 consumers",
             topicPartitions.size());
@@ -494,5 +492,9 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
         kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
         kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
+
+        kProducer.close();
+        kConsumer1.close();
+        kConsumer2.close();
     }
 }

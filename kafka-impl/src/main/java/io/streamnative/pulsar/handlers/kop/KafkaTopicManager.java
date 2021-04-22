@@ -55,12 +55,17 @@ public class KafkaTopicManager {
 
     // consumerTopicManagers for consumers cache.
     @Getter
-    private final ConcurrentHashMap<String, CompletableFuture<KafkaTopicConsumerManager>> consumerTopicManagers;
+    private static final ConcurrentHashMap<String, CompletableFuture<KafkaTopicConsumerManager>>
+        consumerTopicManagers = new ConcurrentHashMap<>();
 
     // cache for topics: <topicName, persistentTopic>, for removing producer
-    private final ConcurrentHashMap<String, CompletableFuture<PersistentTopic>> topics;
+    @Getter
+    private static final ConcurrentHashMap<String, CompletableFuture<PersistentTopic>>
+        topics = new ConcurrentHashMap<>();
     // cache for references in PersistentTopic: <topicName, producer>
-    private final ConcurrentHashMap<String, Producer> references;
+    @Getter
+    private static final ConcurrentHashMap<String, Producer>
+        references = new ConcurrentHashMap<>();
 
     private InternalServerCnx internalServerCnx;
 
@@ -89,10 +94,6 @@ public class KafkaTopicManager {
         this.pulsarService = kafkaRequestHandler.getPulsarService();
         this.brokerService = pulsarService.getBrokerService();
         this.internalServerCnx = new InternalServerCnx(requestHandler);
-
-        consumerTopicManagers = new ConcurrentHashMap<>();
-        topics = new ConcurrentHashMap<>();
-        references = new ConcurrentHashMap<>();
 
         this.rwLock = new ReentrantReadWriteLock();
         this.closed = false;
@@ -357,27 +358,27 @@ public class KafkaTopicManager {
         return references.get(topicName);
     }
 
-    public void deReference(String topicName) {
+    public static void deReference(String topicName) {
         try {
             removeTopicManagerCache(topicName);
 
             if (consumerTopicManagers.containsKey(topicName)) {
-                CompletableFuture<KafkaTopicConsumerManager> manager = consumerTopicManagers.get(topicName);
-                manager.get().close();
-                consumerTopicManagers.remove(topicName);
+                consumerTopicManagers.remove(topicName).get().close();
             }
 
             if (!topics.containsKey(topicName)) {
                 return;
             }
             PersistentTopic persistentTopic = topics.get(topicName).get();
-            if (persistentTopic != null) {
-                persistentTopic.removeProducer(references.get(topicName));
+            Producer producer = references.get(topicName);
+            if (persistentTopic != null && producer != null) {
+                persistentTopic.removeProducer(producer);
             }
             topics.remove(topicName);
+
+            OffsetAcker.removeOffsetAcker(topicName);
         } catch (Exception e) {
-            log.error("[{}] Failed to close reference for individual topic {}. exception:",
-                requestHandler.ctx.channel(), topicName, e);
+            log.error("Failed to close reference for individual topic {}. exception:", topicName, e);
         }
     }
 
