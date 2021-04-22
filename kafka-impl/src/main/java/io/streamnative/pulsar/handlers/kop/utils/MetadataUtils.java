@@ -160,7 +160,9 @@ public class MetadataUtils {
                 namespaces.setRetention(kafkaMetadataNamespace,
                         new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), -1));
             }
-            if (namespaces.getCompactionThreshold(kafkaMetadataNamespace) != MAX_COMPACTION_THRESHOLD) {
+
+            Long compactionThreshold = namespaces.getCompactionThreshold(kafkaMetadataNamespace);
+            if (compactionThreshold != null && compactionThreshold != MAX_COMPACTION_THRESHOLD) {
                 namespaces.setCompactionThreshold(kafkaMetadataNamespace, MAX_COMPACTION_THRESHOLD);
             }
 
