@@ -47,7 +47,7 @@ import org.testng.annotations.Test;
 */
 public class MetadataUtilsTest {
 
-    @Test()
+    @Test(timeOut = 30000)
     public void testCreateKafkaMetadataIfMissing() throws Exception {
         KopTopic.initialize("public/default");
         KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
@@ -106,6 +106,8 @@ public class MetadataUtilsTest {
             + "/" + conf.getKafkaMetadataNamespace()), any(Set.class));
         verify(mockNamespaces, times(2)).setRetention(eq(conf.getKafkaMetadataTenant() + "/"
             + conf.getKafkaMetadataNamespace()), any(RetentionPolicies.class));
+        verify(mockNamespaces, times(2)).setNamespaceMessageTTL(eq(conf.getKafkaMetadataTenant() + "/"
+            + conf.getKafkaMetadataNamespace()), any(Integer.class));
         verify(mockTopics, times(1)).createPartitionedTopic(
                 eq(offsetsTopic.getFullName()), eq(conf.getOffsetsTopicNumPartitions()));
         verify(mockTopics, times(1)).createPartitionedTopic(

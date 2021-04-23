@@ -166,6 +166,12 @@ public class MetadataUtils {
                 namespaces.setCompactionThreshold(kafkaMetadataNamespace, MAX_COMPACTION_THRESHOLD);
             }
 
+            int targetMessageTTL = conf.getOffsetsMessageTTL();
+            Integer messageTTL = namespaces.getNamespaceMessageTTL(kafkaMetadataNamespace);
+            if (messageTTL == null || messageTTL != targetMessageTTL) {
+                namespaces.setNamespaceMessageTTL(kafkaMetadataNamespace, targetMessageTTL);
+            }
+
             namespaceExists = true;
 
             // Check if the offsets topic exists and create it if not
