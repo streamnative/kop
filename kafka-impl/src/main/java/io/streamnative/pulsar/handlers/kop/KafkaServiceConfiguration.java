@@ -45,6 +45,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     // offset configuration
     private static final int OffsetsRetentionMinutes = 3 * 24 * 60;
     public static final int DefaultOffsetsTopicNumPartitions = 8;
+    private static final int OffsetsMessageTTL = 3 * 24 * 3600;
     // txn configuration
     public static final int DefaultTxnLogTopicNumPartitions = 8;
 
@@ -142,6 +143,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         doc = "Offsets older than this retention period will be discarded"
     )
     private long offsetsRetentionMinutes = OffsetsRetentionMinutes;
+
+    @FieldContext(
+        category = CATEGORY_KOP,
+        doc = "Offsets message ttl in seconds. default is 259200."
+    )
+    private int offsetsMessageTTL = OffsetsMessageTTL;
 
     @FieldContext(
         category = CATEGORY_KOP,
