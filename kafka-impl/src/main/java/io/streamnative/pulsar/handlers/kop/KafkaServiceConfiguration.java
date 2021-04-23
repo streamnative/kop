@@ -184,6 +184,19 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private String kafkaAdvertisedListeners;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "limit the queue size for request, \n"
+                + "like queued.max.requests in kafka.\n"
+    )
+    private int maxQueuedRequests = 500;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "limit the timeout for request, \n"
+                + "like request.timeout.ms in kafka\n"
+    )
+    private int requestTimeoutMs = 30000;
 
     // Kafka SSL configs
     @FieldContext(

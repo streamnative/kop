@@ -27,7 +27,9 @@ import java.nio.ByteBuffer;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.naming.AuthenticationException;
 
@@ -57,18 +59,19 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected SocketAddress remoteAddress;
     @Getter
     protected AtomicBoolean isActive = new AtomicBoolean(false);
-
     // Queue to make response get responseFuture in order.
     private Queue<ResponseAndRequest> responseQueue;
 
-    final int maxQueuedRequests = 500;
     // Queue to make request at the given capacity.
     private ArrayBlockingQueue<KafkaHeaderAndRequest> requestQueue;
 
     protected final RequestStats requestStats;
+    @Getter
+    protected final KafkaServiceConfiguration kafkaConfig;
 
-    public KafkaCommandDecoder(StatsLogger statsLogger) {
+    public KafkaCommandDecoder(StatsLogger statsLogger, KafkaServiceConfiguration kafkaConfig) {
         this.requestStats = new RequestStats(statsLogger);
+        this.kafkaConfig = kafkaConfig;
     }
 
     @Override
@@ -78,7 +81,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         this.ctx = ctx;
         isActive.set(true);
         responseQueue = Queues.newConcurrentLinkedQueue();
-        requestQueue = new ArrayBlockingQueue(maxQueuedRequests);
+        requestQueue = new ArrayBlockingQueue(kafkaConfig.getMaxQueuedRequests());
     }
 
     @Override
@@ -303,14 +306,15 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                         response.getRequest().getHeader());
                 }
 
-                ByteBuf result = responseToByteBuf(response.getResponseFuture().get(30,
-                        TimeUnit.SECONDS), response.getRequest());
+                ByteBuf result = responseToByteBuf(response.getResponseFuture().get(
+                        kafkaConfig.getRequestTimeoutMs(),
+                        TimeUnit.MILLISECONDS), response.getRequest());
                 channel.writeAndFlush(result);
-            } catch (Exception e) {
+            } catch (ExecutionException | TimeoutException | InterruptedException e) {
                 // get response result may timeout.
                 log.error("request {}: error to get Response ByteBuf: ",
-                        response.getRequest().getHeader().apiKey(), e);
-                // make sure there is response to client.
+                        response.getRequest().getHeader().apiKey(), e.getCause());
+                // make sure there is response to client when timeout.
                 responseQueue.add(response);
                 writeAndFlushWhenInactiveChannelOrTimeout(channel);
             } finally {

@@ -171,7 +171,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     public static final long DEFAULT_TIMESTAMP = 0L;
 
     private final PulsarService pulsarService;
-    private final KafkaServiceConfiguration kafkaConfig;
     private final KafkaTopicManager topicManager;
     private final GroupCoordinator groupCoordinator;
     private final TransactionCoordinator transactionCoordinator;
@@ -204,9 +203,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
                                StatsLogger statsLogger) throws Exception {
-        super(statsLogger);
+        super(statsLogger, kafkaConfig);
         this.pulsarService = pulsarService;
-        this.kafkaConfig = kafkaConfig;
         this.groupCoordinator = groupCoordinator;
         this.transactionCoordinator = transactionCoordinator;
         this.clusterName = kafkaConfig.getClusterName();
