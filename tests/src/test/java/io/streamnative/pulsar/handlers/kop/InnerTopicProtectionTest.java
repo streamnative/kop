@@ -162,15 +162,14 @@ public class InnerTopicProtectionTest extends KopProtocolHandlerTestBase {
     private void assertProduceMessage(KafkaProducer producer, final String topic, final String value,
                                       boolean assertException) {
         try {
-            producer.send(new ProducerRecord<>(topic, value), ((metadata, exception) -> {
-                if (assertException) {
-                    Assert.assertNotNull(exception);
-                } else {
-                    Assert.assertNull(exception);
-                }
-            })).get();
+            producer.send(new ProducerRecord<>(topic, value)).get();
         } catch (Exception e) {
-
+            if (assertException) {
+                Assert.assertEquals(e.getCause().getMessage(),
+                    "The request attempted to perform an operation on an invalid topic.");
+            } else {
+                Assert.fail();
+            }
         }
     }
 
