@@ -30,7 +30,7 @@ The following table lists all KoP configurations.
 |groupInitialRebalanceDelayMs| The time the group coordinator waits for more consumers to join a new group before performing the first rebalance <br> A longer delay potentially reduces rebalances, but increases the time until processing begins.  |3000|
 |offsetsTopicCompressionCodec| Compression codec for the offsets topic <br>compression may be used to achieve "atomic" commits  |N/A|
 |offsetMetadataMaxSize| The maximum size in bytes for a metadata entry associated with an offset commit  |4096|
-|offsetsRetentionMinutes| Offsets older than this retention period are discarded |10080|
+|offsetsRetentionMinutes| Offsets older than this retention period are discarded |4320|
 |offsetsMessageTTL| Offsets message ttl in seconds. | 259200 |
 |offsetsRetentionCheckIntervalMs| Frequency at which to check for stale offsets  |600000|
 |offsetsTopicNumPartitions| Number of partitions for the offsets topic  |8|
