@@ -29,6 +29,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.naming.AuthenticationException;
 
@@ -309,15 +310,17 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                         kafkaConfig.getRequestTimeoutMs(),
                         TimeUnit.MILLISECONDS), response.getRequest());
                 channel.writeAndFlush(result);
-            } catch (Exception e) {
+            } catch (ExecutionException e) {
                 // catch ExecutionException if this future completed exceptionally
-                if (e instanceof ExecutionException) {
-                    log.error("request {}: error to get Response ByteBuf: ",
-                            response.getRequest().getHeader(), e.getCause());
-                } else {
-                    log.error("request {} timed out or was interrupted",
-                            response.getRequest().getHeader());
-                }
+                log.error("request {}: error to get Response ByteBuf: ",
+                        response.getRequest().getHeader(), e.getCause());
+                // make sure there is response to client when timeout.
+                responseQueue.add(response);
+                writeAndFlushWhenInactiveChannelOrException(channel);
+            } catch (TimeoutException | InterruptedException e) {
+                // catch ExecutionException if this future completed timeout
+                log.error("request {} timed out or was interrupted",
+                        response.getRequest().getHeader());
                 // make sure there is response to client when timeout.
                 responseQueue.add(response);
                 writeAndFlushWhenInactiveChannelOrException(channel);
