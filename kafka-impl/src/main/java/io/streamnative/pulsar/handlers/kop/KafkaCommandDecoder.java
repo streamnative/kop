@@ -29,7 +29,6 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.naming.AuthenticationException;
 
@@ -310,13 +309,18 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                         kafkaConfig.getRequestTimeoutMs(),
                         TimeUnit.MILLISECONDS), response.getRequest());
                 channel.writeAndFlush(result);
-            } catch (ExecutionException | TimeoutException | InterruptedException e) {
-                // get response result may timeout.
-                log.error("request {}: error to get Response ByteBuf: ",
-                        response.getRequest().getHeader().apiKey(), e.getCause());
+            } catch (Exception e) {
+                // catch ExecutionException if this future completed exceptionally
+                if (e instanceof ExecutionException) {
+                    log.error("request {}: error to get Response ByteBuf: ",
+                            response.getRequest().getHeader(), e.getCause());
+                } else {
+                    log.error("request {} timed out or was interrupted",
+                            response.getRequest().getHeader());
+                }
                 // make sure there is response to client when timeout.
                 responseQueue.add(response);
-                writeAndFlushWhenInactiveChannelOrTimeout(channel);
+                writeAndFlushWhenInactiveChannelOrException(channel);
             } finally {
                 try {
                     if (response.getResponseFuture().get() instanceof ResponseCallbackWrapper) {
@@ -330,7 +334,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     }
 
     // return all the current command before a channel close. return Error response for all pending request.
-    protected void writeAndFlushWhenInactiveChannelOrTimeout(Channel channel) {
+    protected void writeAndFlushWhenInactiveChannelOrException(Channel channel) {
         // loop from first responseFuture, and return them all
         while (responseQueue != null && responseQueue.peek() != null) {
             try {
