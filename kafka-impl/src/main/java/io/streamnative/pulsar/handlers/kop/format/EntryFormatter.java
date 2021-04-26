@@ -46,7 +46,7 @@ public interface EntryFormatter {
      * @param magic the Kafka record batch's magic value
      * @return the Kafka records
      */
-    MemoryRecords decode(final List<Entry> entries, final byte magic);
+    DecodeResult decode(final List<Entry> entries, final byte magic);
 
     /**
      * Get the number of messages from MemoryRecords.

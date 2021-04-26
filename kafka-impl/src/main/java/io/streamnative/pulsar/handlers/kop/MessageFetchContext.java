@@ -20,11 +20,13 @@ import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -316,6 +318,7 @@ public final class MessageFetchContext {
                             fetch.getHeader(), entriesRead.get(), allSize);
                     }
 
+                    List<DecodeResult> decodeResults = new ArrayList<>();
                     responseValues.entrySet().forEach(responseEntries -> {
                         final PartitionData partitionData;
                         TopicPartition kafkaPartition = responseEntries.getKey();
@@ -369,9 +372,10 @@ public final class MessageFetchContext {
                             });
                             CompletableFuture<Consumer> consumerFuture = requestHandler.getTopicManager()
                                     .getGroupConsumers(groupName, kafkaPartition);
-                            final MemoryRecords records = requestHandler.getEntryFormatter().decode(entries, magic);
+                            final DecodeResult decodeResult = requestHandler.getEntryFormatter().decode(entries, magic);
+                            decodeResults.add(decodeResult);
                             // collect consumer metrics
-                            EntryFormatter.updateConsumerStats(records, consumerFuture);
+                            EntryFormatter.updateConsumerStats(decodeResult.getRecords(), consumerFuture);
 
                             List<FetchResponse.AbortedTransaction> abortedTransactions;
                             if (requestHandler.getKafkaConfig().isEnableTransactionCoordinator()
@@ -388,7 +392,7 @@ public final class MessageFetchContext {
                                 highWatermark,
                                 highWatermark,
                                 abortedTransactions,
-                                records);
+                                decodeResult.getRecords());
                         }
                         responseData.put(kafkaPartition, partitionData);
                     });
@@ -401,8 +405,11 @@ public final class MessageFetchContext {
                                             ((Integer) THROTTLE_TIME_MS.defaultValue),
                                             ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
                                     () -> {
-                                        responseValues.entrySet().forEach(topicPartitionListEntry -> {
-                                            topicPartitionListEntry.getValue().forEach(Entry::release);
+                                        // release the batched ByteBuf if necessary
+                                        decodeResults.forEach(decodeResult -> {
+                                            if (decodeResult.getReleasedByteBuf() != null) {
+                                                decodeResult.getReleasedByteBuf().release();
+                                            }
                                         });
                                     }));
                     this.recycle();
