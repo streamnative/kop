@@ -46,7 +46,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
 
     @Override
     public DecodeResult decode(List<Entry> entries, byte magic) {
-        //
+        // reset header information
         List<ByteBuf> orderedByteBuf = entries.stream().parallel().map(entry -> {
             long startOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
             final ByteBuf byteBuf = entry.getDataBuffer();
