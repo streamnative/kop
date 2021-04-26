@@ -309,7 +309,19 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 ByteBuf result = responseToByteBuf(response.getResponseFuture().get(
                         kafkaConfig.getRequestTimeoutMs(),
                         TimeUnit.MILLISECONDS), response.getRequest());
-                channel.writeAndFlush(result);
+                channel.writeAndFlush(result)
+                        .addListener(future -> {
+                            if (future.isDone()) {
+                                try {
+                                    if (response.getResponseFuture().get() instanceof ResponseCallbackWrapper) {
+                                        ((ResponseCallbackWrapper) response.getResponseFuture().get())
+                                                .responseComplete();
+                                    }
+                                } catch (Exception e) {
+                                    log.error("Error in executing callback after sending response, ", e);
+                                }
+                            }
+                        });
             } catch (ExecutionException e) {
                 // catch ExecutionException if this future completed exceptionally
                 log.error("request {}: error to get Response ByteBuf: ",
@@ -324,14 +336,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 // make sure there is response to client when timeout.
                 responseQueue.add(response);
                 writeAndFlushWhenInactiveChannelOrException(channel);
-            } finally {
-                try {
-                    if (response.getResponseFuture().get() instanceof ResponseCallbackWrapper) {
-                        ((ResponseCallbackWrapper) response.getResponseFuture().get()).responseComplete();
-                    }
-                } catch (Exception e) {
-                    log.error("Error in executing callback after sending response, ", e);
-                }
             }
         }
     }
@@ -356,7 +360,19 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 pair.getResponseFuture().complete(apiResponse);
 
                 ByteBuf result = responseToByteBuf(pair.getResponseFuture().get(), pair.getRequest());
-                channel.writeAndFlush(result);
+                channel.writeAndFlush(result)
+                        .addListener(future -> {
+                            if (future.isDone()) {
+                                try {
+                                    if (pair.getResponseFuture().get() instanceof ResponseCallbackWrapper) {
+                                        ((ResponseCallbackWrapper) pair.getResponseFuture().get())
+                                                .responseComplete();
+                                    }
+                                } catch (Exception e) {
+                                    log.error("Error in executing callback after sending response, ", e);
+                                }
+                            }
+                        });
             } catch (Exception e) {
                 // should not comes here.
                 log.error("error to get Response ByteBuf:", e);
