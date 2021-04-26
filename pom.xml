@@ -61,6 +61,7 @@
     <os-maven-plugin.version>1.4.1.Final</os-maven-plugin.version>
     <puppycrawl.checkstyle.version>6.19</puppycrawl.checkstyle.version>
     <spotbugs-maven-plugin.version>3.1.8</spotbugs-maven-plugin.version>
+    <avro.version>1.10.2</avro.version>
   </properties>
 
   <licenses>
@@ -226,6 +227,13 @@
       <version>${pulsar.version}</version>
       <type>test-jar</type>
       <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.avro</groupId>
+      <artifactId>avro</artifactId>
+      <version>${avro.version}</version>
+      <scope>provided</scope>
     </dependency>
 
   </dependencies>

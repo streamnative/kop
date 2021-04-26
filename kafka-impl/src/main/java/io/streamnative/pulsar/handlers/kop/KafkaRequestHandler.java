@@ -78,6 +78,7 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.CorruptRecordException;
+import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
@@ -651,6 +652,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         for (Map.Entry<TopicPartition, ? extends Records> entry : produceRequest.partitionRecordsOrFail().entrySet()) {
             TopicPartition topicPartition = entry.getKey();
             try {
+                String fullPartitionName = KopTopic.toString(topicPartition);
+                if (isOffsetTopic(fullPartitionName) || isTransactionTopic(fullPartitionName)) {
+                    log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
+                        ctx.channel(), produceHar.getHeader(), topicPartition);
+                    throw new InvalidTopicException(Errors.INVALID_TOPIC_EXCEPTION.message());
+                }
+
                 MemoryRecords validRecords = validateRecords(produceHar.getHeader().apiVersion(),
                     topicPartition, (MemoryRecords) entry.getValue());
 
@@ -663,7 +671,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         topicPartition.topic(), topicPartition.partition(), responsesSize);
                 }
 
-                String fullPartitionName = KopTopic.toString(topicPartition);
                 PendingProduce pendingProduce = new PendingProduce(partitionResponse, topicManager, fullPartitionName,
                     entryFormatter, validRecords, executor, transactionCoordinator, requestStats);
                 PendingProduceQueue queue =
@@ -1692,12 +1699,20 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return returnFuture;
     }
 
-    private boolean isOffsetTopic(String topic) {
+    protected boolean isOffsetTopic(String topic) {
         String offsetsTopic = kafkaConfig.getKafkaMetadataTenant() + "/"
             + kafkaConfig.getKafkaMetadataNamespace()
             + "/" + GROUP_METADATA_TOPIC_NAME;
 
-        return topic.contains(offsetsTopic);
+        return topic != null && topic.contains(offsetsTopic);
+    }
+
+    protected boolean isTransactionTopic(String topic) {
+        String transactionTopic = kafkaConfig.getKafkaMetadataTenant() + "/"
+            + kafkaConfig.getKafkaMetadataNamespace()
+            + "/" + TRANSACTION_STATE_TOPIC_NAME;
+
+        return topic != null && topic.contains(transactionTopic);
     }
 
     public CompletableFuture<PartitionMetadata> findBroker(TopicName topic) {
