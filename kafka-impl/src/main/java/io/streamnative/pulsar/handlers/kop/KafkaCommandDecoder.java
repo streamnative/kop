@@ -25,8 +25,11 @@ import java.io.Closeable;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Queue;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.naming.AuthenticationException;
 
@@ -56,14 +59,19 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected SocketAddress remoteAddress;
     @Getter
     protected AtomicBoolean isActive = new AtomicBoolean(false);
+    // Queue to make response get responseFuture in order.
+    private Queue<ResponseAndRequest> responseQueue;
 
-    // Queue to make request get responseFuture in order.
-    private Queue<ResponseAndRequest> requestsQueue;
+    // Queue to make request at the given capacity.
+    private ArrayBlockingQueue<KafkaHeaderAndRequest> requestQueue;
 
     protected final RequestStats requestStats;
+    @Getter
+    protected final KafkaServiceConfiguration kafkaConfig;
 
-    public KafkaCommandDecoder(StatsLogger statsLogger) {
+    public KafkaCommandDecoder(StatsLogger statsLogger, KafkaServiceConfiguration kafkaConfig) {
         this.requestStats = new RequestStats(statsLogger);
+        this.kafkaConfig = kafkaConfig;
     }
 
     @Override
@@ -72,7 +80,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         this.remoteAddress = ctx.channel().remoteAddress();
         this.ctx = ctx;
         isActive.set(true);
-        requestsQueue = Queues.newConcurrentLinkedQueue();
+        responseQueue = Queues.newConcurrentLinkedQueue();
+        requestQueue = new ArrayBlockingQueue(kafkaConfig.getMaxQueuedRequests());
     }
 
     @Override
@@ -150,6 +159,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
         final long timeBeforeParse = MathUtils.nowInNano();
         KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress);
+        // potentially blocking until there is room in the queue for the request.
+        requestQueue.put(kafkaHeaderAndRequest);
         requestStats.getRequestParseStats().registerSuccessfulEvent(
                 MathUtils.elapsedNanos(timeBeforeParse), TimeUnit.NANOSECONDS);
         try {
@@ -163,10 +174,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             responseFuture.whenComplete((response, e) -> {
                 ctx.channel().eventLoop().execute(() -> {
                     writeAndFlushResponseToClient(channel);
+                    // release requestQueue room
+                    requestQueue.poll();
                 });
             });
 
-            requestsQueue.add(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
+            responseQueue.add(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
             requestStats.getRequestQueueSize().inc();
 
             if (!isActive.get()) {
@@ -277,9 +290,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     // This is to make sure request get responseFuture in the same order.
     protected void writeAndFlushResponseToClient(Channel channel) {
         // loop from first responseFuture.
-        while (requestsQueue != null && requestsQueue.peek() != null
-            && requestsQueue.peek().getResponseFuture().isDone() && isActive.get()) {
-            ResponseAndRequest response = requestsQueue.remove();
+        while (responseQueue != null && responseQueue.peek() != null && isActive.get()) {
+            ResponseAndRequest response = responseQueue.remove();
             requestStats.getRequestQueueSize().dec();
             requestStats.getRequestQueuedLatencyStats().registerSuccessfulEvent(
                     MathUtils.elapsedNanos(response.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
@@ -294,11 +306,24 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                         response.getRequest().getHeader());
                 }
 
-                ByteBuf result = responseToByteBuf(response.getResponseFuture().get(), response.getRequest());
+                ByteBuf result = responseToByteBuf(response.getResponseFuture().get(
+                        kafkaConfig.getRequestTimeoutMs(),
+                        TimeUnit.MILLISECONDS), response.getRequest());
                 channel.writeAndFlush(result);
-            } catch (Exception e) {
-                // should not comes here.
-                log.error("error to get Response ByteBuf:", e);
+            } catch (ExecutionException e) {
+                // catch ExecutionException if this future completed exceptionally
+                log.error("request {}: error to get Response ByteBuf: ",
+                        response.getRequest().getHeader(), e.getCause());
+                // make sure there is response to client when timeout.
+                responseQueue.add(response);
+                writeAndFlushWhenInactiveChannelOrException(channel);
+            } catch (TimeoutException | InterruptedException e) {
+                // catch ExecutionException if this future completed timeout
+                log.error("request {} timed out or was interrupted",
+                        response.getRequest().getHeader());
+                // make sure there is response to client when timeout.
+                responseQueue.add(response);
+                writeAndFlushWhenInactiveChannelOrException(channel);
             } finally {
                 try {
                     if (response.getResponseFuture().get() instanceof ResponseCallbackWrapper) {
@@ -312,11 +337,11 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     }
 
     // return all the current command before a channel close. return Error response for all pending request.
-    protected void writeAndFlushWhenInactiveChannel(Channel channel) {
+    protected void writeAndFlushWhenInactiveChannelOrException(Channel channel) {
         // loop from first responseFuture, and return them all
-        while (requestsQueue != null && requestsQueue.peek() != null) {
+        while (responseQueue != null && responseQueue.peek() != null) {
             try {
-                ResponseAndRequest pair = requestsQueue.remove();
+                ResponseAndRequest pair = responseQueue.remove();
                 requestStats.getRequestQueueSize().dec();
                 requestStats.getRequestQueuedLatencyStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(pair.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
@@ -327,7 +352,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 }
                 AbstractRequest request = pair.getRequest().getRequest();
                 AbstractResponse apiResponse = request
-                    .getErrorResponse(new LeaderNotAvailableException("Channel is closing!"));
+                    .getErrorResponse(new LeaderNotAvailableException("Channel is closing or Timeout!"));
                 pair.getResponseFuture().complete(apiResponse);
 
                 ByteBuf result = responseToByteBuf(pair.getResponseFuture().get(), pair.getRequest());

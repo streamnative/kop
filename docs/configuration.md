@@ -34,6 +34,8 @@ The following table lists all KoP configurations.
 |offsetsMessageTTL| Offsets message ttl in seconds. | 259200 |
 |offsetsRetentionCheckIntervalMs| Frequency at which to check for stale offsets  |600000|
 |offsetsTopicNumPartitions| Number of partitions for the offsets topic  |8|
+|maxQueuedRequests| limit the queue size for request, like queued.max.requests in kafka  |500|
+|requestTimeoutMs| limit the timeout for request, like request.timeout.ms in kafka  |30000|
 |kopSslProtocol| Kafka SSL configuration map with: SSL_PROTOCOL_CONFIG = ssl.protocol |TLS|
 |kopSslProvider| Kafka SSL configuration map with: SSL_PROVIDER_CONFIG = ssl.provider | N/A |
 |kopSslCipherSuites| Kafka SSL configuration map with: SSL_CIPHER_SUITES_CONFIG = ssl.cipher.suites|  N/A |
