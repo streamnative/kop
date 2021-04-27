@@ -169,7 +169,6 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setKafkaMetadataNamespace(namespace);
 
         // kafka related settings.
-        kafkaConfig.setEnableGroupCoordinator(true);
         kafkaConfig.setOffsetsTopicNumPartitions(1);
 
         kafkaConfig.setEnableTransactionCoordinator(true);

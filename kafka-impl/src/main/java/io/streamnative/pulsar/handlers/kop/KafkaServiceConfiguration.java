@@ -91,12 +91,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
         category = CATEGORY_KOP,
-        doc = "Flag to enable group coordinator"
-    )
-    private boolean enableGroupCoordinator = true;
-
-    @FieldContext(
-        category = CATEGORY_KOP,
         doc = "The minimum allowed session timeout for registered consumers."
             + " Shorter timeouts result in quicker failure detection at the cost"
             + " of more frequent consumer heartbeating, which can overwhelm broker resources."
