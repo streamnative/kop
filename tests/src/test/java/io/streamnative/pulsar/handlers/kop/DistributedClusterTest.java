@@ -76,7 +76,6 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kConfig.setListeners(PLAINTEXT_PREFIX + "localhost:" + kafkaPort);
 
         kConfig.setOffsetsTopicNumPartitions(offsetsTopicNumPartitions);
-        kConfig.setEnableGroupCoordinator(true);
 
         kConfig.setAdvertisedAddress("localhost");
         kConfig.setClusterName(configClusterName);
@@ -85,7 +84,6 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kConfig.setDefaultNumberOfNamespaceBundles(2);
         kConfig.setZookeeperServers("localhost:2181");
         kConfig.setConfigurationStoreServers("localhost:3181");
-        kConfig.setEnableGroupCoordinator(true);
         kConfig.setAuthenticationEnabled(false);
         kConfig.setAuthorizationEnabled(false);
         kConfig.setAllowAutoTopicCreation(true);

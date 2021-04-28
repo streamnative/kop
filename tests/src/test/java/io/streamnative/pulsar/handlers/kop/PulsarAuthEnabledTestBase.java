@@ -82,7 +82,6 @@ public abstract class PulsarAuthEnabledTestBase extends KopProtocolHandlerTestBa
         ((KafkaServiceConfiguration) conf).setKafkaNamespace(NAMESPACE);
         ((KafkaServiceConfiguration) conf).setKafkaMetadataTenant("internal");
         ((KafkaServiceConfiguration) conf).setKafkaMetadataNamespace("__kafka");
-        ((KafkaServiceConfiguration) conf).setEnableGroupCoordinator(true);
         ((KafkaServiceConfiguration) conf).setEnableTransactionCoordinator(true);
 
         conf.setClusterName(super.configClusterName);

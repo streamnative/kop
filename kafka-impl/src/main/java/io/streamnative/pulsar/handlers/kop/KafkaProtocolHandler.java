@@ -269,18 +269,16 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
 
         // init and start group coordinator
-        if (kafkaConfig.isEnableGroupCoordinator()) {
-            try {
-                initGroupCoordinator(brokerService);
-                startGroupCoordinator();
-                // and listener for Offset topics load/unload
-                brokerService.pulsar()
+        try {
+            initGroupCoordinator(brokerService);
+            startGroupCoordinator();
+            // and listener for Offset topics load/unload
+            brokerService.pulsar()
                     .getNamespaceService()
                     .addNamespaceBundleOwnershipListener(
                         new OffsetAndTopicListener(brokerService, kafkaConfig, groupCoordinator));
-            } catch (Exception e) {
-                log.error("initGroupCoordinator failed with", e);
-            }
+        } catch (Exception e) {
+            log.error("initGroupCoordinator failed with", e);
         }
         if (kafkaConfig.isEnableTransactionCoordinator()) {
             try {
@@ -303,9 +301,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
         checkState(kafkaConfig != null);
         checkState(brokerService != null);
-        if (kafkaConfig.isEnableGroupCoordinator()) {
-            checkState(groupCoordinator != null);
-        }
 
         try {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
