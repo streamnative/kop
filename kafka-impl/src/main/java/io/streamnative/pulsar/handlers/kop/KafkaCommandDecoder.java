@@ -25,7 +25,6 @@ import java.io.Closeable;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Queue;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -60,10 +59,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     @Getter
     protected AtomicBoolean isActive = new AtomicBoolean(false);
     // Queue to make response get responseFuture in order.
-    private Queue<ResponseAndRequest> responseQueue;
+    private final Queue<ResponseAndRequest> responseQueue = Queues.newConcurrentLinkedQueue();
 
     // Queue to make request at the given capacity.
-    private ArrayBlockingQueue<KafkaHeaderAndRequest> requestQueue;
+    private final FakeArrayBlockingQueue requestQueue;
 
     protected final RequestStats requestStats;
     @Getter
@@ -72,6 +71,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     public KafkaCommandDecoder(StatsLogger statsLogger, KafkaServiceConfiguration kafkaConfig) {
         this.requestStats = new RequestStats(statsLogger);
         this.kafkaConfig = kafkaConfig;
+        this.requestQueue = new FakeArrayBlockingQueue(kafkaConfig.getMaxQueuedRequests());
     }
 
     @Override
@@ -80,8 +80,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         this.remoteAddress = ctx.channel().remoteAddress();
         this.ctx = ctx;
         isActive.set(true);
-        responseQueue = Queues.newConcurrentLinkedQueue();
-        requestQueue = new ArrayBlockingQueue(kafkaConfig.getMaxQueuedRequests());
     }
 
     @Override
@@ -92,6 +90,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected void close() {
         ctx.close();
+        requestQueue.clear();
+        responseQueue.clear();
     }
 
     @Override
@@ -160,7 +160,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         final long timeBeforeParse = MathUtils.nowInNano();
         KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress);
         // potentially blocking until there is room in the queue for the request.
-        requestQueue.put(kafkaHeaderAndRequest);
+        requestQueue.put();
         requestStats.getRequestParseStats().registerSuccessfulEvent(
                 MathUtils.elapsedNanos(timeBeforeParse), TimeUnit.NANOSECONDS);
         try {
@@ -290,8 +290,11 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     // This is to make sure request get responseFuture in the same order.
     protected void writeAndFlushResponseToClient(Channel channel) {
         // loop from first responseFuture.
-        while (responseQueue != null && responseQueue.peek() != null && isActive.get()) {
-            ResponseAndRequest response = responseQueue.remove();
+        while (isActive.get()) {
+            final ResponseAndRequest response = responseQueue.poll();
+            if (response == null) {
+                break;
+            }
             requestStats.getRequestQueueSize().dec();
             requestStats.getRequestQueuedLatencyStats().registerSuccessfulEvent(
                     MathUtils.elapsedNanos(response.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
@@ -339,9 +342,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     // return all the current command before a channel close. return Error response for all pending request.
     protected void writeAndFlushWhenInactiveChannelOrException(Channel channel) {
         // loop from first responseFuture, and return them all
-        while (responseQueue != null && responseQueue.peek() != null) {
+        while (true) {
             try {
-                ResponseAndRequest pair = responseQueue.remove();
+                ResponseAndRequest pair = responseQueue.poll();
+                if (pair == null) {
+                    break;
+                }
                 requestStats.getRequestQueueSize().dec();
                 requestStats.getRequestQueuedLatencyStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(pair.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
