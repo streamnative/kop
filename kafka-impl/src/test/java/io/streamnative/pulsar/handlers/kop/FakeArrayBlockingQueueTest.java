@@ -25,14 +25,40 @@ import org.testng.annotations.Test;
  */
 public class FakeArrayBlockingQueueTest {
 
-    @Test(timeOut = 10000)
-    public void testBlockPut() throws InterruptedException {
-        final int capacity = 100;
+    private FakeArrayBlockingQueue createFullQueue(int capacity) throws InterruptedException {
         final FakeArrayBlockingQueue queue = new FakeArrayBlockingQueue(capacity);
         for (int i = 0; i < capacity; i++) {
             queue.put();
         }
-        // queue is full now
+        return queue;
+    }
+
+    @Test(timeOut = 10000)
+    public void testClear() throws Exception {
+        final int capacity = 100;
+        final FakeArrayBlockingQueue queue = createFullQueue(capacity);
+        final ExecutorService executor = Executors.newSingleThreadExecutor();
+        final AtomicBoolean completed = new AtomicBoolean(false);
+        executor.execute(() -> {
+            try {
+                queue.put(); // blocked until clear() is called
+            } catch (InterruptedException ignored) {
+            }
+            completed.set(true);
+        });
+        queue.clear();
+        executor.awaitTermination(1, TimeUnit.SECONDS);
+        executor.shutdownNow(); // cancel the current putAgain task
+
+        for (int i = 0; i < capacity - 1; i++) {
+            queue.put(); // never blocked
+        }
+    }
+
+    @Test(timeOut = 10000)
+    public void testPoll() throws Exception {
+        final int capacity = 100;
+        final FakeArrayBlockingQueue queue = createFullQueue(capacity);
         ExecutorService executor = Executors.newSingleThreadExecutor();
         final AtomicBoolean completed = new AtomicBoolean(false);
         final Runnable putAgain = () -> {
