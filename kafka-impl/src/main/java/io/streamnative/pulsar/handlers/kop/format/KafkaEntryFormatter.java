@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 
@@ -58,7 +59,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
 
         // batched ByteBuf should be released after sending to client
         int totalSize = orderedByteBuf.stream().mapToInt(ByteBuf::readableBytes).sum();
-        ByteBuf batchedByteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(totalSize);
+        ByteBuf batchedByteBuf = PulsarByteBufAllocator.DEFAULT.directBuffer(totalSize);
 
         for (ByteBuf byteBuf : orderedByteBuf) {
             batchedByteBuf.writeBytes(byteBuf);

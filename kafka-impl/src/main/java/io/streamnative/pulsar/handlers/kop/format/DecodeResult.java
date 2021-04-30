@@ -31,4 +31,10 @@ public class DecodeResult {
     public DecodeResult(MemoryRecords records) {
         this.records = records;
     }
+
+    public void release() {
+        if (releasedByteBuf != null) {
+            releasedByteBuf.release();
+        }
+    }
 }

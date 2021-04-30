@@ -406,11 +406,7 @@ public final class MessageFetchContext {
                                             ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
                                     () -> {
                                         // release the batched ByteBuf if necessary
-                                        decodeResults.forEach(decodeResult -> {
-                                            if (decodeResult.getReleasedByteBuf() != null) {
-                                                decodeResult.getReleasedByteBuf().release();
-                                            }
-                                        });
+                                        decodeResults.forEach(DecodeResult::release);
                                     }));
                     this.recycle();
                 } else {
