@@ -302,20 +302,19 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             final long nanoSecondsSinceCreated = responseAndRequest.nanoSecondsSinceCreated();
             final boolean expired =
                     (nanoSecondsSinceCreated > TimeUnit.MILLISECONDS.toNanos(kafkaConfig.getRequestTimeoutMs()));
-            // 1. responseFuture is not completed or expired, stop polling responses from responseQueue
             if (!responseFuture.isDone() && !expired) {
+                // case 1: responseFuture is not completed or expired, stop polling responses from responseQueue
                 break;
-            }
-
-            // remove the response from responseQueue and update related stats
-            if (responseQueue.remove(responseAndRequest)) {
-                responseAndRequest.updateStats(requestStats);
-            } else { // it has been removed by another thread, skip this element
-                continue;
+            } else {
+                if (responseQueue.remove(responseAndRequest)) {
+                    responseAndRequest.updateStats(requestStats);
+                } else { // it has been removed by another thread, skip this element
+                    continue;
+                }
             }
 
             final KafkaHeaderAndRequest request = responseAndRequest.getRequest();
-            // 2. responseFuture is expired
+            // case 2: responseFuture is expired
             if (expired) {
                 log.error("[{}] request {} is not completed for {} ns (> {} ms)",
                         channel, request.getHeader(), nanoSecondsSinceCreated, kafkaConfig.getRequestTimeoutMs());
@@ -323,7 +322,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 continue;
             }
 
-            // 3. responseFuture is completed exceptionally
+            // case 3: responseFuture is completed exceptionally
             if (responseFuture.isCompletedExceptionally()) {
                 responseFuture.exceptionally(e -> {
                     log.error("[{}] request {} completed exceptionally", channel, request.getHeader(), e);
@@ -332,7 +331,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 continue;
             }
 
-            // 4. responseFuture is completed normally
+            // case 4: responseFuture is completed normally
             final AbstractResponse response = responseFuture.getNow(null);
             if (log.isDebugEnabled()) {
                 log.debug("Write kafka cmd responseAndRequest back to client. \n"
