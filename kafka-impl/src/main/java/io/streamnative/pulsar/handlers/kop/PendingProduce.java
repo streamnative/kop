@@ -137,7 +137,7 @@ public class PendingProduce {
         }
         topicManager.registerProducerInPersistentTopic(partitionName, persistentTopic);
         // collect metrics
-        Producer producer = topicManager.getReferenceProducer(partitionName);
+        Producer producer = KafkaTopicManager.getReferenceProducer(partitionName);
         producer.updateRates(numMessages, byteBuf.readableBytes());
         producer.getTopic().incrementPublishCount(numMessages, byteBuf.readableBytes());
         // publish

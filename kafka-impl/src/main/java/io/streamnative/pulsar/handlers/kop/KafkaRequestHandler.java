@@ -437,7 +437,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         if (topics == null || topics.isEmpty()) {
             // clean all cache when get all metadata for librdkafka(<1.0.0).
-            topicManager.clearTopicManagerCache();
+            KafkaTopicManager.clearTopicManagerCache();
             // get all topics
             getAllTopicsAsync(pulsarTopicsFuture);
         } else {
@@ -784,7 +784,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 log.error("Failed while get persistentTopic topic: {} ts: {}. ",
                     perTopic == null ? "null" : perTopic.getName(), timestamp, t);
                 // remove cache when topic is null
-                topicManager.removeTopicManagerCache(perTopic.getName());
+                KafkaTopicManager.removeTopicManagerCache(perTopic.getName());
                 partitionData.complete(new ListOffsetResponse.PartitionData(
                     Errors.LEADER_NOT_AVAILABLE,
                     ListOffsetResponse.UNKNOWN_TIMESTAMP,
@@ -1604,7 +1604,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             log.error("[{}] failed get pulsar address, returned null.", topic.toString());
 
             // getTopicBroker returns null. topic should be removed from LookupCache.
-            topicManager.removeTopicManagerCache(topic.toString());
+            KafkaTopicManager.removeTopicManagerCache(topic.toString());
 
             returnFuture.complete(Optional.empty());
             return returnFuture;
@@ -1642,7 +1642,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 if (matchBrokers.isEmpty()) {
                     log.error("No node for broker {} under zk://loadbalance", pulsarAddress);
                     returnFuture.complete(Optional.empty());
-                    topicManager.removeTopicManagerCache(topic.toString());
+                    KafkaTopicManager.removeTopicManagerCache(topic.toString());
                     return;
                 }
 
@@ -1660,7 +1660,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             if (th != null) {
                                 log.error("Error in getDataAsync() for {}", pulsarAddress, th);
                                 returnFuture.complete(Optional.empty());
-                                topicManager.removeTopicManagerCache(topic.toString());
+                                KafkaTopicManager.removeTopicManagerCache(topic.toString());
                                 return;
                             }
 
@@ -1684,7 +1684,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             } catch (Exception e) {
                                 log.error("Error in {} lookupFuture get: ", pulsarAddress, e);
                                 returnFuture.complete(Optional.empty());
-                                topicManager.removeTopicManagerCache(topic.toString());
+                                KafkaTopicManager.removeTopicManagerCache(topic.toString());
                                 return;
                             }
 
@@ -1744,7 +1744,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 // here we found topic broker: broker2, but this is in broker1,
                 // how to clean the lookup cache?
                 if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
-                    topicManager.removeTopicManagerCache(topic.toString());
+                    KafkaTopicManager.removeTopicManagerCache(topic.toString());
                 }
 
                 if (advertisedListeners.contains(endPoint.getOriginalListener())) {
@@ -1753,7 +1753,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             log.warn("[{}] findBroker: Failed to getOrCreateTopic {}. broker:{}, exception:",
                                 ctx.channel(), topic.toString(), endPoint.getOriginalListener(), exception);
                             // remove cache when topic is null
-                            topicManager.removeTopicManagerCache(topic.toString());
+                            KafkaTopicManager.removeTopicManagerCache(topic.toString());
                             returnFuture.complete(null);
                         } else {
                             if (log.isDebugEnabled()) {
