@@ -26,9 +26,7 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.naming.AuthenticationException;
 
@@ -36,7 +34,6 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.stats.StatsLogger;
-import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.AbstractRequest;
@@ -172,6 +169,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
             CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
             responseFuture.whenComplete((response, e) -> {
+                // Do nothing if it's triggered when responseFuture is expired
+                if (response == null) {
+                    return;
+                }
                 ctx.channel().eventLoop().execute(() -> {
                     writeAndFlushResponseToClient(channel);
                     // release requestQueue room
@@ -291,82 +292,64 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected void writeAndFlushResponseToClient(Channel channel) {
         // loop from first responseFuture.
         while (isActive.get()) {
-            final ResponseAndRequest response = responseQueue.poll();
-            if (response == null) {
+            final ResponseAndRequest responseAndRequest = responseQueue.peek();
+            if (responseAndRequest == null) {
+                // responseQueue is empty
                 break;
             }
-            requestStats.getRequestQueueSize().dec();
-            requestStats.getRequestQueuedLatencyStats().registerSuccessfulEvent(
-                    MathUtils.elapsedNanos(response.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
-            try {
-                if (log.isDebugEnabled()) {
-                    log.debug("Write kafka cmd response back to client. \n"
-                            + "\trequest content: {} \n"
-                            + "\tresponse content: {}",
-                        response.getRequest().toString(),
-                        response.getResponseFuture().join().toString(response.getRequest().getRequest().version()));
-                    log.debug("Write kafka cmd responseFuture back to client. request: {}",
-                        response.getRequest().getHeader());
-                }
 
-                ByteBuf result = responseToByteBuf(response.getResponseFuture().get(
-                        kafkaConfig.getRequestTimeoutMs(),
-                        TimeUnit.MILLISECONDS), response.getRequest());
-                channel.writeAndFlush(result);
-            } catch (ExecutionException e) {
-                // catch ExecutionException if this future completed exceptionally
-                log.error("request {}: error to get Response ByteBuf: ",
-                        response.getRequest().getHeader(), e.getCause());
-                // make sure there is response to client when timeout.
-                responseQueue.add(response);
-                writeAndFlushWhenInactiveChannelOrException(channel);
-            } catch (TimeoutException | InterruptedException e) {
-                // catch ExecutionException if this future completed timeout
-                log.error("request {} timed out or was interrupted",
-                        response.getRequest().getHeader());
-                // make sure there is response to client when timeout.
-                responseQueue.add(response);
-                writeAndFlushWhenInactiveChannelOrException(channel);
-            } finally {
-                try {
-                    if (response.getResponseFuture().get() instanceof ResponseCallbackWrapper) {
-                        ((ResponseCallbackWrapper) response.getResponseFuture().get()).responseComplete();
+            final CompletableFuture<AbstractResponse> responseFuture = responseAndRequest.getResponseFuture();
+            final long nanoSecondsSinceCreated = responseAndRequest.nanoSecondsSinceCreated();
+            final boolean expired =
+                    (nanoSecondsSinceCreated > TimeUnit.MILLISECONDS.toNanos(kafkaConfig.getRequestTimeoutMs()));
+            // 1. responseFuture is not completed or expired, stop polling responses from responseQueue
+            if (!responseFuture.isDone() && !expired) {
+                break;
+            }
+
+            // remove the response from responseQueue and update related stats
+            if (responseQueue.remove(responseAndRequest)) {
+                responseAndRequest.updateStats(requestStats);
+            } else { // it has been removed by another thread, skip this element
+                continue;
+            }
+
+            final KafkaHeaderAndRequest request = responseAndRequest.getRequest();
+            // 2. responseFuture is expired
+            if (expired) {
+                log.error("[{}] request {} is not completed for {} ns (> {} ms)",
+                        channel, request.getHeader(), nanoSecondsSinceCreated, kafkaConfig.getRequestTimeoutMs());
+                responseFuture.complete(null);
+                continue;
+            }
+
+            // 3. responseFuture is completed exceptionally
+            if (responseFuture.isCompletedExceptionally()) {
+                responseFuture.exceptionally(e -> {
+                    log.error("[{}] request {} completed exceptionally", channel, request.getHeader(), e);
+                    return null;
+                });
+                continue;
+            }
+
+            // 4. responseFuture is completed normally
+            final AbstractResponse response = responseFuture.getNow(null);
+            if (log.isDebugEnabled()) {
+                log.debug("Write kafka cmd responseAndRequest back to client. \n"
+                                + "\trequest content: {} \n"
+                                + "\tresponseAndRequest content: {}",
+                        request, response.toString(request.getRequest().version()));
+            }
+            final ByteBuf result = responseToByteBuf(response, request);
+            channel.writeAndFlush(result).addListener(future -> {
+                if (future.isSuccess()) {
+                    if (response instanceof ResponseCallbackWrapper) {
+                        ((ResponseCallbackWrapper) response).responseComplete();
                     }
-                } catch (Exception e) {
-                    log.error("Error in executing callback after sending response, ", e);
+                } else {
+                    log.error("[{}] Failed to write {}", channel, request.getHeader(), future.cause());
                 }
-            }
-        }
-    }
-
-    // return all the current command before a channel close. return Error response for all pending request.
-    protected void writeAndFlushWhenInactiveChannelOrException(Channel channel) {
-        // loop from first responseFuture, and return them all
-        while (true) {
-            try {
-                ResponseAndRequest pair = responseQueue.poll();
-                if (pair == null) {
-                    break;
-                }
-                requestStats.getRequestQueueSize().dec();
-                requestStats.getRequestQueuedLatencyStats().registerSuccessfulEvent(
-                        MathUtils.elapsedNanos(pair.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
-
-                if (log.isDebugEnabled()) {
-                    log.debug("Channel Closing! Write kafka cmd responseFuture back to client. request: {}",
-                        pair.getRequest().getHeader());
-                }
-                AbstractRequest request = pair.getRequest().getRequest();
-                AbstractResponse apiResponse = request
-                    .getErrorResponse(new LeaderNotAvailableException("Channel is closing or Timeout!"));
-                pair.getResponseFuture().complete(apiResponse);
-
-                ByteBuf result = responseToByteBuf(pair.getResponseFuture().get(), pair.getRequest());
-                channel.writeAndFlush(result);
-            } catch (Exception e) {
-                // should not comes here.
-                log.error("error to get Response ByteBuf:", e);
-            }
+            });
         }
     }
 
@@ -574,6 +557,20 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         public static ResponseAndRequest of(CompletableFuture<AbstractResponse> response,
                                             KafkaHeaderAndRequest request) {
             return new ResponseAndRequest(response, request);
+        }
+
+        public long nanoSecondsSinceCreated() {
+            return MathUtils.elapsedNanos(createdTimestamp);
+        }
+
+        public boolean expired(final int requestTimeoutMs) {
+            return MathUtils.elapsedNanos(createdTimestamp) > TimeUnit.MILLISECONDS.toNanos(requestTimeoutMs);
+        }
+
+        public void updateStats(final RequestStats requestStats) {
+            requestStats.getRequestQueueSize().dec();
+            requestStats.getRequestQueuedLatencyStats()
+                    .registerSuccessfulEvent(MathUtils.elapsedNanos(createdTimestamp), TimeUnit.NANOSECONDS);
         }
 
         ResponseAndRequest(CompletableFuture<AbstractResponse> response, KafkaHeaderAndRequest request) {
