@@ -17,7 +17,6 @@ import static org.apache.kafka.common.record.Records.MAGIC_OFFSET;
 import static org.apache.kafka.common.record.Records.OFFSET_OFFSET;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
@@ -25,6 +24,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 
@@ -45,9 +45,8 @@ public class KafkaEntryFormatter implements EntryFormatter {
     }
 
     @Override
-    public MemoryRecords decode(List<Entry> entries, byte magic) {
-        // TODO The memory records should maintain multiple batches, one entry present one batch,
-        //  this is necessary, because one entry only belongs to one transaction.
+    public DecodeResult decode(List<Entry> entries, byte magic) {
+        // reset header information
         List<ByteBuf> orderedByteBuf = entries.stream().parallel().map(entry -> {
             long startOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
             final ByteBuf byteBuf = entry.getDataBuffer();
@@ -57,11 +56,18 @@ public class KafkaEntryFormatter implements EntryFormatter {
             return byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes());
         }).collect(Collectors.toList());
 
-        CompositeByteBuf batchedByteBuf = Unpooled.compositeBuffer();
-        batchedByteBuf.addComponents(true, orderedByteBuf);
+        // batched ByteBuf should be released after sending to client
+        int totalSize = orderedByteBuf.stream().mapToInt(ByteBuf::readableBytes).sum();
+        ByteBuf batchedByteBuf = PulsarByteBufAllocator.DEFAULT.directBuffer(totalSize);
 
-        MemoryRecords batchedMemoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(batchedByteBuf));
-        return batchedMemoryRecords;
+        for (ByteBuf byteBuf : orderedByteBuf) {
+            batchedByteBuf.writeBytes(byteBuf);
+        }
+
+        // release entries
+        entries.forEach(Entry::release);
+        return new DecodeResult(
+                MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(batchedByteBuf)), batchedByteBuf);
     }
 
     private static MessageMetadata getMessageMetadataWithNumberMessages(int numMessages) {

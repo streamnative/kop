@@ -113,7 +113,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
     }
 
     @Override
-    public MemoryRecords decode(final List<Entry> entries, final byte magic) {
+    public DecodeResult decode(final List<Entry> entries, final byte magic) {
         ByteBuffer byteBuffer = ByteBuffer.allocate(DEFAULT_FETCH_BUFFER_SIZE);
 
         entries.parallelStream().forEachOrdered(entry -> {
@@ -228,7 +228,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
         });
 
         byteBuffer.flip();
-        return MemoryRecords.readableRecords(byteBuffer);
+        return new DecodeResult(MemoryRecords.readableRecords(byteBuffer));
     }
 
     // convert kafka Record to Pulsar Message.

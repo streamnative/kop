@@ -14,25 +14,27 @@
 package io.streamnative.pulsar.handlers.kop.format;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import java.util.List;
-import org.apache.bookkeeper.mledger.Entry;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import org.apache.kafka.common.record.MemoryRecords;
 
 /**
- * The entry formatter that uses Kafka's format but has no header.
+ * Result of decode in entry formatter.
  */
-public class NoHeaderKafkaEntryFormatter implements EntryFormatter {
+@Data
+@AllArgsConstructor
+public class DecodeResult {
 
-    @Override
-    public ByteBuf encode(MemoryRecords records, int numMessages) {
-        // The difference from KafkaEntryFormatter is here we don't add the header
-        return Unpooled.wrappedBuffer(records.buffer());
+    private MemoryRecords records;
+    private ByteBuf releasedByteBuf;
+
+    public DecodeResult(MemoryRecords records) {
+        this.records = records;
     }
 
-    @Override
-    public DecodeResult decode(List<Entry> entries, byte magic) {
-        // Do nothing
-        return null;
+    public void release() {
+        if (releasedByteBuf != null) {
+            releasedByteBuf.release();
+        }
     }
 }
