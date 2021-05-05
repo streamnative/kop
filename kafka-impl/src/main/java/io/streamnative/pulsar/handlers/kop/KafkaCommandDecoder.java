@@ -332,23 +332,26 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             }
 
             // case 4: responseFuture is completed normally
-            final AbstractResponse response = responseFuture.getNow(null);
-            if (log.isDebugEnabled()) {
-                log.debug("Write kafka cmd responseAndRequest back to client. \n"
-                                + "\trequest content: {} \n"
-                                + "\tresponseAndRequest content: {}",
-                        request, response.toString(request.getRequest().version()));
-            }
-            final ByteBuf result = responseToByteBuf(response, request);
-            channel.writeAndFlush(result).addListener(future -> {
-                if (future.isSuccess()) {
+            responseFuture.thenApply(response -> {
+                if (log.isDebugEnabled()) {
+                    log.debug("Write kafka cmd responseAndRequest back to client. \n"
+                                    + "\trequest content: {} \n"
+                                    + "\tresponseAndRequest content: {}",
+                            request, response.toString(request.getRequest().version()));
+                }
+
+                final ByteBuf result = responseToByteBuf(response, request);
+                channel.writeAndFlush(result).addListener(future -> {
                     if (response instanceof ResponseCallbackWrapper) {
                         ((ResponseCallbackWrapper) response).responseComplete();
                     }
-                } else {
-                    log.error("[{}] Failed to write {}", channel, request.getHeader(), future.cause());
-                }
+                    if (!future.isSuccess()) {
+                        log.error("[{}] Failed to write {}", channel, request.getHeader(), future.cause());
+                    }
+                });
+                return null;
             });
+
         }
     }
 
