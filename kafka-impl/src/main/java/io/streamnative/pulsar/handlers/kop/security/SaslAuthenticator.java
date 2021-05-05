@@ -253,7 +253,6 @@ public class SaslAuthenticator {
             responseFuture.complete(new SaslAuthenticateResponse(Errors.NONE, null, responseBuf));
         } catch (SaslException e) {
             responseFuture.complete(new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()));
-            throw new AuthenticationException(e.getMessage());
         }
     }
 
