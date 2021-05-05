@@ -14,9 +14,13 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.collect.Maps;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.SystemTopicClientFactory;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.Map;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.pulsar.broker.systopic.SystemTopicClient;
 
 
 /**
@@ -25,11 +29,15 @@ import org.apache.kafka.common.TopicPartition;
 public class BrokerProducerStateManager {
 
     private final Map<String, ProducerStateManager> producerStateManagerMap;
-    private int maxProducerIdExpirationMs;
+    private final int maxProducerIdExpirationMs;
+    private final SystemTopicClientFactory systemTopicClientFactory;
+    private final String format;
 
-    public BrokerProducerStateManager(int maxProducerIdExpirationMs) {
+    public BrokerProducerStateManager(int maxProducerIdExpirationMs, SystemTopicClientFactory systemTopicClientFactory, String format) {
         producerStateManagerMap = Maps.newConcurrentMap();
         this.maxProducerIdExpirationMs = maxProducerIdExpirationMs;
+        this.systemTopicClientFactory = systemTopicClientFactory;
+        this.format = format;
     }
 
     public ProducerStateManager getProducerStateManager(TopicPartition topicPartition) {
@@ -37,8 +45,14 @@ public class BrokerProducerStateManager {
     }
 
     public ProducerStateManager getProducerStateManager(String topicPartition) {
+        SystemTopicClient systemTopicClient = systemTopicClientFactory.generateProducerStateClient(topicPartition);
+        EntryFormatter formatter = EntryFormatterFactory.create(format);
         return producerStateManagerMap.computeIfAbsent(topicPartition, key ->
-                new ProducerStateManager(topicPartition, maxProducerIdExpirationMs));
+                new ProducerStateManager(topicPartition,
+                        maxProducerIdExpirationMs,
+                        formatter,
+                        systemTopicClient.newWriterAsync(),
+                        systemTopicClient.newReaderAsync()));
     }
 
 }

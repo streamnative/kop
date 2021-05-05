@@ -18,10 +18,20 @@ import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
+import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.BrokerProducerStateManager;
+import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
+import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.ProducerStateManager;
+
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTxnStateException;
@@ -31,7 +41,19 @@ import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.utils.SystemTime;
+import org.apache.pulsar.broker.PulsarServerException;
+import org.apache.pulsar.broker.protocol.ProtocolHandler;
+import org.apache.pulsar.client.api.Consumer;
+import org.apache.pulsar.client.api.Message;
+import org.apache.pulsar.client.api.MessageId;
+import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.common.policies.data.RetentionPolicies;
+import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.mockito.Mockito;
+import org.testng.annotations.AfterClass;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 import org.testng.collections.Lists;
@@ -40,16 +62,37 @@ import org.testng.collections.Lists;
  * Producer state manager test.
  */
 @Slf4j
-public class ProducerStateManagerTest {
+public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
+
+    private BrokerProducerStateManager brokerProducerStateManager;
 
     private ProducerStateManager stateManager;
     private TopicPartition partition = new TopicPartition("test", 0);
     private Long producerId = 1L;
     private Long maxPidExpirationMs = 10 * 1000L;
 
+    @BeforeClass
+    @Override
+    protected void setup() throws Exception {
+        this.conf.setEnableTransactionCoordinator(true);
+        super.internalSetup();
+
+        admin.topics().createPartitionedTopic("public/default/sys-topic-producer-state", 1);
+
+        ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
+        brokerProducerStateManager = ((KafkaProtocolHandler) handler).getBrokerProducerStateManager();
+        log.info("success internal setup");
+    }
+
     @BeforeMethod
-    private void setup() {
-        stateManager = new ProducerStateManager(partition.toString(), maxPidExpirationMs.intValue());
+    private void resetStateManager() {
+        stateManager = new ProducerStateManager(partition.toString(), maxPidExpirationMs.intValue(), null, null, null);
+    }
+
+    @AfterClass
+    @Override
+    protected void cleanup() throws Exception {
+        super.internalCleanup();
     }
 
     @Test
@@ -536,7 +579,7 @@ public class ProducerStateManagerTest {
     @Test
     public void testSequenceNotValidatedForGroupMetadataTopic() {
         TopicPartition partition = new TopicPartition(Topic.GROUP_METADATA_TOPIC_NAME, 0);
-        ProducerStateManager stateManager = new ProducerStateManager(partition.topic(), maxPidExpirationMs.intValue());
+        ProducerStateManager stateManager = new ProducerStateManager(partition.topic(), maxPidExpirationMs.intValue(), null, null, null);
 
         short epoch = 0;
         append(stateManager, producerId, epoch, RecordBatch.NO_SEQUENCE, 99L, SystemTime.SYSTEM.milliseconds(),
@@ -575,6 +618,82 @@ public class ProducerStateManagerTest {
         // Appending the empty control batch should not throw and a new transaction shouldn't be started
         append(stateManager, producerId, baseOffset, batch, ProducerStateManager.AppendOrigin.Client);
         assertEquals(Optional.empty(), stateManager.lastEntry(producerId).get().getCurrentTxnFirstOffset());
+    }
+
+    @Test
+    public void testTruncateAndReloadRemovesOutOfRangeSnapshots() throws InterruptedException {
+        short epoch = 0;
+        ProducerStateManager stateManager =
+                brokerProducerStateManager.getProducerStateManager("public/default/test-topic");
+        append(stateManager, producerId, epoch, 0, 0L);
+        takeSnapshotAndWait(stateManager);
+        append(stateManager, producerId, epoch, 1, 1L);
+        takeSnapshotAndWait(stateManager);
+        append(stateManager, producerId, epoch, 2, 2L);
+        takeSnapshotAndWait(stateManager);
+        append(stateManager, producerId, epoch, 3, 3L);
+        takeSnapshotAndWait(stateManager);
+        append(stateManager, producerId, epoch, 4, 4L);
+        takeSnapshotAndWait(stateManager);
+
+        stateManager.truncate();
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        CompletableFuture<Void> future = stateManager.loadFromSnapshot();
+        future.whenComplete((ignored, throwable) -> {
+            if (throwable != null) {
+                log.error("Failed to load from snapshot.", throwable);
+            }
+            countDownLatch.countDown();
+        });
+        countDownLatch.await();
+        stateManager.getAbortedIndexList(0);
+    }
+
+    @Test
+    public void test() throws Exception {
+        short epoch = 0;
+//        ProducerStateManager stateManager =
+//                brokerProducerStateManager.getProducerStateManager("public/default/test-topic");
+//        append(stateManager, producerId, epoch, 0, 0L);
+//        takeSnapshotAndWait(stateManager);
+
+        String topic = "public/default/sys-topic-producer-state";
+
+        Reader<byte[]> reader = pulsar.getClient()
+                .newReader()
+                .readCompacted(true)
+                .startMessageId(MessageId.earliest)
+                .topic(topic)
+                .create();
+
+        Consumer<byte[]> consumer = pulsar.getClient()
+                .newConsumer()
+                .topic(topic)
+                .subscriptionName("test")
+                .subscribe();
+
+        Producer<byte[]> producer = pulsar.getClient()
+                .newProducer()
+                .topic(topic)
+                .create();
+
+        producer.newMessage().value("hello".getBytes(StandardCharsets.UTF_8)).send();
+        Message<byte[]> message = consumer.receive();
+
+        reader.hasMessageAvailable();
+    }
+
+    private void takeSnapshotAndWait(ProducerStateManager stateManager) throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+        stateManager.takeSnapshot().whenComplete((messageId, throwable) -> {
+            if (throwable != null) {
+                log.error("Failed to take snapshot.", throwable);
+            } else {
+                log.info("take snapshot messageId {}", messageId);
+            }
+            latch.countDown();
+        });
+        latch.await();
     }
 
     private Optional<ProducerStateManager.CompletedTxn> appendEndTxnMarker(ProducerStateManager mapping,

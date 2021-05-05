@@ -73,12 +73,15 @@ public class KafkaTopicManager {
     public static final ConcurrentHashMap<String, CompletableFuture<Optional<String>>>
             KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
 
-    KafkaTopicManager(KafkaRequestHandler kafkaRequestHandler) {
+    private BrokerProducerStateManager brokerProducerStateManager;
+
+    KafkaTopicManager(KafkaRequestHandler kafkaRequestHandler, BrokerProducerStateManager brokerProducerStateManager) {
         this.requestHandler = kafkaRequestHandler;
         PulsarService pulsarService = kafkaRequestHandler.getPulsarService();
         this.brokerService = pulsarService.getBrokerService();
         this.internalServerCnx = new InternalServerCnx(requestHandler);
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
+        this.brokerProducerStateManager = brokerProducerStateManager;
 
         initializeCursorExpireTask(brokerService.executor());
     }

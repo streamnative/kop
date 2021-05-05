@@ -15,28 +15,56 @@ package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.collect.Maps;
 import java.nio.ByteBuffer;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.SystemTopicProducerStateClient.SystemTopicProducerStateReader;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.SystemTopicProducerStateClient.SystemTopicProducerStateWriter;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
+import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.AsyncCallbacks;
+import org.apache.bookkeeper.mledger.Entry;
+import org.apache.bookkeeper.mledger.ManagedCursor;
+import org.apache.bookkeeper.mledger.ManagedLedger;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.compress.utils.Lists;
 import org.apache.kafka.common.errors.InvalidTxnStateException;
 import org.apache.kafka.common.errors.OutOfOrderSequenceException;
+import org.apache.kafka.common.protocol.types.ArrayOf;
+import org.apache.kafka.common.protocol.types.Field;
+import org.apache.kafka.common.protocol.types.Schema;
+import org.apache.kafka.common.protocol.types.SchemaException;
+import org.apache.kafka.common.protocol.types.Struct;
+import org.apache.kafka.common.protocol.types.Type;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.FetchResponse;
+import org.apache.kafka.common.utils.ByteUtils;
+import org.apache.kafka.common.utils.Crc32C;
+import org.apache.kafka.common.utils.SystemTime;
+import org.apache.pulsar.broker.service.Topic;
+import org.apache.pulsar.client.api.MessageId;
+import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Producer state manager.
@@ -46,20 +74,74 @@ public class ProducerStateManager {
 
     private final String topicPartition;
     private final int maxProducerIdExpirationMs;
-
     private final Map<Long, ProducerStateEntry> producers = Maps.newConcurrentMap();
     private Long lastMapOffset = 0L;
-
     // ongoing transactions sorted by the first offset of the transaction
     private final TreeMap<Long, TxnMetadata> ongoingTxns = Maps.newTreeMap();
     private final List<AbortedTxn> abortedIndexList = new ArrayList<>();
+
+    private State state;
+
+    /** snapshot and recover **/
+    private CompletableFuture<SystemTopicProducerStateWriter> snapshotWriter;
+    private CompletableFuture<SystemTopicProducerStateReader> snapshotReader;
+    private CompletableFuture<Optional<Topic>> topicFuture;
+    private EntryFormatter entryFormatter;
+
+    private final short ProducerSnapshotVersion = 1;
+
+    private final static String VersionField = "version";
+    private final static String CrcField = "crc";
+    private final static String ProducerEntriesField = "producer_entries";
+    private final static String SnapshotOffset = "snapshot_offset";
+
+    private final static String ProducerIdField = "producer_id";
+    private final static String LastSequenceField = "last_sequence";
+    private final static String ProducerEpochField = "epoch";
+    private final static String LastOffsetField = "last_offset";
+    private final static String OffsetDeltaField = "offset_delta";
+    private final static String TimestampField = "timestamp";
+    private final static String CoordinatorEpochField = "coordinator_epoch";
+    private final static String CurrentTxnFirstOffsetField = "current_txn_first_offset";
+
+    private final static int VersionOffset = 0;
+    private final static int CrcOffset = VersionOffset + 2;
+    private final static int ProducerEntriesOffset = CrcOffset + 4;
+    /** snapshot and recover **/
+
+    private final Schema ProducerSnapshotEntrySchema = new Schema(
+            new Field(ProducerIdField, Type.INT64, "The producer ID"),
+            new Field(ProducerEpochField, Type.INT16, "Current epoch of the producer"),
+            new Field(LastSequenceField, Type.INT32, "Last written sequence of the producer"),
+            new Field(LastOffsetField, Type.INT64, "Last written offset of the producer"),
+            new Field(OffsetDeltaField, Type.INT32, "The difference of the last sequence and first sequence in the last written batch"),
+            new Field(TimestampField, Type.INT64, "Max timestamp from the last written entry"),
+            new Field(CoordinatorEpochField, Type.INT32, "The epoch of the last transaction coordinator to send an end transaction marker"),
+            new Field(CurrentTxnFirstOffsetField, Type.INT64, "The first offset of the on-going transaction (-1 if there is none)"));
+
+    private final Schema PidSnapshotMapSchema = new Schema(
+            new Field(VersionField, Type.INT16, "Version of the snapshot file"),
+            new Field(CrcField, Type.UNSIGNED_INT32, "CRC of the snapshot data"),
+            new Field(SnapshotOffset, Type.INT64, "The snapshot offset"),
+            new Field(ProducerEntriesField, new ArrayOf(ProducerSnapshotEntrySchema), "The entries in the producer table"));
+
+    /**
+     * ProducerStateManage state.
+     */
+    private enum State {
+        INIT, // init
+        RECOVERING, // start recover
+        READY, // finish recover
+        RECOVER_ERROR // failed to recover
+    }
 
     /**
      * AppendOrigin is used mark the data origin.
      */
     public enum AppendOrigin {
         Coordinator,
-        Client
+        Client,
+        Log
     }
 
     /**
@@ -480,7 +562,6 @@ public class ProducerStateManager {
                     + "lastTimestamp=" + updatedEntry.lastTimestamp + ", "
                     + "startedTransactions=" + transactions + ")";
         }
-
     }
 
     /**
@@ -494,9 +575,17 @@ public class ProducerStateManager {
         private Optional<BatchMetadata> batchMetadata;
     }
 
-    public ProducerStateManager(String topicPartition, int maxProducerIdExpirationMs) {
+    public ProducerStateManager(String topicPartition,
+                                int maxProducerIdExpirationMs,
+                                EntryFormatter entryFormatter,
+                                CompletableFuture<SystemTopicProducerStateWriter> snapshotWriter,
+                                CompletableFuture<SystemTopicProducerStateReader> snapshotReader) {
         this.topicPartition = topicPartition;
         this.maxProducerIdExpirationMs = maxProducerIdExpirationMs;
+        this.entryFormatter = entryFormatter;
+        this.snapshotWriter = snapshotWriter;
+        this.snapshotReader = snapshotReader;
+        this.state = State.INIT;
     }
 
     public ProducerAppendInfo prepareUpdate(Long producerId, AppendOrigin origin) {
@@ -668,6 +757,249 @@ public class ProducerStateManager {
         producers.clear();
         ongoingTxns.clear();
         lastMapOffset = 0L;
+    }
+
+    private byte[] writeSnapshot(Map<Long, ProducerStateEntry> entries, long snapshotOffset) {
+        Struct struct = new Struct(PidSnapshotMapSchema);
+        struct.set(VersionField, ProducerSnapshotVersion);
+        struct.set(CrcField, 0L); // we'll fill this after writing the entries
+
+        Object[] entriesArray = new Object[entries.size()];
+        AtomicInteger entryIndex = new AtomicInteger(0);
+        entries.forEach((pid, entry) -> {
+            Struct producerEntryStruct = struct.instance(ProducerEntriesField);
+            producerEntryStruct
+                    .set(ProducerIdField, pid)
+                    .set(ProducerEpochField, entry.producerEpoch)
+                    .set(LastSequenceField, entry.lastSeq())
+                    .set(LastOffsetField, entry.lastDataOffset())
+                    .set(OffsetDeltaField, entry.lastOffsetDelta())
+                    .set(TimestampField, entry.lastTimestamp)
+                    .set(CoordinatorEpochField, entry.coordinatorEpoch)
+                    .set(CurrentTxnFirstOffsetField, entry.currentTxnFirstOffset.orElse(-1L));
+            entriesArray[entryIndex.getAndIncrement()] = producerEntryStruct;
+        });
+        struct.set(ProducerEntriesField, entriesArray);
+        struct.set(SnapshotOffset, snapshotOffset);
+
+        ByteBuffer buffer = ByteBuffer.allocate(struct.sizeOf());
+        struct.writeTo(buffer);
+        buffer.flip();
+
+        // now fill in the CRC
+        long crc = Crc32C.compute(buffer, ProducerEntriesOffset, buffer.limit() - ProducerEntriesOffset);
+        ByteUtils.writeUnsignedInt(buffer, CrcOffset, crc);
+        return buffer.array();
+    }
+
+    public CompletableFuture<MessageId> takeSnapshot() {
+        return snapshotWriter.thenComposeAsync(writer -> writer.writeAsync(writeSnapshot(producers, lastMapOffset)));
+    }
+
+    public CompletableFuture<Void> loadFromSnapshot() {
+        return snapshotReader.thenComposeAsync(reader -> {
+            CompletableFuture<Void> completableFuture = new CompletableFuture<>();
+            reader.readLastValidMessage()
+                    .whenComplete(((message, throwable) -> {
+                        if (throwable != null) {
+                            log.error("Failed to read snapshot log.",
+                                    throwable instanceof CompletionException ? throwable.getCause() : throwable);
+                            completableFuture.completeExceptionally(throwable);
+                            return;
+                        }
+                        if (message != null) {
+                            try {
+                                List<ProducerStateEntry> stateEntryList = readSnapshot(message.getValue());
+                                Long currentTime = SystemTime.SYSTEM.milliseconds();
+                                for (ProducerStateEntry entry : stateEntryList) {
+                                    if (!isProducerExpired(currentTime, entry)) {
+                                        loadProducerEntry(entry);
+                                    }
+                                }
+                            } catch (Exception e) {
+                                log.error("Failed to decode snapshot log.", e);
+                                completableFuture.completeExceptionally(e);
+                            }
+                        }
+                        log.info("Finish load snapshot for topic {}", topicPartition);
+                        completableFuture.complete(null);
+                    }));
+            return completableFuture;
+        }).exceptionally(throwable -> {
+            log.error("Failed load from snapshot.", throwable);
+            return null;
+        });
+    }
+
+    private List<ProducerStateEntry> readSnapshot(byte[] bytes) throws Exception {
+        try {
+            Struct struct = PidSnapshotMapSchema.read(ByteBuffer.wrap(bytes));
+
+            Short version = struct.getShort(VersionField);
+            if (version != ProducerSnapshotVersion) {
+                throw new Exception("Snapshot contained an unknown file version " + version);
+            }
+
+            long snapshotOffset = struct.getLong(SnapshotOffset);
+            long crc = struct.getUnsignedInt(CrcField);
+            long computedCrc =  Crc32C.compute(bytes, ProducerEntriesOffset, bytes.length - ProducerEntriesOffset);
+            if (crc != computedCrc) {
+                throw new Exception("Snapshot is corrupt (CRC is no longer valid). Stored crc: "
+                        + crc + ". Computed crc: " + computedCrc);
+            }
+
+            List<ProducerStateEntry> producerStateEntryList = new ArrayList<>();
+            for (Object producerEntryObj : struct.getArray(ProducerEntriesField)) {
+                Struct producerEntryStruct = (Struct) producerEntryObj;
+                Long producerId = producerEntryStruct.getLong(ProducerIdField);
+                Short producerEpoch = producerEntryStruct.getShort(ProducerEpochField);
+                Integer seq = producerEntryStruct.getInt(LastSequenceField);
+                Long offset = producerEntryStruct.getLong(LastOffsetField);
+                Long timestamp = producerEntryStruct.getLong(TimestampField);
+                Integer offsetDelta = producerEntryStruct.getInt(OffsetDeltaField);
+                Integer coordinatorEpoch = producerEntryStruct.getInt(CoordinatorEpochField);
+                Long currentTxnFirstOffset = producerEntryStruct.getLong(CurrentTxnFirstOffsetField);
+                Deque<BatchMetadata> lastAppendedDataBatches = new ArrayDeque<>();
+                if (offset >= 0) {
+                    lastAppendedDataBatches.add(new BatchMetadata(seq, offset, offsetDelta, timestamp));
+                }
+
+                Optional<Long> currentFirstOffset = currentTxnFirstOffset >= 0
+                        ? Optional.of(currentTxnFirstOffset) : Optional.empty();
+                ProducerStateEntry entry = new ProducerStateEntry(producerId, lastAppendedDataBatches, producerEpoch,
+                        coordinatorEpoch, timestamp, currentFirstOffset);
+                producerStateEntryList.add(entry);
+            }
+            return producerStateEntryList;
+        } catch (SchemaException e) {
+            throw new Exception("Snapshot failed schema validation: " + e.getMessage());
+        }
+    }
+
+    private void loadProducerEntry(ProducerStateEntry entry) {
+        Long producerId = entry.producerId;
+        producers.put(producerId, entry);
+        entry.currentTxnFirstOffset.ifPresent(offset -> ongoingTxns.put(offset, new TxnMetadata(producerId, offset)));
+    }
+
+    public CompletableFuture<Void> recover(ManagedLedger managedLedger) {
+        log.info("Start recover fo topic {}", topicPartition);
+        if (state.equals(State.READY)) {
+            return CompletableFuture.completedFuture(null);
+        }
+        if (state.equals(State.RECOVER_ERROR)) {
+            return FutureUtil.failedFuture(new Exception("Failed to recover for topic partition " + topicPartition));
+        }
+        CompletableFuture<Void> completableFuture = new CompletableFuture<>();
+        loadFromSnapshot().thenAccept(ignored -> {
+            PositionImpl startPos = MessageIdUtils.getPositionForOffset(managedLedger, this.lastMapOffset);
+            try {
+                ManagedCursor cursor = managedLedger.newNonDurableCursor(startPos, "producer-state-recover");
+                ProducerStateLogRecovery recovery = new ProducerStateLogRecovery(cursor, 100);
+                recovery.recover();
+                state = State.READY;
+                completableFuture.complete(null);
+                log.info("Finish recover fo topic {}", topicPartition);
+            } catch (ManagedLedgerException e) {
+                state = State.RECOVER_ERROR;
+                log.error("Failed to open non durable cursor for topic {}.", topicPartition, e);
+                completableFuture.completeExceptionally(e);
+            }
+        });
+        return completableFuture;
+    }
+
+    /**
+     * ProducerStateLogRecovery is used to recover producer state from logs.
+     */
+    private class ProducerStateLogRecovery {
+
+        private final ManagedCursor cursor;
+        private int cacheQueueSize = 100;
+        private final List<Entry> readEntryList = new ArrayList<>();
+        private int maxErrorCount = 10;
+        private int errorCount = 0;
+        private boolean readComplete = false;
+        private boolean havePendingRead = false;
+        private boolean recoverComplete = false;
+        private boolean recoverError = false;
+
+        private ProducerStateLogRecovery(ManagedCursor cursor, int cacheQueueSize) {
+            this.cursor = cursor;
+            this.cacheQueueSize = cacheQueueSize;
+        }
+
+        private void fillCacheQueue() {
+            havePendingRead = true;
+            cursor.asyncReadEntries(cacheQueueSize, new AsyncCallbacks.ReadEntriesCallback() {
+                @Override
+                public void readEntriesComplete(List<Entry> entries, Object ctx) {
+                    havePendingRead = false;
+                    if (entries.size() == 0) {
+                        log.info("Can't read more entries, finish to recover topic {}.", topicPartition);
+                        readComplete = true;
+                        return;
+                    }
+                    readEntryList.addAll(entries);
+                }
+
+                @Override
+                public void readEntriesFailed(ManagedLedgerException exception, Object ctx) {
+                    havePendingRead = false;
+                    if (exception instanceof ManagedLedgerException.NoMoreEntriesToReadException) {
+                        log.info("No more entries to read, finish to recover topic {}.", topicPartition);
+                        readComplete = true;
+                        return;
+                    }
+                    checkErrorCount(exception);
+                }
+            }, null, null);
+        }
+
+        private void recover() {
+            while (!recoverComplete && !recoverError && readEntryList.size() > 0) {
+                if (!havePendingRead && !readComplete) {
+                    fillCacheQueue();
+                }
+                if (readEntryList.size() > 0) {
+                    List<Entry> entryList = new ArrayList<>(readEntryList);
+                    readEntryList.clear();
+                    fillCacheQueue();
+                    MemoryRecords records = entryFormatter.decode(entryList, RecordBatch.CURRENT_MAGIC_VALUE);
+                    Map<Long, ProducerAppendInfo> appendInfoMap = new HashMap<>();
+                    List<CompletedTxn> completedTxns = new ArrayList<>();
+                    records.batches().forEach(batch -> {
+                        Optional<CompletedTxn> completedTxn =
+                                updateProducers(batch, appendInfoMap, Optional.empty(), AppendOrigin.Log);
+                        completedTxn.ifPresent(completedTxns::add);
+                    });
+                    appendInfoMap.values().forEach(ProducerStateManager.this::update);
+                    completedTxns.forEach(ProducerStateManager.this::completeTxn);
+                    if (readComplete) {
+                        recoverComplete = true;
+                    }
+                } else {
+                    try {
+                        Thread.sleep(1);
+                    } catch (InterruptedException e) {
+                        checkErrorCount(e);
+                    }
+                }
+            }
+            log.info("Finish to recover from logs.");
+        }
+
+        private void checkErrorCount(Throwable throwable) {
+            if (errorCount < maxErrorCount) {
+                errorCount ++;
+                log.error("[{}] Recover error count {}. msg: {}.",
+                        topicPartition, errorCount, throwable.getMessage(), throwable);
+            } else {
+                recoverError = true;
+                log.error("[{}] Failed to recover.", topicPartition);
+            }
+        }
+
     }
 
 }
