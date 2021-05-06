@@ -637,6 +637,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                  final String partitionName,
                                  final Consumer<Long> offsetConsumer,
                                  final Consumer<Errors> errorsConsumer) {
+        if (persistentTopic == null) {
+            // It will trigger a retry send of Kafka client
+            errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
+            return;
+        }
         topicManager.registerProducerInPersistentTopic(partitionName, persistentTopic);
         // collect metrics
         final Producer producer = KafkaTopicManager.getReferenceProducer(partitionName);

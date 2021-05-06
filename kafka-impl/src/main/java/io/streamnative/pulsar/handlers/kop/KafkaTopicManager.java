@@ -34,6 +34,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerService;
+import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.Consumer;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
@@ -244,8 +245,14 @@ public class KafkaTopicManager {
         brokerService.getTopic(topicName, brokerService.isAllowAutoTopicCreation(topicName))
                 .whenComplete((t2, throwable) -> {
             if (throwable != null) {
-                log.error("[{}] Failed to getTopic {}. exception:",
-                        requestHandler.ctx.channel(), topicName, throwable);
+                // The ServiceUnitNotReadyException is retriable so we should print a warning log instead of error log
+                if (throwable instanceof BrokerServiceException.ServiceUnitNotReadyException) {
+                    log.warn("[{}] Failed to getTopic {}: {}",
+                            requestHandler.ctx.channel(), topicName, throwable.getMessage());
+                } else {
+                    log.error("[{}] Failed to getTopic {}. exception:",
+                            requestHandler.ctx.channel(), topicName, throwable);
+                }
                 // failed to getTopic from current broker, remove cache, which added in getTopicBroker.
                 removeTopicManagerCache(topicName);
                 topicCompletableFuture.complete(null);
