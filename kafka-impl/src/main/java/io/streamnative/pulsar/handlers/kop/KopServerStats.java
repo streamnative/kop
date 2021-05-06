@@ -36,4 +36,18 @@ public interface KopServerStats {
     String MESSAGE_PUBLISH = "MESSAGE_PUBLISH";
     String MESSAGE_QUEUED_LATENCY = "MESSAGE_QUEUED_LATENCY";
 
+    /**
+     * FETCH stats.
+     *
+     * <p>
+     * Elapsed time estimation:
+     * 1) HANDLE_FETCH_REQUEST = PREPARE_METADATA + TOTAL_MESSAGE_READ + FETCH_DECODE + Overhead
+     * 2) TOTAL_MESSAGE_READ = read-recursion-times * topic-partitions * MESSAGE_READ + Overhead
+     * </p>
+     */
+    String HANDLE_FETCH_REQUEST = "HANDLE_FETCH_REQUEST";
+    String PREPARE_METADATA = "PREPARE_METADATA";
+    String TOTAL_MESSAGE_READ = "TOTAL_MESSAGE_READ";
+    String MESSAGE_READ = "MESSAGE_READ";
+    String FETCH_DECODE = "FETCH_DECODE";
 }
