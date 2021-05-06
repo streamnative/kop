@@ -642,6 +642,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
             return;
         }
+        if (persistentTopic.isSystemTopic()) {
+            log.error("Not support producing message to system topic: {}", persistentTopic);
+            errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
+            return;
+        }
         topicManager.registerProducerInPersistentTopic(partitionName, persistentTopic);
         // collect metrics
         final Producer producer = KafkaTopicManager.getReferenceProducer(partitionName);
