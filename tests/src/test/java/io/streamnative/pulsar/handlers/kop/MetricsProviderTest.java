@@ -17,12 +17,20 @@ import com.google.common.collect.Sets;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.time.Duration;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
@@ -109,6 +117,27 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
             }
         }
 
+        // 2. consume messages with Kafka consumer
+        KConsumer kConsumer = new KConsumer(kafkaTopicName, getKafkaBrokerPort());
+        List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
+                .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
+        kConsumer.getConsumer().assign(topicPartitions);
+
+        int msgs = 0;
+        while (msgs < totalMsgs) {
+            if (log.isDebugEnabled()) {
+                log.debug("start poll message: {}", msgs);
+            }
+            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<Integer, String> record : records) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Kafka consumer get message: {}, key: {} at offset {}",
+                            record.key(), record.value(), record.offset());
+                }
+                msgs++;
+            }
+        }
+        Assert.assertEquals(msgs, totalMsgs);
 
         HttpClient httpClient = HttpClientBuilder.create().build();
         final String metricsEndPoint = pulsar.getWebServiceAddress() + "/metrics";
@@ -121,12 +150,23 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         while ((str = reader.readLine()) != null) {
             sb.append(str);
         }
+
+        // request stats
         Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_QUEUE_SIZE"));
         Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_QUEUED_LATENCY"));
         Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_PARSE"));
+
+        // produce stats
         Assert.assertTrue(sb.toString().contains("kop_server_HANDLE_PRODUCE_REQUEST"));
         Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_ENCODE"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_PUBLISH"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_QUEUED_LATENCY"));
+
+        // fetch stats
+        Assert.assertTrue(sb.toString().contains("kop_server_HANDLE_FETCH_REQUEST"));
+        Assert.assertTrue(sb.toString().contains("kop_server_PREPARE_METADATA"));
+        Assert.assertTrue(sb.toString().contains("kop_server_TOTAL_MESSAGE_READ"));
+        Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_READ"));
+        Assert.assertTrue(sb.toString().contains("kop_server_FETCH_DECODE"));
     }
 }
