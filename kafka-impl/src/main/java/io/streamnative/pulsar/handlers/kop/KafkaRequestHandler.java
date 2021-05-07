@@ -837,19 +837,24 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private CompletableFuture<ListOffsetResponse.PartitionData>
-    fetchOffsetForTimestamp(CompletableFuture<PersistentTopic> persistentTopic, Long timestamp, boolean legacyMode) {
+    fetchOffsetForTimestamp(String topicName, Long timestamp, boolean legacyMode) {
         CompletableFuture<ListOffsetResponse.PartitionData> partitionData = new CompletableFuture<>();
 
-        persistentTopic.whenComplete((perTopic, t) -> {
-            if (t != null || perTopic == null) {
+        topicManager.getTopic(topicName).whenComplete((perTopic, t) -> {
+            if (t != null) {
                 log.error("Failed while get persistentTopic topic: {} ts: {}. ",
                     perTopic == null ? "null" : perTopic.getName(), timestamp, t);
-                // remove cache when topic is null
-                KafkaTopicManager.removeTopicManagerCache(perTopic.getName());
                 partitionData.complete(new ListOffsetResponse.PartitionData(
-                    Errors.LEADER_NOT_AVAILABLE,
-                    ListOffsetResponse.UNKNOWN_TIMESTAMP,
-                    ListOffsetResponse.UNKNOWN_OFFSET));
+                        Errors.forException(t),
+                        ListOffsetResponse.UNKNOWN_TIMESTAMP,
+                        ListOffsetResponse.UNKNOWN_OFFSET));
+                return;
+            }
+            if (perTopic == null) {
+                partitionData.complete(new ListOffsetResponse.PartitionData(
+                        Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                        ListOffsetResponse.UNKNOWN_TIMESTAMP,
+                        ListOffsetResponse.UNKNOWN_OFFSET));
                 return;
             }
 
@@ -936,7 +941,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         log.warn("Unable to find position for topic {} time {}. Exception:",
                             perTopic.getName(), timestamp, exception);
                         fetchOffsetForTimestampFailed(partitionData, legacyMode);
-                        return;
                     }
                 });
             }
@@ -987,8 +991,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             Long times = tms.getValue();
             CompletableFuture<ListOffsetResponse.PartitionData> partitionData;
 
-            CompletableFuture<PersistentTopic> persistentTopic = topicManager.getTopic(KopTopic.toString(topic));
-            partitionData = fetchOffsetForTimestamp(persistentTopic, times, false);
+            partitionData = fetchOffsetForTimestamp(KopTopic.toString(topic), times, false);
 
             responseData.put(topic, partitionData);
         });
@@ -1032,9 +1035,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET)));
             }
 
-            CompletableFuture<PersistentTopic> persistentTopic = topicManager.getTopic(fullPartitionName);
-            partitionData = fetchOffsetForTimestamp(persistentTopic, times, true);
-
+            partitionData = fetchOffsetForTimestamp(fullPartitionName, times, true);
             responseData.put(topic, partitionData);
         });
 
@@ -1549,6 +1550,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         partitionErrorsMap.put(topicPartition, Errors.forException(throwable));
                         return;
                     }
+                    if (offset == null) {
+                        partitionErrorsMap.put(topicPartition, Errors.LEADER_NOT_AVAILABLE);
+                        return;
+                    }
 
                     CompletableFuture<Void> handleGroupFuture;
                     if (TopicName.get(topicPartition.topic()).getLocalName().equals(GROUP_METADATA_TOPIC_NAME)) {
@@ -1622,7 +1627,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String fullPartitionName = KopTopic.toString(topicPartition);
         TopicName topicName = TopicName.get(fullPartitionName);
         topicManager.getTopic(topicName.toString())
-                .thenAccept(persistentTopic -> {
+                .whenComplete((persistentTopic, throwable) -> {
+                    if (throwable != null) {
+                        offsetFuture.completeExceptionally(throwable);
+                        return;
+                    }
+                    if (persistentTopic == null) {
+                        offsetFuture.complete(null);
+                        return;
+                    }
                     persistentTopic.publishMessage(generateTxnMarker(transactionResult, producerId, producerEpoch),
                             MessagePublishContext.get(offsetFuture, persistentTopic,
                                     1, SystemTime.SYSTEM.milliseconds()));
@@ -1818,26 +1831,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
                     KafkaTopicManager.removeTopicManagerCache(topic.toString());
                 }
-
-                if (advertisedListeners.contains(endPoint.getOriginalListener())) {
-                    topicManager.getTopic(topic.toString()).whenComplete((persistentTopic, exception) -> {
-                        if (exception != null || persistentTopic == null) {
-                            log.warn("[{}] findBroker: Failed to getOrCreateTopic {}. broker:{}, exception:",
-                                ctx.channel(), topic.toString(), endPoint.getOriginalListener(), exception);
-                            // remove cache when topic is null
-                            KafkaTopicManager.removeTopicManagerCache(topic.toString());
-                            returnFuture.complete(null);
-                        } else {
-                            if (log.isDebugEnabled()) {
-                                log.debug("Add topic: {} into TopicManager while findBroker.",
-                                    topic.toString());
-                            }
-                            returnFuture.complete(newPartitionMetadata(topic, node));
-                        }
-                    });
-                } else {
-                    returnFuture.complete(newPartitionMetadata(topic, node));
-                }
+                returnFuture.complete(newPartitionMetadata(topic, node));
             });
         return returnFuture;
     }

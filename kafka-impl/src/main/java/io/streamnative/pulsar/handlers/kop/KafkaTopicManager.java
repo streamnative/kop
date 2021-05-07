@@ -127,22 +127,26 @@ public class KafkaTopicManager {
         return consumerTopicManagers.computeIfAbsent(
             topicName,
             t -> {
-                CompletableFuture<PersistentTopic> topic = getTopic(t);
-
-                return topic.thenApply(t2 -> {
-                    if (log.isDebugEnabled()) {
-                        log.debug("[{}] Call getTopicConsumerManager for {}, and create TCM for {}.",
-                            requestHandler.ctx.channel(), topicName, t2);
+                final CompletableFuture<KafkaTopicConsumerManager> tcmFuture = new CompletableFuture<>();
+                getTopic(t).whenComplete((persistentTopic, throwable) -> {
+                    if (persistentTopic != null && throwable == null) {
+                        if (log.isDebugEnabled()) {
+                            log.debug("[{}] Call getTopicConsumerManager for {}, and create TCM for {}.",
+                                    requestHandler.ctx.channel(), topicName, persistentTopic);
+                        }
+                        tcmFuture.complete(new KafkaTopicConsumerManager(requestHandler, persistentTopic));
+                    } else {
+                        if (throwable != null) {
+                            log.error("[{}] Failed to getTopicConsumerManager caused by getTopic '{}' throws {}",
+                                    requestHandler.ctx.channel(), topicName, throwable.getMessage());
+                        } else { // persistentTopic == null
+                            log.error("[{}] Failed to getTopicConsumerManager caused by getTopic '{}' returns empty",
+                                    requestHandler.ctx.channel(), topicName);
+                        }
+                        tcmFuture.complete(null);
                     }
-
-                    if (t2 == null) {
-                        // remove cache when topic is null
-                        removeTopicManagerCache(topic.toString());
-                        return null;
-                    }
-                    // return consumer manager
-                    return new KafkaTopicConsumerManager(requestHandler, t2);
                 });
+                return tcmFuture;
             }
         );
     }
@@ -229,10 +233,7 @@ public class KafkaTopicManager {
         }
     }
 
-    // For Produce/Consume we need to lookup, to make sure topic served by brokerService,
-    // or will meet error: "Service unit is not ready when loading the topic".
-    // If getTopic is called after lookup, then no needLookup.
-    // Returned Future wil complete with null when meet error.
+    // A wrapper of `BrokerService#getTopic` that is to find the topic's associated `PersistentTopic` instance
     public CompletableFuture<PersistentTopic> getTopic(String topicName) {
         if (closed.get()) {
             if (log.isDebugEnabled()) {
@@ -242,7 +243,7 @@ public class KafkaTopicManager {
             return CompletableFuture.completedFuture(null);
         }
         CompletableFuture<PersistentTopic> topicCompletableFuture = new CompletableFuture<>();
-        brokerService.getTopic(topicName, brokerService.isAllowAutoTopicCreation(topicName))
+        brokerService.getTopic(topicName, false)
                 .whenComplete((t2, throwable) -> {
             if (throwable != null) {
                 // The ServiceUnitNotReadyException is retriable so we should print a warning log instead of error log
@@ -255,15 +256,15 @@ public class KafkaTopicManager {
                 }
                 // failed to getTopic from current broker, remove cache, which added in getTopicBroker.
                 removeTopicManagerCache(topicName);
-                topicCompletableFuture.complete(null);
+                topicCompletableFuture.completeExceptionally(throwable);
                 return;
             }
             if (t2.isPresent()) {
                 PersistentTopic persistentTopic = (PersistentTopic) t2.get();
                 topicCompletableFuture.complete(persistentTopic);
             } else {
-                log.error("[{}]Get empty topic for name {}",
-                        requestHandler.ctx.channel(), topicName);
+                log.error("[{}]Get empty topic for name {}", requestHandler.ctx.channel(), topicName);
+                removeTopicManagerCache(topicName);
                 topicCompletableFuture.complete(null);
             }
         });

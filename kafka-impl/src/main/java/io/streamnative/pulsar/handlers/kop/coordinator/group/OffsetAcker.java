@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.group;
 
+import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetSearchPredicate;
@@ -106,6 +107,7 @@ public class OffsetAcker implements Closeable {
                 brokerService.getTopic(partitionTopicName, false).whenComplete((topic, error) -> {
                     if (error != null) {
                         log.error("[{}] get topic failed when ack for {}.", partitionTopicName, groupId, error);
+                        KafkaTopicManager.removeTopicManagerCache(partitionTopicName);
                         return;
                     }
                     if (topic.isPresent()) {
@@ -130,6 +132,7 @@ public class OffsetAcker implements Closeable {
                                 new MessageIdImpl(position.getLedgerId(), position.getEntryId(), -1));
                     } else {
                         log.error("[{}] Topic not exist when ack for {}.", partitionTopicName, groupId);
+                        KafkaTopicManager.removeTopicManagerCache(partitionTopicName);
                     }
                 });
             });

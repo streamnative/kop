@@ -17,6 +17,8 @@ package io.streamnative.pulsar.handlers.kop;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getPartitionedTopicNameWithoutPartitions;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
@@ -24,6 +26,8 @@ import static org.testng.Assert.fail;
 import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndResponse;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
@@ -69,6 +73,9 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
+import org.apache.kafka.common.requests.IsolationLevel;
+import org.apache.kafka.common.requests.ListOffsetRequest;
+import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.RequestHeader;
@@ -152,6 +159,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             false,
             getPlainEndPoint(),
             NullStatsLogger.INSTANCE);
+        ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
+        Channel mockChannel = mock(Channel.class);
+        doReturn(mockChannel).when(mockCtx).channel();
+        handler.ctx = mockCtx;
     }
 
     @AfterMethod
@@ -609,5 +620,23 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         // not cleanup
         Assert.assertNotNull(offsetAndMetadata);
 
+    }
+
+    @Test(timeOut = 10000)
+    public void testListOffsetsForNotExistedTopic() throws Exception {
+        final TopicPartition topicPartition = new TopicPartition("testListOffsetsForNotExistedTopic", 0);
+        final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        final RequestHeader header =
+                new RequestHeader(ApiKeys.LIST_OFFSETS, ApiKeys.LIST_OFFSETS.latestVersion(), "client", 0);
+        final ListOffsetRequest request =
+                ListOffsetRequest.Builder.forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
+                        .setTargetTimes(Collections.singletonMap(topicPartition, ListOffsetRequest.EARLIEST_TIMESTAMP))
+                        .build(ApiKeys.LIST_OFFSETS.latestVersion());
+        handler.handleListOffsetRequest(
+                new KafkaHeaderAndRequest(header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
+                responseFuture);
+        final ListOffsetResponse response = (ListOffsetResponse) responseFuture.get();
+        assertTrue(response.responseData().containsKey(topicPartition));
+        assertEquals(response.responseData().get(topicPartition).error, Errors.UNKNOWN_TOPIC_OR_PARTITION);
     }
 }
