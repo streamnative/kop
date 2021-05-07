@@ -181,12 +181,13 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
             throws PulsarClientException {
         List<String> values = new ArrayList<>();
         while (numMessages > 0) {
-            Message<byte[]> message = consumer.receive(100, TimeUnit.MILLISECONDS);
+            Message<byte[]> message = consumer.receive(3, TimeUnit.SECONDS);
             if (message != null) {
                 final byte[] value = message.getValue();
                 values.add((value == null) ? null : new String(value));
                 if (log.isDebugEnabled()) {
-                    log.debug("Pulsar Consumer receive: {}", values.get(values.size() - 1));
+                    log.debug("Pulsar Consumer receive: {} from {}",
+                            values.get(values.size() - 1), message.getMessageId());
                 }
             }
             numMessages--;
