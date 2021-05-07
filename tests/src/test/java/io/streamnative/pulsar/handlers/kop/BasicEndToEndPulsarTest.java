@@ -36,6 +36,7 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
     @Test(timeOut = 20000)
     public void testNullValueMessages() throws Exception {
         final String topic = "test-produce-null-value";
+        admin.topics().createPartitionedTopic(topic, 1);
 
         @Cleanup
         final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
@@ -53,7 +54,7 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
         //  value. So here we just subscribe a single partition with ConsumerImpl.
         //  See https://github.com/apache/pulsar/pull/9113 for details.
         @Cleanup
-        final Consumer<byte[]> pulsarConsumer = newPulsarConsumer(topic + "-partition-0");
+        final Consumer<byte[]> pulsarConsumer = newPulsarConsumer(topic);
         List<String> pulsarReceives = receiveMessages(pulsarConsumer, expectValues.size());
         assertEquals(pulsarReceives, expectValues);
 
