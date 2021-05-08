@@ -40,6 +40,7 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.policies.data.TopicStats;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -90,10 +91,15 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
+    private void registerPartitionedTopic(final String topic) throws PulsarAdminException {
+        admin.topics().createPartitionedTopic(topic, 1);
+        pulsar.getBrokerService().getOrCreateTopic(topic);
+    }
+
     @Test
     public void testGetTopicConsumerManager() throws Exception {
         String topicName = "persistent://public/default/testGetTopicConsumerManager";
-        admin.lookups().lookupTopic(topicName);
+        registerPartitionedTopic(topicName);
         CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager.getTopicConsumerManager(topicName);
         KafkaTopicConsumerManager topicConsumerManager = tcm.get();
 
@@ -106,7 +112,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
 
         // 2. verify another get with different topic will return different tcm
         String topicName2 = "persistent://public/default/testGetTopicConsumerManager2";
-        admin.lookups().lookupTopic(topicName2);
+        registerPartitionedTopic(topicName2);
         tcm = kafkaTopicManager.getTopicConsumerManager(topicName2);
         topicConsumerManager2 = tcm.get();
         assertTrue(topicConsumerManager != topicConsumerManager2);
@@ -117,7 +123,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     @Test
     public void testTopicConsumerManagerRemoveAndAdd() throws Exception {
         String topicName = "persistent://public/default/testTopicConsumerManagerRemoveAndAdd";
-        admin.lookups().lookupTopic(topicName);
+        registerPartitionedTopic(topicName);
 
         final Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
