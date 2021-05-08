@@ -258,13 +258,14 @@ public class KafkaTopicManager {
                 if (throwable instanceof BrokerServiceException.ServiceUnitNotReadyException) {
                     log.warn("[{}] Failed to getTopic {}: {}",
                             requestHandler.ctx.channel(), topicName, throwable.getMessage());
+                    topicCompletableFuture.complete(null);
                 } else {
                     log.error("[{}] Failed to getTopic {}. exception:",
                             requestHandler.ctx.channel(), topicName, throwable);
+                    topicCompletableFuture.completeExceptionally(throwable);
                 }
                 // failed to getTopic from current broker, remove cache, which added in getTopicBroker.
                 removeTopicManagerCache(topicName);
-                topicCompletableFuture.completeExceptionally(throwable);
                 return;
             }
             if (t2.isPresent()) {
