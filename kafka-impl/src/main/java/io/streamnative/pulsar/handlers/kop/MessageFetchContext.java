@@ -33,10 +33,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.MarkDeleteCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
 import org.apache.bookkeeper.mledger.Entry;
@@ -96,6 +98,7 @@ public final class MessageFetchContext {
             CompletableFuture<AbstractResponse> fetchResponse,
             KafkaHeaderAndRequest fetchRequest,
             TransactionCoordinator transactionCoordinator) {
+        final long startPreparingMetadataNanos = MathUtils.nowInNano();
         LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData = new LinkedHashMap<>();
 
         // Map of partition and related tcm.
@@ -179,6 +182,9 @@ public final class MessageFetchContext {
                         .filter(x -> x != null)
                         .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
+                requestHandler.requestStats.getPrepareMetadataStats().registerSuccessfulEvent(
+                        MathUtils.elapsedNanos(startPreparingMetadataNanos), TimeUnit.NANOSECONDS);
+
                 readMessages(fetchRequest, partitionCursor, fetchResponse, responseData,
                         transactionCoordinator, highWaterMarkMap);
             });
@@ -198,7 +204,9 @@ public final class MessageFetchContext {
         AtomicInteger bytesRead = new AtomicInteger(0);
         Map<TopicPartition, List<Entry>> entryValues = new ConcurrentHashMap<>();
 
-        readMessagesInternal(fetch, cursors, bytesRead, entryValues, resultFuture, responseData, tc, highWaterMarkMap);
+        final long startReadingTotalMessagesNanos = MathUtils.nowInNano();
+        readMessagesInternal(fetch, cursors, bytesRead, entryValues, resultFuture, responseData, tc, highWaterMarkMap,
+                startReadingTotalMessagesNanos);
     }
 
     private void readMessagesInternal(KafkaHeaderAndRequest fetch,
@@ -208,7 +216,8 @@ public final class MessageFetchContext {
                                       CompletableFuture<AbstractResponse> resultFuture,
                                       LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData,
                                       TransactionCoordinator tc,
-                                      Map<TopicPartition, Long> highWaterMarkMap) {
+                                      Map<TopicPartition, Long> highWaterMarkMap,
+                                      long startReadingTotalMessagesNanos) {
 
         AtomicInteger entriesRead = new AtomicInteger(0);
         // here do the real read, and in read callback put cursor back to KafkaTopicConsumerManager.
@@ -317,6 +326,8 @@ public final class MessageFetchContext {
                         log.debug(" Request {}: Complete read {} entries with size {}",
                             fetch.getHeader(), entriesRead.get(), allSize);
                     }
+                    requestHandler.requestStats.getTotalMessageReadStats().registerSuccessfulEvent(
+                            MathUtils.elapsedNanos(startReadingTotalMessagesNanos), TimeUnit.NANOSECONDS);
 
                     List<DecodeResult> decodeResults = new ArrayList<>();
                     responseValues.entrySet().forEach(responseEntries -> {
@@ -372,7 +383,10 @@ public final class MessageFetchContext {
                             });
                             CompletableFuture<Consumer> consumerFuture = requestHandler.getTopicManager()
                                     .getGroupConsumers(groupName, kafkaPartition);
+                            final long startDecodingEntriesNanos = MathUtils.nowInNano();
                             final DecodeResult decodeResult = requestHandler.getEntryFormatter().decode(entries, magic);
+                            requestHandler.requestStats.getFetchDecodeStats().registerSuccessfulEvent(
+                                    MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
                             decodeResults.add(decodeResult);
                             // collect consumer metrics
                             EntryFormatter.updateConsumerStats(decodeResult.getRecords(), consumerFuture);
@@ -416,7 +430,7 @@ public final class MessageFetchContext {
                     }
                     // need do another round read
                     readMessagesInternal(fetch, cursors, bytesRead, responseValues, resultFuture, responseData,
-                            tc, highWaterMarkMap);
+                            tc, highWaterMarkMap, startReadingTotalMessagesNanos);
                 }
             });
     }
@@ -433,6 +447,7 @@ public final class MessageFetchContext {
             int readeEntryNum = requestHandler.getMaxReadEntriesNum();
 
             // read readeEntryNum size entry.
+            long startReadingMessagesNanos = MathUtils.nowInNano();
             cursor.asyncReadEntries(readeEntryNum,
                     new ReadEntriesCallback() {
                         @Override
@@ -466,6 +481,8 @@ public final class MessageFetchContext {
                             }
 
                             readFuture.complete(list);
+                            requestHandler.requestStats.getMessageReadStats().registerSuccessfulEvent(
+                                    MathUtils.elapsedNanos(startReadingMessagesNanos), TimeUnit.NANOSECONDS);
                         }
 
                     @Override
@@ -473,6 +490,8 @@ public final class MessageFetchContext {
                         log.error("Error read entry for topic: {}", KopTopic.toString(cursorOffsetPair.getKey()));
 
                         readFuture.completeExceptionally(e);
+                        requestHandler.requestStats.getMessageReadStats().registerFailedEvent(
+                                MathUtils.elapsedNanos(startReadingMessagesNanos), TimeUnit.NANOSECONDS);
                     }
                 }, null, PositionImpl.latest);
 
