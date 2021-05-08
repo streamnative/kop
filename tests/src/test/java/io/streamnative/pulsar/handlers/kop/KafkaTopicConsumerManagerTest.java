@@ -23,12 +23,12 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+
+import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.stats.NullStatsLogger;
@@ -53,7 +53,6 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
 
     private KafkaTopicManager kafkaTopicManager;
     private KafkaRequestHandler kafkaRequestHandler;
-    private SocketAddress serviceAddress;
     private AdminManager adminManager;
 
     @BeforeMethod
@@ -80,8 +79,6 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
         kafkaRequestHandler.ctx = mockCtx;
-
-        serviceAddress = new InetSocketAddress(pulsar.getBindAddress(), kafkaBrokerPort);
 
         kafkaTopicManager = new KafkaTopicManager(kafkaRequestHandler);
     }
@@ -127,9 +124,9 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
 
+        @Cleanup
         final KafkaProducer<Integer, String> producer = new KafkaProducer<>(props);
 
-        KProducer kProducer = new KProducer(topicName, true, getKafkaBrokerPort());
         int i = 0;
         String messagePrefix = "testTopicConsumerManagerRemoveAndAdd_message_";
         long offset = -1L;
@@ -198,6 +195,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
 
+        @Cleanup
         final KafkaProducer<Integer, String> producer = new KafkaProducer<>(props);
 
         int i = 0;
