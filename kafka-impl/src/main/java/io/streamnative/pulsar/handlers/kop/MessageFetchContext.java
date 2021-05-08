@@ -46,6 +46,7 @@ import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.impl.NonDurableCursorImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
@@ -448,6 +449,7 @@ public final class MessageFetchContext {
 
             // read readeEntryNum size entry.
             long startReadingMessagesNanos = MathUtils.nowInNano();
+            final OpStatsLogger messageReadStats = requestHandler.requestStats.getMessageReadStats();
             cursor.asyncReadEntries(readeEntryNum,
                     new ReadEntriesCallback() {
                         @Override
@@ -481,7 +483,7 @@ public final class MessageFetchContext {
                             }
 
                             readFuture.complete(list);
-                            requestHandler.requestStats.getMessageReadStats().registerSuccessfulEvent(
+                            messageReadStats.registerSuccessfulEvent(
                                     MathUtils.elapsedNanos(startReadingMessagesNanos), TimeUnit.NANOSECONDS);
                         }
 
@@ -490,7 +492,7 @@ public final class MessageFetchContext {
                         log.error("Error read entry for topic: {}", KopTopic.toString(cursorOffsetPair.getKey()));
 
                         readFuture.completeExceptionally(e);
-                        requestHandler.requestStats.getMessageReadStats().registerFailedEvent(
+                        messageReadStats.registerFailedEvent(
                                 MathUtils.elapsedNanos(startReadingMessagesNanos), TimeUnit.NANOSECONDS);
                     }
                 }, null, PositionImpl.latest);
