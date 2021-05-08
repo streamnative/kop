@@ -128,7 +128,7 @@ public class KafkaTopicManager {
             topicName,
             t -> {
                 final CompletableFuture<KafkaTopicConsumerManager> tcmFuture = new CompletableFuture<>();
-                getTopic(t).whenComplete((persistentTopic, throwable) -> {
+                getOrCreateTopic(t).whenComplete((persistentTopic, throwable) -> {
                     if (persistentTopic != null && throwable == null) {
                         if (log.isDebugEnabled()) {
                             log.debug("[{}] Call getTopicConsumerManager for {}, and create TCM for {}.",
@@ -233,8 +233,16 @@ public class KafkaTopicManager {
         }
     }
 
-    // A wrapper of `BrokerService#getTopic` that is to find the topic's associated `PersistentTopic` instance
+    public CompletableFuture<PersistentTopic> getOrCreateTopic(String topicName) {
+        return getTopic(topicName, true);
+    }
+
     public CompletableFuture<PersistentTopic> getTopic(String topicName) {
+        return getTopic(topicName, false);
+    }
+
+    // A wrapper of `BrokerService#getTopic` that is to find the topic's associated `PersistentTopic` instance
+    private CompletableFuture<PersistentTopic> getTopic(String topicName, boolean createIfMissing) {
         if (closed.get()) {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Return null for getTopic({}) since channel is closing",
@@ -243,7 +251,7 @@ public class KafkaTopicManager {
             return CompletableFuture.completedFuture(null);
         }
         CompletableFuture<PersistentTopic> topicCompletableFuture = new CompletableFuture<>();
-        brokerService.getTopic(topicName, false)
+        brokerService.getTopic(topicName, createIfMissing && brokerService.isAllowAutoTopicCreation(topicName))
                 .whenComplete((t2, throwable) -> {
             if (throwable != null) {
                 // The ServiceUnitNotReadyException is retriable so we should print a warning log instead of error log
