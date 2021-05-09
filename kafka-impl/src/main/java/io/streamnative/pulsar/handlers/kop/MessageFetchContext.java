@@ -124,21 +124,12 @@ public final class MessageFetchContext {
                 Map<TopicPartition, Pair<ManagedCursor, Long>> partitionCursor =
                     topicsAndCursor.entrySet().stream()
                         .map(pair -> {
-                            KafkaTopicConsumerManager tcm;
-                            try {
-                                // all future completed now.
-                                tcm = pair.getValue().get();
-                                if (tcm == null) {
-                                    // remove null future cache from consumerTopicManagers
-                                    KafkaTopicManager.getConsumerTopicManagers()
-                                            .remove(KopTopic.toString(pair.getKey()));
-                                    throw new NullPointerException("topic not owned, and return null TCM in fetch.");
-                                }
-                            } catch (Exception e) {
-                                log.warn("Error for get KafkaTopicConsumerManager.", e);
-
-                                responseData.put(pair.getKey(),
-                                    new FetchResponse.PartitionData(
+                            final TopicPartition topicPartition = pair.getKey();
+                            // The future is completed now
+                            final KafkaTopicConsumerManager tcm = pair.getValue().getNow(null);
+                            if (tcm == null) {
+                                // Current broker is not the owner broker of the partition
+                                responseData.put(topicPartition, new FetchResponse.PartitionData<>(
                                         Errors.NOT_LEADER_FOR_PARTITION,
                                         FetchResponse.INVALID_HIGHWATERMARK,
                                         FetchResponse.INVALID_LAST_STABLE_OFFSET,
@@ -150,21 +141,21 @@ public final class MessageFetchContext {
                             }
 
                             long offset = ((FetchRequest) fetchRequest.getRequest()).fetchData()
-                                .get(pair.getKey()).fetchOffset;
+                                .get(topicPartition).fetchOffset;
 
                             if (log.isDebugEnabled()) {
                                 log.debug("Fetch for {}: remove tcm to get cursor for fetch offset: {} .",
-                                    pair.getKey(), offset);
+                                    topicPartition, offset);
                             }
 
                             Pair<ManagedCursor, Long> cursorLongPair = tcm.remove(offset);
                             if (cursorLongPair == null) {
                                 log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
                                         + "Fetch for topic return error.",
-                                    offset, pair.getKey());
+                                    offset, topicPartition);
 
-                                responseData.put(pair.getKey(),
-                                    new FetchResponse.PartitionData(
+                                responseData.put(topicPartition,
+                                    new FetchResponse.PartitionData<>(
                                         Errors.NOT_LEADER_FOR_PARTITION,
                                         FetchResponse.INVALID_HIGHWATERMARK,
                                         FetchResponse.INVALID_LAST_STABLE_OFFSET,
@@ -175,10 +166,10 @@ public final class MessageFetchContext {
                                 return null;
                             }
 
-                            highWaterMarkMap.put(pair.getKey(),
+                            highWaterMarkMap.put(topicPartition,
                                     MessageIdUtils.getHighWatermark(cursorLongPair.getLeft().getManagedLedger()));
 
-                            return Pair.of(pair.getKey(), cursorLongPair);
+                            return Pair.of(topicPartition, cursorLongPair);
                         })
                         .filter(x -> x != null)
                         .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
