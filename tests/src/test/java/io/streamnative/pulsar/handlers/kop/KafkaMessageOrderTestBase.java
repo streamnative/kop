@@ -115,12 +115,6 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
         // create partitioned topic with 1 partition.
         pulsar.getAdminClient().topics().createPartitionedTopic(topicName, 1);
 
-        @Cleanup
-        Consumer<byte[]> consumer = pulsarClient.newConsumer()
-            .topic(pulsarTopicName)
-            .subscriptionName("testKafkaProduce-PulsarConsume")
-            .subscribe();
-
         final Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
@@ -144,6 +138,12 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
 
         // 2. Consume messages use Pulsar client Consumer.
         if (conf.getEntryFormat().equals("pulsar")) {
+            @Cleanup
+            Consumer<byte[]> consumer = pulsarClient.newConsumer()
+                    .topic(pulsarTopicName)
+                    .subscriptionName("testKafkaProduce-PulsarConsume")
+                    .subscribe();
+
             Message<byte[]> msg = null;
             int numBatches = 0;
             for (int i = 0; i < totalMsgs; i++) {
