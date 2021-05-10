@@ -161,7 +161,6 @@ import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.metadata.api.MetadataCache;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
-import org.apache.pulsar.zookeeper.ZooKeeperCache;
 
 /**
  * This class contains all the request handling methods.
@@ -1759,8 +1758,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         // advertised data is write in  /loadbalance/brokers/advertisedAddress:webServicePort
         // here we get the broker url, need to find related webServiceUrl.
-        ZooKeeperCache zkCache = pulsarService.getLocalZkCache();
-        zkCache.getChildrenAsync(LoadManager.LOADBALANCE_BROKERS_ROOT, zkCache)
+        pulsarService.getPulsarResources()
+            .getDynamicConfigResources()
+            .getChildrenAsync(LoadManager.LOADBALANCE_BROKERS_ROOT)
             .whenComplete((set, throwable) -> {
                 if (throwable != null) {
                     log.error("Error in getChildrenAsync(zk://loadbalance) for {}", pulsarAddress, throwable);
