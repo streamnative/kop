@@ -38,7 +38,7 @@
     <redirectTestOutputToFile>true</redirectTestOutputToFile>
 
     <!-- dependencies -->
-    <commons-lang3.version>3.4</commons-lang3.version>
+    <commons-lang3.version>3.11</commons-lang3.version>
     <guava.version>21.0</guava.version>
     <grpc.version>1.18.0</grpc.version>
     <jackson.version>2.12.1</jackson.version>
@@ -53,6 +53,8 @@
     <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
     <testcontainers.version>1.15.1</testcontainers.version>
     <testng.version>6.14.3</testng.version>
+    <avro.version>1.10.2</avro.version>
+    <awaitility.version>4.0.3</awaitility.version>
     <!-- plugin dependencies -->
     <dockerfile-maven.version>1.4.9</dockerfile-maven.version>
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
@@ -237,6 +239,12 @@
       <scope>provided</scope>
     </dependency>
 
+    <dependency>
+      <groupId>org.awaitility</groupId>
+      <artifactId>awaitility</artifactId>
+      <version>${awaitility.version}</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

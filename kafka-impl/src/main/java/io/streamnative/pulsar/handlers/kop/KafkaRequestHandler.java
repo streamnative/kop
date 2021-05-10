@@ -59,6 +59,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -197,6 +198,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     // is found.
     private final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap = new ConcurrentHashMap<>();
 
+    // Flag to manage throttling-publish-buffer by atomically enable/disable read-channel.
+    private final long maxPendingBytes;
+    private final long resumeThresholdPendingBytes;
+    private final AtomicLong pendingBytes = new AtomicLong(0);
+    private volatile boolean autoReadDisabledPublishBufferLimiting = false;
+
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
                                GroupCoordinator groupCoordinator,
@@ -227,6 +234,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
         this.currentConnectedGroup = new ConcurrentHashMap<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
+        this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
+        this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
     }
 
     @Override
@@ -245,7 +254,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         log.info("channel inactive {}", ctx.channel());
 
         close();
-        isActive.set(false);
     }
 
     @Override
@@ -628,6 +636,54 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
+    private void disableCnxAutoRead() {
+        if (ctx != null && ctx.channel().config().isAutoRead()) {
+            ctx.channel().config().setAutoRead(false);
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] disable auto read", ctx.channel());
+            }
+        }
+    }
+
+    private void enableCnxAutoRead() {
+        if (ctx != null && !ctx.channel().config().isAutoRead()
+                && !autoReadDisabledPublishBufferLimiting) {
+            // Resume reading from socket if pending-request is not reached to threshold
+            ctx.channel().config().setAutoRead(true);
+            // triggers channel read
+            ctx.read();
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] enable auto read", ctx.channel());
+            }
+        }
+    }
+
+    private void startSendOperationForThrottling(long msgSize) {
+        final long currentPendingBytes = pendingBytes.addAndGet(msgSize);
+        if (currentPendingBytes >= maxPendingBytes && !autoReadDisabledPublishBufferLimiting && maxPendingBytes > 0) {
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] disable auto read because currentPendingBytes({}) > maxPendingBytes({})",
+                        ctx.channel(), currentPendingBytes, maxPendingBytes);
+            }
+            disableCnxAutoRead();
+            autoReadDisabledPublishBufferLimiting = true;
+            pulsarService.getBrokerService().pausedConnections(1);
+        }
+    }
+
+    private void completeSendOperationForThrottling(long msgSize) {
+        final long currentPendingBytes = pendingBytes.addAndGet(-msgSize);
+        if (currentPendingBytes < resumeThresholdPendingBytes && autoReadDisabledPublishBufferLimiting) {
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] enable auto read because currentPendingBytes({}) < resumeThreshold({})",
+                        ctx.channel(), currentPendingBytes, resumeThresholdPendingBytes);
+            }
+            autoReadDisabledPublishBufferLimiting = false;
+            enableCnxAutoRead();
+            pulsarService.getBrokerService().resumedConnections(1);
+        }
+    }
+
     private void publishMessages(final PersistentTopic persistentTopic,
                                  final ByteBuf byteBuf,
                                  final int numMessages,
@@ -655,9 +711,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final long beforePublish = MathUtils.nowInNano();
         persistentTopic.publishMessage(byteBuf,
                 MessagePublishContext.get(offsetFuture, persistentTopic, numMessages, System.nanoTime()));
-        byteBuf.release();
         final RecordBatch batch = records.batchIterator().next();
         offsetFuture.whenComplete((offset, e) -> {
+            completeSendOperationForThrottling(byteBuf.readableBytes());
+            byteBuf.release();
             if (e == null) {
                 if (batch.isTransactional()) {
                     transactionCoordinator.addActivePidOffset(TopicName.get(partitionName), batch.producerId(), offset);
@@ -682,9 +739,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
 
         final int numPartitions = produceRequest.partitionRecordsOrFail().size();
-
-        final long dataSizePerPartition = produceHar.getBuffer().readableBytes();
-        topicManager.getInternalServerCnx().increasePublishBuffer(dataSizePerPartition);
 
         final Map<TopicPartition, PartitionResponse> responseMap = new ConcurrentHashMap<>();
         final CompletableFuture<Void> produceFuture = new CompletableFuture<>();
@@ -719,6 +773,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 final ByteBuf byteBuf = entryFormatter.encode(validRecords, numMessages);
                 requestStats.getProduceEncodeStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
+                startSendOperationForThrottling(byteBuf.readableBytes());
 
                 if (log.isDebugEnabled()) {
                     log.debug("[{}] Request {}: Produce messages for topic {} partition {}, request size: {} ",
@@ -757,7 +812,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
 
         produceFuture.thenApply(ignored -> {
-            topicManager.getInternalServerCnx().decreasePublishBuffer(dataSizePerPartition);
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Request {}: Complete handle produce.", ctx.channel(), produceHar.toString());
             }
