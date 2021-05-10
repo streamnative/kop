@@ -14,16 +14,12 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import com.google.common.collect.Sets;
-
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
-
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-
 import lombok.extern.slf4j.Slf4j;
-
 import org.apache.kafka.common.internals.Topic;
 import org.apache.pulsar.client.admin.Clusters;
 import org.apache.pulsar.client.admin.Namespaces;

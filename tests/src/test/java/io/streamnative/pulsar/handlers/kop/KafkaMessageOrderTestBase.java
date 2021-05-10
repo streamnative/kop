@@ -20,13 +20,11 @@ import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
-
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
-
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;

@@ -19,12 +19,10 @@ import static org.mockito.Mockito.spy;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
-
 import io.confluent.kafka.schemaregistry.avro.AvroCompatibilityLevel;
 import io.confluent.kafka.schemaregistry.rest.SchemaRegistryConfig;
 import io.confluent.kafka.schemaregistry.rest.SchemaRegistryRestApplication;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
-
 import java.io.Closeable;
 import java.io.IOException;
 import java.lang.reflect.Field;

@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.testng.Assert.assertTrue;
 
 import java.util.concurrent.TimeUnit;
-
 import lombok.Cleanup;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;

@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import java.util.HashMap;
 import java.util.Map;
-
 import org.testng.Assert;
 import org.testng.annotations.Test;
 

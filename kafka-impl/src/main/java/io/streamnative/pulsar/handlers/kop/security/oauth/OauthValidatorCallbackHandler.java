@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -25,7 +24,6 @@ import javax.naming.AuthenticationException;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.AppConfigurationEntry;
-
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerToken;

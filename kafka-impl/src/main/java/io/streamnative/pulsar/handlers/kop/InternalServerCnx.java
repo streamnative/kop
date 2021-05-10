@@ -14,10 +14,8 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.annotations.VisibleForTesting;
-
 import java.net.InetSocketAddress;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
-
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.service.Producer;

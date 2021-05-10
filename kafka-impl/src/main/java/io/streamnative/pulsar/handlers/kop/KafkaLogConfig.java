@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-
 import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.record.Records;
 
