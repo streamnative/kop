@@ -82,6 +82,7 @@ import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
+import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
@@ -809,6 +810,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     e -> addPartitionResponse.accept(topicPartition, new PartitionResponse(Errors.forException(e)));
 
             final String fullPartitionName = KopTopic.toString(topicPartition);
+
+            // check KOP inner topic
             if (isOffsetTopic(fullPartitionName) || isTransactionTopic(fullPartitionName)) {
                 log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
                         ctx.channel(), produceHar.getHeader(), topicPartition);
@@ -845,9 +848,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     return;
                 }
 
-                final Consumer<PersistentTopic> persistentTopicConsumer = persistentTopic ->
-                        publishMessages(persistentTopic, byteBuf, numMessages, validRecords, fullPartitionName,
-                                offsetConsumer, errorsConsumer);
+                final Consumer<PersistentTopic> persistentTopicConsumer = persistentTopic -> {
+                    // check system topic
+                    if (persistentTopic.isSystemTopic()) {
+                        log.error("Not support produce message to system topic. topic: {}", persistentTopic);
+                        throw new InvalidTopicException(Errors.INVALID_TOPIC_EXCEPTION.message());
+                    }
+                    publishMessages(persistentTopic, byteBuf, numMessages, validRecords, fullPartitionName,
+                            offsetConsumer, errorsConsumer);
+                };
+
                 if (topicFuture.isDone()) {
                     persistentTopicConsumer.accept(topicFuture.getNow(null));
                 } else {
@@ -1832,7 +1842,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     .map(matchBroker -> metadataCache.get(
                             String.format("%s/%s", LoadManager.LOADBALANCE_BROKERS_ROOT, matchBroker)))
                     .collect(Collectors.toList());
-
                 FutureUtil.waitForAll(list)
                     .whenComplete((ignore, th) -> {
                             if (th != null) {
