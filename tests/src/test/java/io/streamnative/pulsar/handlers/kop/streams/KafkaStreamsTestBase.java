@@ -17,7 +17,6 @@ import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
-
 import lombok.Getter;
 import lombok.NonNull;
 import org.apache.kafka.clients.consumer.ConsumerConfig;

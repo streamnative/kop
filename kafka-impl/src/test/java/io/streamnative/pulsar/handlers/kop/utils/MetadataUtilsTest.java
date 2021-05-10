@@ -24,13 +24,10 @@ import static org.mockito.Mockito.verify;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-
 import org.apache.pulsar.client.admin.Clusters;
 import org.apache.pulsar.client.admin.Namespaces;
 import org.apache.pulsar.client.admin.PulsarAdmin;

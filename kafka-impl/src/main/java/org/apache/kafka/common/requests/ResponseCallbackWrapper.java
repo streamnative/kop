@@ -14,7 +14,6 @@
 package org.apache.kafka.common.requests;
 
 import java.util.Map;
-
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.Struct;
 

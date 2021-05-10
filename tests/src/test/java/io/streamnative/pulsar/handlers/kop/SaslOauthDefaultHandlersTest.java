@@ -17,7 +17,6 @@ import static org.mockito.Mockito.spy;
 
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
-
 import java.util.Optional;
 import java.util.Properties;
 import javax.crypto.SecretKey;

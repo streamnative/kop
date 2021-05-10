@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop;
 
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
-
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;

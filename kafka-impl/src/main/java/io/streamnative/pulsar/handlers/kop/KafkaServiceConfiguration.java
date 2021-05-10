@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
-
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;

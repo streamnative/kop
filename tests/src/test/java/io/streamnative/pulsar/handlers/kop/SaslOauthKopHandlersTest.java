@@ -16,11 +16,9 @@ package io.streamnative.pulsar.handlers.kop;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
-
 import java.net.URL;
 import java.nio.file.Paths;
 import java.util.Properties;
-
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationFactoryOAuth2;

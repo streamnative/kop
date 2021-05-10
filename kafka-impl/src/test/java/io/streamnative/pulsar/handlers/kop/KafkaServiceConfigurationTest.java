@@ -26,10 +26,8 @@ import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.util.Properties;
-
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.api.DigestType;
-
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.testng.annotations.Test;
 

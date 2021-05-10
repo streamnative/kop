@@ -43,7 +43,7 @@ public abstract class SaslOauthBearerTestBase extends KopProtocolHandlerTestBase
         super("kafka");
     }
 
-    protected abstract void configureOauth2(final Properties props);
+    protected abstract void configureOauth2(Properties props);
 
     protected void testSimpleProduceConsume() throws Exception {
         final String topic = "testSimpleProduceConsume";

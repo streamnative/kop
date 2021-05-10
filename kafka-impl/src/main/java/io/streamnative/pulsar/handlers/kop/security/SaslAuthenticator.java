@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.security;
 
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
-
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashMap;
@@ -26,11 +25,9 @@ import javax.naming.AuthenticationException;
 import javax.security.auth.login.AppConfigurationEntry;
 import javax.security.sasl.SaslException;
 import javax.security.sasl.SaslServer;
-
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractRequest;

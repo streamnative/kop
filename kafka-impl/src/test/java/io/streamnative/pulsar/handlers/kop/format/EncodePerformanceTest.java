@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop.format;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Random;
-
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
