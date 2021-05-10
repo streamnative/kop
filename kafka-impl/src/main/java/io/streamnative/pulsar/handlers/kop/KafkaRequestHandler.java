@@ -157,9 +157,10 @@ import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
+import org.apache.pulsar.metadata.api.MetadataCache;
+import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 import org.apache.pulsar.zookeeper.ZooKeeperCache;
-import org.apache.pulsar.zookeeper.ZooKeeperCache.Deserializer;
 
 /**
  * This class contains all the request handling methods.
@@ -1730,12 +1731,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
 
                 // Get a list of ServiceLookupData for each matchBroker.
-                List<CompletableFuture<Optional<ServiceLookupData>>> list = matchBrokers.stream()
-                    .map(matchBroker ->
-                        zkCache.getDataAsync(
-                            String.format("%s/%s", LoadManager.LOADBALANCE_BROKERS_ROOT, matchBroker),
-                            (Deserializer<ServiceLookupData>)
-                                pulsarService.getLoadManager().get().getLoadReportDeserializer()))
+                final MetadataCache<LocalBrokerData> metadataCache = pulsarService.getLocalMetadataStore()
+                        .getMetadataCache(LocalBrokerData.class);
+                List<CompletableFuture<Optional<LocalBrokerData>>> list = matchBrokers.stream()
+                    .map(matchBroker -> metadataCache.get(
+                            String.format("%s/%s", LoadManager.LOADBALANCE_BROKERS_ROOT, matchBroker)))
                     .collect(Collectors.toList());
 
                 FutureUtil.waitForAll(list)
@@ -1748,7 +1748,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             }
 
                             try {
-                                for (CompletableFuture<Optional<ServiceLookupData>> lookupData : list) {
+                                for (CompletableFuture<Optional<LocalBrokerData>> lookupData : list) {
                                     ServiceLookupData data = lookupData.get().get();
                                     if (log.isDebugEnabled()) {
                                         log.debug("Handle getProtocolDataToAdvertise for {}, pulsarUrl: {}, "
