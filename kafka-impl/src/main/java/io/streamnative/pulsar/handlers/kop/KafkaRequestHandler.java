@@ -1842,6 +1842,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     .map(matchBroker -> metadataCache.get(
                             String.format("%s/%s", LoadManager.LOADBALANCE_BROKERS_ROOT, matchBroker)))
                     .collect(Collectors.toList());
+
                 FutureUtil.waitForAll(list)
                     .whenComplete((ignore, th) -> {
                             if (th != null) {
