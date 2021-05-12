@@ -345,7 +345,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
         KafkaTopicManager.LOOKUP_CACHE.clear();
         KopBrokerLookupManager.clear();
-        KafkaTopicManager.getConsumerTopicManagers().clear();
+        KafkaTopicManager.closeKafkaTopicConsumerManagers();
         KafkaTopicManager.getReferences().clear();
         KafkaTopicManager.getTopics().clear();
         OffsetAcker.CONSUMERS.clear();

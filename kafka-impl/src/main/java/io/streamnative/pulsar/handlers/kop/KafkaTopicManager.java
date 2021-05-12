@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkState;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetAcker;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.net.InetSocketAddress;
@@ -23,8 +24,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -54,7 +57,6 @@ public class KafkaTopicManager {
     private final BrokerService brokerService;
 
     // consumerTopicManagers for consumers cache.
-    @Getter
     private static final ConcurrentHashMap<String, CompletableFuture<KafkaTopicConsumerManager>>
         consumerTopicManagers = new ConcurrentHashMap<>();
 
@@ -309,10 +311,7 @@ public class KafkaTopicManager {
         try {
             this.cursorExpireTask.cancel(true);
 
-            for (CompletableFuture<KafkaTopicConsumerManager> manager : consumerTopicManagers.values()) {
-                manager.get().close();
-            }
-            consumerTopicManagers.clear();
+            closeKafkaTopicConsumerManagers();
 
             for (Map.Entry<String, CompletableFuture<PersistentTopic>> entry : topics.entrySet()) {
                 String topicName = entry.getKey();
@@ -345,9 +344,14 @@ public class KafkaTopicManager {
         try {
             removeTopicManagerCache(topicName);
 
-            if (consumerTopicManagers.containsKey(topicName)) {
-                consumerTopicManagers.remove(topicName).get().close();
-            }
+            Optional.ofNullable(consumerTopicManagers.remove(topicName)).ifPresent(
+                    // Use thenAccept to avoid blocking
+                    tcmFuture -> tcmFuture.thenAccept(tcm -> {
+                        if (tcm != null) {
+                            tcm.close();
+                        }
+                    })
+            );
 
             if (!topics.containsKey(topicName)) {
                 return;
@@ -363,6 +367,27 @@ public class KafkaTopicManager {
         } catch (Exception e) {
             log.error("Failed to close reference for individual topic {}. exception:", topicName, e);
         }
+    }
+
+    public static void removeKafkaTopicConsumerManager(String topicName) {
+        consumerTopicManagers.remove(topicName);
+    }
+
+    public static void closeKafkaTopicConsumerManagers() {
+        consumerTopicManagers.forEach((topic, tcmFuture) -> {
+            try {
+                Optional.ofNullable(tcmFuture.get(300, TimeUnit.SECONDS))
+                        .ifPresent(KafkaTopicConsumerManager::close);
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                log.warn("Failed to get TCM future of {} when trying to close it", topic);
+            }
+        });
+        consumerTopicManagers.clear();
+    }
+
+    @VisibleForTesting
+    public static int getNumberOfKafkaTopicConsumerManagers() {
+        return consumerTopicManagers.size();
     }
 
     public CompletableFuture<Consumer> getGroupConsumers(String groupId, TopicPartition kafkaPartition) {

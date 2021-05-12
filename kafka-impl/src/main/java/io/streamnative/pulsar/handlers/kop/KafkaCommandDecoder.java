@@ -333,9 +333,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             // case 4: responseFuture is completed normally
             responseFuture.thenApply(response -> {
                 if (log.isDebugEnabled()) {
-                    log.debug("Write kafka cmd responseAndRequest back to client. \n"
-                                    + "\trequest content: {} \n"
-                                    + "\tresponseAndRequest content: {}",
+                    log.debug("Write kafka cmd to client."
+                                    + " request content: {}"
+                                    + " responseAndRequest content: {}",
                             request, response.toString(request.getRequest().version()));
                 }
 
