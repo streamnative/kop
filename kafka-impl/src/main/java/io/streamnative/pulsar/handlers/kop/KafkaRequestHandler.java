@@ -42,6 +42,10 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
+import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
@@ -196,6 +200,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     // key is the topic(partition), value is the future that indicates whether the PersistentTopic instance of the key
     // is found.
     private final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap = new ConcurrentHashMap<>();
+    // DelayedOperation for produce and fetch
+    private final DelayedOperationPurgatory<DelayedOperation> producePurgatory =
+            DelayedOperationPurgatory.<DelayedOperation>builder()
+                    .purgatoryName("produce")
+                    .timeoutTimer(SystemTimer.builder().executorName("produce").build())
+                    .build();
+    private final DelayedOperationPurgatory<DelayedOperation> fetchPurgatory =
+            DelayedOperationPurgatory.<DelayedOperation>builder()
+                    .purgatoryName("fetch")
+                    .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
+                    .build();
 
     // Flag to manage throttling-publish-buffer by atomically enable/disable read-channel.
     private final long maxPendingBytes;
@@ -267,6 +282,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 log.info("currentConnectedGroup remove {}", clientHost);
                 currentConnectedGroup.remove(clientHost);
             }
+            producePurgatory.shutdown();
+            fetchPurgatory.shutdown();
         }
     }
 
@@ -740,11 +757,33 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final int numPartitions = produceRequest.partitionRecordsOrFail().size();
 
         final Map<TopicPartition, PartitionResponse> responseMap = new ConcurrentHashMap<>();
-        final CompletableFuture<Void> produceFuture = new CompletableFuture<>();
+        // delay produce
+        final AtomicInteger topicPartitionNum = new AtomicInteger(produceRequest.partitionRecordsOrFail().size());
+        int timeoutMs = produceRequest.timeout();
+        Runnable complete = () -> {
+            topicPartitionNum.set(0);
+            // add the topicPartition with timeout error if it's not existed in responseMap
+            produceRequest.partitionRecordsOrFail().keySet().forEach(topicPartition -> {
+                if (!responseMap.containsKey(topicPartition)) {
+                    responseMap.put(topicPartition, new PartitionResponse(Errors.REQUEST_TIMED_OUT));
+                }
+            });
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] Request {}: Complete handle produce.", ctx.channel(), produceHar.toString());
+            }
+            requestStats.getHandleProduceRequestStats()
+                    .registerFailedEvent(MathUtils.elapsedNanos(startProduceNanos), TimeUnit.NANOSECONDS);
+            resultFuture.complete(new ProduceResponse(responseMap));
+        };
         BiConsumer<TopicPartition, PartitionResponse> addPartitionResponse = (topicPartition, response) -> {
             responseMap.put(topicPartition, response);
-            if (responseMap.size() == numPartitions) {
-                produceFuture.complete(null);
+            // reset topicPartitionNum
+            int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
+            if (restTopicPartitionNum < 0) {
+                return;
+            }
+            if (restTopicPartitionNum == 0) {
+                complete.run();
             }
         };
 
@@ -809,16 +848,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 exceptionConsumer.accept(e);
             }
         });
-
-        produceFuture.thenApply(ignored -> {
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Request {}: Complete handle produce.", ctx.channel(), produceHar.toString());
-            }
-            requestStats.getHandleProduceRequestStats()
-                    .registerFailedEvent(MathUtils.elapsedNanos(startProduceNanos), TimeUnit.NANOSECONDS);
-            resultFuture.complete(new ProduceResponse(responseMap));
-            return null;
-        });
+        // delay produce
+        if (timeoutMs <= 0) {
+            complete.run();
+        } else {
+            List<Object> delayedCreateKeys =
+                    produceRequest.partitionRecordsOrFail().keySet().stream()
+                            .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
+            DelayedProduceAndFetch delayedProduce = new DelayedProduceAndFetch(timeoutMs, topicPartitionNum, complete);
+            producePurgatory.tryCompleteElseWatch(delayedProduce, delayedCreateKeys);
+        }
     }
 
     protected void handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator,
@@ -1261,7 +1300,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
 
         MessageFetchContext fetchContext = MessageFetchContext.get(this);
-        fetchContext.handleFetch(resultFuture, fetch, transactionCoordinator);
+        fetchContext.handleFetch(resultFuture, fetch, transactionCoordinator, fetchPurgatory);
     }
 
     protected void handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup,
