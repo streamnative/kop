@@ -227,6 +227,16 @@ public final class MessageFetchContext {
         int timeoutMs = fetchRequestRequest.maxWait();
         Runnable complete = () -> {
             topicPartitionNum.set(0);
+            if (resultFuture.isCancelled()) {
+                // The request was cancelled by KafkaCommandDecoder when channel is closed or this request is expired,
+                // so the Netty buffers should be released.
+                decodeResults.forEach(DecodeResult::release);
+                return;
+            }
+            if (resultFuture.isDone()) {
+                // It may be triggered again in DelayedProduceAndFetch
+                return;
+            }
             // add the topicPartition with timeout error if it's not existed in responseData
             fetchRequestRequest.fetchData().keySet().forEach(topicPartition -> {
                 if (!responseData.containsKey(topicPartition)) {
@@ -239,23 +249,17 @@ public final class MessageFetchContext {
                             MemoryRecords.EMPTY));
                 }
             });
-            if (resultFuture.isDone()) {
-                // This future was completed by KafkaCommandDecoder because the channel is closed or the request
-                // timed out, so we need to release the Netty buffers here
-                decodeResults.forEach(DecodeResult::release);
-            } else {
-                resultFuture.complete(
-                        new ResponseCallbackWrapper(
-                                new FetchResponse(
-                                        Errors.NONE,
-                                        responseData,
-                                        ((Integer) THROTTLE_TIME_MS.defaultValue),
-                                        ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
-                                () -> {
-                                    // release the batched ByteBuf if necessary
-                                    decodeResults.forEach(DecodeResult::release);
-                                }));
-            }
+            resultFuture.complete(
+                    new ResponseCallbackWrapper(
+                            new FetchResponse(
+                                    Errors.NONE,
+                                    responseData,
+                                    ((Integer) THROTTLE_TIME_MS.defaultValue),
+                                    ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
+                            () -> {
+                                // release the batched ByteBuf if necessary
+                                decodeResults.forEach(DecodeResult::release);
+                            }));
             this.recycle();
         };
         CompletableFuture.allOf(readFutures.values().stream().toArray(CompletableFuture<?>[]::new))

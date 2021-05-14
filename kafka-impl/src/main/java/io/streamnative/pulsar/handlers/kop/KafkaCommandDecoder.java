@@ -89,7 +89,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             final ResponseAndRequest responseAndRequest = requestQueue.poll();
             if (responseAndRequest != null) {
                 // Trigger writeAndFlushResponseToClient immediately, but it will do nothing because isActive is false
-                responseAndRequest.getResponseFuture().complete(null);
+                responseAndRequest.getResponseFuture().cancel(true);
             } else {
                 // queue is empty
                 break;
@@ -309,16 +309,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             final boolean expired =
                     (nanoSecondsSinceCreated > TimeUnit.MILLISECONDS.toNanos(kafkaConfig.getRequestTimeoutMs()));
             if (!responseFuture.isDone() && !expired) {
-<<<<<<< HEAD
                 // case 1: responseFuture is not completed or expired, stop polling responses from responseQueue
                 requestStats.getResponseBlockedTimes().inc();
                 long firstBlockTimestamp = responseAndRequest.getFirstBlockedTimestamp();
                 if (firstBlockTimestamp == 0) {
                     responseAndRequest.setFirstBlockedTimestamp(MathUtils.nowInNano());
                 }
-=======
-                // case 1: responseFuture is not completed or expired, stop polling responses from requestQueue
->>>>>>> Rename responseQueue to requestQueue
                 break;
             } else {
                 if (requestQueue.remove(responseAndRequest)) {
@@ -339,9 +335,13 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             if (expired) {
                 log.error("[{}] request {} is not completed for {} ns (> {} ms)",
                         channel, request.getHeader(), nanoSecondsSinceCreated, kafkaConfig.getRequestTimeoutMs());
+<<<<<<< HEAD
                 responseFuture.complete(null);  // whether send timeout exception to client?
                 requestStats.getRequestQueuedLatencyStats().registerFailedEvent(
                         MathUtils.elapsedNanos(responseAndRequest.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
+=======
+                responseFuture.cancel(true);
+>>>>>>> Fix tests failure caused by DelayedOperation
                 continue;
             }
 
