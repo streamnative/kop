@@ -55,7 +55,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     @Getter
     protected AtomicBoolean isActive = new AtomicBoolean(false);
     // Queue to make response get responseFuture in order and limit the max request size
-    private final LinkedBlockingQueue<ResponseAndRequest> responseQueue;
+    private final LinkedBlockingQueue<ResponseAndRequest> requestQueue;
 
     protected final RequestStats requestStats;
     @Getter
@@ -64,7 +64,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     public KafkaCommandDecoder(StatsLogger statsLogger, KafkaServiceConfiguration kafkaConfig) {
         this.requestStats = new RequestStats(statsLogger);
         this.kafkaConfig = kafkaConfig;
-        this.responseQueue = new LinkedBlockingQueue<>(kafkaConfig.getMaxQueuedRequests());
+        this.requestQueue = new LinkedBlockingQueue<>(kafkaConfig.getMaxQueuedRequests());
     }
 
     @Override
@@ -83,10 +83,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected void close() {
         assert !isActive.get();
-        // Clear the response queue
-        log.info("close channel {} with {} pending responses", ctx.channel(), responseQueue.size());
+        // Clear the request queue
+        log.info("close channel {} with {} pending responses", ctx.channel(), requestQueue.size());
         while (true) {
-            final ResponseAndRequest responseAndRequest = responseQueue.poll();
+            final ResponseAndRequest responseAndRequest = requestQueue.poll();
             if (responseAndRequest != null) {
                 // Trigger writeAndFlushResponseToClient immediately, but it will do nothing because isActive is false
                 responseAndRequest.getResponseFuture().complete(null);
@@ -186,7 +186,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 });
             });
             // potentially blocking until there is room in the queue for the request.
-            responseQueue.put(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
+            requestQueue.put(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
             requestStats.getResponseQueueSize().incrementAndGet();
 
             if (!isActive.get()) {
@@ -298,9 +298,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected void writeAndFlushResponseToClient(Channel channel) {
         // loop from first responseFuture.
         while (isActive.get()) {
-            final ResponseAndRequest responseAndRequest = responseQueue.peek();
+            final ResponseAndRequest responseAndRequest = requestQueue.peek();
             if (responseAndRequest == null) {
-                // responseQueue is empty
+                // requestQueue is empty
                 break;
             }
 
@@ -309,15 +309,19 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             final boolean expired =
                     (nanoSecondsSinceCreated > TimeUnit.MILLISECONDS.toNanos(kafkaConfig.getRequestTimeoutMs()));
             if (!responseFuture.isDone() && !expired) {
+<<<<<<< HEAD
                 // case 1: responseFuture is not completed or expired, stop polling responses from responseQueue
                 requestStats.getResponseBlockedTimes().inc();
                 long firstBlockTimestamp = responseAndRequest.getFirstBlockedTimestamp();
                 if (firstBlockTimestamp == 0) {
                     responseAndRequest.setFirstBlockedTimestamp(MathUtils.nowInNano());
                 }
+=======
+                // case 1: responseFuture is not completed or expired, stop polling responses from requestQueue
+>>>>>>> Rename responseQueue to requestQueue
                 break;
             } else {
-                if (responseQueue.remove(responseAndRequest)) {
+                if (requestQueue.remove(responseAndRequest)) {
                     responseAndRequest.updateStats(requestStats);
                     requestStats.getResponseQueueSize().decrementAndGet();
                 } else { // it has been removed by another thread, skip this element
