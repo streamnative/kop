@@ -26,10 +26,13 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.naming.AuthenticationException;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.stats.StatsLogger;
@@ -153,10 +156,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             remoteAddress = channel.remoteAddress();
         }
 
+        requestQueue.put();
+        requestStats.getRequestQueueSize().incrementAndGet();
+
         final long timeBeforeParse = MathUtils.nowInNano();
         KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress);
         // potentially blocking until there is room in the queue for the request.
-        requestQueue.put();
         requestStats.getRequestParseStats().registerSuccessfulEvent(
                 MathUtils.elapsedNanos(timeBeforeParse), TimeUnit.NANOSECONDS);
         try {
@@ -175,12 +180,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 ctx.channel().eventLoop().execute(() -> {
                     writeAndFlushResponseToClient(channel);
                     // release requestQueue room
-                    requestQueue.poll();
+                    requestQueue.poll();    // throw exception wheather cause the eventLoop thread dead
                 });
             });
 
             responseQueue.add(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
-            requestStats.getRequestQueueSize().inc();
+            requestStats.getResponseQueueSize().incrementAndGet();
 
             if (!isActive.get()) {
                 handleInactive(kafkaHeaderAndRequest, responseFuture);
@@ -303,13 +308,24 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     (nanoSecondsSinceCreated > TimeUnit.MILLISECONDS.toNanos(kafkaConfig.getRequestTimeoutMs()));
             if (!responseFuture.isDone() && !expired) {
                 // case 1: responseFuture is not completed or expired, stop polling responses from responseQueue
+                requestStats.getResponseBlockedTimes().inc();
+                long firstBlockTimestamp = responseAndRequest.getFirstBlockedTimestamp();
+                if (firstBlockTimestamp == 0) {
+                    responseAndRequest.setFirstBlockedTimestamp(MathUtils.nowInNano());
+                }
                 break;
             } else {
                 if (responseQueue.remove(responseAndRequest)) {
                     responseAndRequest.updateStats(requestStats);
+                    requestStats.getResponseQueueSize().decrementAndGet();
                 } else { // it has been removed by another thread, skip this element
                     continue;
                 }
+            }
+
+            if (responseAndRequest.getFirstBlockedTimestamp() != 0) {
+                requestStats.getResponseBlockedLatency().registerSuccessfulEvent(
+                        MathUtils.elapsedNanos(responseAndRequest.getFirstBlockedTimestamp()), TimeUnit.NANOSECONDS);
             }
 
             final KafkaHeaderAndRequest request = responseAndRequest.getRequest();
@@ -317,7 +333,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             if (expired) {
                 log.error("[{}] request {} is not completed for {} ns (> {} ms)",
                         channel, request.getHeader(), nanoSecondsSinceCreated, kafkaConfig.getRequestTimeoutMs());
-                responseFuture.complete(null);
+                responseFuture.complete(null);  // whether send timeout exception to client?
+                requestStats.getRequestQueuedLatencyStats().registerFailedEvent(
+                        MathUtils.elapsedNanos(responseAndRequest.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
                 continue;
             }
 
@@ -325,8 +343,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             if (responseFuture.isCompletedExceptionally()) {
                 responseFuture.exceptionally(e -> {
                     log.error("[{}] request {} completed exceptionally", channel, request.getHeader(), e);
+                    requestStats.getRequestQueuedLatencyStats().registerFailedEvent(
+                            MathUtils.elapsedNanos(responseAndRequest.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
                     return null;
-                });
+                }); // send exception to client?
                 continue;
             }
 
@@ -555,6 +575,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         @Getter
         private final long createdTimestamp;
 
+        @Getter
+        @Setter
+        private long firstBlockedTimestamp;
+
         public static ResponseAndRequest of(CompletableFuture<AbstractResponse> response,
                                             KafkaHeaderAndRequest request) {
             return new ResponseAndRequest(response, request);
@@ -569,7 +593,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
 
         public void updateStats(final RequestStats requestStats) {
-            requestStats.getRequestQueueSize().dec();
+            requestStats.getRequestQueueSize().decrementAndGet();
             requestStats.getRequestQueuedLatencyStats()
                     .registerSuccessfulEvent(MathUtils.elapsedNanos(createdTimestamp), TimeUnit.NANOSECONDS);
         }
@@ -578,6 +602,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             this.responseFuture = response;
             this.request = request;
             this.createdTimestamp = MathUtils.nowInNano();
+            this.firstBlockedTimestamp = 0;
         }
     }
 }

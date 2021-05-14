@@ -29,6 +29,13 @@ public interface KopServerStats {
     String REQUEST_PARSE = "REQUEST_PARSE";
 
     /**
+     * Response stats.
+     */
+    String RESPONSE_QUEUE_SIZE = "RESPONSE_QUEUE_SIZE";
+    String RESPONSE_BLOCKED_TIMES = "RESPONSE_BLOCKED_TIMES";
+    String RESPONSE_BLOCKED_LATENCY = "RESPONSE_BLOCKED_LATENCY";
+
+    /**
      * PRODUCE STATS.
      */
     String HANDLE_PRODUCE_REQUEST = "HANDLE_PRODUCE_REQUEST";

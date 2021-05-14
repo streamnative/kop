@@ -25,14 +25,20 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_ENCODE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_PARSE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_QUEUED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_QUEUE_SIZE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_LATENCY;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_TIMES;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_QUEUE_SIZE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOTAL_MESSAGE_READ;
 
 import lombok.Getter;
 import org.apache.bookkeeper.stats.Counter;
+import org.apache.bookkeeper.stats.Gauge;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.stats.annotations.StatsDoc;
+
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Kop request stats metric for prometheus metrics.
@@ -45,11 +51,9 @@ import org.apache.bookkeeper.stats.annotations.StatsDoc;
 
 @Getter
 public class RequestStats {
-    @StatsDoc(
-            name = REQUEST_QUEUE_SIZE,
-            help = "request queue's size"
-    )
-    private final Counter requestQueueSize;
+
+    final AtomicInteger requestQueueSize = new AtomicInteger(0);
+    final AtomicInteger responseQueueSize = new AtomicInteger(0);
 
     @StatsDoc(
             name = REQUEST_QUEUED_LATENCY,
@@ -62,6 +66,18 @@ public class RequestStats {
             help = "parse request to ByteBuf"
     )
     private final OpStatsLogger requestParseStats;
+
+    @StatsDoc(
+            name = RESPONSE_BLOCKED_TIMES,
+            help = "response blocked times"
+    )
+    private final Counter responseBlockedTimes;
+
+    @StatsDoc(
+            name = RESPONSE_BLOCKED_LATENCY,
+            help = "response blocked latency"
+    )
+    private final OpStatsLogger responseBlockedLatency;
 
     @StatsDoc(
         name = HANDLE_PRODUCE_REQUEST,
@@ -118,9 +134,11 @@ public class RequestStats {
     private final OpStatsLogger fetchDecodeStats;
 
     public RequestStats(StatsLogger statsLogger) {
-        this.requestQueueSize = statsLogger.getCounter(REQUEST_QUEUE_SIZE);
         this.requestQueuedLatencyStats = statsLogger.getOpStatsLogger(REQUEST_QUEUED_LATENCY);
         this.requestParseStats = statsLogger.getOpStatsLogger(REQUEST_PARSE);
+
+        this.responseBlockedLatency = statsLogger.getOpStatsLogger(RESPONSE_BLOCKED_LATENCY);
+        this.responseBlockedTimes = statsLogger.getCounter(RESPONSE_BLOCKED_TIMES);
 
         this.handleProduceRequestStats = statsLogger.getOpStatsLogger(HANDLE_PRODUCE_REQUEST);
         this.produceEncodeStats = statsLogger.getOpStatsLogger(PRODUCE_ENCODE);
@@ -132,5 +150,30 @@ public class RequestStats {
         this.totalMessageReadStats = statsLogger.getOpStatsLogger(TOTAL_MESSAGE_READ);
         this.messageReadStats = statsLogger.getOpStatsLogger(MESSAGE_READ);
         this.fetchDecodeStats  = statsLogger.getOpStatsLogger(FETCH_DECODE);
+
+
+        statsLogger.registerGauge(RESPONSE_QUEUE_SIZE, new Gauge<Number>() {
+            @Override
+            public Number getDefaultValue() {
+                return 0;
+            }
+
+            @Override
+            public Number getSample() {
+                return responseQueueSize;
+            }
+        });
+
+        statsLogger.registerGauge(REQUEST_QUEUE_SIZE, new Gauge<Number>() {
+            @Override
+            public Number getDefaultValue() {
+                return 0;
+            }
+
+            @Override
+            public Number getSample() {
+                return requestQueueSize;
+            }
+        });
     }
 }

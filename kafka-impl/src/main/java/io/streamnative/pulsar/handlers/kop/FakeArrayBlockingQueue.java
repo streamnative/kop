@@ -36,7 +36,7 @@ public class FakeArrayBlockingQueue {
     public void put() throws InterruptedException {
         lock.lockInterruptibly();
         try {
-            while (count == capacity) {
+            while (count >= capacity) {
                 notFull.await();
             }
             count++; // enqueue
@@ -48,7 +48,7 @@ public class FakeArrayBlockingQueue {
     public void poll() {
         lock.lock();
         try {
-            if (count == 0) {
+            if (count <= 0) {
                 throw new IllegalStateException("poll() is called when count is 0");
             }
             count--; // dequeue
