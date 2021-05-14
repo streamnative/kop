@@ -135,6 +135,8 @@ public final class MessageFetchContext {
                                         FetchResponse.INVALID_LOG_START_OFFSET,
                                         null,
                                         MemoryRecords.EMPTY));
+                                // remove null future cache from consumerTopicManagers
+                                KafkaTopicManager.removeKafkaTopicConsumerManager(KopTopic.toString(topicPartition));
                                 // result got. this will be filtered in following filter method.
                                 return null;
                             }
@@ -242,8 +244,8 @@ public final class MessageFetchContext {
                                                 "cursor.readEntry fail. deleteCursor");
                                     } else {
                                         // remove null future cache from consumerTopicManagers
-                                        KafkaTopicManager.getConsumerTopicManagers()
-                                                .remove(KopTopic.toString(kafkaTopic));
+                                        KafkaTopicManager.removeKafkaTopicConsumerManager(
+                                                KopTopic.toString(kafkaTopic));
                                         log.warn("Cursor deleted while TCM close.");
                                     }
                                 });
@@ -335,8 +337,8 @@ public final class MessageFetchContext {
                                     cm.add(pair.getRight(), pair);
                                 } else {
                                     // remove null future cache from consumerTopicManagers
-                                    KafkaTopicManager.getConsumerTopicManagers()
-                                        .remove(KopTopic.toString(kafkaPartition));
+                                    KafkaTopicManager.removeKafkaTopicConsumerManager(
+                                            KopTopic.toString(kafkaPartition));
                                     log.warn("Cursor deleted while TCM close, failed to add cursor back to TCM.");
                                 }
                             });

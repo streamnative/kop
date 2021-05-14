@@ -107,7 +107,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         KafkaTopicConsumerManager topicConsumerManager2 = tcm.get();
 
         assertTrue(topicConsumerManager == topicConsumerManager2);
-        assertEquals(kafkaTopicManager.getConsumerTopicManagers().size(), 1);
+        assertEquals(KafkaTopicManager.getNumberOfKafkaTopicConsumerManagers(), 1);
 
         // 2. verify another get with different topic will return different tcm
         String topicName2 = "persistent://public/default/testGetTopicConsumerManager2";
@@ -115,7 +115,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         tcm = kafkaTopicManager.getTopicConsumerManager(topicName2);
         topicConsumerManager2 = tcm.get();
         assertTrue(topicConsumerManager != topicConsumerManager2);
-        assertEquals(kafkaTopicManager.getConsumerTopicManagers().size(), 2);
+        assertEquals(KafkaTopicManager.getNumberOfKafkaTopicConsumerManagers(), 2);
     }
 
 
