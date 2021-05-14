@@ -23,6 +23,7 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import java.io.Closeable;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -177,8 +178,16 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
             CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
             responseFuture.whenComplete((response, e) -> {
-                // Do nothing if it's triggered when responseFuture is expired
-                if (response == null) {
+                if (e != null) {
+                    if (e instanceof CancellationException) {
+                        if (log.isDebugEnabled()) {
+                            log.debug("[{}] Request {} is cancelled",
+                                    ctx.channel(), kafkaHeaderAndRequest.getHeader());
+                        }
+                    } else {
+                        log.error("[{}] Request {} is completed with exception",
+                                ctx.channel(), kafkaHeaderAndRequest.getHeader(), e);
+                    }
                     return;
                 }
                 ctx.channel().eventLoop().execute(() -> {
