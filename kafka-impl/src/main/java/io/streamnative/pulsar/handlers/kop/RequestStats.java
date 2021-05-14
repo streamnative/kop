@@ -31,14 +31,13 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_QUEUE_
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOTAL_MESSAGE_READ;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Getter;
 import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.Gauge;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.stats.annotations.StatsDoc;
-
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Kop request stats metric for prometheus metrics.
