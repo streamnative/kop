@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.kafka.common.protocol.ApiKeys.API_VERSIONS;
 
-import com.google.common.collect.Queues;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -24,8 +23,8 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import java.io.Closeable;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
-import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.naming.AuthenticationException;
@@ -55,11 +54,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected SocketAddress remoteAddress;
     @Getter
     protected AtomicBoolean isActive = new AtomicBoolean(false);
-    // Queue to make response get responseFuture in order.
-    private final Queue<ResponseAndRequest> responseQueue = Queues.newConcurrentLinkedQueue();
-
-    // Queue to make request at the given capacity.
-    private final FakeArrayBlockingQueue requestQueue;
+    // Queue to make response get responseFuture in order and limit the max request size
+    private final LinkedBlockingQueue<ResponseAndRequest> responseQueue;
 
     protected final RequestStats requestStats;
     @Getter
@@ -68,7 +64,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     public KafkaCommandDecoder(StatsLogger statsLogger, KafkaServiceConfiguration kafkaConfig) {
         this.requestStats = new RequestStats(statsLogger);
         this.kafkaConfig = kafkaConfig;
-        this.requestQueue = new FakeArrayBlockingQueue(kafkaConfig.getMaxQueuedRequests());
+        this.responseQueue = new LinkedBlockingQueue<>(kafkaConfig.getMaxQueuedRequests());
     }
 
     @Override
@@ -86,9 +82,20 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     }
 
     protected void close() {
+        assert !isActive.get();
+        // Clear the response queue
+        log.info("close channel {} with {} pending responses", ctx.channel(), responseQueue.size());
+        while (true) {
+            final ResponseAndRequest responseAndRequest = responseQueue.poll();
+            if (responseAndRequest != null) {
+                // Trigger writeAndFlushResponseToClient immediately, but it will do nothing because isActive is false
+                responseAndRequest.getResponseFuture().complete(null);
+            } else {
+                // queue is empty
+                break;
+            }
+        }
         ctx.close();
-        requestQueue.clear();
-        responseQueue.clear();
     }
 
     @Override
@@ -154,7 +161,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             remoteAddress = channel.remoteAddress();
         }
 
-        requestQueue.put();
         requestStats.getRequestQueueSize().incrementAndGet();
 
         final long timeBeforeParse = MathUtils.nowInNano();
@@ -177,12 +183,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 }
                 ctx.channel().eventLoop().execute(() -> {
                     writeAndFlushResponseToClient(channel);
-                    // release requestQueue room
-                    requestQueue.poll();    // throw exception wheather cause the eventLoop thread dead
                 });
             });
-
-            responseQueue.add(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
+            // potentially blocking until there is room in the queue for the request.
+            responseQueue.put(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
             requestStats.getResponseQueueSize().incrementAndGet();
 
             if (!isActive.get()) {
