@@ -25,8 +25,10 @@ import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -97,7 +99,8 @@ public final class MessageFetchContext {
     public CompletableFuture<AbstractResponse> handleFetch(
             CompletableFuture<AbstractResponse> fetchResponse,
             KafkaHeaderAndRequest fetchRequest,
-            TransactionCoordinator transactionCoordinator) {
+            TransactionCoordinator transactionCoordinator,
+            DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
         final long startPreparingMetadataNanos = MathUtils.nowInNano();
         LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData = new LinkedHashMap<>();
 
@@ -179,7 +182,7 @@ public final class MessageFetchContext {
                         MathUtils.elapsedNanos(startPreparingMetadataNanos), TimeUnit.NANOSECONDS);
 
                 readMessages(fetchRequest, partitionCursor, fetchResponse, responseData,
-                        transactionCoordinator, highWaterMarkMap);
+                        transactionCoordinator, highWaterMarkMap, fetchPurgatory);
             });
 
         return fetchResponse;
@@ -193,13 +196,14 @@ public final class MessageFetchContext {
                               CompletableFuture<AbstractResponse> resultFuture,
                               LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData,
                               TransactionCoordinator tc,
-                              Map<TopicPartition, Long> highWaterMarkMap) {
+                              Map<TopicPartition, Long> highWaterMarkMap,
+                              DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
         AtomicInteger bytesRead = new AtomicInteger(0);
         Map<TopicPartition, List<Entry>> entryValues = new ConcurrentHashMap<>();
 
         final long startReadingTotalMessagesNanos = MathUtils.nowInNano();
         readMessagesInternal(fetch, cursors, bytesRead, entryValues, resultFuture, responseData, tc, highWaterMarkMap,
-                startReadingTotalMessagesNanos);
+                startReadingTotalMessagesNanos, fetchPurgatory);
     }
 
     private void readMessagesInternal(KafkaHeaderAndRequest fetch,
@@ -210,11 +214,44 @@ public final class MessageFetchContext {
                                       LinkedHashMap<TopicPartition, PartitionData<MemoryRecords>> responseData,
                                       TransactionCoordinator tc,
                                       Map<TopicPartition, Long> highWaterMarkMap,
-                                      long startReadingTotalMessagesNanos) {
+                                      long startReadingTotalMessagesNanos,
+                                      DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
 
         AtomicInteger entriesRead = new AtomicInteger(0);
         // here do the real read, and in read callback put cursor back to KafkaTopicConsumerManager.
         Map<TopicPartition, CompletableFuture<List<Entry>>> readFutures = readAllCursorOnce(cursors);
+        // delay fetch
+        FetchRequest fetchRequestRequest = (FetchRequest) fetch.getRequest();
+        List<DecodeResult> decodeResults = new ArrayList<>();
+        final AtomicInteger topicPartitionNum = new AtomicInteger(fetchRequestRequest.fetchData().entrySet().size());
+        int timeoutMs = fetchRequestRequest.maxWait();
+        Runnable complete = () -> {
+            topicPartitionNum.set(0);
+            // add the topicPartition with timeout error if it's not existed in responseData
+            fetchRequestRequest.fetchData().keySet().forEach(topicPartition -> {
+                if (!responseData.containsKey(topicPartition)) {
+                    responseData.put(topicPartition, new FetchResponse.PartitionData<>(
+                            Errors.REQUEST_TIMED_OUT,
+                            FetchResponse.INVALID_HIGHWATERMARK,
+                            FetchResponse.INVALID_LAST_STABLE_OFFSET,
+                            FetchResponse.INVALID_LOG_START_OFFSET,
+                            null,
+                            MemoryRecords.EMPTY));
+                }
+            });
+            resultFuture.complete(
+                    new ResponseCallbackWrapper(
+                            new FetchResponse(
+                                    Errors.NONE,
+                                    responseData,
+                                    ((Integer) THROTTLE_TIME_MS.defaultValue),
+                                    ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
+                            () -> {
+                                // release the batched ByteBuf if necessary
+                                decodeResults.forEach(DecodeResult::release);
+                            }));
+            this.recycle();
+        };
         CompletableFuture.allOf(readFutures.values().stream().toArray(CompletableFuture<?>[]::new))
             .whenComplete((ignore, ex) -> {
 
@@ -295,24 +332,20 @@ public final class MessageFetchContext {
 
                 int maxBytes = request.maxBytes();
                 int minBytes = request.minBytes();
-                int waitTime = request.maxWait(); // in ms
-                // if endTime <= 0, then no time wait, wait for minBytes.
-                long endTime = waitTime > 0 ? System.currentTimeMillis() + waitTime : waitTime;
 
                 int allSize = bytesRead.get();
 
                 if (log.isDebugEnabled()) {
                     log.debug("Request {}: One round read {} entries, "
-                            + "allSize/maxBytes/minBytes/endTime: {}/{}/{}/{}",
+                            + "allSize/maxBytes/minBytes: {}/{}/{}",
                         fetch.getHeader(), entriesRead.get(),
-                        allSize, maxBytes, minBytes, new Date(endTime));
+                        allSize, maxBytes, minBytes);
                 }
 
                 // all partitions read no entry, return earlier;
                 // reach maxTime, return;
                 // reach minBytes if no endTime, return;
                 if ((allSize == 0 && entriesRead.get() == 0)
-                    || (endTime > 0 && endTime <= System.currentTimeMillis())
                     || allSize > minBytes
                     || allSize > maxBytes){
                     if (log.isDebugEnabled()) {
@@ -322,7 +355,6 @@ public final class MessageFetchContext {
                     requestHandler.requestStats.getTotalMessageReadStats().registerSuccessfulEvent(
                             MathUtils.elapsedNanos(startReadingTotalMessagesNanos), TimeUnit.NANOSECONDS);
 
-                    List<DecodeResult> decodeResults = new ArrayList<>();
                     responseValues.entrySet().forEach(responseEntries -> {
                         final PartitionData partitionData;
                         TopicPartition kafkaPartition = responseEntries.getKey();
@@ -402,20 +434,27 @@ public final class MessageFetchContext {
                                 decodeResult.getRecords());
                         }
                         responseData.put(kafkaPartition, partitionData);
+                        // reset topicPartitionNum
+                        int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
+                        if (restTopicPartitionNum < 0) {
+                            return;
+                        }
+                        if (restTopicPartitionNum == 0) {
+                            complete.run();
+                        }
                     });
-
-                    resultFuture.complete(
-                            new ResponseCallbackWrapper(
-                                    new FetchResponse(
-                                            Errors.NONE,
-                                            responseData,
-                                            ((Integer) THROTTLE_TIME_MS.defaultValue),
-                                            ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
-                                    () -> {
-                                        // release the batched ByteBuf if necessary
-                                        decodeResults.forEach(DecodeResult::release);
-                                    }));
-                    this.recycle();
+                    // delay fetch
+                    if (timeoutMs <= 0) {
+                        complete.run();
+                    } else {
+                        List<Object> delayedCreateKeys =
+                                fetchRequestRequest.fetchData().keySet().stream()
+                                        .map(DelayedOperationKey.TopicPartitionOperationKey::new)
+                                        .collect(Collectors.toList());
+                        DelayedProduceAndFetch delayedFetch = new DelayedProduceAndFetch(timeoutMs,
+                                topicPartitionNum, complete);
+                        fetchPurgatory.tryCompleteElseWatch(delayedFetch, delayedCreateKeys);
+                    }
                 } else {
                     if (log.isDebugEnabled()) {
                         log.debug("Request {}: Read time or size not reach, do another round of read before return.",
@@ -423,7 +462,7 @@ public final class MessageFetchContext {
                     }
                     // need do another round read
                     readMessagesInternal(fetch, cursors, bytesRead, responseValues, resultFuture, responseData,
-                            tc, highWaterMarkMap, startReadingTotalMessagesNanos);
+                            tc, highWaterMarkMap, startReadingTotalMessagesNanos, fetchPurgatory);
                 }
             });
     }
