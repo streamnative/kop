@@ -51,8 +51,8 @@ import org.apache.bookkeeper.stats.annotations.StatsDoc;
 @Getter
 public class RequestStats {
 
-    final AtomicInteger requestQueueSize = new AtomicInteger(0);
-    final AtomicInteger responseQueueSize = new AtomicInteger(0);
+    private final AtomicInteger requestQueueSize = new AtomicInteger(0);
+    private final AtomicInteger responseQueueSize = new AtomicInteger(0);
 
     @StatsDoc(
             name = REQUEST_QUEUED_LATENCY,
