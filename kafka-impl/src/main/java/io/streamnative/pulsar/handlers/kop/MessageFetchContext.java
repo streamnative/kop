@@ -239,17 +239,23 @@ public final class MessageFetchContext {
                             MemoryRecords.EMPTY));
                 }
             });
-            resultFuture.complete(
-                    new ResponseCallbackWrapper(
-                            new FetchResponse(
-                                    Errors.NONE,
-                                    responseData,
-                                    ((Integer) THROTTLE_TIME_MS.defaultValue),
-                                    ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
-                            () -> {
-                                // release the batched ByteBuf if necessary
-                                decodeResults.forEach(DecodeResult::release);
-                            }));
+            if (resultFuture.isDone()) {
+                // This future was completed by KafkaCommandDecoder because the channel is closed or the request
+                // timed out, so we need to release the Netty buffers here
+                decodeResults.forEach(DecodeResult::release);
+            } else {
+                resultFuture.complete(
+                        new ResponseCallbackWrapper(
+                                new FetchResponse(
+                                        Errors.NONE,
+                                        responseData,
+                                        ((Integer) THROTTLE_TIME_MS.defaultValue),
+                                        ((FetchRequest) fetch.getRequest()).metadata().sessionId()),
+                                () -> {
+                                    // release the batched ByteBuf if necessary
+                                    decodeResults.forEach(DecodeResult::release);
+                                }));
+            }
             this.recycle();
         };
         CompletableFuture.allOf(readFutures.values().stream().toArray(CompletableFuture<?>[]::new))
