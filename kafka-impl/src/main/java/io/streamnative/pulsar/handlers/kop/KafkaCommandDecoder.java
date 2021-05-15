@@ -344,13 +344,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             if (expired) {
                 log.error("[{}] request {} is not completed for {} ns (> {} ms)",
                         channel, request.getHeader(), nanoSecondsSinceCreated, kafkaConfig.getRequestTimeoutMs());
-<<<<<<< HEAD
-                responseFuture.complete(null);  // whether send timeout exception to client?
+                responseFuture.cancel(true);
                 requestStats.getRequestQueuedLatencyStats().registerFailedEvent(
                         MathUtils.elapsedNanos(responseAndRequest.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
-=======
-                responseFuture.cancel(true);
->>>>>>> Fix tests failure caused by DelayedOperation
                 continue;
             }
 
