@@ -83,7 +83,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     }
 
     protected void close() {
-        assert !isActive.get();
         // Clear the request queue
         log.info("close channel {} with {} pending responses", ctx.channel(), requestQueue.size());
         while (true) {
@@ -188,6 +187,11 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                         log.error("[{}] Request {} is completed with exception",
                                 ctx.channel(), kafkaHeaderAndRequest.getHeader(), e);
                     }
+                    return;
+                }
+                if (response == null) {
+                    log.error("[{}] Unexpected null completed future for request {}",
+                            ctx.channel(), kafkaHeaderAndRequest.getHeader());
                     return;
                 }
                 ctx.channel().eventLoop().execute(() -> {
