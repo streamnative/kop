@@ -34,6 +34,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.stats.StatsLogger;
+import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.AbstractRequest;
@@ -127,7 +128,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    protected ByteBuf responseToByteBuf(AbstractResponse response, KafkaHeaderAndRequest request) {
+    protected static ByteBuf responseToByteBuf(AbstractResponse response, KafkaHeaderAndRequest request) {
         try (KafkaHeaderAndResponse kafkaHeaderAndResponse =
                  KafkaHeaderAndResponse.responseForRequest(request, response)) {
             // Lowering Client API_VERSION request to the oldest API_VERSION KoP supports, this is to make \
@@ -177,21 +178,13 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
             CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
             responseFuture.whenComplete((response, e) -> {
-                if (e != null) {
-                    if (e instanceof CancellationException) {
-                        if (log.isDebugEnabled()) {
-                            log.debug("[{}] Request {} is cancelled",
-                                    ctx.channel(), kafkaHeaderAndRequest.getHeader());
-                        }
-                    } else {
-                        log.error("[{}] Request {} is completed with exception",
-                                ctx.channel(), kafkaHeaderAndRequest.getHeader(), e);
+                if (e instanceof CancellationException) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("[{}] Request {} is cancelled",
+                                ctx.channel(), kafkaHeaderAndRequest.getHeader());
                     }
-                    return;
-                }
-                if (response == null) {
-                    log.error("[{}] Unexpected null completed future for request {}",
-                            ctx.channel(), kafkaHeaderAndRequest.getHeader());
+                    // The response future is cancelled by `close` or `writeAndFlushResponseToClient` method, there's
+                    // no need to call `writeAndFlushResponseToClient` again.
                     return;
                 }
                 ctx.channel().eventLoop().execute(() -> {
@@ -344,20 +337,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             }
 
             final KafkaHeaderAndRequest request = responseAndRequest.getRequest();
-            // case 2: responseFuture is expired
-            if (expired) {
-                log.error("[{}] request {} is not completed for {} ns (> {} ms)",
-                        channel, request.getHeader(), nanoSecondsSinceCreated, kafkaConfig.getRequestTimeoutMs());
-                responseFuture.cancel(true);
-                requestStats.getRequestQueuedLatencyStats().registerFailedEvent(
-                        MathUtils.elapsedNanos(responseAndRequest.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
-                continue;
-            }
 
-            // case 3: responseFuture is completed exceptionally
+            // case 2: responseFuture is completed exceptionally
             if (responseFuture.isCompletedExceptionally()) {
                 responseFuture.exceptionally(e -> {
                     log.error("[{}] request {} completed exceptionally", channel, request.getHeader(), e);
+                    channel.writeAndFlush(request.createErrorResponse(e));
                     requestStats.getRequestQueuedLatencyStats().registerFailedEvent(
                             MathUtils.elapsedNanos(responseAndRequest.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
                     return null;
@@ -365,27 +350,45 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 continue;
             }
 
-            // case 4: responseFuture is completed normally
-            responseFuture.thenApply(response -> {
-                if (log.isDebugEnabled()) {
-                    log.debug("Write kafka cmd to client."
-                                    + " request content: {}"
-                                    + " responseAndRequest content: {}",
-                            request, response.toString(request.getRequest().version()));
-                }
+            // case 3: responseFuture is completed normally
+            if (responseFuture.isDone()) {
+                responseFuture.thenAccept(response -> {
+                    if (response == null) {
+                        // It should not be null, just check it for safety
+                        log.error("[{}] Unexpected null completed future for request {}",
+                                ctx.channel(), request.getHeader());
+                        channel.writeAndFlush(request.createErrorResponse(new ApiException("response is null")));
+                        return;
+                    }
+                    if (log.isDebugEnabled()) {
+                        log.debug("Write kafka cmd to client."
+                                        + " request content: {}"
+                                        + " responseAndRequest content: {}",
+                                request, response.toString(request.getRequest().version()));
+                    }
 
-                final ByteBuf result = responseToByteBuf(response, request);
-                channel.writeAndFlush(result).addListener(future -> {
-                    if (response instanceof ResponseCallbackWrapper) {
-                        ((ResponseCallbackWrapper) response).responseComplete();
-                    }
-                    if (!future.isSuccess()) {
-                        log.error("[{}] Failed to write {}", channel, request.getHeader(), future.cause());
-                    }
+                    final ByteBuf result = responseToByteBuf(response, request);
+                    channel.writeAndFlush(result).addListener(future -> {
+                        if (response instanceof ResponseCallbackWrapper) {
+                            ((ResponseCallbackWrapper) response).responseComplete();
+                        }
+                        if (!future.isSuccess()) {
+                            log.error("[{}] Failed to write {}", channel, request.getHeader(), future.cause());
+                        }
+                    });
                 });
-                return null;
-            });
+            }
 
+            // case 4: responseFuture is expired
+            if (expired) {
+                log.error("[{}] request {} is not completed for {} ns (> {} ms)",
+                        channel, request.getHeader(), nanoSecondsSinceCreated, kafkaConfig.getRequestTimeoutMs());
+                responseFuture.cancel(true);
+                channel.writeAndFlush(
+                        request.createErrorResponse(new ApiException("request is expired from server side")));
+                requestStats.getRequestQueuedLatencyStats().registerFailedEvent(
+                        MathUtils.elapsedNanos(responseAndRequest.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
+            }
         }
     }
 
@@ -518,8 +521,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             }
         }
 
-        ByteBuf getBuffer() {
-            return this.buffer;
+        public ByteBuf createErrorResponse(Throwable e) {
+            return responseToByteBuf(request.getErrorResponse(e), this);
         }
 
         public String toString() {
