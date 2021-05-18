@@ -20,7 +20,6 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetAcker;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.net.InetSocketAddress;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -313,23 +312,13 @@ public class KafkaTopicManager {
 
             closeKafkaTopicConsumerManagers();
 
-            for (Map.Entry<String, CompletableFuture<PersistentTopic>> entry : topics.entrySet()) {
-                String topicName = entry.getKey();
-                CompletableFuture<PersistentTopic> topicFuture = entry.getValue();
+            topics.keySet().forEach(topicName -> {
                 if (log.isDebugEnabled()) {
                     log.debug("[{}] remove producer {} for topic {} at close()",
-                        requestHandler.ctx.channel(), references.get(topicName), topicName);
+                            requestHandler.ctx.channel(), references.get(topicName), topicName);
                 }
-                if (references.get(topicName) != null) {
-                    PersistentTopic persistentTopic = topicFuture.get();
-                    if (persistentTopic != null) {
-                        persistentTopic.removeProducer(references.get(topicName));
-                    }
-                    references.remove(topicName);
-                }
-            }
-            // clear topics after close
-            topics.clear();
+                removePersistentTopicAndReferenceProducer(topicName);
+            });
         } catch (Exception e) {
             log.error("[{}] Failed to close KafkaTopicManager. exception:",
                 requestHandler.ctx.channel(), e);
@@ -338,6 +327,34 @@ public class KafkaTopicManager {
 
     public static Producer getReferenceProducer(String topicName) {
         return references.get(topicName);
+    }
+
+    private static void removePersistentTopicAndReferenceProducer(final String topicName) {
+        // 1. Remove PersistentTopic and Producer from caches, these calls are thread safe
+        final CompletableFuture<PersistentTopic> topicFuture = topics.remove(topicName);
+        final Producer producer = references.remove(topicName);
+
+        if (topicFuture == null) {
+            removeTopicManagerCache(topicName);
+            return;
+        }
+
+        // 2. Remove Producer from PersistentTopic's internal cache
+        try {
+            // It's safe to wait until the future is completed because it's completed when
+            // `BrokerService#getTopicIfExists` completed and it won't block too long.
+            final PersistentTopic persistentTopic = topicFuture.get();
+            if (producer != null && persistentTopic != null) {
+                try {
+                    persistentTopic.removeProducer(producer);
+                } catch (IllegalArgumentException ignored) {
+                    log.error("[{}] The producer's topic ({}) doesn't match the current PersistentTopic",
+                            topicName, (producer.getTopic() == null) ? "null" : producer.getTopic().getName());
+                }
+            }
+        } catch (InterruptedException | ExecutionException e) {
+            log.error("Failed to get topic '{}' in removeTopicAndReferenceProducer", topicName, e);
+        }
     }
 
     public static void deReference(String topicName) {
@@ -353,16 +370,7 @@ public class KafkaTopicManager {
                     })
             );
 
-            if (!topics.containsKey(topicName)) {
-                return;
-            }
-            PersistentTopic persistentTopic = topics.get(topicName).get();
-            Producer producer = references.get(topicName);
-            if (persistentTopic != null && producer != null) {
-                persistentTopic.removeProducer(producer);
-            }
-            topics.remove(topicName);
-
+            removePersistentTopicAndReferenceProducer(topicName);
             OffsetAcker.removeOffsetAcker(topicName);
         } catch (Exception e) {
             log.error("Failed to close reference for individual topic {}. exception:", topicName, e);
