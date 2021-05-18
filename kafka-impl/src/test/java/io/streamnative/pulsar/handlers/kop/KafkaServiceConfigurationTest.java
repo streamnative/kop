@@ -66,14 +66,6 @@ public class KafkaServiceConfigurationTest {
     }
 
     @Test
-    public void testGroupIdZooKeeperPath() {
-        String zkPathForKop = "/consumer_group_test";
-        KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
-        configuration.setGroupIdZooKeeperPath(zkPathForKop);
-        assertEquals("/consumer_group_test", configuration.getGroupIdZooKeeperPath());
-    }
-
-    @Test
     public void testConfigurationUtilsStream() throws Exception {
         File testConfigFile = new File("tmp." + System.currentTimeMillis() + ".properties");
         if (testConfigFile.exists()) {

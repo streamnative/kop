@@ -17,9 +17,7 @@ import static com.google.common.base.Preconditions.checkState;
 
 import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetAcker;
-import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.net.InetSocketAddress;
-import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,17 +28,13 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.BrokerServiceException;
-import org.apache.pulsar.broker.service.Consumer;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
-import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.TopicName;
 
 /**
@@ -83,10 +77,6 @@ public class KafkaTopicManager {
 
     public static final ConcurrentHashMap<String, CompletableFuture<Optional<String>>>
             KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
-
-    // cache for consumers for collect metrics: <groupId, Consumer>
-    public static final ConcurrentHashMap<String, CompletableFuture<Consumer>>
-            CONSUMERS_CACHE = new ConcurrentHashMap<>();
 
     KafkaTopicManager(KafkaRequestHandler kafkaRequestHandler) {
         this.requestHandler = kafkaRequestHandler;
@@ -154,7 +144,6 @@ public class KafkaTopicManager {
     public static void removeTopicManagerCache(String topicName) {
         LOOKUP_CACHE.remove(topicName);
         KOP_ADDRESS_CACHE.remove(topicName);
-        CONSUMERS_CACHE.clear();
     }
 
     public static void clearTopicManagerCache() {
@@ -396,71 +385,5 @@ public class KafkaTopicManager {
     @VisibleForTesting
     public static int getNumberOfKafkaTopicConsumerManagers() {
         return consumerTopicManagers.size();
-    }
-
-    public CompletableFuture<Consumer> getGroupConsumers(String groupId, TopicPartition kafkaPartition) {
-        if (closed.get()) {
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Return null for getGroupConsumers({}, {}) since channel closing",
-                        requestHandler.ctx.channel(), groupId, kafkaPartition);
-            }
-            return CompletableFuture.completedFuture(null);
-        }
-        if (StringUtils.isEmpty(groupId)) {
-            if (log.isDebugEnabled()) {
-                log.debug("Try to get group consumers with an empty group id");
-            }
-            return CompletableFuture.completedFuture(null);
-        }
-
-        // The future of the offset consumer should be created before in `GroupCoordinator#handleSyncGroup`
-        final OffsetAcker offsetAcker = requestHandler.getGroupCoordinator().getOffsetAcker();
-        final CompletableFuture<org.apache.pulsar.client.api.Consumer<byte[]>> offsetConsumerFuture =
-                offsetAcker.getConsumer(groupId, kafkaPartition);
-        if (offsetConsumerFuture == null) {
-            if (log.isDebugEnabled()) {
-                log.debug("No offset consumer for [group={}] [topic={}]", groupId, kafkaPartition);
-            }
-            return CompletableFuture.completedFuture(null);
-        }
-
-        CompletableFuture<Consumer> consumerFuture = new CompletableFuture<>();
-        return CONSUMERS_CACHE.computeIfAbsent(groupId, group -> {
-            try {
-                TopicName topicName = TopicName.get(KopTopic.toString(kafkaPartition));
-                NamespaceBundle namespaceBundle = pulsarService.getBrokerService()
-                        .pulsar().getNamespaceService().getBundle(topicName);
-                PersistentTopic persistentTopic = (PersistentTopic) pulsarService
-                        .getBrokerService().getMultiLayerTopicsMap()
-                        .get(topicName.getNamespace()).get(namespaceBundle.toString())
-                        .get(topicName.toString());
-                // The `Consumer` in broker side won't be created until the `Consumer` in client side subscribes
-                // successfully, so we should wait until offset consumer's future is completed.
-                offsetConsumerFuture.whenComplete((ignored, e) -> {
-                    if (e != null) {
-                        log.warn("Failed to create offset consumer for [group={}] [topic={}]: {}",
-                                groupId, kafkaPartition, e.getMessage());
-                        offsetAcker.removeConsumer(groupId, kafkaPartition);
-                        // Here we don't return because the `Consumer` in broker side may be created already
-                    }
-                    // Double check for if the `Consumer` in broker side has been created
-                    final List<Consumer> consumers =
-                            persistentTopic.getSubscriptions().get(groupId).getDispatcher().getConsumers();
-                    if (consumers.isEmpty()) {
-                        log.error("There's no internal consumer for [group={}]", groupId);
-                        consumerFuture.complete(null);
-                        return;
-                    }
-                    // only one consumer existed for internal subscription
-                    final Consumer consumer = persistentTopic.getSubscriptions()
-                            .get(groupId).getDispatcher().getConsumers().get(0);
-                    consumerFuture.complete(consumer);
-                });
-            } catch (Exception e) {
-                log.error("get topic error", e);
-                consumerFuture.complete(null);
-            }
-            return consumerFuture;
-        });
     }
 }

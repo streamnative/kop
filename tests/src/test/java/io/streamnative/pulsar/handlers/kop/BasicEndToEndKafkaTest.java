@@ -17,25 +17,19 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
-import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.Properties;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.policies.data.ConsumerStats;
 import org.testng.annotations.Test;
 
 /**
@@ -111,38 +105,6 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         kafkaConsumer2.close();
         Thread.sleep(500); // Wait for consumers closed
         admin.topics().deletePartitionedTopic(topic);
-    }
-
-    @Test(timeOut = 20000)
-    public void testKafkaConsumerMetrics() throws Exception {
-        final String topic = "test-kafka-consumer-metrics";
-        final String group = "group-test-kafka-consumer-metrics";
-        final List<String> expectedMessages = Arrays.asList("A", "B", "C");
-
-        @Cleanup
-        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
-        sendSingleMessages(kafkaProducer, topic, expectedMessages);
-
-        final Properties consumerProps = newKafkaConsumerProperties();
-        consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, group);
-        @Cleanup
-        final KafkaConsumer<String, String> kafkaConsumer = new KafkaConsumer<>(consumerProps);
-        kafkaConsumer.subscribe(Collections.singleton(topic));
-        List<String> kafkaReceives = receiveMessages(kafkaConsumer, expectedMessages.size());
-        assertEquals(kafkaReceives, expectedMessages);
-
-        // Check stats
-        final TopicName topicName = TopicName.get(KopTopic.toString(new TopicPartition(topic, 0)));
-        final PersistentTopic persistentTopic = (PersistentTopic) pulsar.getBrokerService().getMultiLayerTopicsMap()
-                .get(topicName.getNamespace())
-                .get(pulsar.getNamespaceService().getBundle(topicName).toString())
-                .get(topicName.toString());
-        final ConsumerStats stats =
-                persistentTopic.getSubscriptions().get(group).getDispatcher().getConsumers().get(0).getStats();
-        log.info("Consumer stats: [msgOutCounter={}] [bytesOutCounter={}]",
-                stats.msgOutCounter, stats.bytesOutCounter);
-        assertEquals(stats.msgOutCounter, expectedMessages.size());
-        assertTrue(stats.bytesOutCounter > 0);
     }
 
     @Test(timeOut = 30000)

@@ -149,12 +149,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private long offsetsRetentionCheckIntervalMs = OffsetConfig.DefaultOffsetsRetentionCheckIntervalMs;
 
-    @FieldContext(
-            category = CATEGORY_KOP,
-            doc = "Zookeeper path for storing kop consumer group"
-    )
-    private String groupIdZooKeeperPath = "/client_group_id";
-
     @Deprecated
     @FieldContext(
         category = CATEGORY_KOP,
