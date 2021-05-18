@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static com.google.common.base.Preconditions.checkState;
 
 import com.google.common.annotations.VisibleForTesting;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetAcker;
 import java.net.InetSocketAddress;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -360,7 +359,6 @@ public class KafkaTopicManager {
             );
 
             removePersistentTopicAndReferenceProducer(topicName);
-            OffsetAcker.removeOffsetAcker(topicName);
         } catch (Exception e) {
             log.error("Failed to close reference for individual topic {}. exception:", topicName, e);
         }

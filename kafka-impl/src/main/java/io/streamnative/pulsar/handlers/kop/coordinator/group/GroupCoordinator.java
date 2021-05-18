@@ -25,7 +25,6 @@ import static org.apache.kafka.common.record.RecordBatch.NO_PRODUCER_ID;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
@@ -44,6 +43,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -85,8 +85,6 @@ public class GroupCoordinator {
         PulsarClientImpl pulsarClient,
         GroupConfig groupConfig,
         OffsetConfig offsetConfig,
-        KafkaServiceConfiguration kafkaServiceConfiguration,
-
         Timer timer,
         Time time
     ) {
@@ -120,7 +118,7 @@ public class GroupCoordinator {
                 .timeoutTimer(timer)
                 .build();
 
-        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient, brokerService);
+        OffsetAcker offsetAcker = new OffsetAcker(brokerService);
         return new GroupCoordinator(
             groupConfig,
             metadataManager,
@@ -195,7 +193,6 @@ public class GroupCoordinator {
         groupManager.shutdown();
         heartbeatPurgatory.shutdown();
         joinPurgatory.shutdown();
-        offsetAcker.close();
         log.info("Shutdown group coordinator completely.");
     }
 
@@ -464,12 +461,6 @@ public class GroupCoordinator {
             (assignment, errors) -> resultFuture.complete(
                 new KeyValue<>(errors, assignment))
         );
-
-        resultFuture.whenCompleteAsync((kv, throwable) -> {
-            if (throwable == null && kv.getKey() == Errors.NONE) {
-                offsetAcker.addOffsetsTracker(groupId, kv.getValue());
-            }
-        });
         return resultFuture;
     }
 
@@ -679,7 +670,6 @@ public class GroupCoordinator {
             );
         }
 
-        offsetAcker.close(groupIds);
         return groupErrors;
     }
 
@@ -844,8 +834,7 @@ public class GroupCoordinator {
                 // The group is only using Kafka to store offsets.
                 // Also, for transactional offset commits we don't need to validate group membership
                 // and the generation.
-                offsetAcker.ackOffsets(group.groupId(), offsetMetadata);
-                return groupManager.storeOffsets(group, memberId, offsetMetadata, producerId, producerEpoch);
+                return storeOffsets(group, memberId, offsetMetadata, producerId, producerEpoch);
             } else if (group.is(CompletingRebalance)) {
                 return CompletableFuture.completedFuture(
                     CoreUtils.mapValue(offsetMetadata, ignored ->
@@ -861,12 +850,51 @@ public class GroupCoordinator {
             } else {
                 MemberMetadata member = group.get(memberId);
                 completeAndScheduleNextHeartbeatExpiration(group, member);
-                offsetAcker.ackOffsets(group.groupId(), offsetMetadata);
-                return groupManager.storeOffsets(
-                    group, memberId, offsetMetadata
-                );
+                return storeOffsets(group, memberId, offsetMetadata, NO_PRODUCER_ID, NO_PRODUCER_EPOCH);
             }
         });
+    }
+
+    private CompletableFuture<Map<TopicPartition, Errors>> storeOffsets(
+            final GroupMetadata groupMetadata,
+            final String memberId,
+            final Map<TopicPartition, OffsetAndMetadata> offsetAndMetadata,
+            final long producerId,
+            final short producerEpoch) {
+        // First reset the cursor in Pulsar's subscription to check if the current broker is the leader
+        // ackOffsets() would never be completed exceptionally
+        final CompletableFuture<Map<TopicPartition, Errors>> future = new CompletableFuture<>();
+        final int numPartitions = offsetAndMetadata.size();
+        offsetAcker.ackOffsets(groupMetadata.groupId(), offsetAndMetadata).thenAccept(pulsarAckResult -> {
+            final Map<TopicPartition, Errors> ackResult = new ConcurrentHashMap<>();
+            pulsarAckResult.entrySet().stream().collect(
+                    Collectors.partitioningBy(
+                            entry -> entry.getValue() == Errors.NONE,
+                            Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)))
+                    .forEach((success, result) -> {
+                        if (success) {
+                            // Store the offsets to __consumer_offsets
+                            final Map<TopicPartition, OffsetAndMetadata> validOffsetAndMetadata = offsetAndMetadata
+                                    .entrySet().stream().filter(e -> result.containsKey(e.getKey()))
+                                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                            groupManager.storeOffsets(
+                                    groupMetadata, memberId, validOffsetAndMetadata, producerId,producerEpoch)
+                                    .thenAccept(kafkaAckResult -> {
+                                        ackResult.putAll(result);
+                                        if (ackResult.size() == numPartitions) {
+                                            future.complete(ackResult);
+                                        }
+                                    });
+                        } else {
+                            // Pulsar ACK failed, we shouldn't commit offsets to Kafka
+                            ackResult.putAll(result);
+                            if (ackResult.size() == numPartitions) {
+                                future.complete(ackResult);
+                            }
+                        }
+                    });
+        });
+        return future;
     }
 
     public KeyValue<Errors, Map<TopicPartition, PartitionData>> handleFetchOffsets(

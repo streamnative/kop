@@ -13,213 +13,135 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.group;
 
-import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetSearchPredicate;
-import java.io.Closeable;
-import java.nio.ByteBuffer;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
+import lombok.AllArgsConstructor;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.ManagedLedger;
+import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
-import org.apache.kafka.clients.consumer.internals.ConsumerProtocol;
-import org.apache.kafka.clients.consumer.internals.PartitionAssignor.Assignment;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.ApiException;
+import org.apache.kafka.common.protocol.Errors;
 import org.apache.pulsar.broker.service.BrokerService;
+import org.apache.pulsar.broker.service.Subscription;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.client.api.Consumer;
-import org.apache.pulsar.client.api.ConsumerBuilder;
-import org.apache.pulsar.client.api.SubscriptionInitialPosition;
-import org.apache.pulsar.client.impl.MessageIdImpl;
-import org.apache.pulsar.client.impl.PulsarClientImpl;
+import org.apache.pulsar.common.api.proto.CommandSubscribe;
+
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * This class used to track all the partition offset commit position.
  */
+@AllArgsConstructor
 @Slf4j
-public class OffsetAcker implements Closeable {
+public class OffsetAcker {
 
-    private static final Map<String, CompletableFuture<Consumer<byte[]>>> EMPTY_CONSUMERS = new HashMap<>();
-
-    private final ConsumerBuilder<byte[]> consumerBuilder;
     private final BrokerService brokerService;
 
-    // A map whose
-    //   key is group id,
-    //   value is a map whose
-    //     key is the partition,
-    //     value is the created future of consumer.
-    // The consumer, whose subscription is the group id, is used for acknowledging message id cumulatively.
-    // This behavior is equivalent to committing offsets in Kafka.
-    public static final Map<String, Map<String, CompletableFuture<Consumer<byte[]>>>>
-            CONSUMERS = new ConcurrentHashMap<>();
-
-    public OffsetAcker(PulsarClientImpl pulsarClient) {
-        this.consumerBuilder = pulsarClient.newConsumer()
-                .receiverQueueSize(0)
-                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
-        brokerService = null;
-    }
-
-    public OffsetAcker(PulsarClientImpl pulsarClient, BrokerService brokerService) {
-        this.consumerBuilder = pulsarClient.newConsumer()
-                .receiverQueueSize(0)
-                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
-        this.brokerService = brokerService;
-    }
-
-    public void addOffsetsTracker(String groupId, byte[] assignment) {
-        ByteBuffer assignBuffer = ByteBuffer.wrap(assignment);
-        Assignment assign = ConsumerProtocol.deserializeAssignment(assignBuffer);
-        if (log.isDebugEnabled()) {
-            log.debug(" Add offsets after sync group: {}", assign.toString());
+    public CompletableFuture<Map<TopicPartition, Errors>> ackOffsets(
+            final String groupId, final Map<TopicPartition, OffsetAndMetadata> partitionAndOffsets) {
+        if (groupId == null || groupId.isEmpty()) {
+            log.warn("Try to ackOffsets for group {}", groupId);
+            return CompletableFuture.completedFuture(
+                    CoreUtils.mapValue(partitionAndOffsets, offsetAndMetadata -> Errors.INVALID_GROUP_ID));
         }
-        assign.partitions().forEach(topicPartition -> getOrCreateConsumer(groupId, topicPartition));
-    }
 
-    public void ackOffsets(String groupId, Map<TopicPartition, OffsetAndMetadata> offsetMetadata) {
-        if (log.isDebugEnabled()) {
-            log.debug(" ack offsets after commit offset for group: {}", groupId);
-            offsetMetadata.forEach((partition, metadata) ->
-                log.debug("\t partition: {}",
-                    partition));
-        }
-        offsetMetadata.forEach(((topicPartition, offsetAndMetadata) -> {
-            // 1. get consumer, then do ackCumulative
-            CompletableFuture<Consumer<byte[]>> consumerFuture = getOrCreateConsumer(groupId, topicPartition);
+        final CompletableFuture<Map<TopicPartition, Errors>> future = new CompletableFuture<>();
+        final Map<TopicPartition, Errors> ackResultMap = new ConcurrentHashMap<>();
+        final int numPartitions = partitionAndOffsets.size();
 
-            consumerFuture.whenComplete((consumer, throwable) -> {
-                if (throwable != null) {
-                    log.warn("Failed to create offset consumer for [group={}] [topic={}]: {}",
-                            groupId, topicPartition, throwable.getMessage());
-                    removeConsumer(groupId, topicPartition);
+        final BiConsumer<TopicPartition, Errors> addAckResult = (topicPartition, errors) -> {
+            ackResultMap.put(topicPartition, errors);
+            if (ackResultMap.size() == numPartitions) {
+                future.complete(ackResultMap);
+            }
+        };
+
+        partitionAndOffsets.forEach((topicPartition, offsetAndMetadata) -> {
+            final String partitionTopicName = new KopTopic(topicPartition.topic())
+                    .getPartitionName(topicPartition.partition());
+            // 1. find PersistentTopic
+            brokerService.getTopicIfExists(partitionTopicName).whenComplete((optTopic, e) -> {
+                if (e != null) {
+                    log.warn("OffsetAcker failed to get topic {}: {}", topicPartition, e.getMessage());
+                    addAckResult.accept(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
                     return;
                 }
-                KopTopic kopTopic = new KopTopic(topicPartition.topic());
-                String partitionTopicName = kopTopic.getPartitionName(topicPartition.partition());
-                brokerService.getTopic(partitionTopicName, false).whenComplete((topic, error) -> {
-                    if (error != null) {
-                        log.error("[{}] get topic failed when ack for {}.", partitionTopicName, groupId, error);
-                        KafkaTopicManager.removeTopicManagerCache(partitionTopicName);
+                if (!optTopic.isPresent()) {
+                    log.warn("OffsetAcker got empty topic {}", topicPartition);
+                    addAckResult.accept(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
+                    return;
+                }
+
+                final PersistentTopic persistentTopic = (PersistentTopic) optTopic.get();
+                final ManagedLedger managedLedger = persistentTopic.getManagedLedger();
+                final long offset = offsetAndMetadata.offset();
+                // 2. find Position of the offset
+                managedLedger.asyncFindPosition(new OffsetSearchPredicate(offset)).whenComplete((position, e1) -> {
+                    if (e1 != null) {
+                        log.warn("[{}] Failed to find position of offset {}: {}",
+                                topicPartition, offset, e1.getMessage());
+                        addAckResult.accept(topicPartition, Errors.forException(e1));
                         return;
                     }
-                    if (topic.isPresent()) {
-                        PersistentTopic persistentTopic = (PersistentTopic) topic.get();
-                        PositionImpl position = null;
-                        try {
-                            position = (PositionImpl) persistentTopic.getManagedLedger()
-                                    .asyncFindPosition(new OffsetSearchPredicate(offsetAndMetadata.offset())).get();
-                            if (position.compareTo(
-                                    (PositionImpl) persistentTopic.getManagedLedger().getLastConfirmedEntry()) > 0) {
-                                position = (PositionImpl) persistentTopic.getManagedLedger().getLastConfirmedEntry();
-                            }
-                            if (log.isDebugEnabled()) {
-                                log.debug("[{}] find position {} for offset {}.",
-                                        partitionTopicName, position, offsetAndMetadata.offset());
-                            }
-                        } catch (InterruptedException | ExecutionException e) {
-                            log.error("[{}] Failed to find position for offset {} when processing offset commit.",
-                                    partitionTopicName, offsetAndMetadata.offset());
+                    if (position == null) {
+                        log.warn("[{}] Failed to find position of offset {}: null", topicPartition, offset);
+                        addAckResult.accept(topicPartition, Errors.forException(new ApiException("null position")));
+                        return;
+                    }
+
+                    final PositionImpl lastConfirmedPosition = (PositionImpl) managedLedger.getLastConfirmedEntry();
+                    final Position positionImpl = ((PositionImpl) position).compareTo(lastConfirmedPosition) > 0
+                            ? lastConfirmedPosition
+                            : (PositionImpl) position;
+                    if (log.isDebugEnabled()) {
+                        log.debug("[{}] find position {} for offset {}", topicPartition, position, offset);
+                    }
+
+                    // 3. get or create the durable subscription
+                    getOrCreateDurableSubscription(persistentTopic, groupId).whenComplete((subscription, e2) -> {
+                        if (e2 != null) {
+                            log.warn("[{}] Failed to create subscription {}: {}",
+                                    topicPartition, groupId, e2.getMessage());
+                            addAckResult.accept(topicPartition, Errors.forException(e2));
+                            return;
                         }
-                        consumer.acknowledgeCumulativeAsync(
-                                new MessageIdImpl(position.getLedgerId(), position.getEntryId(), -1));
-                    } else {
-                        log.error("[{}] Topic not exist when ack for {}.", partitionTopicName, groupId);
-                        KafkaTopicManager.removeTopicManagerCache(partitionTopicName);
-                    }
+
+                        // 4. reset cursor of the subscription to the position
+                        subscription.resetCursor(positionImpl).whenComplete((ignored, e3) -> {
+                            if (e3 == null) {
+                                addAckResult.accept(topicPartition, Errors.NONE);
+                            } else {
+                                addAckResult.accept(topicPartition, Errors.forException(e3));
+                            }
+                        });
+                    });
                 });
             });
-        }));
-    }
-
-    public void close(Set<String> groupIds) {
-        for (String groupId : groupIds) {
-            final Map<String, CompletableFuture<Consumer<byte[]>>>
-                    consumersToRemove = CONSUMERS.remove(groupId);
-            if (consumersToRemove == null) {
-                continue;
-            }
-            consumersToRemove.forEach((topicPartition, consumerFuture) -> {
-                if (!consumerFuture.isDone()) {
-                    log.warn("Consumer of [group={}] [topic={}] is not done while being closed",
-                            groupId, topicPartition);
-                    consumerFuture.complete(null);
-                }
-                final Consumer<byte[]> consumer = consumerFuture.getNow(null);
-                if (consumer != null) {
-                    log.debug("Try to close consumer of [group={}] [topic={}]", groupId, topicPartition);
-                    consumer.closeAsync();
-                }
-            });
-        }
-    }
-
-    @Override
-    public void close() {
-        log.info("close OffsetAcker with {} groupIds", CONSUMERS.size());
-        close(CONSUMERS.keySet());
-    }
-
-    @NonNull
-    public CompletableFuture<Consumer<byte[]>> getOrCreateConsumer(String groupId, TopicPartition topicPartition) {
-        Map<String, CompletableFuture<Consumer<byte[]>>> group = CONSUMERS
-            .computeIfAbsent(groupId, gid -> new ConcurrentHashMap<>());
-        KopTopic kopTopic = new KopTopic(topicPartition.topic());
-        String topicName = kopTopic.getPartitionName((topicPartition.partition()));
-        return group.computeIfAbsent(
-            topicName,
-            name -> createConsumer(groupId, name));
-    }
-
-    @NonNull
-    private CompletableFuture<Consumer<byte[]>> createConsumer(String groupId, String topicName) {
-        return consumerBuilder.clone()
-                .topic(topicName)
-                .subscriptionName(groupId)
-                .subscribeAsync();
-    }
-
-    public CompletableFuture<Consumer<byte[]>> getConsumer(String groupId, TopicPartition topicPartition) {
-        KopTopic kopTopic = new KopTopic(topicPartition.topic());
-        String topicName = kopTopic.getPartitionName((topicPartition.partition()));
-        return CONSUMERS.getOrDefault(groupId, EMPTY_CONSUMERS).get(topicName);
-    }
-
-    public void removeConsumer(String groupId, TopicPartition topicPartition) {
-        KopTopic kopTopic = new KopTopic(topicPartition.topic());
-        String topicName = kopTopic.getPartitionName((topicPartition.partition()));
-
-        final CompletableFuture<Consumer<byte[]>> consumerFuture =
-                CONSUMERS.getOrDefault(groupId, EMPTY_CONSUMERS).remove(topicName);
-        if (consumerFuture != null) {
-            consumerFuture.whenComplete((consumer, e) -> {
-                if (e == null) {
-                    consumer.closeAsync();
-                } else {
-                    log.error("Failed to create consumer for [group={}] [topic={}]: {}",
-                            groupId, topicPartition, e.getMessage());
-                }
-            });
-        }
-    }
-
-    public static void removeOffsetAcker(String topicName) {
-        CONSUMERS.forEach((groupId, group) -> {
-            CompletableFuture<Consumer<byte[]> > consumerCompletableFuture = group.remove(topicName);
-            if (consumerCompletableFuture != null) {
-                consumerCompletableFuture.thenApply(Consumer::closeAsync).whenCompleteAsync((ignore, t) -> {
-                    if (t != null) {
-                        log.error("Failed to close offsetAcker consumer when remove partition {}.",
-                            topicName);
-                    }
-                });
-            }
         });
+
+        return future;
+    }
+
+    private CompletableFuture<Subscription> getOrCreateDurableSubscription(
+            @NonNull final PersistentTopic persistentTopic,
+            @NonNull final String groupId) {
+        final Subscription subscription = persistentTopic.getSubscription(groupId);
+        if (subscription != null) {
+            return CompletableFuture.completedFuture(subscription);
+        } else {
+            // replicateSubscriptionState is false
+            if (log.isDebugEnabled()) {
+                log.debug("Create subscription {} for topic {}", groupId, persistentTopic.getName());
+            }
+            return persistentTopic.createSubscription(groupId, CommandSubscribe.InitialPosition.Earliest, false);
+        }
     }
 }
