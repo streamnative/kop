@@ -878,7 +878,7 @@ public class GroupCoordinator {
                                     .entrySet().stream().filter(e -> result.containsKey(e.getKey()))
                                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
                             groupManager.storeOffsets(
-                                    groupMetadata, memberId, validOffsetAndMetadata, producerId,producerEpoch)
+                                    groupMetadata, memberId, validOffsetAndMetadata, producerId, producerEpoch)
                                     .thenAccept(kafkaAckResult -> {
                                         ackResult.putAll(result);
                                         if (ackResult.size() == numPartitions) {
