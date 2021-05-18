@@ -33,7 +33,8 @@ public class NullStatsLogger implements StatsLogger {
      * A <i>no-op</i> {@code OpStatsLogger}.
      */
     static class NullOpStatsLogger implements OpStatsLogger {
-        final OpStatsData nullOpStats = new OpStatsData(0, 0, 0, new long[6]);
+        private final OpStatsData nullOpStats =
+                new OpStatsData(0, 0, 0, new long[6]);
 
         @Override
         public void registerFailedEvent(long eventLatency, TimeUnit unit) {
@@ -65,7 +66,7 @@ public class NullStatsLogger implements StatsLogger {
             // nop
         }
     }
-    static NullOpStatsLogger nullOpStatsLogger = new NullOpStatsLogger();
+    private static final NullOpStatsLogger nullOpStatsLogger = new NullOpStatsLogger();
 
     /**
      * A <i>no-op</i> {@code Counter}.
@@ -96,7 +97,7 @@ public class NullStatsLogger implements StatsLogger {
             return 0L;
         }
     }
-    static NullCounter nullCounter = new NullStatsLogger.NullCounter();
+    private static final NullCounter nullCounter = new NullStatsLogger.NullCounter();
 
     @Override
     public OpStatsLogger getOpStatsLogger(String name) {
