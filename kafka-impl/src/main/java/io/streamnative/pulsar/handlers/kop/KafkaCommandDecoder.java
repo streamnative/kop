@@ -20,6 +20,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.io.Closeable;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -33,7 +34,6 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
-import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.types.Struct;
@@ -177,6 +177,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             }
 
             CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+            final long startProcessRequestTimestamp = MathUtils.nowInNano();
             responseFuture.whenComplete((response, e) -> {
                 if (e instanceof CancellationException) {
                     if (log.isDebugEnabled()) {
@@ -187,6 +188,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     // no need to call `writeAndFlushResponseToClient` again.
                     return;
                 }
+                requestStats.getStatsLogger()
+                        .scopeLabel(KopServerStats.REQUEST_SCOPE, kafkaHeaderAndRequest.getHeader().apiKey().name)
+                        .getOpStatsLogger(KopServerStats.REQUEST_LATENCY)
+                        .registerSuccessfulEvent(MathUtils.elapsedNanos(startProcessRequestTimestamp),
+                                TimeUnit.NANOSECONDS);
+
                 ctx.channel().eventLoop().execute(() -> {
                     writeAndFlushResponseToClient(channel);
                 });

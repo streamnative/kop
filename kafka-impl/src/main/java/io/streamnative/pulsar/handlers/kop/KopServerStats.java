@@ -21,12 +21,15 @@ public interface KopServerStats {
 
     String SERVER_SCOPE = "kop_server";
 
+    String REQUEST_SCOPE = "request";
+
     /**
      * Request stats.
      */
     String REQUEST_QUEUE_SIZE = "REQUEST_QUEUE_SIZE";
     String REQUEST_QUEUED_LATENCY = "REQUEST_QUEUED_LATENCY";
     String REQUEST_PARSE = "REQUEST_PARSE";
+    String REQUEST_LATENCY = "REQUEST_LATENCY";
 
     /**
      * Response stats.
