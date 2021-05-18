@@ -84,6 +84,7 @@ public class OffsetAcker implements Closeable {
     }
 
     public void ackOffsets(String groupId, Map<TopicPartition, OffsetAndMetadata> offsetMetadata) {
+        log.info("Test");
         if (log.isDebugEnabled()) {
             log.debug(" ack offsets after commit offset for group: {}", groupId);
             offsetMetadata.forEach((partition, metadata) ->
