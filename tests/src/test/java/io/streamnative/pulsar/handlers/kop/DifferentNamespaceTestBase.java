@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
-import static org.testng.Assert.fail;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -99,8 +98,7 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
                     log.info("Successfully send {} to {}-partition-{}",
                             key, recordMetadata.topic(), recordMetadata.partition());
                 } else {
-                    log.error("Failed to send {}", key);
-                    fail("Failed to send " + key);
+                    log.error("Failed to send {}: {}", key, e.getMessage());
                 }
             });
         }

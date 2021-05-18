@@ -273,9 +273,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void close() {
         if (isActive.getAndSet(false)) {
-            log.info("close channel {}", ctx.channel());
-            groupCoordinator.getOffsetAcker().close(groupIds);
             super.close();
+            groupCoordinator.getOffsetAcker().close(groupIds);
             topicManager.close();
             String clientHost = ctx.channel().remoteAddress().toString();
             if (currentConnectedGroup.containsKey(clientHost)){
@@ -770,6 +769,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         int timeoutMs = produceRequest.timeout();
         Runnable complete = () -> {
             topicPartitionNum.set(0);
+            if (resultFuture.isDone()) {
+                // It may be triggered again in DelayedProduceAndFetch
+                return;
+            }
             // add the topicPartition with timeout error if it's not existed in responseMap
             produceRequest.partitionRecordsOrFail().keySet().forEach(topicPartition -> {
                 if (!responseMap.containsKey(topicPartition)) {
