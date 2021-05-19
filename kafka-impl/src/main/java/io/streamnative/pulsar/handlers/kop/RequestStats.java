@@ -31,12 +31,12 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_QUEUE_
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOTAL_MESSAGE_READ;
 
+import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Getter;
 import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.Gauge;
 import org.apache.bookkeeper.stats.OpStatsLogger;
-import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.stats.annotations.StatsDoc;
 
 /**
@@ -53,6 +53,8 @@ public class RequestStats {
 
     private final AtomicInteger requestQueueSize = new AtomicInteger(0);
     private final AtomicInteger responseQueueSize = new AtomicInteger(0);
+
+    private final StatsLogger statsLogger;
 
     @StatsDoc(
             name = REQUEST_QUEUED_LATENCY,
@@ -133,6 +135,8 @@ public class RequestStats {
     private final OpStatsLogger fetchDecodeStats;
 
     public RequestStats(StatsLogger statsLogger) {
+        this.statsLogger = statsLogger;
+
         this.requestQueuedLatencyStats = statsLogger.getOpStatsLogger(REQUEST_QUEUED_LATENCY);
         this.requestParseStats = statsLogger.getOpStatsLogger(REQUEST_PARSE);
 

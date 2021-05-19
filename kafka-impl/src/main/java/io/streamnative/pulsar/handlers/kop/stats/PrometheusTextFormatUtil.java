@@ -18,7 +18,7 @@ import io.prometheus.client.Collector.MetricFamilySamples;
 import io.prometheus.client.Collector.MetricFamilySamples.Sample;
 import io.prometheus.client.CollectorRegistry;
 import java.util.Enumeration;
-import org.apache.bookkeeper.stats.Counter;
+import java.util.Map;
 import org.apache.pulsar.common.util.SimpleTextOutputStream;
 
 /**
@@ -30,16 +30,20 @@ public class PrometheusTextFormatUtil {
         // # TYPE bookie_storage_entries_count gauge
         // bookie_storage_entries_count 519
         w.write("# TYPE ").write(name).write(" gauge\n");
-        w.write(name).write(' ').write(gauge.getSample().toString()).write('\n');
+        w.write(name);
+        writeLabels(w, gauge.getLabels());
+        w.write(' ').write(gauge.getSample().toString()).write('\n');
 
     }
 
-    public static void writeCounter(SimpleTextOutputStream w, String name, Counter counter) {
+    public static void writeCounter(SimpleTextOutputStream w, String name, LongAdderCounter counter) {
         // Example:
         // # TYPE jvm_threads_started_total counter
         // jvm_threads_started_total 59
         w.write("# TYPE ").write(name).write(" counter\n");
-        w.write(name).write(' ').write(counter.get().toString()).write('\n');
+        w.write(name);
+        writeLabels(w, counter.getLabels());
+        w.write(' ').write(counter.get().toString()).write('\n');
     }
 
     public static void writeOpStat(SimpleTextOutputStream w, String name, DataSketchesOpStatsLogger opStat) {
@@ -83,25 +87,32 @@ public class PrometheusTextFormatUtil {
         writeQuantile(w, opStat, name, true, 1.0);
         writeCount(w, opStat, name, true);
         writeSum(w, opStat, name, true);
-
     }
 
     private static void writeQuantile(SimpleTextOutputStream w, DataSketchesOpStatsLogger opStat, String name,
                                       Boolean success, double quantile) {
-        w.write(name).write("{success=\"").write(success.toString()).write("\",quantile=\"")
-                .write(Double.toString(quantile)).write("\"} ")
+        w.write(name)
+                .write("{success=\"").write(success.toString())
+                .write("\",quantile=\"").write(Double.toString(quantile))
+                .write("\", ");
+        writeLabelsNoBraces(w, opStat.getLabels());
+        w.write("\"} ")
                 .write(Double.toString(opStat.getQuantileValue(success, quantile))).write('\n');
     }
 
     private static void writeCount(SimpleTextOutputStream w, DataSketchesOpStatsLogger opStat, String name,
                                    Boolean success) {
-        w.write(name).write("_count{success=\"").write(success.toString()).write("\"} ")
+        w.write(name).write("_count{success=\"").write(success.toString()).write("\", ");
+        writeLabelsNoBraces(w, opStat.getLabels());
+        w.write("\"} ")
                 .write(Long.toString(opStat.getCount(success))).write('\n');
     }
 
     private static void writeSum(SimpleTextOutputStream w, DataSketchesOpStatsLogger opStat, String name,
                                  Boolean success) {
-        w.write(name).write("_sum{success=\"").write(success.toString()).write("\"} ")
+        w.write(name).write("_sum{success=\"").write(success.toString()).write("\", ");
+        writeLabelsNoBraces(w, opStat.getLabels());
+        w.write("\"} ")
                 .write(Double.toString(opStat.getSum(success))).write('\n');
     }
 
@@ -128,6 +139,34 @@ public class PrometheusTextFormatUtil {
                 w.write(Collector.doubleToGoString(sample.value));
                 w.write('\n');
             }
+        }
+    }
+
+    private static void writeLabels(SimpleTextOutputStream w, Map<String, String> labels) {
+        if (labels.isEmpty()) {
+            return;
+        }
+
+        w.write('{');
+        writeLabelsNoBraces(w, labels);
+        w.write('}');
+    }
+
+    private static void writeLabelsNoBraces(SimpleTextOutputStream w, Map<String, String> labels) {
+        if (labels.isEmpty()) {
+            return;
+        }
+
+        boolean isFirst = true;
+        for (Map.Entry<String, String> e : labels.entrySet()) {
+            if (!isFirst) {
+                w.write(',');
+            }
+            isFirst = false;
+            w.write(e.getKey())
+                    .write("=\"")
+                    .write(e.getValue())
+                    .write('"');
         }
     }
 }
