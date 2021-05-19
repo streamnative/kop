@@ -42,6 +42,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
+import org.apache.bookkeeper.stats.NullStatsLogger;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.Errors;
@@ -94,7 +95,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
 
     static class MockOffsetAcker extends OffsetAcker {
         public MockOffsetAcker(PulsarClientImpl pulsarClient) {
-            super(pulsarClient);
+            super(pulsarClient, NullStatsLogger.INSTANCE);
         }
 
         @Override
@@ -197,7 +198,8 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
             heartbeatPurgatory,
             joinPurgatory,
             timer.time(),
-            new MockOffsetAcker((PulsarClientImpl) pulsarClient)
+            new MockOffsetAcker((PulsarClientImpl) pulsarClient),
+            NullStatsLogger.INSTANCE
         );
 
         // start the group coordinator

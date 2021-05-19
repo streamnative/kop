@@ -15,6 +15,8 @@ package io.streamnative.pulsar.handlers.kop.coordinator.group;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.COORDINATOR_SCOPE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.OFFSET_ACKER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.CompletingRebalance;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.Dead;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.Empty;
@@ -54,6 +56,7 @@ import java.util.stream.Stream;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
+import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -88,7 +91,8 @@ public class GroupCoordinator {
         KafkaServiceConfiguration kafkaServiceConfiguration,
 
         Timer timer,
-        Time time
+        Time time,
+        StatsLogger statsLogger
     ) {
         ScheduledExecutorService coordinatorExecutor = OrderedScheduler.newSchedulerBuilder()
             .name("group-coordinator-executor")
@@ -120,14 +124,15 @@ public class GroupCoordinator {
                 .timeoutTimer(timer)
                 .build();
 
-        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient, brokerService);
+        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient, brokerService, statsLogger.scope(OFFSET_ACKER_SCOPE));
         return new GroupCoordinator(
             groupConfig,
             metadataManager,
             heartbeatPurgatory,
             joinPurgatory,
             time,
-            offsetAcker
+            offsetAcker,
+            statsLogger.scope(COORDINATOR_SCOPE)
         );
     }
 
@@ -159,6 +164,7 @@ public class GroupCoordinator {
     private final DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory;
     private final DelayedOperationPurgatory<DelayedJoin> joinPurgatory;
     private final Time time;
+    private final CoordinatorStats statsLogger;
 
     public GroupCoordinator(
         GroupConfig groupConfig,
@@ -166,13 +172,15 @@ public class GroupCoordinator {
         DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory,
         DelayedOperationPurgatory<DelayedJoin> joinPurgatory,
         Time time,
-        OffsetAcker offsetAcker) {
+        OffsetAcker offsetAcker,
+        StatsLogger statsLogger) {
         this.groupConfig = groupConfig;
         this.groupManager = groupManager;
         this.heartbeatPurgatory = heartbeatPurgatory;
         this.joinPurgatory = joinPurgatory;
         this.time = time;
         this.offsetAcker = offsetAcker;
+        this.statsLogger = new CoordinatorStats(statsLogger);
     }
 
     /**
