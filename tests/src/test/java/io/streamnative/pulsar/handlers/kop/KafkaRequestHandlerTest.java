@@ -77,6 +77,7 @@ import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
+import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
 import org.apache.kafka.common.serialization.IntegerSerializer;
@@ -573,7 +574,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         String group = "test-groupId";
         String memberId = "test_member_id";
         int generationId = -1; // use for avoid mock group state and member
-        TopicPartition topicPartition = new TopicPartition("test", 1);
+        TopicPartition topicPartition = new TopicPartition("test", 0);
 
         // build input params
         Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
@@ -590,12 +591,19 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         KafkaHeaderAndRequest headerAndRequest = new KafkaHeaderAndRequest(header,
                 offsetCommitRequest, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null);
 
-        // handle request
+        // the topic is not created, so we'll get a NOT_LEADER_FOR_PARTITION error
         CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
         handler.handleOffsetCommitRequest(headerAndRequest, future);
+        OffsetCommitResponse response = (OffsetCommitResponse) future.get();
+        Assert.assertEquals(response.responseData().get(topicPartition), Errors.NOT_LEADER_FOR_PARTITION);
 
-        // wait for save offset
-        future.get();
+        // create the topic and then handleOffsetCommitRequest will succeed
+        admin.topics().createPartitionedTopic(topicPartition.topic(), 1);
+
+        future = new CompletableFuture<>();
+        handler.handleOffsetCommitRequest(headerAndRequest, future);
+        response = (OffsetCommitResponse) future.get();
+        Assert.assertEquals(response.responseData().get(topicPartition), Errors.NONE);
 
         // verify
         GroupMetadataManager groupMetadataManager = handler.getGroupCoordinator().getGroupManager();
