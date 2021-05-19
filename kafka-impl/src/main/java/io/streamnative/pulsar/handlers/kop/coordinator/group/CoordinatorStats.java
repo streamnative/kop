@@ -1,11 +1,9 @@
 package io.streamnative.pulsar.handlers.kop.coordinator.group;
 
+import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import lombok.Getter;
 import org.apache.bookkeeper.stats.OpStatsLogger;
-import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.stats.annotations.StatsDoc;
-
-import javax.print.attribute.standard.MediaSize;
 
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.CATEGORY_SERVER;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.COORDINATOR_SCOPE;

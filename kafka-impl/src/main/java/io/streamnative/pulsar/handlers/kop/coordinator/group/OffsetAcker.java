@@ -31,7 +31,6 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
-import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.kafka.clients.consumer.internals.ConsumerProtocol;
 import org.apache.kafka.clients.consumer.internals.PartitionAssignor.Assignment;
 import org.apache.kafka.common.TopicPartition;
@@ -65,20 +64,20 @@ public class OffsetAcker implements Closeable {
     public static final Map<String, Map<String, CompletableFuture<Consumer<byte[]>>>>
             CONSUMERS = new ConcurrentHashMap<>();
 
-    public OffsetAcker(PulsarClientImpl pulsarClient, StatsLogger statsLogger) {
+    public OffsetAcker(PulsarClientImpl pulsarClient, CoordinatorStats statsLogger) {
         this.consumerBuilder = pulsarClient.newConsumer()
                 .receiverQueueSize(0)
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
         brokerService = null;
-        this.statsLogger = new CoordinatorStats(statsLogger);
+        this.statsLogger = statsLogger;
     }
 
-    public OffsetAcker(PulsarClientImpl pulsarClient, BrokerService brokerService, StatsLogger statsLogger) {
+    public OffsetAcker(PulsarClientImpl pulsarClient, BrokerService brokerService, CoordinatorStats statsLogger) {
         this.consumerBuilder = pulsarClient.newConsumer()
                 .receiverQueueSize(0)
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
         this.brokerService = brokerService;
-        this.statsLogger = new CoordinatorStats(statsLogger);
+        this.statsLogger = statsLogger;
     }
 
     public void addOffsetsTracker(String groupId, byte[] assignment) {
@@ -128,7 +127,6 @@ public class OffsetAcker implements Closeable {
                         KafkaTopicManager.removeTopicManagerCache(partitionTopicName);
                         return;
                     }
-
 
                     if (topic.isPresent()) {
                         PersistentTopic persistentTopic = (PersistentTopic) topic.get();

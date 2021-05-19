@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop.coordinator.group;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.COORDINATOR_SCOPE;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.OFFSET_ACKER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.CompletingRebalance;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.Dead;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.Empty;
@@ -31,6 +30,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.GroupKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.MemberKey;
@@ -56,7 +56,6 @@ import java.util.stream.Stream;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
-import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -124,7 +123,8 @@ public class GroupCoordinator {
                 .timeoutTimer(timer)
                 .build();
 
-        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient, brokerService, statsLogger.scope(OFFSET_ACKER_SCOPE));
+        CoordinatorStats coordinatorStats = new CoordinatorStats(statsLogger.scope(COORDINATOR_SCOPE));
+        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient, brokerService, coordinatorStats);
         return new GroupCoordinator(
             groupConfig,
             metadataManager,
@@ -132,7 +132,7 @@ public class GroupCoordinator {
             joinPurgatory,
             time,
             offsetAcker,
-            statsLogger.scope(COORDINATOR_SCOPE)
+            coordinatorStats
         );
     }
 
@@ -173,14 +173,14 @@ public class GroupCoordinator {
         DelayedOperationPurgatory<DelayedJoin> joinPurgatory,
         Time time,
         OffsetAcker offsetAcker,
-        StatsLogger statsLogger) {
+        CoordinatorStats statsLogger) {
         this.groupConfig = groupConfig;
         this.groupManager = groupManager;
         this.heartbeatPurgatory = heartbeatPurgatory;
         this.joinPurgatory = joinPurgatory;
         this.time = time;
         this.offsetAcker = offsetAcker;
-        this.statsLogger = new CoordinatorStats(statsLogger);
+        this.statsLogger = statsLogger;
     }
 
     /**

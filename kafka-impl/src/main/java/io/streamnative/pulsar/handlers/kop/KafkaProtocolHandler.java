@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkState;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.COORDINATOR_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;

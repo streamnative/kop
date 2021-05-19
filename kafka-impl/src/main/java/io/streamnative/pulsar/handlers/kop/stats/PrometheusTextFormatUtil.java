@@ -93,26 +93,40 @@ public class PrometheusTextFormatUtil {
                                       Boolean success, double quantile) {
         w.write(name)
                 .write("{success=\"").write(success.toString())
-                .write("\",quantile=\"").write(Double.toString(quantile))
-                .write("\", ");
-        writeLabelsNoBraces(w, opStat.getLabels());
-        w.write("\"} ")
+                .write("\",quantile=\"").write(Double.toString(quantile));
+        if (!opStat.getLabels().isEmpty()) {
+            w.write("\", ");
+            writeLabelsNoBraces(w, opStat.getLabels());
+        } else {
+            w.write("\"");
+        }
+        w.write("} ")
                 .write(Double.toString(opStat.getQuantileValue(success, quantile))).write('\n');
     }
 
     private static void writeCount(SimpleTextOutputStream w, DataSketchesOpStatsLogger opStat, String name,
                                    Boolean success) {
-        w.write(name).write("_count{success=\"").write(success.toString()).write("\", ");
-        writeLabelsNoBraces(w, opStat.getLabels());
-        w.write("\"} ")
+        w.write(name).write("_count{success=\"").write(success.toString());
+        if (!opStat.getLabels().isEmpty()) {
+            w.write("\", ");
+            writeLabelsNoBraces(w, opStat.getLabels());
+        } else {
+            w.write("\"");
+        }
+        w.write("} ")
                 .write(Long.toString(opStat.getCount(success))).write('\n');
     }
 
     private static void writeSum(SimpleTextOutputStream w, DataSketchesOpStatsLogger opStat, String name,
                                  Boolean success) {
-        w.write(name).write("_sum{success=\"").write(success.toString()).write("\", ");
-        writeLabelsNoBraces(w, opStat.getLabels());
-        w.write("\"} ")
+        w.write(name).write("_sum{success=\"").write(success.toString());
+        if (!opStat.getLabels().isEmpty()) {
+            w.write("\", ");
+            writeLabelsNoBraces(w, opStat.getLabels());
+        } else {
+            w.write("\"");
+        }
+        w.write("} ")
                 .write(Double.toString(opStat.getSum(success))).write('\n');
     }
 
