@@ -93,15 +93,6 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
         kafkaProducer.close();
         kafkaConsumer1.close();
-        try {
-            admin.topics().deletePartitionedTopic(topic);
-            fail();
-        } catch (PulsarAdminException e) {
-            log.info("Failed to delete partitioned topic \"{}\": {}", topic, e.getMessage());
-            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions")
-                    || e.getMessage().contains("Partitioned topic does not exist"));
-        }
-
         kafkaConsumer2.close();
         Thread.sleep(500); // Wait for consumers closed
         admin.topics().deletePartitionedTopic(topic);
