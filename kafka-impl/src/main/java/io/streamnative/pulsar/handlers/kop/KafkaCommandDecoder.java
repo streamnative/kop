@@ -384,6 +384,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                         }
                     });
                 });
+                continue;
             }
 
             // case 4: responseFuture is expired
