@@ -552,7 +552,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     log.error("Topic {} is a non-partitioned topic", topic);
                                     allTopicMetadata.add(
                                             new TopicMetadata(
-                                                    Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                                                    Errors.INVALID_TOPIC_EXCEPTION,
                                                     topic,
                                                     false,
                                                     Collections.emptyList()));
