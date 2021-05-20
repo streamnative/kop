@@ -35,9 +35,7 @@ Since Pulsar 2.6.2, KoP version changes with Pulsar version accordingly. The ver
 | KoP version | Pulsar version |
 | :---------- | :------------- |
 | [2.8.0](https://github.com/streamnative/kop/releases/tag/v2.8.0) |Pulsar 2.8.0|
-| [2.7.1](https://github.com/streamnative/kop/releases/tag/v2.7.1) |Pulsar 2.7.1|
 | [2.7.0](https://github.com/streamnative/kop/releases/tag/v2.7.0) |Pulsar 2.7.0|
-| [2.6.3](https://github.com/streamnative/kop/releases/tag/v2.6.3) |Pulsar 2.6.3|
 | [2.6.2](https://github.com/streamnative/kop/releases/tag/v2.6.2) |Pulsar 2.6.2|
 | [0.3.0](https://github.com/streamnative/kop/releases/tag/v0.3.0) |Pulsar 2.6.1|
 | [0.2.0](https://github.com/streamnative/kop/releases/tag/v0.2.0) |Pulsar 2.5.0|
@@ -103,8 +101,6 @@ After you copy the .nar file to your Pulsar `/protocols` directory, you need to 
     listeners=PLAINTEXT://127.0.0.1:9092
     advertisedAddress=127.0.0.1
     ```
-
-    > The hostname in listeners should be the same as Pulsar broker's `advertisedAddress`.
 
 3. Set offset management as follows since offset management for KoP depends on Pulsar "Broker Entry Metadata".
 
