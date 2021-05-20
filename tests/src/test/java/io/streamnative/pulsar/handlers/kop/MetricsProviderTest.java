@@ -138,6 +138,9 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         }
         Assert.assertEquals(msgs, totalMsgs);
 
+        // commit offsets
+        kConsumer.getConsumer().commitSync(Duration.ofSeconds(5));
+
         HttpClient httpClient = HttpClientBuilder.create().build();
         final String metricsEndPoint = pulsar.getWebServiceAddress() + "/metrics";
         HttpResponse response = httpClient.execute(new HttpGet(metricsEndPoint));
@@ -178,5 +181,10 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         Assert.assertTrue(sb.toString().contains("kop_server_TOTAL_MESSAGE_READ"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_READ"));
         Assert.assertTrue(sb.toString().contains("kop_server_FETCH_DECODE"));
+
+        // offset commit stats
+        Assert.assertTrue(sb.toString().contains("kop_coordinator_GET_TOPIC"));
+        Assert.assertTrue(sb.toString().contains("kop_coordinator_FIND_POSITION"));
+        Assert.assertTrue(sb.toString().contains("kop_coordinator_GET_OR_CREATE_CONSUMER"));
     }
 }

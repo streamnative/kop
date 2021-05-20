@@ -131,8 +131,7 @@ public class GroupCoordinator {
             heartbeatPurgatory,
             joinPurgatory,
             time,
-            offsetAcker,
-            coordinatorStats
+            offsetAcker
         );
     }
 
@@ -164,7 +163,6 @@ public class GroupCoordinator {
     private final DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory;
     private final DelayedOperationPurgatory<DelayedJoin> joinPurgatory;
     private final Time time;
-    private final CoordinatorStats statsLogger;
 
     public GroupCoordinator(
         GroupConfig groupConfig,
@@ -172,15 +170,13 @@ public class GroupCoordinator {
         DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory,
         DelayedOperationPurgatory<DelayedJoin> joinPurgatory,
         Time time,
-        OffsetAcker offsetAcker,
-        CoordinatorStats statsLogger) {
+        OffsetAcker offsetAcker) {
         this.groupConfig = groupConfig;
         this.groupManager = groupManager;
         this.heartbeatPurgatory = heartbeatPurgatory;
         this.joinPurgatory = joinPurgatory;
         this.time = time;
         this.offsetAcker = offsetAcker;
-        this.statsLogger = statsLogger;
     }
 
     /**

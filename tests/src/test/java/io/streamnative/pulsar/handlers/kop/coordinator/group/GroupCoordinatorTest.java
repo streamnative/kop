@@ -198,8 +198,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
             heartbeatPurgatory,
             joinPurgatory,
             timer.time(),
-            new MockOffsetAcker((PulsarClientImpl) pulsarClient),
-            new CoordinatorStats(NullStatsLogger.INSTANCE)
+            new MockOffsetAcker((PulsarClientImpl) pulsarClient)
         );
 
         // start the group coordinator
