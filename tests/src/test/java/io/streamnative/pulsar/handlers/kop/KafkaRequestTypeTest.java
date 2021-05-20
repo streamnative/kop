@@ -436,7 +436,7 @@ public class KafkaRequestTypeTest extends KopProtocolHandlerTestBase {
         kConsumer.close();
 
         // wait for offset commit complete
-        Thread.sleep(1000);
+        Thread.sleep(500);
 
         log.info("start another consumer, will consume from the left place of first consumer");
         KConsumer kConsumer2 = new KConsumer(topicName, getKafkaBrokerPort(), true);
@@ -460,7 +460,13 @@ public class KafkaRequestTypeTest extends KopProtocolHandlerTestBase {
 
         assertEquals(i, totalMsgs);
 
-        // no more records
+        kConsumer2.getConsumer().close();
+        // wait for offset commit complete
+        Thread.sleep(500);
+
+        // resubscribe the topic with the same group, no more records will be received
+        kConsumer2 = new KConsumer(topicName, getKafkaBrokerPort(), true);
+        kConsumer2.getConsumer().subscribe(Collections.singletonList(topicName));
         ConsumerRecords<Integer, String> records = kConsumer2.getConsumer().poll(Duration.ofSeconds(1));
         assertTrue(records.isEmpty());
     }
