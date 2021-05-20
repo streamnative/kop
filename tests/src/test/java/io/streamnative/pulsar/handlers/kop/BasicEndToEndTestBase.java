@@ -54,6 +54,7 @@ import org.testng.annotations.BeforeClass;
 public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
 
     protected static final String GROUP_ID = "my-group";
+    protected static final String SUBSCRIPTION = "pulsar-sub";
 
     public BasicEndToEndTestBase(final String entryFormat) {
         super(entryFormat);
@@ -105,8 +106,13 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
     }
 
     protected Consumer<byte[]> newPulsarConsumer(final String topic) throws PulsarClientException {
+        return newPulsarConsumer(topic, SUBSCRIPTION);
+    }
+
+    protected Consumer<byte[]> newPulsarConsumer(final String topic,
+                                                 final String subscription) throws PulsarClientException {
         return pulsarClient.newConsumer().topic(topic)
-                .subscriptionName("pulsar-sub")
+                .subscriptionName(subscription)
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                 .subscribe();
     }
