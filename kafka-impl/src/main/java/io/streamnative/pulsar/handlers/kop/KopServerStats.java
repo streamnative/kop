@@ -22,6 +22,9 @@ public interface KopServerStats {
     String SERVER_SCOPE = "kop_server";
 
     String REQUEST_SCOPE = "request";
+    String TOPIC_SCOPE = "topic";
+    String PARTITION_SCOPE = "partition";
+    String GROUP_SCOPE = "group";
 
     /**
      * Request stats.
@@ -60,4 +63,11 @@ public interface KopServerStats {
     String TOTAL_MESSAGE_READ = "TOTAL_MESSAGE_READ";
     String MESSAGE_READ = "MESSAGE_READ";
     String FETCH_DECODE = "FETCH_DECODE";
+
+    /**
+     * Consumer stats.
+     */
+    String BYTES_OUT = "BYTES_OUT";
+    String MESSAGE_OUT = "MESSAGE_OUT";
+    String ENTRIES_OUT = "ENTRIES_OUT";
 }

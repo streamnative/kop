@@ -89,7 +89,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
 
     @Test(timeOut = 30000)
     public void testMetricsProvider() throws Exception {
-        int partitionNumber = 3;
+        int partitionNumber = 1;
         String kafkaTopicName = "kopKafkaProducePulsarMetrics" + partitionNumber;
 
         // create partitioned topic.
@@ -181,5 +181,12 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         Assert.assertTrue(sb.toString().contains("kop_server_TOTAL_MESSAGE_READ"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_READ"));
         Assert.assertTrue(sb.toString().contains("kop_server_FETCH_DECODE"));
+
+        // consumer stats
+        Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_OUT{group=\"DemoKafkaOnPulsarConsumer\","
+                + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
+        Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT{group=\"DemoKafkaOnPulsarConsumer\","
+                + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 1130"));
+        Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT"));
     }
 }

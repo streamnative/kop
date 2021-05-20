@@ -1285,17 +1285,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected void handleFetchRequest(KafkaHeaderAndRequest fetch,
                                       CompletableFuture<AbstractResponse> resultFuture) {
-        long startFetchingRequestNanos = MathUtils.nowInNano();
-        resultFuture.whenComplete((r, e) -> {
-            if (e != null) {
-                requestStats.getHandleFetchRequestStats().registerFailedEvent(
-                        MathUtils.elapsedNanos(startFetchingRequestNanos), TimeUnit.NANOSECONDS);
-            } else {
-                requestStats.getHandleFetchRequestStats().registerSuccessfulEvent(
-                        MathUtils.elapsedNanos(startFetchingRequestNanos), TimeUnit.NANOSECONDS);
-            }
-        });
-
         checkArgument(fetch.getRequest() instanceof FetchRequest);
         FetchRequest request = (FetchRequest) fetch.getRequest();
 
@@ -1309,7 +1298,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         }
 
-        MessageFetchContext fetchContext = MessageFetchContext.get(this);
+        MessageFetchContext fetchContext = MessageFetchContext.get(this, requestStats);
         fetchContext.handleFetch(resultFuture, fetch, transactionCoordinator, fetchPurgatory);
     }
 
