@@ -27,7 +27,6 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.Group
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.MemberMetadata.MemberSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
-import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTimer;
 import java.nio.ByteBuffer;
@@ -37,7 +36,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -57,7 +55,6 @@ import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
-import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -92,32 +89,6 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
     private String otherGroupId;
     private int otherGroupPartitionId;
     private Map<String, byte[]> protocols;
-
-    static class MockOffsetAcker extends OffsetAcker {
-        public MockOffsetAcker(PulsarClientImpl pulsarClient) {
-            super(pulsarClient, new CoordinatorStats(NullStatsLogger.INSTANCE));
-        }
-
-        @Override
-        public void addOffsetsTracker(String groupId, byte[] assignment) {
-            // non op
-        }
-
-        @Override
-        public void ackOffsets(String groupId, Map<TopicPartition, OffsetAndMetadata> offsetMetadata) {
-            // non op
-        }
-
-        @Override
-        public void close(Set<String> groupIds) {
-            // non op
-        }
-
-        @Override
-        public void close() {
-            // non op
-        }
-    }
 
     @Override
     protected void resetConfig() {
@@ -197,8 +168,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
             groupMetadataManager,
             heartbeatPurgatory,
             joinPurgatory,
-            timer.time(),
-            new MockOffsetAcker((PulsarClientImpl) pulsarClient)
+            timer.time()
         );
 
         // start the group coordinator

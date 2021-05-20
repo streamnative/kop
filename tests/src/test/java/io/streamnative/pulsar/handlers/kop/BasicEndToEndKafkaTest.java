@@ -75,6 +75,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         sendSingleMessages(kafkaProducer, topic, expectedMessages);
 
         try {
+            // topics cannot be deleted because the broker Producer has been attached to the PersistentTopic
             admin.topics().deletePartitionedTopic(topic);
             fail();
         } catch (PulsarAdminException e) {
@@ -98,19 +99,16 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         assertEquals(receiveMessages(kafkaConsumer2, expectedMessages.size()), expectedMessages);
 
         kafkaProducer.close();
-        kafkaConsumer1.close();
         try {
+            // topics can be deleted even if the Kafka consumers are active because there are no broker side Consumers
+            // that are attached to the PersistentTopic.
             admin.topics().deletePartitionedTopic(topic);
-            fail();
         } catch (PulsarAdminException e) {
-            log.info("Failed to delete partitioned topic \"{}\": {}", topic, e.getMessage());
-            assertTrue(e.getMessage().contains("Topic has active producers/subscriptions")
-                    || e.getMessage().contains("Partitioned topic does not exist"));
+            log.error("Failed to delete topic even if the producer has been closed: {}", e.getMessage());
+            fail("Failed to delete topic after the producer is closed", e);
         }
-
+        kafkaConsumer1.close();
         kafkaConsumer2.close();
-        Thread.sleep(500); // Wait for consumers closed
-        admin.topics().deletePartitionedTopic(topic);
     }
 
     @Test(timeOut = 20000)

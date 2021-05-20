@@ -23,7 +23,6 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetAcker;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
@@ -348,7 +347,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         KafkaTopicManager.closeKafkaTopicConsumerManagers();
         KafkaTopicManager.getReferences().clear();
         KafkaTopicManager.getTopics().clear();
-        OffsetAcker.CONSUMERS.clear();
         statsProvider.stop();
     }
 
@@ -379,16 +377,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
 
         this.groupCoordinator = GroupCoordinator.of(
-            brokerService,
             (PulsarClientImpl) (service.pulsar().getClient()),
             groupConfig,
             offsetConfig,
-            kafkaConfig,
             SystemTimer.builder()
                 .executorName("group-coordinator-timer")
                 .build(),
-            Time.SYSTEM,
-            rootStatsLogger
+            Time.SYSTEM
         );
 
         loadOffsetTopics(groupCoordinator);

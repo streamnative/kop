@@ -181,10 +181,5 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         Assert.assertTrue(sb.toString().contains("kop_server_TOTAL_MESSAGE_READ"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_READ"));
         Assert.assertTrue(sb.toString().contains("kop_server_FETCH_DECODE"));
-
-        // offset commit stats
-        Assert.assertTrue(sb.toString().contains("kop_coordinator_GET_TOPIC"));
-        Assert.assertTrue(sb.toString().contains("kop_coordinator_FIND_POSITION"));
-        Assert.assertTrue(sb.toString().contains("kop_coordinator_GET_OR_CREATE_CONSUMER"));
     }
 }
