@@ -153,6 +153,7 @@ import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.api.proto.MarkerType;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.naming.NamespaceName;
@@ -498,32 +499,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     getPartitionedTopicMetadataAsync(fullTopicName)
                         .whenComplete((partitionedTopicMetadata, throwable) -> {
                             if (throwable != null) {
-                                // Failed get partitions.
-                                allTopicMetadata.add(
-                                    new TopicMetadata(
-                                        Errors.UNKNOWN_TOPIC_OR_PARTITION,
-                                        topic,
-                                        false,
-                                        Collections.emptyList()));
-                                log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} metadata: {}",
-                                        ctx.channel(), metadataHar.getHeader(),
-                                        fullTopicName, throwable.getMessage());
-                                completeOneTopic.run();
-                            } else {
-                                if (partitionedTopicMetadata.partitions > 0) {
-                                    if (log.isDebugEnabled()) {
-                                        log.debug("Topic {} has {} partitions",
-                                            topic, partitionedTopicMetadata.partitions);
-                                    }
-                                    addTopicPartition.accept(topic, partitionedTopicMetadata.partitions);
-                                } else {
+                                if (throwable instanceof PulsarAdminException.NotFoundException) {
                                     if (kafkaConfig.isAllowAutoTopicCreation()
                                             && metadataRequest.allowAutoTopicCreation()) {
-                                        if (log.isDebugEnabled()) {
-                                            log.debug("[{}] Request {}: Topic {} has single partition, "
-                                                    + "auto create partitioned topic",
-                                                ctx.channel(), metadataHar.getHeader(), topic);
-                                        }
+                                        log.info("[{}] Request {}: Topic {} doesn't exist, auto create it with {} "
+                                                        + "partitions", ctx.channel(), metadataHar.getHeader(),
+                                                topic, defaultNumPartitions);
                                         admin.topics().createPartitionedTopicAsync(fullTopicName, defaultNumPartitions)
                                                 .whenComplete((ignored, e) -> {
                                                     if (e == null) {
@@ -535,21 +516,47 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     }
                                                 });
                                     } else {
-                                        // NOTE: Currently no matter topic is a non-partitioned topic or topic doesn't
-                                        // exist, the queried partitions from broker are both 0.
-                                        // See https://github.com/apache/pulsar/issues/8813 for details.
                                         log.error("[{}] Request {}: Topic {} doesn't exist and it's not allowed to"
                                                         + "auto create partitioned topic",
                                                 ctx.channel(), metadataHar.getHeader(), topic);
                                         // not allow to auto create topic, return unknown topic
                                         allTopicMetadata.add(
-                                            new TopicMetadata(
-                                                Errors.UNKNOWN_TOPIC_OR_PARTITION,
-                                                topic,
-                                                false,
-                                                Collections.emptyList()));
+                                                new TopicMetadata(
+                                                        Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                                                        topic,
+                                                        false,
+                                                        Collections.emptyList()));
                                         completeOneTopic.run();
                                     }
+                                } else {
+                                    // Failed get partitions.
+                                    allTopicMetadata.add(
+                                            new TopicMetadata(
+                                                    Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                                                    topic,
+                                                    false,
+                                                    Collections.emptyList()));
+                                    log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} metadata: {}",
+                                            ctx.channel(), metadataHar.getHeader(),
+                                            fullTopicName, throwable.getMessage());
+                                    completeOneTopic.run();
+                                }
+                            } else { // the topic already existed
+                                if (partitionedTopicMetadata.partitions > 0) {
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("Topic {} has {} partitions",
+                                            topic, partitionedTopicMetadata.partitions);
+                                    }
+                                    addTopicPartition.accept(topic, partitionedTopicMetadata.partitions);
+                                } else {
+                                    log.error("Topic {} is a non-partitioned topic", topic);
+                                    allTopicMetadata.add(
+                                            new TopicMetadata(
+                                                    Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                                                    topic,
+                                                    false,
+                                                    Collections.emptyList()));
+                                    completeOneTopic.run();
                                 }
                             }
                         });

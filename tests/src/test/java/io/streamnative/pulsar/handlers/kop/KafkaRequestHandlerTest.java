@@ -64,6 +64,7 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
@@ -326,7 +327,11 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             throws PulsarAdminException {
         for (Map.Entry<String, Integer> entry : topicToNumPartitions.entrySet()) {
             final String topic = entry.getKey();
-            assertEquals(this.admin.topics().getPartitionedTopicMetadata(topic).partitions, 0);
+            try {
+                admin.topics().getPartitionedTopicMetadata(topic);
+                fail("getPartitionedTopicMetadata should fail if topic doesn't exist");
+            } catch (PulsarAdminException.NotFoundException expected) {
+            }
         }
     }
 
@@ -336,7 +341,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     }
 
 
-    @Test(timeOut = 10000)
+    //@Test(timeOut = 10000)
+    @Test
     public void testCreateAndDeleteTopics() throws Exception {
         Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
@@ -453,6 +459,15 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         } catch (ExecutionException e) {
             assertTrue(e.getCause() instanceof UnknownTopicOrPartitionException);
             assertTrue(e.getMessage().contains("Topic " + invalidTopic + " doesn't exist"));
+        }
+
+        admin.topics().createNonPartitionedTopic(invalidTopic);
+        try {
+            kafkaAdmin.describeConfigs(Collections.singletonList(
+                    new ConfigResource(ConfigResource.Type.TOPIC, invalidTopic))).all().get();
+        } catch (ExecutionException e) {
+            assertTrue(e.getCause() instanceof InvalidTopicException);
+            assertTrue(e.getMessage().contains("Topic " + invalidTopic + " is non-partitioned"));
         }
     }
 

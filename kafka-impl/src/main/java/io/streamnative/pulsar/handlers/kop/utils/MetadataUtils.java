@@ -15,10 +15,8 @@ package io.streamnative.pulsar.handlers.kop.utils;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.pulsar.client.admin.Clusters;
@@ -27,8 +25,6 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.admin.PulsarAdminException.ConflictException;
 import org.apache.pulsar.client.admin.Tenants;
-import org.apache.pulsar.client.admin.Topics;
-import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
@@ -118,13 +114,13 @@ public class MetadataUtils {
             if (!tenants.getTenants().contains(kafkaMetadataTenant)) {
                 log.info("Tenant: {} does not exist, creating it ...", kafkaMetadataTenant);
                 tenants.createTenant(kafkaMetadataTenant,
-                    new TenantInfo(Sets.newHashSet(conf.getSuperUserRoles()), Sets.newHashSet(cluster)));
+                        new TenantInfo(Sets.newHashSet(conf.getSuperUserRoles()), Sets.newHashSet(cluster)));
             } else {
                 TenantInfo kafkaMetadataTenantInfo = tenants.getTenantInfo(kafkaMetadataTenant);
                 Set<String> allowedClusters = kafkaMetadataTenantInfo.getAllowedClusters();
                 if (!allowedClusters.contains(cluster)) {
                     log.info("Tenant: {} exists but cluster: {} is not in the allowedClusters list, updating it ...",
-                        kafkaMetadataTenant, cluster);
+                            kafkaMetadataTenant, cluster);
                     allowedClusters.add(cluster);
                     tenants.updateTenant(kafkaMetadataTenant, kafkaMetadataTenantInfo);
                 }
@@ -135,7 +131,7 @@ public class MetadataUtils {
             Namespaces namespaces = pulsarAdmin.namespaces();
             if (!namespaces.getNamespaces(kafkaMetadataTenant).contains(kafkaMetadataNamespace)) {
                 log.info("Namespaces: {} does not exist in tenant: {}, creating it ...",
-                    kafkaMetadataNamespace, kafkaMetadataTenant);
+                        kafkaMetadataNamespace, kafkaMetadataTenant);
                 Set<String> replicationClusters = Sets.newHashSet(cluster);
                 namespaces.createNamespace(kafkaMetadataNamespace, replicationClusters);
                 namespaces.setNamespaceReplicationClusters(kafkaMetadataNamespace, replicationClusters);
@@ -143,7 +139,7 @@ public class MetadataUtils {
                 List<String> replicationClusters = namespaces.getNamespaceReplicationClusters(kafkaMetadataNamespace);
                 if (!replicationClusters.contains(cluster)) {
                     log.info("Namespace: {} exists but cluster: {} is not in the replicationClusters list,"
-                    + "updating it ...", kafkaMetadataNamespace, cluster);
+                            + "updating it ...", kafkaMetadataNamespace, cluster);
                     Set<String> newReplicationClusters = Sets.newHashSet(replicationClusters);
                     newReplicationClusters.add(cluster);
                     namespaces.setNamespaceReplicationClusters(kafkaMetadataNamespace, newReplicationClusters);
@@ -171,40 +167,7 @@ public class MetadataUtils {
             namespaceExists = true;
 
             // Check if the offsets topic exists and create it if not
-            Topics topics = pulsarAdmin.topics();
-            PartitionedTopicMetadata topicMetadata =
-                    topics.getPartitionedTopicMetadata(kopTopic.getFullName());
-
-            Set<String> partitionSet = new HashSet<>(partitionNum);
-            for (int i = 0; i < partitionNum; i++) {
-                partitionSet.add(kopTopic.getPartitionName(i));
-            }
-
-            if (topicMetadata.partitions <= 0) {
-                log.info("Kafka group metadata topic {} doesn't exist. Creating it ...", kopTopic.getFullName());
-
-                topics.createPartitionedTopic(
-                        kopTopic.getFullName(),
-                        partitionNum
-                );
-
-                log.info("Successfully created kop metadata topic {} with {} partitions.",
-                        kopTopic.getFullName(), partitionNum);
-            } else {
-                // Check to see if the partitions all exist
-                partitionSet.removeAll(
-                        topics.getList(kafkaMetadataNamespace).stream()
-                                .filter((topic) -> topic.startsWith(kopTopic.getFullName()))
-                                .collect(Collectors.toList())
-                );
-
-                if (!partitionSet.isEmpty()) {
-                    log.info("Identified missing kop metadata topic {} partitions: {}", kopTopic, partitionSet);
-                    for (String offsetPartition : partitionSet) {
-                        topics.createNonPartitionedTopic(offsetPartition);
-                    }
-                }
-            }
+            createTopicIfNotExist(pulsarAdmin, kopTopic.getFullName(), partitionNum);
             offsetsTopicExists = true;
         } catch (PulsarAdminException e) {
             if (e instanceof ConflictException) {
@@ -220,6 +183,21 @@ public class MetadataUtils {
                             + " namespace: {} exists: {}, topic: {} exists: {}",
                     cluster, clusterExists, kafkaMetadataTenant, tenantExists, kafkaMetadataNamespace, namespaceExists,
                     kopTopic.getOriginalName(), offsetsTopicExists);
+        }
+    }
+
+    private static void createTopicIfNotExist(final PulsarAdmin admin,
+                                              final String topic,
+                                              final int numPartitions) throws PulsarAdminException {
+        try {
+            admin.topics().createPartitionedTopic(topic, numPartitions);
+        } catch (PulsarAdminException.ConflictException e) {
+            log.info("Resources concurrent creating: {}", e.getMessage());
+        }
+        try {
+            // Ensure all partitions are created
+            admin.topics().createMissedPartitions(topic);
+        } catch (PulsarAdminException ignored) {
         }
     }
 }
