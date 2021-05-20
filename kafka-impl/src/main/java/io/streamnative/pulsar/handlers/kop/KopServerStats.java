@@ -19,6 +19,8 @@ package io.streamnative.pulsar.handlers.kop;
 public interface KopServerStats {
     String CATEGORY_SERVER = "server";
 
+    String COORDINATOR_SCOPE = "kop_coordinator";
+    String OFFSET_ACKER_SCOPE = "kop_offset_acker";
     String SERVER_SCOPE = "kop_server";
 
     String REQUEST_SCOPE = "request";
@@ -60,4 +62,11 @@ public interface KopServerStats {
     String TOTAL_MESSAGE_READ = "TOTAL_MESSAGE_READ";
     String MESSAGE_READ = "MESSAGE_READ";
     String FETCH_DECODE = "FETCH_DECODE";
+
+    /**
+     * Coordinator stats.
+     */
+    String GET_OR_CREATE_CONSUMER = "GET_OR_CREATE_CONSUMER";
+    String GET_TOPIC = "GET_TOPIC";
+    String FIND_POSITION = "FIND_POSITION";
 }

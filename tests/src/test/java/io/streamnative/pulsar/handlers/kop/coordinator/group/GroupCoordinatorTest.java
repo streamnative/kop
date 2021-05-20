@@ -27,6 +27,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.Group
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.MemberMetadata.MemberSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTimer;
 import java.nio.ByteBuffer;
@@ -94,7 +95,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
 
     static class MockOffsetAcker extends OffsetAcker {
         public MockOffsetAcker(PulsarClientImpl pulsarClient) {
-            super(pulsarClient);
+            super(pulsarClient, new CoordinatorStats(NullStatsLogger.INSTANCE));
         }
 
         @Override

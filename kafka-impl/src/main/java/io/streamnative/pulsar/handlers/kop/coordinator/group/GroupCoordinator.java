@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.coordinator.group;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.COORDINATOR_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.CompletingRebalance;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.Dead;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.Empty;
@@ -29,6 +30,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.GroupKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.MemberKey;
@@ -88,7 +90,8 @@ public class GroupCoordinator {
         KafkaServiceConfiguration kafkaServiceConfiguration,
 
         Timer timer,
-        Time time
+        Time time,
+        StatsLogger statsLogger
     ) {
         ScheduledExecutorService coordinatorExecutor = OrderedScheduler.newSchedulerBuilder()
             .name("group-coordinator-executor")
@@ -120,7 +123,8 @@ public class GroupCoordinator {
                 .timeoutTimer(timer)
                 .build();
 
-        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient, brokerService);
+        CoordinatorStats coordinatorStats = new CoordinatorStats(statsLogger.scope(COORDINATOR_SCOPE));
+        OffsetAcker offsetAcker = new OffsetAcker(pulsarClient, brokerService, coordinatorStats);
         return new GroupCoordinator(
             groupConfig,
             metadataManager,

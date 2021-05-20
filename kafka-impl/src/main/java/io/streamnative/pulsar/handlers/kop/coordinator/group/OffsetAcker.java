@@ -25,8 +25,10 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.kafka.clients.consumer.internals.ConsumerProtocol;
 import org.apache.kafka.clients.consumer.internals.PartitionAssignor.Assignment;
@@ -49,6 +51,7 @@ public class OffsetAcker implements Closeable {
 
     private final ConsumerBuilder<byte[]> consumerBuilder;
     private final BrokerService brokerService;
+    private final CoordinatorStats statsLogger;
 
     // A map whose
     //   key is group id,
@@ -60,18 +63,20 @@ public class OffsetAcker implements Closeable {
     public static final Map<String, Map<String, CompletableFuture<Consumer<byte[]>>>>
             CONSUMERS = new ConcurrentHashMap<>();
 
-    public OffsetAcker(PulsarClientImpl pulsarClient) {
+    public OffsetAcker(PulsarClientImpl pulsarClient, CoordinatorStats statsLogger) {
         this.consumerBuilder = pulsarClient.newConsumer()
                 .receiverQueueSize(0)
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
         brokerService = null;
+        this.statsLogger = statsLogger;
     }
 
-    public OffsetAcker(PulsarClientImpl pulsarClient, BrokerService brokerService) {
+    public OffsetAcker(PulsarClientImpl pulsarClient, BrokerService brokerService, CoordinatorStats statsLogger) {
         this.consumerBuilder = pulsarClient.newConsumer()
                 .receiverQueueSize(0)
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
         this.brokerService = brokerService;
+        this.statsLogger = statsLogger;
     }
 
     public void addOffsetsTracker(String groupId, byte[] assignment) {
@@ -92,29 +97,50 @@ public class OffsetAcker implements Closeable {
         }
         offsetMetadata.forEach(((topicPartition, offsetAndMetadata) -> {
             // 1. get consumer, then do ackCumulative
+            final long beforeGetOrCreateConsumerTimeStamp = MathUtils.nowInNano();
             CompletableFuture<Consumer<byte[]>> consumerFuture = getOrCreateConsumer(groupId, topicPartition);
 
             consumerFuture.whenComplete((consumer, throwable) -> {
                 if (throwable != null) {
+                    statsLogger.getGetOrCreateConsumerStats()
+                            .registerFailedEvent(MathUtils.elapsedNanos(beforeGetOrCreateConsumerTimeStamp),
+                                    TimeUnit.NANOSECONDS);
                     log.warn("Failed to create offset consumer for [group={}] [topic={}]: {}",
                             groupId, topicPartition, throwable.getMessage());
                     removeConsumer(groupId, topicPartition);
                     return;
                 }
+                statsLogger.getGetOrCreateConsumerStats()
+                        .registerSuccessfulEvent(MathUtils.elapsedNanos(beforeGetOrCreateConsumerTimeStamp),
+                                TimeUnit.NANOSECONDS);
+
                 KopTopic kopTopic = new KopTopic(topicPartition.topic());
                 String partitionTopicName = kopTopic.getPartitionName(topicPartition.partition());
+                final long beforeGetTopicTimeStamp = MathUtils.nowInNano();
                 brokerService.getTopic(partitionTopicName, false).whenComplete((topic, error) -> {
                     if (error != null) {
+                        statsLogger.getGetTopicStats()
+                                .registerFailedEvent(MathUtils.elapsedNanos(beforeGetTopicTimeStamp),
+                                        TimeUnit.NANOSECONDS);
                         log.error("[{}] get topic failed when ack for {}.", partitionTopicName, groupId, error);
                         KafkaTopicManager.removeTopicManagerCache(partitionTopicName);
                         return;
                     }
+
                     if (topic.isPresent()) {
                         PersistentTopic persistentTopic = (PersistentTopic) topic.get();
+                        statsLogger.getGetTopicStats()
+                                .registerSuccessfulEvent(MathUtils.elapsedNanos(beforeGetTopicTimeStamp),
+                                        TimeUnit.NANOSECONDS);
+
                         PositionImpl position = null;
+                        final long beforeFindPositionTimeStamp = MathUtils.nowInNano();
                         try {
                             position = (PositionImpl) persistentTopic.getManagedLedger()
                                     .asyncFindPosition(new OffsetSearchPredicate(offsetAndMetadata.offset())).get();
+                            statsLogger.getFindPositionStats()
+                                    .registerSuccessfulEvent(MathUtils.elapsedNanos(beforeFindPositionTimeStamp),
+                                            TimeUnit.NANOSECONDS);
                             if (position.compareTo(
                                     (PositionImpl) persistentTopic.getManagedLedger().getLastConfirmedEntry()) > 0) {
                                 position = (PositionImpl) persistentTopic.getManagedLedger().getLastConfirmedEntry();
@@ -124,12 +150,20 @@ public class OffsetAcker implements Closeable {
                                         partitionTopicName, position, offsetAndMetadata.offset());
                             }
                         } catch (InterruptedException | ExecutionException e) {
+                            statsLogger.getFindPositionStats()
+                                    .registerFailedEvent(MathUtils.elapsedNanos(beforeFindPositionTimeStamp),
+                                            TimeUnit.NANOSECONDS);
+
                             log.error("[{}] Failed to find position for offset {} when processing offset commit.",
                                     partitionTopicName, offsetAndMetadata.offset());
                         }
                         consumer.acknowledgeCumulativeAsync(
                                 new MessageIdImpl(position.getLedgerId(), position.getEntryId(), -1));
                     } else {
+                        statsLogger.getGetTopicStats()
+                                .registerFailedEvent(MathUtils.elapsedNanos(beforeGetTopicTimeStamp),
+                                        TimeUnit.NANOSECONDS);
+
                         log.error("[{}] Topic not exist when ack for {}.", partitionTopicName, groupId);
                         KafkaTopicManager.removeTopicManagerCache(partitionTopicName);
                     }

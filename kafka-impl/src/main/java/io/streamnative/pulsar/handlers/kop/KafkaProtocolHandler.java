@@ -387,7 +387,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             SystemTimer.builder()
                 .executorName("group-coordinator-timer")
                 .build(),
-            Time.SYSTEM
+            Time.SYSTEM,
+            rootStatsLogger
         );
 
         loadOffsetTopics(groupCoordinator);
