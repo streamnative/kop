@@ -349,8 +349,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     }
 
 
-    //@Test(timeOut = 10000)
-    @Test
+    @Test(timeOut = 10000)
     public void testCreateAndDeleteTopics() throws Exception {
         Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
