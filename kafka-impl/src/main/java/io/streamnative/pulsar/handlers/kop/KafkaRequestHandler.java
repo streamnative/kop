@@ -755,8 +755,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected void handleProduceRequest(KafkaHeaderAndRequest produceHar,
                                         CompletableFuture<AbstractResponse> resultFuture) {
-        final long startProduceNanos = MathUtils.nowInNano();
-
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
 
@@ -781,8 +779,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Request {}: Complete handle produce.", ctx.channel(), produceHar.toString());
             }
-            requestStats.getHandleProduceRequestStats()
-                    .registerFailedEvent(MathUtils.elapsedNanos(startProduceNanos), TimeUnit.NANOSECONDS);
             resultFuture.complete(new ProduceResponse(responseMap));
         };
         BiConsumer<TopicPartition, PartitionResponse> addPartitionResponse = (topicPartition, response) -> {

@@ -170,13 +170,11 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         Assert.assertTrue(sb.toString().contains("kop_server_RESPONSE_BLOCKED_LATENCY"));
 
         // produce stats
-        Assert.assertTrue(sb.toString().contains("kop_server_HANDLE_PRODUCE_REQUEST"));
         Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_ENCODE"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_PUBLISH"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_QUEUED_LATENCY"));
 
         // fetch stats
-        Assert.assertTrue(sb.toString().contains("kop_server_HANDLE_FETCH_REQUEST"));
         Assert.assertTrue(sb.toString().contains("kop_server_PREPARE_METADATA"));
         Assert.assertTrue(sb.toString().contains("kop_server_TOTAL_MESSAGE_READ"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_READ"));

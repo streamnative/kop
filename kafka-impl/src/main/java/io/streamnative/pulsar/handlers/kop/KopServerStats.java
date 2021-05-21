@@ -44,7 +44,6 @@ public interface KopServerStats {
     /**
      * PRODUCE STATS.
      */
-    String HANDLE_PRODUCE_REQUEST = "HANDLE_PRODUCE_REQUEST";
     String PRODUCE_ENCODE = "PRODUCE_ENCODE";
     String MESSAGE_PUBLISH = "MESSAGE_PUBLISH";
     String MESSAGE_QUEUED_LATENCY = "MESSAGE_QUEUED_LATENCY";
@@ -58,7 +57,6 @@ public interface KopServerStats {
      * 2) TOTAL_MESSAGE_READ = read-recursion-times * topic-partitions * MESSAGE_READ + Overhead
      * </p>
      */
-    String HANDLE_FETCH_REQUEST = "HANDLE_FETCH_REQUEST";
     String PREPARE_METADATA = "PREPARE_METADATA";
     String TOTAL_MESSAGE_READ = "TOTAL_MESSAGE_READ";
     String MESSAGE_READ = "MESSAGE_READ";
