@@ -150,6 +150,9 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         StringBuffer sb = new StringBuffer();
         String str;
         while ((str = reader.readLine()) != null) {
+            if (str.contains("NaN") || str.contains("Infinity")) {
+                continue;
+            }
             sb.append(str);
         }
 
@@ -161,7 +164,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         Assert.assertTrue(sb.toString().contains("request=\"ApiVersions\""));
         Assert.assertTrue(sb.toString().contains("request=\"ListOffsets\""));
         Assert.assertTrue(sb.toString().contains("request=\"Fetch\""));
-        Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_LATENCY{success=\"false\",quantile=\"0.999\", "
+        Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_LATENCY{success=\"true\",quantile=\"0.999\", "
                 + "request=\"ListOffsets\"}"));
 
         // response stats
