@@ -21,7 +21,6 @@ import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
@@ -59,7 +58,6 @@ import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.FetchResponse.PartitionData;
 import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
-import org.apache.pulsar.broker.service.Consumer;
 import org.apache.pulsar.common.naming.TopicName;
 
 /**
@@ -416,15 +414,14 @@ public final class MessageFetchContext {
                                         clientHost, groupId);
                                 return groupId;
                             });
-                            CompletableFuture<Consumer> consumerFuture = requestHandler.getTopicManager()
-                                    .getGroupConsumers(groupName, kafkaPartition);
+
                             final long startDecodingEntriesNanos = MathUtils.nowInNano();
                             final DecodeResult decodeResult = requestHandler.getEntryFormatter().decode(entries, magic);
                             requestHandler.requestStats.getFetchDecodeStats().registerSuccessfulEvent(
                                     MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
                             decodeResults.add(decodeResult);
-                            // collect consumer metrics
-                            EntryFormatter.updateConsumerStats(decodeResult.getRecords(), consumerFuture);
+                            // TODO: replace the following line with the method to collect metrics
+                            log.info("TODO: collect metrics of group {}", groupName);
 
                             List<FetchResponse.AbortedTransaction> abortedTransactions;
                             if (requestHandler.getKafkaConfig().isEnableTransactionCoordinator()

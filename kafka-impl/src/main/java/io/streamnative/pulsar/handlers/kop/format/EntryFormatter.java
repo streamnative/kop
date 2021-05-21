@@ -15,12 +15,9 @@ package io.streamnative.pulsar.handlers.kop.format;
 
 import io.netty.buffer.ByteBuf;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
-import org.apache.pulsar.broker.service.Consumer;
-import org.apache.pulsar.common.policies.data.ConsumerStats;
 
 
 /**
@@ -62,23 +59,5 @@ public interface EntryFormatter {
             numMessages += (batch.lastOffset() - batch.baseOffset() + 1);
         }
         return numMessages;
-    }
-
-    /**
-     * Update Consumer Stats.
-     *
-     * @param records messages with Kafka's format
-     * @param consumerFuture pulsar internal consumer
-     */
-    static void updateConsumerStats(final MemoryRecords records, CompletableFuture<Consumer> consumerFuture) {
-        ConsumerStats consumerStats = new ConsumerStats();
-        consumerFuture.whenComplete((consumer, throwable) -> {
-            if (consumer == null || throwable != null) {
-                return;
-            }
-            consumerStats.bytesOutCounter = records.sizeInBytes();
-            consumerStats.msgOutCounter = parseNumMessages(records);
-            consumer.updateStats(consumerStats);
-        });
     }
 }
