@@ -164,8 +164,8 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         Assert.assertTrue(sb.toString().contains("request=\"ApiVersions\""));
         Assert.assertTrue(sb.toString().contains("request=\"ListOffsets\""));
         Assert.assertTrue(sb.toString().contains("request=\"Fetch\""));
-        Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_LATENCY{success=\"true\",quantile=\"0.999\", "
-                + "request=\"ListOffsets\"}"));
+        Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_LATENCY{success=\"true\",quantile=\"0.99\", "
+                + "request=\"Fetch\"}"));
 
         // response stats
         Assert.assertTrue(sb.toString().contains("kop_server_RESPONSE_QUEUE_SIZE"));
