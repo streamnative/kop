@@ -755,8 +755,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected void handleProduceRequest(KafkaHeaderAndRequest produceHar,
                                         CompletableFuture<AbstractResponse> resultFuture) {
-        final long startProduceNanos = MathUtils.nowInNano();
-
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
 
@@ -781,8 +779,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Request {}: Complete handle produce.", ctx.channel(), produceHar.toString());
             }
-            requestStats.getHandleProduceRequestStats()
-                    .registerFailedEvent(MathUtils.elapsedNanos(startProduceNanos), TimeUnit.NANOSECONDS);
             resultFuture.complete(new ProduceResponse(responseMap));
         };
         BiConsumer<TopicPartition, PartitionResponse> addPartitionResponse = (topicPartition, response) -> {
@@ -1285,17 +1281,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected void handleFetchRequest(KafkaHeaderAndRequest fetch,
                                       CompletableFuture<AbstractResponse> resultFuture) {
-        long startFetchingRequestNanos = MathUtils.nowInNano();
-        resultFuture.whenComplete((r, e) -> {
-            if (e != null) {
-                requestStats.getHandleFetchRequestStats().registerFailedEvent(
-                        MathUtils.elapsedNanos(startFetchingRequestNanos), TimeUnit.NANOSECONDS);
-            } else {
-                requestStats.getHandleFetchRequestStats().registerSuccessfulEvent(
-                        MathUtils.elapsedNanos(startFetchingRequestNanos), TimeUnit.NANOSECONDS);
-            }
-        });
-
         checkArgument(fetch.getRequest() instanceof FetchRequest);
         FetchRequest request = (FetchRequest) fetch.getRequest();
 
@@ -1309,7 +1294,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         }
 
-        MessageFetchContext fetchContext = MessageFetchContext.get(this);
+        MessageFetchContext fetchContext = MessageFetchContext.get(this, requestStats);
         fetchContext.handleFetch(resultFuture, fetch, transactionCoordinator, fetchPurgatory);
     }
 

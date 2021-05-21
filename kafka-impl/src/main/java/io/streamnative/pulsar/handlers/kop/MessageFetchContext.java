@@ -13,6 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_OUT;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.ENTRIES_OUT;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.GROUP_SCOPE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_OUT;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 
 import com.google.common.collect.Lists;
@@ -21,6 +27,7 @@ import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
@@ -67,11 +74,13 @@ import org.apache.pulsar.common.naming.TopicName;
 public final class MessageFetchContext {
 
     private KafkaRequestHandler requestHandler;
+    private RequestStats statsLogger;
 
     // recycler and get for this object
-    public static MessageFetchContext get(KafkaRequestHandler requestHandler) {
+    public static MessageFetchContext get(KafkaRequestHandler requestHandler, RequestStats statsLogger) {
         MessageFetchContext context = RECYCLER.get();
         context.requestHandler = requestHandler;
+        context.statsLogger = statsLogger;
         return context;
     }
 
@@ -214,7 +223,6 @@ public final class MessageFetchContext {
                                       Map<TopicPartition, Long> highWaterMarkMap,
                                       long startReadingTotalMessagesNanos,
                                       DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
-
         AtomicInteger entriesRead = new AtomicInteger(0);
         // here do the real read, and in read callback put cursor back to KafkaTopicConsumerManager.
         Map<TopicPartition, CompletableFuture<List<Entry>>> readFutures = readAllCursorOnce(cursors);
@@ -420,8 +428,9 @@ public final class MessageFetchContext {
                             requestHandler.requestStats.getFetchDecodeStats().registerSuccessfulEvent(
                                     MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
                             decodeResults.add(decodeResult);
-                            // TODO: replace the following line with the method to collect metrics
-                            log.info("TODO: collect metrics of group {}", groupName);
+
+                            // collect consumer metrics
+                            updateConsumerStats(kafkaPartition, decodeResult.getRecords(), entries.size(), groupName);
 
                             List<FetchResponse.AbortedTransaction> abortedTransactions;
                             if (requestHandler.getKafkaConfig().isEnableTransactionCoordinator()
@@ -558,6 +567,32 @@ public final class MessageFetchContext {
                     currentPosition, e);
             }
         }, null);
+    }
+
+    private void updateConsumerStats(final TopicPartition topicPartition, final MemoryRecords records,
+                                     int entrySize, final String groupId) {
+        int numMessages = EntryFormatter.parseNumMessages(records);
+
+        statsLogger.getStatsLogger()
+                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
+                .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition()))
+                .scopeLabel(GROUP_SCOPE, groupId)
+                .getCounter(BYTES_OUT)
+                .add(records.sizeInBytes());
+
+        statsLogger.getStatsLogger()
+                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
+                .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition()))
+                .scopeLabel(GROUP_SCOPE, groupId)
+                .getCounter(MESSAGE_OUT)
+                .add(numMessages);
+
+        statsLogger.getStatsLogger()
+                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
+                .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition()))
+                .scopeLabel(GROUP_SCOPE, groupId)
+                .getCounter(ENTRIES_OUT)
+                .add(entrySize);
     }
 
 }

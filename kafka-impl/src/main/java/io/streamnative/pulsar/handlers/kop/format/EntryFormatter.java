@@ -19,7 +19,6 @@ import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 
-
 /**
  * The formatter for conversion between Kafka records and Bookie entries.
  */

@@ -89,7 +89,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
 
     @Test(timeOut = 30000)
     public void testMetricsProvider() throws Exception {
-        int partitionNumber = 3;
+        int partitionNumber = 1;
         String kafkaTopicName = "kopKafkaProducePulsarMetrics" + partitionNumber;
 
         // create partitioned topic.
@@ -141,6 +141,12 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         // commit offsets
         kConsumer.getConsumer().commitSync(Duration.ofSeconds(5));
 
+        try {
+            Thread.sleep(1000);
+        } catch (Exception e) {
+
+        }
+
         HttpClient httpClient = HttpClientBuilder.create().build();
         final String metricsEndPoint = pulsar.getWebServiceAddress() + "/metrics";
         HttpResponse response = httpClient.execute(new HttpGet(metricsEndPoint));
@@ -150,6 +156,9 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         StringBuffer sb = new StringBuffer();
         String str;
         while ((str = reader.readLine()) != null) {
+            if (str.contains("NaN") || str.contains("Infinity")) {
+                continue;
+            }
             sb.append(str);
         }
 
@@ -161,8 +170,8 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         Assert.assertTrue(sb.toString().contains("request=\"ApiVersions\""));
         Assert.assertTrue(sb.toString().contains("request=\"ListOffsets\""));
         Assert.assertTrue(sb.toString().contains("request=\"Fetch\""));
-        Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_LATENCY{success=\"false\",quantile=\"0.999\", "
-                + "request=\"ListOffsets\"}"));
+        Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_LATENCY{success=\"true\",quantile=\"0.99\", "
+                + "request=\"Produce\"}"));
 
         // response stats
         Assert.assertTrue(sb.toString().contains("kop_server_RESPONSE_QUEUE_SIZE"));
@@ -170,16 +179,21 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         Assert.assertTrue(sb.toString().contains("kop_server_RESPONSE_BLOCKED_LATENCY"));
 
         // produce stats
-        Assert.assertTrue(sb.toString().contains("kop_server_HANDLE_PRODUCE_REQUEST"));
         Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_ENCODE"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_PUBLISH"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_QUEUED_LATENCY"));
 
         // fetch stats
-        Assert.assertTrue(sb.toString().contains("kop_server_HANDLE_FETCH_REQUEST"));
         Assert.assertTrue(sb.toString().contains("kop_server_PREPARE_METADATA"));
         Assert.assertTrue(sb.toString().contains("kop_server_TOTAL_MESSAGE_READ"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_READ"));
         Assert.assertTrue(sb.toString().contains("kop_server_FETCH_DECODE"));
+
+        // consumer stats
+        Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_OUT{group=\"DemoKafkaOnPulsarConsumer\","
+                + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
+        Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT{group=\"DemoKafkaOnPulsarConsumer\","
+                + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 1130"));
+        Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT"));
     }
 }

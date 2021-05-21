@@ -15,8 +15,6 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.CATEGORY_SERVER;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.FETCH_DECODE;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.HANDLE_FETCH_REQUEST;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.HANDLE_PRODUCE_REQUEST;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_PUBLISH;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_QUEUED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_READ;
@@ -81,12 +79,6 @@ public class RequestStats {
     private final OpStatsLogger responseBlockedLatency;
 
     @StatsDoc(
-        name = HANDLE_PRODUCE_REQUEST,
-        help = "handle produce request stats of Kop"
-    )
-    private final OpStatsLogger handleProduceRequestStats;
-
-    @StatsDoc(
         name = PRODUCE_ENCODE,
         help = "produce encode stats of Kop"
     )
@@ -103,12 +95,6 @@ public class RequestStats {
         help = "message queued stats from kop to pulsar broker"
     )
     private final OpStatsLogger messageQueuedLatencyStats;
-
-    @StatsDoc(
-            name = HANDLE_FETCH_REQUEST,
-            help = "stats of fetch request"
-    )
-    private final OpStatsLogger handleFetchRequestStats;
 
     @StatsDoc(
             name = PREPARE_METADATA,
@@ -143,12 +129,10 @@ public class RequestStats {
         this.responseBlockedLatency = statsLogger.getOpStatsLogger(RESPONSE_BLOCKED_LATENCY);
         this.responseBlockedTimes = statsLogger.getCounter(RESPONSE_BLOCKED_TIMES);
 
-        this.handleProduceRequestStats = statsLogger.getOpStatsLogger(HANDLE_PRODUCE_REQUEST);
         this.produceEncodeStats = statsLogger.getOpStatsLogger(PRODUCE_ENCODE);
         this.messagePublishStats = statsLogger.getOpStatsLogger(MESSAGE_PUBLISH);
         this.messageQueuedLatencyStats = statsLogger.getOpStatsLogger(MESSAGE_QUEUED_LATENCY);
 
-        this.handleFetchRequestStats = statsLogger.getOpStatsLogger(HANDLE_FETCH_REQUEST);
         this.prepareMetadataStats = statsLogger.getOpStatsLogger(PREPARE_METADATA);
         this.totalMessageReadStats = statsLogger.getOpStatsLogger(TOTAL_MESSAGE_READ);
         this.messageReadStats = statsLogger.getOpStatsLogger(MESSAGE_READ);
