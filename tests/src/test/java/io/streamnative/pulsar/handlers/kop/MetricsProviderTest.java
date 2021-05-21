@@ -141,6 +141,12 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         // commit offsets
         kConsumer.getConsumer().commitSync(Duration.ofSeconds(5));
 
+        try {
+            Thread.sleep(1000);
+        } catch (Exception e) {
+
+        }
+
         HttpClient httpClient = HttpClientBuilder.create().build();
         final String metricsEndPoint = pulsar.getWebServiceAddress() + "/metrics";
         HttpResponse response = httpClient.execute(new HttpGet(metricsEndPoint));
@@ -165,7 +171,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         Assert.assertTrue(sb.toString().contains("request=\"ListOffsets\""));
         Assert.assertTrue(sb.toString().contains("request=\"Fetch\""));
         Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_LATENCY{success=\"true\",quantile=\"0.99\", "
-                + "request=\"Fetch\"}"));
+                + "request=\"Produce\"}"));
 
         // response stats
         Assert.assertTrue(sb.toString().contains("kop_server_RESPONSE_QUEUE_SIZE"));
