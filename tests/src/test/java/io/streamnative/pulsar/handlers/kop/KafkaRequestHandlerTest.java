@@ -64,6 +64,7 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
@@ -75,6 +76,8 @@ import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
+import org.apache.kafka.common.requests.MetadataRequest;
+import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.RequestHeader;
@@ -90,8 +93,9 @@ import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.Assert;
-import org.testng.annotations.AfterMethod;
-import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.AfterClass;
+import org.testng.annotations.BeforeClass;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 /**
@@ -103,7 +107,12 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     private KafkaRequestHandler handler;
     private AdminManager adminManager;
 
-    @BeforeMethod
+    @DataProvider(name = "metadataVersions")
+    public static Object[][] metadataVersions() {
+        return new Object[][]{ { (short) 0 }, { (short) 1 } };
+    }
+
+    @BeforeClass
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
@@ -164,7 +173,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         handler.ctx = mockCtx;
     }
 
-    @AfterMethod
+    @AfterClass
     @Override
     protected void cleanup() throws Exception {
         adminManager.shutdown();
@@ -326,7 +335,11 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             throws PulsarAdminException {
         for (Map.Entry<String, Integer> entry : topicToNumPartitions.entrySet()) {
             final String topic = entry.getKey();
-            assertEquals(this.admin.topics().getPartitionedTopicMetadata(topic).partitions, 0);
+            try {
+                admin.topics().getPartitionedTopicMetadata(topic);
+                fail("getPartitionedTopicMetadata should fail if topic doesn't exist");
+            } catch (PulsarAdminException.NotFoundException expected) {
+            }
         }
     }
 
@@ -453,6 +466,15 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         } catch (ExecutionException e) {
             assertTrue(e.getCause() instanceof UnknownTopicOrPartitionException);
             assertTrue(e.getMessage().contains("Topic " + invalidTopic + " doesn't exist"));
+        }
+
+        admin.topics().createNonPartitionedTopic(invalidTopic);
+        try {
+            kafkaAdmin.describeConfigs(Collections.singletonList(
+                    new ConfigResource(ConfigResource.Type.TOPIC, invalidTopic))).all().get();
+        } catch (ExecutionException e) {
+            assertTrue(e.getCause() instanceof InvalidTopicException);
+            assertTrue(e.getMessage().contains("Topic " + invalidTopic + " is non-partitioned"));
         }
     }
 
@@ -637,5 +659,22 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         final ListOffsetResponse response = (ListOffsetResponse) responseFuture.get();
         assertTrue(response.responseData().containsKey(topicPartition));
         assertEquals(response.responseData().get(topicPartition).error, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+    }
+
+    @Test(timeOut = 10000, dataProvider = "metadataVersions")
+    public void testMetadataForNonPartitionedTopic(short version) throws Exception {
+        final String topic = "testMetadataForNonPartitionedTopic-" + version;
+        admin.topics().createNonPartitionedTopic(topic);
+
+        final RequestHeader header = new RequestHeader(ApiKeys.METADATA, version, "client", 0);
+        final MetadataRequest request = new MetadataRequest(Collections.singletonList(topic), false, version);
+        final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        handler.handleTopicMetadataRequest(
+                new KafkaHeaderAndRequest(header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
+                responseFuture);
+        final MetadataResponse response = (MetadataResponse) responseFuture.get();
+        assertEquals(response.topicMetadata().size(), 1);
+        assertEquals(response.errors().size(), 1);
+        assertEquals(response.errors().get(topic), Errors.INVALID_TOPIC_EXCEPTION);
     }
 }
