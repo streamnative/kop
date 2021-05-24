@@ -99,7 +99,7 @@ After you copy the .nar file to your Pulsar `/protocols` directory, you need to 
 
     ```properties
     # Use `kafkaListeners` here for KoP 2.8.0 because `listeners` is marked as deprecated from KoP 2.8.0 
- kafkaListeners=PLAINTEXT://127.0.0.1:9092
+    kafkaListeners=PLAINTEXT://127.0.0.1:9092
     # This config is not required unless you want to expose another address to the Kafka client.
     # If it’s not configured, it will be the same with `listeners` config by default
     kafkaAdvertisedListeners=PLAINTEXT://127.0.0.1:9092
