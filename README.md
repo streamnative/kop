@@ -155,7 +155,7 @@ You can configure and manage KoP based on your requirements. Check the following
 
 The following are important information when you configure and use KoP.
 
-- Set both [retention and (time to live) TTL](http://pulsar.apache.org/docs/en/cookbooks-retention-expiry/) as `7 days` for KoP topics. If you only configure retention without configuring TTL, all messages of KoP topics cannot be deleted because KoP does not update a durable cursor.
+- Set both [retention and time to live (TTL)](http://pulsar.apache.org/docs/en/cookbooks-retention-expiry/) for KoP topics. If you only configure retention without configuring TTL, all messages of KoP topics cannot be deleted because KoP does not update a durable cursor.
 -  If a Pulsar consumer and a Kafka consumer both subscribe the same topic with the same subscription (or group) name, the two consumers consume messages independently and they do not share the same subscription though the subscription name of a Pulsar client is the same with the group name of a Kafka client.
 - KoP supports interaction between Pulsar client and Kafka client by default. If your topic is used only by the Pulsar client or only by the Kafka client, you can set `entryFormat=kafka` for better performance.
 
