@@ -161,6 +161,9 @@ public class InnerTopicProtectionTest extends KopProtocolHandlerTestBase {
                                       boolean assertException) {
         try {
             producer.send(new ProducerRecord<>(topic, value)).get();
+            if (assertException) {
+                Assert.fail();
+            }
         } catch (Exception e) {
             if (assertException) {
                 Assert.assertEquals(e.getCause().getMessage(),

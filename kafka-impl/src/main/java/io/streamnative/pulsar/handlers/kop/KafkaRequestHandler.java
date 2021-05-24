@@ -809,6 +809,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     e -> addPartitionResponse.accept(topicPartition, new PartitionResponse(Errors.forException(e)));
 
             final String fullPartitionName = KopTopic.toString(topicPartition);
+
+            // check KOP inner topic
             if (isOffsetTopic(fullPartitionName) || isTransactionTopic(fullPartitionName)) {
                 log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
                         ctx.channel(), produceHar.getHeader(), topicPartition);
@@ -845,9 +847,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     return;
                 }
 
-                final Consumer<PersistentTopic> persistentTopicConsumer = persistentTopic ->
-                        publishMessages(persistentTopic, byteBuf, numMessages, validRecords, fullPartitionName,
-                                offsetConsumer, errorsConsumer);
+                final Consumer<PersistentTopic> persistentTopicConsumer = persistentTopic -> {
+                    publishMessages(persistentTopic, byteBuf, numMessages, validRecords, fullPartitionName,
+                            offsetConsumer, errorsConsumer);
+                };
+
                 if (topicFuture.isDone()) {
                     persistentTopicConsumer.accept(topicFuture.getNow(null));
                 } else {
