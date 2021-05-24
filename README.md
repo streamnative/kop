@@ -87,30 +87,39 @@ After you copy the .nar file to your Pulsar `/protocols` directory, you need to 
     allowAutoTopicCreationType=partitioned
     ```
 
-    | Property | The value you need to set | Default value |
+    | Property | Default value | Proposed value |
     | :------- | :---------------------------- | :------------ |
-    | `messagingProtocols` | kafka | null |
-    | `protocolHandlerDirectory`| Location of KoP NAR file | ./protocols |
-    | `allowAutoTopicCreationType`| partitioned | non-partitioned |
+    | `messagingProtocols` | null | kafka |
+    | `protocolHandlerDirectory`|./protocols  | Location of KoP NAR file |
+    | `allowAutoTopicCreationType`| non-partitioned | partitioned |
 
     You need to set `allowAutoTopicCreationType` to `partitioned` since KoP only supports partitioned topics. If it is set to `non-partitioned` by default, the topics created automatically by KoP are still partitioned topics, yet topics created automatically by Pulsar broker are non-partitioned topics.
 
 2. Set Kafka service listeners.
 
     ```properties
-    listeners=PLAINTEXT://127.0.0.1:9092
-    advertisedAddress=127.0.0.1
+    # Use `kafkaListeners` here for KoP 2.8.0 because `listeners` is marked as deprecated from KoP 2.8.0 
+ kafkaListeners=PLAINTEXT://127.0.0.1:9092
+    # This config is not required unless you want to expose another address to the Kafka client.
+    # If it’s not configured, it will be the same with `listeners` config by default
+    kafkaAdvertisedListeners=PLAINTEXT://127.0.0.1:9092
     ```
 
-3. Set offset management as follows since offset management for KoP depends on Pulsar "Broker Entry Metadata".
+3. Set offset management as follows since offset management for KoP depends on Pulsar "Broker Entry Metadata". It’s required from KoP 2.8.0.
 
     ```properties
     brokerEntryMetadataInterceptors=org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor
     ```
 
+4. Disable the deletion of inactive topics. It’s not required yet **very important** in KoP. Currently, Pulsar deletes inactive partitions of a partitioned topic while the metadata of the partitioned topic is not deleted. KoP cannot [create missed partitions](http://pulsar.apache.org/docs/en/admin-api-topics/#create-missed-partitions) in this case.
+
+    ```properties
+    brokerDeleteInactiveTopicsEnabled=false
+    ```
+
 ## Restart Pulsar brokers to load KoP
 
-After you have installed the KoP protocol handler to Pulsar broker, you can restart the Pulsar brokers to load KoP. You can verify if your KoP works well by running a Kafka client.
+After you have installed the KoP protocol handler to Pulsar broker, you can restart the Pulsar brokers to load KoP if you have configured the `conf/broker.conf` file. For quick start, you can configure the `conf/standalone.conf` file and run a Pulsar standalone. You can verify if your KoP works well by running a Kafka client.
 
 1. Download [Kafka 2.0.0](https://www.apache.org/dyn/closer.cgi?path=/kafka/2.0.0/kafka_2.11-2.0.0.tgz) and untar the release package.
 
@@ -143,6 +152,12 @@ You can configure and manage KoP based on your requirements. Check the following
 - [Secure KoP](docs/security.md)
 - [Manage KoP with the [Envoy](https://www.envoyproxy.io) proxy](docs/envoy-proxy.md)
 - [Implementation: How to converse Pulsar and Kafka](docs/implementation.md)
+
+The following are important information when you configure and use KoP.
+
+- Set both [retention and (time to live) TTL](http://pulsar.apache.org/docs/en/cookbooks-retention-expiry/) as `7 days` for KoP topics. If you only configure retention without configuring TTL, all messages of KoP topics cannot be deleted because KoP does not update a durable cursor.
+-  If a Pulsar consumer and a Kafka consumer both subscribe the same topic with the same subscription (or group) name, the two consumers consume messages independently and they do not share the same subscription though the subscription name of a Pulsar client is the same with the group name of a Kafka client.
+- KoP supports interaction between Pulsar client and Kafka client by default. If your topic is used only by the Pulsar client or only by the Kafka client, you can set `entryFormat=kafka` for better performance.
 
 ## Upgrade
 If you want to upgrade your KoP version, you must first upgrade your Pulsar version accordingly.
