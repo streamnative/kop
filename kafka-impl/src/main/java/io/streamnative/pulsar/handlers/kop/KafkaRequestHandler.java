@@ -849,11 +849,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
 
                 final Consumer<PersistentTopic> persistentTopicConsumer = persistentTopic -> {
-                    // check system topic
-                    if (persistentTopic.isSystemTopic()) {
-                        log.error("Not support produce message to system topic. topic: {}", persistentTopic);
-                        throw new InvalidTopicException(Errors.INVALID_TOPIC_EXCEPTION.message());
-                    }
                     publishMessages(persistentTopic, byteBuf, numMessages, validRecords, fullPartitionName,
                             offsetConsumer, errorsConsumer);
                 };
