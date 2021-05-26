@@ -15,22 +15,22 @@ KoP implements the Kafka wire protocol on Pulsar by leveraging the existing comp
 
 The following figure illustrates how the Kafka-on-Pulsar protocol handler is implemented within Pulsar.
 
-![](docs/kop-architecture.png)
+![](kop-architecture.png)
 
 # Get Started with KoP
 
-If you have a Apache Pulsar cluster, you can enable Kafka-on-Pulsar on your existing Pulsar cluster by downloading and installing the KoP protocol handler to Pulsar brokers directly. It takes three steps:
+If you have an Apache Pulsar cluster, you can enable Kafka-on-Pulsar on your existing Pulsar cluster by downloading and installing the KoP protocol handler to Pulsar brokers directly. It takes three steps:
 1. Download KoP protocol handler, or build the `./kafka-impl/target/pulsar-protocol-handler-kafka-{{connector:version}}.nar` file, and then copy it to your Pulsar `/protocols` directory.
 2. Set the configuration of the KoP protocol handler in Pulsar `broker.conf` or `standalone.conf` files.
 3. Restart Pulsar brokers to load KoP protocol handler.
 
-And then you can start your broker and use KoP. The following are detailed instructions for each step.
+And then you can start your broker and use KoP. The followings are detailed instructions for each step.
 
 ## Download/Build KoP protocol handler
 
 You can download the KoP protocol handler [here](https://github.com/streamnative/kop/releases), or you can build the KoP protocol handler from source code.
 
-1. Clone the KoP github project to your local. 
+1. Clone the KoP GitHub project to your local. 
 
 ```bash
 git clone https://github.com/streamnative/kop.git
@@ -49,7 +49,7 @@ mvn clean install -DskipTests
 
 ## Set configuration for KoP
 
-After you copy the .nar file to your Pulsar `/protocols` directory, you need to configure the Pulsar broker to run the KoP protocol handler as a plugin by adding configurations in Pulsar configuration file `broker.conf` or `standalone.conf`.
+After you copy the .nar file to your Pulsar `/protocols` directory, you need to configure the Pulsar broker to run the KoP protocol handler as a plugin by adding configurations in the Pulsar configuration file `broker.conf` or `standalone.conf`.
 
 1. Set the configuration of the KoP protocol handler in `broker.conf` or `standalone.conf` file.
 
@@ -91,7 +91,7 @@ After you copy the .nar file to your Pulsar `/protocols` directory, you need to 
 
 ## Load KoP by restarting Pulsar brokers
 
-After you have installed the KoP protocol handler to Pulsar broker, you can restart the Pulsar brokers to load KoP if you have configured the `conf/broker.conf` file. For quick start, you can configure the `conf/standalone.conf` file and run a Pulsar standalone. You can verify if your KoP works well by running a Kafka client.
+After you have installed the KoP protocol handler to Pulsar broker, you can restart the Pulsar brokers to load KoP if you have configured the `conf/broker.conf` file. For a quick start, you can configure the `conf/standalone.conf` file and run a Pulsar standalone. You can verify if your KoP works well by running a Kafka client.
 
 1. Download [Kafka 2.0.0](https://www.apache.org/dyn/closer.cgi?path=/kafka/2.0.0/kafka_2.11-2.0.0.tgz) and untar the release package.
 
@@ -120,16 +120,16 @@ After you have installed the KoP protocol handler to Pulsar broker, you can rest
 
 # How to use KoP
 You can configure and manage KoP based on your requirements. Check the following guides for more details.
-- [Configure KoP](docs/configuration.md)
-- [Secure KoP](docs/security.md)
-- [Manage KoP with the [Envoy](https://www.envoyproxy.io) proxy](docs/envoy-proxy.md)
-- [Implementation: How to converse Pulsar and Kafka](docs/implementation.md)
+- [Configure KoP](configuration.md)
+- [Secure KoP](security.md)
+- [Manage KoP with the [Envoy](https://www.envoyproxy.io) proxy](envoy-proxy.md)
+- [Implementation: How to converse Pulsar and Kafka](implementation.md)
 
-The following are important information when you configure and use KoP.
+The followings are important information when you configure and use KoP.
 
 - Set both [retention and time to live (TTL)](http://pulsar.apache.org/docs/en/cookbooks-retention-expiry/) for KoP topics. If you only configure retention without configuring TTL, all messages of KoP topics cannot be deleted because KoP does not update a durable cursor.
 -  If a Pulsar consumer and a Kafka consumer both subscribe the same topic with the same subscription (or group) name, the two consumers consume messages independently and they do not share the same subscription though the subscription name of a Pulsar client is the same with the group name of a Kafka client.
 - KoP supports interaction between Pulsar client and Kafka client by default. If your topic is used only by the Pulsar client or only by the Kafka client, you can set `entryFormat=kafka` for better performance.
 
 ## Upgrade
-If you want to upgrade your KoP version, you must first upgrade your Pulsar version accordingly.
+If you want to upgrade your KoP version, you must first [upgrade your Pulsar version](https://pulsar.apache.org/docs/en/next/administration-upgrade/) accordingly.
