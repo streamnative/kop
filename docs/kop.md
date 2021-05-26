@@ -20,15 +20,18 @@ The following figure illustrates how the Kafka-on-Pulsar protocol handler is imp
 # Get Started with KoP
 
 If you have an Apache Pulsar cluster, you can enable Kafka-on-Pulsar on your existing Pulsar cluster by downloading and installing the KoP protocol handler to Pulsar brokers directly. It takes three steps:
-1. Download KoP protocol handler, or build the `./kafka-impl/target/pulsar-protocol-handler-kafka-{{connector:version}}.nar` file, and then copy it to your Pulsar `/protocols` directory.
+1. Download KoP protocol handler, or build the `./kafka-impl/target/pulsar-protocol-handler-kafka-{{connector:version}}.nar` file, and then copy it to your Pulsar `protocols` directory.
 2. Set the configuration of the KoP protocol handler in Pulsar `broker.conf` or `standalone.conf` files.
 3. Restart Pulsar brokers to load KoP protocol handler.
 
 And then you can start your broker and use KoP. The followings are detailed instructions for each step.
 
-## Download/Build KoP protocol handler
+## Get KoP protocol handler
 
-You can download the KoP protocol handler [here](https://github.com/streamnative/kop/releases), or you can build the KoP protocol handler from source code.
+You can get the KoP protocol handler in the following ways:
+
+- Download the [KoP protocol handler](https://github.com/streamnative/kop/releases) directly.
+- Build the KoP protocol handler from source code. You can build it with the following steps.
 
 1. Clone the KoP GitHub project to your local. 
 
@@ -42,7 +45,8 @@ cd kop
 mvn clean install -DskipTests
 ```
 
-3. Get the nar file in the following directory and copy it your Pulsar `/protocols` directory.
+3. Get the `.nar` file in the following directory and copy it your Pulsar `protocols` directory. You need to create the `protocols` folder in Pulsar if it's the first time you use protocol handlers.
+
 ```bash
 ./kafka-impl/target/pulsar-protocol-handler-kafka-{{connector:version}}.nar
 ```
@@ -67,7 +71,7 @@ After you copy the .nar file to your Pulsar `/protocols` directory, you need to 
 
     You need to set `allowAutoTopicCreationType` to `partitioned` since KoP only supports partitioned topics. If it is set to `non-partitioned` by default, the topics created automatically by KoP are still partitioned topics, yet topics created automatically by Pulsar broker are non-partitioned topics.
 
-2. Set Kafka service listeners.
+2. Set Kafka listeners.
 
     ```properties
     # Use `kafkaListeners` here for KoP 2.8.0 because `listeners` is marked as deprecated from KoP 2.8.0 

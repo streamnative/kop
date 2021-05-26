@@ -29,7 +29,7 @@ The following enhancement is added in KoP 2.8.0.
 - Enable advertised listeners, so users can use Envoy Kafka filter directly
 
 ## Deprecated features
-The property name of Kafka service listener `listeners` is deprecated. Instead, you can use `kafkaListeners` since KoP 2.8.0.
+The property name of Kafka listener `listeners` is deprecated. Instead, you can use `kafkaListeners` since KoP 2.8.0.
 
 # Version compatibility
 
