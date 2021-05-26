@@ -122,7 +122,7 @@ After you have installed the KoP protocol handler to Pulsar broker, you can rest
 You can configure and manage KoP based on your requirements. Check the following guides for more details.
 - [Configure KoP](configuration.md)
 - [Secure KoP](security.md)
-- [Manage KoP with the [Envoy](https://www.envoyproxy.io) proxy](envoy-proxy.md)
+- [Manage KoP with the Envoy proxy](envoy-proxy.md)
 - [Implementation: How to converse Pulsar and Kafka](implementation.md)
 
 The followings are important information when you configure and use KoP.
