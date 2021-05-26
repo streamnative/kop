@@ -61,7 +61,7 @@ After you copy the .nar file to your Pulsar `/protocols` directory, you need to 
 
     | Property | Default value | Proposed value |
     | :------- | :---------------------------- | :------------ |
-    | `messagingProtocols` | null | kafka |
+    | `messagingProtocols` |  | kafka |
     | `protocolHandlerDirectory`|./protocols  | Location of KoP NAR file |
     | `allowAutoTopicCreationType`| non-partitioned | partitioned |
 
@@ -132,4 +132,4 @@ The followings are important information when you configure and use KoP.
 - KoP supports interaction between Pulsar client and Kafka client by default. If your topic is used only by the Pulsar client or only by the Kafka client, you can set `entryFormat=kafka` for better performance.
 
 ## Upgrade
-If you want to upgrade your KoP version, you must first [upgrade your Pulsar version](https://pulsar.apache.org/docs/en/next/administration-upgrade/) accordingly.
+If you want to upgrade your KoP version, you must first [upgrade your Pulsar version](https://pulsar.apache.org/docs/en/next/administration-upgrade/) accordingly, and then configure offset management.
