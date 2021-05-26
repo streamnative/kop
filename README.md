@@ -47,37 +47,47 @@ Since Pulsar 2.6.2, KoP version changes with Pulsar version accordingly. The ver
 
 # Get Started with KoP
 
-If you have a Apache Pulsar cluster, you can enable Kafka-on-Pulsar on your existing Pulsar cluster by downloading and installing the KoP protocol handler to Pulsar brokers directly. It takes three steps:
-1. Download KoP protocol handler, get the `./kafka-impl/target/pulsar-protocol-handler-kafka-${version}.nar` file, and then copy it to your Pulsar `/protocols` directory.
+If you have a Apache Pulsar cluster, you can enable KoP on your existing Pulsar cluster by downloading and installing the KoP protocol handler to Pulsar brokers directly. It takes three steps:
+1. Download the KoP protocol handler, get the `./kafka-impl/target/pulsar-protocol-handler-kafka-${version}.nar` file, create `/protocol` directory under Pulsar, and then copy the KoP NAR package to your Pulsar `/protocols` directory.
 2. Set the configuration of the KoP protocol handler in Pulsar `broker.conf` or `standalone.conf` files.
-3. Restart Pulsar brokers to load KoP protocol handler.
+3. Restart Pulsar brokers to load the KoP protocol handler.
 
 And then you can start your broker and use KoP. The following are detailed instructions for each step.
 
-## Download KoP protocol handler
+## Get KoP protocol handler
 
-You can download the KoP protocol handler [here](https://github.com/streamnative/kop/releases), or you can build the KoP protocol handler from source code.
+This section describes how to get the KoP protocol handler.
 
-1. Clone the KoP github project to your local. 
+### Download KoP NAR package
 
-```bash
-git clone https://github.com/streamnative/kop.git
-cd kop
-```
+You can download the KoP protocol handler [here](https://github.com/streamnative/kop/releases).
+
+### Build KoP from the source code 
+
+To build the KoP protocol handler from source code, follow these steps.
+
+1. Clone the KoP GitHub project to your local. 
+
+    ```bash
+    git clone https://github.com/streamnative/kop.git
+    cd kop
+    ```
 
 2. Build the project.
-```bash
-mvn clean install -DskipTests
-```
+
+    ```bash
+    mvn clean install -DskipTests
+    ```
 
 3. Get the nar file in the following directory and copy it your Pulsar `/protocols` directory.
-```bash
-./kafka-impl/target/pulsar-protocol-handler-kafka-${version}.nar
-```
+
+    ```bash
+    ./kafka-impl/target/pulsar-protocol-handler-kafka-${version}.nar
+    ```
 
 ## Set configuration for KoP
 
-After you copy the .nar file to your Pulsar `/protocols` directory, you need to configure the Pulsar broker to run the KoP protocol handler as a plugin by adding configurations in Pulsar configuration file `broker.conf` or `standalone.conf`.
+After you copy the `.nar` file to your Pulsar `/protocols` directory, you need to configure the Pulsar broker to run the KoP protocol handler as a plugin by adding configurations in Pulsar configuration file `broker.conf` or `standalone.conf`.
 
 1. Set the configuration of the KoP protocol handler in `broker.conf` or `standalone.conf` file.
 
@@ -95,7 +105,7 @@ After you copy the .nar file to your Pulsar `/protocols` directory, you need to 
 
     You need to set `allowAutoTopicCreationType` to `partitioned` since KoP only supports partitioned topics. If it is set to `non-partitioned` by default, the topics created automatically by KoP are still partitioned topics, yet topics created automatically by Pulsar broker are non-partitioned topics.
 
-2. Set Kafka service listeners.
+2. Set Kafka listeners.
 
     ```properties
     # Use `kafkaListeners` here for KoP 2.8.0 because `listeners` is marked as deprecated from KoP 2.8.0 
