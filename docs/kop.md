@@ -35,21 +35,21 @@ You can get the KoP protocol handler in the following ways:
 
 1. Clone the KoP GitHub project to your local. 
 
-```bash
-git clone https://github.com/streamnative/kop.git
-cd kop
-```
+    ```bash
+    git clone https://github.com/streamnative/kop.git
+    cd kop
+    ```
 
 2. Build the project.
-```bash
-mvn clean install -DskipTests
-```
+    ```bash
+    mvn clean install -DskipTests
+    ```
 
 3. Get the `.nar` file in the following directory and copy it your Pulsar `protocols` directory. You need to create the `protocols` folder in Pulsar if it's the first time you use protocol handlers.
 
-```bash
-./kafka-impl/target/pulsar-protocol-handler-kafka-{{connector:version}}.nar
-```
+    ```bash
+    ./kafka-impl/target/pulsar-protocol-handler-kafka-{{connector:version}}.nar
+    ```
 
 ## Set configuration for KoP
 
