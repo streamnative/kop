@@ -49,7 +49,7 @@ You can configure and manage KoP based on your requirements. Check the following
 - [Quick Start](docs/kop.md)
 - [Configure KoP](docs/configuration.md)
 - [Secure KoP](docs/security.md)
-- [Manage KoP with the [Envoy](https://www.envoyproxy.io) proxy](docs/envoy-proxy.md)
+- [Manage KoP with the Envoy proxy](docs/envoy-proxy.md)
 - [Implementation: How to converse Pulsar and Kafka](docs/implementation.md)
 
 # Project Maintainers
