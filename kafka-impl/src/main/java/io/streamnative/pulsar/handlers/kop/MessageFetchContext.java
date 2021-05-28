@@ -51,6 +51,7 @@ import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.NonDurableCursorImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.bookkeeper.stats.OpStatsLogger;
@@ -153,6 +154,37 @@ public final class MessageFetchContext {
 
                             long offset = ((FetchRequest) fetchRequest.getRequest()).fetchData()
                                 .get(topicPartition).fetchOffset;
+
+                            // handle offset out-of-range exception
+                            ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) tcm.getManagedLedger();
+                            try {
+                                long logStartOffset = MessageIdUtils.getLogStartOffset(managedLedger);
+                                long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
+                                if (offset > logEndOffset || offset < logStartOffset) {
+                                    log.error("Received request for offset {} for partition {}, "
+                                                    + "but we only have entries in the range {} to {}.",
+                                            offset, topicPartition, logStartOffset, logEndOffset);
+                                    responseData.put(topicPartition, new FetchResponse.PartitionData<>(
+                                            Errors.OFFSET_OUT_OF_RANGE,
+                                            FetchResponse.INVALID_HIGHWATERMARK,
+                                            FetchResponse.INVALID_LAST_STABLE_OFFSET,
+                                            FetchResponse.INVALID_LOG_START_OFFSET,
+                                            null,
+                                            MemoryRecords.EMPTY));
+                                    return null;
+                                }
+                            } catch (Exception e) {
+                                log.error("[{}] Failed to get log start offset for managed ledger {}",
+                                        topicPartition, managedLedger.getName(), e);
+                                responseData.put(topicPartition, new FetchResponse.PartitionData<>(
+                                        Errors.UNKNOWN_SERVER_ERROR,
+                                        FetchResponse.INVALID_HIGHWATERMARK,
+                                        FetchResponse.INVALID_LAST_STABLE_OFFSET,
+                                        FetchResponse.INVALID_LOG_START_OFFSET,
+                                        null,
+                                        MemoryRecords.EMPTY));
+                                return null;
+                            }
 
                             if (log.isDebugEnabled()) {
                                 log.debug("Fetch for {}: remove tcm to get cursor for fetch offset: {} .",

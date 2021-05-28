@@ -25,6 +25,7 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteCursorCallback;
 import org.apache.bookkeeper.mledger.ManagedCursor;
+import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
@@ -278,5 +279,9 @@ public class KafkaTopicConsumerManager implements Closeable {
 
         lastAccessTimes.put(offset, System.currentTimeMillis());
         return Pair.of(newCursor, offset);
+    }
+
+    public ManagedLedger getManagedLedger() {
+        return topic.getManagedLedger();
     }
 }
