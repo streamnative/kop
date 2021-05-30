@@ -1,5 +1,5 @@
 ---
-dockerfile: "https://hub.docker.com/r/streamnative/kop(TBD)"
+dockerfile: "https://github.com/streamnative/kop/releases/download/v2.8.0-rc-202105291235//pulsar-protocol-handler-kafka-2.8.0-rc-202105291235.nar"
 ---
 
 KoP (Kafka on Pulsar) brings the native Apache Kafka protocol support to Apache Pulsar by introducing a Kafka protocol handler on Pulsar brokers. By adding the KoP protocol handler to your existing Pulsar cluster, you can migrate your existing Kafka applications and services to Pulsar without modifying the code. This enables Kafka applications to leverage Pulsar’s powerful features, such as:
