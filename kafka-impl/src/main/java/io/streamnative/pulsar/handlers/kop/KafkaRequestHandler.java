@@ -2067,6 +2067,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 .getCounter(MESSAGE_IN)
                 .add(numMessages);
 
-        requestStats.getBatchCountPerMemoryRecord().set(numMessages);
+        requestStats.getBatchCountPerMemoryRecords().set(numMessages);
     }
 }
