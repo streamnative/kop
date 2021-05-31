@@ -49,6 +49,13 @@ public interface KopServerStats {
     String MESSAGE_QUEUED_LATENCY = "MESSAGE_QUEUED_LATENCY";
 
     /**
+     * Producer Stats.
+     */
+    String BYTES_IN = "BYTES_IN";
+    String MESSAGE_IN = "MESSAGE_IN";
+    String BATCH_COUNT_PER_MEMORYRECORD = "BATCH_COUNT_PER_MEMORYRECORD";
+
+    /**
      * FETCH stats.
      *
      * <p>

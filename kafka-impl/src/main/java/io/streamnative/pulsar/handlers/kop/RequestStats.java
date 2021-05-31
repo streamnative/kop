@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.BATCH_COUNT_PER_MEMORYRECORD;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.CATEGORY_SERVER;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.FETCH_DECODE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_PUBLISH;
@@ -51,6 +52,7 @@ public class RequestStats {
 
     private final AtomicInteger requestQueueSize = new AtomicInteger(0);
     private final AtomicInteger responseQueueSize = new AtomicInteger(0);
+    private final AtomicInteger batchCountPerMemoryRecord = new AtomicInteger(0);
 
     private final StatsLogger statsLogger;
 
@@ -160,6 +162,18 @@ public class RequestStats {
             @Override
             public Number getSample() {
                 return requestQueueSize;
+            }
+        });
+
+        statsLogger.registerGauge(BATCH_COUNT_PER_MEMORYRECORD, new Gauge<Number>() {
+            @Override
+            public Number getDefaultValue() {
+                return 0;
+            }
+
+            @Override
+            public Number getSample() {
+                return batchCountPerMemoryRecord;
             }
         });
     }

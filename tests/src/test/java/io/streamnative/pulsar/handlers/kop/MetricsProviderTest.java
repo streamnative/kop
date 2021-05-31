@@ -195,5 +195,12 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT{group=\"DemoKafkaOnPulsarConsumer\","
                 + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 1130"));
         Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT"));
+
+        // producer stats
+        Assert.assertTrue(sb.toString().contains("kop_server_BATCH_COUNT_PER_MEMORYRECORD"));
+        Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_IN{partition=\"0\","
+                + "topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
+        Assert.assertTrue(sb.toString().contains("kop_server_BYTES_IN{partition=\"0\","
+                + "topic=\"kopKafkaProducePulsarMetrics1\"} 1170"));
     }
 }
