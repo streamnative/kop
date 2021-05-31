@@ -162,12 +162,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             remoteAddress = channel.remoteAddress();
         }
 
-        requestStats.getRequestQueueSize().incrementAndGet();
-
         final long timeBeforeParse = MathUtils.nowInNano();
         KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress);
         // potentially blocking until there is room in the queue for the request.
-        requestStats.getRequestParseStats().registerSuccessfulEvent(
+        requestStats.getRequestParseLatencyStats().registerSuccessfulEvent(
                 MathUtils.elapsedNanos(timeBeforeParse), TimeUnit.NANOSECONDS);
         try {
             if (log.isDebugEnabled()) {
@@ -200,7 +198,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             });
             // potentially blocking until there is room in the queue for the request.
             requestQueue.put(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
-            requestStats.getResponseQueueSize().incrementAndGet();
+            requestStats.getRequestQueueSize().incrementAndGet();
 
             if (!isActive.get()) {
                 handleInactive(kafkaHeaderAndRequest, responseFuture);
@@ -332,7 +330,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             } else {
                 if (requestQueue.remove(responseAndRequest)) {
                     responseAndRequest.updateStats(requestStats);
-                    requestStats.getResponseQueueSize().decrementAndGet();
                 } else { // it has been removed by another thread, skip this element
                     continue;
                 }

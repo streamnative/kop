@@ -594,5 +594,4 @@ public final class MessageFetchContext {
                 .getCounter(ENTRIES_OUT)
                 .add(entrySize);
     }
-
 }

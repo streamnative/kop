@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.BATCH_COUNT_PER_MEMORYRECORDS;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.CATEGORY_SERVER;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.FETCH_DECODE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_PUBLISH;
@@ -20,12 +21,11 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_QUEUED_
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_READ;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PREPARE_METADATA;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_ENCODE;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_PARSE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_PARSE_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_QUEUED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_QUEUE_SIZE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_TIMES;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_QUEUE_SIZE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOTAL_MESSAGE_READ;
 
@@ -50,7 +50,7 @@ import org.apache.bookkeeper.stats.annotations.StatsDoc;
 public class RequestStats {
 
     private final AtomicInteger requestQueueSize = new AtomicInteger(0);
-    private final AtomicInteger responseQueueSize = new AtomicInteger(0);
+    private final AtomicInteger batchCountPerMemoryRecords = new AtomicInteger(0);
 
     private final StatsLogger statsLogger;
 
@@ -61,10 +61,10 @@ public class RequestStats {
     private final OpStatsLogger requestQueuedLatencyStats;
 
     @StatsDoc(
-            name = REQUEST_PARSE,
-            help = "parse request to ByteBuf"
+            name = REQUEST_PARSE_LATENCY,
+            help = "parse ByteBuf to request latency"
     )
-    private final OpStatsLogger requestParseStats;
+    private final OpStatsLogger requestParseLatencyStats;
 
     @StatsDoc(
             name = RESPONSE_BLOCKED_TIMES,
@@ -124,7 +124,7 @@ public class RequestStats {
         this.statsLogger = statsLogger;
 
         this.requestQueuedLatencyStats = statsLogger.getOpStatsLogger(REQUEST_QUEUED_LATENCY);
-        this.requestParseStats = statsLogger.getOpStatsLogger(REQUEST_PARSE);
+        this.requestParseLatencyStats = statsLogger.getOpStatsLogger(REQUEST_PARSE_LATENCY);
 
         this.responseBlockedLatency = statsLogger.getOpStatsLogger(RESPONSE_BLOCKED_LATENCY);
         this.responseBlockedTimes = statsLogger.getCounter(RESPONSE_BLOCKED_TIMES);
@@ -138,19 +138,6 @@ public class RequestStats {
         this.messageReadStats = statsLogger.getOpStatsLogger(MESSAGE_READ);
         this.fetchDecodeStats  = statsLogger.getOpStatsLogger(FETCH_DECODE);
 
-
-        statsLogger.registerGauge(RESPONSE_QUEUE_SIZE, new Gauge<Number>() {
-            @Override
-            public Number getDefaultValue() {
-                return 0;
-            }
-
-            @Override
-            public Number getSample() {
-                return responseQueueSize;
-            }
-        });
-
         statsLogger.registerGauge(REQUEST_QUEUE_SIZE, new Gauge<Number>() {
             @Override
             public Number getDefaultValue() {
@@ -160,6 +147,18 @@ public class RequestStats {
             @Override
             public Number getSample() {
                 return requestQueueSize;
+            }
+        });
+
+        statsLogger.registerGauge(BATCH_COUNT_PER_MEMORYRECORDS, new Gauge<Number>() {
+            @Override
+            public Number getDefaultValue() {
+                return 0;
+            }
+
+            @Override
+            public Number getSample() {
+                return batchCountPerMemoryRecords;
             }
         });
     }

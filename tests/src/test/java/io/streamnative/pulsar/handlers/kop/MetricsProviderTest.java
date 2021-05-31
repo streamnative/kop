@@ -165,7 +165,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         // request stats
         Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_QUEUE_SIZE"));
         Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_QUEUED_LATENCY"));
-        Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_PARSE"));
+        Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_PARSE_LATENCY"));
         Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_LATENCY"));
         Assert.assertTrue(sb.toString().contains("request=\"ApiVersions\""));
         Assert.assertTrue(sb.toString().contains("request=\"ListOffsets\""));
@@ -174,7 +174,6 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
                 + "request=\"Produce\"}"));
 
         // response stats
-        Assert.assertTrue(sb.toString().contains("kop_server_RESPONSE_QUEUE_SIZE"));
         Assert.assertTrue(sb.toString().contains("kop_server_RESPONSE_BLOCKED_TIMES"));
         Assert.assertTrue(sb.toString().contains("kop_server_RESPONSE_BLOCKED_LATENCY"));
 
@@ -195,5 +194,12 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT{group=\"DemoKafkaOnPulsarConsumer\","
                 + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 1130"));
         Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT"));
+
+        // producer stats
+        Assert.assertTrue(sb.toString().contains("kop_server_BATCH_COUNT_PER_MEMORYRECORDS"));
+        Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_IN{partition=\"0\","
+                + "topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
+        Assert.assertTrue(sb.toString().contains("kop_server_BYTES_IN{partition=\"0\","
+                + "topic=\"kopKafkaProducePulsarMetrics1\"} 1170"));
     }
 }

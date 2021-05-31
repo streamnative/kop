@@ -15,6 +15,10 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_IN;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_IN;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
@@ -717,7 +721,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                  final ByteBuf byteBuf,
                                  final int numMessages,
                                  final MemoryRecords records,
-                                 final String partitionName,
+                                 final TopicPartition topicPartition,
                                  final Consumer<Long> offsetConsumer,
                                  final Consumer<Errors> errorsConsumer) {
         if (persistentTopic == null) {
@@ -730,11 +734,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
             return;
         }
+        final String partitionName = KopTopic.toString(topicPartition);
+
         topicManager.registerProducerInPersistentTopic(partitionName, persistentTopic);
         // collect metrics
         final Producer producer = KafkaTopicManager.getReferenceProducer(partitionName);
         producer.updateRates(numMessages, byteBuf.readableBytes());
         producer.getTopic().incrementPublishCount(numMessages, byteBuf.readableBytes());
+        updateProducerStats(topicPartition, numMessages, byteBuf.readableBytes());
+
         // publish
         final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
         final long beforePublish = MathUtils.nowInNano();
@@ -848,7 +856,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
 
                 final Consumer<PersistentTopic> persistentTopicConsumer = persistentTopic -> {
-                    publishMessages(persistentTopic, byteBuf, numMessages, validRecords, fullPartitionName,
+                    publishMessages(persistentTopic, byteBuf, numMessages, validRecords, topicPartition,
                             offsetConsumer, errorsConsumer);
                 };
 
@@ -2044,5 +2052,21 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
 
         return validRecords;
+    }
+
+    private void updateProducerStats(final TopicPartition topicPartition, final int numMessages, final int numBytes) {
+        requestStats.getStatsLogger()
+                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
+                .scopeLabel(PARTITION_SCOPE, String.valueOf((topicPartition.partition())))
+                .getCounter(BYTES_IN)
+                .add(numBytes);
+
+        requestStats.getStatsLogger()
+                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
+                .scopeLabel(PARTITION_SCOPE, String.valueOf((topicPartition.partition())))
+                .getCounter(MESSAGE_IN)
+                .add(numMessages);
+
+        requestStats.getBatchCountPerMemoryRecords().set(numMessages);
     }
 }
