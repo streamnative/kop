@@ -69,6 +69,12 @@ import org.apache.pulsar.common.naming.TopicName;
 @Slf4j
 public final class MessageFetchContext {
 
+    private static final Recycler<MessageFetchContext> RECYCLER = new Recycler<MessageFetchContext>() {
+        protected MessageFetchContext newObject(Handle<MessageFetchContext> handle) {
+            return new MessageFetchContext(handle);
+        }
+    };
+
     private final Handle<MessageFetchContext> recyclerHandle;
     private Map<TopicPartition, PartitionData<MemoryRecords>> responseData;
     private List<DecodeResult> decodeResults;
@@ -105,11 +111,6 @@ public final class MessageFetchContext {
         this.recyclerHandle = recyclerHandle;
     }
 
-    private static final Recycler<MessageFetchContext> RECYCLER = new Recycler<MessageFetchContext>() {
-        protected MessageFetchContext newObject(Handle<MessageFetchContext> handle) {
-            return new MessageFetchContext(handle);
-        }
-    };
 
     private void recycle() {
         responseData = null;
