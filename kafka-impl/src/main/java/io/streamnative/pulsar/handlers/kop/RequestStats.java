@@ -27,7 +27,6 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKE
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_TIMES;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_QUEUE_SIZE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOTAL_MESSAGE_READ;
 
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -103,12 +102,6 @@ public class RequestStats {
     private final OpStatsLogger prepareMetadataStats;
 
     @StatsDoc(
-            name = TOTAL_MESSAGE_READ,
-            help = "stats of reading total entries in a single fetch request"
-    )
-    private final OpStatsLogger totalMessageReadStats;
-
-    @StatsDoc(
             name = MESSAGE_READ,
             help = "stats of performing a single cursor's async-read within fetch request"
     )
@@ -134,7 +127,6 @@ public class RequestStats {
         this.messageQueuedLatencyStats = statsLogger.getOpStatsLogger(MESSAGE_QUEUED_LATENCY);
 
         this.prepareMetadataStats = statsLogger.getOpStatsLogger(PREPARE_METADATA);
-        this.totalMessageReadStats = statsLogger.getOpStatsLogger(TOTAL_MESSAGE_READ);
         this.messageReadStats = statsLogger.getOpStatsLogger(MESSAGE_READ);
         this.fetchDecodeStats  = statsLogger.getOpStatsLogger(FETCH_DECODE);
 

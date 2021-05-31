@@ -58,7 +58,6 @@ public interface KopServerStats {
      * </p>
      */
     String PREPARE_METADATA = "PREPARE_METADATA";
-    String TOTAL_MESSAGE_READ = "TOTAL_MESSAGE_READ";
     String MESSAGE_READ = "MESSAGE_READ";
     String FETCH_DECODE = "FETCH_DECODE";
 
