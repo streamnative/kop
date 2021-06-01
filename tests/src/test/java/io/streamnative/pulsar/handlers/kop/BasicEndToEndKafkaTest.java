@@ -93,6 +93,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         assertEquals(receiveMessages(kafkaConsumer2, expectedMessages.size()), expectedMessages);
 
         kafkaProducer.close();
+        Thread.sleep(1000); // wait for Producer was removed from PersistentTopic
         try {
             // topics can be deleted even if the Kafka consumers are active because there are no broker side Consumers
             // that are attached to the PersistentTopic.

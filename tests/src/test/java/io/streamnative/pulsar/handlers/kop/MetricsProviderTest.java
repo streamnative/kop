@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
@@ -96,6 +97,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         admin.topics().createPartitionedTopic(kafkaTopicName, partitionNumber);
 
         // 1. produce message with Kafka producer.
+        @Cleanup
         KProducer kProducer = new KProducer(kafkaTopicName, false, getKafkaBrokerPort());
 
         int totalMsgs = 10;
@@ -117,6 +119,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         }
 
         // 2. consume messages with Kafka consumer
+        @Cleanup
         KConsumer kConsumer = new KConsumer(kafkaTopicName, getKafkaBrokerPort());
         List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
                 .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
@@ -184,7 +187,6 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
 
         // fetch stats
         Assert.assertTrue(sb.toString().contains("kop_server_PREPARE_METADATA"));
-        Assert.assertTrue(sb.toString().contains("kop_server_TOTAL_MESSAGE_READ"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_READ"));
         Assert.assertTrue(sb.toString().contains("kop_server_FETCH_DECODE"));
 
