@@ -286,10 +286,15 @@ public final class MessageFetchContext {
                         if (readCommitted) {
                             committedEntries = new ArrayList<>();
                             for (Entry entry : entries) {
-                                if (lso >= MessageIdUtils.peekBaseOffsetFromEntry(entry)) {
-                                    committedEntries.add(entry);
-                                } else {
-                                    break;
+                                try {
+                                    if (lso >= MessageIdUtils.peekBaseOffsetFromEntry(entry)) {
+                                        committedEntries.add(entry);
+                                    } else {
+                                        break;
+                                    }
+                                } catch (Exception e) {
+                                    log.error("[{}:{}] Failed to peek base offset from entry.",
+                                            entry.getLedgerId(), entry.getEntryId());
                                 }
                             }
                             if (log.isDebugEnabled()) {

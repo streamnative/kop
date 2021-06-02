@@ -15,6 +15,8 @@ package io.streamnative.pulsar.handlers.kop.utils;
 
 import io.netty.buffer.ByteBuf;
 import java.util.concurrent.CompletableFuture;
+import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedLedger;
@@ -28,6 +30,7 @@ import org.apache.pulsar.common.protocol.Commands;
 /**
  * Utils for Pulsar MessageId.
  */
+@Slf4j
 public class MessageIdUtils {
 
     public static long getCurrentOffset(ManagedLedger managedLedger) {
@@ -93,11 +96,15 @@ public class MessageIdUtils {
         return Commands.peekBrokerEntryMetadataIfExist(entry.getDataBuffer()).getIndex();
     }
 
-    public static long peekBaseOffsetFromEntry(Entry entry) {
+    public static long peekBaseOffsetFromEntry(@NonNull Entry entry) throws Exception{
+        MessageMetadata metadata = Commands.peekMessageMetadata(entry.getDataBuffer(), null, 0);
 
-        return peekOffsetFromEntry(entry)
-                - Commands.peekMessageMetadata(entry.getDataBuffer(), null, 0)
-                    .getNumMessagesInBatch() + 1;
+        if (metadata == null) {
+            throw new Exception("[" + entry.getLedgerId() + ":" + entry.getEntryId()
+                    + "] Failed to peek offset from entry");
+        }
+
+        return peekOffsetFromEntry(entry) - metadata.getNumMessagesInBatch() + 1;
     }
 
     public static long getMockOffset(long ledgerId, long entryId) {
