@@ -257,7 +257,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
 
         // update alive channel count stats
-        RequestStats.aliveChannelCount.incrementAndGet();
+        RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
     }
 
     @Override
@@ -269,7 +269,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
 
         // update active channel count stats
-        RequestStats.activeChannelCount.incrementAndGet();
+        RequestStats.ACTIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
         log.info("channel active: {}", ctx.channel());
     }
 
@@ -278,7 +278,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         super.channelInactive(ctx);
 
         // update active channel count stats
-        RequestStats.activeChannelCount.decrementAndGet();
+        RequestStats.ACTIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
         log.info("channel inactive {}", ctx.channel());
 
         close();
@@ -298,7 +298,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             fetchPurgatory.shutdown();
 
             // update alive channel count stat
-            RequestStats.aliveChannelCount.decrementAndGet();
+            RequestStats.ACTIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
         }
     }
 
@@ -2078,6 +2078,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 .getCounter(MESSAGE_IN)
                 .add(numMessages);
 
-        RequestStats.batchCountPerMemoryRecords.set(numMessages);
+        RequestStats.BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE.set(numMessages);
     }
 }

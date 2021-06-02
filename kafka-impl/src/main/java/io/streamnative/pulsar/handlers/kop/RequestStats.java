@@ -24,7 +24,6 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_READ;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PREPARE_METADATA;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_ENCODE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_PARSE_LATENCY;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_QUEUED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_QUEUE_SIZE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_TIMES;
@@ -52,10 +51,10 @@ import org.apache.bookkeeper.stats.annotations.StatsDoc;
 @Slf4j
 public class RequestStats {
 
-    public static final AtomicInteger requestQueueSize = new AtomicInteger(0);
-    public static final AtomicInteger batchCountPerMemoryRecords = new AtomicInteger(0);
-    public static final AtomicInteger aliveChannelCount = new AtomicInteger(0);
-    public static final AtomicInteger activeChannelCount = new AtomicInteger(0);
+    public static final AtomicInteger REQUEST_QUEUE_SIZE_INSTANCE = new AtomicInteger(0);
+    public static final AtomicInteger BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE = new AtomicInteger(0);
+    public static final AtomicInteger ALIVE_CHANNEL_COUNT_INSTANCE = new AtomicInteger(0);
+    public static final AtomicInteger ACTIVE_CHANNEL_COUNT_INSTANCE = new AtomicInteger(0);
 
     private final StatsLogger statsLogger;
 
@@ -137,7 +136,7 @@ public class RequestStats {
 
             @Override
             public Number getSample() {
-                return requestQueueSize;
+                return REQUEST_QUEUE_SIZE_INSTANCE;
             }
         });
 
@@ -149,7 +148,7 @@ public class RequestStats {
 
             @Override
             public Number getSample() {
-                return batchCountPerMemoryRecords;
+                return BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE;
             }
         });
 
@@ -161,7 +160,7 @@ public class RequestStats {
 
             @Override
             public Number getSample() {
-                return aliveChannelCount;
+                return ALIVE_CHANNEL_COUNT_INSTANCE;
             }
         });
 
@@ -173,7 +172,7 @@ public class RequestStats {
 
             @Override
             public Number getSample() {
-                return activeChannelCount;
+                return ACTIVE_CHANNEL_COUNT_INSTANCE;
             }
         });
     }

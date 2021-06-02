@@ -97,7 +97,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             }
 
             // update request queue size stat
-            RequestStats.requestQueueSize.decrementAndGet();
+            RequestStats.REQUEST_QUEUE_SIZE_INSTANCE.decrementAndGet();
         }
         ctx.close();
     }
@@ -201,7 +201,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             });
             // potentially blocking until there is room in the queue for the request.
             requestQueue.put(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
-            RequestStats.requestQueueSize.incrementAndGet();
+            RequestStats.REQUEST_QUEUE_SIZE_INSTANCE.incrementAndGet();
 
             if (!isActive.get()) {
                 handleInactive(kafkaHeaderAndRequest, responseFuture);
@@ -628,7 +628,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
 
         public void updateStats(final RequestStats requestStats) {
-            RequestStats.requestQueueSize.decrementAndGet();
+            RequestStats.REQUEST_QUEUE_SIZE_INSTANCE.decrementAndGet();
             requestStats.getStatsLogger()
                     .scopeLabel(KopServerStats.REQUEST_SCOPE, request.getHeader().apiKey().name)
                     .getOpStatsLogger(KopServerStats.REQUEST_QUEUED_LATENCY)
