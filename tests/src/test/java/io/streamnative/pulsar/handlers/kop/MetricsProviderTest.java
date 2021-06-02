@@ -19,6 +19,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.time.Duration;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
@@ -157,13 +159,21 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         InputStreamReader isReader = new InputStreamReader(inputStream);
         BufferedReader reader = new BufferedReader(isReader);
         StringBuffer sb = new StringBuffer();
-        String str;
-        while ((str = reader.readLine()) != null) {
-            if (str.contains("NaN") || str.contains("Infinity")) {
+        String line;
+
+        while ((line = reader.readLine()) != null) {
+            if (line.isEmpty()
+                    || line.startsWith("#")
+                    || line.contains("NaN")
+                    || line.contains("Infinity")) {
                 continue;
             }
-            sb.append(str);
+            sb.append(line);
         }
+
+        // channel stats
+        Assert.assertTrue(sb.toString().contains("kop_server_ALIVE_CHANNEL_COUNT"));
+        Assert.assertTrue(sb.toString().contains("kop_server_ACTIVE_CHANNEL_COUNT"));
 
         // request stats
         Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_QUEUE_SIZE"));
@@ -174,6 +184,8 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         Assert.assertTrue(sb.toString().contains("request=\"ListOffsets\""));
         Assert.assertTrue(sb.toString().contains("request=\"Fetch\""));
         Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_LATENCY{success=\"true\",quantile=\"0.99\", "
+                + "request=\"Produce\"}"));
+        Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_QUEUED_LATENCY_count{success=\"true\", "
                 + "request=\"Produce\"}"));
 
         // response stats

@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.ACTIVE_CHANNEL_COUNT;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.ALIVE_CHANNEL_COUNT;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.BATCH_COUNT_PER_MEMORYRECORDS;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.CATEGORY_SERVER;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.FETCH_DECODE;
@@ -31,6 +33,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.Gauge;
 import org.apache.bookkeeper.stats.OpStatsLogger;
@@ -46,18 +49,15 @@ import org.apache.bookkeeper.stats.annotations.StatsDoc;
 )
 
 @Getter
+@Slf4j
 public class RequestStats {
 
-    private final AtomicInteger requestQueueSize = new AtomicInteger(0);
-    private final AtomicInteger batchCountPerMemoryRecords = new AtomicInteger(0);
+    public static final AtomicInteger requestQueueSize = new AtomicInteger(0);
+    public static final AtomicInteger batchCountPerMemoryRecords = new AtomicInteger(0);
+    public static final AtomicInteger aliveChannelCount = new AtomicInteger(0);
+    public static final AtomicInteger activeChannelCount = new AtomicInteger(0);
 
     private final StatsLogger statsLogger;
-
-    @StatsDoc(
-            name = REQUEST_QUEUED_LATENCY,
-            help = "latency from request enqueued to dequeued"
-    )
-    private final OpStatsLogger requestQueuedLatencyStats;
 
     @StatsDoc(
             name = REQUEST_PARSE_LATENCY,
@@ -116,7 +116,6 @@ public class RequestStats {
     public RequestStats(StatsLogger statsLogger) {
         this.statsLogger = statsLogger;
 
-        this.requestQueuedLatencyStats = statsLogger.getOpStatsLogger(REQUEST_QUEUED_LATENCY);
         this.requestParseLatencyStats = statsLogger.getOpStatsLogger(REQUEST_PARSE_LATENCY);
 
         this.responseBlockedLatency = statsLogger.getOpStatsLogger(RESPONSE_BLOCKED_LATENCY);
@@ -151,6 +150,30 @@ public class RequestStats {
             @Override
             public Number getSample() {
                 return batchCountPerMemoryRecords;
+            }
+        });
+
+        statsLogger.registerGauge(ALIVE_CHANNEL_COUNT, new Gauge<Number>() {
+            @Override
+            public Number getDefaultValue() {
+                return 0;
+            }
+
+            @Override
+            public Number getSample() {
+                return aliveChannelCount;
+            }
+        });
+
+        statsLogger.registerGauge(ACTIVE_CHANNEL_COUNT, new Gauge<Number>() {
+            @Override
+            public Number getDefaultValue() {
+                return 0;
+            }
+
+            @Override
+            public Number getSample() {
+                return activeChannelCount;
             }
         });
     }
