@@ -29,11 +29,17 @@ The KoP metrics are exposed under "/metrics" at port `8000` along with Pulsar me
 
 | Name | Type | Description |
 |---|---|---|
-| kop_server_REQUEST_QUEUE_SIZE | Gauge | The number of quest in kop request processing queue. |
-| kop_server_REQUEST_QUEUED_LATENCY | Summary | The requests queued latency calculated in milliseconds. |
+| kop_server_ALIVE_CHANNEL_COUNT | Gauge | The number of alive request channel |
+| kop_server_ACTIVE_CHANNEL_COUNT | Gauge | The number of active request channel |
+
+### Request metrics
+
+| Name | Type | Description |
+|---|---|---|
+| kop_server_REQUEST_QUEUE_SIZE | Gauge | The number of quest in kop request processing queue of total request channel. |
+| kop_server_REQUEST_QUEUED_LATENCY | Summary | The requests queued latency calculated in milliseconds. <br> Available labels: *request* (ApiVersions, Metadata, Produce, FindCoordinator, ListOffsets, OffsetFetch, OffsetCommit, Fetch, JoinGroup, SyncGroup, Heartbeat, LeaveGroup, DescribeGroups, ListGroups, DeleteGroups, SaslHandshake, SaslAuthenticate, CreateTopics, InitProducerId, AddPartitionsToTxn, AddOffsetsToTxn, TxnOffsetCommit, EndTxn, WriteTxnMarkers, DescribeConfigs, DeleteTopics). </br>|
 | kop_server_REQUEST_PARSE_LATENCY | Summary | The requests parse latency from byteBuf to MemoryRecords calculated in milliseconds. |
 | kop_server_REQUEST_LATENCY | Summary | The requests processing total latency for all Kafka Apis. <br> Available labels: *request* (ApiVersions, Metadata, Produce, FindCoordinator, ListOffsets, OffsetFetch, OffsetCommit, Fetch, JoinGroup, SyncGroup, Heartbeat, LeaveGroup, DescribeGroups, ListGroups, DeleteGroups, SaslHandshake, SaslAuthenticate, CreateTopics, InitProducerId, AddPartitionsToTxn, AddOffsetsToTxn, TxnOffsetCommit, EndTxn, WriteTxnMarkers, DescribeConfigs, DeleteTopics). </br>|
-| zookeeper_server_ephemerals_count | Gauge | The number of ephemeral z-nodes. |
 
 ### Response metrics
 

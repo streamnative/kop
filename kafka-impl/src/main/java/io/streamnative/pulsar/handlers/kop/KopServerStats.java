@@ -35,6 +35,12 @@ public interface KopServerStats {
     String REQUEST_LATENCY = "REQUEST_LATENCY";
 
     /**
+     * Channel stats.
+     */
+    String ALIVE_CHANNEL_COUNT = "ALIVE_CHANNEL_COUNT";
+    String ACTIVE_CHANNEL_COUNT = "ACTIVE_CHANNEL_COUNT";
+
+    /**
      * Response stats.
      */
     String RESPONSE_BLOCKED_TIMES = "RESPONSE_BLOCKED_TIMES";
