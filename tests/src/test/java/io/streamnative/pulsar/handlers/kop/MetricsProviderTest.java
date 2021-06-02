@@ -19,6 +19,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.time.Duration;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
@@ -158,6 +160,8 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         BufferedReader reader = new BufferedReader(isReader);
         StringBuffer sb = new StringBuffer();
         String line;
+        Pattern formatPattern = Pattern.compile("^(\\w+)(\\{(\\w+=[\\\"\\.\\w]+(,\\s?\\w+=[\\\"\\.\\w]+)*)\\})?"
+                + "\\s(-?[\\d\\w\\.]+)(\\s(\\d+))?$");
 
         while ((line = reader.readLine()) != null) {
             if (line.isEmpty()
@@ -166,6 +170,13 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
                     || line.contains("Infinity")) {
                 continue;
             }
+
+            // check kop metric format
+            if (line.startsWith("kop")) {
+                Matcher formatMatcher = formatPattern.matcher(line);
+                Assert.assertTrue(formatMatcher.matches());
+            }
+
             sb.append(line);
         }
 
