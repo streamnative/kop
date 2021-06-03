@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
@@ -77,7 +78,7 @@ public final class MessageFetchContext {
 
     private final Handle<MessageFetchContext> recyclerHandle;
     private Map<TopicPartition, PartitionData<MemoryRecords>> responseData;
-    private List<DecodeResult> decodeResults;
+    private ConcurrentLinkedQueue<DecodeResult> decodeResults;
     private KafkaRequestHandler requestHandler;
     private int maxReadEntriesNum;
     private KafkaTopicManager topicManager;
@@ -94,7 +95,7 @@ public final class MessageFetchContext {
                                           CompletableFuture<AbstractResponse> resultFuture) {
         MessageFetchContext context = RECYCLER.get();
         context.responseData = new ConcurrentHashMap<>();
-        context.decodeResults = new ArrayList<>();
+        context.decodeResults = new ConcurrentLinkedQueue<>();
         context.requestHandler = requestHandler;
         context.maxReadEntriesNum = requestHandler.getMaxReadEntriesNum();
         context.topicManager = requestHandler.getTopicManager();
@@ -180,7 +181,7 @@ public final class MessageFetchContext {
 
         // Create another reference to this.decodeResults so the lambda expression will capture this local reference
         // because this.decodeResults will be reset to null after resultFuture is completed.
-        final List<DecodeResult> decodeResults = this.decodeResults;
+        final ConcurrentLinkedQueue<DecodeResult> decodeResults = this.decodeResults;
         resultFuture.complete(
                 new ResponseCallbackWrapper(
                         new FetchResponse<>(
