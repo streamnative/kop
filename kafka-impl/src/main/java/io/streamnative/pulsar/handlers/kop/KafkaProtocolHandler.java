@@ -61,6 +61,7 @@ import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.common.policies.data.ClusterDataImpl;
 import org.apache.pulsar.common.util.FutureUtil;
 
 /**
@@ -369,7 +370,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             .build();
 
         PulsarAdmin pulsarAdmin = service.pulsar().getAdminClient();
-        ClusterData clusterData = new ClusterData(service.getPulsar().getWebServiceAddress(),
+        ClusterData clusterData = new ClusterDataImpl(service.getPulsar().getWebServiceAddress(),
                                                   service.getPulsar().getWebServiceAddressTls(),
                                                   service.getPulsar().getBrokerServiceUrl(),
                                                   service.getPulsar().getBrokerServiceUrlTls());
@@ -404,7 +405,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 .build();
 
         PulsarAdmin pulsarAdmin = brokerService.getPulsar().getAdminClient();
-        ClusterData clusterData = new ClusterData(brokerService.getPulsar().getWebServiceAddress(),
+        ClusterData clusterData = new ClusterDataImpl(brokerService.getPulsar().getWebServiceAddress(),
                                                   brokerService.getPulsar().getWebServiceAddressTls(),
                                                   brokerService.getPulsar().getBrokerServiceUrl(),
                                                   brokerService.getPulsar().getBrokerServiceUrlTls());

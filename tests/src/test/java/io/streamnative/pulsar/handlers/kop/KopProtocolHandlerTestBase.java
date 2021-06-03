@@ -70,6 +70,7 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.common.policies.data.ClusterDataImpl;
 import org.apache.pulsar.compaction.Compactor;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
 import org.apache.pulsar.zookeeper.ZooKeeperClientFactory;
@@ -227,7 +228,7 @@ public abstract class KopProtocolHandlerTestBase {
         String brokerServiceUrl = "pulsar://" + this.conf.getAdvertisedAddress() + ":" + brokerPort;
         String brokerServiceUrlTls = null; // TLS not supported at this time
 
-        ClusterData clusterData = new ClusterData(serviceUrl, serviceUrlTls, brokerServiceUrl, null);
+        ClusterData clusterData = new ClusterDataImpl(serviceUrl, serviceUrlTls, brokerServiceUrl, null);
 
         mockZooKeeper = createMockZooKeeper(configClusterName, serviceUrl, serviceUrlTls, brokerServiceUrl,
             brokerServiceUrlTls);

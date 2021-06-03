@@ -35,7 +35,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
-import org.apache.pulsar.common.policies.data.TenantInfo;
+import org.apache.pulsar.common.policies.data.TenantInfoImpl;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
@@ -73,7 +73,7 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         super.internalSetup();
 
         admin.tenants().createTenant(ANOTHER_TENANT,
-                new TenantInfo(Sets.newHashSet("admin_user"), Sets.newHashSet(super.configClusterName)));
+                new TenantInfoImpl(Sets.newHashSet("admin_user"), Sets.newHashSet(super.configClusterName)));
         admin.namespaces().createNamespace(ANOTHER_TENANT + "/" + ANOTHER_NAMESPACE);
     }
 

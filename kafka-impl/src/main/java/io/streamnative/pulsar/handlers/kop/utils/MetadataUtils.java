@@ -28,6 +28,7 @@ import org.apache.pulsar.client.admin.Tenants;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
+import org.apache.pulsar.common.policies.data.TenantInfoImpl;
 
 /**
  * Utils for KoP Metadata.
@@ -114,7 +115,7 @@ public class MetadataUtils {
             if (!tenants.getTenants().contains(kafkaMetadataTenant)) {
                 log.info("Tenant: {} does not exist, creating it ...", kafkaMetadataTenant);
                 tenants.createTenant(kafkaMetadataTenant,
-                        new TenantInfo(Sets.newHashSet(conf.getSuperUserRoles()), Sets.newHashSet(cluster)));
+                        new TenantInfoImpl(Sets.newHashSet(conf.getSuperUserRoles()), Sets.newHashSet(cluster)));
             } else {
                 TenantInfo kafkaMetadataTenantInfo = tenants.getTenantInfo(kafkaMetadataTenant);
                 Set<String> allowedClusters = kafkaMetadataTenantInfo.getAllowedClusters();

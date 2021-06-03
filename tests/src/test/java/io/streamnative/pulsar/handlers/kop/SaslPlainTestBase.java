@@ -44,7 +44,7 @@ import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.AuthAction;
-import org.apache.pulsar.common.policies.data.TenantInfo;
+import org.apache.pulsar.common.policies.data.TenantInfoImpl;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
@@ -106,7 +106,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
         super.internalSetup();
 
         admin.tenants().createTenant(TENANT,
-            new TenantInfo(Sets.newHashSet(ADMIN_USER), Sets.newHashSet(super.configClusterName)));
+            new TenantInfoImpl(Sets.newHashSet(ADMIN_USER), Sets.newHashSet(super.configClusterName)));
         admin.namespaces().createNamespace(TENANT + "/" + NAMESPACE);
         admin.topics().createPartitionedTopic(TOPIC, 1);
         admin

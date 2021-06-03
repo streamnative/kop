@@ -38,9 +38,9 @@ import java.util.Enumeration;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.common.policies.data.ClusterDataImpl;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
-import org.apache.pulsar.common.policies.data.TenantInfo;
+import org.apache.pulsar.common.policies.data.TenantInfoImpl;
 import org.testcontainers.Testcontainers;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.output.WaitingConsumer;
@@ -165,18 +165,18 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
         if (!this.admin.clusters().getClusters().contains(this.configClusterName)) {
             // so that clients can test short names
             this.admin.clusters().createCluster(this.configClusterName,
-                    new ClusterData("http://127.0.0.1:" + this.brokerWebservicePort));
+                    new ClusterDataImpl("http://127.0.0.1:" + this.brokerWebservicePort));
         } else {
             this.admin.clusters().updateCluster(this.configClusterName,
-                    new ClusterData("http://127.0.0.1:" + this.brokerWebservicePort));
+                    new ClusterDataImpl("http://127.0.0.1:" + this.brokerWebservicePort));
         }
 
         if (!this.admin.tenants().getTenants().contains("public")) {
             this.admin.tenants().createTenant("public",
-                    new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
+                    new TenantInfoImpl(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
         } else {
             this.admin.tenants().updateTenant("public",
-                    new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
+                    new TenantInfoImpl(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
         }
         if (!this.admin.namespaces().getNamespaces("public").contains("public/default")) {
             this.admin.namespaces().createNamespace("public/default");

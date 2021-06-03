@@ -35,8 +35,10 @@ import org.apache.pulsar.client.admin.Tenants;
 import org.apache.pulsar.client.admin.Topics;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.common.policies.data.ClusterDataImpl;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
+import org.apache.pulsar.common.policies.data.TenantInfoImpl;
 import org.testng.annotations.Test;
 
 /**
@@ -48,7 +50,7 @@ public class MetadataUtilsTest {
     public void testCreateKafkaMetadataIfMissing() throws Exception {
         KopTopic.initialize("public/default");
         KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
-        ClusterData clusterData = new ClusterData();
+        ClusterData clusterData = new ClusterDataImpl();
         conf.setClusterName("test");
         conf.setKafkaMetadataTenant("public");
         conf.setKafkaMetadataNamespace("default");
@@ -82,7 +84,7 @@ public class MetadataUtilsTest {
         doReturn(mockNamespaces).when(mockPulsarAdmin).namespaces();
         doReturn(mockTopics).when(mockPulsarAdmin).topics();
 
-        TenantInfo partialTenant = new TenantInfo();
+        TenantInfo partialTenant = new TenantInfoImpl();
         doReturn(partialTenant).when(mockTenants).getTenantInfo(eq(conf.getKafkaMetadataTenant()));
 
         MetadataUtils.createOffsetMetadataIfMissing(mockPulsarAdmin, clusterData, conf);
@@ -120,7 +122,7 @@ public class MetadataUtilsTest {
 
         doReturn(Lists.newArrayList("public")).when(mockTenants).getTenants();
 
-        partialTenant = new TenantInfo(Sets.newHashSet(conf.getSuperUserRoles()),
+        partialTenant = new TenantInfoImpl(Sets.newHashSet(conf.getSuperUserRoles()),
             Sets.newHashSet("other-cluster"));
         doReturn(partialTenant).when(mockTenants).getTenantInfo(eq(conf.getKafkaMetadataTenant()));
 

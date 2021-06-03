@@ -89,9 +89,9 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.common.policies.data.ClusterDataImpl;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
-import org.apache.pulsar.common.policies.data.TenantInfo;
+import org.apache.pulsar.common.policies.data.TenantInfoImpl;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -121,18 +121,18 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         if (!admin.clusters().getClusters().contains(configClusterName)) {
             // so that clients can test short names
             admin.clusters().createCluster(configClusterName,
-                new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
+                new ClusterDataImpl("http://127.0.0.1:" + brokerWebservicePort));
         } else {
             admin.clusters().updateCluster(configClusterName,
-                new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
+                new ClusterDataImpl("http://127.0.0.1:" + brokerWebservicePort));
         }
 
         if (!admin.tenants().getTenants().contains("public")) {
             admin.tenants().createTenant("public",
-                new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
+                new TenantInfoImpl(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
         } else {
             admin.tenants().updateTenant("public",
-                new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
+                new TenantInfoImpl(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
         }
         if (!admin.namespaces().getNamespaces("public").contains("public/default")) {
             admin.namespaces().createNamespace("public/default");
@@ -148,7 +148,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         }
 
         admin.tenants().createTenant("my-tenant",
-                new TenantInfo(Sets.newHashSet(), Sets.newHashSet(super.configClusterName)));
+                new TenantInfoImpl(Sets.newHashSet(), Sets.newHashSet(super.configClusterName)));
         admin.namespaces().createNamespace("my-tenant/my-ns");
 
         log.info("created namespaces, init handler");
