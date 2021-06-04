@@ -29,7 +29,7 @@
 
   <groupId>io.streamnative.pulsar.handlers</groupId>
   <artifactId>pulsar-protocol-handler-kafka-parent</artifactId>
-  <version>2.7.2.2</version>
+  <version>2.7.2.4</version>
   <name>StreamNative :: Pulsar Protocol Handler :: KoP Parent</name>
   <description>Parent for Kafka on Pulsar implemented using Pulsar Protocol Handler.</description>
 
@@ -47,7 +47,7 @@
     <log4j2.version>2.13.3</log4j2.version>
     <lombok.version>1.18.4</lombok.version>
     <mockito.version>2.22.0</mockito.version>
-    <pulsar.version>2.7.2.2</pulsar.version>
+    <pulsar.version>2.7.2.4</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
     <testcontainers.version>1.15.1</testcontainers.version>
