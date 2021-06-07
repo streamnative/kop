@@ -295,8 +295,13 @@ public final class MessageFetchContext {
                                         header.clientId());
                                 String groupId = ZooKeeperUtils.getData(requestHandler.getPulsarService().getZkClient(),
                                         requestHandler.getGroupIdStoredPath(), zkSubPath);
-                                log.info("get group name from zk for current connection:{} groupId:{}",
-                                        clientHost, groupId);
+                                if (groupId.isEmpty()) {
+                                    log.error("get empty group name from zk for current connection: {}, consumer stats"
+                                            + "won't be updated", clientHost);
+                                } else {
+                                    log.info("get group name from zk for current connection: {} groupId: {}",
+                                            clientHost, groupId);
+                                }
                                 return groupId;
                             });
                     final long startDecodingEntriesNanos = MathUtils.nowInNano();
@@ -306,7 +311,9 @@ public final class MessageFetchContext {
                     decodeResults.add(decodeResult);
 
                     // collect consumer metrics
-                    updateConsumerStats(topicPartition, decodeResult.getRecords(), entries.size(), groupName);
+                    if (!groupName.isEmpty()) {
+                        updateConsumerStats(topicPartition, decodeResult.getRecords(), entries.size(), groupName);
+                    }
 
                     final List<FetchResponse.AbortedTransaction> abortedTransactions =
                             (readCommitted ? tc.getAbortedIndexList(partitionData.fetchOffset) : null);
