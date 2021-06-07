@@ -87,7 +87,6 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
         anotherToken = AuthTokenUtils.createToken(secretKey, ANOTHER_USER, Optional.empty());
 
         super.resetConfig();
-        ((KafkaServiceConfiguration) conf).setEnableGroupCoordinator(true);
         ((KafkaServiceConfiguration) conf).setSaslAllowedMechanisms(Sets.newHashSet("PLAIN"));
         ((KafkaServiceConfiguration) conf).setKafkaMetadataTenant("internal");
         ((KafkaServiceConfiguration) conf).setKafkaMetadataNamespace("__kafka");

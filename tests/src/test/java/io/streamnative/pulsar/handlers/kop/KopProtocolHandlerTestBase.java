@@ -18,13 +18,11 @@ import static org.mockito.Mockito.spy;
 
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.MoreExecutors;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
-
 import io.confluent.kafka.schemaregistry.avro.AvroCompatibilityLevel;
 import io.confluent.kafka.schemaregistry.rest.SchemaRegistryConfig;
 import io.confluent.kafka.schemaregistry.rest.SchemaRegistryRestApplication;
+import io.netty.channel.EventLoopGroup;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
-
 import java.io.Closeable;
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -40,8 +38,6 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -50,6 +46,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.EnsemblePlacementPolicy;
 import org.apache.bookkeeper.client.PulsarMockBookKeeper;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
+import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.util.ZkUtils;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -71,6 +69,7 @@ import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.compaction.Compactor;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
 import org.apache.pulsar.zookeeper.ZooKeeperClientFactory;
@@ -115,7 +114,7 @@ public abstract class KopProtocolHandlerTestBase {
     protected final String namespace = "default";
 
     private SameThreadOrderedSafeExecutor sameThreadOrderedSafeExecutor;
-    private ExecutorService bkExecutor;
+    private OrderedExecutor bkExecutor;
 
     // Fields about Confluent Schema Registry
     protected boolean enableSchemaRegistry = false;
@@ -168,8 +167,11 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setKafkaMetadataNamespace(namespace);
 
         // kafka related settings.
-        kafkaConfig.setEnableGroupCoordinator(true);
         kafkaConfig.setOffsetsTopicNumPartitions(1);
+
+        kafkaConfig.setEnableTransactionCoordinator(true);
+        kafkaConfig.setTxnLogTopicNumPartitions(1);
+
         kafkaConfig.setKafkaListeners(
                 PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort + ","
                         + SSL_PREFIX + "localhost:" + kafkaBrokerPortTls);
@@ -214,10 +216,8 @@ public abstract class KopProtocolHandlerTestBase {
 
     protected final void init() throws Exception {
         sameThreadOrderedSafeExecutor = new SameThreadOrderedSafeExecutor();
-        bkExecutor = Executors.newSingleThreadExecutor(
-            new ThreadFactoryBuilder().setNameFormat("mock-pulsar-bk")
-                .setUncaughtExceptionHandler((thread, ex) -> log.info("Uncaught exception", ex))
-                .build());
+
+        bkExecutor = OrderedScheduler.newSchedulerBuilder().numThreads(2).name("mock-pulsar-bk").build();
 
         brokerUrl = new URL("http://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePort);
         brokerUrlTls = new URL("https://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePortTls);
@@ -227,15 +227,18 @@ public abstract class KopProtocolHandlerTestBase {
         String brokerServiceUrl = "pulsar://" + this.conf.getAdvertisedAddress() + ":" + brokerPort;
         String brokerServiceUrlTls = null; // TLS not supported at this time
 
+        ClusterData clusterData = new ClusterData(serviceUrl, serviceUrlTls, brokerServiceUrl, null);
+
         mockZooKeeper = createMockZooKeeper(configClusterName, serviceUrl, serviceUrlTls, brokerServiceUrl,
             brokerServiceUrlTls);
-        mockBookKeeper = createMockBookKeeper(mockZooKeeper, bkExecutor);
+        mockBookKeeper = createMockBookKeeper(bkExecutor);
 
         startBroker();
 
         createAdmin();
 
-        MetadataUtils.createKafkaMetadataIfMissing(admin, this.conf);
+        MetadataUtils.createOffsetMetadataIfMissing(admin, clusterData, this.conf);
+        MetadataUtils.createTxnMetadataIfMissing(admin, clusterData, this.conf);
 
         if (enableSchemaRegistry) {
             admin.topics().createPartitionedTopic(KAFKASTORE_TOPIC, 1);
@@ -330,6 +333,7 @@ public abstract class KopProtocolHandlerTestBase {
         doReturn(mockBookKeeperClientFactory).when(pulsar).newBookKeeperClientFactory();
         doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createLocalMetadataStore();
         doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createConfigurationMetadataStore();
+        doReturn(mockZooKeeper).when(pulsar).getZkClient();
 
         Supplier<NamespaceService> namespaceServiceSupplier = () -> spy(new NamespaceService(pulsar));
         doReturn(namespaceServiceSupplier).when(pulsar).getNamespaceServiceProvider();
@@ -358,9 +362,8 @@ public abstract class KopProtocolHandlerTestBase {
         return zk;
     }
 
-    public static NonClosableMockBookKeeper createMockBookKeeper(ZooKeeper zookeeper,
-                                                                 ExecutorService executor) throws Exception {
-        return spy(new NonClosableMockBookKeeper(zookeeper, executor));
+    public static NonClosableMockBookKeeper createMockBookKeeper(OrderedExecutor executor) throws Exception {
+        return spy(new NonClosableMockBookKeeper(executor));
     }
 
     /**
@@ -368,8 +371,8 @@ public abstract class KopProtocolHandlerTestBase {
      */
     public static class NonClosableMockBookKeeper extends PulsarMockBookKeeper {
 
-        public NonClosableMockBookKeeper(ZooKeeper zk, ExecutorService executor) throws Exception {
-            super(zk, executor);
+        public NonClosableMockBookKeeper(OrderedExecutor executor) throws Exception {
+            super(executor);
         }
 
         @Override
@@ -401,17 +404,19 @@ public abstract class KopProtocolHandlerTestBase {
     private BookKeeperClientFactory mockBookKeeperClientFactory = new BookKeeperClientFactory() {
 
         @Override
-        public BookKeeper create(ServiceConfiguration conf, ZooKeeper zkClient,
+        public BookKeeper create(ServiceConfiguration conf, ZooKeeper zkClient, EventLoopGroup eventLoopGroup,
                                  Optional<Class<? extends EnsemblePlacementPolicy>> ensemblePlacementPolicyClass,
-                                 Map<String, Object> properties) {
+                                 Map<String, Object> ensemblePlacementPolicyProperties) {
             // Always return the same instance (so that we don't loose the mock BK content on broker restart
             return mockBookKeeper;
         }
 
         @Override
         public BookKeeper create(ServiceConfiguration serviceConfiguration, ZooKeeper zooKeeper,
+                                 EventLoopGroup eventLoopGroup,
                                  Optional<Class<? extends EnsemblePlacementPolicy>> optional,
-                                 Map<String, Object> map, StatsLogger statsLogger) throws IOException {
+                                 Map<String, Object> ensemblePlacementPolicyProperties,
+                                 StatsLogger statsLogger) throws IOException {
             return mockBookKeeper;
         }
 
@@ -455,7 +460,7 @@ public abstract class KopProtocolHandlerTestBase {
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducer");
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, keySer);
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, valueSer);
-            props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000);
+            props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 10000);
 
             if (retry) {
                 props.put(ProducerConfig.RETRIES_CONFIG, 3);

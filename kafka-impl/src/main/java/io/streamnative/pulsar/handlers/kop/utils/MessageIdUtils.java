@@ -14,10 +14,8 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import io.netty.buffer.ByteBuf;
-
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedLedger;

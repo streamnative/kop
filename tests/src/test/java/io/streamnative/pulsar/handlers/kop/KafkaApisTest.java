@@ -30,6 +30,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -86,6 +87,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
     KafkaRequestHandler kafkaRequestHandler;
     SocketAddress serviceAddress;
+    private AdminManager adminManager;
 
     @Override
     protected void resetConfig() {
@@ -135,13 +137,16 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();
         TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler).getTransactionCoordinator();
 
+        adminManager = new AdminManager(pulsar.getAdminClient());
         kafkaRequestHandler = new KafkaRequestHandler(
             pulsar,
             (KafkaServiceConfiguration) conf,
             groupCoordinator,
             transactionCoordinator,
+            adminManager,
             false,
-            getPlainEndPoint());
+            getPlainEndPoint(),
+            NullStatsLogger.INSTANCE);
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
@@ -153,6 +158,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     @AfterMethod
     @Override
     protected void cleanup() throws Exception {
+        adminManager.shutdown();
         super.internalCleanup();
     }
 

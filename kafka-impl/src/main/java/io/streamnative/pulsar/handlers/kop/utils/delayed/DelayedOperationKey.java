@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.utils.delayed;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.Accessors;
+import org.apache.kafka.common.TopicPartition;
 
 /**
  * Delayed operation key.
@@ -86,12 +87,12 @@ public interface DelayedOperationKey {
     @RequiredArgsConstructor
     class TopicPartitionOperationKey implements DelayedOperationKey {
 
-        private final String topic;
-        private final int partition;
+        private final TopicPartition topicPartition;
 
         @Override
         public String keyLabel() {
-            return String.format("%s-%d", topic, partition);
+            return String.format("%s-%d", topicPartition.topic(),
+                    topicPartition.partition());
         }
     }
 

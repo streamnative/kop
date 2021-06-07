@@ -117,7 +117,7 @@ public class KafkaTopicConsumerManager implements Closeable {
 
                 @Override
                 public void deleteCursorFailed(ManagedLedgerException exception, Object ctx) {
-                    log.warn("[{}] Error deleting cursor for topic {} for reason: {}.",
+                    log.warn("[{}] Error deleting cursor {} for topic {} for reason: {}.",
                         requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason, exception);
                 }
             }, null);
@@ -164,36 +164,13 @@ public class KafkaTopicConsumerManager implements Closeable {
                 return null;
             }
             // handle offset not exist in consumers, need create cursor.
-            consumers.computeIfAbsent(
-                offset,
-                off -> {
-                    ManagedLedgerImpl ledger = (ManagedLedgerImpl) topic.getManagedLedger();
+            Pair<ManagedCursor, Long> managedCursorLongPair = getCursorByOffset(offset);
+            if (null == managedCursorLongPair) {
+                log.error("[{}] Failed to get cursor by offset {}", requestHandler.ctx.channel(), offset);
+                return null;
+            }
 
-                    PositionImpl position = MessageIdUtils.getPositionForOffset(ledger, off);
-
-                    String cursorName = "kop-consumer-cursor-" + topic.getName()
-                        + "-" + position.getLedgerId() + "-" + position.getEntryId()
-                        + "-" + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 10);
-
-                    // get previous position, because NonDurableCursor is read from next position.
-                    PositionImpl previous = ledger.getPreviousPosition(position);
-                    if (log.isDebugEnabled()) {
-                        log.debug("[{}] Create cursor {} for offset: {}. position: {}, previousPosition: {}",
-                            requestHandler.ctx.channel(), cursorName, off, position, previous);
-                    }
-                    ManagedCursor newCursor;
-                    try {
-                        newCursor = ledger.newNonDurableCursor(previous, cursorName);
-                        createdCursors.put(newCursor.getName(), newCursor);
-                    } catch (ManagedLedgerException e) {
-                        log.error("[{}] Error new cursor for topic {} at offset {} - {}. will cause fetch data error.",
-                            requestHandler.ctx.channel(), topic.getName(), off, previous, e);
-                        return null;
-                    }
-
-                    lastAccessTimes.put(off, System.currentTimeMillis());
-                    return Pair.of(newCursor, off);
-                });
+            consumers.putIfAbsent(offset, managedCursorLongPair);
 
             // notice:  above would add a <offset, null-Pair>
             cursor = consumers.remove(offset);
@@ -273,5 +250,33 @@ public class KafkaTopicConsumerManager implements Closeable {
         cursorsToClose.values().forEach(cursor ->
             deleteOneCursorAsync(cursor, "TopicConsumerManager close but cursor is still outstanding"));
         cursorsToClose.clear();
+    }
+
+    private Pair<ManagedCursor, Long> getCursorByOffset(Long offset) {
+        ManagedLedgerImpl ledger = (ManagedLedgerImpl) topic.getManagedLedger();
+        PositionImpl position = MessageIdUtils.getPositionForOffset(ledger, offset);
+
+        String cursorName = "kop-consumer-cursor-" + topic.getName()
+            + "-" + position.getLedgerId() + "-" + position.getEntryId()
+            + "-" + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 10);
+
+        // get previous position, because NonDurableCursor is read from next position.
+        PositionImpl previous = ledger.getPreviousPosition(position);
+        if (log.isDebugEnabled()) {
+            log.debug("[{}] Create cursor {} for offset: {}. position: {}, previousPosition: {}",
+                requestHandler.ctx.channel(), cursorName, offset, position, previous);
+        }
+        ManagedCursor newCursor;
+        try {
+            newCursor = ledger.newNonDurableCursor(previous, cursorName);
+            createdCursors.put(newCursor.getName(), newCursor);
+        } catch (ManagedLedgerException e) {
+            log.error("[{}] Error new cursor for topic {} at offset {} - {}. will cause fetch data error.",
+                requestHandler.ctx.channel(), topic.getName(), offset, previous, e);
+            return null;
+        }
+
+        lastAccessTimes.put(offset, System.currentTimeMillis());
+        return Pair.of(newCursor, offset);
     }
 }

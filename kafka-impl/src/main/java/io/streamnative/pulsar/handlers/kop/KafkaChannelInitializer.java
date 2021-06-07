@@ -22,6 +22,7 @@ import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslHandler;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import lombok.Getter;
 import org.apache.pulsar.broker.PulsarService;
@@ -42,26 +43,33 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final GroupCoordinator groupCoordinator;
     @Getter
     private final TransactionCoordinator transactionCoordinator;
+    private final AdminManager adminManager;
     @Getter
     private final boolean enableTls;
     @Getter
     private final EndPoint advertisedEndPoint;
     @Getter
     private final SslContextFactory sslContextFactory;
+    @Getter
+    private final StatsLogger statsLogger;
 
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
                                    GroupCoordinator groupCoordinator,
                                    TransactionCoordinator transactionCoordinator,
+                                   AdminManager adminManager,
                                    boolean enableTLS,
-                                   EndPoint advertisedEndPoint) {
+                                   EndPoint advertisedEndPoint,
+                                   StatsLogger statsLogger) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
         this.groupCoordinator = groupCoordinator;
         this.transactionCoordinator = transactionCoordinator;
+        this.adminManager = adminManager;
         this.enableTls = enableTLS;
         this.advertisedEndPoint = advertisedEndPoint;
+        this.statsLogger = statsLogger;
 
         if (enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
@@ -80,7 +88,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
             new KafkaRequestHandler(pulsarService, kafkaConfig,
-                    groupCoordinator, transactionCoordinator, enableTls, advertisedEndPoint));
+                    groupCoordinator, transactionCoordinator, adminManager,
+                    enableTls, advertisedEndPoint, statsLogger));
     }
 
 }

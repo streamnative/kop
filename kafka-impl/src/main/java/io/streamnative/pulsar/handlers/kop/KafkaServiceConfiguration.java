@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
-
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -43,12 +42,11 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private static final int GroupMaxSessionTimeoutMs = 300000;
     private static final int GroupInitialRebalanceDelayMs = 3000;
     // offset configuration
-    private static final int OffsetsRetentionMinutes = 7 * 24 * 60;
+    private static final int OffsetsRetentionMinutes = 3 * 24 * 60;
     public static final int DefaultOffsetsTopicNumPartitions = 8;
+    private static final int OffsetsMessageTTL = 3 * 24 * 3600;
     // txn configuration
     public static final int DefaultTxnLogTopicNumPartitions = 8;
-
-    public static final String DEFAULT_OAUTH2_CONFIG_FILE = "kop-oauth2.properties";
 
     @Category
     private static final String CATEGORY_KOP = "Kafka on Pulsar";
@@ -89,12 +87,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         doc = "The namespace used for storing Kafka metadata topics"
     )
     private String kafkaMetadataNamespace = "__kafka";
-
-    @FieldContext(
-        category = CATEGORY_KOP,
-        doc = "Flag to enable group coordinator"
-    )
-    private boolean enableGroupCoordinator = true;
 
     @FieldContext(
         category = CATEGORY_KOP,
@@ -147,6 +139,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
         category = CATEGORY_KOP,
+        doc = "Offsets message ttl in seconds. default is 259200."
+    )
+    private int offsetsMessageTTL = OffsetsMessageTTL;
+
+    @FieldContext(
+        category = CATEGORY_KOP,
         doc = "Frequency at which to check for stale offsets"
     )
     private long offsetsRetentionCheckIntervalMs = OffsetConfig.DefaultOffsetsRetentionCheckIntervalMs;
@@ -179,6 +177,19 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private String kafkaAdvertisedListeners;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "limit the queue size for request, \n"
+                + "like queued.max.requests in kafka.\n"
+    )
+    private int maxQueuedRequests = 500;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "limit the timeout for request, \n"
+                + "like request.timeout.ms in kafka\n"
+    )
+    private int requestTimeoutMs = 30000;
 
     // Kafka SSL configs
     @FieldContext(
@@ -319,10 +330,15 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "The properties configuration file of OAuth2 authentication. If it's not specified, use"
-                    + " kop-oauth2.properties file under resource directory"
+            doc = "The properties configuration file of OAuth2 authentication."
     )
     private String kopOauth2ConfigFile;
+
+    @FieldContext(
+        category = CATEGORY_KOP,
+        doc = "KOP Prometheus stats rollover latency"
+    )
+    private int kopPrometheusStatsLatencyRolloverSeconds = 60;
 
     public @NonNull String getKafkaAdvertisedListeners() {
         if (kafkaAdvertisedListeners != null) {
@@ -339,18 +355,15 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         return (kafkaListeners != null) ? kafkaListeners : listeners;
     }
 
-    private InputStream getKopOauth2ConfigInputStream() throws FileNotFoundException {
-        if (kopOauth2ConfigFile == null) {
-            return KafkaServiceConfiguration.class.getClassLoader().getResourceAsStream(DEFAULT_OAUTH2_CONFIG_FILE);
-        } else {
-            return new FileInputStream(kopOauth2ConfigFile);
-        }
-    }
-
     public @NonNull Properties getKopOauth2Properties() {
         final Properties props = new Properties();
-        try (InputStream inputStream = getKopOauth2ConfigInputStream()) {
+        if (kopOauth2ConfigFile == null) {
+            return props;
+        }
+        try (InputStream inputStream = new FileInputStream(kopOauth2ConfigFile)) {
             props.load(inputStream);
+        } catch (FileNotFoundException e) {
+            return props;
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

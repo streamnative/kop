@@ -21,6 +21,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
@@ -40,6 +41,7 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
 
     KafkaRequestHandler kafkaRequestHandler;
     SocketAddress serviceAddress;
+    private AdminManager adminManager;
 
     public EntryPublishTimeTest(String format) {
         super(format);
@@ -84,13 +86,16 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();
         TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler).getTransactionCoordinator();
 
+        adminManager = new AdminManager(pulsar.getAdminClient());
         kafkaRequestHandler = new KafkaRequestHandler(
                 pulsar,
                 (KafkaServiceConfiguration) conf,
                 groupCoordinator,
                 transactionCoordinator,
+                adminManager,
                 false,
-                getPlainEndPoint());
+                getPlainEndPoint(),
+                NullStatsLogger.INSTANCE);
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
@@ -102,6 +107,7 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
     @AfterMethod
     @Override
     protected void cleanup() throws Exception {
+        adminManager.shutdown();
         super.internalCleanup();
     }
 }

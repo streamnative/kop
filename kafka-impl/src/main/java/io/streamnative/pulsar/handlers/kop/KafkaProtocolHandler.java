@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
@@ -25,6 +26,8 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
+import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
@@ -39,6 +42,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.configuration.Configuration;
+import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
@@ -55,6 +60,7 @@ import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.util.FutureUtil;
 
 /**
@@ -65,6 +71,11 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     public static final String PROTOCOL_NAME = "kafka";
     public static final String TLS_HANDLER = "tls";
+
+    private StatsLogger rootStatsLogger;
+    private PrometheusMetricsProvider statsProvider;
+    private KopBrokerLookupManager kopBrokerLookupManager;
+    private AdminManager adminManager = null;
 
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
@@ -108,6 +119,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                 groupCoordinator.handleGroupImmigration(name.getPartitionIndex());
                             }
                             KafkaTopicManager.removeTopicManagerCache(name.toString());
+                            KopBrokerLookupManager.removeTopicManagerCache(name.toString());
                             // update lookup cache when onload
                             try {
                                 CompletableFuture<InetSocketAddress> retFuture = new CompletableFuture<>();
@@ -122,6 +134,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                             retFuture.complete(pair.getLeft());
                                         });
                                 KafkaTopicManager.LOOKUP_CACHE.put(topic, retFuture);
+                                KopBrokerLookupManager.updateTopicManagerCache(topic, retFuture);
                             } catch (PulsarServerException e) {
                                 log.error("onLoad PulsarServerException ", e);
                             }
@@ -156,8 +169,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                 }
                                 groupCoordinator.handleGroupEmigration(name.getPartitionIndex());
                             }
-                            // remove cache when unload
-                            KafkaTopicManager.removeTopicManagerCache(name.toString());
+                            // deReference topic when unload
+                            KopBrokerLookupManager.removeTopicManagerCache(name.toString());
+                            KafkaTopicManager.deReference(name.toString());
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
@@ -195,7 +209,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     @Getter
     private String bindAddress;
 
-
     @Override
     public String protocolName() {
         return PROTOCOL_NAME;
@@ -223,6 +236,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
         this.bindAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(kafkaConfig.getBindAddress());
         KopTopic.initialize(kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace());
+
+        statsProvider = new PrometheusMetricsProvider();
+        rootStatsLogger = statsProvider.getStatsLogger("");
     }
 
     // This method is called after initialize
@@ -234,6 +250,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     @Override
     public void start(BrokerService service) {
         brokerService = service;
+        kopBrokerLookupManager = new KopBrokerLookupManager(
+                brokerService.getPulsar(), false, kafkaConfig.getKafkaAdvertisedListeners());
 
         log.info("Starting KafkaProtocolHandler, kop version is: '{}'", KopVersion.getVersion());
         log.info("Git Revision {}", KopVersion.getGitSha());
@@ -242,19 +260,24 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             KopVersion.getBuildHost(),
             KopVersion.getBuildTime());
 
+        try {
+            adminManager = new AdminManager(brokerService.getPulsar().getAdminClient());
+        } catch (PulsarServerException e) {
+            log.error("Failed to create PulsarAdmin: {}", e.getMessage());
+            throw new IllegalStateException(e);
+        }
+
         // init and start group coordinator
-        if (kafkaConfig.isEnableGroupCoordinator()) {
-            try {
-                initGroupCoordinator(brokerService);
-                startGroupCoordinator();
-                // and listener for Offset topics load/unload
-                brokerService.pulsar()
+        try {
+            initGroupCoordinator(brokerService);
+            startGroupCoordinator();
+            // and listener for Offset topics load/unload
+            brokerService.pulsar()
                     .getNamespaceService()
                     .addNamespaceBundleOwnershipListener(
                         new OffsetAndTopicListener(brokerService, kafkaConfig, groupCoordinator));
-            } catch (Exception e) {
-                log.error("initGroupCoordinator failed with", e);
-            }
+        } catch (Exception e) {
+            log.error("initGroupCoordinator failed with", e);
         }
         if (kafkaConfig.isEnableTransactionCoordinator()) {
             try {
@@ -264,6 +287,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 log.error("Initialized transaction coordinator failed.", e);
             }
         }
+
+        Configuration conf = new PropertiesConfiguration();
+        conf.addProperty("prometheusStatsLatencyRolloverSeconds",
+            kafkaConfig.getKopPrometheusStatsLatencyRolloverSeconds());
+        statsProvider.start(conf);
+        brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
@@ -271,9 +300,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
         checkState(kafkaConfig != null);
         checkState(brokerService != null);
-        if (kafkaConfig.isEnableGroupCoordinator()) {
-            checkState(groupCoordinator != null);
-        }
 
         try {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
@@ -291,12 +317,14 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, transactionCoordinator, false, advertisedEndPoint));
+                                kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, false,
+                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE)));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, transactionCoordinator, true, advertisedEndPoint));
+                                kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, true,
+                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE)));
                         break;
                 }
             });
@@ -310,10 +338,16 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     @Override
     public void close() {
+        adminManager.shutdown();
         if (groupCoordinator != null) {
             groupCoordinator.shutdown();
         }
         KafkaTopicManager.LOOKUP_CACHE.clear();
+        KopBrokerLookupManager.clear();
+        KafkaTopicManager.closeKafkaTopicConsumerManagers();
+        KafkaTopicManager.getReferences().clear();
+        KafkaTopicManager.getTopics().clear();
+        statsProvider.stop();
     }
 
     public void initGroupCoordinator(BrokerService service) throws Exception {
@@ -335,15 +369,17 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             .build();
 
         PulsarAdmin pulsarAdmin = service.pulsar().getAdminClient();
-        MetadataUtils.createKafkaMetadataIfMissing(pulsarAdmin, kafkaConfig);
+        ClusterData clusterData = new ClusterData(service.getPulsar().getWebServiceAddress(),
+                                                  service.getPulsar().getWebServiceAddressTls(),
+                                                  service.getPulsar().getBrokerServiceUrl(),
+                                                  service.getPulsar().getBrokerServiceUrlTls());
+        MetadataUtils.createOffsetMetadataIfMissing(pulsarAdmin, clusterData, kafkaConfig);
 
 
         this.groupCoordinator = GroupCoordinator.of(
-            brokerService,
             (PulsarClientImpl) (service.pulsar().getClient()),
             groupConfig,
             offsetConfig,
-            kafkaConfig,
             SystemTimer.builder()
                 .executorName("group-coordinator-timer")
                 .build(),
@@ -362,10 +398,24 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     }
 
     public void initTransactionCoordinator() throws Exception {
-        TransactionConfig transactionConfig = TransactionConfig.builder().build();
-        transactionConfig.setTransactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions());
+        TransactionConfig transactionConfig = TransactionConfig.builder()
+                .transactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions())
+                .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(kafkaConfig))
+                .build();
+
+        PulsarAdmin pulsarAdmin = brokerService.getPulsar().getAdminClient();
+        ClusterData clusterData = new ClusterData(brokerService.getPulsar().getWebServiceAddress(),
+                                                  brokerService.getPulsar().getWebServiceAddressTls(),
+                                                  brokerService.getPulsar().getBrokerServiceUrl(),
+                                                  brokerService.getPulsar().getBrokerServiceUrlTls());
+
+        MetadataUtils.createTxnMetadataIfMissing(pulsarAdmin, clusterData, kafkaConfig);
+
         this.transactionCoordinator = TransactionCoordinator.of(
-                transactionConfig, kafkaConfig.getBrokerId(), brokerService.getPulsar().getZkClient());
+                transactionConfig,
+                kafkaConfig.getBrokerId(),
+                brokerService.getPulsar().getZkClient(),
+                kopBrokerLookupManager);
 
         loadTxnLogTopics(transactionCoordinator);
     }

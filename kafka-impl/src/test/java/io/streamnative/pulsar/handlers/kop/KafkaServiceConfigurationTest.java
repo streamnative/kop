@@ -17,21 +17,17 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
-import static org.testng.Assert.fail;
 
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.util.Properties;
-
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.api.DigestType;
-
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.testng.annotations.Test;
 
@@ -153,6 +149,7 @@ public class KafkaServiceConfigurationTest {
     public void testGetKopOauth2Configs() {
         // Read kop-oauth2.properties
         final KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
+        conf.setKopOauth2ConfigFile("src/test/resources/kop-oauth2.properties");
         Properties oauth2Props = conf.getKopOauth2Properties();
         Properties expectedProps = new Properties();
         expectedProps.setProperty("unsecuredLoginStringClaim_sub", "admin");
@@ -166,12 +163,7 @@ public class KafkaServiceConfigurationTest {
         assertEquals(oauth2Props, expectedProps);
 
         conf.setKopOauth2ConfigFile("src/test/resources/not-existed.properties");
-        try {
-            conf.getKopOauth2Properties();
-            fail();
-        } catch (RuntimeException e) {
-            System.out.println(e.getMessage());
-            assertTrue(e.getCause() instanceof IOException);
-        }
+        final Properties emptyProps = conf.getKopOauth2Properties();
+        assertTrue(emptyProps.isEmpty());
     }
 }

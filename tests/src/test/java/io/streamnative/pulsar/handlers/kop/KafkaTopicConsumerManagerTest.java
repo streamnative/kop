@@ -23,12 +23,12 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
+import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.commons.lang3.tuple.Pair;
@@ -39,6 +39,7 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.policies.data.TopicStats;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -52,7 +53,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
 
     private KafkaTopicManager kafkaTopicManager;
     private KafkaRequestHandler kafkaRequestHandler;
-    private SocketAddress serviceAddress;
+    private AdminManager adminManager;
 
     @BeforeMethod
     @Override
@@ -63,20 +64,21 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();
         TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler).getTransactionCoordinator();
 
+        adminManager = new AdminManager(pulsar.getAdminClient());
         kafkaRequestHandler = new KafkaRequestHandler(
             pulsar,
             (KafkaServiceConfiguration) conf,
             groupCoordinator,
             transactionCoordinator,
+            adminManager,
             false,
-            getPlainEndPoint());
+            getPlainEndPoint(),
+            NullStatsLogger.INSTANCE);
 
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
         kafkaRequestHandler.ctx = mockCtx;
-
-        serviceAddress = new InetSocketAddress(pulsar.getBindAddress(), kafkaBrokerPort);
 
         kafkaTopicManager = new KafkaTopicManager(kafkaRequestHandler);
     }
@@ -84,13 +86,19 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     @AfterMethod
     @Override
     protected void cleanup() throws Exception {
+        adminManager.shutdown();
         super.internalCleanup();
+    }
+
+    private void registerPartitionedTopic(final String topic) throws PulsarAdminException {
+        admin.topics().createPartitionedTopic(topic, 1);
+        pulsar.getBrokerService().getOrCreateTopic(topic);
     }
 
     @Test
     public void testGetTopicConsumerManager() throws Exception {
         String topicName = "persistent://public/default/testGetTopicConsumerManager";
-        admin.lookups().lookupTopic(topicName);
+        registerPartitionedTopic(topicName);
         CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager.getTopicConsumerManager(topicName);
         KafkaTopicConsumerManager topicConsumerManager = tcm.get();
 
@@ -99,31 +107,31 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         KafkaTopicConsumerManager topicConsumerManager2 = tcm.get();
 
         assertTrue(topicConsumerManager == topicConsumerManager2);
-        assertEquals(kafkaTopicManager.getConsumerTopicManagers().size(), 1);
+        assertEquals(KafkaTopicManager.getNumberOfKafkaTopicConsumerManagers(), 1);
 
         // 2. verify another get with different topic will return different tcm
         String topicName2 = "persistent://public/default/testGetTopicConsumerManager2";
-        admin.lookups().lookupTopic(topicName2);
+        registerPartitionedTopic(topicName2);
         tcm = kafkaTopicManager.getTopicConsumerManager(topicName2);
         topicConsumerManager2 = tcm.get();
         assertTrue(topicConsumerManager != topicConsumerManager2);
-        assertEquals(kafkaTopicManager.getConsumerTopicManagers().size(), 2);
+        assertEquals(KafkaTopicManager.getNumberOfKafkaTopicConsumerManagers(), 2);
     }
 
 
     @Test
     public void testTopicConsumerManagerRemoveAndAdd() throws Exception {
         String topicName = "persistent://public/default/testTopicConsumerManagerRemoveAndAdd";
-        admin.lookups().lookupTopic(topicName);
+        registerPartitionedTopic(topicName);
 
         final Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
 
+        @Cleanup
         final KafkaProducer<Integer, String> producer = new KafkaProducer<>(props);
 
-        KProducer kProducer = new KProducer(topicName, true, getKafkaBrokerPort());
         int i = 0;
         String messagePrefix = "testTopicConsumerManagerRemoveAndAdd_message_";
         long offset = -1L;
@@ -192,6 +200,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
 
+        @Cleanup
         final KafkaProducer<Integer, String> producer = new KafkaProducer<>(props);
 
         int i = 0;

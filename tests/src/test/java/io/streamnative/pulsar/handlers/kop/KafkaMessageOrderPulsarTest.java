@@ -13,28 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import java.util.LinkedList;
-import java.util.Queue;
-
 /**
- * Queue of PendingProduce instances.
+ * Unit test for Different kafka produce messages with `entryFormat=pulsar`.
  */
-public class PendingProduceQueue {
+public class KafkaMessageOrderPulsarTest extends KafkaMessageOrderTestBase {
 
-    private final Queue<PendingProduce> queue = new LinkedList<>();
-
-    public synchronized void sendCompletedProduces() {
-        while (!queue.isEmpty()) {
-            PendingProduce pendingProduce = queue.peek();
-            if (!pendingProduce.ready()) {
-                break;
-            }
-            queue.remove();
-            pendingProduce.publishMessages();
-        }
-    }
-
-    public synchronized void add(PendingProduce pendingProduce) {
-        queue.add(pendingProduce);
+    public KafkaMessageOrderPulsarTest() {
+        super("pulsar");
     }
 }

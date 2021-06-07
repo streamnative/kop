@@ -20,7 +20,6 @@ import static org.testng.Assert.fail;
 
 import java.net.InetAddress;
 import java.util.Map;
-
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.testng.annotations.Test;
 

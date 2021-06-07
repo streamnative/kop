@@ -14,26 +14,17 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import com.google.common.collect.Sets;
-
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
-
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
-
 import lombok.extern.slf4j.Slf4j;
-
 import org.apache.kafka.common.internals.Topic;
-import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.client.admin.Clusters;
 import org.apache.pulsar.client.admin.Namespaces;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.admin.PulsarAdminException.ConflictException;
 import org.apache.pulsar.client.admin.Tenants;
-import org.apache.pulsar.client.admin.Topics;
-import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
@@ -56,7 +47,23 @@ public class MetadataUtils {
                 + "/" + Topic.TRANSACTION_STATE_TOPIC_NAME;
     }
 
-   /**
+    public static void createOffsetMetadataIfMissing(PulsarAdmin pulsarAdmin,
+                                                     ClusterData clusterData,
+                                                     KafkaServiceConfiguration conf)
+            throws PulsarAdminException {
+        KopTopic kopTopic = new KopTopic(constructOffsetsTopicBaseName(conf));
+        createKafkaMetadataIfMissing(pulsarAdmin, clusterData, conf, kopTopic, conf.getOffsetsTopicNumPartitions());
+    }
+
+    public static void createTxnMetadataIfMissing(PulsarAdmin pulsarAdmin,
+                                                  ClusterData clusterData,
+                                                  KafkaServiceConfiguration conf)
+            throws PulsarAdminException {
+        KopTopic kopTopic = new KopTopic(constructTxnLogTopicBaseName(conf));
+        createKafkaMetadataIfMissing(pulsarAdmin, clusterData, conf, kopTopic, conf.getTxnLogTopicNumPartitions());
+    }
+
+    /**
      * This method creates the Kafka metadata tenant and namespace if they are not currently present.
      * <ul>
      * <li>If the cluster does not exist this method will throw a PulsarServerException.NotFoundException</li>
@@ -70,13 +77,15 @@ public class MetadataUtils {
      * <li>If the offset topic exists but some partitions are missing, the missing partitions will be created</li>
      * </ul>
      */
-    public static void createKafkaMetadataIfMissing(PulsarAdmin pulsarAdmin, KafkaServiceConfiguration conf)
-        throws PulsarServerException, PulsarAdminException {
+    private static void createKafkaMetadataIfMissing(PulsarAdmin pulsarAdmin,
+                                                     ClusterData clusterData,
+                                                     KafkaServiceConfiguration conf,
+                                                     KopTopic kopTopic,
+                                                     int partitionNum)
+        throws PulsarAdminException {
         String cluster = conf.getClusterName();
         String kafkaMetadataTenant = conf.getKafkaMetadataTenant();
         String kafkaMetadataNamespace = kafkaMetadataTenant + "/" + conf.getKafkaMetadataNamespace();
-
-        final KopTopic offsetsTopic = new KopTopic(constructOffsetsTopicBaseName(conf));
 
         boolean clusterExists, tenantExists, namespaceExists, offsetsTopicExists;
         clusterExists = tenantExists = namespaceExists = offsetsTopicExists = false;
@@ -84,25 +93,34 @@ public class MetadataUtils {
         try {
             Clusters clusters = pulsarAdmin.clusters();
             if (!clusters.getClusters().contains(cluster)) {
-                throw new PulsarServerException.NotFoundException("Configured cluster does not exist");
+                try {
+                    pulsarAdmin.clusters().createCluster(cluster, clusterData);
+                } catch (PulsarAdminException e) {
+                    if (e instanceof ConflictException) {
+                        log.info("Attempted to create cluster {} however it was created concurrently.", cluster);
+                    } else {
+                        // Re-throw all other exceptions
+                        throw e;
+                    }
+                }
             } else {
                 ClusterData configuredClusterData = clusters.getCluster(cluster);
                 log.info("Cluster {} found: {}", cluster, configuredClusterData);
-                clusterExists = true;
             }
+            clusterExists = true;
 
             // Check if the metadata tenant exists and create it if not
             Tenants tenants = pulsarAdmin.tenants();
             if (!tenants.getTenants().contains(kafkaMetadataTenant)) {
                 log.info("Tenant: {} does not exist, creating it ...", kafkaMetadataTenant);
                 tenants.createTenant(kafkaMetadataTenant,
-                    new TenantInfo(Sets.newHashSet(conf.getSuperUserRoles()), Sets.newHashSet(cluster)));
+                        new TenantInfo(Sets.newHashSet(conf.getSuperUserRoles()), Sets.newHashSet(cluster)));
             } else {
                 TenantInfo kafkaMetadataTenantInfo = tenants.getTenantInfo(kafkaMetadataTenant);
                 Set<String> allowedClusters = kafkaMetadataTenantInfo.getAllowedClusters();
                 if (!allowedClusters.contains(cluster)) {
                     log.info("Tenant: {} exists but cluster: {} is not in the allowedClusters list, updating it ...",
-                        kafkaMetadataTenant, cluster);
+                            kafkaMetadataTenant, cluster);
                     allowedClusters.add(cluster);
                     tenants.updateTenant(kafkaMetadataTenant, kafkaMetadataTenantInfo);
                 }
@@ -113,60 +131,43 @@ public class MetadataUtils {
             Namespaces namespaces = pulsarAdmin.namespaces();
             if (!namespaces.getNamespaces(kafkaMetadataTenant).contains(kafkaMetadataNamespace)) {
                 log.info("Namespaces: {} does not exist in tenant: {}, creating it ...",
-                    kafkaMetadataNamespace, kafkaMetadataTenant);
-                Set<String> replicationClusters = Sets.newHashSet(conf.getClusterName());
+                        kafkaMetadataNamespace, kafkaMetadataTenant);
+                Set<String> replicationClusters = Sets.newHashSet(cluster);
                 namespaces.createNamespace(kafkaMetadataNamespace, replicationClusters);
                 namespaces.setNamespaceReplicationClusters(kafkaMetadataNamespace, replicationClusters);
-                namespaces.setRetention(kafkaMetadataNamespace,
-                    new RetentionPolicies(-1, -1));
-                namespaces.setCompactionThreshold(kafkaMetadataNamespace, MAX_COMPACTION_THRESHOLD);
             } else {
                 List<String> replicationClusters = namespaces.getNamespaceReplicationClusters(kafkaMetadataNamespace);
                 if (!replicationClusters.contains(cluster)) {
                     log.info("Namespace: {} exists but cluster: {} is not in the replicationClusters list,"
-                    + "updating it ...", kafkaMetadataNamespace, cluster);
+                            + "updating it ...", kafkaMetadataNamespace, cluster);
                     Set<String> newReplicationClusters = Sets.newHashSet(replicationClusters);
                     newReplicationClusters.add(cluster);
                     namespaces.setNamespaceReplicationClusters(kafkaMetadataNamespace, newReplicationClusters);
                 }
             }
+            // set namespace config if namespace existed
+            int retentionMinutes = (int) conf.getOffsetsRetentionMinutes();
+            RetentionPolicies retentionPolicies = namespaces.getRetention(kafkaMetadataNamespace);
+            if (retentionPolicies == null || retentionPolicies.getRetentionTimeInMinutes() != retentionMinutes) {
+                namespaces.setRetention(kafkaMetadataNamespace,
+                        new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), -1));
+            }
+
+            Long compactionThreshold = namespaces.getCompactionThreshold(kafkaMetadataNamespace);
+            if (compactionThreshold != null && compactionThreshold != MAX_COMPACTION_THRESHOLD) {
+                namespaces.setCompactionThreshold(kafkaMetadataNamespace, MAX_COMPACTION_THRESHOLD);
+            }
+
+            int targetMessageTTL = conf.getOffsetsMessageTTL();
+            Integer messageTTL = namespaces.getNamespaceMessageTTL(kafkaMetadataNamespace);
+            if (messageTTL == null || messageTTL != targetMessageTTL) {
+                namespaces.setNamespaceMessageTTL(kafkaMetadataNamespace, targetMessageTTL);
+            }
+
             namespaceExists = true;
 
             // Check if the offsets topic exists and create it if not
-            Topics topics = pulsarAdmin.topics();
-            PartitionedTopicMetadata offsetsTopicMetadata =
-                    topics.getPartitionedTopicMetadata(offsetsTopic.getFullName());
-
-            Set<String> offsetPartitionSet = new HashSet<String>(conf.getOffsetsTopicNumPartitions());
-            for (int i = 0; i < conf.getOffsetsTopicNumPartitions(); i++) {
-                offsetPartitionSet.add(offsetsTopic.getPartitionName(i));
-            }
-
-            if (offsetsTopicMetadata.partitions <= 0) {
-                log.info("Kafka group metadata topic {} doesn't exist. Creating it ...", offsetsTopic);
-
-                topics.createPartitionedTopic(
-                        offsetsTopic.getFullName(),
-                        conf.getOffsetsTopicNumPartitions()
-                );
-
-                log.info("Successfully created group metadata topic {} with {} partitions.",
-                        offsetsTopic, conf.getOffsetsTopicNumPartitions());
-            } else {
-                // Check to see if the partitions all exist
-                offsetPartitionSet.removeAll(
-                        topics.getList(kafkaMetadataNamespace).stream()
-                                .filter((topic) -> topic.startsWith(offsetsTopic.getFullName()))
-                                .collect(Collectors.toList())
-                );
-
-                if (!offsetPartitionSet.isEmpty()) {
-                    log.info("Identified missing offset topic partitions: {}", offsetPartitionSet);
-                    for (String offsetPartition : offsetPartitionSet) {
-                        topics.createNonPartitionedTopic(offsetPartition);
-                    }
-                }
-            }
+            createTopicIfNotExist(pulsarAdmin, kopTopic.getFullName(), partitionNum);
             offsetsTopicExists = true;
         } catch (PulsarAdminException e) {
             if (e instanceof ConflictException) {
@@ -181,7 +182,22 @@ public class MetadataUtils {
             log.info("Current state of kafka metadata, cluster: {} exists: {}, tenant: {} exists: {},"
                             + " namespace: {} exists: {}, topic: {} exists: {}",
                     cluster, clusterExists, kafkaMetadataTenant, tenantExists, kafkaMetadataNamespace, namespaceExists,
-                    offsetsTopic.getOriginalName(), offsetsTopicExists);
+                    kopTopic.getOriginalName(), offsetsTopicExists);
+        }
+    }
+
+    private static void createTopicIfNotExist(final PulsarAdmin admin,
+                                              final String topic,
+                                              final int numPartitions) throws PulsarAdminException {
+        try {
+            admin.topics().createPartitionedTopic(topic, numPartitions);
+        } catch (PulsarAdminException.ConflictException e) {
+            log.info("Resources concurrent creating: {}", e.getMessage());
+        }
+        try {
+            // Ensure all partitions are created
+            admin.topics().createMissedPartitions(topic);
+        } catch (PulsarAdminException ignored) {
         }
     }
 }

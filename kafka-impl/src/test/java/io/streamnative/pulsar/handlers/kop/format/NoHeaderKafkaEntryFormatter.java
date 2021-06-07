@@ -31,7 +31,7 @@ public class NoHeaderKafkaEntryFormatter implements EntryFormatter {
     }
 
     @Override
-    public MemoryRecords decode(List<Entry> entries, byte magic) {
+    public DecodeResult decode(List<Entry> entries, byte magic) {
         // Do nothing
         return null;
     }

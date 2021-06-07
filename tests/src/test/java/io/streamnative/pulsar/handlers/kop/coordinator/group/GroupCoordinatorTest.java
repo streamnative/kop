@@ -22,7 +22,6 @@ import static org.testng.Assert.fail;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
@@ -37,7 +36,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -57,7 +55,6 @@ import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
-import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -93,38 +90,9 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
     private int otherGroupPartitionId;
     private Map<String, byte[]> protocols;
 
-    static class MockOffsetAcker extends OffsetAcker {
-        public MockOffsetAcker(PulsarClientImpl pulsarClient) {
-            super(pulsarClient);
-        }
-
-        @Override
-        public void addOffsetsTracker(String groupId, byte[] assignment) {
-            // non op
-        }
-
-        @Override
-        public void ackOffsets(String groupId, Map<TopicPartition, OffsetAndMetadata> offsetMetadata) {
-            // non op
-        }
-
-        @Override
-        public void close(Set<String> groupIds) {
-            // non op
-        }
-
-        @Override
-        public void close() {
-            // non op
-        }
-    }
-
     @Override
     protected void resetConfig() {
         super.resetConfig();
-
-        // since this test mock all Group Coordinator, we disable the one in Kafka broker.
-        ((KafkaServiceConfiguration) this.conf).setEnableGroupCoordinator(false);
     }
 
     @BeforeMethod
@@ -200,8 +168,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
             groupMetadataManager,
             heartbeatPurgatory,
             joinPurgatory,
-            timer.time(),
-            new MockOffsetAcker((PulsarClientImpl) pulsarClient)
+            timer.time()
         );
 
         // start the group coordinator

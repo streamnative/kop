@@ -13,9 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
+
 import com.google.common.collect.Sets;
 import java.util.Properties;
 import lombok.Cleanup;

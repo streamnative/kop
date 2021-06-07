@@ -20,7 +20,6 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
-
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +29,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
-
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.InvalidRequestException;
@@ -53,6 +51,10 @@ class AdminManager {
 
     AdminManager(PulsarAdmin admin) {
         this.admin = admin;
+    }
+
+    public void shutdown() {
+        topicPurgatory.shutdown();
     }
 
     CompletableFuture<Map<String, ApiError>> createTopicsAsync(Map<String, TopicDetails> createInfo, int timeoutMs) {
@@ -141,13 +143,22 @@ class AdminManager {
                                 admin.topics().getPartitionedTopicMetadataAsync(kopTopic.getFullName())
                                         .whenComplete((metadata, e) -> {
                                             if (e != null) {
-                                                future.complete(new DescribeConfigsResponse.Config(
-                                                        ApiError.fromThrowable(e), Collections.emptyList()));
+                                                if (e instanceof PulsarAdminException.NotFoundException) {
+                                                    final ApiError error = new ApiError(
+                                                            Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                                                            "Topic " + kopTopic.getOriginalName() + " doesn't exist");
+                                                    future.complete(new DescribeConfigsResponse.Config(
+                                                            error, Collections.emptyList()));
+                                                } else {
+                                                    future.complete(new DescribeConfigsResponse.Config(
+                                                            ApiError.fromThrowable(e), Collections.emptyList()));
+                                                }
                                             } else if (metadata.partitions > 0) {
                                                 future.complete(defaultTopicConfig);
                                             } else {
-                                                final ApiError error = new ApiError(Errors.UNKNOWN_TOPIC_OR_PARTITION,
-                                                        "Topic " + kopTopic.getOriginalName() + " doesn't exist");
+                                                final ApiError error = new ApiError(Errors.INVALID_TOPIC_EXCEPTION,
+                                                        "Topic " + kopTopic.getOriginalName()
+                                                                + " is non-partitioned");
                                                 future.complete(new DescribeConfigsResponse.Config(
                                                         error, Collections.emptyList()));
                                             }

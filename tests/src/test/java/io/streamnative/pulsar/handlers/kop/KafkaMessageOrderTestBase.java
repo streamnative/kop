@@ -20,13 +20,11 @@ import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
-
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
-
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -46,25 +44,16 @@ import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
-import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 /**
  * Unit test for Different kafka produce messages.
  */
 @Slf4j
-public class KafkaMessageOrderTest extends KopProtocolHandlerTestBase {
+public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBase {
 
-    public KafkaMessageOrderTest(final String entryFormat) {
+    public KafkaMessageOrderTestBase(final String entryFormat) {
         super(entryFormat);
-    }
-
-    @Factory
-    public static Object[] instances() {
-        return new Object[] {
-                new KafkaMessageOrderTest("pulsar"),
-                new KafkaMessageOrderTest("kafka")
-        };
     }
 
     @DataProvider(name = "batchSizeList")

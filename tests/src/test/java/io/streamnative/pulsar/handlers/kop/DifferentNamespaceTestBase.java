@@ -15,12 +15,9 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
-import static org.testng.Assert.fail;
 
 import com.google.common.collect.Sets;
-
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
-
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -30,7 +27,6 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -102,8 +98,7 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
                     log.info("Successfully send {} to {}-partition-{}",
                             key, recordMetadata.topic(), recordMetadata.partition());
                 } else {
-                    log.error("Failed to send {}", key);
-                    fail("Failed to send " + key);
+                    log.error("Failed to send {}: {}", key, e.getMessage());
                 }
             });
         }

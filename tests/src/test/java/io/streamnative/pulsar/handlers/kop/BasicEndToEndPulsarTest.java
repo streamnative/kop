@@ -15,8 +15,11 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import lombok.Cleanup;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -49,11 +52,8 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
 
         final List<String> expectValues = Arrays.asList(null, "", "test", null, "", null, "", "test", null, "");
 
-        // TODO: Currently there's a bug with MultiTopicsConsumerImpl that it cannot receive messages with null
-        //  value. So here we just subscribe a single partition with ConsumerImpl.
-        //  See https://github.com/apache/pulsar/pull/9113 for details.
         @Cleanup
-        final Consumer<byte[]> pulsarConsumer = newPulsarConsumer(topic + "-partition-0");
+        final Consumer<byte[]> pulsarConsumer = newPulsarConsumer(topic);
         List<String> pulsarReceives = receiveMessages(pulsarConsumer, expectValues.size());
         assertEquals(pulsarReceives, expectValues);
 
@@ -61,5 +61,39 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
         final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
         List<String> kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
         assertEquals(kafkaReceives, expectValues);
+    }
+
+    @Test(timeOut = 20000)
+    public void testMixedConsumersWithSameSubscription() throws Exception {
+        final String topic = "testMixedConsumersWithSameSubscription";
+        final List<String> messages = IntStream.range(0, 10).mapToObj(Integer::toString).collect(Collectors.toList());
+        final String subscription = "same-sub";
+
+        @Cleanup
+        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        @Cleanup
+        final Producer<byte[]> pulsarProducer = newPulsarProducer(topic);
+
+        sendSingleMessages(kafkaProducer, topic, messages.subList(0, messages.size() / 2));
+        sendSingleMessages(pulsarProducer, messages.subList(messages.size() / 2, messages.size()));
+
+        KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic, subscription);
+        final List<String> kafkaReceives = receiveMessages(kafkaConsumer, messages.size());
+        assertEquals(kafkaReceives, messages);
+        kafkaConsumer.commitSync(Duration.ofSeconds(1));
+        kafkaConsumer.close();
+
+        // 1. Even if Pulsar consumer subscribes the same topic with the same subscription, the offset that Kafka
+        // consumer committed doesn't affect.
+        @Cleanup
+        final Consumer<byte[]> pulsarConsumer = newPulsarConsumer(topic, subscription);
+        final List<String> pulsarReceives = receiveMessages(pulsarConsumer, messages.size());
+        assertEquals(pulsarReceives, messages);
+
+        // 2. However, when a Kafka consumer subscribes the same topic with the same group, it will begin to subscribe
+        // from the offset that has been committed before
+        kafkaConsumer = newKafkaConsumer(topic, subscription);
+        assertEquals(kafkaConsumer.poll(Duration.ofSeconds(1)).count(), 0);
+        kafkaConsumer.close();
     }
 }

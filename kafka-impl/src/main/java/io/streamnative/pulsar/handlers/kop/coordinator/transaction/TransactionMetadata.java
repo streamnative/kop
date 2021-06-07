@@ -25,6 +25,7 @@ import java.util.function.Supplier;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
@@ -173,6 +174,7 @@ public class TransactionMetadata {
     /**
      * Transaction transit metadata.
      */
+    @ToString
     @Builder
     @AllArgsConstructor
     @Data
@@ -294,6 +296,14 @@ public class TransactionMetadata {
         short transitEpoch = transitMetadata.producerEpoch;
         long transitProducerId = transitMetadata.producerId;
         return transitEpoch == producerEpoch + 1 || (transitEpoch == 0 && transitProducerId != producerId);
+    }
+
+    // this is visible for test only
+    public TxnTransitMetadata prepareNoTransit() {
+        // do not call transitTo as it will set the pending state,
+        // a follow-up call to abort the transaction will set its pending state
+        return new TxnTransitMetadata(producerId, lastProducerId, producerEpoch, lastProducerEpoch, txnTimeoutMs,
+                state, topicPartitions, txnStartTimestamp, txnLastUpdateTimestamp);
     }
 
     public TxnTransitMetadata prepareFenceProducerEpoch() {
@@ -468,5 +478,18 @@ public class TransactionMetadata {
         return producerEpoch >= Short.MAX_VALUE - 1;
     }
 
+    public void removePartition(TopicPartition topicPartition) {
+        if (state != TransactionState.PREPARE_COMMIT && state != TransactionState.PREPARE_ABORT) {
+            throw new IllegalStateException(
+                    String.format("Transaction metadata's current state is %s, and its pending state is %s while "
+                                + "trying to remove partitions whose txn marker has been sent, this is not expected",
+                                state, pendingState));
+        }
+        topicPartitions.remove(topicPartition);
+    }
+
+    public void addPartitions(Set<TopicPartition> partitions) {
+        topicPartitions.addAll(partitions);
+    }
 
 }
