@@ -67,9 +67,11 @@ import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.auth.SameThreadOrderedSafeExecutor;
 import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.apache.pulsar.compaction.Compactor;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
 import org.apache.pulsar.zookeeper.ZooKeeperClientFactory;
@@ -227,7 +229,11 @@ public abstract class KopProtocolHandlerTestBase {
         String brokerServiceUrl = "pulsar://" + this.conf.getAdvertisedAddress() + ":" + brokerPort;
         String brokerServiceUrlTls = null; // TLS not supported at this time
 
-        ClusterData clusterData = new ClusterData(serviceUrl, serviceUrlTls, brokerServiceUrl, null);
+        ClusterData clusterData = ClusterData.builder()
+                .serviceUrl(serviceUrl)
+                .serviceUrlTls(serviceUrlTls)
+                .brokerServiceUrl(brokerServiceUrl)
+                .build();
 
         mockZooKeeper = createMockZooKeeper(configClusterName, serviceUrl, serviceUrlTls, brokerServiceUrl,
             brokerServiceUrlTls);
@@ -694,4 +700,33 @@ public abstract class KopProtocolHandlerTestBase {
         props.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         return props;
     }
+
+    protected void createOrUpdateCluster() throws PulsarAdminException {
+        ClusterData clusterData = ClusterData.builder()
+                .serviceUrl("http://127.0.0.1:" + brokerWebservicePort)
+                .build();
+        if (!admin.clusters().getClusters().contains(configClusterName)) {
+            // so that clients can test short names
+            admin.clusters().createCluster(configClusterName, clusterData);
+        } else {
+            admin.clusters().updateCluster(configClusterName, clusterData);
+        }
+    }
+
+    protected void createOrUpdatePublicTenant() throws PulsarAdminException {
+        createOrUpdateTenant("public");
+    }
+
+    protected void createOrUpdateTenant(String tenant) throws PulsarAdminException {
+        TenantInfo tenantInfo = TenantInfo.builder()
+                .adminRoles(Sets.newHashSet("appid1", "appid2"))
+                .allowedClusters(Sets.newHashSet("test"))
+                .build();
+        if (!admin.tenants().getTenants().contains(tenant)) {
+            admin.tenants().createTenant(tenant, tenantInfo);
+        } else {
+            admin.tenants().updateTenant(tenant, tenantInfo);
+        }
+    }
+
 }

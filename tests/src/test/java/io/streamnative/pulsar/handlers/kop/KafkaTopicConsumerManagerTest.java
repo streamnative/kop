@@ -290,14 +290,14 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
             TopicStats topicStats = persistentTopic.getStats(true, true);
             log.info(" dump topicStats for topic : {}, storageSize: {}, backlogSize: {}, expected: {}",
                 persistentTopic.getName(),
-                topicStats.storageSize, topicStats.backlogSize, expectedBacklog);
+                topicStats.getStorageSize(), topicStats.getBacklogSize(), expectedBacklog);
 
-            topicStats.subscriptions.forEach((subname, substats) -> {
+            topicStats.getSubscriptions().forEach((subname, substats) -> {
                 log.debug(" dump sub: subname - {}, activeConsumerName {}, "
                         + "consumers {}, msgBacklog {}, unackedMessages {}.",
                     subname,
-                    substats.activeConsumerName, substats.consumers,
-                    substats.msgBacklog, substats.unackedMessages);
+                    substats.getActiveConsumerName(), substats.getConsumers(),
+                    substats.getMsgBacklog(), substats.getUnackedMessages());
             });
         }
 

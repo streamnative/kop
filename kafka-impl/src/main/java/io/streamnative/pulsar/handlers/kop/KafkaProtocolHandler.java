@@ -369,10 +369,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             .build();
 
         PulsarAdmin pulsarAdmin = service.pulsar().getAdminClient();
-        ClusterData clusterData = new ClusterData(service.getPulsar().getWebServiceAddress(),
-                                                  service.getPulsar().getWebServiceAddressTls(),
-                                                  service.getPulsar().getBrokerServiceUrl(),
-                                                  service.getPulsar().getBrokerServiceUrlTls());
+        ClusterData clusterData = ClusterData.builder()
+                .brokerServiceUrl(service.getPulsar().getWebServiceAddress())
+                .brokerServiceUrlTls(service.getPulsar().getWebServiceAddressTls())
+                .serviceUrl(service.getPulsar().getBrokerServiceUrl())
+                .serviceUrlTls(service.getPulsar().getBrokerServiceUrlTls())
+                .build();
         MetadataUtils.createOffsetMetadataIfMissing(pulsarAdmin, clusterData, kafkaConfig);
 
 
@@ -404,11 +406,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 .build();
 
         PulsarAdmin pulsarAdmin = brokerService.getPulsar().getAdminClient();
-        ClusterData clusterData = new ClusterData(brokerService.getPulsar().getWebServiceAddress(),
-                                                  brokerService.getPulsar().getWebServiceAddressTls(),
-                                                  brokerService.getPulsar().getBrokerServiceUrl(),
-                                                  brokerService.getPulsar().getBrokerServiceUrlTls());
-
+        ClusterData clusterData = ClusterData.builder()
+                .brokerServiceUrl(brokerService.getPulsar().getWebServiceAddress())
+                .brokerServiceUrlTls(brokerService.getPulsar().getWebServiceAddressTls())
+                .serviceUrl(brokerService.getPulsar().getBrokerServiceUrl())
+                .serviceUrlTls(brokerService.getPulsar().getBrokerServiceUrlTls())
+                .build();
         MetadataUtils.createTxnMetadataIfMissing(pulsarAdmin, clusterData, kafkaConfig);
 
         this.transactionCoordinator = TransactionCoordinator.of(

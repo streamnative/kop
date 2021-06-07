@@ -73,7 +73,10 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         super.internalSetup();
 
         admin.tenants().createTenant(ANOTHER_TENANT,
-                new TenantInfo(Sets.newHashSet("admin_user"), Sets.newHashSet(super.configClusterName)));
+                TenantInfo.builder()
+                        .adminRoles(Sets.newHashSet("admin_user"))
+                        .allowedClusters(Sets.newHashSet(super.configClusterName))
+                        .build());
         admin.namespaces().createNamespace(ANOTHER_TENANT + "/" + ANOTHER_NAMESPACE);
     }
 

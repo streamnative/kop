@@ -114,7 +114,9 @@ public class MetadataUtils {
             if (!tenants.getTenants().contains(kafkaMetadataTenant)) {
                 log.info("Tenant: {} does not exist, creating it ...", kafkaMetadataTenant);
                 tenants.createTenant(kafkaMetadataTenant,
-                        new TenantInfo(Sets.newHashSet(conf.getSuperUserRoles()), Sets.newHashSet(cluster)));
+                        TenantInfo.builder()
+                                .adminRoles(Sets.newHashSet(conf.getSuperUserRoles()))
+                                .allowedClusters(Sets.newHashSet(cluster)).build());
             } else {
                 TenantInfo kafkaMetadataTenantInfo = tenants.getTenantInfo(kafkaMetadataTenant);
                 Set<String> allowedClusters = kafkaMetadataTenantInfo.getAllowedClusters();

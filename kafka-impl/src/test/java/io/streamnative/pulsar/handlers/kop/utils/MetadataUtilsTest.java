@@ -48,7 +48,7 @@ public class MetadataUtilsTest {
     public void testCreateKafkaMetadataIfMissing() throws Exception {
         KopTopic.initialize("public/default");
         KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
-        ClusterData clusterData = new ClusterData();
+        ClusterData clusterData = ClusterData.builder().build();
         conf.setClusterName("test");
         conf.setKafkaMetadataTenant("public");
         conf.setKafkaMetadataNamespace("default");
@@ -82,7 +82,7 @@ public class MetadataUtilsTest {
         doReturn(mockNamespaces).when(mockPulsarAdmin).namespaces();
         doReturn(mockTopics).when(mockPulsarAdmin).topics();
 
-        TenantInfo partialTenant = new TenantInfo();
+        TenantInfo partialTenant = TenantInfo.builder().build();
         doReturn(partialTenant).when(mockTenants).getTenantInfo(eq(conf.getKafkaMetadataTenant()));
 
         MetadataUtils.createOffsetMetadataIfMissing(mockPulsarAdmin, clusterData, conf);
@@ -120,8 +120,10 @@ public class MetadataUtilsTest {
 
         doReturn(Lists.newArrayList("public")).when(mockTenants).getTenants();
 
-        partialTenant = new TenantInfo(Sets.newHashSet(conf.getSuperUserRoles()),
-            Sets.newHashSet("other-cluster"));
+        partialTenant = TenantInfo.builder()
+                .adminRoles(Sets.newHashSet(conf.getSuperUserRoles()))
+                .allowedClusters(Sets.newHashSet("other-cluster"))
+                .build();
         doReturn(partialTenant).when(mockTenants).getTenantInfo(eq(conf.getKafkaMetadataTenant()));
 
         doReturn(Lists.newArrayList("test")).when(mockNamespaces).getNamespaces("public");

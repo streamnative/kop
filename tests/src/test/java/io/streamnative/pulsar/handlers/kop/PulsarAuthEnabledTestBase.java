@@ -99,7 +99,10 @@ public abstract class PulsarAuthEnabledTestBase extends KopProtocolHandlerTestBa
         super.internalSetup();
 
         admin.tenants().createTenant(TENANT,
-            new TenantInfo(Sets.newHashSet(ADMIN_USER), Sets.newHashSet(super.configClusterName)));
+            TenantInfo.builder()
+                .adminRoles(Sets.newHashSet(ADMIN_USER))
+                .allowedClusters(Sets.newHashSet(super.configClusterName))
+                .build());
         admin.namespaces().createNamespace(TENANT + "/" + NAMESPACE);
         admin.namespaces()
             .setNamespaceReplicationClusters(TENANT + "/" + NAMESPACE, Sets.newHashSet(super.configClusterName));

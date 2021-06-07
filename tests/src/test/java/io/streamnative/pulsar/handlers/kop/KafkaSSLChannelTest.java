@@ -27,9 +27,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
-import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Factory;
@@ -87,22 +85,9 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         super.internalSetup();
         log.info("success internal setup");
 
-        if (!admin.clusters().getClusters().contains(configClusterName)) {
-            // so that clients can test short names
-            admin.clusters().createCluster(configClusterName,
-                new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
-        } else {
-            admin.clusters().updateCluster(configClusterName,
-                new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
-        }
+        createOrUpdateCluster();
+        createOrUpdatePublicTenant();
 
-        if (!admin.tenants().getTenants().contains("public")) {
-            admin.tenants().createTenant("public",
-                new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
-        } else {
-            admin.tenants().updateTenant("public",
-                new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
-        }
         if (!admin.namespaces().getNamespaces("public").contains("public/default")) {
             admin.namespaces().createNamespace("public/default");
             admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
