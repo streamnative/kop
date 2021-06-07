@@ -89,7 +89,6 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.Assert;
@@ -118,28 +117,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         super.internalSetup();
         log.info("success internal setup");
 
-        if (!admin.clusters().getClusters().contains(configClusterName)) {
-            // so that clients can test short names
-            admin.clusters().createCluster(configClusterName,
-                new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
-        } else {
-            admin.clusters().updateCluster(configClusterName,
-                new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
-        }
-
-        if (!admin.tenants().getTenants().contains("public")) {
-            admin.tenants().createTenant("public",
-                new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
-        } else {
-            admin.tenants().updateTenant("public",
-                new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
-        }
-        if (!admin.namespaces().getNamespaces("public").contains("public/default")) {
-            admin.namespaces().createNamespace("public/default");
-            admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
-            admin.namespaces().setRetention("public/default",
-                new RetentionPolicies(60, 1000));
-        }
         if (!admin.namespaces().getNamespaces("public").contains("public/__kafka")) {
             admin.namespaces().createNamespace("public/__kafka");
             admin.namespaces().setNamespaceReplicationClusters("public/__kafka", Sets.newHashSet("test"));
@@ -148,7 +125,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         }
 
         admin.tenants().createTenant("my-tenant",
-                new TenantInfo(Sets.newHashSet(), Sets.newHashSet(super.configClusterName)));
+                TenantInfo.builder()
+                        .adminRoles(Collections.emptySet())
+                        .allowedClusters(Collections.singleton(configClusterName))
+                        .build());
         admin.namespaces().createNamespace("my-tenant/my-ns");
 
         log.info("created namespaces, init handler");

@@ -26,6 +26,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import org.apache.pulsar.client.admin.Clusters;
@@ -48,7 +49,7 @@ public class MetadataUtilsTest {
     public void testCreateKafkaMetadataIfMissing() throws Exception {
         KopTopic.initialize("public/default");
         KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
-        ClusterData clusterData = new ClusterData();
+        ClusterData clusterData = ClusterData.builder().build();
         conf.setClusterName("test");
         conf.setKafkaMetadataTenant("public");
         conf.setKafkaMetadataNamespace("default");
@@ -82,7 +83,7 @@ public class MetadataUtilsTest {
         doReturn(mockNamespaces).when(mockPulsarAdmin).namespaces();
         doReturn(mockTopics).when(mockPulsarAdmin).topics();
 
-        TenantInfo partialTenant = new TenantInfo();
+        TenantInfo partialTenant = TenantInfo.builder().build();
         doReturn(partialTenant).when(mockTenants).getTenantInfo(eq(conf.getKafkaMetadataTenant()));
 
         MetadataUtils.createOffsetMetadataIfMissing(mockPulsarAdmin, clusterData, conf);
@@ -120,8 +121,10 @@ public class MetadataUtilsTest {
 
         doReturn(Lists.newArrayList("public")).when(mockTenants).getTenants();
 
-        partialTenant = new TenantInfo(Sets.newHashSet(conf.getSuperUserRoles()),
-            Sets.newHashSet("other-cluster"));
+        partialTenant = TenantInfo.builder()
+                .adminRoles(conf.getSuperUserRoles())
+                .allowedClusters(Collections.singleton("other-cluster"))
+                .build();
         doReturn(partialTenant).when(mockTenants).getTenantInfo(eq(conf.getKafkaMetadataTenant()));
 
         doReturn(Lists.newArrayList("test")).when(mockNamespaces).getNamespaces("public");

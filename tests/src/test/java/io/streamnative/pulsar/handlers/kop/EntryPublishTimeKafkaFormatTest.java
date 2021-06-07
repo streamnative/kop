@@ -49,7 +49,7 @@ import org.testng.annotations.Test;
 public class EntryPublishTimeKafkaFormatTest extends EntryPublishTimeTest {
     private static final Logger log = LoggerFactory.getLogger(EntryPublishTimeKafkaFormatTest.class);
 
-    public EntryPublishTimeKafkaFormatTest(String format) {
+    public EntryPublishTimeKafkaFormatTest() {
         super("kafka");
     }
 
