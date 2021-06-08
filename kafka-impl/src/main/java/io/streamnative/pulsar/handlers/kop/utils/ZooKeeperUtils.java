@@ -29,9 +29,12 @@ import org.apache.zookeeper.data.Stat;
 @Slf4j
 public class ZooKeeperUtils {
 
-    private static boolean tryCreatePath(ZooKeeper zooKeeper, String path, byte[] data) {
+    public static boolean tryCreatePath(ZooKeeper zooKeeper, String path, byte[] data) {
         try {
             zooKeeper.create(path, data, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+            if (log.isDebugEnabled()) {
+                log.debug("Created ZK path: {} data: {}", path, new String(data, StandardCharsets.UTF_8));
+            }
         } catch (KeeperException e) {
             if (!e.code().equals(KeeperException.Code.NODEEXISTS)) {
                 log.error("Failed to create ZooKeeper node {}: {}", path, e.getMessage());
@@ -42,16 +45,6 @@ public class ZooKeeperUtils {
             return false;
         }
         return true;
-    }
-
-    public static void createPath(ZooKeeper zooKeeper, String zkPath, String subPath, byte[] data) {
-        tryCreatePath(zooKeeper, zkPath, new byte[0]);
-        final String addSubPath = zkPath + subPath;
-        final boolean result = tryCreatePath(zooKeeper, addSubPath, data);
-        if (result && log.isDebugEnabled()) {
-            log.debug("create zk path, addSubPath:{} data:{}.",
-                    addSubPath, new String(data, StandardCharsets.UTF_8));
-        }
     }
 
     public static @NonNull String getData(ZooKeeper zooKeeper, String zkPath, String subPath) {
@@ -69,6 +62,9 @@ public class ZooKeeperUtils {
 
     public static String groupIdPathFormat(String clientHost, String clientId) {
         String path = clientHost.split(":")[0] + "-" + clientId;
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
         return path;
     }
 }
