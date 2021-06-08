@@ -123,7 +123,7 @@ public class MetadataUtilsTest {
 
         partialTenant = TenantInfo.builder()
                 .adminRoles(conf.getSuperUserRoles())
-                .allowedClusters(Collections.singleton("other-cluster"))
+                .allowedClusters(Sets.newHashSet("other-cluster"))
                 .build();
         doReturn(partialTenant).when(mockTenants).getTenantInfo(eq(conf.getKafkaMetadataTenant()));
 
