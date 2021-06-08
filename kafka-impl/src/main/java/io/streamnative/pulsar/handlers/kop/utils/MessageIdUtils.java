@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop.utils;
 
 import io.netty.buffer.ByteBuf;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedLedger;
@@ -25,14 +24,11 @@ import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.intercept.ManagedLedgerInterceptorImpl;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Utils for Pulsar MessageId.
  */
 public class MessageIdUtils {
-    private static final Logger log = LoggerFactory.getLogger(MessageIdUtils.class);
 
     public static long getCurrentOffset(ManagedLedger managedLedger) {
         return ((ManagedLedgerInterceptorImpl) managedLedger.getManagedLedgerInterceptor()).getIndex();
@@ -91,15 +87,6 @@ public class MessageIdUtils {
             }
         }, null);
         return future;
-    }
-
-    public static PositionImpl getPositionForOffset(ManagedLedger managedLedger, Long offset) {
-        try {
-            return (PositionImpl) managedLedger.asyncFindPosition(new OffsetSearchPredicate(offset)).get();
-        } catch (InterruptedException | ExecutionException e) {
-            log.error("[{}] Failed to find position for offset {}", managedLedger.getName(), offset);
-            throw new RuntimeException(managedLedger.getName() + " failed to find position for offset " + offset);
-        }
     }
 
     public static long peekOffsetFromEntry(Entry entry) {

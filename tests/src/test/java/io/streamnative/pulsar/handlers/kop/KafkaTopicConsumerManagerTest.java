@@ -144,8 +144,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         KafkaTopicConsumerManager topicConsumerManager = tcm.get();
 
         // before a read, first get cursor of offset.
-        Pair<ManagedCursor, Long> cursorPair = topicConsumerManager.remove(offset);
-        assertEquals(topicConsumerManager.getConsumers().size(), 0);
+        Pair<ManagedCursor, Long> cursorPair = topicConsumerManager.removeCursorFuture(offset).get();
+        assertEquals(topicConsumerManager.getCursors().size(), 0);
         ManagedCursor cursor = cursorPair.getLeft();
         assertEquals(cursorPair.getRight(), Long.valueOf(offset));
 
@@ -156,11 +156,11 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         // simulate a read complete;
         offset++;
         topicConsumerManager.add(offset, Pair.of(cursor, offset));
-        assertEquals(topicConsumerManager.getConsumers().size(), 1);
+        assertEquals(topicConsumerManager.getCursors().size(), 1);
 
         // another read, cache hit.
-        cursorPair  = topicConsumerManager.remove(offset);
-        assertEquals(topicConsumerManager.getConsumers().size(), 0);
+        cursorPair  = topicConsumerManager.removeCursorFuture(offset).get();
+        assertEquals(topicConsumerManager.getCursors().size(), 0);
         ManagedCursor cursor2 = cursorPair.getLeft();
 
         assertEquals(cursor2, cursor);
@@ -178,9 +178,9 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         }
 
         // try read last messages, so read not continuous
-        cursorPair = topicConsumerManager.remove(offset);
+        cursorPair = topicConsumerManager.removeCursorFuture(offset).get();
         // since above remove will use a new cursor. there should be one in the map.
-        assertEquals(topicConsumerManager.getConsumers().size(), 1);
+        assertEquals(topicConsumerManager.getCursors().size(), 1);
         cursor2 = cursorPair.getLeft();
         assertNotEquals(cursor2.getName(), cursor.getName());
         assertEquals(cursorPair.getRight(), Long.valueOf(offset));
@@ -236,10 +236,10 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         KafkaTopicConsumerManager topicConsumerManager = tcm.get();
 
         // before a read, first get cursor of offset.
-        Pair<ManagedCursor, Long> cursorPair1 = topicConsumerManager.remove(offset1);
-        Pair<ManagedCursor, Long> cursorPair2 = topicConsumerManager.remove(offset2);
-        Pair<ManagedCursor, Long> cursorPair3 = topicConsumerManager.remove(offset3);
-        assertEquals(topicConsumerManager.getConsumers().size(), 0);
+        Pair<ManagedCursor, Long> cursorPair1 = topicConsumerManager.removeCursorFuture(offset1).get();
+        Pair<ManagedCursor, Long> cursorPair2 = topicConsumerManager.removeCursorFuture(offset2).get();
+        Pair<ManagedCursor, Long> cursorPair3 = topicConsumerManager.removeCursorFuture(offset3).get();
+        assertEquals(topicConsumerManager.getCursors().size(), 0);
 
         ManagedCursor cursor1 = cursorPair1.getLeft();
         ManagedCursor cursor2 = cursorPair2.getLeft();
@@ -259,7 +259,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         topicConsumerManager.add(offset1, Pair.of(cursor1, offset1));
         topicConsumerManager.add(offset2, Pair.of(cursor2, offset2));
         topicConsumerManager.add(offset3, Pair.of(cursor3, offset3));
-        assertEquals(topicConsumerManager.getConsumers().size(), 3);
+        assertEquals(topicConsumerManager.getCursors().size(), 3);
 
         // simulate cursor deleted, and backlog cleared.
         topicConsumerManager.deleteOneExpiredCursor(offset3);
@@ -269,7 +269,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         topicConsumerManager.deleteOneExpiredCursor(offset1);
         verifyBacklogAndNumCursor(persistentTopic, 0, 0);
 
-        assertEquals(topicConsumerManager.getConsumers().size(), 0);
+        assertEquals(topicConsumerManager.getCursors().size(), 0);
     }
 
     // dump Topic Stats, mainly want to get and verify backlogSize.

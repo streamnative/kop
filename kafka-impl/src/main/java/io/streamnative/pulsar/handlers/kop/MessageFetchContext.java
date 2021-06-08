@@ -222,109 +222,115 @@ public final class MessageFetchContext {
                             topicPartition, offset);
                 }
 
-                final Pair<ManagedCursor, Long> cursorLongPair = tcm.remove(offset);
-                if (cursorLongPair == null) {
-                    log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
-                                    + "Fetch for topic return error.",
-                            offset, topicPartition);
-                    addErrorPartitionResponse(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
+                final CompletableFuture<Pair<ManagedCursor, Long>> cursorFuture = tcm.removeCursorFuture(offset);
+                if (cursorFuture == null) {
+                    // tcm is closed, just return a NONE error because the channel may be still active
+                    log.warn("[{}] KafkaTopicConsumerManager is closed", requestHandler.ctx);
+                    addErrorPartitionResponse(topicPartition, Errors.NONE);
                     return;
                 }
 
-                final ManagedCursor cursor = cursorLongPair.getLeft();
-                final AtomicLong cursorOffset = new AtomicLong(cursorLongPair.getRight());
-                final long highWatermark = MessageIdUtils.getHighWatermark(
-                        cursorLongPair.getLeft().getManagedLedger());
-                statsLogger.getPrepareMetadataStats().registerSuccessfulEvent(
-                        MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
-                readEntries(cursor, topicPartition, cursorOffset).whenComplete((entries, throwable) -> {
-                    if (throwable != null) {
-                        tcm.deleteOneCursorAsync(cursorLongPair.getLeft(), "cursor.readEntry fail. deleteCursor");
-                        addErrorPartitionResponse(topicPartition, Errors.forException(throwable));
-                        return;
-                    }
-                    if (entries == null) {
-                        addErrorPartitionResponse(topicPartition,
-                                Errors.forException(new ApiException("Cursor is null")));
+                // cursorFuture is never completed exceptionally because ManagedLedgerImpl#asyncFindPosition is never
+                // completed exceptionally.
+                cursorFuture.thenAccept(cursorLongPair -> {
+                    if (cursorLongPair == null) {
+                        log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
+                                        + "Fetch for topic return error.",
+                                offset, topicPartition);
+                        addErrorPartitionResponse(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
                         return;
                     }
 
-                    // Add new offset back to TCM after entries are read successfully
-                    tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
+                    final ManagedCursor cursor = cursorLongPair.getLeft();
+                    final AtomicLong cursorOffset = new AtomicLong(cursorLongPair.getRight());
+                    final long highWatermark = MessageIdUtils.getHighWatermark(
+                            cursorLongPair.getLeft().getManagedLedger());
+                    statsLogger.getPrepareMetadataStats().registerSuccessfulEvent(
+                            MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
+                    readEntries(cursor, topicPartition, cursorOffset).whenComplete((entries, throwable) -> {
+                        if (throwable != null) {
+                            tcm.deleteOneCursorAsync(cursorLongPair.getLeft(), "cursor.readEntry fail. deleteCursor");
+                            addErrorPartitionResponse(topicPartition, Errors.forException(throwable));
+                            return;
+                        }
+                        if (entries == null) {
+                            addErrorPartitionResponse(topicPartition,
+                                    Errors.forException(new ApiException("Cursor is null")));
+                            return;
+                        }
 
-                    final long lso = (readCommitted
-                            ? tc.getLastStableOffset(TopicName.get(fullTopicName), highWatermark)
-                            : highWatermark);
-                    List<Entry> committedEntries = entries;
-                    if (readCommitted) {
-                        committedEntries = new ArrayList<>();
-                        for (Entry entry : entries) {
-                            if (lso >= MessageIdUtils.peekBaseOffsetFromEntry(entry)) {
-                                committedEntries.add(entry);
-                            } else {
-                                break;
+                        // Add new offset back to TCM after entries are read successfully
+                        tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
+
+                        final long lso = (readCommitted
+                                ? tc.getLastStableOffset(TopicName.get(fullTopicName), highWatermark)
+                                : highWatermark);
+                        List<Entry> committedEntries = entries;
+                        if (readCommitted) {
+                            committedEntries = new ArrayList<>();
+                            for (Entry entry : entries) {
+                                if (lso >= MessageIdUtils.peekBaseOffsetFromEntry(entry)) {
+                                    committedEntries.add(entry);
+                                } else {
+                                    break;
+                                }
+                            }
+                            if (log.isDebugEnabled()) {
+                                log.debug("Request {}: read {} entries but only {} entries are committed",
+                                        header, entries.size(), committedEntries.size());
+                            }
+                        } else {
+                            if (log.isDebugEnabled()) {
+                                log.debug("Request {}: read {} entries", header, entries.size());
                             }
                         }
-                        if (log.isDebugEnabled()) {
-                            log.debug("Request {}: read {} entries but only {} entries are committed",
-                                    header, entries.size(), committedEntries.size());
+                        if (committedEntries.isEmpty()) {
+                            addErrorPartitionResponse(topicPartition, Errors.NONE);
+                            return;
                         }
-                    } else {
-                        if (log.isDebugEnabled()) {
-                            log.debug("Request {}: read {} entries", header, entries.size());
+
+                        // use compatible magic value by apiVersion
+                        short apiVersion = header.apiVersion();
+                        byte magic = RecordBatch.CURRENT_MAGIC_VALUE;
+                        if (apiVersion <= 1) {
+                            magic = RecordBatch.MAGIC_VALUE_V0;
+                        } else if (apiVersion <= 3) {
+                            magic = RecordBatch.MAGIC_VALUE_V1;
                         }
-                    }
-                    if (committedEntries.isEmpty()) {
-                        addErrorPartitionResponse(topicPartition, Errors.NONE);
-                        return;
-                    }
 
-                    // use compatible magic value by apiVersion
-                    short apiVersion = header.apiVersion();
-                    byte magic = RecordBatch.CURRENT_MAGIC_VALUE;
-                    if (apiVersion <= 1) {
-                        magic = RecordBatch.MAGIC_VALUE_V0;
-                    } else if (apiVersion <= 3) {
-                        magic = RecordBatch.MAGIC_VALUE_V1;
-                    }
-
-                    // get group and consumer
-                    final String groupName = requestHandler
-                            .getCurrentConnectedGroup().computeIfAbsent(clientHost, ignored -> {
-                                String zkSubPath = ZooKeeperUtils.groupIdPathFormat(clientHost,
-                                        header.clientId());
-                                String groupId = ZooKeeperUtils.getData(requestHandler.getPulsarService().getZkClient(),
-                                        requestHandler.getGroupIdStoredPath(), zkSubPath);
-                                if (groupId.isEmpty()) {
-                                    log.error("get empty group name from zk for current connection: {}, consumer stats"
-                                            + "won't be updated", clientHost);
-                                } else {
-                                    log.info("get group name from zk for current connection: {} groupId: {}",
+                        // get group and consumer
+                        final String groupName = requestHandler
+                                .getCurrentConnectedGroup().computeIfAbsent(clientHost, ignored -> {
+                                    String zkSubPath = ZooKeeperUtils.groupIdPathFormat(clientHost,
+                                            header.clientId());
+                                    String groupId = ZooKeeperUtils.getData(
+                                            requestHandler.getPulsarService().getZkClient(),
+                                            requestHandler.getGroupIdStoredPath(),
+                                            zkSubPath);
+                                    log.info("get group name from zk for current connection:{} groupId:{}",
                                             clientHost, groupId);
-                                }
-                                return groupId;
-                            });
-                    final long startDecodingEntriesNanos = MathUtils.nowInNano();
-                    final DecodeResult decodeResult = requestHandler.getEntryFormatter().decode(entries, magic);
-                    requestHandler.requestStats.getFetchDecodeStats().registerSuccessfulEvent(
-                            MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
-                    decodeResults.add(decodeResult);
+                                    return groupId;
+                                });
+                        final long startDecodingEntriesNanos = MathUtils.nowInNano();
+                        final DecodeResult decodeResult = requestHandler.getEntryFormatter().decode(entries, magic);
+                        requestHandler.requestStats.getFetchDecodeStats().registerSuccessfulEvent(
+                                MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
+                        decodeResults.add(decodeResult);
 
-                    // collect consumer metrics
-                    if (!groupName.isEmpty()) {
+                        // collect consumer metrics
                         updateConsumerStats(topicPartition, decodeResult.getRecords(), entries.size(), groupName);
-                    }
 
-                    final List<FetchResponse.AbortedTransaction> abortedTransactions =
-                            (readCommitted ? tc.getAbortedIndexList(partitionData.fetchOffset) : null);
-                    responseData.put(topicPartition, new PartitionData<>(
-                            Errors.NONE,
-                            highWatermark,
-                            lso,
-                            highWatermark, // TODO: should it be changed to the logStartOffset?
-                            abortedTransactions,
-                            decodeResult.getRecords()));
-                    tryComplete();
+                        final List<FetchResponse.AbortedTransaction> abortedTransactions =
+                                (readCommitted ? tc.getAbortedIndexList(partitionData.fetchOffset) : null);
+                        responseData.put(topicPartition, new PartitionData<>(
+                                Errors.NONE,
+                                highWatermark,
+                                lso,
+                                highWatermark, // TODO: should it be changed to the logStartOffset?
+                                abortedTransactions,
+                                decodeResult.getRecords()));
+                        tryComplete();
+                    });
                 });
             });
         });
