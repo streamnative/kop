@@ -31,6 +31,7 @@ import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
+import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -266,6 +267,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             log.error("Failed to create PulsarAdmin: {}", e.getMessage());
             throw new IllegalStateException(e);
         }
+
+        ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
+                kafkaConfig.getGroupIdZooKeeperPath(), new byte[0]);
 
         // init and start group coordinator
         try {

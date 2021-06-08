@@ -920,8 +920,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String zkSubPath = ZooKeeperUtils.groupIdPathFormat(findCoordinator.getClientHost(),
                 findCoordinator.getHeader().clientId());
         byte[] groupIdBytes = groupId.getBytes(Charset.forName("UTF-8"));
-        ZooKeeperUtils.createPath(pulsarService.getZkClient(), groupIdStoredPath,
-                zkSubPath, groupIdBytes);
+        ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(), groupIdStoredPath + zkSubPath, groupIdBytes);
 
         findBroker(TopicName.get(pulsarTopicName))
                 .whenComplete((node, t) -> {
