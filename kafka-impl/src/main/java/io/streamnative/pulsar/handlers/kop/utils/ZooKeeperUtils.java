@@ -29,22 +29,15 @@ import org.apache.zookeeper.data.Stat;
 @Slf4j
 public class ZooKeeperUtils {
 
-    public static boolean tryCreatePath(ZooKeeper zooKeeper, String path, byte[] data) {
+    public static void tryCreatePath(ZooKeeper zooKeeper, String path, byte[] data) {
         try {
             zooKeeper.create(path, data, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
             if (log.isDebugEnabled()) {
                 log.debug("Created ZK path: {} data: {}", path, new String(data, StandardCharsets.UTF_8));
             }
-        } catch (KeeperException e) {
-            if (!e.code().equals(KeeperException.Code.NODEEXISTS)) {
-                log.error("Failed to create ZooKeeper node {}: {}", path, e.getMessage());
-                return false;
-            }
-        } catch (InterruptedException e) {
+        } catch (KeeperException | InterruptedException e) {
             log.error("Failed to create ZooKeeper node {}: {}", path, e.getMessage());
-            return false;
         }
-        return true;
     }
 
     public static @NonNull String getData(ZooKeeper zooKeeper, String zkPath, String subPath) {
