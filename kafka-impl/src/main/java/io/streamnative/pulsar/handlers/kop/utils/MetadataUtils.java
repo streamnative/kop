@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.utils;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
@@ -114,7 +115,10 @@ public class MetadataUtils {
             if (!tenants.getTenants().contains(kafkaMetadataTenant)) {
                 log.info("Tenant: {} does not exist, creating it ...", kafkaMetadataTenant);
                 tenants.createTenant(kafkaMetadataTenant,
-                        new TenantInfo(Sets.newHashSet(conf.getSuperUserRoles()), Sets.newHashSet(cluster)));
+                        TenantInfo.builder()
+                                .adminRoles(conf.getSuperUserRoles())
+                                .allowedClusters(Collections.singleton(cluster))
+                                .build());
             } else {
                 TenantInfo kafkaMetadataTenantInfo = tenants.getTenantInfo(kafkaMetadataTenant);
                 Set<String> allowedClusters = kafkaMetadataTenantInfo.getAllowedClusters();

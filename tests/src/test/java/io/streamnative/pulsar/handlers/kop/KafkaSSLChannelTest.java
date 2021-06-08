@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import com.google.common.collect.Sets;
 import java.io.Closeable;
 import java.util.Properties;
 import javax.net.ssl.HostnameVerifier;
@@ -27,9 +26,6 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.apache.pulsar.common.policies.data.ClusterData;
-import org.apache.pulsar.common.policies.data.RetentionPolicies;
-import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Factory;
@@ -86,35 +82,6 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         sslSetUpForBroker();
         super.internalSetup();
         log.info("success internal setup");
-
-        if (!admin.clusters().getClusters().contains(configClusterName)) {
-            // so that clients can test short names
-            admin.clusters().createCluster(configClusterName,
-                new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
-        } else {
-            admin.clusters().updateCluster(configClusterName,
-                new ClusterData("http://127.0.0.1:" + brokerWebservicePort));
-        }
-
-        if (!admin.tenants().getTenants().contains("public")) {
-            admin.tenants().createTenant("public",
-                new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
-        } else {
-            admin.tenants().updateTenant("public",
-                new TenantInfo(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test")));
-        }
-        if (!admin.namespaces().getNamespaces("public").contains("public/default")) {
-            admin.namespaces().createNamespace("public/default");
-            admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
-            admin.namespaces().setRetention("public/default",
-                new RetentionPolicies(60, 1000));
-        }
-        if (!admin.namespaces().getNamespaces("public").contains("public/__kafka")) {
-            admin.namespaces().createNamespace("public/__kafka");
-            admin.namespaces().setNamespaceReplicationClusters("public/__kafka", Sets.newHashSet("test"));
-            admin.namespaces().setRetention("public/__kafka",
-                new RetentionPolicies(-1, -1));
-        }
     }
 
     @AfterMethod

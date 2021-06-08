@@ -227,7 +227,12 @@ public abstract class KopProtocolHandlerTestBase {
         String brokerServiceUrl = "pulsar://" + this.conf.getAdvertisedAddress() + ":" + brokerPort;
         String brokerServiceUrlTls = null; // TLS not supported at this time
 
-        ClusterData clusterData = new ClusterData(serviceUrl, serviceUrlTls, brokerServiceUrl, null);
+        final ClusterData clusterData = ClusterData.builder()
+                .serviceUrl(serviceUrl)
+                .serviceUrlTls(serviceUrlTls)
+                .brokerServiceUrl(brokerServiceUrl)
+                .brokerServiceUrlTls(brokerServiceUrlTls)
+                .build();
 
         mockZooKeeper = createMockZooKeeper(configClusterName, serviceUrl, serviceUrlTls, brokerServiceUrl,
             brokerServiceUrlTls);
