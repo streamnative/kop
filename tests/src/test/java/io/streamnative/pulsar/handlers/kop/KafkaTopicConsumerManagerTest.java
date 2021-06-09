@@ -24,6 +24,9 @@ import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import java.time.Duration;
+import java.util.Collections;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -32,6 +35,7 @@ import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -314,5 +318,34 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         // verify.
         assertEquals(backlog.get(), expectedBacklog);
         assertEquals(cursorCount.get(), numCursor);
+    }
+
+    @Test(timeOut = 20000)
+    public void testOnlyOneCursorCreated() throws Exception {
+        final String topic = "testOnlyOneCursorCreated";
+        admin.topics().createPartitionedTopic(topic, 1);
+
+        final int numMessages = 100;
+
+        @Cleanup
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+        for (int i = 0; i < numMessages; i++) {
+            producer.send(new ProducerRecord<>(topic, "msg-" + i)).get();
+        }
+
+        @Cleanup
+        final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties());
+        consumer.subscribe(Collections.singleton(topic));
+
+        int numReceived = 0;
+        while (numReceived < numMessages) {
+            numReceived += consumer.poll(Duration.ofSeconds(1)).count();
+        }
+
+        final KafkaTopicConsumerManager tcm =
+                kafkaTopicManager.getTopicConsumerManager(new KopTopic(topic).getPartitionName(0)).get();
+        // Only 1 cursor should be created for a consumer even if there were a lot of FETCH requests
+        // This check is to ensure that KafkaTopicConsumerManager#add is called in FETCH request handler
+        assertEquals(tcm.getCreatedCursors().size(), 1);
     }
 }

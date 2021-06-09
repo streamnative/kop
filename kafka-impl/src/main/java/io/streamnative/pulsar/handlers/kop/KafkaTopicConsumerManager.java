@@ -55,6 +55,7 @@ public class KafkaTopicConsumerManager implements Closeable {
 
     // used to track all created cursor, since above consumers may be remove and in fly,
     // use this map will not leak cursor when close.
+    @Getter
     private final ConcurrentMap<String, ManagedCursor> createdCursors;
 
     // track last access time(millis) for offsets <offset, time>
