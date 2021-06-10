@@ -273,4 +273,8 @@ public class KafkaTopicConsumerManager implements Closeable {
             }
         });
     }
+
+    public ManagedLedger getManagedLedger() {
+        return topic.getManagedLedger();
+    }
 }

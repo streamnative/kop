@@ -46,6 +46,7 @@ import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.NonDurableCursorImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.bookkeeper.stats.OpStatsLogger;
@@ -214,6 +215,22 @@ public final class MessageFetchContext {
                     // remove null future cache
                     KafkaTopicManager.removeKafkaTopicConsumerManager(KopTopic.toString(topicPartition));
                     addErrorPartitionResponse(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
+                    return;
+                }
+
+                // handle offset out-of-range exception
+                ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) tcm.getManagedLedger();
+                long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
+                // TODO: Offset out-of-range checks are still incomplete
+                // We only check the case of `offset > logEndOffset` and `offset < LogStartOffset` is currently
+                // not handled. Because we found that the operation of obtaining `LogStartOffset` requires reading
+                // from disk, and such a time-consuming operation is likely to harm the performance of FETCH request.
+                // More discussions please refer to https://github.com/streamnative/kop/pull/531
+                if (offset > logEndOffset) {
+                    log.error("Received request for offset {} for partition {}, "
+                                    + "but we only have entries less than {}.",
+                            offset, topicPartition, logEndOffset);
+                    addErrorPartitionResponse(topicPartition, Errors.OFFSET_OUT_OF_RANGE);
                     return;
                 }
 
