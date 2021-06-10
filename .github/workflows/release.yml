@@ -1,8 +1,8 @@
 name: KoP Release
 
 on:
-  release:
-    types: [created]
+  push:
+    branches: [ting/debug-remove-unused]
 
 jobs:
   upload:
