@@ -95,6 +95,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 // queue is empty
                 break;
             }
+
+            // update request queue size stat
+            RequestStats.REQUEST_QUEUE_SIZE_INSTANCE.decrementAndGet();
         }
         ctx.close();
     }
@@ -162,12 +165,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             remoteAddress = channel.remoteAddress();
         }
 
-        requestStats.getRequestQueueSize().incrementAndGet();
-
         final long timeBeforeParse = MathUtils.nowInNano();
         KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress);
         // potentially blocking until there is room in the queue for the request.
-        requestStats.getRequestParseStats().registerSuccessfulEvent(
+        requestStats.getRequestParseLatencyStats().registerSuccessfulEvent(
                 MathUtils.elapsedNanos(timeBeforeParse), TimeUnit.NANOSECONDS);
         try {
             if (log.isDebugEnabled()) {
@@ -200,7 +201,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             });
             // potentially blocking until there is room in the queue for the request.
             requestQueue.put(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
-            requestStats.getResponseQueueSize().incrementAndGet();
+            RequestStats.REQUEST_QUEUE_SIZE_INSTANCE.incrementAndGet();
 
             if (!isActive.get()) {
                 handleInactive(kafkaHeaderAndRequest, responseFuture);
@@ -332,7 +333,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             } else {
                 if (requestQueue.remove(responseAndRequest)) {
                     responseAndRequest.updateStats(requestStats);
-                    requestStats.getResponseQueueSize().decrementAndGet();
                 } else { // it has been removed by another thread, skip this element
                     continue;
                 }
@@ -350,8 +350,13 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 responseFuture.exceptionally(e -> {
                     log.error("[{}] request {} completed exceptionally", channel, request.getHeader(), e);
                     channel.writeAndFlush(request.createErrorResponse(e));
-                    requestStats.getRequestQueuedLatencyStats().registerFailedEvent(
-                            MathUtils.elapsedNanos(responseAndRequest.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
+
+                    requestStats.getStatsLogger()
+                            .scopeLabel(KopServerStats.REQUEST_SCOPE,
+                                    responseAndRequest.request.getHeader().apiKey().name)
+                            .getOpStatsLogger(KopServerStats.REQUEST_QUEUED_LATENCY)
+                            .registerFailedEvent(MathUtils.elapsedNanos(responseAndRequest.getCreatedTimestamp()),
+                                    TimeUnit.NANOSECONDS);
                     return null;
                 }); // send exception to client?
                 continue;
@@ -394,8 +399,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 responseFuture.cancel(true);
                 channel.writeAndFlush(
                         request.createErrorResponse(new ApiException("request is expired from server side")));
-                requestStats.getRequestQueuedLatencyStats().registerFailedEvent(
-                        MathUtils.elapsedNanos(responseAndRequest.getCreatedTimestamp()), TimeUnit.NANOSECONDS);
+
+                requestStats.getStatsLogger()
+                        .scopeLabel(KopServerStats.REQUEST_SCOPE, responseAndRequest.request.getHeader().apiKey().name)
+                        .getOpStatsLogger(KopServerStats.REQUEST_QUEUED_LATENCY)
+                        .registerFailedEvent(MathUtils.elapsedNanos(responseAndRequest.getCreatedTimestamp()),
+                                TimeUnit.NANOSECONDS);
             }
         }
     }
@@ -619,8 +628,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
 
         public void updateStats(final RequestStats requestStats) {
-            requestStats.getRequestQueueSize().decrementAndGet();
-            requestStats.getRequestQueuedLatencyStats()
+            RequestStats.REQUEST_QUEUE_SIZE_INSTANCE.decrementAndGet();
+            requestStats.getStatsLogger()
+                    .scopeLabel(KopServerStats.REQUEST_SCOPE, request.getHeader().apiKey().name)
+                    .getOpStatsLogger(KopServerStats.REQUEST_QUEUED_LATENCY)
                     .registerSuccessfulEvent(MathUtils.elapsedNanos(createdTimestamp), TimeUnit.NANOSECONDS);
         }
 

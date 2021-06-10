@@ -24,6 +24,9 @@ import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import java.time.Duration;
+import java.util.Collections;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -32,6 +35,7 @@ import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -144,8 +148,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         KafkaTopicConsumerManager topicConsumerManager = tcm.get();
 
         // before a read, first get cursor of offset.
-        Pair<ManagedCursor, Long> cursorPair = topicConsumerManager.remove(offset);
-        assertEquals(topicConsumerManager.getConsumers().size(), 0);
+        Pair<ManagedCursor, Long> cursorPair = topicConsumerManager.removeCursorFuture(offset).get();
+        assertEquals(topicConsumerManager.getCursors().size(), 0);
         ManagedCursor cursor = cursorPair.getLeft();
         assertEquals(cursorPair.getRight(), Long.valueOf(offset));
 
@@ -156,11 +160,11 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         // simulate a read complete;
         offset++;
         topicConsumerManager.add(offset, Pair.of(cursor, offset));
-        assertEquals(topicConsumerManager.getConsumers().size(), 1);
+        assertEquals(topicConsumerManager.getCursors().size(), 1);
 
         // another read, cache hit.
-        cursorPair  = topicConsumerManager.remove(offset);
-        assertEquals(topicConsumerManager.getConsumers().size(), 0);
+        cursorPair  = topicConsumerManager.removeCursorFuture(offset).get();
+        assertEquals(topicConsumerManager.getCursors().size(), 0);
         ManagedCursor cursor2 = cursorPair.getLeft();
 
         assertEquals(cursor2, cursor);
@@ -178,9 +182,9 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         }
 
         // try read last messages, so read not continuous
-        cursorPair = topicConsumerManager.remove(offset);
+        cursorPair = topicConsumerManager.removeCursorFuture(offset).get();
         // since above remove will use a new cursor. there should be one in the map.
-        assertEquals(topicConsumerManager.getConsumers().size(), 1);
+        assertEquals(topicConsumerManager.getCursors().size(), 1);
         cursor2 = cursorPair.getLeft();
         assertNotEquals(cursor2.getName(), cursor.getName());
         assertEquals(cursorPair.getRight(), Long.valueOf(offset));
@@ -236,10 +240,10 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         KafkaTopicConsumerManager topicConsumerManager = tcm.get();
 
         // before a read, first get cursor of offset.
-        Pair<ManagedCursor, Long> cursorPair1 = topicConsumerManager.remove(offset1);
-        Pair<ManagedCursor, Long> cursorPair2 = topicConsumerManager.remove(offset2);
-        Pair<ManagedCursor, Long> cursorPair3 = topicConsumerManager.remove(offset3);
-        assertEquals(topicConsumerManager.getConsumers().size(), 0);
+        Pair<ManagedCursor, Long> cursorPair1 = topicConsumerManager.removeCursorFuture(offset1).get();
+        Pair<ManagedCursor, Long> cursorPair2 = topicConsumerManager.removeCursorFuture(offset2).get();
+        Pair<ManagedCursor, Long> cursorPair3 = topicConsumerManager.removeCursorFuture(offset3).get();
+        assertEquals(topicConsumerManager.getCursors().size(), 0);
 
         ManagedCursor cursor1 = cursorPair1.getLeft();
         ManagedCursor cursor2 = cursorPair2.getLeft();
@@ -259,7 +263,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         topicConsumerManager.add(offset1, Pair.of(cursor1, offset1));
         topicConsumerManager.add(offset2, Pair.of(cursor2, offset2));
         topicConsumerManager.add(offset3, Pair.of(cursor3, offset3));
-        assertEquals(topicConsumerManager.getConsumers().size(), 3);
+        assertEquals(topicConsumerManager.getCursors().size(), 3);
 
         // simulate cursor deleted, and backlog cleared.
         topicConsumerManager.deleteOneExpiredCursor(offset3);
@@ -269,7 +273,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         topicConsumerManager.deleteOneExpiredCursor(offset1);
         verifyBacklogAndNumCursor(persistentTopic, 0, 0);
 
-        assertEquals(topicConsumerManager.getConsumers().size(), 0);
+        assertEquals(topicConsumerManager.getCursors().size(), 0);
     }
 
     // dump Topic Stats, mainly want to get and verify backlogSize.
@@ -290,14 +294,14 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
             TopicStats topicStats = persistentTopic.getStats(true, true);
             log.info(" dump topicStats for topic : {}, storageSize: {}, backlogSize: {}, expected: {}",
                 persistentTopic.getName(),
-                topicStats.storageSize, topicStats.backlogSize, expectedBacklog);
+                topicStats.getStorageSize(), topicStats.getBacklogSize(), expectedBacklog);
 
-            topicStats.subscriptions.forEach((subname, substats) -> {
+            topicStats.getSubscriptions().forEach((subname, substats) -> {
                 log.debug(" dump sub: subname - {}, activeConsumerName {}, "
                         + "consumers {}, msgBacklog {}, unackedMessages {}.",
                     subname,
-                    substats.activeConsumerName, substats.consumers,
-                    substats.msgBacklog, substats.unackedMessages);
+                    substats.getActiveConsumerName(), substats.getConsumers(),
+                    substats.getMsgBacklog(), substats.getUnackedMessages());
             });
         }
 
@@ -314,5 +318,34 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         // verify.
         assertEquals(backlog.get(), expectedBacklog);
         assertEquals(cursorCount.get(), numCursor);
+    }
+
+    @Test(timeOut = 20000)
+    public void testOnlyOneCursorCreated() throws Exception {
+        final String topic = "testOnlyOneCursorCreated";
+        admin.topics().createPartitionedTopic(topic, 1);
+
+        final int numMessages = 100;
+
+        @Cleanup
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+        for (int i = 0; i < numMessages; i++) {
+            producer.send(new ProducerRecord<>(topic, "msg-" + i)).get();
+        }
+
+        @Cleanup
+        final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties());
+        consumer.subscribe(Collections.singleton(topic));
+
+        int numReceived = 0;
+        while (numReceived < numMessages) {
+            numReceived += consumer.poll(Duration.ofSeconds(1)).count();
+        }
+
+        final KafkaTopicConsumerManager tcm =
+                kafkaTopicManager.getTopicConsumerManager(new KopTopic(topic).getPartitionName(0)).get();
+        // Only 1 cursor should be created for a consumer even if there were a lot of FETCH requests
+        // This check is to ensure that KafkaTopicConsumerManager#add is called in FETCH request handler
+        assertEquals(tcm.getCreatedCursors().size(), 1);
     }
 }

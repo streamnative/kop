@@ -13,6 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.ACTIVE_CHANNEL_COUNT;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.ALIVE_CHANNEL_COUNT;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.BATCH_COUNT_PER_MEMORYRECORDS;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.CATEGORY_SERVER;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.FETCH_DECODE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_PUBLISH;
@@ -20,18 +23,16 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_QUEUED_
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_READ;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PREPARE_METADATA;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_ENCODE;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_PARSE;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_QUEUED_LATENCY;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_PARSE_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_QUEUE_SIZE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_TIMES;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_QUEUE_SIZE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOTAL_MESSAGE_READ;
 
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.Gauge;
 import org.apache.bookkeeper.stats.OpStatsLogger;
@@ -47,24 +48,21 @@ import org.apache.bookkeeper.stats.annotations.StatsDoc;
 )
 
 @Getter
+@Slf4j
 public class RequestStats {
 
-    private final AtomicInteger requestQueueSize = new AtomicInteger(0);
-    private final AtomicInteger responseQueueSize = new AtomicInteger(0);
+    public static final AtomicInteger REQUEST_QUEUE_SIZE_INSTANCE = new AtomicInteger(0);
+    public static final AtomicInteger BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE = new AtomicInteger(0);
+    public static final AtomicInteger ALIVE_CHANNEL_COUNT_INSTANCE = new AtomicInteger(0);
+    public static final AtomicInteger ACTIVE_CHANNEL_COUNT_INSTANCE = new AtomicInteger(0);
 
     private final StatsLogger statsLogger;
 
     @StatsDoc(
-            name = REQUEST_QUEUED_LATENCY,
-            help = "latency from request enqueued to dequeued"
+            name = REQUEST_PARSE_LATENCY,
+            help = "parse ByteBuf to request latency"
     )
-    private final OpStatsLogger requestQueuedLatencyStats;
-
-    @StatsDoc(
-            name = REQUEST_PARSE,
-            help = "parse request to ByteBuf"
-    )
-    private final OpStatsLogger requestParseStats;
+    private final OpStatsLogger requestParseLatencyStats;
 
     @StatsDoc(
             name = RESPONSE_BLOCKED_TIMES,
@@ -103,12 +101,6 @@ public class RequestStats {
     private final OpStatsLogger prepareMetadataStats;
 
     @StatsDoc(
-            name = TOTAL_MESSAGE_READ,
-            help = "stats of reading total entries in a single fetch request"
-    )
-    private final OpStatsLogger totalMessageReadStats;
-
-    @StatsDoc(
             name = MESSAGE_READ,
             help = "stats of performing a single cursor's async-read within fetch request"
     )
@@ -123,8 +115,7 @@ public class RequestStats {
     public RequestStats(StatsLogger statsLogger) {
         this.statsLogger = statsLogger;
 
-        this.requestQueuedLatencyStats = statsLogger.getOpStatsLogger(REQUEST_QUEUED_LATENCY);
-        this.requestParseStats = statsLogger.getOpStatsLogger(REQUEST_PARSE);
+        this.requestParseLatencyStats = statsLogger.getOpStatsLogger(REQUEST_PARSE_LATENCY);
 
         this.responseBlockedLatency = statsLogger.getOpStatsLogger(RESPONSE_BLOCKED_LATENCY);
         this.responseBlockedTimes = statsLogger.getCounter(RESPONSE_BLOCKED_TIMES);
@@ -134,22 +125,8 @@ public class RequestStats {
         this.messageQueuedLatencyStats = statsLogger.getOpStatsLogger(MESSAGE_QUEUED_LATENCY);
 
         this.prepareMetadataStats = statsLogger.getOpStatsLogger(PREPARE_METADATA);
-        this.totalMessageReadStats = statsLogger.getOpStatsLogger(TOTAL_MESSAGE_READ);
         this.messageReadStats = statsLogger.getOpStatsLogger(MESSAGE_READ);
         this.fetchDecodeStats  = statsLogger.getOpStatsLogger(FETCH_DECODE);
-
-
-        statsLogger.registerGauge(RESPONSE_QUEUE_SIZE, new Gauge<Number>() {
-            @Override
-            public Number getDefaultValue() {
-                return 0;
-            }
-
-            @Override
-            public Number getSample() {
-                return responseQueueSize;
-            }
-        });
 
         statsLogger.registerGauge(REQUEST_QUEUE_SIZE, new Gauge<Number>() {
             @Override
@@ -159,7 +136,43 @@ public class RequestStats {
 
             @Override
             public Number getSample() {
-                return requestQueueSize;
+                return REQUEST_QUEUE_SIZE_INSTANCE;
+            }
+        });
+
+        statsLogger.registerGauge(BATCH_COUNT_PER_MEMORYRECORDS, new Gauge<Number>() {
+            @Override
+            public Number getDefaultValue() {
+                return 0;
+            }
+
+            @Override
+            public Number getSample() {
+                return BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE;
+            }
+        });
+
+        statsLogger.registerGauge(ALIVE_CHANNEL_COUNT, new Gauge<Number>() {
+            @Override
+            public Number getDefaultValue() {
+                return 0;
+            }
+
+            @Override
+            public Number getSample() {
+                return ALIVE_CHANNEL_COUNT_INSTANCE;
+            }
+        });
+
+        statsLogger.registerGauge(ACTIVE_CHANNEL_COUNT, new Gauge<Number>() {
+            @Override
+            public Number getDefaultValue() {
+                return 0;
+            }
+
+            @Override
+            public Number getSample() {
+                return ACTIVE_CHANNEL_COUNT_INSTANCE;
             }
         });
     }

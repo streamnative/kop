@@ -15,6 +15,10 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_IN;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_IN;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
@@ -251,6 +255,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
+
+        // update alive channel count stats
+        RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
     }
 
     @Override
@@ -260,12 +267,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (authenticator != null) {
             authenticator.reset();
         }
+
+        // update active channel count stats
+        RequestStats.ACTIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
         log.info("channel active: {}", ctx.channel());
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         super.channelInactive(ctx);
+
+        // update active channel count stats
+        RequestStats.ACTIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
         log.info("channel inactive {}", ctx.channel());
 
         close();
@@ -283,6 +296,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
             producePurgatory.shutdown();
             fetchPurgatory.shutdown();
+
+            // update alive channel count stat
+            RequestStats.ACTIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
         }
     }
 
@@ -717,7 +733,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                  final ByteBuf byteBuf,
                                  final int numMessages,
                                  final MemoryRecords records,
-                                 final String partitionName,
+                                 final TopicPartition topicPartition,
                                  final Consumer<Long> offsetConsumer,
                                  final Consumer<Errors> errorsConsumer) {
         if (persistentTopic == null) {
@@ -730,11 +746,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
             return;
         }
+        final String partitionName = KopTopic.toString(topicPartition);
+
         topicManager.registerProducerInPersistentTopic(partitionName, persistentTopic);
         // collect metrics
         final Producer producer = KafkaTopicManager.getReferenceProducer(partitionName);
         producer.updateRates(numMessages, byteBuf.readableBytes());
         producer.getTopic().incrementPublishCount(numMessages, byteBuf.readableBytes());
+        updateProducerStats(topicPartition, numMessages, byteBuf.readableBytes());
+
         // publish
         final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
         final long beforePublish = MathUtils.nowInNano();
@@ -848,7 +868,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
 
                 final Consumer<PersistentTopic> persistentTopicConsumer = persistentTopic -> {
-                    publishMessages(persistentTopic, byteBuf, numMessages, validRecords, fullPartitionName,
+                    publishMessages(persistentTopic, byteBuf, numMessages, validRecords, topicPartition,
                             offsetConsumer, errorsConsumer);
                 };
 
@@ -900,8 +920,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String zkSubPath = ZooKeeperUtils.groupIdPathFormat(findCoordinator.getClientHost(),
                 findCoordinator.getHeader().clientId());
         byte[] groupIdBytes = groupId.getBytes(Charset.forName("UTF-8"));
-        ZooKeeperUtils.createPath(pulsarService.getZkClient(), groupIdStoredPath,
-                zkSubPath, groupIdBytes);
+        ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(), groupIdStoredPath + zkSubPath, groupIdBytes);
 
         findBroker(TopicName.get(pulsarTopicName))
                 .whenComplete((node, t) -> {
@@ -1305,8 +1324,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         }
 
-        MessageFetchContext fetchContext = MessageFetchContext.get(this, requestStats);
-        fetchContext.handleFetch(resultFuture, fetch, transactionCoordinator, fetchPurgatory);
+        MessageFetchContext.get(this, fetch, resultFuture).handleFetch();
     }
 
     protected void handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup,
@@ -2044,5 +2062,21 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
 
         return validRecords;
+    }
+
+    private void updateProducerStats(final TopicPartition topicPartition, final int numMessages, final int numBytes) {
+        requestStats.getStatsLogger()
+                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
+                .scopeLabel(PARTITION_SCOPE, String.valueOf((topicPartition.partition())))
+                .getCounter(BYTES_IN)
+                .add(numBytes);
+
+        requestStats.getStatsLogger()
+                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
+                .scopeLabel(PARTITION_SCOPE, String.valueOf((topicPartition.partition())))
+                .getCounter(MESSAGE_IN)
+                .add(numMessages);
+
+        RequestStats.BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE.set(numMessages);
     }
 }

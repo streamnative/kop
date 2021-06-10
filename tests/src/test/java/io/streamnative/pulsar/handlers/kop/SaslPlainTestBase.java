@@ -106,7 +106,10 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
         super.internalSetup();
 
         admin.tenants().createTenant(TENANT,
-            new TenantInfo(Sets.newHashSet(ADMIN_USER), Sets.newHashSet(super.configClusterName)));
+            TenantInfo.builder()
+                    .adminRoles(Collections.singleton(ADMIN_USER))
+                    .allowedClusters(Collections.singleton(configClusterName))
+                    .build());
         admin.namespaces().createNamespace(TENANT + "/" + NAMESPACE);
         admin.topics().createPartitionedTopic(TOPIC, 1);
         admin

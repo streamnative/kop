@@ -31,13 +31,18 @@ public interface KopServerStats {
      */
     String REQUEST_QUEUE_SIZE = "REQUEST_QUEUE_SIZE";
     String REQUEST_QUEUED_LATENCY = "REQUEST_QUEUED_LATENCY";
-    String REQUEST_PARSE = "REQUEST_PARSE";
+    String REQUEST_PARSE_LATENCY = "REQUEST_PARSE_LATENCY";
     String REQUEST_LATENCY = "REQUEST_LATENCY";
+
+    /**
+     * Channel stats.
+     */
+    String ALIVE_CHANNEL_COUNT = "ALIVE_CHANNEL_COUNT";
+    String ACTIVE_CHANNEL_COUNT = "ACTIVE_CHANNEL_COUNT";
 
     /**
      * Response stats.
      */
-    String RESPONSE_QUEUE_SIZE = "RESPONSE_QUEUE_SIZE";
     String RESPONSE_BLOCKED_TIMES = "RESPONSE_BLOCKED_TIMES";
     String RESPONSE_BLOCKED_LATENCY = "RESPONSE_BLOCKED_LATENCY";
 
@@ -49,6 +54,13 @@ public interface KopServerStats {
     String MESSAGE_QUEUED_LATENCY = "MESSAGE_QUEUED_LATENCY";
 
     /**
+     * Producer Stats.
+     */
+    String BYTES_IN = "BYTES_IN";
+    String MESSAGE_IN = "MESSAGE_IN";
+    String BATCH_COUNT_PER_MEMORYRECORDS = "BATCH_COUNT_PER_MEMORYRECORDS";
+
+    /**
      * FETCH stats.
      *
      * <p>
@@ -58,7 +70,6 @@ public interface KopServerStats {
      * </p>
      */
     String PREPARE_METADATA = "PREPARE_METADATA";
-    String TOTAL_MESSAGE_READ = "TOTAL_MESSAGE_READ";
     String MESSAGE_READ = "MESSAGE_READ";
     String FETCH_DECODE = "FETCH_DECODE";
 
