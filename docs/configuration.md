@@ -20,7 +20,7 @@ Logger:
     level: warn
     additivity: false
     AppenderRef:
-        - ref: Console
+      - ref: Console
 ```
 
 ## Namespace
