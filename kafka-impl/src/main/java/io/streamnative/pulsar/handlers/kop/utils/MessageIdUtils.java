@@ -34,12 +34,6 @@ public class MessageIdUtils {
         return ((ManagedLedgerInterceptorImpl) managedLedger.getManagedLedgerInterceptor()).getIndex();
     }
 
-    public static long getLogStartOffset(ManagedLedgerImpl managedLedger) throws Exception {
-        long firstLedgerId = managedLedger.getLedgersInfo().firstKey();
-        return getOffsetOfPosition(managedLedger,
-                new PositionImpl(firstLedgerId, 0), false, -1L).get();
-    }
-
     public static long getHighWatermark(ManagedLedger managedLedger) {
         return getCurrentOffset(managedLedger) + 1;
     }
