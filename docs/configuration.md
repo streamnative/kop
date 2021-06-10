@@ -72,7 +72,7 @@ This sections lists configurations about group coordinator and `__consumer_offse
 |offsetsRetentionMinutes| Offsets older than this retention period are discarded |4320|
 |offsetsMessageTTL| Offsets message ttl in seconds. | 259200 |
 |offsetsRetentionCheckIntervalMs| Frequency at which to check for stale offsets  |600000|
-|offsetsTopicNumPartitions| Number of partitions for the offsets topic  |8|
+|offsetsTopicNumPartitions| Number of partitions for the offsets topic  |50|
 
 ## Transaction
 
@@ -80,7 +80,7 @@ This sections lists configurations about group coordinator and `__consumer_offse
 | ---------------------------- | -------------------------------------------------- | ------- |
 | enableTransactionCoordinator | Whether to enable transaction coordinator          | false   |
 | brokerId                     | The broker id that is used to create producer id.  | 1       |
-| txnLogTopicNumPartitions     | Number of partitions for the transaction log topic | 8       |
+| txnLogTopicNumPartitions     | Number of partitions for the transaction log topic | 50      |
 
 ## Authentication
 

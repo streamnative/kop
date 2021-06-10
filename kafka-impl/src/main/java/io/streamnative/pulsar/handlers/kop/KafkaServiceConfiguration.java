@@ -43,10 +43,10 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private static final int GroupInitialRebalanceDelayMs = 3000;
     // offset configuration
     private static final int OffsetsRetentionMinutes = 3 * 24 * 60;
-    public static final int DefaultOffsetsTopicNumPartitions = 8;
+    public static final int DefaultOffsetsTopicNumPartitions = 50;
     private static final int OffsetsMessageTTL = 3 * 24 * 3600;
     // txn configuration
-    public static final int DefaultTxnLogTopicNumPartitions = 8;
+    public static final int DefaultTxnLogTopicNumPartitions = 50;
 
     @Category
     private static final String CATEGORY_KOP = "Kafka on Pulsar";
