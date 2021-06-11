@@ -18,6 +18,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
 import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.IOException;
@@ -117,114 +118,119 @@ public class PulsarEntryFormatter implements EntryFormatter {
         ByteBuffer byteBuffer = ByteBuffer.allocate(DEFAULT_FETCH_BUFFER_SIZE);
 
         entries.parallelStream().forEachOrdered(entry -> {
-            long baseOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
-            // each entry is a batched message
-            ByteBuf metadataAndPayload = entry.getDataBuffer();
+            try {
+                long baseOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
+                // each entry is a batched message
+                ByteBuf metadataAndPayload = entry.getDataBuffer();
 
-            Commands.skipBrokerEntryMetadataIfExist(metadataAndPayload);
-            MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
+                Commands.skipBrokerEntryMetadataIfExist(metadataAndPayload);
+                MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
 
-            if (msgMetadata.hasMarkerType()
-                    && (msgMetadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
-                    || msgMetadata.getMarkerType() == MarkerType.TXN_ABORT_VALUE)) {
-                MemoryRecords memoryRecords = MemoryRecords.withEndTransactionMarker(
+                if (msgMetadata.hasMarkerType()
+                        && (msgMetadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
+                        || msgMetadata.getMarkerType() == MarkerType.TXN_ABORT_VALUE)) {
+                    MemoryRecords memoryRecords = MemoryRecords.withEndTransactionMarker(
+                            baseOffset,
+                            msgMetadata.getPublishTime(),
+                            0,
+                            msgMetadata.getTxnidMostBits(),
+                            (short) msgMetadata.getTxnidLeastBits(),
+                            new EndTransactionMarker(
+                                    msgMetadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
+                                            ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0));
+                    byteBuffer.put(memoryRecords.buffer());
+                    return;
+                }
+
+                MemoryRecordsBuilder builder = new MemoryRecordsBuilder(byteBuffer, magic,
+                        org.apache.kafka.common.record.CompressionType.NONE,
+                        TimestampType.CREATE_TIME,
+                        // using the first entry, index 0 as base offset
                         baseOffset,
                         msgMetadata.getPublishTime(),
-                        0,
-                        msgMetadata.getTxnidMostBits(),
-                        (short) msgMetadata.getTxnidLeastBits(),
-                        new EndTransactionMarker(
-                                msgMetadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
-                                        ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0));
-                byteBuffer.put(memoryRecords.buffer());
-                return;
+                        RecordBatch.NO_PRODUCER_ID,
+                        RecordBatch.NO_PRODUCER_EPOCH,
+                        RecordBatch.NO_SEQUENCE,
+                        msgMetadata.hasTxnidMostBits() && msgMetadata.hasTxnidLeastBits(),
+                        false,
+                        RecordBatch.NO_PARTITION_LEADER_EPOCH,
+                        MAX_RECORDS_BUFFER_SIZE);
+
+                CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(msgMetadata.getCompression());
+                int uncompressedSize = msgMetadata.getUncompressedSize();
+                ByteBuf payload;
+                try {
+                    payload = codec.decode(metadataAndPayload, uncompressedSize);
+                } catch (IOException ioe) {
+                    log.error("Meet IOException: {}", ioe);
+                    throw new UncheckedIOException(ioe);
+                }
+                int numMessages = msgMetadata.getNumMessagesInBatch();
+                boolean notBatchMessage = (numMessages == 1 && !msgMetadata.hasNumMessagesInBatch());
+
+                if (log.isDebugEnabled()) {
+                    log.debug("entriesToRecords.  NumMessagesInBatch: {}, isBatchMessage: {}, entries in list: {}."
+                                    + " new entryId {}:{}, readerIndex: {},  writerIndex: {}",
+                            numMessages, !notBatchMessage, entries.size(), entry.getLedgerId(),
+                            entry.getEntryId(), payload.readerIndex(), payload.writerIndex());
+                }
+
+                // need handle encryption
+                checkState(msgMetadata.getEncryptionKeysCount() == 0);
+
+                if (msgMetadata.hasTxnidMostBits()) {
+                    builder.setProducerState(
+                            msgMetadata.getTxnidMostBits(),
+                            (short) msgMetadata.getTxnidLeastBits(), 0, true);
+                }
+
+                if (!notBatchMessage) {
+                    IntStream.range(0, numMessages).parallel().forEachOrdered(i -> {
+                        if (log.isDebugEnabled()) {
+                            log.debug(" processing message num - {} in batch", i);
+                        }
+                        try {
+                            final SingleMessageMetadata singleMessageMetadata = new SingleMessageMetadata();
+                            ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(payload,
+                                    singleMessageMetadata, i, numMessages);
+
+                            Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
+
+                            final ByteBuffer value = (singleMessageMetadata.isNullValue())
+                                    ? null
+                                    : ByteBufUtils.getNioBuffer(singleMessagePayload);
+                            builder.appendWithOffset(
+                                    baseOffset + i,
+                                    msgMetadata.getEventTime() > 0
+                                            ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
+                                    ByteBufUtils.getKeyByteBuffer(singleMessageMetadata),
+                                    value,
+                                    headers);
+                            singleMessagePayload.release();
+                        } catch (IOException e) {
+                            log.error("Meet IOException: {}", e);
+                            throw new UncheckedIOException(e);
+                        }
+                    });
+                } else {
+                    Header[] headers = getHeadersFromMetadata(msgMetadata.getPropertiesList());
+
+                    builder.appendWithOffset(
+                            baseOffset,
+                            msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
+                            ByteBufUtils.getKeyByteBuffer(msgMetadata),
+                            ByteBufUtils.getNioBuffer(payload),
+                            headers);
+                }
+
+                payload.release();
+                builder.close();
+
+            } catch (KoPMessageMetadataNotFoundException e) { // skip failed decode entry
+                log.error("[{}:{}] Failed to decode entry", entry.getLedgerId(), entry.getEntryId());
+            } finally {
+                entry.release();
             }
-
-            MemoryRecordsBuilder builder = new MemoryRecordsBuilder(byteBuffer, magic,
-                    org.apache.kafka.common.record.CompressionType.NONE,
-                    TimestampType.CREATE_TIME,
-                    // using the first entry, index 0 as base offset
-                    baseOffset,
-                    msgMetadata.getPublishTime(),
-                    RecordBatch.NO_PRODUCER_ID,
-                    RecordBatch.NO_PRODUCER_EPOCH,
-                    RecordBatch.NO_SEQUENCE,
-                    msgMetadata.hasTxnidMostBits() && msgMetadata.hasTxnidLeastBits(),
-                    false,
-                    RecordBatch.NO_PARTITION_LEADER_EPOCH,
-                    MAX_RECORDS_BUFFER_SIZE);
-
-            CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(msgMetadata.getCompression());
-            int uncompressedSize = msgMetadata.getUncompressedSize();
-            ByteBuf payload;
-            try {
-                payload = codec.decode(metadataAndPayload, uncompressedSize);
-            } catch (IOException ioe) {
-                log.error("Meet IOException: {}", ioe);
-                throw new UncheckedIOException(ioe);
-            }
-            int numMessages = msgMetadata.getNumMessagesInBatch();
-            boolean notBatchMessage = (numMessages == 1 && !msgMetadata.hasNumMessagesInBatch());
-
-            if (log.isDebugEnabled()) {
-                log.debug("entriesToRecords.  NumMessagesInBatch: {}, isBatchMessage: {}, entries in list: {}."
-                                + " new entryId {}:{}, readerIndex: {},  writerIndex: {}",
-                        numMessages, !notBatchMessage, entries.size(), entry.getLedgerId(),
-                        entry.getEntryId(), payload.readerIndex(), payload.writerIndex());
-            }
-
-            // need handle encryption
-            checkState(msgMetadata.getEncryptionKeysCount() == 0);
-
-            if (msgMetadata.hasTxnidMostBits()) {
-                builder.setProducerState(
-                        msgMetadata.getTxnidMostBits(),
-                        (short) msgMetadata.getTxnidLeastBits(), 0, true);
-            }
-
-            if (!notBatchMessage) {
-                IntStream.range(0, numMessages).parallel().forEachOrdered(i -> {
-                    if (log.isDebugEnabled()) {
-                        log.debug(" processing message num - {} in batch", i);
-                    }
-                    try {
-                        final SingleMessageMetadata singleMessageMetadata = new SingleMessageMetadata();
-                        ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(payload,
-                                singleMessageMetadata, i, numMessages);
-
-                        Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
-
-                        final ByteBuffer value = (singleMessageMetadata.isNullValue())
-                                ? null
-                                : ByteBufUtils.getNioBuffer(singleMessagePayload);
-                        builder.appendWithOffset(
-                                baseOffset + i,
-                                msgMetadata.getEventTime() > 0
-                                        ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
-                                ByteBufUtils.getKeyByteBuffer(singleMessageMetadata),
-                                value,
-                                headers);
-                        singleMessagePayload.release();
-                    } catch (IOException e) {
-                        log.error("Meet IOException: {}", e);
-                        throw new UncheckedIOException(e);
-                    }
-                });
-            } else {
-                Header[] headers = getHeadersFromMetadata(msgMetadata.getPropertiesList());
-
-                builder.appendWithOffset(
-                        baseOffset,
-                        msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
-                        ByteBufUtils.getKeyByteBuffer(msgMetadata),
-                        ByteBufUtils.getNioBuffer(payload),
-                        headers);
-            }
-
-            payload.release();
-            entry.release();
-
-            builder.close();
         });
 
         byteBuffer.flip();

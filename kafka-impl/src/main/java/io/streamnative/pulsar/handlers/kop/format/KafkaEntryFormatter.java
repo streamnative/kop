@@ -18,10 +18,13 @@ import static org.apache.kafka.common.record.Records.OFFSET_OFFSET;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
 import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
@@ -31,6 +34,7 @@ import org.apache.pulsar.common.protocol.Commands;
 /**
  * The entry formatter that uses Kafka's format.
  */
+@Slf4j
 public class KafkaEntryFormatter implements EntryFormatter {
 
     @Override
@@ -48,13 +52,19 @@ public class KafkaEntryFormatter implements EntryFormatter {
     public DecodeResult decode(List<Entry> entries, byte magic) {
         // reset header information
         List<ByteBuf> orderedByteBuf = entries.stream().parallel().map(entry -> {
-            long startOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
-            final ByteBuf byteBuf = entry.getDataBuffer();
-            Commands.skipMessageMetadata(byteBuf);
-            byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
-            byteBuf.setByte(byteBuf.readerIndex() + MAGIC_OFFSET, magic);
-            return byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes());
-        }).collect(Collectors.toList());
+            try {
+                long startOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
+                final ByteBuf byteBuf = entry.getDataBuffer();
+                Commands.skipMessageMetadata(byteBuf);
+                byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
+                byteBuf.setByte(byteBuf.readerIndex() + MAGIC_OFFSET, magic);
+                return byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes());
+            } catch (KoPMessageMetadataNotFoundException e) { // skip failed decode entry
+                log.error("[{}:{}] Failed to decode entry. ", entry.getLedgerId(), entry.getEntryId(), e);
+                entry.release();
+                return null;
+            }
+        }).filter(Objects::nonNull).collect(Collectors.toList());
 
         // batched ByteBuf should be released after sending to client
         int totalSize = orderedByteBuf.stream().mapToInt(ByteBuf::readableBytes).sum();
