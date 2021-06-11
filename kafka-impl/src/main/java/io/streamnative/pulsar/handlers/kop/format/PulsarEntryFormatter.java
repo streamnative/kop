@@ -18,6 +18,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
 import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.IOException;
@@ -225,7 +226,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
                 payload.release();
                 builder.close();
 
-            } catch (Exception e) { // skip failed decode entry
+            } catch (KoPMessageMetadataNotFoundException e) { // skip failed decode entry
                 log.error("[{}:{}] Failed to decode entry", entry.getLedgerId(), entry.getEntryId());
             } finally {
                 entry.release();

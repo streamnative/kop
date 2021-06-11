@@ -18,6 +18,7 @@ import static org.apache.kafka.common.record.Records.OFFSET_OFFSET;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
 import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.util.List;
@@ -58,7 +59,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
                 byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
                 byteBuf.setByte(byteBuf.readerIndex() + MAGIC_OFFSET, magic);
                 return byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes());
-            } catch (Exception e) { // skip failed decode entry
+            } catch (KoPMessageMetadataNotFoundException e) { // skip failed decode entry
                 log.error("[{}:{}] Failed to decode entry. ", entry.getLedgerId(), entry.getEntryId(), e);
                 entry.release();
                 return null;

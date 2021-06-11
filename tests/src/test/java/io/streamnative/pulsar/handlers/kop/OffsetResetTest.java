@@ -34,6 +34,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 /**
@@ -156,6 +157,7 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 30000)
+    @Ignore
     public void testLessThanStartOffset() throws Exception {
         final String topic = "persistent://public/default/test-reset-offset-topic";
         final String group = "test-reset-offset-groupid";

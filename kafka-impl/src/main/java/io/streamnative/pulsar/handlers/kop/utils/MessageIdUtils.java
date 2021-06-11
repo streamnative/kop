@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import io.netty.buffer.ByteBuf;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
 import java.util.concurrent.CompletableFuture;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -96,11 +97,11 @@ public class MessageIdUtils {
         return Commands.peekBrokerEntryMetadataIfExist(entry.getDataBuffer()).getIndex();
     }
 
-    public static long peekBaseOffsetFromEntry(@NonNull Entry entry) throws Exception{
+    public static long peekBaseOffsetFromEntry(@NonNull Entry entry) throws KoPMessageMetadataNotFoundException {
         MessageMetadata metadata = Commands.peekMessageMetadata(entry.getDataBuffer(), null, 0);
 
         if (metadata == null) {
-            throw new Exception("[" + entry.getLedgerId() + ":" + entry.getEntryId()
+            throw new KoPMessageMetadataNotFoundException("[" + entry.getLedgerId() + ":" + entry.getEntryId()
                     + "] Failed to peek offset from entry");
         }
 
