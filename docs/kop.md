@@ -28,10 +28,15 @@ And then you can start your broker and use KoP. The followings are detailed inst
 
 ## Get KoP protocol handler
 
-You can get the KoP protocol handler in the following ways:
+This section describes how to get the KoP protocol handler.
 
-- Download the [KoP protocol handler](https://github.com/streamnative/kop/releases) directly.
-- Build the KoP protocol handler from source code. You can build it with the following steps.
+### Download KoP protocol handler
+
+StreamNative provide a ready-to-use KoP docker image. You can download the [KoP protocol handler](https://github.com/streamnative/kop/releases) directly.
+
+### Build KoP protocol handler from source code
+
+To build the KoP protocol handler from the source, follow thse steps.
 
 1. Clone the KoP GitHub project to your local. 
 
@@ -53,7 +58,7 @@ You can get the KoP protocol handler in the following ways:
 
 ## Set configuration for KoP
 
-After you copy the .nar file to your Pulsar `/protocols` directory, you need to configure the Pulsar broker to run the KoP protocol handler as a plugin by adding configurations in the Pulsar configuration file `broker.conf` or `standalone.conf`.
+After you copy the `.nar` file to your Pulsar `/protocols` directory, you need to configure the Pulsar broker to run the KoP protocol handler as a plugin by adding configurations in the Pulsar configuration file `broker.conf` or `standalone.conf`.
 
 1. Set the configuration of the KoP protocol handler in `broker.conf` or `standalone.conf` file.
 
@@ -69,7 +74,7 @@ After you copy the .nar file to your Pulsar `/protocols` directory, you need to 
     | `protocolHandlerDirectory`|./protocols  | Location of KoP NAR file |
     | `allowAutoTopicCreationType`| non-partitioned | partitioned |
 
-    You need to set `allowAutoTopicCreationType` to `partitioned` since KoP only supports partitioned topics. If it is set to `non-partitioned` by default, the topics created automatically by KoP are still partitioned topics, yet topics created automatically by Pulsar broker are non-partitioned topics.
+    By default, `allowAutoTopicCreationType` is set to `non-partitioned`. You need to set `allowAutoTopicCreationType` to `partitioned` because KoP only supports partitioned topics. If not, topics automatically created by KoP are still partitioned topics, yet topics created automatically by the Pulsar broker are non-partitioned topics.
 
 2. Set Kafka listeners.
 
@@ -77,17 +82,19 @@ After you copy the .nar file to your Pulsar `/protocols` directory, you need to 
     # Use `kafkaListeners` here for KoP 2.8.0 because `listeners` is marked as deprecated from KoP 2.8.0 
     kafkaListeners=PLAINTEXT://127.0.0.1:9092
     # This config is not required unless you want to expose another address to the Kafka client.
-    # If it’s not configured, it will be the same with `listeners` config by default
+    # If it’s not configured, it will be the same with `kafkaListeners` config by default
     kafkaAdvertisedListeners=PLAINTEXT://127.0.0.1:9092
     ```
+    - `kafkaListeners` is a comma-separated list of listeners and the host/IP and port to which Kafka binds to for listening. 
+    - `kafkaAdvertisedListeners` is a comma-separated list of listeners with their host/IP and port. 
 
-3. Set offset management as follows since offset management for KoP depends on Pulsar "Broker Entry Metadata". It’s required from KoP 2.8.0.
+3. Set offset management as below since offset management for KoP depends on Pulsar "Broker Entry Metadata". It’s required for KoP 2.8.0 or higher version.
 
     ```properties
     brokerEntryMetadataInterceptors=org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor
     ```
 
-4. Disable the deletion of inactive topics. It’s not required yet **very important** in KoP. Currently, Pulsar deletes inactive partitions of a partitioned topic while the metadata of the partitioned topic is not deleted. KoP cannot [create missed partitions](http://pulsar.apache.org/docs/en/admin-api-topics/#create-missed-partitions) in this case.
+4. Disable the deletion of inactive topics. It’s not required but **very important** in KoP. Currently, Pulsar deletes inactive partitions of a partitioned topic while the metadata of the partitioned topic is not deleted. KoP cannot [create missed partitions](http://pulsar.apache.org/docs/en/admin-api-topics/#create-missed-partitions) in this case.
 
     ```properties
     brokerDeleteInactiveTopicsEnabled=false
@@ -106,21 +113,22 @@ After you have installed the KoP protocol handler to Pulsar broker, you can rest
 
 2. Verify the KoP by using a Kafka producer and a Kafka consumer. Kafka binary contains a command-line producer and consumer.
 
-    Run the command-line producer and send messages to the server.
+    1. Run the command-line producer and send messages to the server.
 
-    ```
-    > bin/kafka-console-producer.sh --broker-list [pulsar-broker-address]:9092 --topic test
-    This is a message
-    This is another message
-    ```
+        ```
+        > bin/kafka-console-producer.sh --broker-list [pulsar-broker-address]:9092 --topic test
+        This is a message
+        This is another message
+        ```
 
-    Kafka has a command-line consumer dumping out messages to standard output.
+    
+    2. Run the command-line consumer to receive messages from the server.
 
-    ```
-    > bin/kafka-console-consumer.sh --bootstrap-server [pulsar-broker-address]:9092 --topic test --from-beginning
-    This is a message
-    This is another message
-    ```
+        ```
+        > bin/kafka-console-consumer.sh --bootstrap-server [pulsar-broker-address]:9092 --topic test --from-beginning
+        This is a message
+        This is another message
+        ```
 
 # How to use KoP
 You can configure and manage KoP based on your requirements. Check the following guides for more details.
