@@ -32,7 +32,7 @@ public class TransactionMarkerChannelInitializer extends ChannelInitializer<Sock
 
     private final KafkaServiceConfiguration kafkaConfig;
     private final boolean enableTls;
-    private final SslContextFactory sslContextFactory;
+    private final SslContextFactory.Server sslContextFactory;
 
     public TransactionMarkerChannelInitializer(KafkaServiceConfiguration kafkaConfig,
                                                boolean enableTls) {
