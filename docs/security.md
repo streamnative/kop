@@ -9,15 +9,15 @@ By default, KoP is installed with no encryption, authentication, and authorizati
 KoP authentication mechanism uses [Kafka SASL mechanisms](https://docs.confluent.io/platform/current/kafka/overview-authentication-methods.html) and achieves authentication with [Pulsar token-based authentication mechanism](https://pulsar.apache.org/docs/en/security-overview/). Consequently, if you want to enable the authentication feature for KoP, you need to enable authentication for the following components:
 
 - Pulsar brokers
-  
+
 - KoP (some configurations of KoP rely on the configurations of Pulsar brokers)
-  
+
 - Kafka clients
 
 Currently, KoP supports the following SASL mechanisms:
 
 - [`PLAIN`](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_plain.html#kafka-sasl-auth-plain)
-  
+
 - [`OAUTHBEARER`](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_oauth.html#kafka-oauth-auth)
 
 ### `PLAIN`
@@ -96,16 +96,16 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
 
 1. Enable authentication on Pulsar broker.
 
-    Set the following properties in the `conf/broker.conf` or `conf/standalone.conf` file. 
-    
+    Set the following properties in the `conf/broker.conf` or `conf/standalone.conf` file.
+
     The properties here are same to that of the `PLAIN` mechanism except `brokerClientAuthenticationPlugin` and `brokerClientAuthenticationParameters`.
 
     |Property|Description|Required or optional|Example value
     |---|---|---|---
-    | `type` | Oauth 2.0 authentication type <br><br> The **default** value is `client_credentials`| Optional | `client_credentials`  | 
+    | `type` | Oauth 2.0 authentication type <br><br> The **default** value is `client_credentials`| Optional | `client_credentials`  |
     | `privateKey` | URL to a JSON credential file <br><br>The following pattern formats are supported:<br> - `file:///path/to/file` <br> - `file:/path/to/file` <br> - `data:application/json;base64,<base64-encoded value>` |   Required |file:///path/to/credentials_file.json
     | `issuerUrl` | URL of the authentication provider which allows the Pulsar client to obtain an access token | Required | `https://accounts.google.com` |
-    | `audience`  | An OAuth 2.0 "resource server" identifier for the Pulsar cluster | Required |`https://broker.example.com` | 
+    | `audience`  | An OAuth 2.0 "resource server" identifier for the Pulsar cluster | Required |`https://broker.example.com` |
 
 
     ```properties
@@ -116,7 +116,7 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
     brokerClientAuthenticationPlugin=org.apache.pulsar.client.impl.auth.oauth2.AuthenticationOAuth2
     brokerClientAuthenticationParameters={"type":"client_credentials","privateKey":"file:///path/to/credentials_file.json","issuerUrl":"<issuer-url>","audience":"<audience>"}
     tokenPublicKey=<token-public-key>
-    ``` 
+    ```
 
 2. Enable authentication on KoP.
 
@@ -133,7 +133,7 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
     KoP provides a built-in `AuthenticateCallbackHandler` that uses the authentication provider of Pulsar for authentication. You need to configure the following properties in the `conf/kop-handler.properties` file.
 
     ```properties
-    # Use the KoP's built-in handler 
+    # Use the KoP's built-in handler
     kopOauth2AuthenticateCallbackHandler=io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler
 
     # Java property configuration file of OauthValidatorCallbackHandler
@@ -276,20 +276,31 @@ The following example shows how to connect KoP through SSL.
 
     This example creates the related CA and JKS files.
 
-    ```shell
-    #!/bin/bash
-    #Step 1
+    ```bash
+    # You need to input a password, for example "server-keystore".
     keytool -keystore server.keystore.jks -alias localhost -validity 365 -keyalg RSA -genkey
-    #Step 2
+    # You need to input a password, for example "server".
     openssl req -new -x509 -keyout ca-key -out ca-cert -days 365
+    # You need to input a password, for example "server-truststore"
     keytool -keystore server.truststore.jks -alias CARoot -import -file ca-cert
+    # You need to input a password, for example "client-truststore"
     keytool -keystore client.truststore.jks -alias CARoot -import -file ca-cert
-    #Step 3
+    # You must input the password of server.keystore.jks: "server-keystore"
     keytool -keystore server.keystore.jks -alias localhost -certreq -file cert-file
-    openssl x509 -req -CA ca-cert -CAkey ca-key -in cert-file -out cert-signed -days 365 -CAcreateserial -passin pass:test1234
+    # NOTE: the password followed by `-passin pass:` is the password of ca-cert: "server"
+    openssl x509 -req -CA ca-cert -CAkey ca-key -in cert-file -out cert-signed -days 365 -CAcreateserial -passin pass:server
+    # You must input the password of server.keystore.jks: "server-keystore"
     keytool -keystore server.keystore.jks -alias CARoot -import -file ca-cert
+    # You must input the password of server.keystore.jks: "server-keystore"
     keytool -keystore server.keystore.jks -alias localhost -import -file cert-signed
     ```
+
+    In above example, we have input four passwords:
+
+    - `server-keystore` for `server.keystore.jks` file
+    - `server` for `ca-cert` and `ca-key` files
+    - `server-truststore` for `client.truststore.jks` file
+    - `client-truststore` for `client.truststore.jks` file
 
 2. Configure the KoP broker.
 
@@ -298,11 +309,13 @@ The following example shows how to connect KoP through SSL.
     ```shell
     listeners=PLAINTEXT://localhost:9092,SSL://localhost:9093
 
-    kopSslKeystoreLocation=/Users/kop/server.keystore.jks
-    kopSslKeystorePassword=test1234
-    kopSslKeyPassword=test1234
-    kopSslTruststoreLocation=/Users/kop/server.truststore.jks
-    kopSslTruststorePassword=test1234
+    # You need to use the full path of server.keystore.jks
+    kopSslKeystoreLocation=server.keystore.jks
+    kopSslKeystorePassword=server-keystore
+    kopSslKeyPassword=server-keystore
+    # You need to use the full path of server.truststore.jks
+    kopSslTruststoreLocation=server.truststore.jks
+    kopSslTruststorePassword=server-truststore
     ```
 
 3. Configure the Kafka client.
@@ -311,8 +324,10 @@ The following example shows how to connect KoP through SSL.
 
     ```shell
     security.protocol=SSL
+    # You need to use the full path of client.truststore.jks
     ssl.truststore.location=client.truststore.jks
-    ssl.truststore.password=test1234
+    ssl.truststore.password=client-truststore
+    # The identification algorithm must be empty
     ssl.endpoint.identification.algorithm=
     ```
 
