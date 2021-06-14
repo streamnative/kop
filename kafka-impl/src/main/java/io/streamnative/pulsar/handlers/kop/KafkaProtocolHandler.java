@@ -282,6 +282,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                         new OffsetAndTopicListener(brokerService, kafkaConfig, groupCoordinator));
         } catch (Exception e) {
             log.error("initGroupCoordinator failed with", e);
+            throw new IllegalStateException(e);
         }
         if (kafkaConfig.isEnableTransactionCoordinator()) {
             try {
@@ -289,6 +290,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 startTransactionCoordinator();
             } catch (Exception e) {
                 log.error("Initialized transaction coordinator failed.", e);
+                throw new IllegalStateException(e);
             }
         }
 
