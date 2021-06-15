@@ -49,7 +49,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     @Getter
     private final EndPoint advertisedEndPoint;
     @Getter
-    private final SslContextFactory sslContextFactory;
+    private final SslContextFactory.Server sslContextFactory;
     @Getter
     private final StatsLogger statsLogger;
 

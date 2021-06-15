@@ -36,10 +36,13 @@ import org.testng.annotations.Test;
  */
 @Slf4j
 public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
-    protected final String kopSslKeystoreLocation = "./src/test/resources/ssl/certificate/broker.keystore.jks";
-    protected final String kopSslKeystorePassword = "broker";
-    protected final String kopSslTruststoreLocation = "./src/test/resources/ssl/certificate/client.truststore.jks";
-    protected final String kopSslTruststorePassword = "client";
+
+    private String kopSslKeystoreLocation;
+    private String kopSslKeystorePassword;
+    private String kopSslTruststoreLocation;
+    private String kopSslTruststorePassword;
+    private String kopClientTruststoreLocation;
+    private String kopClientTruststorePassword;
 
     static {
         final HostnameVerifier defaultHostnameVerifier = javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier();
@@ -56,24 +59,48 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier(localhostAcceptedHostnameVerifier);
     }
 
-    public KafkaSSLChannelTest(final String entryFormat) {
+    public KafkaSSLChannelTest(final String entryFormat, boolean withCertHost) {
         super(entryFormat);
+        setSslConfigurations(withCertHost);
+    }
+
+    /**
+     * Set ssl configurations.
+     * @param withCertHost the keystore with certHost or not.
+     */
+    private void setSslConfigurations(boolean withCertHost) {
+        String path = "./src/test/resources/ssl/certificate" + (withCertHost ? "2" : "") + "/";
+        if (!withCertHost) {
+            this.kopSslKeystoreLocation = path + "broker.keystore.jks";
+            this.kopSslKeystorePassword = "broker";
+            this.kopSslTruststoreLocation = path + "broker.truststore.jks";
+            this.kopSslTruststorePassword = "broker";
+        } else {
+            this.kopSslKeystoreLocation = path + "server.keystore.jks";
+            this.kopSslKeystorePassword = "server";
+            this.kopSslTruststoreLocation = path + "server.truststore.jks";
+            this.kopSslTruststorePassword = "server";
+        }
+        kopClientTruststoreLocation = path + "client.truststore.jks";
+        kopClientTruststorePassword = "client";
     }
 
     @Factory
     public static Object[] instances() {
         return new Object[] {
-                new KafkaSSLChannelTest("pulsar"),
-                new KafkaSSLChannelTest("kafka")
+                new KafkaSSLChannelTest("pulsar", false),
+                new KafkaSSLChannelTest("pulsar", true),
+                new KafkaSSLChannelTest("kafka", false),
+                new KafkaSSLChannelTest("kafka", true)
         };
     }
 
     protected void sslSetUpForBroker() throws Exception {
-        ((KafkaServiceConfiguration) conf).setKopSslKeystoreType("JKS");
-        ((KafkaServiceConfiguration) conf).setKopSslKeystoreLocation(kopSslKeystoreLocation);
-        ((KafkaServiceConfiguration) conf).setKopSslKeystorePassword(kopSslKeystorePassword);
-        ((KafkaServiceConfiguration) conf).setKopSslTruststoreLocation(kopSslTruststoreLocation);
-        ((KafkaServiceConfiguration) conf).setKopSslTruststorePassword(kopSslTruststorePassword);
+        conf.setKopSslKeystoreType("JKS");
+        conf.setKopSslKeystoreLocation(kopSslKeystoreLocation);
+        conf.setKopSslKeystorePassword(kopSslKeystorePassword);
+        conf.setKopSslTruststoreLocation(kopSslTruststoreLocation);
+        conf.setKopSslTruststorePassword(kopSslTruststorePassword);
     }
 
     @BeforeMethod
@@ -109,7 +136,8 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         String messageStrPrefix = "Message_Kop_KafkaProduceKafkaConsume_" + partitionNumber + "_";
 
         @Cleanup
-        SslProducer kProducer = new SslProducer(topicName, getKafkaBrokerPortTls());
+        SslProducer kProducer = new SslProducer(topicName, getKafkaBrokerPortTls(),
+                kopClientTruststoreLocation, kopClientTruststorePassword);
 
         for (int i = 0; i < totalMsgs; i++) {
             String messageStr = messageStrPrefix + i;
@@ -143,7 +171,7 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         private final KafkaProducer<Integer, String> producer;
         private final String topic;
 
-        public SslProducer(String topic, int port) {
+        public SslProducer(String topic, int port, String truststoreLocation, String truststorePassword) {
             Properties props = new Properties();
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + port);
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducerSSL");
@@ -152,8 +180,8 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
 
             // SSL client config
             props.put("security.protocol", "SSL");
-            props.put("ssl.truststore.location", "./src/test/resources/ssl/certificate/broker.truststore.jks");
-            props.put("ssl.truststore.password", "broker");
+            props.put("ssl.truststore.location", truststoreLocation);
+            props.put("ssl.truststore.password", truststorePassword);
 
             // default is https, here need to set empty.
             props.put("ssl.endpoint.identification.algorithm", "");
