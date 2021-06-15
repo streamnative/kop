@@ -299,7 +299,7 @@ The following example shows how to connect KoP through SSL.
 
     - `server-keystore` for `server.keystore.jks` file
     - `server` for `ca-cert` and `ca-key` files
-    - `server-truststore` for `client.truststore.jks` file
+    - `server-truststore` for `server.truststore.jks` file
     - `client-truststore` for `client.truststore.jks` file
 
 2. Configure the KoP broker.
