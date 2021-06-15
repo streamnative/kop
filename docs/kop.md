@@ -1,5 +1,6 @@
 ---
 dockerfile: "https://github.com/streamnative/kop/releases/download/v2.8.0-rc-202105291235//pulsar-protocol-handler-kafka-2.8.0-rc-202105291235.nar"
+alias: KoP - Kafka on Pulsar
 ---
 
 KoP (Kafka on Pulsar) brings the native Apache Kafka protocol support to Apache Pulsar by introducing a Kafka protocol handler on Pulsar brokers. By adding the KoP protocol handler to your existing Pulsar cluster, you can migrate your existing Kafka applications and services to Pulsar without modifying the code. This enables Kafka applications to leverage Pulsar’s powerful features, such as:
@@ -20,7 +21,7 @@ The following figure illustrates how the Kafka-on-Pulsar protocol handler is imp
 # Get Started with KoP
 
 If you have an Apache Pulsar cluster, you can enable Kafka-on-Pulsar on your existing Pulsar cluster by downloading and installing the KoP protocol handler to Pulsar brokers directly. It takes three steps:
-1. Download KoP protocol handler, or build the `./kafka-impl/target/pulsar-protocol-handler-kafka-{{connector:version}}.nar` file, and then copy it to your Pulsar `protocols` directory.
+1. Download KoP protocol handler, or build the `./kafka-impl/target/pulsar-protocol-handler-kafka-{{protocol:version}}.nar` file, and then copy it to your Pulsar `protocols` directory.
 2. Set the configuration of the KoP protocol handler in Pulsar `broker.conf` or `standalone.conf` files.
 3. Restart Pulsar brokers to load KoP protocol handler.
 
@@ -53,7 +54,7 @@ To build the KoP protocol handler from the source, follow thse steps.
 3. Get the `.nar` file in the following directory and copy it your Pulsar `protocols` directory. You need to create the `protocols` folder in Pulsar if it's the first time you use protocol handlers.
 
     ```bash
-    ./kafka-impl/target/pulsar-protocol-handler-kafka-{{connector:version}}.nar
+    ./kafka-impl/target/pulsar-protocol-handler-kafka-{{protocol:version}}.nar
     ```
 
 ## Set configuration for KoP
