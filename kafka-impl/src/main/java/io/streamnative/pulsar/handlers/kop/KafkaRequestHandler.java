@@ -36,6 +36,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.Group
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.AbortedIndexEntry;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
@@ -984,7 +985,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             new KopTopic(tp.topic()).getFullName(), tp.partition());
                                     replacingIndex.put(newTopicPartition, tp);
                                     return newTopicPartition;
-                                } catch (Exception e) {
+                                } catch (KoPTopicException e) {
                                     log.warn("Invalid topic name: {}", tp.topic(), e);
                                     unknownPartitions.put(tp, OffsetFetchResponse.UNKNOWN_PARTITION);
                                     return null;
@@ -1001,7 +1002,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (log.isTraceEnabled()) {
             StringBuffer traceInfo = new StringBuffer();
             replacingIndex.forEach((inner, outer) ->
-                    traceInfo.append(String.format("\tinnerName:%s, outerName:%s\n", inner, outer)));
+                    traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
             log.trace("OFFSET_FETCH TopicPartition relations: \n{}", traceInfo.toString());
         }
 
@@ -1335,7 +1336,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                 convertedOffsetData.put(newTopicPartition, entry.getValue());
                 replacingIndex.put(newTopicPartition, tp);
-            } catch (Exception e) {
+            } catch (KoPTopicException e) {
                 log.warn("Invalid topic name: {}", tp.topic(), e);
                 nonExistingTopic.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION);
             }
@@ -1345,7 +1346,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (log.isTraceEnabled()) {
             StringBuffer traceInfo = new StringBuffer();
             replacingIndex.forEach((inner, outer) ->
-                    traceInfo.append(String.format("\tinnerName:%s, outerName:%s\n", inner, outer)));
+                    traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
             log.trace("OFFSET_FETCH TopicPartition relations: \n{}", traceInfo.toString());
         }
 

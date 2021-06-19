@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.utils;
 
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import lombok.Getter;
 import org.apache.kafka.common.TopicPartition;
 
@@ -40,7 +41,7 @@ public class KopTopic {
 
     public static void initialize(String namespace) {
         if (namespace.split("/").length != 2) {
-            throw new IllegalArgumentException("Invalid namespace: " + namespace);
+            throw new KoPTopicIllegalArgumentException("Invalid namespace: " + namespace);
         }
         KopTopic.namespacePrefix = namespace;
     }
@@ -50,9 +51,23 @@ public class KopTopic {
     @Getter
     private final String fullName;
 
+    public static class KoPTopicNotInitializedException extends KoPTopicException {
+
+        public KoPTopicNotInitializedException(String message) {
+            super(message);
+        }
+    }
+
+    public static class KoPTopicIllegalArgumentException extends KoPTopicException {
+
+        public KoPTopicIllegalArgumentException(String message) {
+            super(message);
+        }
+    }
+
     public KopTopic(String topic) {
         if (namespacePrefix == null) {
-            throw new RuntimeException("KopTopic is not initialized");
+            throw new KoPTopicNotInitializedException("KopTopic is not initialized");
         }
         originalName = topic;
         fullName = expandToFullName(topic);
@@ -61,7 +76,7 @@ public class KopTopic {
     private String expandToFullName(String topic) {
         if (topic.startsWith(persistentDomain)) {
             if (topic.substring(persistentDomain.length()).split("/").length != 3) {
-                throw new IllegalArgumentException("Invalid topic name '" + topic + "', it should be "
+                throw new KoPTopicIllegalArgumentException("Invalid topic name '" + topic + "', it should be "
                         + " persistent://<tenant>/<namespace>/<topic>");
             }
             return topic;
@@ -73,16 +88,22 @@ public class KopTopic {
         } else if (parts.length == 1) {
             return persistentDomain + namespacePrefix + "/" + topic;
         } else {
-            throw new IllegalArgumentException("Invalid short topic name '" + topic + "', it should be in the format"
+            throw new KoPTopicIllegalArgumentException(
+                    "Invalid short topic name '" + topic + "', it should be in the format"
                     + " of <tenant>/<namespace>/<topic> or <topic>");
         }
     }
 
     public String getPartitionName(int partition) {
         if (partition < 0) {
-            throw new IllegalArgumentException("Invalid partition " + partition + ", it should be non-negative number");
+            throw new KoPTopicIllegalArgumentException(
+                    "Invalid partition " + partition + ", it should be non-negative number");
         }
         return fullName + PARTITIONED_TOPIC_SUFFIX + partition;
+    }
+
+    public static boolean isFullTopicName(String topic) {
+        return topic.startsWith(persistentDomain);
     }
 
     public static String toString(TopicPartition topicPartition) {

@@ -49,7 +49,6 @@ import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Reader;
 import org.apache.pulsar.client.api.Schema;
-import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Ignore;
@@ -318,7 +317,7 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
                 long leo = consumer.endOffsets(Collections.singletonList(topicPartition))
                         .get(topicPartition);
                 lag += (leo - offset);
-                buffer.append(String.format("offset:%d, leo:%d, lag:%d\n", offset, leo, leo - offset));
+                buffer.append(String.format("offset:%d, leo:%d, lag:%d%n", offset, leo, leo - offset));
             }
 
             log.info("{}", buffer.toString());
@@ -420,7 +419,7 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
         assertEquals(msgs, totalMsgs);
         kConsumer.getConsumer().commitSync();
         readFromOffsetMessagePulsar();
-        Assert.assertEquals(0, describeGroups(group, topic));
+        assertEquals(0, describeGroups(group, topic));
 
         // simulate the consumer has closed
         kConsumer.close();
@@ -430,6 +429,6 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
         resetTo(topic, group, "earliest");
         readFromOffsetMessagePulsar();
         // Check whether offset-reset works
-        Assert.assertTrue(describeGroups(group, topic) > 0);
+        assertTrue(describeGroups(group, topic) > 0);
     }
 }
