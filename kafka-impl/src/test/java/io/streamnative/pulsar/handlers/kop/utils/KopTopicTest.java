@@ -30,7 +30,7 @@ public class KopTopicTest {
         try {
             topic = new KopTopic("my-topic");
             fail();
-        } catch (RuntimeException e) {
+        } catch (KopTopic.KoPTopicNotInitializedException e) {
             assertEquals(e.getMessage(), "KopTopic is not initialized");
         }
 
@@ -51,12 +51,12 @@ public class KopTopicTest {
         try {
             topic = new KopTopic("my-ns/my-topic");
             fail();
-        } catch (IllegalArgumentException e) {
+        } catch (KopTopic.KoPTopicIllegalArgumentException e) {
             assertTrue(e.getMessage().contains("Invalid short topic name"));
         }
         try {
             topic = new KopTopic("persistent://my-topic");
-        } catch (IllegalArgumentException e) {
+        } catch (KopTopic.KoPTopicIllegalArgumentException e) {
             assertTrue(e.getMessage().contains("Invalid topic name"));
         }
     }
@@ -70,7 +70,7 @@ public class KopTopicTest {
         try {
             topic.getPartitionName(-1);
             fail();
-        } catch (IllegalArgumentException e) {
+        } catch (KopTopic.KoPTopicIllegalArgumentException e) {
             assertTrue(e.getMessage().contains("Invalid partition"));
         }
     }
