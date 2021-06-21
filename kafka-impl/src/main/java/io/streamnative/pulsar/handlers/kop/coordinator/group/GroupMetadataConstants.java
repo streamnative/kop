@@ -25,12 +25,15 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManage
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.GroupMetadataKey;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.GroupTopicPartition;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.OffsetKey;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.types.ArrayOf;
@@ -55,6 +58,7 @@ import org.apache.pulsar.common.schema.KeyValue;
  * <p>key version 2:       group metadata
  *     -> value version 0:       [protocol_type, generation, protocol, leader, members]
  */
+@Slf4j
 final class GroupMetadataConstants {
 
     static final short CURRENT_OFFSET_KEY_SCHEMA_VERSION = 1;
@@ -216,6 +220,20 @@ final class GroupMetadataConstants {
     static byte[] offsetCommitKey(String group,
                                   TopicPartition topicPartition,
                                   short versionId) {
+        // Some test cases may use the original topic name to commit the offset
+        // directly from this method, so we need to ensure that all the topics
+        // has chances to be converted
+        if (topicPartition.partition() >= 0 && !KopTopic.isFullTopicName(topicPartition.topic())) {
+            try {
+                topicPartition = new TopicPartition(
+                        new KopTopic(topicPartition.topic()).getFullName(), topicPartition.partition());
+            } catch (KoPTopicException e) {
+                // In theory, this place will not be executed
+                log.warn("Invalid topic name: {}", topicPartition.topic(), e);
+                return null;
+            }
+        }
+
         Struct key = new Struct(CURRENT_OFFSET_KEY_SCHEMA);
         key.set(OFFSET_KEY_GROUP_FIELD, group);
         key.set(OFFSET_KEY_TOPIC_FIELD, topicPartition.topic());

@@ -36,6 +36,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.Group
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.AbortedIndexEntry;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
@@ -61,6 +62,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -947,6 +949,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 });
     }
 
+    private <T> void replaceTopicPartition(Map<TopicPartition, T> replacedMap,
+                                           Map<TopicPartition, TopicPartition> replacingIndex) {
+        Map<TopicPartition, T> newMap = new HashMap<>();
+        replacedMap.entrySet().removeIf(entry -> {
+            if (replacingIndex.containsKey(entry.getKey())) {
+                newMap.put(replacingIndex.get(entry.getKey()), entry.getValue());
+                return true;
+            }
+            return false;
+        });
+        replacedMap.putAll(newMap);
+    }
+
     protected void handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch,
                                             CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(offsetFetch.getRequest() instanceof OffsetFetchRequest);
@@ -954,11 +969,46 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkState(groupCoordinator != null,
             "Group Coordinator not started");
 
+        Map<TopicPartition, OffsetFetchResponse.PartitionData> unknownPartitions = new HashMap<>();
+
+        // replace
+        Map<TopicPartition, TopicPartition> replacingIndex = new HashMap<>();
         KeyValue<Errors, Map<TopicPartition, OffsetFetchResponse.PartitionData>> keyValue =
             groupCoordinator.handleFetchOffsets(
-                request.groupId(),
-                Optional.ofNullable(request.partitions())
+                    request.groupId(),
+                    request.partitions() == null ? Optional.ofNullable(request.partitions()) : Optional.of(
+                            request.partitions()
+                            .stream()
+                            .map(tp -> {
+                                try {
+                                    TopicPartition newTopicPartition = new TopicPartition(
+                                            new KopTopic(tp.topic()).getFullName(), tp.partition());
+                                    replacingIndex.put(newTopicPartition, tp);
+                                    return newTopicPartition;
+                                } catch (KoPTopicException e) {
+                                    log.warn("Invalid topic name: {}", tp.topic(), e);
+                                    unknownPartitions.put(tp, OffsetFetchResponse.UNKNOWN_PARTITION);
+                                    return null;
+                                }
+                            })
+                            .filter(Objects::nonNull)
+                            .collect(Collectors.toList()))
             );
+
+        if (log.isDebugEnabled()) {
+            log.debug("OFFSET_FETCH Unknown partitions: {}", unknownPartitions);
+        }
+
+        if (log.isTraceEnabled()) {
+            StringBuffer traceInfo = new StringBuffer();
+            replacingIndex.forEach((inner, outer) ->
+                    traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
+            log.trace("OFFSET_FETCH TopicPartition relations: \n{}", traceInfo.toString());
+        }
+
+        // recover to original topic name
+        replaceTopicPartition(keyValue.getValue(), replacingIndex);
+        keyValue.getValue().putAll(unknownPartitions);
 
         resultFuture.complete(new OffsetFetchResponse(keyValue.getKey(), keyValue.getValue()));
     }
@@ -1205,6 +1255,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 //                ));
     }
 
+    private Map<TopicPartition, Errors> nonExistingTopicErrors() {
+        // TODO: The check for the existence of the topic is missing
+        return Maps.newHashMap();
+    }
+
     @VisibleForTesting
     Map<TopicPartition, OffsetAndMetadata> convertOffsetCommitRequestRetentionMs(OffsetCommitRequest request,
                                                                                  short apiVersion,
@@ -1274,6 +1329,35 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // TODO not process nonExistingTopic at this time.
         Map<TopicPartition, Errors> nonExistingTopic = nonExistingTopicErrors(request);
 
+        // convert raw topic name to KoP full name
+        // we need to ensure that topic name in __consumer_offsets is globally unique
+        Map<TopicPartition, OffsetCommitRequest.PartitionData> convertedOffsetData = new HashMap<>();
+        Map<TopicPartition, TopicPartition> replacingIndex = new HashMap<>();
+        request.offsetData().entrySet().removeIf(entry -> {
+            TopicPartition tp = entry.getKey();
+            try {
+                TopicPartition newTopicPartition = new TopicPartition(
+                        new KopTopic(tp.topic()).getFullName(), tp.partition());
+
+                convertedOffsetData.put(newTopicPartition, entry.getValue());
+                replacingIndex.put(newTopicPartition, tp);
+            } catch (KoPTopicException e) {
+                log.warn("Invalid topic name: {}", tp.topic(), e);
+                nonExistingTopic.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+            }
+            return true;
+        });
+
+        if (log.isTraceEnabled()) {
+            StringBuffer traceInfo = new StringBuffer();
+            replacingIndex.forEach((inner, outer) ->
+                    traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
+            log.trace("OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo.toString());
+        }
+
+        // update the request data
+        request.offsetData().putAll(convertedOffsetData);
+
         Map<TopicPartition, OffsetCommitRequest.PartitionData> authorizedTopic = request.offsetData();
         if (authorizedTopic.isEmpty()) {
             Map<TopicPartition, Errors> offsetCommitResult = new HashMap<>();
@@ -1299,6 +1383,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     request.generationId(),
                     convertedPartitionData
             ).thenAccept(offsetCommitResult -> {
+
+                // recover to original topic name
+                replaceTopicPartition(offsetCommitResult, replacingIndex);
+
                 if (!nonExistingTopic.isEmpty()) {
                     offsetCommitResult.putAll(nonExistingTopic);
                 }
@@ -1602,11 +1690,51 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleTxnOffsetCommit(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         TxnOffsetCommitRequest request = (TxnOffsetCommitRequest) kafkaHeaderAndRequest.getRequest();
+
+        // TODO not process nonExistingTopic at this time.
+        Map<TopicPartition, Errors> nonExistingTopic = nonExistingTopicErrors();
+
+        // convert raw topic name to KoP full name
+        // we need to ensure that topic name in __consumer_offsets is globally unique
+        Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> convertedOffsetData = new HashMap<>();
+        Map<TopicPartition, TopicPartition> replacingIndex = new HashMap<>();
+        request.offsets().entrySet().removeIf(entry -> {
+            TopicPartition tp = entry.getKey();
+            try {
+                TopicPartition newTopicPartition = new TopicPartition(
+                        new KopTopic(tp.topic()).getFullName(), tp.partition());
+
+                convertedOffsetData.put(newTopicPartition, entry.getValue());
+                replacingIndex.put(newTopicPartition, tp);
+            } catch (KoPTopicException e) {
+                log.warn("Invalid topic name: {}", tp.topic(), e);
+                nonExistingTopic.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+            }
+            return true;
+        });
+
+        if (log.isTraceEnabled()) {
+            StringBuffer traceInfo = new StringBuffer();
+            replacingIndex.forEach((inner, outer) ->
+                    traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
+            log.trace("TXN_OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo.toString());
+        }
+
+        // update the request data
+        request.offsets().putAll(convertedOffsetData);
+
         groupCoordinator.handleTxnCommitOffsets(
                 request.consumerGroupId(),
                 request.producerId(),
                 request.producerEpoch(),
                 convertTxnOffsets(request.offsets())).whenComplete((resultMap, throwable) -> {
+
+            // recover to original topic name
+            replaceTopicPartition(resultMap, replacingIndex);
+
+            if (!nonExistingTopic.isEmpty()) {
+                resultMap.putAll(nonExistingTopic);
+            }
             response.complete(new TxnOffsetCommitResponse(0, resultMap));
         });
     }

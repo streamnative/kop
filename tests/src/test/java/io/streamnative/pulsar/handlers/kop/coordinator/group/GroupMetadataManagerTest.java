@@ -43,6 +43,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManage
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.GroupTopicPartition;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.OffsetKey;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -605,7 +606,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         pendingOffsets.put(
             new TopicPartition("bar", 2), 899212L);
 
-        ByteBuffer buffer = ByteBuffer.allocate(1024);
+        ByteBuffer buffer = ByteBuffer.allocate(2048);
         int nextOffset = 0;
         nextOffset += appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, committedOffsets);
         nextOffset += completeTransactionalOffsetCommit(buffer, producerId, producerEpoch, nextOffset, true);
@@ -1412,7 +1413,9 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                 OffsetKey ok = (OffsetKey) bk;
                 GroupTopicPartition gtp = ok.key();
                 assertEquals(groupId, gtp.group());
-                assertEquals(topicPartition, gtp.topicPartition());
+                assertEquals(new TopicPartition(
+                        new KopTopic(topicPartition.topic()).getFullName(), topicPartition.partition()),
+                        gtp.topicPartition());
 
                 OffsetAndMetadata gm = GroupMetadataConstants.readOffsetMessageValue(
                     record.value()
@@ -1799,7 +1802,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                 assertTrue(bk instanceof OffsetKey);
                 OffsetKey ok = (OffsetKey) bk;
                 assertEquals(groupId, ok.key().group());
-                assertEquals("foo", ok.key().topicPartition().topic());
+                assertEquals(new KopTopic("foo").getFullName(), ok.key().topicPartition().topic());
             }
         });
         assertEquals(0, verified.get());
