@@ -223,7 +223,7 @@ final class GroupMetadataConstants {
         // Some test cases may use the original topic name to commit the offset
         // directly from this method, so we need to ensure that all the topics
         // has chances to be converted
-        if (topicPartition.partition() > 0 && !KopTopic.isFullTopicName(topicPartition.topic())) {
+        if (topicPartition.partition() >= 0 && !KopTopic.isFullTopicName(topicPartition.topic())) {
             try {
                 topicPartition = new TopicPartition(
                         new KopTopic(topicPartition.topic()).getFullName(), topicPartition.partition());

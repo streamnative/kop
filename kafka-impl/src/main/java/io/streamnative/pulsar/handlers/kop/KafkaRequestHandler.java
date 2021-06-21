@@ -1256,6 +1256,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private Map<TopicPartition, Errors> nonExistingTopicErrors(TxnOffsetCommitRequest request) {
+        // TODO: The check for the existence of the topic is missing
+        if (!request.offsets().isEmpty()) {
+            // do some checks and return the non-existing topics
+        }
         return Maps.newHashMap();
     }
 
