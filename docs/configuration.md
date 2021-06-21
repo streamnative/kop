@@ -60,7 +60,7 @@ This section lists configurations that may affect the performance.
 
 | Name                                     | Description                                                  | Default |
 | ---------------------------------------- | ------------------------------------------------------------ | ------- |
-| kopPrometheusStatsLatencyRolloverSeconds | Kop metrics exposed toPprometheus rollover latency in seconds. | 60      |
+| kopPrometheusStatsLatencyRolloverSeconds | Kop metrics exposed to prometheus rollover latency in seconds. | 60      |
 
 ## Group Coordinator
 
@@ -95,7 +95,7 @@ This section lists configurations about the authentication.
 | Name                                 | Description                                                  | Range                 | Default |
 | ------------------------------------ | ------------------------------------------------------------ | --------------------- | ------- |
 | saslAllowedMechanisms                | A set of supported SASL mechanisms exposed by the broker.     | PLAIN,<br>OAUTHBEARER |         |
-| kopOauth2AuthenticateCallbackHandler | The fully qualified name of an SASL server callback handler class that implements the <br>AuthenticateCallbackHandler interface, which is used for OAuth2 authentication. <br>If it is not set, the class will be Kafka's default server callback handler for <br>OAUTHBEARER mechanism: OAuthBearerUnsecuredValidatorCallbackHandler. |                       |         |
+| kopOauth2AuthenticateCallbackHandler | The fully qualified name of a SASL server callback handler class that implements the <br>AuthenticateCallbackHandler interface, which is used for OAuth2 authentication. <br>If it is not set, the class will be Kafka's default server callback handler for <br>OAUTHBEARER mechanism: OAuthBearerUnsecuredValidatorCallbackHandler. |                       |         |
 
 ## SSL encryption
 
