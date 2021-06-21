@@ -1255,11 +1255,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 //                ));
     }
 
-    private Map<TopicPartition, Errors> nonExistingTopicErrors(TxnOffsetCommitRequest request) {
+    private Map<TopicPartition, Errors> nonExistingTopicErrors() {
         // TODO: The check for the existence of the topic is missing
-        if (!request.offsets().isEmpty()) {
-            // do some checks and return the non-existing topics
-        }
         return Maps.newHashMap();
     }
 
@@ -1695,7 +1692,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         TxnOffsetCommitRequest request = (TxnOffsetCommitRequest) kafkaHeaderAndRequest.getRequest();
 
         // TODO not process nonExistingTopic at this time.
-        Map<TopicPartition, Errors> nonExistingTopic = nonExistingTopicErrors(request);
+        Map<TopicPartition, Errors> nonExistingTopic = nonExistingTopicErrors();
 
         // convert raw topic name to KoP full name
         // we need to ensure that topic name in __consumer_offsets is globally unique
