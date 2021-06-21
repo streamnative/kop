@@ -23,8 +23,10 @@ import com.google.common.base.MoreObjects.ToStringHelper;
 import com.google.common.base.Supplier;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.MemberMetadata.MemberSummary;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -622,7 +624,23 @@ public class GroupMetadata {
     }
 
     public Optional<OffsetAndMetadata> offset(TopicPartition topicPartition) {
-        return Optional.ofNullable(offsets.get(topicPartition)).map(e -> e.offsetAndMetadata);
+        return Optional
+                .ofNullable(offsets.computeIfAbsent(
+                        topicPartition,
+                        tp -> {
+                            // Some test cases may use the original topic name to read the offset
+                            // directly from this method, so we need to ensure that all the topics
+                            // has chances to be converted when it is missing
+                            try {
+                                return offsets.get(new TopicPartition(
+                                        new KopTopic(tp.topic()).getFullName(), tp.partition()));
+                            } catch (KoPTopicException e) {
+                                // In theory, this place will not be executed
+                                log.warn("Invalid topic name: {}", tp.topic(), e);
+                                return null;
+                            }
+                        }))
+                .map(e -> e.offsetAndMetadata);
     }
 
     // visible for testing

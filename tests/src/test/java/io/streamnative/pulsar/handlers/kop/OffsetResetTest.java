@@ -13,14 +13,23 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
 import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import kafka.admin.ConsumerGroupCommand;
+import kafka.coordinator.group.BaseKey;
+import kafka.coordinator.group.GroupMetadataManager;
+import kafka.coordinator.group.OffsetKey;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
@@ -29,9 +38,17 @@ import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.MutableRecordBatch;
+import org.apache.kafka.common.record.Record;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
+import org.apache.pulsar.client.api.Message;
+import org.apache.pulsar.client.api.MessageId;
+import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.client.api.Schema;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Ignore;
@@ -277,5 +294,141 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
         kProducer.close();
         kConsumer.close();
         adminClient.close();
+    }
+
+    private long describeGroups(String group, String topic) {
+        Properties properties = new Properties();
+        properties.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        AdminClient adminClient = AdminClient.create(properties);
+
+        KafkaConsumer<Integer, String> consumer = new KConsumer(topic, getKafkaBrokerPort(), group).getConsumer();
+        consumer.subscribe(Collections.singleton(topic));
+
+        long lag = 0;
+
+        try {
+            StringBuffer buffer = new StringBuffer("Consumer group details:\n");
+            for (TopicPartition topicPartition : consumer.partitionsFor(topic).stream()
+                    .map(info -> new TopicPartition(info.topic(), info.partition())).collect(Collectors.toList())) {
+                log.info("offset part: {}", adminClient.listConsumerGroupOffsets(group)
+                        .partitionsToOffsetAndMetadata().get());
+                long offset = adminClient.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get()
+                        .get(topicPartition).offset();
+                long leo = consumer.endOffsets(Collections.singletonList(topicPartition))
+                        .get(topicPartition);
+                lag += (leo - offset);
+                buffer.append(String.format("offset:%d, leo:%d, lag:%d%n", offset, leo, leo - offset));
+            }
+
+            log.info("{}", buffer.toString());
+            return lag;
+        } catch (Exception e) {
+            log.info("Unable to describe groups", e);
+            return -1;
+        }
+    }
+
+    private void resetTo(String topic, String group, String pos) {
+        List<String> args = new ArrayList<>();
+        args.add("--bootstrap-server");
+        args.add("localhost:" + getKafkaBrokerPort());
+        args.add("--group");
+        args.add(group);
+        args.add("--topic");
+        // notice we use the raw topic name here
+        args.add(topic.substring(topic.lastIndexOf('/') + 1));
+        args.add("--execute");
+        args.add("--reset-offsets");
+        args.add("--to-" + pos);
+
+        log.info("Start resetting");
+
+        ConsumerGroupCommand.ConsumerGroupCommandOptions opts =
+                new ConsumerGroupCommand.ConsumerGroupCommandOptions(args.stream().toArray(String[]::new));
+        ConsumerGroupCommand.ConsumerGroupService resetService = new ConsumerGroupCommand.ConsumerGroupService(opts);
+        resetService.resetOffsets();
+    }
+
+    private void readFromOffsetMessagePulsar() throws Exception {
+        Reader<ByteBuffer> reader = pulsarClient
+                .newReader(Schema.BYTEBUFFER)
+                .startMessageId(MessageId.earliest)
+                .topic("persistent://public/default/__consumer_offsets" + PARTITIONED_TOPIC_SUFFIX + "0")
+                .readCompacted(true)
+                .create();
+
+        log.info("start reading __consumer_offsets:{}", reader.getTopic());
+        while (true) {
+            Message<ByteBuffer> offsetMetadata = reader.readNext(1, TimeUnit.SECONDS);
+            if (offsetMetadata == null) {
+                break;
+            }
+
+            MemoryRecords memRecords = MemoryRecords.readableRecords(offsetMetadata.getValue());
+            log.info("__consumer_offsets MessageId:{}", offsetMetadata.getMessageId());
+
+            for (MutableRecordBatch batch : memRecords.batches()) {
+                for (Record record : batch) {
+                    BaseKey baseKey = GroupMetadataManager.readMessageKey(record.key());
+                    if (baseKey != null && (baseKey instanceof OffsetKey)) {
+                        OffsetKey offsetKey = (OffsetKey) baseKey;
+                        String formattedValue = String.valueOf(GroupMetadataManager
+                                .readOffsetMessageValue(record.value()));
+                        log.info("__consumer_offsets - key:{}, value:{}", offsetKey, formattedValue);
+                    }
+                }
+            }
+        }
+
+        reader.close();
+    }
+
+    @Test(timeOut = 30000)
+    public void testCliReset() throws Exception {
+        String topic = "persistent://public/default/test-reset-offset-topic";
+        final String group = "test-reset-offset-groupid";
+        final int numPartitions = 10;
+
+        // step1: create topic, produce some messages and consume until the end
+        admin.topics().createPartitionedTopic(topic, numPartitions);
+
+        KProducer kProducer = new KProducer(topic, false, getKafkaBrokerPort());
+
+        int totalMsgs = 10;
+        String messageStrPrefix = topic + "_message_";
+
+        for (int i = 0; i < totalMsgs; i++) {
+            String messageStr = messageStrPrefix + i;
+            kProducer.getProducer().send(new ProducerRecord<>(topic, i, messageStr));
+        }
+        kProducer.close();
+        log.info("finish producing");
+
+        KConsumer kConsumer = new KConsumer(topic, getKafkaBrokerPort(), group);
+        kConsumer.getConsumer().subscribe(Collections.singleton(topic));
+
+        int msgs = 0;
+        while (msgs < totalMsgs) {
+            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<Integer, String> record : records) {
+                Integer key = record.key();
+                assertEquals(messageStrPrefix + key.toString(), record.value());
+                msgs++;
+            }
+        }
+        assertEquals(msgs, totalMsgs);
+        kConsumer.getConsumer().commitSync();
+        readFromOffsetMessagePulsar();
+        assertEquals(0, describeGroups(group, topic));
+
+        // simulate the consumer has closed
+        kConsumer.close();
+        log.info("finish consuming");
+
+        // step2: reset to earliest or latest
+        resetTo(topic, group, "earliest");
+        readFromOffsetMessagePulsar();
+        // Check whether offset-reset works
+        assertTrue(describeGroups(group, topic) > 0);
     }
 }
