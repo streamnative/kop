@@ -262,7 +262,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             KopVersion.getBuildTime());
 
         try {
-            adminManager = new AdminManager(brokerService.getPulsar().getAdminClient());
+            adminManager = new AdminManager(brokerService.getPulsar().getAdminClient(), kafkaConfig);
         } catch (PulsarServerException e) {
             log.error("Failed to create PulsarAdmin: {}", e.getMessage());
             throw new IllegalStateException(e);

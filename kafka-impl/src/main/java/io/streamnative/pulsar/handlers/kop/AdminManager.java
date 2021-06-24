@@ -28,12 +28,15 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.InvalidRequestException;
+import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
+import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
@@ -48,9 +51,11 @@ class AdminManager {
                     .build();
 
     private final PulsarAdmin admin;
+    private final int defaultNumPartitions;
 
-    AdminManager(PulsarAdmin admin) {
+    public AdminManager(PulsarAdmin admin, KafkaServiceConfiguration conf) {
         this.admin = admin;
+        this.defaultNumPartitions = conf.getDefaultNumPartitions();
     }
 
     public void shutdown() {
@@ -81,14 +86,34 @@ class AdminManager {
             final CompletableFuture<ApiError> errorFuture = new CompletableFuture<>();
             futureMap.put(topic, errorFuture);
 
+            Consumer<ApiError> tryComplete = error -> {
+                errorFuture.complete(error);
+                int restNumTopics = numTopics.decrementAndGet();
+                if (restNumTopics < 0) {
+                    return;
+                }
+                if (restNumTopics == 0) {
+                    complete.run();
+                }
+            };
+
             KopTopic kopTopic;
             try {
                 kopTopic = new KopTopic(topic);
             } catch (RuntimeException e) {
-                errorFuture.complete(ApiError.fromThrowable(e));
+                tryComplete.accept(ApiError.fromThrowable(e));
                 return;
             }
-            admin.topics().createPartitionedTopicAsync(kopTopic.getFullName(), detail.numPartitions)
+            int numPartitions = detail.numPartitions;
+            if (numPartitions == CreateTopicsRequest.NO_NUM_PARTITIONS) {
+                numPartitions = defaultNumPartitions;
+            }
+            if (numPartitions < 0) {
+                tryComplete.accept(ApiError.fromThrowable(
+                        new InvalidRequestException("The partition '" + numPartitions + "' is negative")));
+                return;
+            }
+            admin.topics().createPartitionedTopicAsync(kopTopic.getFullName(), numPartitions)
                     .whenComplete((ignored, e) -> {
                         if (e == null) {
                             if (log.isDebugEnabled()) {
@@ -102,9 +127,13 @@ class AdminManager {
                         if (restNumTopics < 0) {
                             return;
                         }
-                        errorFuture.complete((e == null) ? ApiError.NONE : ApiError.fromThrowable(e));
-                        if (restNumTopics == 0) {
-                            complete.run();
+                        if (e == null) {
+                            tryComplete.accept(ApiError.NONE);
+                        } else if (e instanceof PulsarAdminException.ConflictException) {
+                            tryComplete.accept(ApiError.fromThrowable(
+                                    new TopicExistsException("Topic '" + topic + "' already exists.")));
+                        } else {
+                            tryComplete.accept(ApiError.fromThrowable(e));
                         }
                     });
         });
