@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.TopicKey;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
@@ -88,7 +89,7 @@ class AdminManager {
             KopTopic kopTopic;
             try {
                 kopTopic = new KopTopic(topic);
-            } catch (RuntimeException e) {
+            } catch (KoPTopicException e) {
                 errorFuture.complete(ApiError.fromThrowable(e));
                 if (numTopics.decrementAndGet() == 0) {
                     complete.run();
