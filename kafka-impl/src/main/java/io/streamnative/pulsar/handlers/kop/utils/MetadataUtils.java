@@ -88,8 +88,10 @@ public class MetadataUtils {
         String kafkaMetadataTenant = conf.getKafkaMetadataTenant();
         String kafkaMetadataNamespace = kafkaMetadataTenant + "/" + conf.getKafkaMetadataNamespace();
 
-        boolean clusterExists, tenantExists, namespaceExists, offsetsTopicExists;
-        clusterExists = tenantExists = namespaceExists = offsetsTopicExists = false;
+        boolean clusterExists = false;
+        boolean tenantExists = false;
+        boolean namespaceExists = false;
+        boolean offsetsTopicExists = false;
 
         try {
             Clusters clusters = pulsarAdmin.clusters();
@@ -212,8 +214,9 @@ public class MetadataUtils {
         String kafkaTenant = conf.getKafkaTenant();
         String kafkaNamespace = kafkaTenant + "/" + conf.getKafkaNamespace();
 
-        boolean clusterExists, tenantExists, namespaceExists;
-        clusterExists = tenantExists = namespaceExists = false;
+        boolean clusterExists = false;
+        boolean tenantExists = false;
+        boolean namespaceExists = false;
 
         try {
             Clusters clusters = pulsarAdmin.clusters();
