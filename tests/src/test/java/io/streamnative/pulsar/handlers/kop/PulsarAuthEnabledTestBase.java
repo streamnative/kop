@@ -104,7 +104,7 @@ public abstract class PulsarAuthEnabledTestBase extends KopProtocolHandlerTestBa
                             .allowedClusters(Collections.singleton(configClusterName))
                             .build());
         }
-        if (!admin.namespaces().getNamespaces(TENANT).contains(NAMESPACE)) {
+        if (!admin.namespaces().getNamespaces(TENANT).contains(TENANT + "/" + NAMESPACE)) {
             admin.namespaces().createNamespace(TENANT + "/" + NAMESPACE);
         }
         admin.namespaces()
