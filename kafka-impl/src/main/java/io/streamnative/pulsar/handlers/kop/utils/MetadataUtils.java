@@ -190,13 +190,114 @@ public class MetadataUtils {
         }
     }
 
+    /**
+     * This method creates the Kafka tenant and namespace if they are not currently present.
+     * <ul>
+     * <li>If the cluster does not exist this method will throw a PulsarServerException.NotFoundException</li>
+     * <li>If the tenant does not exist it will be created</li>
+     * <li>If the tenant exists but the allowedClusters list does not include the cluster this method will
+     * add the cluster to the allowedClusters list</li>
+     * <li>If the namespace does not exist it will be created</li>
+     * <li>If the namespace exists but the replicationClusters list does not include the cluster this method
+     * will add the cluster to the replicationClusters list</li>
+     * <li>If the offset topic does not exist it will be created</li>
+     * <li>If the offset topic exists but some partitions are missing, the missing partitions will be created</li>
+     * </ul>
+     */
+    public static void createKafkaNamespaceIfMissing(PulsarAdmin pulsarAdmin,
+                                                     ClusterData clusterData,
+                                                     KafkaServiceConfiguration conf)
+            throws PulsarAdminException {
+        String cluster = conf.getClusterName();
+        String kafkaTenant = conf.getKafkaTenant();
+        String kafkaNamespace = kafkaTenant + "/" + conf.getKafkaNamespace();
+
+        boolean clusterExists, tenantExists, namespaceExists;
+        clusterExists = tenantExists = namespaceExists = false;
+
+        try {
+            Clusters clusters = pulsarAdmin.clusters();
+            if (!clusters.getClusters().contains(cluster)) {
+                try {
+                    pulsarAdmin.clusters().createCluster(cluster, clusterData);
+                } catch (PulsarAdminException e) {
+                    if (e instanceof ConflictException) {
+                        log.info("Attempted to create cluster {} however it was created concurrently.", cluster);
+                    } else {
+                        // Re-throw all other exceptions
+                        throw e;
+                    }
+                }
+            } else {
+                ClusterData configuredClusterData = clusters.getCluster(cluster);
+                log.info("Cluster {} found: {}", cluster, configuredClusterData);
+            }
+            clusterExists = true;
+
+            // Check if the kafka tenant exists and create it if not
+            Tenants tenants = pulsarAdmin.tenants();
+            if (!tenants.getTenants().contains(kafkaTenant)) {
+                log.info("Tenant: {} does not exist, creating it ...", kafkaTenant);
+                tenants.createTenant(kafkaTenant,
+                        TenantInfo.builder()
+                                .adminRoles(conf.getSuperUserRoles())
+                                .allowedClusters(Collections.singleton(cluster))
+                                .build());
+            } else {
+                TenantInfo kafkaMetadataTenantInfo = tenants.getTenantInfo(kafkaTenant);
+                Set<String> allowedClusters = kafkaMetadataTenantInfo.getAllowedClusters();
+                if (!allowedClusters.contains(cluster)) {
+                    log.info("Tenant: {} exists but cluster: {} is not in the allowedClusters list, updating it ...",
+                            kafkaTenant, cluster);
+                    allowedClusters.add(cluster);
+                    tenants.updateTenant(kafkaTenant, kafkaMetadataTenantInfo);
+                }
+            }
+            tenantExists = true;
+
+            // Check if the kafka namespace exists and create it if not
+            Namespaces namespaces = pulsarAdmin.namespaces();
+            if (!namespaces.getNamespaces(kafkaTenant).contains(kafkaNamespace)) {
+                log.info("Namespaces: {} does not exist in tenant: {}, creating it ...",
+                        kafkaNamespace, kafkaTenant);
+                Set<String> replicationClusters = Sets.newHashSet(cluster);
+                namespaces.createNamespace(kafkaNamespace, replicationClusters);
+                namespaces.setNamespaceReplicationClusters(kafkaNamespace, replicationClusters);
+            } else {
+                List<String> replicationClusters = namespaces.getNamespaceReplicationClusters(kafkaNamespace);
+                if (!replicationClusters.contains(cluster)) {
+                    log.info("Namespace: {} exists but cluster: {} is not in the replicationClusters list,"
+                            + "updating it ...", kafkaNamespace, cluster);
+                    Set<String> newReplicationClusters = Sets.newHashSet(replicationClusters);
+                    newReplicationClusters.add(cluster);
+                    namespaces.setNamespaceReplicationClusters(kafkaNamespace, newReplicationClusters);
+                }
+            }
+            namespaceExists = true;
+
+        } catch (PulsarAdminException e) {
+            if (e instanceof ConflictException) {
+                log.info("Resources concurrent creating and cause e: ", e);
+                return;
+            }
+
+            log.error("Failed to successfully initialize Kafka Metadata {}",
+                    kafkaNamespace, e);
+            throw e;
+        } finally {
+            log.info("Current state of kafka metadata, cluster: {} exists: {}, tenant: {} exists: {},"
+                            + " namespace: {} exists: {}",
+                    cluster, clusterExists, kafkaTenant, tenantExists, kafkaNamespace, namespaceExists);
+        }
+    }
+
     private static void createTopicIfNotExist(final PulsarAdmin admin,
                                               final String topic,
                                               final int numPartitions) throws PulsarAdminException {
         try {
             admin.topics().createPartitionedTopic(topic, numPartitions);
         } catch (PulsarAdminException.ConflictException e) {
-            log.info("Resources concurrent creating: {}", e.getMessage());
+            log.info("Resources concurrent creating for topic : {}, caused by : {}", topic, e.getMessage());
         }
         try {
             // Ensure all partitions are created
