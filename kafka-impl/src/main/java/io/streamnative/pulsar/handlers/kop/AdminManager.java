@@ -28,7 +28,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.config.ConfigResource;
@@ -86,22 +85,14 @@ class AdminManager {
             final CompletableFuture<ApiError> errorFuture = new CompletableFuture<>();
             futureMap.put(topic, errorFuture);
 
-            Consumer<ApiError> tryComplete = error -> {
-                errorFuture.complete(error);
-                int restNumTopics = numTopics.decrementAndGet();
-                if (restNumTopics < 0) {
-                    return;
-                }
-                if (restNumTopics == 0) {
-                    complete.run();
-                }
-            };
-
             KopTopic kopTopic;
             try {
                 kopTopic = new KopTopic(topic);
             } catch (RuntimeException e) {
-                tryComplete.accept(ApiError.fromThrowable(e));
+                errorFuture.complete(ApiError.fromThrowable(e));
+                if (numTopics.decrementAndGet() == 0) {
+                    complete.run();
+                }
                 return;
             }
             int numPartitions = detail.numPartitions;
@@ -109,8 +100,11 @@ class AdminManager {
                 numPartitions = defaultNumPartitions;
             }
             if (numPartitions < 0) {
-                tryComplete.accept(ApiError.fromThrowable(
+                errorFuture.complete(ApiError.fromThrowable(
                         new InvalidRequestException("The partition '" + numPartitions + "' is negative")));
+                if (numTopics.decrementAndGet() == 0) {
+                    complete.run();
+                }
                 return;
             }
             admin.topics().createPartitionedTopicAsync(kopTopic.getFullName(), numPartitions)
@@ -122,18 +116,16 @@ class AdminManager {
                         } else {
                             log.error("Failed to create topic '{}': {}", topic, e);
                         }
-
-                        int restNumTopics = numTopics.decrementAndGet();
-                        if (restNumTopics < 0) {
-                            return;
-                        }
                         if (e == null) {
-                            tryComplete.accept(ApiError.NONE);
+                            errorFuture.complete(ApiError.NONE);
                         } else if (e instanceof PulsarAdminException.ConflictException) {
-                            tryComplete.accept(ApiError.fromThrowable(
+                            errorFuture.complete(ApiError.fromThrowable(
                                     new TopicExistsException("Topic '" + topic + "' already exists.")));
                         } else {
-                            tryComplete.accept(ApiError.fromThrowable(e));
+                            errorFuture.complete(ApiError.fromThrowable(e));
+                        }
+                        if (numTopics.decrementAndGet() == 0) {
+                            complete.run();
                         }
                     });
         });
