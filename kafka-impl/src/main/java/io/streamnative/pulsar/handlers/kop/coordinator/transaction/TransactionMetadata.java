@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
@@ -30,7 +31,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.RecordBatch;
-import org.inferred.freebuilder.shaded.com.google.common.collect.Maps;
 
 /**
  * Transaction metadata.
@@ -87,7 +87,7 @@ public class TransactionMetadata {
     private static Map<TransactionState, Set<TransactionState>> validPreviousStates;
 
     static {
-        validPreviousStates = Maps.newHashMap();
+        validPreviousStates = new HashMap<>();
         validPreviousStates.put(TransactionState.EMPTY, Sets.immutableEnumSet(
                 TransactionState.EMPTY,
                 TransactionState.COMPLETE_COMMIT,
