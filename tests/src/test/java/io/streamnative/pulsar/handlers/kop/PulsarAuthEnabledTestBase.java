@@ -38,7 +38,6 @@ import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.AuthAction;
-import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
@@ -97,13 +96,6 @@ public abstract class PulsarAuthEnabledTestBase extends KopProtocolHandlerTestBa
         conf.setProperties(properties);
 
         super.internalSetup();
-
-        admin.tenants().createTenant(TENANT,
-            TenantInfo.builder()
-                    .adminRoles(Collections.singleton(ADMIN_USER))
-                    .allowedClusters(Collections.singleton(configClusterName))
-                    .build());
-        admin.namespaces().createNamespace(TENANT + "/" + NAMESPACE);
         admin.namespaces()
             .setNamespaceReplicationClusters(TENANT + "/" + NAMESPACE, Sets.newHashSet(super.configClusterName));
         admin.topics().createPartitionedTopic(TOPIC, 1);
