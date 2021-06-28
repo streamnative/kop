@@ -58,13 +58,15 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.config.ConfigResource;
-import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.errors.InvalidRequestException;
+import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
+import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
@@ -97,6 +99,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     @BeforeMethod
     @Override
     protected void setup() throws Exception {
+        conf.setDefaultNumPartitions(2);
         super.internalSetup();
         log.info("success internal setup");
 
@@ -138,7 +141,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         ProtocolHandler handler1 = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler1).getGroupCoordinator();
 
-        adminManager = new AdminManager(pulsar.getAdminClient());
+        adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         handler = new KafkaRequestHandler(
             pulsar,
             (KafkaServiceConfiguration) conf,
@@ -371,7 +374,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         verifyTopicsDeletedByPulsarAdmin(topicToNumPartitions);
     }
 
-    @Test(timeOut = 10000)
+    @Test(timeOut = 20000)
     public void testCreateInvalidTopics() {
         Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
@@ -379,17 +382,64 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(props);
-        Map<String, Integer> topicToNumPartitions = new HashMap<String, Integer>(){{
-            put("xxx/testCreateInvalidTopics-0", 1);
-        }};
+        Map<String, Integer> topicToNumPartitions = Collections.singletonMap("xxx/testCreateInvalidTopics-0", 1);
         try {
             createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
             fail("create a invalid topic should fail");
         } catch (Exception e) {
             log.info("Failed to create topics: {} caused by {}", topicToNumPartitions, e.getCause());
-            final Throwable cause = e.getCause();
-            assertTrue(cause instanceof TimeoutException || cause instanceof UnknownServerException);
+            assertTrue(e.getCause() instanceof UnknownServerException);
         }
+        topicToNumPartitions = Collections.singletonMap("testCreateInvalidTopics-1", -1234);
+        try {
+            createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
+            fail("create a invalid topic should fail");
+        } catch (Exception e) {
+            log.info("Failed to create topics: {} caused by {}", topicToNumPartitions, e.getCause());
+            assertTrue(e.getCause() instanceof InvalidRequestException);
+        }
+    }
+
+    @Test(timeOut = 10000)
+    public void testCreateExistedTopic() {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000);
+
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(props);
+        final Map<String, Integer> topicToNumPartitions = Collections.singletonMap("testCreatedExistedTopic", 1);
+        try {
+            createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
+        } catch (ExecutionException | InterruptedException e) {
+            fail(e.getMessage());
+        }
+        try {
+            createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
+            fail("Create the existed topic should fail");
+        } catch (ExecutionException e) {
+            log.info("Failed to create existed topic: {}", e.getMessage());
+            assertTrue(e.getCause() instanceof TopicExistsException);
+        } catch (InterruptedException e) {
+            fail(e.getMessage());
+        }
+    }
+
+    @Test(timeOut = 10000)
+    public void testCreateTopicWithDefaultPartitions() throws Exception {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000);
+
+        final String topic = "testCreatedTopicWithDefaultPartitions";
+
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(props);
+        final Map<String, Integer> topicToNumPartitions = Collections.singletonMap(
+                topic,
+                CreateTopicsRequest.NO_NUM_PARTITIONS);
+        createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
+        assertEquals(admin.topics().getPartitionedTopicMetadata(topic).partitions, conf.getDefaultNumPartitions());
     }
 
     @Test(timeOut = 10000)

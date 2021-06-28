@@ -60,7 +60,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();
 
-        adminManager = new AdminManager(pulsar.getAdminClient());
+        adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         kafkaRequestHandler = new KafkaRequestHandler(
             pulsar,
             (KafkaServiceConfiguration) conf,
