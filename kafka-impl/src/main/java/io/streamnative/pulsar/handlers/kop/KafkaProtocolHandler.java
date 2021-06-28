@@ -271,9 +271,23 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
                 kafkaConfig.getGroupIdZooKeeperPath(), new byte[0]);
 
+        PulsarAdmin pulsarAdmin;
+        try {
+            pulsarAdmin = brokerService.getPulsar().getAdminClient();
+        } catch (PulsarServerException e) {
+            log.error("init PulsarAdmin failed with ", e);
+            throw new IllegalStateException(e);
+        }
+        final ClusterData clusterData = ClusterData.builder()
+                .serviceUrl(brokerService.getPulsar().getWebServiceAddress())
+                .serviceUrlTls(brokerService.getPulsar().getWebServiceAddressTls())
+                .brokerServiceUrl(brokerService.getPulsar().getBrokerServiceUrl())
+                .brokerServiceUrlTls(brokerService.getPulsar().getBrokerServiceUrlTls())
+                .build();
+
         // init and start group coordinator
         try {
-            initGroupCoordinator(brokerService);
+            initGroupCoordinator(pulsarAdmin, clusterData);
             startGroupCoordinator();
             // and listener for Offset topics load/unload
             brokerService.pulsar()
@@ -284,9 +298,18 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             log.error("initGroupCoordinator failed with", e);
             throw new IllegalStateException(e);
         }
+
+        // init kafka namespaces
+        try {
+            initKafkaNamespace(pulsarAdmin, clusterData);
+        } catch (Exception e) {
+            // no need to throw exception since we can create kafka namespace later
+            log.warn("init kafka failed, need to create it manually later", e);
+        }
+
         if (kafkaConfig.isEnableTransactionCoordinator()) {
             try {
-                initTransactionCoordinator();
+                initTransactionCoordinator(pulsarAdmin, clusterData);
                 startTransactionCoordinator();
             } catch (Exception e) {
                 log.error("Initialized transaction coordinator failed.", e);
@@ -356,7 +379,11 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         statsProvider.stop();
     }
 
-    public void initGroupCoordinator(BrokerService service) throws Exception {
+    public void initKafkaNamespace(PulsarAdmin pulsarAdmin, ClusterData clusterData) throws Exception {
+        MetadataUtils.createKafkaNamespaceIfMissing(pulsarAdmin, clusterData, kafkaConfig);
+    }
+
+    public void initGroupCoordinator(PulsarAdmin pulsarAdmin, ClusterData clusterData) throws Exception {
         GroupConfig groupConfig = new GroupConfig(
             kafkaConfig.getGroupMinSessionTimeoutMs(),
             kafkaConfig.getGroupMaxSessionTimeoutMs(),
@@ -374,18 +401,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             .offsetsRetentionMs(TimeUnit.MINUTES.toMillis(kafkaConfig.getOffsetsRetentionMinutes()))
             .build();
 
-        PulsarAdmin pulsarAdmin = service.pulsar().getAdminClient();
-        final ClusterData clusterData = ClusterData.builder()
-                .serviceUrl(brokerService.getPulsar().getWebServiceAddress())
-                .serviceUrlTls(brokerService.getPulsar().getWebServiceAddressTls())
-                .brokerServiceUrl(brokerService.getPulsar().getBrokerServiceUrl())
-                .brokerServiceUrlTls(brokerService.getPulsar().getBrokerServiceUrlTls())
-                .build();
         MetadataUtils.createOffsetMetadataIfMissing(pulsarAdmin, clusterData, kafkaConfig);
 
-
         this.groupCoordinator = GroupCoordinator.of(
-            (PulsarClientImpl) (service.pulsar().getClient()),
+            (PulsarClientImpl) (brokerService.pulsar().getClient()),
             groupConfig,
             offsetConfig,
             SystemTimer.builder()
@@ -405,18 +424,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
     }
 
-    public void initTransactionCoordinator() throws Exception {
+    public void initTransactionCoordinator(PulsarAdmin pulsarAdmin, ClusterData clusterData) throws Exception {
         TransactionConfig transactionConfig = TransactionConfig.builder()
                 .transactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions())
                 .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(kafkaConfig))
-                .build();
-
-        PulsarAdmin pulsarAdmin = brokerService.getPulsar().getAdminClient();
-        final ClusterData clusterData = ClusterData.builder()
-                .serviceUrl(brokerService.getPulsar().getWebServiceAddress())
-                .serviceUrlTls(brokerService.getPulsar().getWebServiceAddressTls())
-                .brokerServiceUrl(brokerService.getPulsar().getBrokerServiceUrl())
-                .brokerServiceUrlTls(brokerService.getPulsar().getBrokerServiceUrlTls())
                 .build();
 
         MetadataUtils.createTxnMetadataIfMissing(pulsarAdmin, clusterData, kafkaConfig);
