@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.TopicKey;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
@@ -32,8 +33,10 @@ import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.InvalidRequestException;
+import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
+import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
@@ -48,9 +51,11 @@ class AdminManager {
                     .build();
 
     private final PulsarAdmin admin;
+    private final int defaultNumPartitions;
 
-    AdminManager(PulsarAdmin admin) {
+    public AdminManager(PulsarAdmin admin, KafkaServiceConfiguration conf) {
         this.admin = admin;
+        this.defaultNumPartitions = conf.getDefaultNumPartitions();
     }
 
     public void shutdown() {
@@ -84,11 +89,26 @@ class AdminManager {
             KopTopic kopTopic;
             try {
                 kopTopic = new KopTopic(topic);
-            } catch (RuntimeException e) {
+            } catch (KoPTopicException e) {
                 errorFuture.complete(ApiError.fromThrowable(e));
+                if (numTopics.decrementAndGet() == 0) {
+                    complete.run();
+                }
                 return;
             }
-            admin.topics().createPartitionedTopicAsync(kopTopic.getFullName(), detail.numPartitions)
+            int numPartitions = detail.numPartitions;
+            if (numPartitions == CreateTopicsRequest.NO_NUM_PARTITIONS) {
+                numPartitions = defaultNumPartitions;
+            }
+            if (numPartitions < 0) {
+                errorFuture.complete(ApiError.fromThrowable(
+                        new InvalidRequestException("The partition '" + numPartitions + "' is negative")));
+                if (numTopics.decrementAndGet() == 0) {
+                    complete.run();
+                }
+                return;
+            }
+            admin.topics().createPartitionedTopicAsync(kopTopic.getFullName(), numPartitions)
                     .whenComplete((ignored, e) -> {
                         if (e == null) {
                             if (log.isDebugEnabled()) {
@@ -97,13 +117,15 @@ class AdminManager {
                         } else {
                             log.error("Failed to create topic '{}': {}", topic, e);
                         }
-
-                        int restNumTopics = numTopics.decrementAndGet();
-                        if (restNumTopics < 0) {
-                            return;
+                        if (e == null) {
+                            errorFuture.complete(ApiError.NONE);
+                        } else if (e instanceof PulsarAdminException.ConflictException) {
+                            errorFuture.complete(ApiError.fromThrowable(
+                                    new TopicExistsException("Topic '" + topic + "' already exists.")));
+                        } else {
+                            errorFuture.complete(ApiError.fromThrowable(e));
                         }
-                        errorFuture.complete((e == null) ? ApiError.NONE : ApiError.fromThrowable(e));
-                        if (restNumTopics == 0) {
+                        if (numTopics.decrementAndGet() == 0) {
                             complete.run();
                         }
                     });
