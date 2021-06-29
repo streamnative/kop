@@ -1,5 +1,5 @@
 ---
-download: "https://github.com/streamnative/kop/releases/download/v2.8.0.1/pulsar-protocol-handler-kafka-2.8.0.1.nar"
+download: "https://github.com/streamnative/kop/releases/download/v{{protocol:version}}/pulsar-protocol-handler-kafka-{{protocol:version}}.nar"
 alias: KoP - Kafka on Pulsar
 ---
 
