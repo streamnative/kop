@@ -60,6 +60,7 @@
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
     <maven-checkstyle-plugin.version>3.1.1</maven-checkstyle-plugin.version>
     <maven-compiler-plugin.version>3.8.1</maven-compiler-plugin.version>
+    <mavem-shade-plugin.version>3.2.4</mavem-shade-plugin.version>
     <maven-surefire-plugin.version>3.0.0-M3</maven-surefire-plugin.version>
     <os-maven-plugin.version>1.4.1.Final</os-maven-plugin.version>
     <puppycrawl.checkstyle.version>8.37</puppycrawl.checkstyle.version>
@@ -81,6 +82,8 @@
     <module>tests</module>
     <module>oauth-client</module>
     <module>kafka-client-api</module>
+    <module>kafka-1-0</module>
+    <module>kafka-client-factory</module>
   </modules>
 
   <!-- dependency definitions -->

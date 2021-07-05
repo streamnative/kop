@@ -61,6 +61,26 @@ public class ProduceContext<K, V> {
         }
     }
 
+    /**
+     * Complete the internal `future` field.
+     *
+     * @param metadata the instance of Kafka's RecordMetadata
+     * @param e the exception to complete exceptionally if it's not null
+     * @param <T> it should be org.apache.kafka.clients.producer.RecordMetadata
+     */
+    public <T> void complete(final T metadata, final Exception e) {
+        if (e == null) {
+            future.complete(RecordMetadata.create(metadata));
+        } else {
+            future.completeExceptionally(e);
+        }
+    }
+
+    /**
+     * Send the message using ProduceContext instead of using Producer directly.
+     *
+     * @see Producer#sendAsync(ProduceContext)
+     */
     public Future<RecordMetadata> sendAsync() {
         if (producer == null) {
             throw new IllegalArgumentException("producer is null");
