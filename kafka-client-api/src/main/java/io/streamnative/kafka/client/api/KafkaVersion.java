@@ -24,7 +24,7 @@ import lombok.Getter;
  */
 public enum KafkaVersion {
 
-    KAFKA_1_0_0("1-0-0");
+    DEFAULT("default"), KAFKA_1_0_0("1-0-0");
 
     @Getter
     private String name;
@@ -34,10 +34,16 @@ public enum KafkaVersion {
     }
 
     public String getStringSerializer() {
+        if (this.equals(DEFAULT)) {
+            return "org.apache.kafka.common.serialization.StringSerializer";
+        }
         return String.format("org.apache.kafka-%s.common.serialization.StringSerializer", name);
     }
 
     public String getStringDeserializer() {
+        if (this.equals(DEFAULT)) {
+            return "org.apache.kafka.common.serialization.StringDeserializer";
+        }
         return String.format("org.apache.kafka-%s.common.serialization.StringDeserializer", name);
     }
 }

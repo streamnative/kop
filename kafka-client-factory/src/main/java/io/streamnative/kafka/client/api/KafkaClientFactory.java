@@ -13,31 +13,12 @@
  */
 package io.streamnative.kafka.client.api;
 
-import io.streamnative.kafka.client.one.zero.ConsumerImpl;
-import io.streamnative.kafka.client.one.zero.ProducerImpl;
-
 /**
- * The factory class to create Kafka producers or consumers with a specific version.
+ * The interface for Kafka client factory.
  */
-public class KafkaClientFactory {
+public interface KafkaClientFactory {
 
-    private KafkaVersion kafkaVersion;
+    <K, V> Producer<K, V> createProducer(ProducerConfiguration conf);
 
-    public KafkaClientFactory(final KafkaVersion kafkaVersion) {
-        this.kafkaVersion = kafkaVersion;
-    }
-
-    public <K, V> Producer<K, V> createProducer(final ProducerConfiguration conf) {
-        if (kafkaVersion.equals(KafkaVersion.KAFKA_1_0_0)) {
-            return new ProducerImpl<>(conf);
-        }
-        throw new IllegalArgumentException("No producer for version: " + kafkaVersion);
-    }
-
-    public <K, V> Consumer<K, V> createConsumer(final ConsumerConfiguration conf) {
-        if (kafkaVersion.equals(KafkaVersion.KAFKA_1_0_0)) {
-            return new ConsumerImpl<>(conf);
-        }
-        throw new IllegalArgumentException("No consumer for version: " + kafkaVersion);
-    }
+    <K, V> Consumer<K, V> createConsumer(ConsumerConfiguration conf);
 }
