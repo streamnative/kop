@@ -76,12 +76,12 @@
   </licenses>
 
   <modules>
-    <module>kafka-impl</module>
-    <module>tests</module>
-    <module>oauth-client</module>
-    <module>kafka-client-api</module>
     <module>kafka-1-0</module>
+    <module>kafka-client-api</module>
     <module>kafka-client-factory</module>
+    <module>kafka-impl</module>
+    <module>oauth-client</module>
+    <module>tests</module>
   </modules>
 
   <!-- dependency definitions -->
