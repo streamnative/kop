@@ -29,7 +29,7 @@
 
   <groupId>io.streamnative.pulsar.handlers</groupId>
   <artifactId>pulsar-protocol-handler-kafka-parent</artifactId>
-  <version>2.7.2.2</version>
+  <version>2.7.2.6</version>
   <name>StreamNative :: Pulsar Protocol Handler :: KoP Parent</name>
   <description>Parent for Kafka on Pulsar implemented using Pulsar Protocol Handler.</description>
 
