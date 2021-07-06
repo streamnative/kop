@@ -175,7 +175,7 @@ public class KafkaService extends PulsarService {
             setWebServiceAddress(webAddress(kafkaConfig));
             setWebServiceAddressTls(webAddressTls(kafkaConfig));
             setBrokerServiceUrl(kafkaConfig.getBrokerServicePort().isPresent()
-                ? brokerUrl(advertisedAddress(kafkaConfig), getBrokerListenPort().get())
+                ? brokerUrl(kafkaConfig)
                 : null);
             setBrokerServiceUrlTls(brokerUrlTls(kafkaConfig));
 
