@@ -45,7 +45,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     @Getter
     private final EndPoint advertisedEndPoint;
     @Getter
-    private final SslContextFactory sslContextFactory;
+    private final SslContextFactory.Server sslContextFactory;
 
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
