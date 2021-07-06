@@ -32,5 +32,9 @@
   <!-- include the dependencies -->
   <dependencies>
     <!-- runtime dependencies -->
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+    </dependency>
   </dependencies>
 </project>
