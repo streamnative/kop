@@ -14,9 +14,12 @@
 package io.streamnative.kafka.client.api;
 
 import java.io.Closeable;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import lombok.NonNull;
 
 /**
  * A common interface of Kafka consumer.
@@ -29,5 +32,27 @@ public interface Consumer<K, V> extends Closeable {
         subscribe(Collections.singleton(topic));
     }
 
+    @NonNull
     List<ConsumerRecord<K, V>> receive(long timeoutMs);
+
+    /**
+     * Receive messages as much as possible until the number of received messages time exceeds limit or timed out.
+     *
+     * @param maxNumMessages the limited number of received messages
+     * @param timeoutMs the total timeout in milliseconds for this method
+     * @return the total received messages
+     */
+    default List<ConsumerRecord<K, V>> receiveUntil(int maxNumMessages, long timeoutMs) {
+        final int pollTimeoutMs = 100;
+        final List<ConsumerRecord<K, V>> records = new ArrayList<>();
+        final AtomicInteger numReceived = new AtomicInteger(0);
+        while (numReceived.get() < maxNumMessages) {
+            receive(pollTimeoutMs).forEach(record -> {
+                records.add(record);
+                numReceived.incrementAndGet();
+            });
+            timeoutMs -= pollTimeoutMs; // it may not be accurate, but it's not required to be accurate
+        }
+        return records;
+    }
 }

@@ -16,6 +16,7 @@ package io.streamnative.kafka.client.api;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
@@ -45,7 +46,7 @@ public class Header {
      * @return a list of converted Header
      */
     public static List<Header> fromHeaders(final Object[] originalHeaders) {
-        if (originalHeaders == null) {
+        if (originalHeaders == null || originalHeaders.length == 0) {
             return null;
         }
         final List<Header> headers = new ArrayList<>();
@@ -64,11 +65,28 @@ public class Header {
      * @return the converted list of Kafka header
      */
     public static <T> List<T> toHeaders(final List<Header> headers, final BiFunction<String, byte[], T> constructor) {
-        if (headers == null) {
+        if (headers == null || headers.isEmpty()) {
             return null;
         }
         return headers.stream()
                 .map(header -> constructor.apply(header.getKey(), header.getValue().getBytes(StandardCharsets.UTF_8)))
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        Header header = (Header) o;
+        return Objects.equals(key, header.key) && Objects.equals(value, header.value);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(key, value);
     }
 }
