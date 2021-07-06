@@ -25,6 +25,7 @@ import lombok.Getter;
  * Context for producing messages.
  */
 @Builder
+@Getter
 public class ProduceContext<K, V> {
 
     private Producer<K, V> producer;
@@ -34,8 +35,6 @@ public class ProduceContext<K, V> {
     private K key;
     private V value;
     private List<Header> headers;
-
-    @Getter
     private final CompletableFuture<RecordMetadata> future = new CompletableFuture<>();
 
     /**
