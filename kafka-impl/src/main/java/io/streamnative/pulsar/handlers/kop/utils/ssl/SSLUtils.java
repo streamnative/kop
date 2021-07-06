@@ -52,7 +52,8 @@ public class SSLUtils {
             .put(BrokerSecurityConfigs.SSL_CLIENT_AUTH_CONFIG, "kopSslClientAuth")
             .build();
 
-    public static SslContextFactory createSslContextFactory(KafkaServiceConfiguration kafkaServiceConfiguration) {
+    public static SslContextFactory.Server createSslContextFactory(
+            KafkaServiceConfiguration kafkaServiceConfiguration) {
         Builder<String, Object> sslConfigValues = ImmutableMap.builder();
 
         CONFIG_NAME_MAP.forEach((key, value) -> {
@@ -114,8 +115,8 @@ public class SSLUtils {
         return createSslContextFactory(sslConfigValues.build());
     }
 
-    public static SslContextFactory createSslContextFactory(Map<String, Object> sslConfigValues) {
-        SslContextFactory ssl = new SslContextFactory();
+    public static SslContextFactory.Server createSslContextFactory(Map<String, Object> sslConfigValues) {
+        SslContextFactory.Server ssl = new SslContextFactory.Server();
 
         configureSslContextFactoryKeyStore(ssl, sslConfigValues);
         configureSslContextFactoryTrustStore(ssl, sslConfigValues);
@@ -128,7 +129,7 @@ public class SSLUtils {
     /**
      * Configures KeyStore related settings in SslContextFactory.
      */
-    protected static void configureSslContextFactoryKeyStore(SslContextFactory ssl,
+    protected static void configureSslContextFactoryKeyStore(SslContextFactory.Server ssl,
                                                              Map<String, Object> sslConfigValues) {
         ssl.setKeyStoreType((String)
             getOrDefault(sslConfigValues, SslConfigs.SSL_KEYSTORE_TYPE_CONFIG, SslConfigs.DEFAULT_SSL_KEYSTORE_TYPE));
@@ -248,7 +249,7 @@ public class SSLUtils {
     /**
      * Create SSL engine used in KafkaChannelInitializer.
      */
-    public static SSLEngine createSslEngine(SslContextFactory sslContextFactory) throws Exception {
+    public static SSLEngine createSslEngine(SslContextFactory.Server sslContextFactory) throws Exception {
         sslContextFactory.start();
         SSLEngine engine  = sslContextFactory.newSSLEngine();
         engine.setUseClientMode(false);

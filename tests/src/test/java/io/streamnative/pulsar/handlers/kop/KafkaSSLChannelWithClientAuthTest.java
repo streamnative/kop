@@ -126,7 +126,7 @@ public class KafkaSSLChannelWithClientAuthTest extends KopProtocolHandlerTestBas
     }
 
     // verify producer with SSL configured could produce successfully.
-    @Test
+    @Test(timeOut = 30000)
     public void testKafkaProduceSSL() throws Exception {
         int partitionNumber = 1;
         boolean isBatch = false;
