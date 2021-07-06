@@ -46,12 +46,14 @@ public interface Consumer<K, V> extends Closeable {
         final int pollTimeoutMs = 100;
         final List<ConsumerRecord<K, V>> records = new ArrayList<>();
         final AtomicInteger numReceived = new AtomicInteger(0);
-        while (numReceived.get() < maxNumMessages) {
+
+        long elapsedTimeMs = 0;
+        while (numReceived.get() < maxNumMessages && elapsedTimeMs < timeoutMs) {
             receive(pollTimeoutMs).forEach(record -> {
                 records.add(record);
                 numReceived.incrementAndGet();
             });
-            timeoutMs -= pollTimeoutMs; // it may not be accurate, but it's not required to be accurate
+            elapsedTimeMs += pollTimeoutMs; // it may not be accurate, but it's not required to be accurate
         }
         return records;
     }
