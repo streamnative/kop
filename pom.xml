@@ -39,8 +39,6 @@
 
     <!-- dependencies -->
     <commons-lang3.version>3.11</commons-lang3.version>
-    <guava.version>21.0</guava.version>
-    <grpc.version>1.18.0</grpc.version>
     <jackson.version>2.12.1</jackson.version>
     <jcommander.version>1.48</jcommander.version>
     <kafka.version>2.0.0</kafka.version>
@@ -107,12 +105,6 @@
     </dependency>
 
     <dependency>
-      <groupId>io.grpc</groupId>
-      <artifactId>grpc-core</artifactId>
-      <version>${grpc.version}</version>
-    </dependency>
-
-    <dependency>
       <groupId>${pulsar.group.id}</groupId>
       <artifactId>pulsar-broker</artifactId>
       <version>${pulsar.version}</version>
@@ -148,12 +140,6 @@
     </dependency>
 
     <dependency>
-      <groupId>com.google.guava</groupId>
-      <artifactId>guava</artifactId>
-      <version>${guava.version}</version>
-    </dependency>
-
-    <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
       <version>${slf4j.version}</version>
@@ -163,6 +149,7 @@
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
       <version>${lombok.version}</version>
+      <scope>provided</scope>
     </dependency>
 
     <dependency>
