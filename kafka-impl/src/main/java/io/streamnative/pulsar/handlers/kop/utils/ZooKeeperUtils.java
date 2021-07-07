@@ -35,7 +35,21 @@ public class ZooKeeperUtils {
             if (log.isDebugEnabled()) {
                 log.debug("Created ZK path: {} data: {}", path, new String(data, StandardCharsets.UTF_8));
             }
-        } catch (KeeperException | InterruptedException e) {
+        } catch (KeeperException e) {
+            if (!e.code().equals(KeeperException.Code.NODEEXISTS)) {
+                log.error("Failed to create ZooKeeper node {}: {}", path, e.getMessage());
+            } else {
+                // update the group id
+                try {
+                    zooKeeper.setData(path, data, -1);
+                    if (log.isDebugEnabled()) {
+                        log.debug("Updated ZK path: {} data: {}", path, new String(data, StandardCharsets.UTF_8));
+                    }
+                } catch (KeeperException | InterruptedException setDataException) {
+                    log.error("Failed to set path '{}''s data to {}", path, data, setDataException);
+                }
+            }
+        } catch (InterruptedException e) {
             log.error("Failed to create ZooKeeper node {}: {}", path, e.getMessage());
         }
     }
