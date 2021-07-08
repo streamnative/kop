@@ -16,8 +16,11 @@ package io.streamnative.pulsar.handlers.kop;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.List;
+import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -28,8 +31,10 @@ import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.testng.Assert;
@@ -191,5 +196,39 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
                 + "topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
         Assert.assertTrue(sb.toString().contains("kop_server_BYTES_IN{partition=\"0\","
                 + "topic=\"kopKafkaProducePulsarMetrics1\"} 1170"));
+    }
+
+    @Test(timeOut = 20000)
+    public void testUpdateGroupId() throws Exception {
+        final String topic = "testUpdateGroupId";
+        final String clientId = "my-client";
+        final String group1 = "my-group-1";
+        final String group2 = "my-group-2";
+
+        tryConsume(topic, clientId, group1);
+        List<String> children = mockZooKeeper.getChildren(conf.getGroupIdZooKeeperPath(), false);
+        Assert.assertEquals(children.size(), 1);
+        Assert.assertEquals(children.get(0), "127.0.0.1-" + clientId);
+        byte[] data = mockZooKeeper.getData(conf.getGroupIdZooKeeperPath() + "/" + children.get(0), false, null);
+        Assert.assertEquals(new String(data, StandardCharsets.UTF_8), group1);
+
+        // Create a consumer with the same hostname and client id, the existed z-node will be updated
+        tryConsume(topic, clientId, group2);
+        children = mockZooKeeper.getChildren(conf.getGroupIdZooKeeperPath(), false);
+        Assert.assertEquals(children.size(), 1);
+        Assert.assertEquals(children.get(0), "127.0.0.1-" + clientId);
+        data = mockZooKeeper.getData(conf.getGroupIdZooKeeperPath() + "/" + children.get(0), false, null);
+        Assert.assertEquals(new String(data, StandardCharsets.UTF_8), group2);
+    }
+
+    private void tryConsume(final String topic, final String clientId, final String groupId) {
+        final Properties props = newKafkaConsumerProperties();
+        props.put(ConsumerConfig.CLIENT_ID_CONFIG, clientId);
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+
+        final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
+        consumer.subscribe(Collections.singleton(topic));
+        consumer.poll(Duration.ofSeconds(3));
+        consumer.close();
     }
 }
