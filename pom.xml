@@ -39,8 +39,6 @@
 
     <!-- dependencies -->
     <commons-lang3.version>3.11</commons-lang3.version>
-    <guava.version>21.0</guava.version>
-    <grpc.version>1.18.0</grpc.version>
     <jackson.version>2.12.1</jackson.version>
     <jcommander.version>1.48</jcommander.version>
     <kafka.version>2.0.0</kafka.version>
@@ -60,6 +58,7 @@
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
     <maven-checkstyle-plugin.version>3.1.1</maven-checkstyle-plugin.version>
     <maven-compiler-plugin.version>3.8.1</maven-compiler-plugin.version>
+    <mavem-shade-plugin.version>3.2.4</mavem-shade-plugin.version>
     <maven-surefire-plugin.version>3.0.0-M3</maven-surefire-plugin.version>
     <os-maven-plugin.version>1.4.1.Final</os-maven-plugin.version>
     <puppycrawl.checkstyle.version>8.37</puppycrawl.checkstyle.version>
@@ -77,9 +76,12 @@
   </licenses>
 
   <modules>
+    <module>kafka-1-0</module>
+    <module>kafka-client-api</module>
+    <module>kafka-client-factory</module>
     <module>kafka-impl</module>
-    <module>tests</module>
     <module>oauth-client</module>
+    <module>tests</module>
   </modules>
 
   <!-- dependency definitions -->
@@ -100,12 +102,6 @@
       <groupId>com.github.spotbugs</groupId>
       <artifactId>spotbugs-annotations</artifactId>
       <scope>provided</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>io.grpc</groupId>
-      <artifactId>grpc-core</artifactId>
-      <version>${grpc.version}</version>
     </dependency>
 
     <dependency>
@@ -144,12 +140,6 @@
     </dependency>
 
     <dependency>
-      <groupId>com.google.guava</groupId>
-      <artifactId>guava</artifactId>
-      <version>${guava.version}</version>
-    </dependency>
-
-    <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
       <version>${slf4j.version}</version>
@@ -159,6 +149,7 @@
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
       <version>${lombok.version}</version>
+      <scope>provided</scope>
     </dependency>
 
     <dependency>
