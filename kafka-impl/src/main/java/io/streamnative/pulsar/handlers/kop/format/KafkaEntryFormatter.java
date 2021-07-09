@@ -28,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
+import org.apache.pulsar.common.api.proto.KeyValue;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 
@@ -36,6 +37,10 @@ import org.apache.pulsar.common.protocol.Commands;
  */
 @Slf4j
 public class KafkaEntryFormatter implements EntryFormatter {
+
+    // These key-value identifies the entry's format as kafka
+    private static final String IDENTITY_KEY = "entry.format";
+    private static final String IDENTITY_VALUE = EntryFormatterFactory.EntryFormat.KAFKA.name().toLowerCase();
 
     @Override
     public ByteBuf encode(MemoryRecords records, int numMessages) {
@@ -55,10 +60,15 @@ public class KafkaEntryFormatter implements EntryFormatter {
             try {
                 long startOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
                 final ByteBuf byteBuf = entry.getDataBuffer();
-                Commands.skipMessageMetadata(byteBuf);
-                byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
-                byteBuf.setByte(byteBuf.readerIndex() + MAGIC_OFFSET, magic);
-                return byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes());
+                final MessageMetadata metadata = Commands.parseMessageMetadata(byteBuf);
+                if (isKafkaEntryFormat(metadata)) {
+                    byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
+                    byteBuf.setByte(byteBuf.readerIndex() + MAGIC_OFFSET, magic);
+                    return byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes());
+                } else {
+                    // TODO: treat it as Pulsar format and parse to Kafka format
+                    return null;
+                }
             } catch (KoPMessageMetadataNotFoundException e) { // skip failed decode entry
                 log.error("[{}:{}] Failed to decode entry. ", entry.getLedgerId(), entry.getEntryId(), e);
                 entry.release();
@@ -83,13 +93,25 @@ public class KafkaEntryFormatter implements EntryFormatter {
     private static MessageMetadata getMessageMetadataWithNumberMessages(int numMessages) {
         final MessageMetadata metadata = new MessageMetadata();
         metadata.addProperty()
-                .setKey("entry.format")
-                .setValue(EntryFormatterFactory.EntryFormat.KAFKA.name().toLowerCase());
+                .setKey(IDENTITY_KEY)
+                .setValue(IDENTITY_VALUE);
         metadata.setProducerName("");
         metadata.setSequenceId(0L);
         metadata.setPublishTime(System.currentTimeMillis());
         metadata.setNumMessagesInBatch(numMessages);
         return metadata;
+    }
+
+    private static boolean isKafkaEntryFormat(final MessageMetadata messageMetadata) {
+        final List<KeyValue> keyValues = messageMetadata.getPropertiesList();
+        for (KeyValue keyValue : keyValues) {
+            if (keyValue.hasKey()
+                    && keyValue.getKey().equals(IDENTITY_KEY)
+                    && keyValue.getValue().equals(IDENTITY_VALUE)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }
