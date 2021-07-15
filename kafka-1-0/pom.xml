@@ -57,11 +57,11 @@
               <relocations>
                 <relocation>
                   <pattern>org.apache.kafka.common</pattern>
-                  <shadedPattern>org.apache.kafka-1-0-0.common</shadedPattern>
+                  <shadedPattern>org.apache.kafka100.common</shadedPattern>
                 </relocation>
                 <relocation>
                   <pattern>org.apache.kafka.clients</pattern>
-                  <shadedPattern>org.apache.kafka-1-0-0.clients</shadedPattern>
+                  <shadedPattern>org.apache.kafka100.clients</shadedPattern>
                 </relocation>
               </relocations>
             </configuration>
