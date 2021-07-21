@@ -18,6 +18,7 @@ import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -30,6 +31,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.Producer;
 import org.testng.annotations.Test;
 
 /**
@@ -159,5 +161,23 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         kafkaConsumeCommitMessage(kConsumer4, totalMsg, msgStrPrefix, topicPartitions);
         kafkaConsumeCommitMessage(kConsumer5, totalMsg, msgStrPrefix, topicPartitions);
 
+    }
+
+    @Test(timeOut = 20000)
+    public void testPulsarProduceKafkaConsume() throws Exception {
+        final String topic = "test-pulsar-produce-kafka-consume";
+
+        final List<String> values = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            values.add("msg-" + i);
+        }
+
+        final Producer<byte[]> pulsarProducer = newPulsarProducer(topic);
+        sendSingleMessages(pulsarProducer, values);
+        pulsarProducer.close();
+
+        final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
+        final List<String> receivedValues = receiveMessages(kafkaConsumer, values.size());
+        assertEquals(receivedValues, values);
     }
 }
