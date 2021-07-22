@@ -35,7 +35,7 @@ jobs:
       run: mvn spotbugs:check
 
     - name: test after build
-      run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegrationTest,!DistributedClusterTest'
+      run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegrationTest'
 
     - name: KafkaIntegrationTest
       run: mvn test '-Dtest=KafkaIntegrationTest' -pl tests

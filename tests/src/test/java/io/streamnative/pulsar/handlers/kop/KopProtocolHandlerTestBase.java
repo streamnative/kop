@@ -448,7 +448,7 @@ public abstract class KopProtocolHandlerTestBase {
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducer");
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, keySer);
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, valueSer);
-            props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000);
+            props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 10000);
 
             if (retry) {
                 props.put(ProducerConfig.RETRIES_CONFIG, 3);

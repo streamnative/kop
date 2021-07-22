@@ -22,6 +22,7 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetAcker;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -158,6 +159,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                             }
                             // remove cache when unload
                             KafkaTopicManager.removeTopicManagerCache(name.toString());
+                            // deReference topic when unload
+                            KafkaTopicManager.deReference(name.toString());
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
@@ -314,6 +317,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             groupCoordinator.shutdown();
         }
         KafkaTopicManager.LOOKUP_CACHE.clear();
+        KafkaTopicManager.getConsumerTopicManagers().clear();
+        KafkaTopicManager.getReferences().clear();
+        KafkaTopicManager.getTopics().clear();
+        OffsetAcker.CONSUMERS.clear();
     }
 
     public void initGroupCoordinator(BrokerService service) throws Exception {

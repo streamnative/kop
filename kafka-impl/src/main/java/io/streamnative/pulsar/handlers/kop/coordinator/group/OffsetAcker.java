@@ -47,7 +47,8 @@ public class OffsetAcker implements Closeable {
     }
 
     // map off consumser: <groupId, consumers>
-    Map<String, Map<TopicPartition, CompletableFuture<Consumer<byte[]>>>> consumers = new ConcurrentHashMap<>();
+    public static final Map<String, Map<String, CompletableFuture<Consumer<byte[]>>>>
+            CONSUMERS = new ConcurrentHashMap<>();
 
     public void addOffsetsTracker(String groupId, byte[] assignment) {
         ByteBuffer assignBuffer = ByteBuffer.wrap(assignment);
@@ -81,7 +82,7 @@ public class OffsetAcker implements Closeable {
     }
 
     public void close(Set<String> groupIds) {
-        groupIds.forEach(groupId -> consumers.get(groupId).values().forEach(consumerFuture -> {
+        groupIds.forEach(groupId -> CONSUMERS.get(groupId).values().forEach(consumerFuture -> {
             consumerFuture.whenComplete((consumer, throwable) -> {
                 if (throwable != null) {
                     log.warn("Error when get consumer for consumer group close:", throwable);
@@ -99,24 +100,37 @@ public class OffsetAcker implements Closeable {
 
     @Override
     public void close() {
-        log.info("close OffsetAcker with {} groupIds", consumers.size());
-        close(consumers.keySet());
+        log.info("close OffsetAcker with {} groupIds", CONSUMERS.size());
+        close(CONSUMERS.keySet());
     }
 
     private CompletableFuture<Consumer<byte[]>> getConsumer(String groupId, TopicPartition topicPartition) {
-        Map<TopicPartition, CompletableFuture<Consumer<byte[]>>> group = consumers
+        String topicName = new KopTopic(topicPartition.topic()).getPartitionName(topicPartition.partition());
+        Map<String, CompletableFuture<Consumer<byte[]>>> group = CONSUMERS
             .computeIfAbsent(groupId, gid -> new ConcurrentHashMap<>());
         return group.computeIfAbsent(
-            topicPartition,
-            partition -> createConsumer(groupId, partition));
+            topicName,
+            name -> createConsumer(groupId, name));
     }
 
-    private CompletableFuture<Consumer<byte[]>> createConsumer(String groupId, TopicPartition topicPartition) {
-        KopTopic kopTopic = new KopTopic(topicPartition.topic());
+    private CompletableFuture<Consumer<byte[]>> createConsumer(String groupId, String topicName) {
         return consumerBuilder.clone()
-                .topic(kopTopic.getPartitionName(topicPartition.partition()))
+                .topic(topicName)
                 .subscriptionName(groupId)
                 .subscribeAsync();
     }
 
+    public static void removeOffsetAcker(String topicName) {
+        CONSUMERS.forEach((groupId, group) -> {
+            CompletableFuture<Consumer<byte[]> > consumerCompletableFuture = group.remove(topicName);
+            if (consumerCompletableFuture != null) {
+                consumerCompletableFuture.thenApply(Consumer::closeAsync).whenCompleteAsync((ignore, t) -> {
+                    if (t != null) {
+                        log.error("Failed to close offsetAcker consumer when remove partition {}.",
+                                topicName);
+                    }
+                });
+            }
+        });
+    }
 }
