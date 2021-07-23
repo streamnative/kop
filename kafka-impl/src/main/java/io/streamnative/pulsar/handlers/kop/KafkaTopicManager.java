@@ -21,6 +21,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -67,7 +68,7 @@ public class KafkaTopicManager {
     // remove expired cursors, so backlog can be cleared.
     private static final long checkPeriodMillis = 1 * 60 * 1000;
     private static final long expirePeriodMillis = 2 * 60 * 1000;
-    private final ScheduledFuture<?> cursorExpireTask;
+    private static volatile ScheduledFuture<?> cursorExpireTask = null;
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -83,19 +84,25 @@ public class KafkaTopicManager {
         this.brokerService = pulsarService.getBrokerService();
         this.internalServerCnx = new InternalServerCnx(requestHandler);
 
-        // check expired cursor every 1 min.
-        this.cursorExpireTask = brokerService.executor().scheduleWithFixedDelay(() -> {
-            long current = System.currentTimeMillis();
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Schedule a check of expired cursor",
-                    requestHandler.ctx.channel());
-            }
-            consumerTopicManagers.values().forEach(future -> {
-                if (future != null && future.isDone() && !future.isCompletedExceptionally()) {
-                    future.join().deleteExpiredCursor(current, expirePeriodMillis);
+        initializeCursorExpireTask(brokerService.executor());
+    }
+
+    private static void initializeCursorExpireTask(final ScheduledExecutorService executor) {
+        if (cursorExpireTask == null) {
+            synchronized (KafkaTopicManager.class) {
+                if (cursorExpireTask == null) {
+                    // check expired cursor every 1 min.
+                    cursorExpireTask = executor.scheduleWithFixedDelay(() -> {
+                        long current = System.currentTimeMillis();
+                        consumerTopicManagers.values().forEach(future -> {
+                            if (future != null && future.isDone() && !future.isCompletedExceptionally()) {
+                                future.join().deleteExpiredCursor(current, expirePeriodMillis);
+                            }
+                        });
+                    }, checkPeriodMillis, checkPeriodMillis, TimeUnit.MILLISECONDS);
                 }
-            });
-        }, checkPeriodMillis, checkPeriodMillis, TimeUnit.MILLISECONDS);
+            }
+        }
     }
 
     // update Ctx information, since at internalServerCnx create time there is no ctx passed into kafkaRequestHandler.
@@ -296,8 +303,6 @@ public class KafkaTopicManager {
         }
 
         try {
-            this.cursorExpireTask.cancel(true);
-
             closeKafkaTopicConsumerManagers();
 
             topics.keySet().forEach(topicName -> {
@@ -369,6 +374,12 @@ public class KafkaTopicManager {
     }
 
     public static void closeKafkaTopicConsumerManagers() {
+        synchronized (KafkaTopicManager.class) {
+            if (cursorExpireTask != null) {
+                cursorExpireTask.cancel(true);
+                cursorExpireTask = null;
+            }
+        }
         consumerTopicManagers.forEach((topic, tcmFuture) -> {
             try {
                 Optional.ofNullable(tcmFuture.get(300, TimeUnit.SECONDS))
