@@ -18,10 +18,12 @@ import static io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils.offsetAft
 
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.Closeable;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteCursorCallback;
@@ -32,7 +34,6 @@ import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.common.util.collections.ConcurrentLongHashMap;
 
 /**
  * KafkaTopicConsumerManager manages a topic and its related offset cursor.
@@ -43,30 +44,25 @@ public class KafkaTopicConsumerManager implements Closeable {
     private final PersistentTopic topic;
     private final KafkaRequestHandler requestHandler;
 
-    // the lock for closed status change.
-    // once closed, should not add new cursor back, since consumers are cleared.
-    private final ReentrantReadWriteLock rwLock;
-    private boolean closed;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
     // keep fetch offset and related cursor. keep cursor and its last offset in Pair. <offset, pair>
     @Getter
-    private final ConcurrentLongHashMap<Pair<ManagedCursor, Long>> consumers;
+    private final Map<Long, Pair<ManagedCursor, Long>> consumers;
     // used to track all created cursor, since above consumers may be remove and in fly,
     // use this map will not leak cursor when close.
-    private final ConcurrentMap<String, ManagedCursor> createdCursors;
+    private final Map<String, ManagedCursor> createdCursors;
 
     // track last access time(millis) for offsets <offset, time>
     @Getter
-    private final ConcurrentLongHashMap<Long> lastAccessTimes;
+    private final Map<Long, Long> lastAccessTimes;
 
     KafkaTopicConsumerManager(KafkaRequestHandler requestHandler, PersistentTopic topic) {
         this.topic = topic;
-        this.consumers = new ConcurrentLongHashMap<>();
+        this.consumers = new ConcurrentHashMap<>();
         this.createdCursors = new ConcurrentHashMap<>();
-        this.lastAccessTimes = new ConcurrentLongHashMap<>();
+        this.lastAccessTimes = new ConcurrentHashMap<>();
         this.requestHandler = requestHandler;
-        this.rwLock = new ReentrantReadWriteLock();
-        this.closed = false;
     }
 
     // delete expired cursors, so backlog can be cleared.
@@ -79,19 +75,13 @@ public class KafkaTopicConsumerManager implements Closeable {
     }
 
     void deleteOneExpiredCursor(long offset) {
-        Pair<ManagedCursor, Long> pair;
+        if (closed.get()) {
+            return;
+        }
 
         // need not do anything, since this tcm already in closing state. and close() will delete every thing.
-        rwLock.readLock().lock();
-        try {
-            if (closed) {
-                return;
-            }
-            pair = consumers.remove(offset);
-            lastAccessTimes.remove(offset);
-        } finally {
-            rwLock.readLock().unlock();
-        }
+        final Pair<ManagedCursor, Long> pair = consumers.remove(offset);
+        lastAccessTimes.remove(offset);
 
         if (pair != null) {
             if (log.isDebugEnabled()) {
@@ -106,6 +96,9 @@ public class KafkaTopicConsumerManager implements Closeable {
 
     // delete passed in cursor.
     void deleteOneCursorAsync(ManagedCursor cursor, String reason) {
+        if (closed.get()) {
+            return;
+        }
         if (cursor != null) {
             topic.getManagedLedger().asyncDeleteCursor(cursor.getName(), new DeleteCursorCallback() {
                 @Override
@@ -130,19 +123,12 @@ public class KafkaTopicConsumerManager implements Closeable {
     // remove from cache, so another same offset read could happen.
     // each success remove should have a following add.
     public Pair<ManagedCursor, Long> remove(long offset) {
-        Pair<ManagedCursor, Long> cursor;
+        if (closed.get()) {
+            return null;
+        }
 
         // should not return cursor for Fetch to read, since this tcm already in closing state.
-        rwLock.readLock().lock();
-        try {
-            if (closed) {
-                return null;
-            }
-            cursor = consumers.remove(offset);
-            lastAccessTimes.remove(offset);
-        } finally {
-            rwLock.readLock().unlock();
-        }
+        final Pair<ManagedCursor, Long> cursor = consumers.remove(offset);
 
         if (cursor != null) {
             if (log.isDebugEnabled()) {
@@ -156,53 +142,48 @@ public class KafkaTopicConsumerManager implements Closeable {
     }
 
     private Pair<ManagedCursor, Long> createCursorIfNotExists(long offset) {
+        if (closed.get()) {
+            return null;
+        }
         // This is for read a new entry, first check if offset is from a batched message request.
         offset = offsetAfterBatchIndex(offset);
 
         Pair<ManagedCursor, Long> cursor;
 
-        rwLock.readLock().lock();
-        try {
-            if (closed) {
-                return null;
-            }
-            // handle offset not exist in consumers, need create cursor.
-            consumers.computeIfAbsent(
-                offset,
-                off -> {
-                    PositionImpl position = MessageIdUtils.getPosition(off);
+        // handle offset not exist in consumers, need create cursor.
+        consumers.computeIfAbsent(
+            offset,
+            off -> {
+                PositionImpl position = MessageIdUtils.getPosition(off);
 
-                    String cursorName = "kop-consumer-cursor-" + topic.getName()
-                        + "-" + position.getLedgerId() + "-" + position.getEntryId()
-                        + "-" + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 10);
+                String cursorName = "kop-consumer-cursor-" + topic.getName()
+                    + "-" + position.getLedgerId() + "-" + position.getEntryId()
+                    + "-" + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 10);
 
-                    // get previous position, because NonDurableCursor is read from next position.
-                    ManagedLedgerImpl ledger = (ManagedLedgerImpl) topic.getManagedLedger();
-                    PositionImpl previous = ledger.getPreviousPosition(position);
-                    if (log.isDebugEnabled()) {
-                        log.debug("[{}] Create cursor {} for offset: {}. position: {}, previousPosition: {}",
-                            requestHandler.ctx.channel(), cursorName, off, position, previous);
-                    }
-                    ManagedCursor newCursor;
-                    try {
-                        newCursor = ledger.newNonDurableCursor(previous, cursorName);
-                        createdCursors.put(newCursor.getName(), newCursor);
-                    } catch (ManagedLedgerException e) {
-                        log.error("[{}] Error new cursor for topic {} at offset {} - {}. will cause fetch data error.",
-                            requestHandler.ctx.channel(), topic.getName(), off, previous, e);
-                        return null;
-                    }
+                // get previous position, because NonDurableCursor is read from next position.
+                ManagedLedgerImpl ledger = (ManagedLedgerImpl) topic.getManagedLedger();
+                PositionImpl previous = ledger.getPreviousPosition(position);
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Create cursor {} for offset: {}. position: {}, previousPosition: {}",
+                        requestHandler.ctx.channel(), cursorName, off, position, previous);
+                }
+                ManagedCursor newCursor;
+                try {
+                    newCursor = ledger.newNonDurableCursor(previous, cursorName);
+                    createdCursors.put(newCursor.getName(), newCursor);
+                } catch (ManagedLedgerException e) {
+                    log.error("[{}] Error new cursor for topic {} at offset {} - {}. will cause fetch data error.",
+                        requestHandler.ctx.channel(), topic.getName(), off, previous, e);
+                    return null;
+                }
 
-                    lastAccessTimes.put(off, System.currentTimeMillis());
-                    return Pair.of(newCursor, off);
-                });
+                lastAccessTimes.put(off, System.currentTimeMillis());
+                return Pair.of(newCursor, off);
+            });
 
-            // notice:  above would add a <offset, null-Pair>
-            cursor = consumers.remove(offset);
-            lastAccessTimes.remove(offset);
-        } finally {
-            rwLock.readLock().unlock();
-        }
+        // notice:  above would add a <offset, null-Pair>
+        cursor = consumers.remove(offset);
+        lastAccessTimes.remove(offset);
 
         return cursor;
     }
@@ -212,16 +193,10 @@ public class KafkaTopicConsumerManager implements Closeable {
         checkArgument(offset == pair.getRight(),
             "offset not equal. key: " + offset + " value: " + pair.getRight());
 
-        rwLock.readLock().lock();
-        // should delete the cursor since this tcm already in closing state.
-        try {
-            if (closed) {
-                ManagedCursor managedCursor = pair.getLeft();
-                deleteOneCursorAsync(managedCursor, "A race - add cursor back but tcm already closed");
-                return;
-            }
-        } finally {
-            rwLock.readLock().unlock();
+        if (closed.get()) {
+            ManagedCursor managedCursor = pair.getLeft();
+            deleteOneCursorAsync(managedCursor, "A race - add cursor back but tcm already closed");
+            return;
         }
 
         Pair<ManagedCursor, Long> oldPair = consumers.putIfAbsent(offset, pair);
@@ -239,30 +214,23 @@ public class KafkaTopicConsumerManager implements Closeable {
     // called when channel closed.
     @Override
     public void close() {
-        ConcurrentLongHashMap<Pair<ManagedCursor, Long>> consumersToClose;
-        ConcurrentMap<String, ManagedCursor> cursorsToClose;
-        rwLock.writeLock().lock();
-        try {
-            if (closed) {
-                return;
-            }
-            closed = true;
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Close TCM for topic {}.",
-                    requestHandler.ctx.channel(), topic.getName());
-            }
-            consumersToClose = new ConcurrentLongHashMap<>();
-            consumers.forEach((k, v) -> consumersToClose.put(k, v));
-            consumers.clear();
-            lastAccessTimes.clear();
-            cursorsToClose = new ConcurrentHashMap<>();
-            createdCursors.forEach((k, v) -> cursorsToClose.put(k, v));
-            createdCursors.clear();
-        } finally {
-            rwLock.writeLock().unlock();
+        if (!closed.compareAndSet(false, true)) {
+            return;
         }
 
-        consumersToClose.values()
+        if (log.isDebugEnabled()) {
+            log.debug("[{}] Close TCM for topic {}.",
+                requestHandler.ctx.channel(), topic.getName());
+        }
+        final List<Pair<ManagedCursor, Long>> consumersToClose = new ArrayList<>();
+        consumers.forEach((k, v) -> consumersToClose.add(v));
+        consumers.clear();
+        lastAccessTimes.clear();
+        final List<ManagedCursor> cursorsToClose = new ArrayList<>();
+        createdCursors.forEach((k, v) -> cursorsToClose.add(v));
+        createdCursors.clear();
+
+        consumersToClose
             .forEach(pair -> {
                     ManagedCursor cursor = pair.getLeft();
                     deleteOneCursorAsync(cursor, "TopicConsumerManager close");
@@ -272,7 +240,7 @@ public class KafkaTopicConsumerManager implements Closeable {
             });
 
         // delete dangling createdCursors
-        cursorsToClose.values().forEach(cursor ->
+        cursorsToClose.forEach(cursor ->
             deleteOneCursorAsync(cursor, "TopicConsumerManager close but cursor is still outstanding"));
         cursorsToClose.clear();
     }
