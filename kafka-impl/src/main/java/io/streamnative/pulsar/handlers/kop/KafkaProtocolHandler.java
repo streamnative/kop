@@ -320,6 +320,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         KafkaTopicManager.getConsumerTopicManagers().clear();
         KafkaTopicManager.getReferences().clear();
         KafkaTopicManager.getTopics().clear();
+        KafkaTopicManager.closeKafkaTopicConsumerManagers();
         OffsetAcker.CONSUMERS.clear();
     }
 

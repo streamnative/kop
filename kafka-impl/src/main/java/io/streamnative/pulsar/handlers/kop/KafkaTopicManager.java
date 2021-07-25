@@ -21,9 +21,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -67,7 +69,7 @@ public class KafkaTopicManager {
     // remove expired cursors, so backlog can be cleared.
     private static final long checkPeriodMillis = 1 * 60 * 1000;
     private static final long expirePeriodMillis = 2 * 60 * 1000;
-    private static ScheduledFuture<?> cursorExpireTask = null;
+    private static volatile ScheduledFuture<?> cursorExpireTask = null;
 
     // the lock for closed status change.
     private final ReentrantReadWriteLock rwLock;
@@ -319,6 +321,23 @@ public class KafkaTopicManager {
         }
     }
 
+    public static void closeKafkaTopicConsumerManagers() {
+        synchronized (KafkaTopicManager.class) {
+            if (cursorExpireTask != null) {
+                cursorExpireTask.cancel(true);
+            }
+        }
+        consumerTopicManagers.forEach((topic, tcmFuture) -> {
+            try {
+                Optional.ofNullable(tcmFuture.get(300, TimeUnit.SECONDS))
+                        .ifPresent(KafkaTopicConsumerManager::close);
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                log.warn("Failed to get TCM future of {} when trying to close it", topic);
+            }
+        });
+        consumerTopicManagers.clear();
+    }
+
     // when channel close, release all the topics reference in persistentTopic
     public synchronized void close() {
         rwLock.writeLock().lock();
@@ -336,12 +355,7 @@ public class KafkaTopicManager {
         }
 
         try {
-            this.cursorExpireTask.cancel(true);
-
-            for (CompletableFuture<KafkaTopicConsumerManager> manager : consumerTopicManagers.values()) {
-                manager.get().close();
-            }
-            consumerTopicManagers.clear();
+            closeKafkaTopicConsumerManagers();
 
             for (Map.Entry<String, CompletableFuture<PersistentTopic>> entry : topics.entrySet()) {
                 String topicName = entry.getKey();
