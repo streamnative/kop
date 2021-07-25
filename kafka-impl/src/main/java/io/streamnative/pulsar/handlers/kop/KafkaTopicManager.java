@@ -21,10 +21,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarServerException;
@@ -65,9 +67,9 @@ public class KafkaTopicManager {
 
     // every 1 min, check if the KafkaTopicConsumerManagers have expired cursors.
     // remove expired cursors, so backlog can be cleared.
-    private long checkPeriodMillis = 1 * 60 * 1000;
-    private long expirePeriodMillis = 2 * 60 * 1000;
-    private final ScheduledFuture<?> cursorExpireTask;
+    private static final long checkPeriodMillis = 1 * 60 * 1000;
+    private static final long expirePeriodMillis = 2 * 60 * 1000;
+    private static volatile ScheduledFuture<?> cursorExpireTask = null;
 
     // the lock for closed status change.
     private final ReentrantReadWriteLock rwLock;
@@ -88,19 +90,25 @@ public class KafkaTopicManager {
         this.rwLock = new ReentrantReadWriteLock();
         this.closed = false;
 
-        // check expired cursor every 1 min.
-        this.cursorExpireTask = brokerService.executor().scheduleWithFixedDelay(() -> {
-            long current = System.currentTimeMillis();
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Schedule a check of expired cursor",
-                    requestHandler.ctx.channel());
-            }
-            consumerTopicManagers.values().forEach(future -> {
-                if (future != null && future.isDone() && !future.isCompletedExceptionally()) {
-                    future.join().deleteExpiredCursor(current, expirePeriodMillis);
+        initializeCursorExpireTask(brokerService.executor());
+    }
+
+    private static void initializeCursorExpireTask(final ScheduledExecutorService executor) {
+        if (cursorExpireTask == null) {
+            synchronized (KafkaTopicManager.class) {
+                if (cursorExpireTask == null) {
+                    // check expired cursor every 1 min.
+                    cursorExpireTask = executor.scheduleWithFixedDelay(() -> {
+                        long current = System.currentTimeMillis();
+                        consumerTopicManagers.values().forEach(future -> {
+                            if (future != null && future.isDone() && !future.isCompletedExceptionally()) {
+                                future.join().deleteExpiredCursor(current, expirePeriodMillis);
+                            }
+                        });
+                    }, checkPeriodMillis, checkPeriodMillis, TimeUnit.MILLISECONDS);
                 }
-            });
-        }, checkPeriodMillis, checkPeriodMillis, TimeUnit.MILLISECONDS);
+            }
+        }
     }
 
     // update Ctx information, since at internalServerCnx create time there is no ctx passed into kafkaRequestHandler.
@@ -313,6 +321,23 @@ public class KafkaTopicManager {
         }
     }
 
+    public static void closeKafkaTopicConsumerManagers() {
+        synchronized (KafkaTopicManager.class) {
+            if (cursorExpireTask != null) {
+                cursorExpireTask.cancel(true);
+            }
+        }
+        consumerTopicManagers.forEach((topic, tcmFuture) -> {
+            try {
+                Optional.ofNullable(tcmFuture.get(300, TimeUnit.SECONDS))
+                        .ifPresent(KafkaTopicConsumerManager::close);
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                log.warn("Failed to get TCM future of {} when trying to close it", topic);
+            }
+        });
+        consumerTopicManagers.clear();
+    }
+
     // when channel close, release all the topics reference in persistentTopic
     public synchronized void close() {
         rwLock.writeLock().lock();
@@ -330,12 +355,7 @@ public class KafkaTopicManager {
         }
 
         try {
-            this.cursorExpireTask.cancel(true);
-
-            for (CompletableFuture<KafkaTopicConsumerManager> manager : consumerTopicManagers.values()) {
-                manager.get().close();
-            }
-            consumerTopicManagers.clear();
+            closeKafkaTopicConsumerManagers();
 
             for (Map.Entry<String, CompletableFuture<PersistentTopic>> entry : topics.entrySet()) {
                 String topicName = entry.getKey();
