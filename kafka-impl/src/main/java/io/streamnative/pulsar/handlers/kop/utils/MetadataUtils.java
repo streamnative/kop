@@ -22,7 +22,6 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -150,18 +149,10 @@ public class MetadataUtils {
                 log.info("Successfully created group metadata topic {} with {} partitions.",
                         offsetsTopic, conf.getOffsetsTopicNumPartitions());
             } else {
-                // Check to see if the partitions all exist
-                offsetPartitionSet.removeAll(
-                topics.getList(kafkaMetadataNamespace).stream()
-                .filter((topic) -> {
-                    return topic.startsWith(offsetsTopic + PARTITIONED_TOPIC_SUFFIX);
-                }).collect(Collectors.toList()));
-
-                if (!offsetPartitionSet.isEmpty()) {
-                    log.info("Identified missing offset topic partitions: {}", offsetPartitionSet);
-                    for (String offsetPartition : offsetPartitionSet) {
-                        topics.createNonPartitionedTopic(offsetPartition);
-                    }
+                try {
+                    // Ensure all partitions are created
+                    pulsarAdmin.topics().createMissedPartitions(offsetsTopic);
+                } catch (PulsarAdminException ignored) {
                 }
             }
             offsetsTopicExists = true;

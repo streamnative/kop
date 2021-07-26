@@ -123,6 +123,6 @@ public class MetadataUtilsTest {
         verify(mockTenants, times(1)).updateTenant(eq(conf.getKafkaMetadataTenant()), any(TenantInfo.class));
         verify(mockNamespaces, times(1)).setNamespaceReplicationClusters(eq(conf.getKafkaMetadataTenant()
             + "/" + conf.getKafkaMetadataNamespace()), any(Set.class));
-        verify(mockTopics, times(2)).createNonPartitionedTopic(any(String.class));
+        verify(mockTopics, times(1)).createMissedPartitions(any(String.class));
     }
 }
