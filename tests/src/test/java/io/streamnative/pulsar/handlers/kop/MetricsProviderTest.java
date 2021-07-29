@@ -152,6 +152,8 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
             sb.append(line);
         }
 
+        log.info("Metrics string:\n{}", sb.toString());
+
         // channel stats
         Assert.assertTrue(sb.toString().contains("kop_server_ALIVE_CHANNEL_COUNT"));
         Assert.assertTrue(sb.toString().contains("kop_server_ACTIVE_CHANNEL_COUNT"));
