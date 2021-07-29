@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
 
@@ -177,6 +178,9 @@ public abstract class KopProtocolHandlerTestBase {
                         + SSL_PREFIX + "localhost:" + kafkaBrokerPortTls);
         kafkaConfig.setEntryFormat(entryFormat);
 
+        // Speed up tests for reducing rebalance time
+        kafkaConfig.setGroupInitialRebalanceDelayMs(0);
+
         // set protocol related config
         URL testHandlerUrl = this.getClass().getClassLoader().getResource("test-protocol-handler.nar");
         Path handlerPath;
@@ -313,6 +317,8 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     protected void stopBroker() throws Exception {
+        // set shutdown timeout to 0 for forceful shutdown
+        pulsar.getConfiguration().setBrokerShutdownTimeoutMs(0L);
         pulsar.close();
     }
 
@@ -344,6 +350,7 @@ public abstract class KopProtocolHandlerTestBase {
         doReturn(namespaceServiceSupplier).when(pulsar).getNamespaceServiceProvider();
 
         doReturn(sameThreadOrderedSafeExecutor).when(pulsar).getOrderedExecutor();
+        doAnswer((invocation) -> spy(invocation.callRealMethod())).when(pulsar).newCompactor();
     }
 
     public static MockZooKeeper createMockZooKeeper(String clusterName, String brokerUrl, String brokerUrlTls,

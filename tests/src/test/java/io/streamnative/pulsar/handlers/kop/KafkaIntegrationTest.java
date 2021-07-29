@@ -80,8 +80,11 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
     @DataProvider
     public static Object[][] integrations() {
         return new Object[][]{
-                {"golang-sarama", Optional.empty(), true, true},
-                {"golang-sarama", Optional.of("persistent://public/default/my-sarama-topic-full-name"), true, true},
+                // TODO: golang-sarama works well but it's very likely to complete before testcontainers catch the logs
+                //  so that GenericContainer failed to start. Ignore these two cases first.
+                //  See https://github.com/streamnative/kop/issues/629.
+                //{"golang-sarama", Optional.empty(), true, true},
+                //{"golang-sarama", Optional.of("persistent://public/default/my-sarama-topic-full-name"), true, true},
                 {"golang-confluent-kafka", Optional.empty(), true, true},
                 // TODO: rustlang-rdkafka is failing on Github Actions and works locally, we need to investigate
                 // {"rustlang-rdkafka", Optional.empty(), true, true},

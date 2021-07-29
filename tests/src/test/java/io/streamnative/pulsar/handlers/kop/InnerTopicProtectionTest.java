@@ -62,6 +62,8 @@ public class InnerTopicProtectionTest extends KopProtocolHandlerTestBase {
         kConfig.setBrokerDeleteInactiveTopicsEnabled(false);
         kConfig.setSystemTopicEnabled(true);
         kConfig.setTopicLevelPoliciesEnabled(true);
+        kConfig.setGroupInitialRebalanceDelayMs(0);
+        kConfig.setBrokerShutdownTimeoutMs(0);
 
         // set protocol related config
         URL testHandlerUrl = this.getClass().getClassLoader().getResource("test-protocol-handler.nar");
