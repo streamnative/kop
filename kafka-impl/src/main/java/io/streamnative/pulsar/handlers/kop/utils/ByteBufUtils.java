@@ -70,6 +70,9 @@ public class ByteBufUtils {
             return ByteBuffer.wrap(messageMetadata.getOrderingKey()).asReadOnlyBuffer();
         }
 
+        if (!messageMetadata.hasPartitionKey()) {
+            return null;
+        }
         String key = messageMetadata.getPartitionKey();
         if (messageMetadata.hasPartitionKeyB64Encoded()) {
             return ByteBuffer.wrap(Base64.getDecoder().decode(key));
