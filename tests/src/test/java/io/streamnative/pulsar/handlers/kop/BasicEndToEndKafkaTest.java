@@ -175,7 +175,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
     @Test(timeOut = 20000)
     public void testMixedProduceKafkaConsume() throws Exception {
         final String topic = "test-mixed-produce-kafka-consume";
-        final int numMessages = 60;
+        final int numMessages = 30;
         final List<String> values =
                 IntStream.range(0, numMessages).mapToObj(i -> "value-" + i).collect(Collectors.toList());
         // Some messages doesn't have keys
@@ -184,7 +184,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
                 .collect(Collectors.toList());
         // Some messages doesn't have properties or headers
         final List<Pair<String, String>> properties = IntStream.range(0, numMessages)
-                .mapToObj(i -> (i % 6 == 0) ? Pair.of("prop-key-" + i, "prop-value-" + i) : null)
+                .mapToObj(i -> (i % 5 == 0) ? Pair.of("prop-key-" + i, "prop-value-" + i) : null)
                 .collect(Collectors.toList());
 
         final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();

@@ -18,7 +18,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import io.netty.buffer.ByteBuf;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import lombok.NonNull;
@@ -177,7 +176,7 @@ public class ByteBufUtils {
         return properties.stream()
                 .map(property -> new RecordHeader(
                         property.getKey(),
-                        property.getValue().getBytes(StandardCharsets.UTF_8))
+                        property.getValue().getBytes(UTF_8))
                 ).toArray(Header[]::new);
     }
 }
