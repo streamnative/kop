@@ -60,7 +60,7 @@ public class ByteBufUtils {
 
         if (messageMetadata.hasPartitionKey()) {
             final String key = messageMetadata.getPartitionKey();
-            if (messageMetadata.hasPartitionKeyB64Encoded()) {
+            if (messageMetadata.isPartitionKeyB64Encoded()) {
                 return ByteBuffer.wrap(Base64.getDecoder().decode(key)).asReadOnlyBuffer();
             } else {
                 // for Base64 not encoded string, convert to UTF_8 chars
@@ -149,7 +149,7 @@ public class ByteBufUtils {
                 final ByteBuffer value = singleMessageMetadata.isNullValue()
                         ? null
                         : getNioBuffer(singleMessagePayload);
-                final Header[] headers = getHeadersFromMetadata(metadata.getPropertiesList());
+                final Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
                 builder.appendWithOffset(baseOffset + i,
                         timestamp,
                         getKeyByteBuffer(singleMessageMetadata),
