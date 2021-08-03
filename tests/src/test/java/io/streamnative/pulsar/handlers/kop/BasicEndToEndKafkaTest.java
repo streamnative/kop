@@ -18,7 +18,6 @@ import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -164,17 +163,23 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
     }
 
     @Test(timeOut = 20000)
-    public void testPulsarProduceKafkaConsume() throws Exception {
-        final String topic = "test-pulsar-produce-kafka-consume";
+    public void testMixedProduceKafkaConsume() throws Exception {
+        final String topic = "test-mixed-produce-kafka-consume";
+        final List<String> values = IntStream.range(0, 50).mapToObj(i -> "msg-" + i).collect(Collectors.toList());
 
-        final List<String> values = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            values.add("msg-" + i);
+        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        final Producer<byte[]> pulsarProducer = newPulsarProducer(topic);
+
+        for (int i = 0; i < values.size(); i++) {
+            if (i % 2 == 0) {
+                sendSingleMessages(kafkaProducer, topic, Collections.singletonList(values.get(i)));
+            } else {
+                sendSingleMessages(pulsarProducer, Collections.singletonList(values.get(i)));
+            }
         }
 
-        final Producer<byte[]> pulsarProducer = newPulsarProducer(topic);
-        sendSingleMessages(pulsarProducer, values);
         pulsarProducer.close();
+        kafkaProducer.close();
 
         final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
         final List<String> receivedValues = receiveMessages(kafkaConsumer, values.size());

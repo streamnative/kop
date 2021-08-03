@@ -160,8 +160,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
             return Unpooled.wrappedBuffer(records.buffer());
         }
 
-        // TODO: add cache for NIO buffer
-        final ByteBuffer byteBuffer = ByteBuffer.allocateDirect(DEFAULT_BUFFER_SIZE);
+        final ByteBuffer byteBuffer = ByteBuffer.allocate(DEFAULT_BUFFER_SIZE);
         final MemoryRecordsBuilder builder = new MemoryRecordsBuilder(
                 byteBuffer,
                 magic,
@@ -214,10 +213,11 @@ public class KafkaEntryFormatter implements EntryFormatter {
                     headers);
         }
 
-        builder.close();
+        final MemoryRecords records = builder.build();
         uncompressedPayload.release();
         byteBuffer.flip();
-        return Unpooled.wrappedBuffer(byteBuffer);
+
+        return Unpooled.wrappedBuffer(records.buffer());
     }
 
     @NonNull
