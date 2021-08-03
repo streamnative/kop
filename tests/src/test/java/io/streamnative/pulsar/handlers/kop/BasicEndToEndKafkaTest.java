@@ -165,18 +165,20 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
     @Test(timeOut = 20000)
     public void testMixedProduceKafkaConsume() throws Exception {
         final String topic = "test-mixed-produce-kafka-consume";
-        final List<String> values = IntStream.range(0, 50).mapToObj(i -> "msg-" + i).collect(Collectors.toList());
+        final List<String> values = IntStream.range(0, 60).mapToObj(i -> "msg-" + i).collect(Collectors.toList());
 
         final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
         final Producer<byte[]> pulsarProducer = newPulsarProducer(topic);
 
-        for (int i = 0; i < values.size(); i++) {
+        for (int i = 0; i < values.size() / 3; i++) {
             if (i % 2 == 0) {
                 sendSingleMessages(kafkaProducer, topic, Collections.singletonList(values.get(i)));
             } else {
                 sendSingleMessages(pulsarProducer, Collections.singletonList(values.get(i)));
             }
         }
+        sendBatchedMessages(kafkaProducer, topic, values.subList(values.size() / 3, values.size() / 3 * 2));
+        sendBatchedMessages(pulsarProducer, values.subList(values.size() / 3 * 2, values.size()));
 
         pulsarProducer.close();
         kafkaProducer.close();

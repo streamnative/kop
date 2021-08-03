@@ -22,6 +22,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.stream.IntStream;
+
+import io.netty.buffer.Unpooled;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
@@ -46,6 +49,9 @@ import org.apache.pulsar.common.protocol.Commands;
  */
 @Slf4j
 public class ByteBufUtils {
+
+    private static final int DEFAULT_BUFFER_SIZE = 1024 * 1024;
+    private static final int MAX_RECORDS_BUFFER_SIZE = 10 * 1024 * 1024;
 
     public static ByteBuffer getKeyByteBuffer(SingleMessageMetadata messageMetadata) {
         if (messageMetadata.hasOrderingKey()) {
@@ -91,102 +97,85 @@ public class ByteBufUtils {
         return ByteBuffer.wrap(bytes);
     }
 
-    public MemoryRecords decodePulsarEntryToKafkaRecords(final MessageMetadata msgMetadata,
-                                                         final ByteBuf payload,
-                                                         final long baseOffset,
-                                                         final byte magic,
-                                                         final long ledgerId,
-                                                         final long entryId) {
-
-        if (msgMetadata.hasMarkerType()
-                && (msgMetadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
-                || msgMetadata.getMarkerType() == MarkerType.TXN_ABORT_VALUE)) {
+    public static MemoryRecords decodePulsarEntryToKafkaRecords(final MessageMetadata metadata,
+                                                                final ByteBuf payload,
+                                                                final long baseOffset,
+                                                                final byte magic) throws IOException {
+        if (metadata.hasMarkerType()
+                && (metadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
+                || metadata.getMarkerType() == MarkerType.TXN_ABORT_VALUE)) {
             return MemoryRecords.withEndTransactionMarker(
                     baseOffset,
-                    msgMetadata.getPublishTime(),
+                    metadata.getPublishTime(),
                     0,
-                    msgMetadata.getTxnidMostBits(),
-                    (short) msgMetadata.getTxnidLeastBits(),
-                    new EndTransactionMarker(
-                            msgMetadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
-                                    ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0));
+                    metadata.getTxnidMostBits(),
+                    (short) metadata.getTxnidLeastBits(),
+                    new EndTransactionMarker(metadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
+                            ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0));
         }
 
-        final CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(msgMetadata.getCompression());
-        final int uncompressedSize = msgMetadata.getUncompressedSize();
-        ByteBuf uncompressedPayload;
-        try {
-            uncompressedPayload = codec.decode(payload, uncompressedSize);
-        } catch (IOException e) {
-            log.error("Failed to uncompress payload of offset: {} and skip it", baseOffset, e);
-            return null;
-        }
+        final int uncompressedSize = metadata.getUncompressedSize();
+        final CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(metadata.getCompression());
+        final ByteBuf uncompressedPayload = codec.decode(payload, uncompressedSize);
 
-        final ByteBuffer byteBuffer = ByteBuffer.allocate(1024 * 1024);
+        final ByteBuffer byteBuffer = ByteBuffer.allocate(DEFAULT_BUFFER_SIZE);
         final MemoryRecordsBuilder builder = new MemoryRecordsBuilder(byteBuffer,
                 magic,
                 CompressionType.NONE,
                 TimestampType.CREATE_TIME,
                 baseOffset,
-                msgMetadata.getPublishTime(),
+                metadata.getPublishTime(),
                 RecordBatch.NO_PRODUCER_ID,
                 RecordBatch.NO_PRODUCER_EPOCH,
                 RecordBatch.NO_SEQUENCE,
-                msgMetadata.hasTxnidMostBits() && msgMetadata.hasTxnidLeastBits(),
+                metadata.hasTxnidMostBits() && metadata.hasTxnidLeastBits(),
                 false,
                 RecordBatch.NO_PARTITION_LEADER_EPOCH,
-                100 * 1024 * 1024);
-        if (msgMetadata.hasTxnidMostBits()) {
-            builder.setProducerState(msgMetadata.getTxnidMostBits(), (short) msgMetadata.getTxnidLeastBits(), 0, true);
+                MAX_RECORDS_BUFFER_SIZE);
+        if (metadata.hasTxnidMostBits()) {
+            builder.setProducerState(metadata.getTxnidMostBits(), (short) metadata.getTxnidLeastBits(), 0, true);
         }
 
-        final int numMessages = msgMetadata.getNumMessagesInBatch();
-        final boolean isBatched = (msgMetadata.hasNumMessagesInBatch() || numMessages != 1);
-
-        if (log.isDebugEnabled()) {
-            log.debug("Entry to MemoryRecords, numMessages: {}, isBatched: {}, ledgerId: {}, entryId: {}",
-                    numMessages, isBatched, ledgerId, entryId);
-        }
-
-        if (isBatched) {
-            IntStream.range(0, numMessages).parallel().forEachOrdered(i -> {
-                if (log.isDebugEnabled()) {
-                    log.debug(" processing message num - {} in batch", i);
-                }
+        if (metadata.hasNumMessagesInBatch()) {
+            final int numMessages = metadata.getNumMessagesInBatch();
+            for (int i = 0; i < numMessages; i++) {
                 final SingleMessageMetadata singleMessageMetadata = new SingleMessageMetadata();
-                try {
-                    final ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(
-                            uncompressedPayload, singleMessageMetadata, i, numMessages);
-                    final ByteBuffer value = (singleMessageMetadata.isNullValue()
-                            ? null
-                            : getNioBuffer(singleMessagePayload));
-                    builder.appendWithOffset(
-                            baseOffset + i,
-                            msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
-                            ByteBufUtils.getKeyByteBuffer(singleMessageMetadata),
-                            value,
-                            getHeadersFromMetadata(singleMessageMetadata.getPropertiesList()));
-                    singleMessagePayload.release();
-                } catch (IOException e) {
-                    // TODO: how to handle the corrupted single message?
-                    log.error("Failed to deserialize single message in batch {}", i, e);
-                }
-            });
+                final ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(
+                        uncompressedPayload, singleMessageMetadata, i, numMessages);
+
+                final long timestamp = (metadata.getEventTime() > 0)
+                        ? metadata.getEventTime()
+                        : metadata.getPublishTime();
+                final ByteBuffer value = singleMessageMetadata.isNullValue()
+                        ? null
+                        : getNioBuffer(singleMessagePayload);
+                final Header[] headers = getHeadersFromMetadata(metadata.getPropertiesList());
+                builder.appendWithOffset(baseOffset + i,
+                        timestamp,
+                        getKeyByteBuffer(singleMessageMetadata),
+                        value,
+                        headers);
+                singleMessagePayload.release();
+            }
         } else {
-            builder.appendWithOffset(
-                    baseOffset,
-                    msgMetadata.getEventTime() > 0 ? msgMetadata.getEventTime() : msgMetadata.getPublishTime(),
-                    getKeyByteBuffer(msgMetadata),
+            final long timestamp = (metadata.getEventTime() > 0)
+                    ? metadata.getEventTime()
+                    : metadata.getPublishTime();
+            final Header[] headers = getHeadersFromMetadata(metadata.getPropertiesList());
+            builder.appendWithOffset(baseOffset,
+                    timestamp,
+                    getKeyByteBuffer(metadata),
                     getNioBuffer(uncompressedPayload),
-                    getHeadersFromMetadata(msgMetadata.getPropertiesList()));
+                    headers);
         }
 
+        final MemoryRecords records = builder.build();
         uncompressedPayload.release();
-        builder.close();
         byteBuffer.flip();
-        return MemoryRecords.readableRecords(byteBuffer);
+        return records;
     }
 
+    @NonNull
     private static Header[] getHeadersFromMetadata(final List<KeyValue> properties) {
         return properties.stream()
                 .map(property -> new RecordHeader(
