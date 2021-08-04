@@ -54,16 +54,16 @@ public class ByteBufUtils {
             return ByteBuffer.wrap(messageMetadata.getOrderingKey()).asReadOnlyBuffer();
         }
 
-        if (messageMetadata.hasPartitionKey()) {
-            final String key = messageMetadata.getPartitionKey();
-            if (messageMetadata.isPartitionKeyB64Encoded()) {
-                return ByteBuffer.wrap(Base64.getDecoder().decode(key)).asReadOnlyBuffer();
-            } else {
-                // for Base64 not encoded string, convert to UTF_8 chars
-                return ByteBuffer.wrap(key.getBytes(UTF_8));
-            }
+        if (!messageMetadata.hasPartitionKey()) {
+            return null;
+        }
+
+        final String key = messageMetadata.getPartitionKey();
+        if (messageMetadata.isPartitionKeyB64Encoded()) {
+            return ByteBuffer.wrap(Base64.getDecoder().decode(key)).asReadOnlyBuffer();
         } else {
-            return ByteBuffer.allocate(0);
+            // for Base64 not encoded string, convert to UTF_8 chars
+            return ByteBuffer.wrap(key.getBytes(UTF_8));
         }
     }
 
@@ -76,7 +76,7 @@ public class ByteBufUtils {
             return null;
         }
         String key = messageMetadata.getPartitionKey();
-        if (messageMetadata.hasPartitionKeyB64Encoded()) {
+        if (messageMetadata.isPartitionKeyB64Encoded()) {
             return ByteBuffer.wrap(Base64.getDecoder().decode(key));
         } else {
             // for Base64 not encoded string, convert to UTF_8 chars

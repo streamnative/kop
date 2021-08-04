@@ -102,7 +102,12 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
     }
 
     protected Producer<byte[]> newPulsarProducer(final String topic) throws PulsarClientException {
-        return pulsarClient.newProducer().topic(topic).create();
+        return newPulsarProducer(topic, true);
+    }
+
+    protected Producer<byte[]> newPulsarProducer(final String topic,
+                                                 final boolean enableBatching) throws PulsarClientException {
+        return pulsarClient.newProducer().topic(topic).enableBatching(enableBatching).create();
     }
 
     protected Consumer<byte[]> newPulsarConsumer(final String topic) throws PulsarClientException {
