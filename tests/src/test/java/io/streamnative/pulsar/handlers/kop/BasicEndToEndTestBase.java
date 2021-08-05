@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.junit.Assert.assertEquals;
 
+import io.streamnative.kafka.client.api.Header;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -24,6 +25,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -107,7 +109,10 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
 
     protected Producer<byte[]> newPulsarProducer(final String topic,
                                                  final boolean enableBatching) throws PulsarClientException {
-        return pulsarClient.newProducer().topic(topic).enableBatching(enableBatching).create();
+        return pulsarClient.newProducer().topic(topic)
+                .enableBatching(enableBatching)
+                .batchingMaxMessages(5)
+                .create();
     }
 
     protected Consumer<byte[]> newPulsarConsumer(final String topic) throws PulsarClientException {
@@ -198,6 +203,36 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
             }
         }
         return values;
+    }
+
+    protected List<ConsumerRecord<String, String>> receiveRecords(final KafkaConsumer<String, String> consumer,
+                                                                  int numMessages) {
+        List<ConsumerRecord<String, String>> records = new ArrayList<>();
+        while (numMessages > 0) {
+            for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofMillis(100))) {
+                if (log.isDebugEnabled()) {
+                    log.debug("KafkaConsumer receive: {}", record.value());
+                }
+                records.add(record);
+                numMessages--;
+            }
+        }
+        return records;
+    }
+
+    protected static List<String> getValuesFromRecords(final List<ConsumerRecord<String, String>> records) {
+        return records.stream().map(ConsumerRecord::value).collect(Collectors.toList());
+    }
+
+    protected static List<String> getKeysFromRecords(final List<ConsumerRecord<String, String>> records) {
+        return records.stream().map(ConsumerRecord::key).collect(Collectors.toList());
+    }
+
+    protected static List<Header> getFirstHeadersFromRecords(final List<ConsumerRecord<String, String>> records) {
+        return records.stream().map(ConsumerRecord::headers)
+                .map(headers -> Header.fromHeaders(headers.toArray()))
+                .map(headers -> (headers != null) ? headers.get(0) : null)
+                .collect(Collectors.toList());
     }
 
     protected List<String> receiveMessages(final Consumer<byte[]> consumer, int numMessages)
