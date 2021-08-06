@@ -19,7 +19,10 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import lombok.Getter;
@@ -340,6 +343,14 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private int kopPrometheusStatsLatencyRolloverSeconds = 60;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "The allowed namespaces to list topics with a comma separator.\n"
+                    + " For example, \"public/default,public/kafka\".\n"
+                    + "If it's not set or empty, the allowed namespaces will be \"<kafkaTenant>/<kafkaNamespace>\"."
+    )
+    private String kopAllowedNamespaces;
+
     public @NonNull String getKafkaAdvertisedListeners() {
         if (kafkaAdvertisedListeners != null) {
             return kafkaAdvertisedListeners;
@@ -368,5 +379,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             throw new RuntimeException(e);
         }
         return props;
+    }
+
+    public @NonNull List<String> getAllowedNamespaces() {
+        if (kopAllowedNamespaces == null || kopAllowedNamespaces.isEmpty()) {
+            return Collections.singletonList(getKafkaTenant() + "/" + getKafkaNamespace());
+        }
+        return Arrays.asList(kopAllowedNamespaces.split(",").clone());
     }
 }

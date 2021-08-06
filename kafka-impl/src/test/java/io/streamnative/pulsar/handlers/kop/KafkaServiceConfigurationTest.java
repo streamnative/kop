@@ -25,6 +25,8 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Properties;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.api.DigestType;
@@ -165,5 +167,21 @@ public class KafkaServiceConfigurationTest {
         conf.setKopOauth2ConfigFile("src/test/resources/not-existed.properties");
         final Properties emptyProps = conf.getKopOauth2Properties();
         assertTrue(emptyProps.isEmpty());
+    }
+
+    @Test
+    public void testAllowedNamespaces() {
+        final KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
+        assertEquals(conf.getAllowedNamespaces(), Collections.singletonList("public/default"));
+        conf.setKafkaTenant("my-tenant");
+        assertEquals(conf.getAllowedNamespaces(), Collections.singletonList("my-tenant/default"));
+        conf.setKafkaNamespace("my-ns");
+        assertEquals(conf.getAllowedNamespaces(), Collections.singletonList("my-tenant/my-ns"));
+        conf.setKopAllowedNamespaces("my-tenant-2/my-ns-2");
+        assertEquals(conf.getAllowedNamespaces(), Collections.singletonList("my-tenant-2/my-ns-2"));
+        conf.setKopAllowedNamespaces("");
+        assertEquals(conf.getAllowedNamespaces(), Collections.singletonList("my-tenant/my-ns"));
+        conf.setKopAllowedNamespaces("my-tenant/my-ns-0,my-tenant/my-ns-1");
+        assertEquals(conf.getAllowedNamespaces(), Arrays.asList("my-tenant/my-ns-0", "my-tenant/my-ns-1"));
     }
 }
