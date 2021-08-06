@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import org.testng.annotations.Test;
+
 /**
  * test topics in different namespaces with `entryFormat=kafka`.
  */
@@ -20,5 +22,10 @@ public class DifferentNamespaceKafkaTest extends DifferentNamespaceTestBase {
 
     public DifferentNamespaceKafkaTest() {
         super("kafka");
+    }
+
+    @Test(timeOut = 20000)
+    public void testListTopics() throws Exception {
+        super.testListTopics();
     }
 }

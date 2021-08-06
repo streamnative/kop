@@ -197,6 +197,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final String advertisedListeners;
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
+    private final String offsetsTopicName;
+    private final String txnTopicName;
+    private final List<String> allowedNamespaces;
     // store the group name for current connected client.
     private final ConcurrentHashMap<String, String> currentConnectedGroup;
     private final String groupIdStoredPath;
@@ -252,6 +255,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
+        this.offsetsTopicName = new KopTopic(String.join("/",
+                kafkaConfig.getKafkaMetadataTenant(),
+                kafkaConfig.getKafkaMetadataNamespace(),
+                GROUP_METADATA_TOPIC_NAME)
+        ).getFullName();
+        this.txnTopicName = new KopTopic(String.join("/",
+                kafkaConfig.getKafkaMetadataTenant(),
+                kafkaConfig.getKafkaMetadataNamespace(),
+                TRANSACTION_STATE_TOPIC_NAME)
+        ).getFullName();
+        this.allowedNamespaces = kafkaConfig.getAllowedNamespaces();
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
         this.currentConnectedGroup = new ConcurrentHashMap<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
@@ -393,63 +407,45 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return admin.topics().getPartitionedTopicMetadataAsync(topicName);
     }
 
-    // Get all topics exclude `__consumer_offsets` and `__transaction_state`, the result of `topicMapFuture` is a map:
+    private boolean isInternalTopic(final String fullTopicName) {
+        return fullTopicName.equals(offsetsTopicName) || fullTopicName.equals(txnTopicName);
+    }
+
+    // Get all topics in the configured allowed namespaces.
     //   key: the full topic name without partition suffix, e.g. persistent://public/default/my-topic
     //   value: the partitions associated with the key, e.g. for a topic with 3 partitions,
     //     persistent://public/default/my-topic-partition-0
     //     persistent://public/default/my-topic-partition-1
     //     persistent://public/default/my-topic-partition-2
     private void getAllTopicsAsync(CompletableFuture<Map<String, List<TopicName>>> topicMapFuture) {
-        final String offsetsTopicName = new KopTopic(String.join("/",
-                kafkaConfig.getKafkaMetadataTenant(),
-                kafkaConfig.getKafkaMetadataNamespace(),
-                GROUP_METADATA_TOPIC_NAME)
-        ).getFullName();
-        final String txnTopicName = new KopTopic(String.join("/",
-                kafkaConfig.getKafkaMetadataTenant(),
-                kafkaConfig.getKafkaMetadataNamespace(),
-                TRANSACTION_STATE_TOPIC_NAME)
-        ).getFullName();
-        admin.tenants().getTenantsAsync().thenApply(tenants -> {
-            if (tenants.isEmpty()) {
-                topicMapFuture.complete(Maps.newHashMap());
-                return null;
-            }
-            Map<String, List<TopicName>> topicMap = Maps.newConcurrentMap();
+        final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
+        final AtomicInteger pendingNamespacesCount = new AtomicInteger(allowedNamespaces.size());
 
-            AtomicInteger numTenants = new AtomicInteger(tenants.size());
-            for (String tenant : tenants) {
-                admin.namespaces().getNamespacesAsync(tenant).thenApply(namespaces -> {
-                    if (namespaces.isEmpty() && numTenants.decrementAndGet() == 0) {
-                        topicMapFuture.complete(topicMap);
-                        return null;
-                    }
-                    AtomicInteger numNamespaces = new AtomicInteger(namespaces.size());
-                    for (String namespace : namespaces) {
-                        pulsarService.getNamespaceService().getListOfPersistentTopics(NamespaceName.get(namespace))
-                                .thenApply(topics -> {
-                                    for (String topic : topics) {
-                                        TopicName topicName = TopicName.get(topic);
-                                        String key = topicName.getPartitionedTopicName();
-                                        // ignore the `__consumer_offsets` and `__transaction_state` topic
-                                        if (key.equals(offsetsTopicName) || key.equals(txnTopicName)) {
-                                            continue;
-                                        }
-                                        topicMap.computeIfAbsent(KopTopic.removeDefaultNamespacePrefix(key), ignored ->
-                                                Collections.synchronizedList(new ArrayList<>())
-                                        ).add(topicName);
-                                    }
-                                    if (numNamespaces.decrementAndGet() == 0 && numTenants.decrementAndGet() == 0) {
-                                        topicMapFuture.complete(topicMap);
-                                    }
-                                    return null;
-                                });
-                    }
-                    return null;
-                });
-            }
-            return null;
-        }).exceptionally(topicMapFuture::completeExceptionally);
+        for (String namespace : allowedNamespaces) {
+            pulsarService.getNamespaceService().getListOfPersistentTopics(NamespaceName.get(namespace))
+                    .whenComplete((topics, e) -> {
+                        if (e != null) {
+                            log.error("Failed to getListOfPersistentTopic of {}", namespace, e);
+                            topicMapFuture.completeExceptionally(e);
+                            return;
+                        }
+                        if (topicMapFuture.isDone()) {
+                            return;
+                        }
+
+                        for (String topic : topics) {
+                            final TopicName topicName = TopicName.get(topic);
+                            final String key = topicName.getPartitionedTopicName();
+                            topicMap.computeIfAbsent(
+                                    KopTopic.removeDefaultNamespacePrefix(key),
+                                    ignored -> Collections.synchronizedList(new ArrayList<>())
+                            ).add(topicName);
+                        }
+                        if (pendingNamespacesCount.decrementAndGet() == 0) {
+                            topicMapFuture.complete(topicMap);
+                        }
+                    });
+        }
     }
 
     protected void handleTopicMetadataRequest(KafkaHeaderAndRequest metadataHar,
@@ -542,7 +538,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                 new TopicMetadata(
                                                         Errors.UNKNOWN_TOPIC_OR_PARTITION,
                                                         topic,
-                                                        false,
+                                                        isInternalTopic(fullTopicName),
                                                         Collections.emptyList()));
                                         completeOneTopic.run();
                                     }
@@ -552,7 +548,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             new TopicMetadata(
                                                     Errors.UNKNOWN_TOPIC_OR_PARTITION,
                                                     topic,
-                                                    false,
+                                                    isInternalTopic(fullTopicName),
                                                     Collections.emptyList()));
                                     log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} metadata: {}",
                                             ctx.channel(), metadataHar.getHeader(),
@@ -572,7 +568,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             new TopicMetadata(
                                                     Errors.INVALID_TOPIC_EXCEPTION,
                                                     topic,
-                                                    false,
+                                                    isInternalTopic(fullTopicName),
                                                     Collections.emptyList()));
                                     completeOneTopic.run();
                                 }
@@ -653,7 +649,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         Errors.NONE,
                                         // The topic returned to Kafka clients should be the same with what it sent
                                         topic,
-                                        false,
+                                        isInternalTopic(new KopTopic(topic).getFullName()),
                                         partitionMetadatas));
 
                                 // whether completed all the topics requests.
