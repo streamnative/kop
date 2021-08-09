@@ -17,6 +17,8 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
+import io.streamnative.kafka.client.api.Header;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
@@ -25,11 +27,19 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.MessageId;
+import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.client.api.TypedMessageBuilder;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 /**
@@ -40,6 +50,11 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
     public BasicEndToEndKafkaTest() {
         super("kafka");
+    }
+
+    @DataProvider(name = "enableBatching")
+    public static Object[][] enableBatching() {
+        return new Object[][]{ { true }, { false } };
     }
 
     @Test(timeOut = 20000)
@@ -159,5 +174,115 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         kafkaConsumeCommitMessage(kConsumer4, totalMsg, msgStrPrefix, topicPartitions);
         kafkaConsumeCommitMessage(kConsumer5, totalMsg, msgStrPrefix, topicPartitions);
 
+    }
+
+    @Test(timeOut = 20000, dataProvider = "enableBatching")
+    public void testPulsarProduceKafkaConsume(boolean enableBatching) throws Exception {
+        final String topic = "test-pulsar-produce-kafka-consume";
+        final int numMessages = 30;
+        final List<String> values =
+                IntStream.range(0, numMessages).mapToObj(i -> "value-" + i).collect(Collectors.toList());
+        // Some messages doesn't have keys
+        final List<String> keys = IntStream.range(0, numMessages)
+                .mapToObj(i -> (i % 3 == 0) ? ("key-" + i) : null)
+                .collect(Collectors.toList());
+        // Some messages doesn't have properties or headers
+        final List<Header> headers = IntStream.range(0, numMessages)
+                .mapToObj(i -> (i % 6 == 0) ? new Header("prop-key-" + i, "prop-value-" + i) : null)
+                .collect(Collectors.toList());
+
+        final Producer<byte[]> pulsarProducer = newPulsarProducer(topic, enableBatching);
+
+        boolean useOrderingKey = false;
+        for (int i = 0; i < numMessages; i++) {
+            final String key = keys.get(i);
+            final String value = values.get(i);
+            final Header header = headers.get(i);
+
+            final TypedMessageBuilder<byte[]> messageBuilder = pulsarProducer.newMessage()
+                    .value(value.getBytes(StandardCharsets.UTF_8));
+            if (key != null) {
+                // verify both orderingKey and key
+                if (useOrderingKey) {
+                    messageBuilder.orderingKey(key.getBytes());
+                    messageBuilder.key("XXX"); // verify ordering key's priority is higher
+                } else {
+                    messageBuilder.key(key);
+                }
+                useOrderingKey = !useOrderingKey;
+            }
+            if (header != null) {
+                messageBuilder.property(header.getKey(), header.getValue());
+            }
+            final int index = i;
+            messageBuilder.sendAsync().whenComplete((id, e) -> {
+                if (e != null) {
+                    log.error("Failed to send {}: {}", index, e.getMessage());
+                } else if (log.isDebugEnabled()) {
+                    log.debug("PulsarProducer send {} to {}", value, id);
+                }
+            });
+        }
+
+        pulsarProducer.close();
+
+        @Cleanup
+        final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
+        final List<ConsumerRecord<String, String>> receivedRecords = receiveRecords(kafkaConsumer, numMessages);
+
+        assertEquals(getValuesFromRecords(receivedRecords), values);
+        assertEquals(getKeysFromRecords(receivedRecords), keys);
+        assertEquals(getFirstHeadersFromRecords(receivedRecords), headers);
+    }
+
+    @Test(timeOut = 20000)
+    public void testMixedProduceKafkaConsume() throws Exception {
+        final String topic = "test-mixed-produce-kafka-consume";
+        final int numMessages = 10;
+        final List<String> values =
+                IntStream.range(0, numMessages).mapToObj(i -> "value-" + i).collect(Collectors.toList());
+        final List<String> keys = IntStream.range(0, numMessages)
+                .mapToObj(i -> "key-" + i)
+                .collect(Collectors.toList());
+        final List<Header> headers = IntStream.range(0, numMessages)
+                .mapToObj(i -> new Header("prop-key-" + i, "prop-value-" + i))
+                .collect(Collectors.toList());
+
+        final Producer<byte[]> pulsarProducer = newPulsarProducer(topic);
+        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+
+        for (int i = 0; i < numMessages; i++) {
+            final String key = keys.get(i);
+            final String value = values.get(i);
+            final Header header = headers.get(i);
+
+            if (i % 2 == 0) {
+               final MessageId id = pulsarProducer.newMessage()
+                        .value(value.getBytes(StandardCharsets.UTF_8))
+                        .key(key)
+                        .property(header.getKey(), header.getValue())
+                        .send();
+               if (log.isDebugEnabled()) {
+                   log.debug("PulsarProducer send {} to {}", i, id);
+               }
+            } else {
+                final RecordMetadata metadata = kafkaProducer.send(new ProducerRecord<>(topic, 0, key, value,
+                        Header.toHeaders(Collections.singletonList(header), RecordHeader::new))).get();
+                if (log.isDebugEnabled()) {
+                    log.debug("KafkaProducer send {} to {}", i, metadata);
+                }
+            }
+        }
+
+        kafkaProducer.close();
+        pulsarProducer.close();
+
+        @Cleanup
+        final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
+        final List<ConsumerRecord<String, String>> receivedRecords = receiveRecords(kafkaConsumer, numMessages);
+
+        assertEquals(getValuesFromRecords(receivedRecords), values);
+        assertEquals(getKeysFromRecords(receivedRecords), keys);
+        assertEquals(getFirstHeadersFromRecords(receivedRecords), headers);
     }
 }
