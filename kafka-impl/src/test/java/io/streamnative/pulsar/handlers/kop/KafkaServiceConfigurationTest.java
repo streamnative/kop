@@ -18,6 +18,7 @@ import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 
+import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import java.io.File;
 import java.io.FileInputStream;
@@ -25,6 +26,8 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Properties;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.api.DigestType;
@@ -97,6 +100,7 @@ public class KafkaServiceConfigurationTest {
         printWriter.println("webServicePortTls=");
         printWriter.println("managedLedgerDefaultMarkDeleteRateLimit=5.0");
         printWriter.println("managedLedgerDigestType=CRC32C");
+        printWriter.println("kopAllowedNamespaces=public/default,public/__kafka");
 
         printWriter.close();
         testConfigFile.deleteOnExit();
@@ -116,6 +120,8 @@ public class KafkaServiceConfigurationTest {
         assertFalse(kafkaServiceConfig.getWebServicePort().isPresent());
         assertFalse(kafkaServiceConfig.getWebServicePortTls().isPresent());
         assertEquals(kafkaServiceConfig.getManagedLedgerDigestType(), DigestType.CRC32C);
+        assertEquals(
+                kafkaServiceConfig.getKopAllowedNamespaces(), Sets.newHashSet("public/default", "public/__kafka"));
     }
 
     @Test
@@ -165,5 +171,21 @@ public class KafkaServiceConfigurationTest {
         conf.setKopOauth2ConfigFile("src/test/resources/not-existed.properties");
         final Properties emptyProps = conf.getKopOauth2Properties();
         assertTrue(emptyProps.isEmpty());
+    }
+
+    @Test
+    public void testAllowedNamespaces() {
+        final KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
+        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("public/default"));
+        conf.setKafkaTenant("my-tenant");
+        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("my-tenant/default"));
+        conf.setKafkaNamespace("my-ns");
+        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("my-tenant/my-ns"));
+        conf.setKopAllowedNamespaces(Collections.singleton("my-tenant-2/my-ns-2"));
+        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("my-tenant-2/my-ns-2"));
+        conf.setKopAllowedNamespaces(null);
+        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("my-tenant/my-ns"));
+        conf.setKopAllowedNamespaces(Sets.newHashSet("my-tenant/my-ns-0", "my-tenant/my-ns-1"));
+        assertEquals(conf.getKopAllowedNamespaces(), Arrays.asList("my-tenant/my-ns-0", "my-tenant/my-ns-1"));
     }
 }

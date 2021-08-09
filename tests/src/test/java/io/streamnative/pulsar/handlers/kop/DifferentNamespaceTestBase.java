@@ -16,10 +16,13 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
-import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import com.google.common.collect.Sets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -30,13 +33,18 @@ import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.ListTopicsOptions;
+import org.apache.kafka.clients.admin.ListTopicsResult;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.TopicListing;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.internals.Topic;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
@@ -46,10 +54,12 @@ import org.testng.annotations.Test;
 @Slf4j
 public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestBase {
 
-    private static final String DEFAULT_TENANT = "public";
-    private static final String DEFAULT_NAMESPACE = "default";
+    private static final String DEFAULT_TENANT = "default-tenant";
+    private static final String DEFAULT_NAMESPACE = "default-ns";
     private static final String ANOTHER_TENANT = "my-tenant";
     private static final String ANOTHER_NAMESPACE = "my-ns";
+    private static final String NOT_ALLOWED_TENANT = "non-kop-tenant";
+    private static final String NOT_ALLOWED_NAMESPACE = "non-kop-ns";
 
     public DifferentNamespaceTestBase(final String entryFormat) {
         super(entryFormat);
@@ -69,20 +79,39 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
     @BeforeClass
     @Override
     protected void setup() throws Exception {
+        conf.setKafkaTenant(DEFAULT_TENANT);
+        conf.setKafkaNamespace(DEFAULT_NAMESPACE);
+        conf.setKafkaMetadataTenant(DEFAULT_TENANT);
+        conf.setKafkaMetadataNamespace(DEFAULT_NAMESPACE);
         super.internalSetup();
 
+        resetAllowdNamespaces();
         admin.tenants().createTenant(ANOTHER_TENANT,
                 TenantInfo.builder()
                         .adminRoles(Collections.singleton("admin_user"))
                         .allowedClusters(Collections.singleton(configClusterName))
                         .build());
         admin.namespaces().createNamespace(ANOTHER_TENANT + "/" + ANOTHER_NAMESPACE);
+        admin.tenants().createTenant(NOT_ALLOWED_TENANT,
+                TenantInfo.builder()
+                        .adminRoles(Collections.singleton("admin_user"))
+                        .allowedClusters(Collections.singleton(configClusterName))
+                        .build());
+        admin.namespaces().createNamespace(NOT_ALLOWED_TENANT + "/" + NOT_ALLOWED_NAMESPACE);
     }
 
     @AfterClass
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
+    }
+
+    @BeforeMethod
+    protected void resetAllowdNamespaces() {
+        conf.setKopAllowedNamespaces(Sets.newHashSet(
+                DEFAULT_TENANT + "/" + DEFAULT_NAMESPACE,
+                ANOTHER_TENANT + "/" + ANOTHER_NAMESPACE)
+        );
     }
 
     @Test(timeOut = 20000, dataProvider = "topics")
@@ -127,36 +156,72 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         assertEquals(sortedSuffixes, expectedSuffixes);
     }
 
-    @Test(timeOut = 20000)
-    void testListTopics() throws Exception {
-        final String topic1ShortName = "list-topics-1";
-        final String topic1 = DEFAULT_TENANT + "/" + DEFAULT_NAMESPACE + "/" + topic1ShortName;
-        final int numPartitions1 = 3;
-        final String topic2 = ANOTHER_TENANT + "/" + ANOTHER_NAMESPACE + "/list-topics-2";
-        final int numPartitions2 = 5;
+    protected void testListNonexistentNamespace() throws Exception {
+        final String defaultNamespace = DEFAULT_TENANT + "/" + DEFAULT_NAMESPACE;
+        final String nonexistentNamespace = "xxxxxxx/yyyyyyy";
+        conf.setKopAllowedNamespaces(Sets.newHashSet(defaultNamespace, nonexistentNamespace));
 
-        admin.topics().createPartitionedTopic(topic1, numPartitions1);
-        admin.topics().createPartitionedTopic(topic2, numPartitions2);
-
-        @Cleanup
-        KConsumer kConsumer = new KConsumer("", getKafkaBrokerPort(), true);
-        Map<String, List<PartitionInfo>> topicMap = kConsumer.getConsumer().listTopics(Duration.ofSeconds(5));
-        log.info("topicMap: {}", topicMap);
-
-        assertTrue(topicMap.containsKey(topic1ShortName));
-        assertEquals(topicMap.get(topic1ShortName).size(), numPartitions1);
-
-        final String key2 = new KopTopic(topic2).getFullName();
-        assertTrue(topicMap.containsKey(key2));
-        assertEquals(topicMap.get(key2).size(), numPartitions2);
-
-        Properties props = new Properties();
+        final Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
-        AdminClient kafkaAdmin = AdminClient.create(props);
-        Set<String> topicSet = kafkaAdmin.listTopics().names().get();
-        log.info("topicSet: {}", topicSet);
-        assertTrue(topicSet.contains(topic1ShortName));
-        assertTrue(topicSet.contains(key2));
+        @Cleanup
+        final AdminClient kafkaAdmin = AdminClient.create(props);
+
+        final String topic = "test-list-nonexistent-namespace";
+        kafkaAdmin.createTopics(
+                Collections.singletonList(new NewTopic(defaultNamespace + "/" + topic, 1, (short) 1))
+        ).all().get();
+
+        // Even if kopAllowedNamespaces contain a nonexistent namespace, it doesn't affect the process for other
+        // existent namespaces
+        final Set<String> topics = kafkaAdmin.listTopics().names().get();
+        assertTrue(topics.contains(topic)); // no namespace prefix for topics in default namespace
+        kafkaAdmin.close();
+    }
+
+    protected void testListTopics() throws Exception {
+        final String defaultNamespacePrefix = DEFAULT_TENANT + "/" + DEFAULT_NAMESPACE + "/";
+        final String anotherNamespacePrefix = ANOTHER_TENANT + "/" + ANOTHER_NAMESPACE + "/";
+        final String notAllowedNamespacePrefix = NOT_ALLOWED_TENANT + "/" + NOT_ALLOWED_NAMESPACE + "/";
+        final String topicPrefix = "test-list-topics-";
+
+        final List<String> topics = Arrays.asList(
+                topicPrefix + "topic-0",
+                defaultNamespacePrefix + topicPrefix + "topic-1",
+                anotherNamespacePrefix + topicPrefix + "topic-2",
+                notAllowedNamespacePrefix + topicPrefix + "topic-3",
+                notAllowedNamespacePrefix + topicPrefix + "topic-4"
+        );
+
+        final Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        @Cleanup
+        final AdminClient kafkaAdmin = AdminClient.create(props);
+
+        kafkaAdmin.createTopics(topics.stream().map(topic -> new NewTopic(topic, 1, (short) 1))
+                .collect(Collectors.toList()));
+
+        // Only first 3 topics are in the allowed namespaces
+        final Map<String, Boolean> expectedTopicIsInternalMap = new HashMap<>();
+        expectedTopicIsInternalMap.put(topicPrefix + "topic-0", false);
+        expectedTopicIsInternalMap.put(topicPrefix + "topic-1", false);
+        expectedTopicIsInternalMap.put("persistent://" + anotherNamespacePrefix + topicPrefix + "topic-2", false);
+        expectedTopicIsInternalMap.put(Topic.GROUP_METADATA_TOPIC_NAME, true);
+        expectedTopicIsInternalMap.put(Topic.TRANSACTION_STATE_TOPIC_NAME, true);
+        final List<String> expectedNames =
+                expectedTopicIsInternalMap.keySet().stream().sorted().collect(Collectors.toList());
+
+        // list internal topics as well
+        final ListTopicsResult listTopicsResult = kafkaAdmin.listTopics(new ListTopicsOptions().listInternal(true));
+        final List<String> names = listTopicsResult.names().get().stream()
+                .filter(expectedNames::contains)
+                .sorted().collect(Collectors.toList());
+        final Collection<TopicListing> topicListings = listTopicsResult.listings().get();
+        final Map<String, Boolean> topicIsInternalMap = topicListings.stream()
+                .filter(topicListing -> expectedNames.contains(topicListing.name()))
+                .collect(Collectors.toMap(TopicListing::name, TopicListing::isInternal));
+
+        assertEquals(names, expectedNames);
+        assertEquals(topicIsInternalMap, expectedTopicIsInternalMap);
     }
 
     @Test(timeOut = 30000)
