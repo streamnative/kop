@@ -199,7 +199,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     public final int maxReadEntriesNum;
     private final String offsetsTopicName;
     private final String txnTopicName;
-    private final List<String> allowedNamespaces;
+    private final Set<String> allowedNamespaces;
     // store the group name for current connected client.
     private final ConcurrentHashMap<String, String> currentConnectedGroup;
     private final String groupIdStoredPath;
@@ -265,7 +265,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 kafkaConfig.getKafkaMetadataNamespace(),
                 TRANSACTION_STATE_TOPIC_NAME)
         ).getFullName();
-        this.allowedNamespaces = kafkaConfig.getAllowedNamespaces();
+        this.allowedNamespaces = kafkaConfig.getKopAllowedNamespaces();
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
         this.currentConnectedGroup = new ConcurrentHashMap<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();

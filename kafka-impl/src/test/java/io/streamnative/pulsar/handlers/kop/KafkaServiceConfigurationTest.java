@@ -18,6 +18,7 @@ import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 
+import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import java.io.File;
 import java.io.FileInputStream;
@@ -99,6 +100,7 @@ public class KafkaServiceConfigurationTest {
         printWriter.println("webServicePortTls=");
         printWriter.println("managedLedgerDefaultMarkDeleteRateLimit=5.0");
         printWriter.println("managedLedgerDigestType=CRC32C");
+        printWriter.println("kopAllowedNamespaces=public/default,public/__kafka");
 
         printWriter.close();
         testConfigFile.deleteOnExit();
@@ -118,6 +120,8 @@ public class KafkaServiceConfigurationTest {
         assertFalse(kafkaServiceConfig.getWebServicePort().isPresent());
         assertFalse(kafkaServiceConfig.getWebServicePortTls().isPresent());
         assertEquals(kafkaServiceConfig.getManagedLedgerDigestType(), DigestType.CRC32C);
+        assertEquals(
+                kafkaServiceConfig.getKopAllowedNamespaces(), Sets.newHashSet("public/default", "public/__kafka"));
     }
 
     @Test
@@ -172,16 +176,16 @@ public class KafkaServiceConfigurationTest {
     @Test
     public void testAllowedNamespaces() {
         final KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
-        assertEquals(conf.getAllowedNamespaces(), Collections.singletonList("public/default"));
+        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("public/default"));
         conf.setKafkaTenant("my-tenant");
-        assertEquals(conf.getAllowedNamespaces(), Collections.singletonList("my-tenant/default"));
+        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("my-tenant/default"));
         conf.setKafkaNamespace("my-ns");
-        assertEquals(conf.getAllowedNamespaces(), Collections.singletonList("my-tenant/my-ns"));
-        conf.setKopAllowedNamespaces("my-tenant-2/my-ns-2");
-        assertEquals(conf.getAllowedNamespaces(), Collections.singletonList("my-tenant-2/my-ns-2"));
-        conf.setKopAllowedNamespaces("");
-        assertEquals(conf.getAllowedNamespaces(), Collections.singletonList("my-tenant/my-ns"));
-        conf.setKopAllowedNamespaces("my-tenant/my-ns-0,my-tenant/my-ns-1");
-        assertEquals(conf.getAllowedNamespaces(), Arrays.asList("my-tenant/my-ns-0", "my-tenant/my-ns-1"));
+        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("my-tenant/my-ns"));
+        conf.setKopAllowedNamespaces(Collections.singleton("my-tenant-2/my-ns-2"));
+        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("my-tenant-2/my-ns-2"));
+        conf.setKopAllowedNamespaces(null);
+        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("my-tenant/my-ns"));
+        conf.setKopAllowedNamespaces(Sets.newHashSet("my-tenant/my-ns-0", "my-tenant/my-ns-1"));
+        assertEquals(conf.getKopAllowedNamespaces(), Arrays.asList("my-tenant/my-ns-0", "my-tenant/my-ns-1"));
     }
 }
