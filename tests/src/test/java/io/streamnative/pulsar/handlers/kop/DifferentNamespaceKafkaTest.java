@@ -25,6 +25,11 @@ public class DifferentNamespaceKafkaTest extends DifferentNamespaceTestBase {
     }
 
     @Test(timeOut = 20000)
+    public void testListNonexistentNamespace() throws Exception {
+        super.testListNonexistentNamespace();
+    }
+
+    @Test(timeOut = 20000)
     public void testListTopics() throws Exception {
         super.testListTopics();
     }

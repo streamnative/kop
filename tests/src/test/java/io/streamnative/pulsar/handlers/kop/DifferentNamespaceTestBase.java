@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
@@ -145,6 +146,28 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         assertEquals(sortedSuffixes, expectedSuffixes);
     }
 
+    protected void testListNonexistentNamespace() throws Exception {
+        final String defaultNamespace = DEFAULT_TENANT + "/" + DEFAULT_NAMESPACE;
+        final String nonexistentNamespace = "xxxxxxx/yyyyyyy";
+        conf.setKopAllowedNamespaces(String.join(",", defaultNamespace, nonexistentNamespace));
+
+        final Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        @Cleanup
+        final AdminClient kafkaAdmin = AdminClient.create(props);
+
+        final String topic = "test-list-nonexistent-namespace";
+        kafkaAdmin.createTopics(
+                Collections.singletonList(new NewTopic(defaultNamespace + "/" + topic, 1, (short) 1))
+        ).all().get();
+
+        // Even if kopAllowedNamespaces contain a nonexistent namespace, it doesn't affect the process for other
+        // existent namespaces
+        final Set<String> topics = kafkaAdmin.listTopics().names().get();
+        assertEquals(topics, Collections.singleton(topic)); // no namespace prefix for topics in default namespace
+        kafkaAdmin.close();
+    }
+
     protected void testListTopics() throws Exception {
         final String defaultNamespacePrefix = DEFAULT_TENANT + "/" + DEFAULT_NAMESPACE + "/";
         final String anotherNamespacePrefix = ANOTHER_TENANT + "/" + ANOTHER_NAMESPACE + "/";
@@ -160,6 +183,7 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
 
         final Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        @Cleanup
         final AdminClient kafkaAdmin = AdminClient.create(props);
 
         kafkaAdmin.createTopics(topics.stream().map(topic -> new NewTopic(topic, 1, (short) 1))
