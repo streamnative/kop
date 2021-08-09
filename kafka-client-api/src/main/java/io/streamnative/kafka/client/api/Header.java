@@ -33,6 +33,9 @@ public class Header {
     private final String value;
 
     private static Header fromHeader(final Object originalHeader) {
+        if (originalHeader == null) {
+            return null;
+        }
         final Class<?> clazz = originalHeader.getClass();
         return new Header(
                 (String) ReflectionUtils.invoke(clazz, "key", originalHeader),
@@ -69,7 +72,9 @@ public class Header {
             return null;
         }
         return headers.stream()
-                .map(header -> constructor.apply(header.getKey(), header.getValue().getBytes(StandardCharsets.UTF_8)))
+                .map(header -> (header != null)
+                        ? constructor.apply(header.getKey(), header.getValue().getBytes(StandardCharsets.UTF_8))
+                        : null)
                 .collect(Collectors.toList());
     }
 
