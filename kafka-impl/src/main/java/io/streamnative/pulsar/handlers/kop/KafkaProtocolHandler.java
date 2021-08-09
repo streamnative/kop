@@ -230,6 +230,16 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
         KopTopic.initialize(kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace());
 
+        // Validate the namespaces
+        for (String fullNamespace : kafkaConfig.getKopAllowedNamespaces()) {
+            final String[] tokens = fullNamespace.split("/");
+            if (tokens.length != 2) {
+                throw new IllegalArgumentException(
+                        "Invalid namespace '" + fullNamespace + "' in kopAllowedNamespaces config");
+            }
+            NamespaceName.validateNamespaceName(tokens[0], tokens[1]);
+        }
+
         statsProvider = new PrometheusMetricsProvider();
         rootStatsLogger = statsProvider.getStatsLogger("");
     }

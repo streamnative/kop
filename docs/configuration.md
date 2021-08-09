@@ -35,6 +35,7 @@ Pulsar is a multi-tenant system that requires users to specify the [tenant and n
 | kafkaNamespace         | The default namespace of Kafka topics          | default |
 | kafkaMetadataTenant    | The tenant used for storing Kafka metadata topics    | public  |
 | kafkaMetadataNamespace | The namespace used for storing Kafka metadata topics | __kafka |
+| kopAllowedNamespaces   | The allowed namespace to list topics with a comma separator.<br>For example, "public/default,public/kafka".<br>If it's not set or empty, the allowed namespaces will be "<kafkaTenant>/<kafkaNamespace>". | |
 
 ## Performance
 
