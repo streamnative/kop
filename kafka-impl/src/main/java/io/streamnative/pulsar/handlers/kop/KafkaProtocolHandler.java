@@ -45,11 +45,13 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.PulsarServerException;
+import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.namespace.NamespaceBundleOwnershipListener;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
@@ -132,23 +134,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                             KafkaTopicManager.removeTopicManagerCache(name.toString());
                             KopBrokerLookupManager.removeTopicManagerCache(name.toString());
                             // update lookup cache when onload
-                            try {
-                                CompletableFuture<InetSocketAddress> retFuture = new CompletableFuture<>();
-                                ((PulsarClientImpl) service.pulsar().getClient()).getLookup()
-                                        .getBroker(TopicName.get(topic))
-                                        .whenComplete((pair, throwable) -> {
-                                            if (throwable != null) {
-                                                log.warn("cloud not get broker", throwable);
-                                                retFuture.complete(null);
-                                            }
-                                            checkState(pair.getLeft().equals(pair.getRight()));
-                                            retFuture.complete(pair.getLeft());
-                                        });
-                                KafkaTopicManager.LOOKUP_CACHE.put(topic, retFuture);
-                                KopBrokerLookupManager.updateTopicManagerCache(topic, retFuture);
-                            } catch (PulsarServerException e) {
-                                log.error("onLoad PulsarServerException ", e);
-                            }
+                            final CompletableFuture<InetSocketAddress> retFuture =
+                                    KafkaProtocolHandler.getBroker(service.pulsar(), TopicName.get(topic));
+                            KafkaTopicManager.LOOKUP_CACHE.put(topic, retFuture);
+                            KopBrokerLookupManager.updateTopicManagerCache(topic, retFuture);
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
@@ -462,6 +451,19 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             FutureUtil.waitForAll(lists).get();
         } else {
             log.info("Current broker: {} does not own any of the txn log topic partitions", currentBroker);
+        }
+    }
+
+    public static CompletableFuture<InetSocketAddress> getBroker(final PulsarService pulsarService,
+                                                                 final TopicName topicName) {
+        try {
+            return ((PulsarClientImpl) pulsarService.getClient()).getLookup()
+                    .getBroker(topicName)
+                    .thenApply(Pair::getLeft);
+        } catch (PulsarServerException e) {
+            final CompletableFuture<InetSocketAddress> addressFuture = new CompletableFuture<>();
+            addressFuture.completeExceptionally(e);
+            return CompletableFuture.completedFuture(null);
         }
     }
 }

@@ -13,8 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static com.google.common.base.Preconditions.checkState;
-
 import com.google.common.annotations.VisibleForTesting;
 import java.net.InetSocketAddress;
 import java.util.Optional;
@@ -28,7 +26,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.BrokerServiceException;
@@ -188,44 +185,8 @@ public class KafkaTopicManager {
                 log.debug("[{}] topic {} not in Lookup_cache, call lookupBroker",
                     requestHandler.ctx.channel(), topicName);
             }
-            return lookupBroker(topicName);
+            return KafkaProtocolHandler.getBroker(pulsarService, TopicName.get(topicName));
         });
-    }
-
-    public InternalServerCnx getInternalServerCnx() {
-        return internalServerCnx;
-    }
-
-    // this method do the real lookup into Pulsar broker.
-    // retFuture will be completed with null when meet error.
-    private CompletableFuture<InetSocketAddress> lookupBroker(String topicName) {
-        if (closed.get()) {
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Return null for getTopic({}) since channel closing",
-                        requestHandler.ctx.channel(), topicName);
-            }
-            return CompletableFuture.completedFuture(null);
-        }
-        try {
-            final CompletableFuture<InetSocketAddress> retFuture = new CompletableFuture<>();
-            ((PulsarClientImpl) pulsarService.getClient()).getLookup()
-                .getBroker(TopicName.get(topicName))
-                .thenAccept(pair -> {
-                    checkState(pair.getLeft().equals(pair.getRight()));
-                    retFuture.complete(pair.getLeft());
-                })
-                .exceptionally(th -> {
-                    log.warn("[{}] getBroker for topic failed. throwable: ",
-                            topicName, th);
-                    retFuture.complete(null);
-                    return null;
-                });
-            return retFuture;
-        } catch (PulsarServerException e) {
-            log.error("[{}] getTopicBroker for topic {} failed get pulsar client, return null. throwable: ",
-                requestHandler.ctx.channel(), topicName, e);
-            return CompletableFuture.completedFuture(null);
-        }
     }
 
     // A wrapper of `BrokerService#getTopic` that is to find the topic's associated `PersistentTopic` instance
