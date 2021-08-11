@@ -34,6 +34,8 @@ import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -45,7 +47,6 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
@@ -53,14 +54,19 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.lookup.LookupResult;
+import org.apache.pulsar.broker.namespace.LookupOptions;
 import org.apache.pulsar.broker.namespace.NamespaceBundleOwnershipListener;
+import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.Lookup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClient;
+import org.apache.pulsar.client.impl.ClientCnx;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
+import org.apache.pulsar.common.api.proto.ServerError;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
@@ -454,16 +460,65 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
     }
 
+    private static CompletableFuture<InetSocketAddress> getFailedAddressFuture(final Throwable throwable) {
+        final CompletableFuture<InetSocketAddress> future = new CompletableFuture<>();
+        future.completeExceptionally(throwable);
+        return future;
+    }
+
+    private static CompletableFuture<InetSocketAddress> getAddressFutureFromBrokerUrl(final String brokerUrl) {
+        final CompletableFuture<InetSocketAddress> future = new CompletableFuture<>();
+        try {
+            final URI uri = new URI(brokerUrl);
+            future.complete(InetSocketAddress.createUnresolved(uri.getHost(), uri.getPort()));
+        } catch (URISyntaxException e) {
+            future.completeExceptionally(e);
+        }
+        return future;
+    }
+
     public static CompletableFuture<InetSocketAddress> getBroker(final PulsarService pulsarService,
                                                                  final TopicName topicName) {
-        try {
-            return ((PulsarClientImpl) pulsarService.getClient()).getLookup()
-                    .getBroker(topicName)
-                    .thenApply(Pair::getLeft);
-        } catch (PulsarServerException e) {
-            final CompletableFuture<InetSocketAddress> addressFuture = new CompletableFuture<>();
-            addressFuture.completeExceptionally(e);
-            return CompletableFuture.completedFuture(null);
+        final NamespaceService namespaceService = pulsarService.getNamespaceService();
+        if (namespaceService == null) {
+            return getFailedAddressFuture(new IllegalStateException("NamespaceService is not available"));
         }
+
+        final LookupOptions options = LookupOptions.builder()
+                .authoritative(false)
+                .advertisedListenerName(null)
+                .loadTopicsInBundle(true)
+                .build();
+        final CompletableFuture<InetSocketAddress> future =
+                namespaceService.getBrokerServiceUrlAsync(topicName, options).thenCompose(optLookupResult -> {
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] Lookup result {}", topicName.toString(), optLookupResult);
+            }
+            if (!optLookupResult.isPresent()) {
+                return getFailedAddressFuture(ClientCnx.getPulsarClientException(
+                        ServerError.ServiceNotReady,
+                        "No broker was available to own " + topicName));
+            }
+
+            final LookupResult lookupResult = optLookupResult.get();
+            if (lookupResult.isRedirect()) {
+                // Kafka client can't process redirect field, so here we fallback to PulsarAdmin's topic lookup
+                try {
+                    final PulsarAdmin admin = pulsarService.getAdminClient();
+                    return admin.lookups().lookupTopicAsync(topicName.toString())
+                            .thenCompose(KafkaProtocolHandler::getAddressFutureFromBrokerUrl);
+                } catch (PulsarServerException e) {
+                    // It shouldn't fail because the PulsarAdmin has been created before
+                    return getFailedAddressFuture(e);
+                }
+            } else {
+                return getAddressFutureFromBrokerUrl(lookupResult.getLookupData().getBrokerUrl());
+            }
+        });
+        future.exceptionally(e -> {
+            log.warn("Failed to getBroker of {}: {}", topicName, e.getMessage());
+            return null;
+        });
+        return future;
     }
 }
