@@ -7,6 +7,7 @@
 | kafkaListeners           | Comma-separated list of URIs that we will listen on and the listener names.<br>e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093.<br>If the hostname is not set, the default interface is used. |
 | listeners                | Deprecated. `kafkaListeners` is used.                   |
 | kafkaAdvertisedListeners | Listeners published to the ZooKeeper for clients to use.<br>The format is the same as `kafkaListeners`. |
+| kafkaListenerName        | Specify the internal listener name for the broker.<br>The listener name must be contained in the advertisedListeners.<br>This config is used as the listener name in topic lookup. |
 
 > **NOTE**
 > 

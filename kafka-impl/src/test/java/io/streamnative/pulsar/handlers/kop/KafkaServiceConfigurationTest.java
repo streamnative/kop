@@ -113,6 +113,7 @@ public class KafkaServiceConfigurationTest {
         printWriter.println("managedLedgerDefaultMarkDeleteRateLimit=5.0");
         printWriter.println("managedLedgerDigestType=CRC32C");
         printWriter.println("kopAllowedNamespaces=public/default,public/__kafka");
+        printWriter.println("kafkaListenerName=external");
 
         printWriter.close();
         testConfigFile.deleteOnExit();
@@ -134,6 +135,7 @@ public class KafkaServiceConfigurationTest {
         assertEquals(kafkaServiceConfig.getManagedLedgerDigestType(), DigestType.CRC32C);
         assertEquals(
                 kafkaServiceConfig.getKopAllowedNamespaces(), Sets.newHashSet("public/default", "public/__kafka"));
+        assertEquals(kafkaServiceConfig.getKafkaListenerName(), "external");
     }
 
     @Test
