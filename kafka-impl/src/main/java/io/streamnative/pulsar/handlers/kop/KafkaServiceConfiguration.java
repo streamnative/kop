@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import java.io.FileInputStream;
@@ -27,17 +29,13 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 import org.apache.kafka.common.record.CompressionType;
-import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.common.configuration.Category;
 import org.apache.pulsar.common.configuration.FieldContext;
-
-import static com.google.common.base.Preconditions.checkState;
 
 /**
  * Kafka on Pulsar service configuration object.
@@ -372,12 +370,17 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             if (hostname.isEmpty()) {
                 try {
                     hostname = InetAddress.getLocalHost().getCanonicalHostName();
-                    listenersReBuilder.append(matcher.group(1)).append("://").append(hostname).append(":").append(matcher.group(3));
+                    listenersReBuilder.append(matcher.group(1))
+                            .append("://")
+                            .append(hostname)
+                            .append(":")
+                            .append(matcher.group(3));
                 } catch (UnknownHostException e) {
                     throw new IllegalStateException("hostname is empty and localhost is unknown: " + e.getMessage());
                 }
-            } else
+            } else {
                 listenersReBuilder.append(listener);
+            }
             listenersReBuilder.append(END_POINT_SEPARATOR);
         }
         return listenersReBuilder.deleteCharAt(listenersReBuilder.lastIndexOf(END_POINT_SEPARATOR)).toString();
