@@ -26,6 +26,8 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Properties;
@@ -66,6 +68,16 @@ public class KafkaServiceConfigurationTest {
         // kafkaListeners has higher priority than listeners
         configuration.setKafkaListeners("PLAINTEXT://localhost:9093");
         assertEquals(configuration.getListeners(), "PLAINTEXT://localhost:9093");
+    }
+
+    @Test
+    public void testKafkaListenersWithoutHostname() throws UnknownHostException {
+        KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
+        configuration.setListeners("PLAINTEXT://:9092");
+        assertEquals(configuration.getListeners(), "PLAINTEXT://:9092");
+        String hostName = InetAddress.getLocalHost().getCanonicalHostName();
+        String expectListeners = "PLAINTEXT://" + hostName + ":9092";
+        assertEquals(configuration.getKafkaAdvertisedListeners(), expectListeners);
     }
 
     @Test
