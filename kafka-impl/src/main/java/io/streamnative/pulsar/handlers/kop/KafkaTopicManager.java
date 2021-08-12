@@ -31,7 +31,6 @@ import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.TopicName;
 
 /**
@@ -154,10 +153,9 @@ public class KafkaTopicManager {
         KOP_ADDRESS_CACHE.clear();
     }
 
-    // exception throw for pulsar.getClient();
-    private Producer registerInPersistentTopic(PersistentTopic persistentTopic) throws Exception {
+    private Producer registerInPersistentTopic(PersistentTopic persistentTopic) {
         Producer producer = new InternalProducer(persistentTopic, internalServerCnx,
-            ((PulsarClientImpl) (pulsarService.getClient())).newRequestId(),
+            KafkaProtocolHandler.getPulsarClientImpl(pulsarService).newRequestId(),
             brokerService.generateUniqueProducerName());
 
         if (log.isDebugEnabled()) {
@@ -237,19 +235,14 @@ public class KafkaTopicManager {
             }
             return;
         }
-        try {
+        if (references.containsKey(topicName)) {
+            return;
+        }
+        synchronized (this) {
             if (references.containsKey(topicName)) {
                 return;
             }
-            synchronized (this) {
-                if (references.containsKey(topicName)) {
-                    return;
-                }
-                references.put(topicName, registerInPersistentTopic(persistentTopic));
-            }
-        } catch (Exception e){
-            log.error("[{}] Failed to register producer in PersistentTopic {}. exception:",
-                    requestHandler.ctx.channel(), topicName, e);
+            references.put(topicName, registerInPersistentTopic(persistentTopic));
         }
     }
 

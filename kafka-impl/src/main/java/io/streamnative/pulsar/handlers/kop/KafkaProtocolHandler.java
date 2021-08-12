@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.collect.ImmutableMap;
@@ -41,6 +42,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.Getter;
@@ -65,9 +68,12 @@ import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.Lookup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.AuthenticationFactory;
 import org.apache.pulsar.client.api.PulsarClient;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.impl.ClientCnx;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
+import org.apache.pulsar.client.impl.conf.ClientConfigurationData;
 import org.apache.pulsar.common.api.proto.ServerError;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
@@ -83,6 +89,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     public static final String PROTOCOL_NAME = "kafka";
     public static final String TLS_HANDLER = "tls";
+    private static final Map<PulsarService, CompletableFuture<PulsarClientImpl>>
+            PULSAR_CLIENT_MAP = new ConcurrentHashMap<>();
 
     private StatsLogger rootStatsLogger;
     private PrometheusMetricsProvider statsProvider;
@@ -363,6 +371,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     @Override
     public void close() {
+        try {
+            PULSAR_CLIENT_MAP.remove(brokerService.pulsar()).get().close();
+        } catch (InterruptedException | ExecutionException | PulsarClientException ignored) {
+        }
         adminManager.shutdown();
         groupCoordinator.shutdown();
         KafkaTopicManager.LOOKUP_CACHE.clear();
@@ -479,13 +491,51 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         return future;
     }
 
-    private static @NonNull PulsarClientImpl getPulsarClientImpl(final PulsarService pulsarService) {
-        try {
-            return ((PulsarClientImpl) pulsarService.getClient());
-        } catch (PulsarServerException e) {
-            log.error("Failed to get PulsarClient", e);
-            throw new IllegalStateException(e);
-        }
+    public static @NonNull PulsarClientImpl getPulsarClientImpl(final PulsarService pulsarService) {
+        return PULSAR_CLIENT_MAP.computeIfAbsent(pulsarService, ignored -> {
+            final CompletableFuture<PulsarClientImpl> future = new CompletableFuture<>();
+            try {
+                // It's migrated from PulsarService#getClient() but it can configure listener name
+                final KafkaServiceConfiguration kafkaConfig = ConfigurationUtils.create(
+                        pulsarService.getConfiguration().getProperties(), KafkaServiceConfiguration.class);
+
+                final ClientConfigurationData conf = new ClientConfigurationData();
+                conf.setServiceUrl(kafkaConfig.isTlsEnabled()
+                        ? pulsarService.getBrokerServiceUrlTls()
+                        : pulsarService.getBrokerServiceUrl());
+                conf.setTlsAllowInsecureConnection(kafkaConfig.isTlsAllowInsecureConnection());
+                conf.setTlsTrustCertsFilePath(kafkaConfig.getTlsCertificateFilePath());
+
+                if (kafkaConfig.isBrokerClientTlsEnabled()) {
+                    if (kafkaConfig.isBrokerClientTlsEnabledWithKeyStore()) {
+                        conf.setUseKeyStoreTls(true);
+                        conf.setTlsTrustStoreType(kafkaConfig.getBrokerClientTlsTrustStoreType());
+                        conf.setTlsTrustStorePath(kafkaConfig.getBrokerClientTlsTrustStore());
+                        conf.setTlsTrustStorePassword(kafkaConfig.getBrokerClientTlsTrustStorePassword());
+                    } else {
+                        conf.setTlsTrustCertsFilePath(
+                                isNotBlank(kafkaConfig.getBrokerClientTrustCertsFilePath())
+                                        ? kafkaConfig.getBrokerClientTrustCertsFilePath()
+                                        : kafkaConfig.getTlsCertificateFilePath());
+                    }
+                }
+
+                if (isNotBlank(kafkaConfig.getBrokerClientAuthenticationPlugin())) {
+                    conf.setAuthPluginClassName(kafkaConfig.getBrokerClientAuthenticationPlugin());
+                    conf.setAuthParams(kafkaConfig.getBrokerClientAuthenticationParameters());
+                    conf.setAuthParamMap(null);
+                    conf.setAuthentication(AuthenticationFactory.create(
+                            kafkaConfig.getBrokerClientAuthenticationPlugin(),
+                            kafkaConfig.getBrokerClientAuthenticationParameters()));
+                }
+
+                conf.setListenerName(kafkaConfig.getKafkaListenerName());
+                future.complete(new PulsarClientImpl(conf, pulsarService.getIoEventLoopGroup()));
+            } catch (PulsarClientException e) {
+                future.completeExceptionally(e);
+            }
+            return future;
+        }).join(); // join() allows fail-fast for the first time PulsarClientImpl was created in start() method
     }
 
     public static CompletableFuture<InetSocketAddress> getBroker(final PulsarService pulsarService,
