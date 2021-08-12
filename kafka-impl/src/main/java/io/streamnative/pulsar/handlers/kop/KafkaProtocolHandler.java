@@ -545,9 +545,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             return getFailedAddressFuture(new IllegalStateException("NamespaceService is not available"));
         }
 
+        final PulsarClientImpl pulsarClient = getPulsarClientImpl(pulsarService);
         final LookupOptions options = LookupOptions.builder()
                 .authoritative(false)
-                .advertisedListenerName(null)
+                .advertisedListenerName(pulsarClient.getConfiguration().getListenerName())
                 .loadTopicsInBundle(true)
                 .build();
         final CompletableFuture<InetSocketAddress> future =
@@ -564,7 +565,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             final LookupResult lookupResult = optLookupResult.get();
             if (lookupResult.isRedirect()) {
                 // Kafka client can't process redirect field, so here we fallback to PulsarClient's topic lookup
-                return getPulsarClientImpl(pulsarService).getLookup().getBroker(topicName).thenApply(Pair::getLeft);
+                return pulsarClient.getLookup().getBroker(topicName).thenApply(Pair::getLeft);
             } else {
                 return getAddressFutureFromBrokerUrl(lookupResult.getLookupData().getBrokerUrl());
             }
