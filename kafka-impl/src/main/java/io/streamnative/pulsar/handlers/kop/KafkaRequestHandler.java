@@ -2044,7 +2044,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
 
         topicManager.getTopicBroker(topic.toString())
-            .thenCompose(pair -> getProtocolDataToAdvertise(pair, topic))
+            .thenCompose(address -> getProtocolDataToAdvertise(address, topic))
             .whenComplete((stringOptional, throwable) -> {
                 if (!stringOptional.isPresent() || throwable != null) {
                     log.error("Not get advertise data for Kafka topic:{}. throwable",

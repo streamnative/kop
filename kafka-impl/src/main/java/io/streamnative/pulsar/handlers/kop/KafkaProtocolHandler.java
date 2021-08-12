@@ -44,9 +44,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
@@ -262,15 +264,15 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 kafkaConfig.getGroupIdZooKeeperPath(), new byte[0]);
 
         PulsarAdmin pulsarAdmin;
-        PulsarClient pulsarClient;
         try {
             pulsarAdmin = brokerService.getPulsar().getAdminClient();
             adminManager = new AdminManager(pulsarAdmin, kafkaConfig);
-            pulsarClient = brokerService.getPulsar().getClient();
         } catch (PulsarServerException e) {
-            log.error("Failed to get pulsarAdmin or pulsarClient", e);
+            log.error("Failed to get pulsarAdmin", e);
             throw new IllegalStateException(e);
         }
+
+        final PulsarClient pulsarClient = getPulsarClientImpl(brokerService.getPulsar());
         final ClusterData clusterData = ClusterData.builder()
                 .serviceUrl(brokerService.getPulsar().getWebServiceAddress())
                 .serviceUrlTls(brokerService.getPulsar().getWebServiceAddressTls())
@@ -477,6 +479,15 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         return future;
     }
 
+    private static @NonNull PulsarClientImpl getPulsarClientImpl(final PulsarService pulsarService) {
+        try {
+            return ((PulsarClientImpl) pulsarService.getClient());
+        } catch (PulsarServerException e) {
+            log.error("Failed to get PulsarClient", e);
+            throw new IllegalStateException(e);
+        }
+    }
+
     public static CompletableFuture<InetSocketAddress> getBroker(final PulsarService pulsarService,
                                                                  final TopicName topicName) {
         final NamespaceService namespaceService = pulsarService.getNamespaceService();
@@ -502,15 +513,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
             final LookupResult lookupResult = optLookupResult.get();
             if (lookupResult.isRedirect()) {
-                // Kafka client can't process redirect field, so here we fallback to PulsarAdmin's topic lookup
-                try {
-                    final PulsarAdmin admin = pulsarService.getAdminClient();
-                    return admin.lookups().lookupTopicAsync(topicName.toString())
-                            .thenCompose(KafkaProtocolHandler::getAddressFutureFromBrokerUrl);
-                } catch (PulsarServerException e) {
-                    // It shouldn't fail because the PulsarAdmin has been created before
-                    return getFailedAddressFuture(e);
-                }
+                // Kafka client can't process redirect field, so here we fallback to PulsarClient's topic lookup
+                return getPulsarClientImpl(pulsarService).getLookup().getBroker(topicName).thenApply(Pair::getLeft);
             } else {
                 return getAddressFutureFromBrokerUrl(lookupResult.getLookupData().getBrokerUrl());
             }
