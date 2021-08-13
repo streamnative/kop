@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.testng.annotations.Test;
 
 /**
@@ -42,8 +43,12 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         // There's a limit that PulsarService doesn't use advertised listener's address as it's brokerServiceUrl's
         // address. So here the "external" listener's port should be the same with brokerPort and address should be
         // localhost.
-        conf.setAdvertisedListeners("internal:pulsar://192.168.0.2:6650,external:pulsar://localhost:" + brokerPort);
+        final String localAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(null);
+        final String advertisedListeners =
+                "internal:pulsar://192.168.0.2:6650,external:pulsar://" + localAddress + ":" + brokerPort;
+        conf.setAdvertisedListeners(advertisedListeners);
         conf.setKafkaListenerName("external");
+        log.info("Set advertisedListeners to {}", advertisedListeners);
         super.internalSetup();
 
         final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
