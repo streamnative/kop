@@ -102,6 +102,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         final NamespaceName kafkaMetaNs;
         final NamespaceName kafkaTopicNs;
         final GroupCoordinator groupCoordinator;
+        final LookupClient lookupClient;
+
         public OffsetAndTopicListener(BrokerService service,
                                    KafkaServiceConfiguration kafkaConfig,
                                    GroupCoordinator groupCoordinator) {
@@ -111,6 +113,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             this.groupCoordinator = groupCoordinator;
             this.kafkaTopicNs = NamespaceName
                     .get(kafkaConfig.getKafkaTenant(), kafkaConfig.getKafkaNamespace());
+            this.lookupClient = KafkaProtocolHandler.getLookupClient(service.pulsar());
         }
 
         @Override
@@ -138,8 +141,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                             KopBrokerLookupManager.removeTopicManagerCache(name.toString());
                             // update lookup cache when onload
                             final CompletableFuture<InetSocketAddress> retFuture =
-                                    KafkaProtocolHandler.getLookupClient(service.pulsar())
-                                            .getBrokerAddress(TopicName.get(topic));
+                                    lookupClient.getBrokerAddress(TopicName.get(topic));
                             KafkaTopicManager.LOOKUP_CACHE.put(topic, retFuture);
                             KopBrokerLookupManager.updateTopicManagerCache(topic, retFuture);
                         }

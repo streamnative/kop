@@ -43,6 +43,7 @@ public class KopBrokerLookupManager {
     private final PulsarService pulsarService;
     private final Boolean tlsEnabled;
     private final String advertisedListeners;
+    private final LookupClient lookupClient;
 
     public static final ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>
             LOOKUP_CACHE = new ConcurrentHashMap<>();
@@ -53,6 +54,7 @@ public class KopBrokerLookupManager {
         this.pulsarService = pulsarService;
         this.tlsEnabled = tlsEnabled;
         this.advertisedListeners = advertisedListeners;
+        this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
     }
 
     public CompletableFuture<InetSocketAddress> findBroker(String topic) {
@@ -97,8 +99,7 @@ public class KopBrokerLookupManager {
     // retFuture will be completed with null when meet error.
     private CompletableFuture<InetSocketAddress> getTopicBroker(String topicPartition) {
         return LOOKUP_CACHE.computeIfAbsent(topicPartition,
-                ignored -> KafkaProtocolHandler.getLookupClient(pulsarService)
-                        .getBrokerAddress(TopicName.get(topicPartition)));
+                ignored -> lookupClient.getBrokerAddress(TopicName.get(topicPartition)));
     }
 
     private void checkTopicOwner(CompletableFuture<InetSocketAddress> future, String topic, EndPoint endPoint) {

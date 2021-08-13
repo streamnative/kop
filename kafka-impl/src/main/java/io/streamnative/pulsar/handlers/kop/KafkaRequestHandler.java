@@ -1940,8 +1940,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
 
         // get kop address from cache to prevent query zk each time.
-        if (topicManager.KOP_ADDRESS_CACHE.containsKey(topic.toString())) {
-            return topicManager.KOP_ADDRESS_CACHE.get(topic.toString());
+        final CompletableFuture<Optional<String>> future = KafkaTopicManager.KOP_ADDRESS_CACHE.get(topic.toString());
+        if (future != null) {
+            return future;
         }
         // advertised data is write in  /loadbalance/brokers/advertisedAddress:webServicePort
         // here we get the broker url, need to find related webServiceUrl.
@@ -2049,6 +2050,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 if (!stringOptional.isPresent() || throwable != null) {
                     log.error("Not get advertise data for Kafka topic:{}. throwable",
                         topic, throwable);
+                    KafkaTopicManager.removeTopicManagerCache(topic.toString());
                     returnFuture.complete(null);
                     return;
                 }

@@ -44,6 +44,7 @@ public class KafkaTopicManager {
     private final KafkaRequestHandler requestHandler;
     private final PulsarService pulsarService;
     private final BrokerService brokerService;
+    private final LookupClient lookupClient;
 
     // consumerTopicManagers for consumers cache.
     private static final ConcurrentHashMap<String, CompletableFuture<KafkaTopicConsumerManager>>
@@ -79,6 +80,7 @@ public class KafkaTopicManager {
         this.pulsarService = kafkaRequestHandler.getPulsarService();
         this.brokerService = pulsarService.getBrokerService();
         this.internalServerCnx = new InternalServerCnx(requestHandler);
+        this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
 
         initializeCursorExpireTask(brokerService.executor());
     }
@@ -155,7 +157,7 @@ public class KafkaTopicManager {
 
     private Producer registerInPersistentTopic(PersistentTopic persistentTopic) {
         Producer producer = new InternalProducer(persistentTopic, internalServerCnx,
-            KafkaProtocolHandler.getLookupClient(pulsarService).getPulsarClient().newRequestId(),
+            lookupClient.getPulsarClient().newRequestId(),
             brokerService.generateUniqueProducerName());
 
         if (log.isDebugEnabled()) {
@@ -183,8 +185,19 @@ public class KafkaTopicManager {
                 log.debug("[{}] topic {} not in Lookup_cache, call lookupBroker",
                     requestHandler.ctx.channel(), topicName);
             }
-            return KafkaProtocolHandler.getLookupClient(pulsarService).getBrokerAddress(TopicName.get(topicName));
+            return lookupBroker(topicName);
         });
+    }
+
+    private CompletableFuture<InetSocketAddress> lookupBroker(final String topic) {
+        if (closed.get()) {
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] Return null for getTopic({}) since channel closing",
+                        requestHandler.ctx.channel(), topic);
+            }
+            return CompletableFuture.completedFuture(null);
+        }
+        return lookupClient.getBrokerAddress(TopicName.get(topic));
     }
 
     // A wrapper of `BrokerService#getTopic` that is to find the topic's associated `PersistentTopic` instance
