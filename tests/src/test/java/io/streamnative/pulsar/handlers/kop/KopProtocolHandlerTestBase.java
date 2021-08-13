@@ -197,11 +197,19 @@ public abstract class KopProtocolHandlerTestBase {
 
     protected final void internalSetup() throws Exception {
         init();
-        pulsarClient = KafkaProtocolHandler.getPulsarClientImpl(pulsar);
+        pulsarClient = KafkaProtocolHandler.getLookupClient(pulsar).getPulsarClient();
     }
 
     protected void createAdmin() throws Exception {
         this.admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString()).build());
+    }
+
+    protected String getAdvertisedAddress() {
+        if (conf == null || conf.getAdvertisedAddress() == null) {
+            return "localhost";
+        } else {
+            return conf.getAdvertisedAddress();
+        }
     }
 
     protected final void init() throws Exception {
@@ -209,12 +217,12 @@ public abstract class KopProtocolHandlerTestBase {
 
         bkExecutor = OrderedScheduler.newSchedulerBuilder().numThreads(2).name("mock-pulsar-bk").build();
 
-        brokerUrl = new URL("http://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePort);
-        brokerUrlTls = new URL("https://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePortTls);
+        brokerUrl = new URL("http://" + getAdvertisedAddress() + ":" + brokerWebservicePort);
+        brokerUrlTls = new URL("https://" + getAdvertisedAddress() + ":" + brokerWebservicePortTls);
 
-        String serviceUrl = "http://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePort;
-        String serviceUrlTls = "https://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePortTls;
-        String brokerServiceUrl = "pulsar://" + this.conf.getAdvertisedAddress() + ":" + brokerPort;
+        String serviceUrl = "http://" + getAdvertisedAddress() + ":" + brokerWebservicePort;
+        String serviceUrlTls = "https://" + getAdvertisedAddress() + ":" + brokerWebservicePortTls;
+        String brokerServiceUrl = "pulsar://" + getAdvertisedAddress() + ":" + brokerPort;
         String brokerServiceUrlTls = null; // TLS not supported at this time
 
         final ClusterData clusterData = ClusterData.builder()
@@ -233,7 +241,9 @@ public abstract class KopProtocolHandlerTestBase {
         createAdmin();
 
         MetadataUtils.createOffsetMetadataIfMissing(admin, clusterData, this.conf);
-        MetadataUtils.createTxnMetadataIfMissing(admin, clusterData, this.conf);
+        if (conf.isEnableTransactionCoordinator()) {
+            MetadataUtils.createTxnMetadataIfMissing(admin, clusterData, this.conf);
+        }
 
         if (enableSchemaRegistry) {
             admin.topics().createPartitionedTopic(KAFKASTORE_TOPIC, 1);

@@ -155,7 +155,7 @@ public class KafkaTopicManager {
 
     private Producer registerInPersistentTopic(PersistentTopic persistentTopic) {
         Producer producer = new InternalProducer(persistentTopic, internalServerCnx,
-            KafkaProtocolHandler.getPulsarClientImpl(pulsarService).newRequestId(),
+            KafkaProtocolHandler.getLookupClient(pulsarService).getPulsarClient().newRequestId(),
             brokerService.generateUniqueProducerName());
 
         if (log.isDebugEnabled()) {
@@ -183,7 +183,7 @@ public class KafkaTopicManager {
                 log.debug("[{}] topic {} not in Lookup_cache, call lookupBroker",
                     requestHandler.ctx.channel(), topicName);
             }
-            return KafkaProtocolHandler.getBroker(pulsarService, TopicName.get(topicName));
+            return KafkaProtocolHandler.getLookupClient(pulsarService).getBrokerAddress(TopicName.get(topicName));
         });
     }
 

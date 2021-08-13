@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
-import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.collect.ImmutableMap;
@@ -41,9 +40,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.Getter;
@@ -51,7 +50,6 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
@@ -59,22 +57,14 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
-import org.apache.pulsar.broker.lookup.LookupResult;
-import org.apache.pulsar.broker.namespace.LookupOptions;
 import org.apache.pulsar.broker.namespace.NamespaceBundleOwnershipListener;
-import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.Lookup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.client.api.AuthenticationFactory;
 import org.apache.pulsar.client.api.PulsarClient;
-import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.client.impl.ClientCnx;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
-import org.apache.pulsar.client.impl.conf.ClientConfigurationData;
-import org.apache.pulsar.common.api.proto.ServerError;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
@@ -89,8 +79,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     public static final String PROTOCOL_NAME = "kafka";
     public static final String TLS_HANDLER = "tls";
-    private static final Map<PulsarService, CompletableFuture<PulsarClientImpl>>
-            PULSAR_CLIENT_MAP = new ConcurrentHashMap<>();
+    private static final Map<PulsarService, LookupClient> LOOKUP_CLIENT_MAP = new ConcurrentHashMap<>();
 
     private StatsLogger rootStatsLogger;
     private PrometheusMetricsProvider statsProvider;
@@ -151,7 +140,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                             KopBrokerLookupManager.removeTopicManagerCache(name.toString());
                             // update lookup cache when onload
                             final CompletableFuture<InetSocketAddress> retFuture =
-                                    KafkaProtocolHandler.getBroker(service.pulsar(), TopicName.get(topic));
+                                    KafkaProtocolHandler.getLookupClient(service.pulsar())
+                                            .getBrokerAddress(TopicName.get(topic));
                             KafkaTopicManager.LOOKUP_CACHE.put(topic, retFuture);
                             KopBrokerLookupManager.updateTopicManagerCache(topic, retFuture);
                         }
@@ -282,7 +272,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
         // Create PulsarClient for topic lookup, the listenerName will be set if kafkaListenerName is configured.
         // After it's created successfully, this method won't throw any exception.
-        getPulsarClientImpl(brokerService.getPulsar());
+        LOOKUP_CLIENT_MAP.put(brokerService.pulsar(), new LookupClient(brokerService.pulsar(), kafkaConfig));
+
         final ClusterData clusterData = ClusterData.builder()
                 .serviceUrl(brokerService.getPulsar().getWebServiceAddress())
                 .serviceUrlTls(brokerService.getPulsar().getWebServiceAddressTls())
@@ -381,10 +372,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     @Override
     public void close() {
-        try {
-            PULSAR_CLIENT_MAP.remove(brokerService.pulsar()).get().close();
-        } catch (InterruptedException | ExecutionException | PulsarClientException ignored) {
-        }
+        Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
         adminManager.shutdown();
         groupCoordinator.shutdown();
         KafkaTopicManager.LOOKUP_CACHE.clear();
@@ -501,89 +489,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         return future;
     }
 
-    public static @NonNull PulsarClientImpl getPulsarClientImpl(final PulsarService pulsarService) {
-        return PULSAR_CLIENT_MAP.computeIfAbsent(pulsarService, ignored -> {
-            final CompletableFuture<PulsarClientImpl> future = new CompletableFuture<>();
-            try {
-                // It's migrated from PulsarService#getClient() but it can configure listener name
-                final KafkaServiceConfiguration kafkaConfig = ConfigurationUtils.create(
-                        pulsarService.getConfiguration().getProperties(), KafkaServiceConfiguration.class);
-
-                final ClientConfigurationData conf = new ClientConfigurationData();
-                conf.setServiceUrl(kafkaConfig.isTlsEnabled()
-                        ? pulsarService.getBrokerServiceUrlTls()
-                        : pulsarService.getBrokerServiceUrl());
-                conf.setTlsAllowInsecureConnection(kafkaConfig.isTlsAllowInsecureConnection());
-                conf.setTlsTrustCertsFilePath(kafkaConfig.getTlsCertificateFilePath());
-
-                if (kafkaConfig.isBrokerClientTlsEnabled()) {
-                    if (kafkaConfig.isBrokerClientTlsEnabledWithKeyStore()) {
-                        conf.setUseKeyStoreTls(true);
-                        conf.setTlsTrustStoreType(kafkaConfig.getBrokerClientTlsTrustStoreType());
-                        conf.setTlsTrustStorePath(kafkaConfig.getBrokerClientTlsTrustStore());
-                        conf.setTlsTrustStorePassword(kafkaConfig.getBrokerClientTlsTrustStorePassword());
-                    } else {
-                        conf.setTlsTrustCertsFilePath(
-                                isNotBlank(kafkaConfig.getBrokerClientTrustCertsFilePath())
-                                        ? kafkaConfig.getBrokerClientTrustCertsFilePath()
-                                        : kafkaConfig.getTlsCertificateFilePath());
-                    }
-                }
-
-                if (isNotBlank(kafkaConfig.getBrokerClientAuthenticationPlugin())) {
-                    conf.setAuthPluginClassName(kafkaConfig.getBrokerClientAuthenticationPlugin());
-                    conf.setAuthParams(kafkaConfig.getBrokerClientAuthenticationParameters());
-                    conf.setAuthParamMap(null);
-                    conf.setAuthentication(AuthenticationFactory.create(
-                            kafkaConfig.getBrokerClientAuthenticationPlugin(),
-                            kafkaConfig.getBrokerClientAuthenticationParameters()));
-                }
-
-                conf.setListenerName(kafkaConfig.getKafkaListenerName());
-                future.complete(new PulsarClientImpl(conf, pulsarService.getIoEventLoopGroup()));
-            } catch (PulsarClientException e) {
-                future.completeExceptionally(e);
-            }
-            return future;
-        }).join(); // join() allows fail-fast for the first time PulsarClientImpl was created in start() method
-    }
-
-    public static CompletableFuture<InetSocketAddress> getBroker(final PulsarService pulsarService,
-                                                                 final TopicName topicName) {
-        final NamespaceService namespaceService = pulsarService.getNamespaceService();
-        if (namespaceService == null) {
-            return getFailedAddressFuture(new IllegalStateException("NamespaceService is not available"));
-        }
-
-        final PulsarClientImpl pulsarClient = getPulsarClientImpl(pulsarService);
-        final LookupOptions options = LookupOptions.builder()
-                .authoritative(false)
-                .advertisedListenerName(pulsarClient.getConfiguration().getListenerName())
-                .loadTopicsInBundle(true)
-                .build();
-        final CompletableFuture<InetSocketAddress> future =
-                namespaceService.getBrokerServiceUrlAsync(topicName, options).thenCompose(optLookupResult -> {
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Lookup result {}", topicName.toString(), optLookupResult);
-            }
-            if (!optLookupResult.isPresent()) {
-                return getFailedAddressFuture(ClientCnx.getPulsarClientException(
-                        ServerError.ServiceNotReady,
-                        "No broker was available to own " + topicName));
-            }
-
-            final LookupResult lookupResult = optLookupResult.get();
-            if (lookupResult.isRedirect()) {
-                // Kafka client can't process redirect field, so here we fallback to PulsarClient's topic lookup
-                return pulsarClient.getLookup().getBroker(topicName).thenApply(Pair::getLeft);
-            } else {
-                return getAddressFutureFromBrokerUrl(lookupResult.getLookupData().getBrokerUrl());
-            }
-        });
-        future.exceptionally(e -> {
-            log.warn("Failed to getBroker of {}: {}", topicName, e.getMessage());
-            return null;
-        });
-        return future;
+    public static @NonNull LookupClient getLookupClient(final PulsarService pulsarService) {
+        return LOOKUP_CLIENT_MAP.computeIfAbsent(pulsarService, ignored -> new LookupClient(pulsarService));
     }
 }

@@ -97,7 +97,8 @@ public class KopBrokerLookupManager {
     // retFuture will be completed with null when meet error.
     private CompletableFuture<InetSocketAddress> getTopicBroker(String topicPartition) {
         return LOOKUP_CACHE.computeIfAbsent(topicPartition,
-                ignored -> KafkaProtocolHandler.getBroker(pulsarService, TopicName.get(topicPartition)));
+                ignored -> KafkaProtocolHandler.getLookupClient(pulsarService)
+                        .getBrokerAddress(TopicName.get(topicPartition)));
     }
 
     private void checkTopicOwner(CompletableFuture<InetSocketAddress> future, String topic, EndPoint endPoint) {
