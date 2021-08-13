@@ -280,7 +280,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             throw new IllegalStateException(e);
         }
 
-        final PulsarClient pulsarClient = getPulsarClientImpl(brokerService.getPulsar());
+        // Create PulsarClient for topic lookup, the listenerName will be set if kafkaListenerName is configured.
+        // After it's created successfully, this method won't throw any exception.
+        getPulsarClientImpl(brokerService.getPulsar());
         final ClusterData clusterData = ClusterData.builder()
                 .serviceUrl(brokerService.getPulsar().getWebServiceAddress())
                 .serviceUrlTls(brokerService.getPulsar().getWebServiceAddressTls())
@@ -288,6 +290,14 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 .brokerServiceUrlTls(brokerService.getPulsar().getBrokerServiceUrlTls())
                 .build();
 
+        // Use the builtin PulsarClient for creating producers and readers in group coordinator
+        PulsarClient pulsarClient;
+        try {
+            pulsarClient = brokerService.getPulsar().getClient();
+        } catch (PulsarServerException e) {
+            log.error("Failed to create builtin PulsarClient", e);
+            throw new IllegalStateException(e);
+        }
         try {
             MetadataUtils.createOffsetMetadataIfMissing(pulsarAdmin, clusterData, kafkaConfig);
         } catch (PulsarAdminException e) {
