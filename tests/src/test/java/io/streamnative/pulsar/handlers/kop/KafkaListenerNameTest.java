@@ -26,10 +26,12 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
 
     @Override
     protected void setup() throws Exception {
+        // Set up in the test method
     }
 
     @Override
     protected void cleanup() throws Exception {
+        // Clean up in the test method
     }
 
     @Test(timeOut = 30000)

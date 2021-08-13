@@ -34,8 +34,6 @@ import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -470,23 +468,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         } else {
             log.info("Current broker: {} does not own any of the txn log topic partitions", currentBroker);
         }
-    }
-
-    private static CompletableFuture<InetSocketAddress> getFailedAddressFuture(final Throwable throwable) {
-        final CompletableFuture<InetSocketAddress> future = new CompletableFuture<>();
-        future.completeExceptionally(throwable);
-        return future;
-    }
-
-    private static CompletableFuture<InetSocketAddress> getAddressFutureFromBrokerUrl(final String brokerUrl) {
-        final CompletableFuture<InetSocketAddress> future = new CompletableFuture<>();
-        try {
-            final URI uri = new URI(brokerUrl);
-            future.complete(InetSocketAddress.createUnresolved(uri.getHost(), uri.getPort()));
-        } catch (URISyntaxException e) {
-            future.completeExceptionally(e);
-        }
-        return future;
     }
 
     public static @NonNull LookupClient getLookupClient(final PulsarService pulsarService) {
