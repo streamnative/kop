@@ -20,7 +20,25 @@ KoP uses the same topic lookup approach for the Kafka request handler and the Pu
 
 ## Message
 
-Both a Kafka message and a Pulsar message have the key, value, timestamp, and headers. (In Pulsar，The `headers` is called `properties`.) KoP converts these fields automatically between Kafka messages and Pulsar messages.
+Both a Kafka message and a Pulsar message have the key, value, timestamp, and
+headers. (In Pulsar，The `headers` is called `properties`.) KoP converts these
+fields automatically between Kafka messages and Pulsar messages. The mapping relationships are as below.
+
+### Mapping relationship of converting message fields **from Pulsar to Kafka**
+
+Pulsar | Kafka | Note
+|---|---|---
+`Ordering key` <br><br> `Partition key`  | `Key` | **Ordering key has higher priority**, which means:<br><br> - If a Pulsar message has an `ordering key`, the `ordering key` is converted to a `key`.<br><br> - If a Pulsar message does not have an `ordering key`, the `partition key` is converted to a `key`. <br><br> For example, <br><br> - If a Pulsar message has an `ordering key (xxx)` and a `partition key (yyy)`, the message key of the converted Kafka message is `xxx` rather than `yyy`.<br><br> - If a Pulsar message does not have an `ordering key` but have a `partition key (yyy)`, the message key of the converted Kafka message is `yyy`.
+`Event time` <br><br> `Publish time` | `Timestamp` |  **Event time has higher priority**, which means: <br><br>- If a Pulsar message has an `event time`, the `event time` is converted to `timestamp`.<br><br>- If a Pulsar message does not have an `event time`, the `publish time` is converted to `timestamp`. <br><br>For example, <br><br> - If a Pulsar message has an `event time (1628826964820)` and a `publish time (1628826964821)`, the message key of the converted Kafka message is `1628826964820` rather than `1628826964821`.<br><br> - If a Pulsar message does not have an `event time` but has a `publish time (1628826964821)`, the message key of the converted Kafka message is `1628826964821`.
+NULL value| NULL value |If the field of a Pulsar message is NULL, the converted Kafka message is NULL.
+
+### Mapping relationship of converting message fields **from Kafka to Pulsar**
+
+Kafka|Pulsar|Note
+|---|---|---
+`Key`|Ordering key and partition key |If a Kafka message has a `key`, both  `ordering key` and `partition key` are set for the converted Pulsar message.<br><br> If a Kafka message does not have a `key`, both `ordering key` and `partition key` are **not set** for the converted Pulsar message.
+`Timestamp`|Event time and publish time |If a Kafka message has a `timestamp`, both  `event time` and `publish time` are set for the converted Pulsar message.<br><br> If a Kafka message does not have a `timestamp`, both `event time` and `publish time` are **not set** for the converted Pulsar message.
+NULL value|NULL value| If the field of a Kafka message is NULL, the converted Pulsar message is NULL.
 
 ## Message ID and offset
 
