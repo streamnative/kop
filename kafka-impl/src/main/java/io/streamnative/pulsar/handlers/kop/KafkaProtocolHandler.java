@@ -103,6 +103,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         final NamespaceName kafkaTopicNs;
         final GroupCoordinator groupCoordinator;
         final LookupClient lookupClient;
+        final String brokerUrl;
 
         public OffsetAndTopicListener(BrokerService service,
                                    KafkaServiceConfiguration kafkaConfig,
@@ -114,10 +115,14 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             this.kafkaTopicNs = NamespaceName
                     .get(kafkaConfig.getKafkaTenant(), kafkaConfig.getKafkaNamespace());
             this.lookupClient = KafkaProtocolHandler.getLookupClient(service.pulsar());
+            this.brokerUrl = service.pulsar().getBrokerServiceUrl();
         }
 
         @Override
         public void onLoad(NamespaceBundle bundle) {
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] onLoad bundle: {}", brokerUrl, bundle);
+            }
             // 1. get new partitions owned by this pulsar service.
             // 2. load partitions by GroupCoordinator.handleGroupImmigration.
             service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
@@ -155,6 +160,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
         @Override
         public void unLoad(NamespaceBundle bundle) {
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] unLoad bundle: {}", brokerUrl, bundle);
+            }
             // 1. get partitions owned by this pulsar service.
             // 2. remove partitions by groupCoordinator.handleGroupEmigration.
             service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
