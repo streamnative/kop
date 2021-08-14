@@ -141,7 +141,7 @@ public final class MessageFetchContext {
         tryComplete();
     }
 
-    private void tryComplete() {
+    private synchronized void tryComplete() {
         if (responseData.size() >= fetchRequest.fetchData().size()) {
             complete();
         }
