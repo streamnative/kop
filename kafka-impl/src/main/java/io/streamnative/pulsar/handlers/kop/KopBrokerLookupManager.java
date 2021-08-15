@@ -254,10 +254,6 @@ public class KopBrokerLookupManager {
         KOP_ADDRESS_CACHE.remove(topicName);
     }
 
-    public static void updateTopicManagerCache(String topicName, CompletableFuture<InetSocketAddress> addressFuture) {
-        LOOKUP_CACHE.put(topicName, addressFuture);
-    }
-
     public static void clear() {
         LOOKUP_CACHE.clear();
         KOP_ADDRESS_CACHE.clear();
