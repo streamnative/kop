@@ -94,7 +94,7 @@ public class MessageFetchContextTest {
         future2.get();
     }
 
-    private void startAndGetResult(Boolean isSafe, AtomicReference<Set<Errors>> errorsSet)
+    private void startAndGetResult(Boolean isSafe, AtomicReference<Set<Errors>> errorsSet, Boolean isBlock)
             throws ExecutionException, InterruptedException {
 
         BiConsumer<AbstractResponse, Throwable> action = (response, exception) -> {
@@ -104,7 +104,10 @@ public class MessageFetchContextTest {
             errorsSet.set(currentErrors);
         };
 
-        while (currentAttempts.getAndIncrement() <= totalAttempts) {
+        while (currentAttempts.getAndIncrement() <= totalAttempts || isBlock) {
+            if (isBlock && errorsSet.get().contains(Errors.REQUEST_TIMED_OUT)) {
+                break;
+            }
             startThreads(isSafe);
             resultFuture.whenComplete(action);
             resultFuture = new CompletableFuture<>();
@@ -115,14 +118,14 @@ public class MessageFetchContextTest {
     @Test
     public void testHandleFetchUnSafe() throws ExecutionException, InterruptedException {
         AtomicReference<Set<Errors>> errorsSet = new AtomicReference<>(new HashSet<>());
-        startAndGetResult(false, errorsSet);
+        startAndGetResult(false, errorsSet, true);
         assertTrue(errorsSet.get().contains(Errors.REQUEST_TIMED_OUT));
     }
 
     @Test
     public void testHandleFetchSafe() throws ExecutionException, InterruptedException {
         AtomicReference<Set<Errors>> errorsSet = new AtomicReference<>(new HashSet<>());
-        startAndGetResult(true, errorsSet);
+        startAndGetResult(true, errorsSet, false);
         assertFalse(errorsSet.get().contains(Errors.REQUEST_TIMED_OUT));
     }
 
