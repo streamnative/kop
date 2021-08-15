@@ -2,9 +2,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,21 +14,22 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertTrue;
 
 import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
@@ -39,9 +40,9 @@ import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
 import org.testng.collections.Maps;
 
 public class MessageFetchContextTest {
@@ -58,10 +59,15 @@ public class MessageFetchContextTest {
 
     private static final ConcurrentLinkedQueue<DecodeResult> decodeResults = new ConcurrentLinkedQueue<>();
 
-    private static final TopicPartition tp1 = new TopicPartition("test-fetch", 1);
-    private static final TopicPartition tp2 = new TopicPartition("test-fetch", 2);
+    private static final String topicName = "test-fetch";
+    private static final TopicPartition tp1 = new TopicPartition(topicName, 1);
+    private static final TopicPartition tp2 = new TopicPartition(topicName, 2);
 
-    private static final ExecutorService threadPool = Executors.newFixedThreadPool(2);
+    ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
+            2, 2, 1000, TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(2), Executors.defaultThreadFactory(),
+            new ThreadPoolExecutor.DiscardPolicy());
+
 
     // Competitive problems need a certain chance to appear.
     // Try a few more times to have a higher chance of reproducing the problem.
@@ -69,33 +75,54 @@ public class MessageFetchContextTest {
 
     private static final AtomicInteger currentAttempts = new AtomicInteger(0);
 
-    @Before
-    public void init() {
+    private static volatile MessageFetchContext messageFetchContext = null;
+
+    @BeforeMethod
+    protected void setup() throws Exception {
         fetchData.put(tp1, null);
         fetchData.put(tp2, null);
         resultFuture = new CompletableFuture<>();
+        messageFetchContext = MessageFetchContext.getForTest(fetchRequest, resultFuture);
     }
 
-    private void startThreads(Boolean isSafe) throws ExecutionException, InterruptedException {
+    @AfterMethod
+    protected void cleanup() throws Exception {
+        threadPoolExecutor.shutdown();
+    }
+
+    private void startThreads(Boolean isSafe) throws Exception {
         Runnable run1 = () -> {
-            for (int i = 0; i < 100; i++) {
-                addErrorPartitionResponse(tp1, Errors.NONE, isSafe);
+            if (isSafe) {
+                // For the synchronous method, we can check it only once,
+                // because if there is still has problem, it will eventually become a flaky test,
+                // If it does not become a flaky test, then we can keep this
+                messageFetchContext.addErrorPartitionResponseForTest(tp1, Errors.NONE);
+            } else {
+                for (int i = 0; i < 100; i++) {
+                    addErrorPartitionResponse(tp1, Errors.NONE);
+                }
             }
         };
 
         Runnable run2 = () -> {
-            for (int i = 0; i < 100; i++) {
-                addErrorPartitionResponse(tp2, Errors.NONE, isSafe);
+            if (isSafe) {
+                // As comment described in run1, we can check it only once.
+                messageFetchContext.addErrorPartitionResponseForTest(tp2, Errors.NONE);
+            } else {
+                for (int i = 0; i < 100; i++) {
+                    addErrorPartitionResponse(tp2, Errors.NONE);
+                }
             }
         };
-        Future<?> future1 = threadPool.submit(run1);
-        Future<?> future2 = threadPool.submit(run2);
+
+        Future<?> future1 = threadPoolExecutor.submit(run1);
+        Future<?> future2 = threadPoolExecutor.submit(run2);
         future1.get();
         future2.get();
     }
 
     private void startAndGetResult(Boolean isSafe, AtomicReference<Set<Errors>> errorsSet, Boolean isBlock)
-            throws ExecutionException, InterruptedException {
+            throws Exception {
 
         BiConsumer<AbstractResponse, Throwable> action = (response, exception) -> {
             ResponseCallbackWrapper responseCallbackWrapper = (ResponseCallbackWrapper) response;
@@ -105,31 +132,37 @@ public class MessageFetchContextTest {
         };
 
         while (currentAttempts.getAndIncrement() <= totalAttempts || isBlock) {
-            if (isBlock && errorsSet.get().contains(Errors.REQUEST_TIMED_OUT)) {
-                break;
-            }
             startThreads(isSafe);
             resultFuture.whenComplete(action);
             resultFuture = new CompletableFuture<>();
             responseData.clear();
+            if ((isBlock && errorsSet.get().contains(Errors.REQUEST_TIMED_OUT)) || isSafe) {
+                break;
+            }
         }
     }
 
+    // Since the code has been changed to a synchronized state,
+    // competitive problem is reproduced by simulating the code before the modification
     @Test
-    public void testHandleFetchUnSafe() throws ExecutionException, InterruptedException {
+    public void testHandleFetchUnSafe() throws Exception {
         AtomicReference<Set<Errors>> errorsSet = new AtomicReference<>(new HashSet<>());
         startAndGetResult(false, errorsSet, true);
         assertTrue(errorsSet.get().contains(Errors.REQUEST_TIMED_OUT));
     }
 
+    // Run the actually modified code logic in MessageFetchContext
+    // to avoid changing the MessageFetchContext in the future
+    // and failing to catch possible errors.
+    // We need to ensure that resultFuture.complete has no REQUEST_TIMED_OUT error.
     @Test
-    public void testHandleFetchSafe() throws ExecutionException, InterruptedException {
+    public void testHandleFetchSafe() throws Exception {
         AtomicReference<Set<Errors>> errorsSet = new AtomicReference<>(new HashSet<>());
         startAndGetResult(true, errorsSet, false);
         assertFalse(errorsSet.get().contains(Errors.REQUEST_TIMED_OUT));
     }
 
-    private void addErrorPartitionResponse(TopicPartition topicPartition, Errors errors, Boolean isSafe) {
+    private void addErrorPartitionResponse(TopicPartition topicPartition, Errors errors) {
         responseData.put(topicPartition, new FetchResponse.PartitionData<>(
                 errors,
                 FetchResponse.INVALID_HIGHWATERMARK,
@@ -137,20 +170,11 @@ public class MessageFetchContextTest {
                 FetchResponse.INVALID_LOG_START_OFFSET,
                 null,
                 MemoryRecords.EMPTY));
-        if (isSafe) {
-            tryCompleteThreadSafe();
-        } else {
-            tryComplete();
-        }
+
+        tryComplete();
     }
 
     private void tryComplete() {
-        if (responseData.size() >= fetchRequest.fetchData().size()) {
-            complete();
-        }
-    }
-
-    private synchronized void tryCompleteThreadSafe() {
         if (responseData.size() >= fetchRequest.fetchData().size()) {
             complete();
         }
@@ -205,10 +229,5 @@ public class MessageFetchContextTest {
                             // release the batched ByteBuf if necessary
                             decodeResults.forEach(DecodeResult::release);
                         }));
-    }
-
-    @After
-    public void close() {
-        threadPool.shutdown();
     }
 }

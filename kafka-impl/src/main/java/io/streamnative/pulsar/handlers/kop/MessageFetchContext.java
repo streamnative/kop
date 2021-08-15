@@ -110,6 +110,24 @@ public final class MessageFetchContext {
         return context;
     }
 
+    //only used for unit test
+    public static MessageFetchContext getForTest(FetchRequest fetchRequest,
+                                          CompletableFuture<AbstractResponse> resultFuture) {
+        MessageFetchContext context = RECYCLER.get();
+        context.responseData = new ConcurrentHashMap<>();
+        context.decodeResults = new ConcurrentLinkedQueue<>();
+        context.requestHandler = null;
+        context.maxReadEntriesNum = 0;
+        context.topicManager = null;
+        context.statsLogger = null;
+        context.tc = null;
+        context.clientHost = null;
+        context.fetchRequest = fetchRequest;
+        context.header = null;
+        context.resultFuture = resultFuture;
+        return context;
+    }
+
     private MessageFetchContext(Handle<MessageFetchContext> recyclerHandle) {
         this.recyclerHandle = recyclerHandle;
     }
@@ -128,6 +146,18 @@ public final class MessageFetchContext {
         header = null;
         resultFuture = null;
         recyclerHandle.recycle(this);
+    }
+
+    //only used for unit test
+    public void addErrorPartitionResponseForTest(TopicPartition topicPartition, Errors errors) {
+        responseData.put(topicPartition, new PartitionData<>(
+                errors,
+                FetchResponse.INVALID_HIGHWATERMARK,
+                FetchResponse.INVALID_LAST_STABLE_OFFSET,
+                FetchResponse.INVALID_LOG_START_OFFSET,
+                null,
+                MemoryRecords.EMPTY));
+        tryComplete();
     }
 
     private void addErrorPartitionResponse(TopicPartition topicPartition, Errors errors) {
