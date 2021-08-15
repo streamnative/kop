@@ -102,7 +102,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         final NamespaceName kafkaMetaNs;
         final NamespaceName kafkaTopicNs;
         final GroupCoordinator groupCoordinator;
-        final LookupClient lookupClient;
         final String brokerUrl;
 
         public OffsetAndTopicListener(BrokerService service,
@@ -114,7 +113,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             this.groupCoordinator = groupCoordinator;
             this.kafkaTopicNs = NamespaceName
                     .get(kafkaConfig.getKafkaTenant(), kafkaConfig.getKafkaNamespace());
-            this.lookupClient = KafkaProtocolHandler.getLookupClient(service.pulsar());
             this.brokerUrl = service.pulsar().getBrokerServiceUrl();
         }
 
@@ -144,11 +142,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                             }
                             KafkaTopicManager.removeTopicManagerCache(name.toString());
                             KopBrokerLookupManager.removeTopicManagerCache(name.toString());
-                            // update lookup cache when onload
-                            final CompletableFuture<InetSocketAddress> retFuture =
-                                    lookupClient.getBrokerAddress(TopicName.get(topic));
-                            KafkaTopicManager.LOOKUP_CACHE.put(topic, retFuture);
-                            KopBrokerLookupManager.updateTopicManagerCache(topic, retFuture);
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
