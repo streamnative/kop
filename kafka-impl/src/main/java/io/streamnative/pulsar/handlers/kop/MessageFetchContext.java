@@ -39,6 +39,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
@@ -90,6 +91,7 @@ public final class MessageFetchContext {
     private FetchRequest fetchRequest;
     private RequestHeader header;
     private volatile CompletableFuture<AbstractResponse> resultFuture;
+    private AtomicBoolean hasComplete;
 
     // recycler and get for this object
     public static MessageFetchContext get(KafkaRequestHandler requestHandler,
@@ -107,6 +109,7 @@ public final class MessageFetchContext {
         context.fetchRequest = (FetchRequest) kafkaHeaderAndRequest.getRequest();
         context.header = kafkaHeaderAndRequest.getHeader();
         context.resultFuture = resultFuture;
+        context.hasComplete = new AtomicBoolean(false);
         return context;
     }
 
@@ -125,6 +128,7 @@ public final class MessageFetchContext {
         context.fetchRequest = fetchRequest;
         context.header = null;
         context.resultFuture = resultFuture;
+        context.hasComplete = new AtomicBoolean(false);
         return context;
     }
 
@@ -145,6 +149,7 @@ public final class MessageFetchContext {
         fetchRequest = null;
         header = null;
         resultFuture = null;
+        hasComplete = null;
         recyclerHandle.recycle(this);
     }
 
@@ -171,9 +176,11 @@ public final class MessageFetchContext {
         tryComplete();
     }
 
-    private synchronized void tryComplete() {
-        if (responseData.size() >= fetchRequest.fetchData().size()) {
-            complete();
+    private void tryComplete() {
+        if (responseData != null && responseData.size() >= fetchRequest.fetchData().size()) {
+            if (hasComplete.compareAndSet(false, true)) {
+                complete();
+            }
         }
     }
 

@@ -22,14 +22,9 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
@@ -40,7 +35,6 @@ import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
-import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 import org.testng.collections.Maps;
@@ -63,12 +57,6 @@ public class MessageFetchContextTest {
     private static final TopicPartition tp1 = new TopicPartition(topicName, 1);
     private static final TopicPartition tp2 = new TopicPartition(topicName, 2);
 
-    ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
-            2, 2, 1000, TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<>(2), Executors.defaultThreadFactory(),
-            new ThreadPoolExecutor.DiscardPolicy());
-
-
     // Competitive problems need a certain chance to appear.
     // Try a few more times to have a higher chance of reproducing the problem.
     private static final int totalAttempts = 200;
@@ -85,13 +73,8 @@ public class MessageFetchContextTest {
         messageFetchContext = MessageFetchContext.getForTest(fetchRequest, resultFuture);
     }
 
-    @AfterMethod
-    protected void cleanup() throws Exception {
-        threadPoolExecutor.shutdown();
-    }
-
     private void startThreads(Boolean isSafe) throws Exception {
-        Runnable run1 = () -> {
+        Thread run1 = new Thread(() -> {
             if (isSafe) {
                 // For the synchronous method, we can check it only once,
                 // because if there is still has problem, it will eventually become a flaky test,
@@ -102,9 +85,9 @@ public class MessageFetchContextTest {
                     addErrorPartitionResponse(tp1, Errors.NONE);
                 }
             }
-        };
+        });
 
-        Runnable run2 = () -> {
+        Thread run2 = new Thread(() -> {
             if (isSafe) {
                 // As comment described in run1, we can check it only once.
                 messageFetchContext.addErrorPartitionResponseForTest(tp2, Errors.NONE);
@@ -113,12 +96,12 @@ public class MessageFetchContextTest {
                     addErrorPartitionResponse(tp2, Errors.NONE);
                 }
             }
-        };
+        });
 
-        Future<?> future1 = threadPoolExecutor.submit(run1);
-        Future<?> future2 = threadPoolExecutor.submit(run2);
-        future1.get();
-        future2.get();
+        run1.start();
+        run2.start();
+        run1.join();
+        run2.join();
     }
 
     private void startAndGetResult(Boolean isSafe, AtomicReference<Set<Errors>> errorsSet, Boolean isBlock)
