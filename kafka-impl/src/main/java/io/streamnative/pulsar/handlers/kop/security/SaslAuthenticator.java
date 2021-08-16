@@ -66,8 +66,8 @@ public class SaslAuthenticator {
     private final AuthenticateCallbackHandler oauth2CallbackHandler;
     private State state = State.HANDSHAKE_OR_VERSIONS_REQUEST;
     private SaslServer saslServer;
-    @Getter
-    private String role = null;
+    private Session session;
+
 
     private enum State {
         HANDSHAKE_OR_VERSIONS_REQUEST,
@@ -131,6 +131,14 @@ public class SaslAuthenticator {
     public boolean complete() {
         return state == State.COMPLETE;
     }
+
+    public Session session() {
+        if (this.saslServer != null && complete()) {
+            return this.session;
+        }
+        return null;
+    }
+
 
     public void reset() {
         state = State.HANDSHAKE_OR_VERSIONS_REQUEST;
@@ -246,7 +254,9 @@ public class SaslAuthenticator {
         try {
             byte[] responseToken = saslServer.evaluateResponse(Utils.toArray(saslAuthenticateRequest.saslAuthBytes()));
             ByteBuffer responseBuf = (responseToken == null) ? EMPTY_BUFFER : ByteBuffer.wrap(responseToken);
-            this.role = saslServer.getAuthorizationID();
+            this.session = new Session(
+                    new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID()),
+                    header.clientId());
             responseFuture.complete(new SaslAuthenticateResponse(Errors.NONE, null, responseBuf));
         } catch (SaslException e) {
             responseFuture.complete(new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()));
