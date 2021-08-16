@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
@@ -194,6 +195,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         final Producer<byte[]> pulsarProducer = newPulsarProducer(topic, enableBatching);
 
         boolean useOrderingKey = false;
+        final CountDownLatch sendCompleteLatch = new CountDownLatch(numMessages);
         for (int i = 0; i < numMessages; i++) {
             final String key = keys.get(i);
             final String value = values.get(i);
@@ -221,9 +223,11 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
                 } else if (log.isDebugEnabled()) {
                     log.debug("PulsarProducer send {} to {}", value, id);
                 }
+                sendCompleteLatch.countDown();
             });
         }
 
+        sendCompleteLatch.await();
         pulsarProducer.close();
 
         @Cleanup
