@@ -17,6 +17,7 @@ package io.streamnative.pulsar.handlers.kop.security.auth;
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
+
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
@@ -27,7 +28,6 @@ import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import javax.crypto.SecretKey;
 import lombok.extern.slf4j.Slf4j;
-
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
@@ -53,12 +53,8 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
 
     private static final String TENANT = "SimpleAcl";
     private static final String NAMESPACE = "ns1";
-    private static final String USER_NAME = TENANT + "/" + NAMESPACE;
     private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/topic1";
-    private static final String NOT_EXISTS_TENANT_TOPIC = "persistent://not_exists/" + NAMESPACE + "/topic1" ;
-    private String adminToken;
-    private String userToken;
-    private String anotherToken;
+    private static final String NOT_EXISTS_TENANT_TOPIC = "persistent://not_exists/" + NAMESPACE + "/topic1";
 
     @BeforeMethod
     @Override
@@ -74,9 +70,7 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
         authConf.setProperties(properties);
         provider.initialize(authConf);
 
-        userToken = AuthTokenUtils.createToken(secretKey, SIMPLE_USER, Optional.empty());
-        adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
-        anotherToken = AuthTokenUtils.createToken(secretKey, ANOTHER_USER, Optional.empty());
+        String adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
 
         super.resetConfig();
         conf.setKopAllowedNamespaces(Collections.singleton(TENANT + "/" + NAMESPACE));

@@ -14,21 +14,18 @@
 package io.streamnative.pulsar.handlers.kop.security;
 
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
 
 /**
  * client auth session.
  */
 @Data
+@AllArgsConstructor
 public class Session {
 
     private KafkaPrincipal principal;
 
     private String clientId;
-
-    public Session(KafkaPrincipal principal, String clientId) {
-        this.principal = principal;
-        this.clientId = clientId;
-    }
 
 }

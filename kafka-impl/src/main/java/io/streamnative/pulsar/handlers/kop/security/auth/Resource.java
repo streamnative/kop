@@ -19,15 +19,14 @@ import lombok.Getter;
 /**
  * The Authorization resource.
  */
+@Getter
 public class Resource {
 
-    @Getter
     private final ResourceType resourceType;
 
-    @Getter
     private final String name;
 
-    public Resource(ResourceType resourceType, String name) {
+    private Resource(ResourceType resourceType, String name) {
         this.resourceType = resourceType;
         this.name = name;
     }
@@ -35,6 +34,5 @@ public class Resource {
     public static Resource of(ResourceType resourceType, String name) {
         return new Resource(resourceType, name);
     }
-
 
 }

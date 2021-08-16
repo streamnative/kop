@@ -23,6 +23,7 @@ import java.util.Locale;
  */
 public enum ResourceType {
 
+
     /**
      * Represents any ResourceType which this client cannot understand,
      * perhaps because this client is too old.
@@ -35,6 +36,8 @@ public enum ResourceType {
     TOPIC((byte) 2),
     ;
 
+
+    private final byte code;
 
     private static final HashMap<Byte, ResourceType> CODE_TO_VALUE = new HashMap<>();
 
@@ -69,8 +72,6 @@ public enum ResourceType {
         }
         return resourceType;
     }
-
-    private final byte code;
 
     ResourceType(byte code) {
         this.code = code;

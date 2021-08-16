@@ -14,9 +14,8 @@
 package io.streamnative.pulsar.handlers.kop.security;
 
 
-import static java.util.Objects.requireNonNull;
-
 import java.security.Principal;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.ToString;
 
@@ -25,6 +24,7 @@ import lombok.ToString;
  * Store client login info.
  */
 @ToString
+@AllArgsConstructor
 public class KafkaPrincipal implements Principal {
 
     public static final String USER_TYPE = "User";
@@ -35,17 +35,7 @@ public class KafkaPrincipal implements Principal {
     /**
      * Pulsar role.
      */
+    @Getter
     private final String name;
-
-
-    public KafkaPrincipal(String principalType, String name) {
-        this.principalType = requireNonNull(principalType, "Principal type cannot be null");
-        this.name = requireNonNull(name, "Principal name cannot be null");
-    }
-
-    @Override
-    public String getName() {
-        return name;
-    }
 
 }

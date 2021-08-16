@@ -52,51 +52,45 @@ public class SimpleAclAuthorizer implements Authorizer {
             if (isSuper) {
                 permissionFuture.complete(true);
             } else {
-                try {
-                    getPulsarService()
-                            .getPulsarResources()
-                            .getNamespaceResources()
-                            .getAsync(String.format("%s/%s", POLICY_ROOT, topicName.getNamespace()))
-                            .thenAccept(policies -> {
-                                if (!policies.isPresent()) {
-                                    if (log.isDebugEnabled()) {
-                                        log.debug("Policies node couldn't be found for namespace : {}", principal);
-                                    }
-                                } else {
-                                    String role = principal.getName();
-                                    Map<String, Set<AuthAction>> topicRoles = policies.get()
-                                            .auth_policies
-                                            .getTopicAuthentication()
-                                            .get(topicName.toString());
-                                    if (topicRoles != null && role != null) {
-                                        // Topic has custom policy
-                                        Set<AuthAction> topicActions = topicRoles.get(role);
-                                        if (topicActions != null && topicActions.contains(action)) {
-                                            permissionFuture.complete(true);
-                                            return;
-                                        }
-                                    }
-
-                                    Map<String, Set<AuthAction>> namespaceRoles = policies.get().auth_policies
-                                            .getNamespaceAuthentication();
-                                    Set<AuthAction> namespaceActions = namespaceRoles.get(role);
-                                    if (namespaceActions != null && namespaceActions.contains(action)) {
+                getPulsarService()
+                        .getPulsarResources()
+                        .getNamespaceResources()
+                        .getAsync(String.format("%s/%s", POLICY_ROOT, topicName.getNamespace()))
+                        .thenAccept(policies -> {
+                            if (!policies.isPresent()) {
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Policies node couldn't be found for namespace : {}", principal);
+                                }
+                            } else {
+                                String role = principal.getName();
+                                Map<String, Set<AuthAction>> topicRoles = policies.get()
+                                        .auth_policies
+                                        .getTopicAuthentication()
+                                        .get(topicName.toString());
+                                if (topicRoles != null && role != null) {
+                                    // Topic has custom policy
+                                    Set<AuthAction> topicActions = topicRoles.get(role);
+                                    if (topicActions != null && topicActions.contains(action)) {
                                         permissionFuture.complete(true);
                                         return;
                                     }
                                 }
-                                permissionFuture.complete(false);
-                            }).exceptionally(ex -> {
-                                log.warn("Client with Principal - {} failed to get permissions for resource - {}. {}",
-                                        principal, topicName, ex.getMessage());
-                                permissionFuture.completeExceptionally(ex);
-                                return null;
-                            });
-                } catch (Exception e) {
-                    log.warn("Client with Principal - {} failed to get permissions for topic - {}. {}",
-                            principal, topicName, e.getMessage());
-                    permissionFuture.completeExceptionally(e);
-                }
+
+                                Map<String, Set<AuthAction>> namespaceRoles = policies.get().auth_policies
+                                        .getNamespaceAuthentication();
+                                Set<AuthAction> namespaceActions = namespaceRoles.get(role);
+                                if (namespaceActions != null && namespaceActions.contains(action)) {
+                                    permissionFuture.complete(true);
+                                    return;
+                                }
+                            }
+                            permissionFuture.complete(false);
+                        }).exceptionally(ex -> {
+                            log.warn("Client with Principal - {} failed to get permissions for resource - {}. {}",
+                                    principal, topicName, ex.getMessage());
+                            permissionFuture.completeExceptionally(ex);
+                            return null;
+                        });
             }
         });
 
@@ -114,7 +108,9 @@ public class SimpleAclAuthorizer implements Authorizer {
         authorize(principal, AuthAction.produce, resource)
                 .whenComplete((hasProducePermission, ex) -> {
                     if (ex != null) {
-                        log.warn("Check produce permission error:{}", ex.getMessage());
+                        if (log.isDebugEnabled()) {
+                            log.debug("Check produce permission error:{}", ex.getMessage());
+                        }
                         return;
                     }
                     if (hasProducePermission) {
@@ -124,7 +120,9 @@ public class SimpleAclAuthorizer implements Authorizer {
                     authorize(principal, AuthAction.consume, resource)
                             .whenComplete((hasConsumerPermission, e) -> {
                                 if (e != null) {
-                                    log.warn("Check consumer permission error:{}", e.getMessage());
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("Check consumer permission error:{}", e.getMessage());
+                                    }
                                     canLookupFuture.completeExceptionally(e);
                                     return;
                                 }

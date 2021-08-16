@@ -42,9 +42,7 @@ import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
-import io.streamnative.pulsar.handlers.kop.security.Session;
 import io.streamnative.pulsar.handlers.kop.security.auth.Authorizer;
-import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
@@ -91,7 +89,6 @@ import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -186,7 +183,6 @@ import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 public class KafkaRequestHandler extends KafkaCommandDecoder {
     public static final long DEFAULT_TIMESTAMP = 0L;
 
-    private final Authorizer authorizer;
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
     private final GroupCoordinator groupCoordinator;
@@ -196,6 +192,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final ScheduledExecutorService executor;
     private final PulsarAdmin admin;
     private final SaslAuthenticator authenticator;
+    private final Authorizer authorizer;
     private final AdminManager adminManager;
 
     private final Boolean tlsEnabled;
@@ -2202,42 +2199,5 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 .add(numMessages);
 
         RequestStats.BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE.set(numMessages);
-    }
-
-    private CompletableFuture<Boolean> authorize(AclOperation operation, Resource resource) {
-        if (authorizer == null) {
-            return CompletableFuture.completedFuture(true);
-        }
-        if (authenticator.session() == null) {
-            return CompletableFuture.completedFuture(false);
-        }
-
-        CompletableFuture<Boolean> isAuthorizedFuture;
-        Session session = authenticator.session();
-        switch (operation) {
-            case READ:
-                isAuthorizedFuture = authorizer.canConsumeAsync(session.getPrincipal(), resource);
-                break;
-            case IDEMPOTENT_WRITE:
-            case WRITE:
-                isAuthorizedFuture = authorizer.canProduceAsync(session.getPrincipal(), resource);
-                break;
-            case DESCRIBE:
-                isAuthorizedFuture = authorizer.canLookupAsync(session.getPrincipal(), resource);
-                break;
-            case CLUSTER_ACTION:
-            case DESCRIBE_CONFIGS:
-            case ALTER_CONFIGS:
-            case CREATE:
-            case DELETE:
-            case ALTER:
-            case UNKNOWN:
-            case ALL:
-            case ANY:
-            default:
-                return FutureUtil.failedFuture(
-                        new IllegalStateException("TopicOperation [" + operation.name() + "] is not supported."));
-        }
-        return isAuthorizedFuture;
     }
 }
