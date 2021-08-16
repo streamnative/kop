@@ -105,30 +105,34 @@ public class SimpleAclAuthorizer implements Authorizer {
     @Override
     public CompletableFuture<Boolean> canLookupAsync(KafkaPrincipal principal, Resource resource) {
         CompletableFuture<Boolean> canLookupFuture = new CompletableFuture<>();
-        authorize(principal, AuthAction.produce, resource)
-                .whenComplete((hasProducePermission, ex) -> {
-                    if (ex != null) {
-                        if (log.isDebugEnabled()) {
-                            log.debug("Check produce permission error:{}", ex.getMessage());
-                        }
-                        return;
+        authorize(principal, AuthAction.produce, resource).whenComplete((hasProducePermission, ex) -> {
+            if (ex != null) {
+                if (log.isDebugEnabled()) {
+                    log.debug(
+                            "Resource [{}] Principal [{}] exception occurred while trying to "
+                                    + "check Produce permissions. {}",
+                            resource, principal, ex.getMessage());
+                }
+                return;
+            }
+            if (hasProducePermission) {
+                canLookupFuture.complete(true);
+                return;
+            }
+            authorize(principal, AuthAction.consume, resource).whenComplete((hasConsumerPermission, e) -> {
+                if (e != null) {
+                    if (log.isDebugEnabled()) {
+                        log.debug(
+                                "Resource [{}] Principal [{}] exception occurred while trying to "
+                                        + "check Consume permissions. {}",
+                                resource, principal, e.getMessage());
                     }
-                    if (hasProducePermission) {
-                        canLookupFuture.complete(true);
-                        return;
-                    }
-                    authorize(principal, AuthAction.consume, resource)
-                            .whenComplete((hasConsumerPermission, e) -> {
-                                if (e != null) {
-                                    if (log.isDebugEnabled()) {
-                                        log.debug("Check consumer permission error:{}", e.getMessage());
-                                    }
-                                    canLookupFuture.completeExceptionally(e);
-                                    return;
-                                }
-                                canLookupFuture.complete(hasConsumerPermission);
-                            });
-                });
+                    canLookupFuture.completeExceptionally(e);
+                    return;
+                }
+                canLookupFuture.complete(hasConsumerPermission);
+            });
+        });
         return canLookupFuture;
     }
 
