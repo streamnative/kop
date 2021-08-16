@@ -177,7 +177,7 @@ public final class MessageFetchContext {
     }
 
     private void tryComplete() {
-        if (responseData != null && responseData.size() >= fetchRequest.fetchData().size()) {
+        if (resultFuture != null && responseData.size() >= fetchRequest.fetchData().size()) {
             if (hasComplete.compareAndSet(false, true)) {
                 complete();
             }
