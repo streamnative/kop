@@ -39,6 +39,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
@@ -90,6 +91,7 @@ public final class MessageFetchContext {
     private FetchRequest fetchRequest;
     private RequestHeader header;
     private volatile CompletableFuture<AbstractResponse> resultFuture;
+    private AtomicBoolean hasComplete;
 
     // recycler and get for this object
     public static MessageFetchContext get(KafkaRequestHandler requestHandler,
@@ -107,6 +109,26 @@ public final class MessageFetchContext {
         context.fetchRequest = (FetchRequest) kafkaHeaderAndRequest.getRequest();
         context.header = kafkaHeaderAndRequest.getHeader();
         context.resultFuture = resultFuture;
+        context.hasComplete = new AtomicBoolean(false);
+        return context;
+    }
+
+    //only used for unit test
+    public static MessageFetchContext getForTest(FetchRequest fetchRequest,
+                                          CompletableFuture<AbstractResponse> resultFuture) {
+        MessageFetchContext context = RECYCLER.get();
+        context.responseData = new ConcurrentHashMap<>();
+        context.decodeResults = new ConcurrentLinkedQueue<>();
+        context.requestHandler = null;
+        context.maxReadEntriesNum = 0;
+        context.topicManager = null;
+        context.statsLogger = null;
+        context.tc = null;
+        context.clientHost = null;
+        context.fetchRequest = fetchRequest;
+        context.header = null;
+        context.resultFuture = resultFuture;
+        context.hasComplete = new AtomicBoolean(false);
         return context;
     }
 
@@ -127,7 +149,20 @@ public final class MessageFetchContext {
         fetchRequest = null;
         header = null;
         resultFuture = null;
+        hasComplete = null;
         recyclerHandle.recycle(this);
+    }
+
+    //only used for unit test
+    public void addErrorPartitionResponseForTest(TopicPartition topicPartition, Errors errors) {
+        responseData.put(topicPartition, new PartitionData<>(
+                errors,
+                FetchResponse.INVALID_HIGHWATERMARK,
+                FetchResponse.INVALID_LAST_STABLE_OFFSET,
+                FetchResponse.INVALID_LOG_START_OFFSET,
+                null,
+                MemoryRecords.EMPTY));
+        tryComplete();
     }
 
     private void addErrorPartitionResponse(TopicPartition topicPartition, Errors errors) {
@@ -142,7 +177,8 @@ public final class MessageFetchContext {
     }
 
     private void tryComplete() {
-        if (responseData.size() >= fetchRequest.fetchData().size()) {
+        if (resultFuture != null && responseData.size() >= fetchRequest.fetchData().size()
+                && hasComplete.compareAndSet(false, true)) {
             complete();
         }
     }
