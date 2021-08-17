@@ -42,6 +42,8 @@ import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
+import io.streamnative.pulsar.handlers.kop.security.auth.Authorizer;
+import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -190,6 +192,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final ScheduledExecutorService executor;
     private final PulsarAdmin admin;
     private final SaslAuthenticator authenticator;
+    private final Authorizer authorizer;
     private final AdminManager adminManager;
 
     private final Boolean tlsEnabled;
@@ -247,6 +250,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 && !kafkaConfig.getSaslAllowedMechanisms().isEmpty();
         this.authenticator = authenticationEnabled
                 ? new SaslAuthenticator(pulsarService, kafkaConfig.getSaslAllowedMechanisms(), kafkaConfig)
+                : null;
+        final boolean authorizationEnabled = pulsarService.getBrokerService().isAuthorizationEnabled();
+        this.authorizer =  authorizationEnabled && authenticationEnabled
+                ? new SimpleAclAuthorizer(pulsarService)
                 : null;
         this.adminManager = adminManager;
         this.tlsEnabled = tlsEnabled;
@@ -329,16 +336,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (authenticator != null) {
             authenticator.authenticate(
                     kafkaHeaderAndRequest.getHeader(), kafkaHeaderAndRequest.getRequest(), responseFuture);
-            final String role = authenticator.getRole();
-            if (role == null) {
-                return;
-            }
-            // TODO: role is used for authorization, but KoP doesn't support authorization currently.
-            //  See https://github.com/streamnative/kop/issues/236
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] has authenticated successfully with role {}",
-                        getRemoteAddress(), authenticator.getRole());
-            }
         }
     }
 
