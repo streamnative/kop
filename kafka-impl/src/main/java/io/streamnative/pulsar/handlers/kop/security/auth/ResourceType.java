@@ -50,11 +50,10 @@ public enum ResourceType {
     /**
      * Parse the given string as an ACL resource type.
      *
-     * @param str    The string to parse.
-     *
-     * @return       The ResourceType, or UNKNOWN if the string could not be matched.
+     * @param str The string to parse.
+     * @return The ResourceType, or UNKNOWN if the string could not be matched.
      */
-    public static ResourceType fromString(String str) throws IllegalArgumentException {
+    public static ResourceType fromString(String str) {
         try {
             return ResourceType.valueOf(str.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {

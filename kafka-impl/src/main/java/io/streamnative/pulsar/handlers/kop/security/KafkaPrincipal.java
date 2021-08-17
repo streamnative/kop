@@ -23,19 +23,18 @@ import lombok.ToString;
 /**
  * Store client login info.
  */
+@Getter
 @ToString
 @AllArgsConstructor
 public class KafkaPrincipal implements Principal {
 
     public static final String USER_TYPE = "User";
 
-    @Getter
     private final String principalType;
 
     /**
      * Pulsar role.
      */
-    @Getter
     private final String name;
 
 }
