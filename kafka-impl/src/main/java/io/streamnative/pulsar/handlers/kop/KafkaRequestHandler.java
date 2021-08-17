@@ -359,11 +359,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             for (ApiKeys apiKey : ApiKeys.values()) {
                 if (apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE) {
                     switch (apiKey) {
-                        case FETCH:
-                            // V4 added MessageSets responses. We need to make sure RecordBatch format is not used
-                            versionList.add(new ApiVersionsResponse.ApiVersion((short) 1, (short) 4,
-                                    apiKey.latestVersion()));
-                            break;
+//                        case FETCH:
+//                            // V4 added MessageSets responses. We need to make sure RecordBatch format is not used
+//                            versionList.add(new ApiVersionsResponse.ApiVersion((short) 1, (short) 4,
+//                                    apiKey.latestVersion()));
+//                            break;
                         case LIST_OFFSETS:
                             // V0 is needed for librdkafka
                             versionList.add(new ApiVersionsResponse.ApiVersion((short) 2, (short) 0,

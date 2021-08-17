@@ -182,8 +182,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             responseFuture.whenComplete((response, e) -> {
                 if (e instanceof CancellationException) {
                     if (log.isDebugEnabled()) {
-                        log.debug("[{}] Request {} is cancelled",
-                                ctx.channel(), kafkaHeaderAndRequest.getHeader());
+                        log.debug("[{}] Request {} is cancelled, {}",
+                                ctx.channel(), kafkaHeaderAndRequest.getHeader(), e);
                     }
                     // The response future is cancelled by `close` or `writeAndFlushResponseToClient` method, there's
                     // no need to call `writeAndFlushResponseToClient` again.

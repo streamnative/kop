@@ -24,10 +24,12 @@ import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
+import org.apache.kafka.common.record.ConvertedRecords;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.KeyValue;
@@ -67,9 +69,26 @@ public class KafkaEntryFormatter implements EntryFormatter {
                 final ByteBuf byteBuf = entry.getDataBuffer();
                 final MessageMetadata metadata = Commands.parseMessageMetadata(byteBuf);
                 if (isKafkaEntryFormat(metadata)) {
+                    byte batchMagic = byteBuf.getByte(byteBuf.readerIndex() + MAGIC_OFFSET);
                     byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
-                    byteBuf.setByte(byteBuf.readerIndex() + MAGIC_OFFSET, magic);
-                    orderedByteBuf.add(byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes()));
+                    ConvertedRecords<MemoryRecords> convertedRecords = null;
+                    MemoryRecords memoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
+
+                    if (batchMagic > magic) {
+                        //down converted
+                        convertedRecords = KafkaRecordsUtil.downConvert(memoryRecords.batches(), magic, startOffset);
+                        log.debug("[{}:{}] downConvert record, start offset {}, entry magic: {}, client magic: {}", entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
+                    }
+                    if (convertedRecords != null) {
+                        final ByteBuf kafkaBuffer = Unpooled.wrappedBuffer(convertedRecords.records().buffer());
+                        orderedByteBuf.add(kafkaBuffer);
+                        log.debug("[{}:{}] down convertedRecords not null {}, {}, {}", entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
+                    } else {
+                        orderedByteBuf.add(byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes()));
+                    }
+
+//                    byteBuf.setByte(byteBuf.readerIndex() + MAGIC_OFFSET, magic);
+//                    orderedByteBuf.add(byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes()));
                 } else {
                     final MemoryRecords records =
                             ByteBufUtils.decodePulsarEntryToKafkaRecords(metadata, byteBuf, startOffset, magic);
