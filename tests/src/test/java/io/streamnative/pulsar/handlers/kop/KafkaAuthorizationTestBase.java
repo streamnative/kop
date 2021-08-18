@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 import static org.testng.AssertJUnit.fail;
 
@@ -41,16 +42,17 @@ import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.policies.data.TenantInfo;
-import org.testng.annotations.AfterMethod;
-import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.AfterClass;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
 @Test
 @Slf4j
-public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestBase{
+public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestBase {
 
     private static final String TENANT = "KafkaAuthorizationTest";
     private static final String NAMESPACE = "ns1";
@@ -69,7 +71,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         super(entryFormat);
     }
 
-    @BeforeMethod
+    @BeforeClass
     @Override
     protected void setup() throws Exception {
         SecretKey secretKey = AuthTokenUtils.createSecretKey(SignatureAlgorithm.HS256);
@@ -99,8 +101,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         conf.setAuthorizationAllowWildcardsMatching(true);
         conf.setSuperUserRoles(Sets.newHashSet(ADMIN_USER));
         conf.setAuthenticationProviders(
-                Sets.newHashSet("org.apache.pulsar.broker.authentication."
-                        + "AuthenticationProviderToken"));
+                Sets.newHashSet(AuthenticationProviderToken.class.getName()));
         conf.setBrokerClientAuthenticationPlugin(AuthenticationToken.class.getName());
         conf.setBrokerClientAuthenticationParameters("token:" + adminToken);
         conf.setProperties(properties);
@@ -120,16 +121,17 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                         this.conf.getBrokerClientAuthenticationParameters()).build());
     }
 
-    @AfterMethod
+    @AfterClass
+    @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
     }
 
     @Test(timeOut = 20000)
-    void testAuthorizationFailed() {
+    void testAuthorizationFailed() throws PulsarAdminException {
+        String newTenant = "newTenantAuthorizationFailed";
+        String testTopic = "persistent://" + newTenant + "/" + NAMESPACE + "/topic1";
         try {
-            String newTenant = "newTenant";
-            String testTopic = "persistent://" + newTenant + "/" + NAMESPACE + "/topic1";
             admin.tenants().createTenant(newTenant,
                     TenantInfo.builder()
                             .adminRoles(Collections.singleton(ADMIN_USER))
@@ -144,12 +146,18 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             fail("should have failed");
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("TopicAuthorizationException"));
+        } finally {
+            // Cleanup
+            admin.topics().deletePartitionedTopic(testTopic);
+            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
+            admin.tenants().deleteTenant(newTenant);
         }
     }
 
     @Test(timeOut = 20000)
-    void testSuccessAutoCreateTopicBySuperUser() {
-        String topic = "newTopic";
+    void testSuccessAutoCreateTopicBySuperUser() throws PulsarAdminException {
+        String topic = "testSuccessAutoCreateTopic";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
         KProducer kProducer = new KProducer(topic, false, "localhost", getKafkaBrokerPort(),
                 TENANT + "/" + NAMESPACE, "token:" + adminToken);
         int totalMsgs = 10;
@@ -159,7 +167,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             String messageStr = messageStrPrefix + i;
             kProducer.getProducer().send(new ProducerRecord<>(topic, i, messageStr));
         }
-
         KConsumer kConsumer = new KConsumer(topic, "localhost", getKafkaBrokerPort(), false,
                 TENANT + "/" + NAMESPACE, "token:" + adminToken, "DemoKafkaOnPulsarConsumer");
         kConsumer.getConsumer().subscribe(Collections.singleton(topic));
@@ -180,36 +187,44 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         assertTrue(records.isEmpty());
 
         // ensure that we can list the topic
-        Map<String, List<PartitionInfo>> result = kConsumer
-                .getConsumer().listTopics(Duration.ofSeconds(1));
+        Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
         assertEquals(result.size(), 2);
         assertTrue(result.containsKey(topic),
-                "list of topics " + result.keySet().toString() + "  does not contains " + topic);
+                "list of topics " + result.keySet() + "  does not contains " + topic);
+
+        // Cleanup
+        kProducer.close();
+        kConsumer.close();
+        admin.topics().deletePartitionedTopic(fullNewTopicName);
     }
 
     @Test(timeOut = 20000)
     void testAutoCreateTopicFailedBySimpleUser() {
         try {
-            String topic = "newTopic";
+            String topic = "testAutoCreateTopic";
             @Cleanup
             KProducer kProducer = new KProducer(topic, false, "localhost", getKafkaBrokerPort(),
                     TENANT + "/" + NAMESPACE, "token:" + userToken);
             kProducer.getProducer().send(new ProducerRecord<>(topic, 0, "")).get();
             fail("should have failed");
         } catch (Exception e) {
+            e.printStackTrace();
             assertTrue(e.getMessage().contains("TopicAuthorizationException"));
         }
     }
 
     @Test(timeOut = 20000)
     void testListTopic() throws Exception {
-        String newTopic = "newTopic";
+        String newTopic = "newTestListTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
-        @Cleanup
+
         KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getKafkaBrokerPort(), false,
                 TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
         assertEquals(result.size(), 1);
+        assertFalse(result.containsKey(newTopic));
+
+        // Create newTopic
         admin.topics().createPartitionedTopic(fullNewTopicName, 1);
 
         // Grant topic level permission to ANOTHER_USER
@@ -236,6 +251,11 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         Set<String> topics = listTopicsResult.names().get();
         assertEquals(topics.size(), 1);
         assertTrue(topics.contains(newTopic));
+
+        // Cleanup
+        kConsumer.close();
+        adminClient.close();
+        admin.topics().deletePartitionedTopic(fullNewTopicName);
     }
 
 

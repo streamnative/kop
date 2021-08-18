@@ -33,6 +33,7 @@ import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
+import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterMethod;
@@ -181,7 +182,31 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
                 Resource.of(ResourceType.TOPIC, NOT_EXISTS_TENANT_TOPIC)).get();
 
         assertFalse(isAuthorized);
+    }
 
+    @Test
+    public void testAuthorizeManageTopic() throws ExecutionException, InterruptedException {
 
+        Boolean isAuthorized = simpleAclAuthorizer.canManageTopicAsync(
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER),
+                Resource.of(ResourceType.NAMESPACE, TopicName.get(TOPIC).getNamespace())).get();
+        assertFalse(isAuthorized);
+
+        isAuthorized = simpleAclAuthorizer.canManageTopicAsync(
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ADMIN_USER),
+                Resource.of(ResourceType.NAMESPACE, TopicName.get(TOPIC).getNamespace())).get();
+        assertTrue(isAuthorized);
+
+        isAuthorized = simpleAclAuthorizer.canManageTopicAsync(
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ANOTHER_USER),
+                Resource.of(ResourceType.NAMESPACE, TopicName.get(TOPIC).getNamespace())).get();
+
+        assertFalse(isAuthorized);
+
+        isAuthorized = simpleAclAuthorizer.canManageTopicAsync(
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ANOTHER_USER),
+                Resource.of(ResourceType.NAMESPACE, TopicName.get(NOT_EXISTS_TENANT_TOPIC).getNamespace())).get();
+
+        assertFalse(isAuthorized);
     }
 }

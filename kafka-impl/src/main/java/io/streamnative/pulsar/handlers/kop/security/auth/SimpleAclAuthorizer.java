@@ -190,21 +190,21 @@ public class SimpleAclAuthorizer implements Authorizer {
     @Override
     public CompletableFuture<Boolean> canProduceAsync(KafkaPrincipal principal, Resource resource) {
         checkArgument(resource.getResourceType() == ResourceType.TOPIC,
-                String.format("Expected resource type is TOPIC, but have [%s]", resource.getName()));
+                String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
         return authorize(principal, AuthAction.produce, resource);
     }
 
     @Override
     public CompletableFuture<Boolean> canConsumeAsync(KafkaPrincipal principal, Resource resource) {
         checkArgument(resource.getResourceType() == ResourceType.TOPIC,
-                String.format("Expected resource type is TOPIC, but have [%s]", resource.getName()));
+                String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
         return authorize(principal, AuthAction.consume, resource);
     }
 
     @Override
     public CompletableFuture<Boolean> canManageTopicAsync(KafkaPrincipal principal, Resource resource) {
         checkArgument(resource.getResourceType() == ResourceType.NAMESPACE,
-                String.format("Expected resource type is NAMESPACE, but have [%s]", resource.getName()));
+                String.format("Expected resource type is NAMESPACE, but have [%s]", resource.getResourceType()));
         return authorize(principal, AuthAction.packages, resource);
     }
 
