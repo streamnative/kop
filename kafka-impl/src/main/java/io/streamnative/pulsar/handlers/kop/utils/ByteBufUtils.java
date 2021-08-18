@@ -162,6 +162,7 @@ public class ByteBufUtils {
                         value,
                         headers);
                 singleMessagePayload.release();
+                log.error("after appendWithOffset, baseOffset {}, magic {}", baseOffset, magic);
             }
         } else {
             final long timestamp = (metadata.getEventTime() > 0)
@@ -176,12 +177,17 @@ public class ByteBufUtils {
                     getKeyByteBuffer(metadata),
                     getNioBuffer(uncompressedPayload),
                     headers);
+            log.error("after appendWithOffset2, baseOffset {}, magic {}", baseOffset, magic);
         }
 
+        long startBuildTime = System.currentTimeMillis();
+        log.error("before builder.build, startBuildTime {}, spendTimeFromStartDecodePulsarEntryToKafkaRecords {}" +
+                ", baseOffset {}, magic {}", startBuildTime, (startBuildTime - startTime), baseOffset, magic);
         final MemoryRecords records = builder.build();
         long endTime = System.currentTimeMillis();
         log.error("end decodePulsarEntryToKafkaRecords MemoryRecords build, baseOffset {}," +
-                " magic {}, endTime {}, totalTime {}", baseOffset, magic, endTime, (endTime-startTime));
+                " magic {}, endTime {}, spendBuildTime {}, totalTime {}", baseOffset, magic, endTime,
+                (endTime - startBuildTime), (endTime-startTime));
         uncompressedPayload.release();
         byteBuffer.flip();
         return records;
