@@ -79,11 +79,10 @@ public class KafkaEntryFormatter implements EntryFormatter {
                     // batch magic greater than the magic corresponding to the version requested by the client
                     // need down converted
                     if (batchMagic > magic) {
-                        MemoryRecords memoryRecords =
-                        MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
+                        MemoryRecords memoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
                         //down converted, batch magic will be set to client magic
                         convertedRecords = memoryRecords.downConvert(magic, startOffset, time);
-                        log.info("[{}:{}] downConvert record, start offset {}, entry magic: {}, client magic: {}"
+                        log.trace("[{}:{}] downConvert record, start offset {}, entry magic: {}, client magic: {}"
                                 , entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
                     }
                     if (convertedRecords != null) {
@@ -94,7 +93,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
                         }
                         optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(byteBuf));
                         optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(kafkaBuffer));
-                        log.info("[{}:{}] down convertedRecords not null {}, {}, {}"
+                        log.trace("[{}:{}] down convertedRecords not null {}, {}, {}"
                                 , entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
                     } else {
 //                        byteBuf.setByte(byteBuf.readerIndex() + MAGIC_OFFSET, magic);

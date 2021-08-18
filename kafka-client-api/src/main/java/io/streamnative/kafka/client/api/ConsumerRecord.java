@@ -52,11 +52,14 @@ public class ConsumerRecord<K, V> {
     public static <K, V, T> ConsumerRecord<K, V> createOldRecord(T originalRecord) {
         final Class<?> clazz = originalRecord.getClass();
 
+        List<Header> headerList = new ArrayList<>();
+        headerList.add(new Header(null, null));
+
         return new ConsumerRecord<>((K) ReflectionUtils.invoke(clazz, "key", originalRecord),
                 (V) ReflectionUtils.invoke(clazz, "value", originalRecord),
                 (String) ReflectionUtils.invoke(clazz, "topic", originalRecord),
                 (int) ReflectionUtils.invoke(clazz, "partition", originalRecord),
                 (long) ReflectionUtils.invoke(clazz, "offset", originalRecord),
-                new ArrayList<>());
+                headerList);
     }
 }

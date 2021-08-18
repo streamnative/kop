@@ -69,7 +69,10 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
                     .build();
             keys.add(record.getKey());
             values.add(record.getValue());
-            if (!version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
+            // message has no header before Kafka 0.11.x version
+            if (version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
+                headers.add(null);
+            } else {
                 headers.add(record.getHeaders().get(0));
             }
 
