@@ -303,6 +303,7 @@ public final class MessageFetchContext {
                             cursorLongPair.getLeft().getManagedLedger());
                     statsLogger.getPrepareMetadataStats().registerSuccessfulEvent(
                             MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
+                    log.error("before readEntries {}, fetchOffset {}", topicPartition, offset);
                     readEntries(cursor, topicPartition, cursorOffset).whenComplete((entries, throwable) -> {
                         if (throwable != null) {
                             tcm.deleteOneCursorAsync(cursorLongPair.getLeft(), "cursor.readEntry fail. deleteCursor");
@@ -390,8 +391,8 @@ public final class MessageFetchContext {
                                 highWatermark, // TODO: should it be changed to the logStartOffset?
                                 abortedTransactions,
                                 decodeResult.getRecords()));
-                        log.error("MessageFetchContext fetch responseData.size {}, fetchRequest.fetchData.size {}, magic {}"
-                                , responseData.size(), fetchRequest.fetchData().size(), magic);
+                        log.error("MessageFetchContext fetch responseData.size {}, fetchRequest.fetchData.size " +
+                                        "{}, magic {}", responseData.size(), fetchRequest.fetchData().size(), magic);
                         tryComplete();
                     });
                 });

@@ -101,6 +101,8 @@ public class PulsarEntryFormatter implements EntryFormatter {
     @Override
     public DecodeResult decode(final List<Entry> entries, final byte magic) {
         final List<MemoryRecords> recordsList = new ArrayList<>();
+        log.error("start decode entries from pulsar to kafka, entries.size {}, magic {}",
+                entries.size(), magic);
 
         entries.parallelStream().forEachOrdered(entry -> {
             try {
@@ -110,6 +112,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
 
                 Commands.skipBrokerEntryMetadataIfExist(metadataAndPayload);
                 MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
+                log.error("parseMessageMetadata baseOffset {}, magic {}", baseOffset, magic);
 
                 recordsList.add(ByteBufUtils.decodePulsarEntryToKafkaRecords(
                         msgMetadata, metadataAndPayload, baseOffset, magic));
