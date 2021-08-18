@@ -153,7 +153,7 @@ public class ByteBufUtils {
                             headers);
                 } else {
                     // record less than magic=2, no header attribute
-                    builder.appendWithOffset(baseOffset + 1,
+                    builder.appendWithOffset(baseOffset + i,
                             timestamp,
                             getKeyByteBuffer(singleMessageMetadata),
                             value);
