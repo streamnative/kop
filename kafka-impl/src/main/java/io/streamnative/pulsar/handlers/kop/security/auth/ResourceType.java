@@ -34,6 +34,13 @@ public enum ResourceType {
      * A Pulsar topic.
      */
     TOPIC((byte) 2),
+
+    /**
+     * A Pulsar namespace.
+     */
+    NAMESPACE((byte) 3),
+
+
     ;
 
 

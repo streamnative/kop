@@ -54,4 +54,15 @@ public interface Authorizer {
      */
     CompletableFuture<Boolean> canConsumeAsync(KafkaPrincipal principal, Resource resource);
 
+    /**
+     * Check whether the specified role can manage topics.
+     *
+     * For that the caller needs to have created or delete topic permission.
+     *
+     * @param principal login info
+     * @param resource resources to be authorized
+     * @return a boolean to determine whether authorized or not
+     */
+    CompletableFuture<Boolean> canManageTopicAsync(KafkaPrincipal principal, Resource resource);
+
 }
