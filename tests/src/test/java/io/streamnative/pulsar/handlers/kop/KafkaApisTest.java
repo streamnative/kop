@@ -72,6 +72,7 @@ import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
+import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Ignore;
@@ -126,6 +127,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             groupCoordinator,
             transactionCoordinator,
             adminManager,
+            pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
             false,
             getPlainEndPoint(),
             NullStatsLogger.INSTANCE);

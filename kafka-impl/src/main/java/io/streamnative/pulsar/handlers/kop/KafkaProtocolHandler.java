@@ -68,6 +68,8 @@ import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.util.FutureUtil;
+import org.apache.pulsar.metadata.api.MetadataCache;
+import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 
 /**
  * Kafka Protocol Handler load and run by Pulsar Service.
@@ -83,6 +85,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     private PrometheusMetricsProvider statsProvider;
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
+    private MetadataCache<LocalBrokerData> localBrokerDataCache;
 
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
@@ -259,6 +262,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             KopVersion.getBuildHost(),
             KopVersion.getBuildTime());
 
+        // Currently each time getMetadataCache() is called, a new MetadataCache<T> instance will be created, even for
+        // the same type. So we must reuse the same MetadataCache<LocalBrokerData> to avoid creating a lot of instances.
+        localBrokerDataCache = brokerService.pulsar().getLocalMetadataStore().getMetadataCache(LocalBrokerData.class);
+
         ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
                 kafkaConfig.getGroupIdZooKeeperPath(), new byte[0]);
 
@@ -353,13 +360,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, false,
-                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE)));
+                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, true,
-                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE)));
+                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
                         break;
                 }
             });

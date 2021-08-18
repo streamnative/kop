@@ -45,6 +45,7 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.policies.data.TopicStats;
+import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
@@ -75,6 +76,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
             groupCoordinator,
             transactionCoordinator,
             adminManager,
+            pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
             false,
             getPlainEndPoint(),
             NullStatsLogger.INSTANCE);
