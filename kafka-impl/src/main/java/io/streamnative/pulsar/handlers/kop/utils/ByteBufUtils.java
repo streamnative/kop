@@ -156,11 +156,18 @@ public class ByteBufUtils {
                 final Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
                 log.error("after getHeadersFromMetadata, baseOffset {}, magic {}, headers.size {}, " +
                         "header[] {}", baseOffset, magic, headers.length, headers);
-                builder.appendWithOffset(baseOffset + i,
-                        timestamp,
-                        getKeyByteBuffer(singleMessageMetadata),
-                        value,
-                        headers);
+                if (magic >= RecordBatch.MAGIC_VALUE_V2) {
+                    builder.appendWithOffset(baseOffset + i,
+                            timestamp,
+                            getKeyByteBuffer(singleMessageMetadata),
+                            value,
+                            headers);
+                } else {
+                    builder.appendWithOffset(baseOffset + 1,
+                            timestamp,
+                            getKeyByteBuffer(singleMessageMetadata),
+                            value);
+                }
                 singleMessagePayload.release();
                 log.error("after appendWithOffset, baseOffset {}, magic {}", baseOffset, magic);
             }
