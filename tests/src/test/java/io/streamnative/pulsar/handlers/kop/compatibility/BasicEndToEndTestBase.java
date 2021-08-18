@@ -110,7 +110,10 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
             value = "value-from-" + version.name() + offset;
             keys.add(key);
             values.add(value);
-            headers.add(new Header("header-" + key, "header-" + value));
+            // Because there is no header in ProducerRecord before 0.11.x.
+            if (!version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
+                headers.add(new Header("header-" + key, "header-" + value));
+            }
 
             metadata = producer.newContextBuilder(topic, value)
                     .key(key)
