@@ -36,9 +36,8 @@ public class ConsumerRecord<K, V> {
     public static <K, V, T> ConsumerRecord<K, V> create(T originalRecord) {
         final Class<?> clazz = originalRecord.getClass();
         final Object originalHeaders = ReflectionUtils.invoke(clazz, "headers", originalRecord);
-        List<Header> headers = Header.fromHeaders(
+        final List<Header> headers = Header.fromHeaders(
                 (Object[]) ReflectionUtils.invoke(originalHeaders.getClass(), "toArray", originalHeaders));
-        //support kafka message before 0.11.x
 
         return new ConsumerRecord<>((K) ReflectionUtils.invoke(clazz, "key", originalRecord),
                 (V) ReflectionUtils.invoke(clazz, "value", originalRecord),
@@ -52,7 +51,7 @@ public class ConsumerRecord<K, V> {
     public static <K, V, T> ConsumerRecord<K, V> createOldRecord(T originalRecord) {
         final Class<?> clazz = originalRecord.getClass();
 
-        List<Header> headerList = new ArrayList<>();
+        final List<Header> headerList = new ArrayList<>();
         headerList.add(new Header(null, null));
 
         return new ConsumerRecord<>((K) ReflectionUtils.invoke(clazz, "key", originalRecord),
