@@ -38,10 +38,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
@@ -50,6 +53,7 @@ import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.PulsarServerException;
+import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.namespace.NamespaceBundleOwnershipListener;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
@@ -73,6 +77,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     public static final String PROTOCOL_NAME = "kafka";
     public static final String TLS_HANDLER = "tls";
+    private static final Map<PulsarService, LookupClient> LOOKUP_CLIENT_MAP = new ConcurrentHashMap<>();
 
     private StatsLogger rootStatsLogger;
     private PrometheusMetricsProvider statsProvider;
@@ -97,6 +102,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         final NamespaceName kafkaMetaNs;
         final NamespaceName kafkaTopicNs;
         final GroupCoordinator groupCoordinator;
+        final String brokerUrl;
+
         public OffsetAndTopicListener(BrokerService service,
                                    KafkaServiceConfiguration kafkaConfig,
                                    GroupCoordinator groupCoordinator) {
@@ -106,10 +113,14 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             this.groupCoordinator = groupCoordinator;
             this.kafkaTopicNs = NamespaceName
                     .get(kafkaConfig.getKafkaTenant(), kafkaConfig.getKafkaNamespace());
+            this.brokerUrl = service.pulsar().getBrokerServiceUrl();
         }
 
         @Override
         public void onLoad(NamespaceBundle bundle) {
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] onLoad bundle: {}", brokerUrl, bundle);
+            }
             // 1. get new partitions owned by this pulsar service.
             // 2. load partitions by GroupCoordinator.handleGroupImmigration.
             service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
@@ -131,24 +142,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                             }
                             KafkaTopicManager.removeTopicManagerCache(name.toString());
                             KopBrokerLookupManager.removeTopicManagerCache(name.toString());
-                            // update lookup cache when onload
-                            try {
-                                CompletableFuture<InetSocketAddress> retFuture = new CompletableFuture<>();
-                                ((PulsarClientImpl) service.pulsar().getClient()).getLookup()
-                                        .getBroker(TopicName.get(topic))
-                                        .whenComplete((pair, throwable) -> {
-                                            if (throwable != null) {
-                                                log.warn("cloud not get broker", throwable);
-                                                retFuture.complete(null);
-                                            }
-                                            checkState(pair.getLeft().equals(pair.getRight()));
-                                            retFuture.complete(pair.getLeft());
-                                        });
-                                KafkaTopicManager.LOOKUP_CACHE.put(topic, retFuture);
-                                KopBrokerLookupManager.updateTopicManagerCache(topic, retFuture);
-                            } catch (PulsarServerException e) {
-                                log.error("onLoad PulsarServerException ", e);
-                            }
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
@@ -160,6 +153,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
         @Override
         public void unLoad(NamespaceBundle bundle) {
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] unLoad bundle: {}", brokerUrl, bundle);
+            }
             // 1. get partitions owned by this pulsar service.
             // 2. remove partitions by groupCoordinator.handleGroupEmigration.
             service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
@@ -267,15 +263,18 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 kafkaConfig.getGroupIdZooKeeperPath(), new byte[0]);
 
         PulsarAdmin pulsarAdmin;
-        PulsarClient pulsarClient;
         try {
             pulsarAdmin = brokerService.getPulsar().getAdminClient();
             adminManager = new AdminManager(pulsarAdmin, kafkaConfig);
-            pulsarClient = brokerService.getPulsar().getClient();
         } catch (PulsarServerException e) {
-            log.error("Failed to get pulsarAdmin or pulsarClient", e);
+            log.error("Failed to get pulsarAdmin", e);
             throw new IllegalStateException(e);
         }
+
+        // Create PulsarClient for topic lookup, the listenerName will be set if kafkaListenerName is configured.
+        // After it's created successfully, this method won't throw any exception.
+        LOOKUP_CLIENT_MAP.put(brokerService.pulsar(), new LookupClient(brokerService.pulsar(), kafkaConfig));
+
         final ClusterData clusterData = ClusterData.builder()
                 .serviceUrl(brokerService.getPulsar().getWebServiceAddress())
                 .serviceUrlTls(brokerService.getPulsar().getWebServiceAddressTls())
@@ -283,6 +282,14 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 .brokerServiceUrlTls(brokerService.getPulsar().getBrokerServiceUrlTls())
                 .build();
 
+        // Use the builtin PulsarClient for creating producers and readers in group coordinator
+        PulsarClient pulsarClient;
+        try {
+            pulsarClient = brokerService.getPulsar().getClient();
+        } catch (PulsarServerException e) {
+            log.error("Failed to create builtin PulsarClient", e);
+            throw new IllegalStateException(e);
+        }
         try {
             MetadataUtils.createOffsetMetadataIfMissing(pulsarAdmin, clusterData, kafkaConfig);
         } catch (PulsarAdminException e) {
@@ -366,6 +373,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     @Override
     public void close() {
+        Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
         adminManager.shutdown();
         groupCoordinator.shutdown();
         KafkaTopicManager.LOOKUP_CACHE.clear();
@@ -463,5 +471,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         } else {
             log.info("Current broker: {} does not own any of the txn log topic partitions", currentBroker);
         }
+    }
+
+    public static @NonNull LookupClient getLookupClient(final PulsarService pulsarService) {
+        return LOOKUP_CLIENT_MAP.computeIfAbsent(pulsarService, ignored -> new LookupClient(pulsarService));
     }
 }

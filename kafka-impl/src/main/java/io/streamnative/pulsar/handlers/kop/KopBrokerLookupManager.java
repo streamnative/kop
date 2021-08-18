@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KafkaRequestHandler.lookupDataContainsAddress;
 
 import com.google.common.collect.Lists;
@@ -24,11 +23,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.metadata.api.MetadataCache;
@@ -46,6 +43,7 @@ public class KopBrokerLookupManager {
     private final PulsarService pulsarService;
     private final Boolean tlsEnabled;
     private final String advertisedListeners;
+    private final LookupClient lookupClient;
 
     public static final ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>
             LOOKUP_CACHE = new ConcurrentHashMap<>();
@@ -56,6 +54,7 @@ public class KopBrokerLookupManager {
         this.pulsarService = pulsarService;
         this.tlsEnabled = tlsEnabled;
         this.advertisedListeners = advertisedListeners;
+        this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
     }
 
     public CompletableFuture<InetSocketAddress> findBroker(String topic) {
@@ -99,27 +98,8 @@ public class KopBrokerLookupManager {
     // this method do the real lookup into Pulsar broker.
     // retFuture will be completed with null when meet error.
     private CompletableFuture<InetSocketAddress> getTopicBroker(String topicPartition) {
-        return LOOKUP_CACHE.computeIfAbsent(topicPartition, key -> {
-            CompletableFuture<InetSocketAddress> future = new CompletableFuture<>();
-            try {
-                ((PulsarClientImpl) pulsarService.getClient()).getLookup()
-                        .getBroker(TopicName.get(topicPartition))
-                        .thenAccept(pair -> {
-                            checkState(pair.getLeft().equals(pair.getRight()));
-                            future.complete(pair.getLeft());
-                        })
-                        .exceptionally(th -> {
-                            log.warn("[{}] getBroker for topic failed. throwable: ", topicPartition, th);
-                            future.completeExceptionally(th);
-                            return null;
-                        });
-            } catch (PulsarServerException e) {
-                log.error("GetTopicBroker for topic {} failed get pulsar client, return null. throwable: ",
-                        topicPartition, e);
-                future.completeExceptionally(e);
-            }
-            return future;
-        });
+        return LOOKUP_CACHE.computeIfAbsent(topicPartition,
+                ignored -> lookupClient.getBrokerAddress(TopicName.get(topicPartition)));
     }
 
     private void checkTopicOwner(CompletableFuture<InetSocketAddress> future, String topic, EndPoint endPoint) {
@@ -272,10 +252,6 @@ public class KopBrokerLookupManager {
     public static void removeTopicManagerCache(String topicName) {
         LOOKUP_CACHE.remove(topicName);
         KOP_ADDRESS_CACHE.remove(topicName);
-    }
-
-    public static void updateTopicManagerCache(String topicName, CompletableFuture<InetSocketAddress> addressFuture) {
-        LOOKUP_CACHE.put(topicName, addressFuture);
     }
 
     public static void clear() {

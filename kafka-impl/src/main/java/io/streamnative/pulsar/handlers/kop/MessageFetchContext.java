@@ -250,7 +250,7 @@ public final class MessageFetchContext {
                     statsLogger.getPrepareMetadataStats().registerFailedEvent(
                             MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
                     // remove null future cache
-                    KafkaTopicManager.removeKafkaTopicConsumerManager(KopTopic.toString(topicPartition));
+                    KafkaTopicManager.removeKafkaTopicConsumerManager(fullTopicName);
                     addErrorPartitionResponse(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
                     return;
                 }
@@ -279,7 +279,9 @@ public final class MessageFetchContext {
                 final CompletableFuture<Pair<ManagedCursor, Long>> cursorFuture = tcm.removeCursorFuture(offset);
                 if (cursorFuture == null) {
                     // tcm is closed, just return a NONE error because the channel may be still active
-                    log.warn("[{}] KafkaTopicConsumerManager is closed", requestHandler.ctx);
+                    log.warn("[{}] KafkaTopicConsumerManager is closed, remove TCM of {}",
+                            requestHandler.ctx, fullTopicName);
+                    KafkaTopicManager.removeKafkaTopicConsumerManager(fullTopicName);
                     addErrorPartitionResponse(topicPartition, Errors.NONE);
                     return;
                 }
