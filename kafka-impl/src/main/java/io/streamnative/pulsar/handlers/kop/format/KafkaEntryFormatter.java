@@ -96,7 +96,6 @@ public class KafkaEntryFormatter implements EntryFormatter {
                         log.trace("[{}:{}] down convertedRecords not null {}, {}, {}"
                                 , entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
                     } else {
-//                        byteBuf.setByte(byteBuf.readerIndex() + MAGIC_OFFSET, magic);
                         //not need down converted, batch magic retains the magic value written in production
                         orderedByteBuf.add(byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes()));
                     }

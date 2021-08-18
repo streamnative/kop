@@ -97,9 +97,6 @@ public class ByteBufUtils {
                                                                 final ByteBuf payload,
                                                                 final long baseOffset,
                                                                 final byte magic) throws IOException {
-        long startTime = System.currentTimeMillis();
-        log.error("start decodePulsarEntryToKafkaRecords, baseOffset {}, magic {}," +
-                " startTime {}", baseOffset, magic, startTime);
         if (metadata.hasMarkerType()
                 && (metadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
                 || metadata.getMarkerType() == MarkerType.TXN_ABORT_VALUE)) {
@@ -112,14 +109,11 @@ public class ByteBufUtils {
                     new EndTransactionMarker(metadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
                             ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0));
         }
-        log.error("before getUncompressedSize, baseOffset {}, magic {}", baseOffset, magic);
         final int uncompressedSize = metadata.getUncompressedSize();
         final CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(metadata.getCompression());
         final ByteBuf uncompressedPayload = codec.decode(payload, uncompressedSize);
-        log.error("after codec.decode baseOffset {}, magic {}, codec {}", baseOffset, magic, codec);
 
         final ByteBuffer byteBuffer = ByteBuffer.allocate(DEFAULT_BUFFER_SIZE);
-        log.error("before MemoryRecordsBuilder, baseOffset {}, magic {}", baseOffset, magic);
         final MemoryRecordsBuilder builder = new MemoryRecordsBuilder(byteBuffer,
                 magic,
                 CompressionType.NONE,
@@ -139,8 +133,6 @@ public class ByteBufUtils {
 
         if (metadata.hasNumMessagesInBatch()) {
             final int numMessages = metadata.getNumMessagesInBatch();
-            log.error("hasNumMessagesInBatch numMessages {}, baseOffset {}, magic {}",
-                    numMessages, baseOffset, magic);
             for (int i = 0; i < numMessages; i++) {
                 final SingleMessageMetadata singleMessageMetadata = new SingleMessageMetadata();
                 final ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(
@@ -152,49 +144,42 @@ public class ByteBufUtils {
                 final ByteBuffer value = singleMessageMetadata.isNullValue()
                         ? null
                         : getNioBuffer(singleMessagePayload);
-                log.error("before getHeadersFromMetadata, baseOffset {}, magic {}", baseOffset, magic);
-                final Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
-                log.error("after getHeadersFromMetadata, baseOffset {}, magic {}, headers.size {}, " +
-                        "header[] {}", baseOffset, magic, headers.length, headers);
                 if (magic >= RecordBatch.MAGIC_VALUE_V2) {
+                    final Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
                     builder.appendWithOffset(baseOffset + i,
                             timestamp,
                             getKeyByteBuffer(singleMessageMetadata),
                             value,
                             headers);
                 } else {
+                    // record less than magic=2, no header attribute
                     builder.appendWithOffset(baseOffset + 1,
                             timestamp,
                             getKeyByteBuffer(singleMessageMetadata),
                             value);
                 }
                 singleMessagePayload.release();
-                log.error("after appendWithOffset, baseOffset {}, magic {}", baseOffset, magic);
             }
         } else {
             final long timestamp = (metadata.getEventTime() > 0)
                     ? metadata.getEventTime()
                     : metadata.getPublishTime();
-            log.error("before getHeadersFromMetadata2, baseOffset {}, magic {}", baseOffset, magic);
-            final Header[] headers = getHeadersFromMetadata(metadata.getPropertiesList());
-            log.error("after getHeadersFromMetadata2, baseOffset {}, magic {}, headers.size {}, " +
-                    "header[] {}", baseOffset, magic, headers.length, headers);
-            builder.appendWithOffset(baseOffset,
-                    timestamp,
-                    getKeyByteBuffer(metadata),
-                    getNioBuffer(uncompressedPayload),
-                    headers);
-            log.error("after appendWithOffset2, baseOffset {}, magic {}", baseOffset, magic);
+            if (magic >= RecordBatch.MAGIC_VALUE_V2) {
+                final Header[] headers = getHeadersFromMetadata(metadata.getPropertiesList());
+                builder.appendWithOffset(baseOffset,
+                        timestamp,
+                        getKeyByteBuffer(metadata),
+                        getNioBuffer(uncompressedPayload),
+                        headers);
+            } else {
+                builder.appendWithOffset(baseOffset,
+                        timestamp,
+                        getKeyByteBuffer(metadata),
+                        getNioBuffer(uncompressedPayload));
+            }
         }
 
-        long startBuildTime = System.currentTimeMillis();
-        log.error("before builder.build, startBuildTime {}, spendTimeFromStartDecodePulsarEntryToKafkaRecords {}" +
-                ", baseOffset {}, magic {}", startBuildTime, (startBuildTime - startTime), baseOffset, magic);
         final MemoryRecords records = builder.build();
-        long endTime = System.currentTimeMillis();
-        log.error("end decodePulsarEntryToKafkaRecords MemoryRecords build, baseOffset {}," +
-                " magic {}, endTime {}, spendBuildTime {}, totalTime {}", baseOffset, magic, endTime,
-                (endTime - startBuildTime), (endTime-startTime));
         uncompressedPayload.release();
         byteBuffer.flip();
         return records;

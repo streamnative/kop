@@ -140,7 +140,7 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
             final Consumer<String, String> consumer = kafkaClientFactories.get(version)
                     .createConsumer(consumerConfiguration(version));
             consumer.subscribe(topic);
-            final List<ConsumerRecord<String, String>> records = consumer.receiveUntil(1, 12000);
+            final List<ConsumerRecord<String, String>> records = consumer.receiveUntil(1, 6000);
             Assert.assertEquals(records.size(), 1);
             Assert.assertEquals(records.get(0).getValue(), value);
             Assert.assertEquals(records.get(0).getKey(), key);
