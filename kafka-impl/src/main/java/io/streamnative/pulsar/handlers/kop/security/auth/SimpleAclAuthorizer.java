@@ -103,12 +103,11 @@ public class SimpleAclAuthorizer implements Authorizer {
                                 }
 
                                 // Check wildcard policies
-                                if (conf.isAuthorizationAllowWildcardsMatching()) {
-                                    if (checkWildcardPermission(role, action, namespaceRoles)) {
-                                        // The role has namespace level permission by wildcard match
-                                        permissionFuture.complete(true);
-                                        return;
-                                    }
+                                if (conf.isAuthorizationAllowWildcardsMatching()
+                                        && checkWildcardPermission(role, action, namespaceRoles)) {
+                                    // The role has namespace level permission by wildcard match
+                                    permissionFuture.complete(true);
+                                    return;
                                 }
                             }
                             permissionFuture.complete(false);
