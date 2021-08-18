@@ -194,6 +194,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final SaslAuthenticator authenticator;
     private final Authorizer authorizer;
     private final AdminManager adminManager;
+    private final MetadataCache<LocalBrokerData> localBrokerDataCache;
 
     private final Boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
@@ -236,6 +237,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                GroupCoordinator groupCoordinator,
                                TransactionCoordinator transactionCoordinator,
                                AdminManager adminManager,
+                               MetadataCache<LocalBrokerData> localBrokerDataCache,
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
                                StatsLogger statsLogger) throws Exception {
@@ -256,6 +258,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ? new SimpleAclAuthorizer(pulsarService)
                 : null;
         this.adminManager = adminManager;
+        this.localBrokerDataCache = localBrokerDataCache;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
         this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
@@ -1970,10 +1973,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
 
                 // Get a list of ServiceLookupData for each matchBroker.
-                final MetadataCache<LocalBrokerData> metadataCache = pulsarService.getLocalMetadataStore()
-                        .getMetadataCache(LocalBrokerData.class);
                 List<CompletableFuture<Optional<LocalBrokerData>>> list = matchBrokers.stream()
-                    .map(matchBroker -> metadataCache.get(
+                    .map(matchBroker -> localBrokerDataCache.get(
                             String.format("%s/%s", LoadManager.LOADBALANCE_BROKERS_ROOT, matchBroker)))
                     .collect(Collectors.toList());
 
