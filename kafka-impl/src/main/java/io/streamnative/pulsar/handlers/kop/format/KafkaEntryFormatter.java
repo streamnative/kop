@@ -24,7 +24,6 @@ import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
@@ -83,7 +82,8 @@ public class KafkaEntryFormatter implements EntryFormatter {
                         MemoryRecords memoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
                         //down converted, batch magic will be set to client magic
                         convertedRecords = memoryRecords.downConvert(magic, startOffset, time);
-                        log.trace("[{}:{}] downConvert record, start offset {}, entry magic: {}, client magic: {}", entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
+                        log.trace("[{}:{}] downConvert record, start offset {}, entry magic: {}, client magic: {}"
+                                , entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
                     }
                     if (convertedRecords != null) {
                         final ByteBuf kafkaBuffer = Unpooled.wrappedBuffer(convertedRecords.records().buffer());
@@ -93,7 +93,8 @@ public class KafkaEntryFormatter implements EntryFormatter {
                         }
                         optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(byteBuf));
                         optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(kafkaBuffer));
-                        log.trace("[{}:{}] down convertedRecords not null {}, {}, {}", entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
+                        log.trace("[{}:{}] down convertedRecords not null {}, {}, {}"
+                                , entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
                     } else {
                         //not need down converted, batch magic retains the magic value written in production
                         orderedByteBuf.add(byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes()));
