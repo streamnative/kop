@@ -13,6 +13,7 @@
  */
 package io.streamnative.kafka.client.api;
 
+import java.util.ArrayList;
 import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -35,8 +36,9 @@ public class ConsumerRecord<K, V> {
     public static <K, V, T> ConsumerRecord<K, V> create(T originalRecord) {
         final Class<?> clazz = originalRecord.getClass();
         final Object originalHeaders = ReflectionUtils.invoke(clazz, "headers", originalRecord);
-        final List<Header> headers = Header.fromHeaders(
+        List<Header> headers = Header.fromHeaders(
                 (Object[]) ReflectionUtils.invoke(originalHeaders.getClass(), "toArray", originalHeaders));
+        //support kafka message before 0.11.x
 
         return new ConsumerRecord<>((K) ReflectionUtils.invoke(clazz, "key", originalRecord),
                 (V) ReflectionUtils.invoke(clazz, "value", originalRecord),
@@ -44,5 +46,17 @@ public class ConsumerRecord<K, V> {
                 (int) ReflectionUtils.invoke(clazz, "partition", originalRecord),
                 (long) ReflectionUtils.invoke(clazz, "offset", originalRecord),
                 headers);
+    }
+
+    //support kafka message before 0.11.x
+    public static <K, V, T> ConsumerRecord<K, V> createOldRecord(T originalRecord) {
+        final Class<?> clazz = originalRecord.getClass();
+
+        return new ConsumerRecord<>((K) ReflectionUtils.invoke(clazz, "key", originalRecord),
+                (V) ReflectionUtils.invoke(clazz, "value", originalRecord),
+                (String) ReflectionUtils.invoke(clazz, "topic", originalRecord),
+                (int) ReflectionUtils.invoke(clazz, "partition", originalRecord),
+                (long) ReflectionUtils.invoke(clazz, "offset", originalRecord),
+                new ArrayList<>());
     }
 }

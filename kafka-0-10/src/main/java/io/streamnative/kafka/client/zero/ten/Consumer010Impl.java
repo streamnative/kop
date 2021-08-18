@@ -32,7 +32,7 @@ public class Consumer010Impl<K, V> extends KafkaConsumer<K, V> implements Consum
     @Override
     public List<ConsumerRecord<K, V>> receive(long timeoutMs) {
         final List<ConsumerRecord<K, V>> records = new ArrayList<>();
-        poll(timeoutMs).forEach(record -> records.add(ConsumerRecord.create(record)));
+        poll(timeoutMs).forEach(record -> records.add(ConsumerRecord.createOldRecord(record)));
         return records;
     }
 }

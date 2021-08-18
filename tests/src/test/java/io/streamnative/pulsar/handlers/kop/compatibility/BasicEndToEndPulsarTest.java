@@ -69,7 +69,9 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
                     .build();
             keys.add(record.getKey());
             values.add(record.getValue());
-            headers.add(record.getHeaders().get(0));
+            if (!version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
+                headers.add(record.getHeaders().get(0));
+            }
 
             final RecordMetadata metadata = record.sendAsync().get();
             log.info("Kafka client {} sent {} to {}", version, record.getValue(), metadata);
@@ -139,7 +141,9 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
             Assert.assertEquals(records.size(), 1);
             Assert.assertEquals(records.get(0).getValue(), value);
             Assert.assertEquals(records.get(0).getKey(), key);
-            Assert.assertEquals(records.get(0).getHeaders().get(0), header);
+            if (!version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
+                Assert.assertEquals(records.get(0).getHeaders().get(0), header);
+            }
             consumer.close();
         }
     }
