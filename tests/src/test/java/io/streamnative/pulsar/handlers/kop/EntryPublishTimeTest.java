@@ -24,6 +24,7 @@ import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
+import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.AfterMethod;
@@ -59,6 +60,7 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
                 groupCoordinator,
                 transactionCoordinator,
                 adminManager,
+                pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
                 false,
                 getPlainEndPoint(),
                 NullStatsLogger.INSTANCE);
