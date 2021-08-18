@@ -180,6 +180,14 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
+            doc = "Specify the internal listener name for the broker.\n"
+                    + "The listener name must be contained in the advertisedListeners.\n"
+                    + "This config is used as the listener name in topic lookup."
+    )
+    private String kafkaListenerName;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
             doc = "limit the queue size for request, \n"
                 + "like queued.max.requests in kafka.\n"
     )

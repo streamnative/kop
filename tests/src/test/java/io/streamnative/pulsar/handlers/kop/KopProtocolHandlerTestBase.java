@@ -27,7 +27,6 @@ import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.Closeable;
 import java.io.IOException;
 import java.lang.reflect.Field;
-import java.net.URI;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -39,7 +38,6 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import lombok.Getter;
@@ -69,7 +67,6 @@ import org.apache.pulsar.broker.auth.SameThreadOrderedSafeExecutor;
 import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.PulsarClient;
-import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
 import org.apache.pulsar.zookeeper.ZooKeeperClientFactory;
@@ -91,7 +88,6 @@ public abstract class KopProtocolHandlerTestBase {
     protected PulsarAdmin admin;
     protected URL brokerUrl;
     protected URL brokerUrlTls;
-    protected URI lookupUrl;
     protected PulsarClient pulsarClient;
 
     protected int brokerWebservicePort = PortManager.nextFreePort();
@@ -107,7 +103,6 @@ public abstract class KopProtocolHandlerTestBase {
 
     protected MockZooKeeper mockZooKeeper;
     protected NonClosableMockBookKeeper mockBookKeeper;
-    protected boolean isTcpLookup = false;
     protected final String configClusterName = "test";
 
     protected final String tenant = "public";
@@ -202,19 +197,19 @@ public abstract class KopProtocolHandlerTestBase {
 
     protected final void internalSetup() throws Exception {
         init();
-        lookupUrl = new URI(brokerUrl.toString());
-        if (isTcpLookup) {
-            lookupUrl = new URI("broker://localhost:" + brokerPort);
-        }
-        pulsarClient = newPulsarClient(lookupUrl.toString(), 0);
-    }
-
-    protected PulsarClient newPulsarClient(String url, int intervalInSecs) throws PulsarClientException {
-        return PulsarClient.builder().serviceUrl(url).statsInterval(intervalInSecs, TimeUnit.SECONDS).build();
+        pulsarClient = KafkaProtocolHandler.getLookupClient(pulsar).getPulsarClient();
     }
 
     protected void createAdmin() throws Exception {
         this.admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString()).build());
+    }
+
+    protected String getAdvertisedAddress() {
+        if (conf == null || conf.getAdvertisedAddress() == null) {
+            return "localhost";
+        } else {
+            return conf.getAdvertisedAddress();
+        }
     }
 
     protected final void init() throws Exception {
@@ -222,12 +217,12 @@ public abstract class KopProtocolHandlerTestBase {
 
         bkExecutor = OrderedScheduler.newSchedulerBuilder().numThreads(2).name("mock-pulsar-bk").build();
 
-        brokerUrl = new URL("http://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePort);
-        brokerUrlTls = new URL("https://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePortTls);
+        brokerUrl = new URL("http://" + getAdvertisedAddress() + ":" + brokerWebservicePort);
+        brokerUrlTls = new URL("https://" + getAdvertisedAddress() + ":" + brokerWebservicePortTls);
 
-        String serviceUrl = "http://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePort;
-        String serviceUrlTls = "https://" + this.conf.getAdvertisedAddress() + ":" + brokerWebservicePortTls;
-        String brokerServiceUrl = "pulsar://" + this.conf.getAdvertisedAddress() + ":" + brokerPort;
+        String serviceUrl = "http://" + getAdvertisedAddress() + ":" + brokerWebservicePort;
+        String serviceUrlTls = "https://" + getAdvertisedAddress() + ":" + brokerWebservicePortTls;
+        String brokerServiceUrl = "pulsar://" + getAdvertisedAddress() + ":" + brokerPort;
         String brokerServiceUrlTls = null; // TLS not supported at this time
 
         final ClusterData clusterData = ClusterData.builder()
@@ -246,7 +241,9 @@ public abstract class KopProtocolHandlerTestBase {
         createAdmin();
 
         MetadataUtils.createOffsetMetadataIfMissing(admin, clusterData, this.conf);
-        MetadataUtils.createTxnMetadataIfMissing(admin, clusterData, this.conf);
+        if (conf.isEnableTransactionCoordinator()) {
+            MetadataUtils.createTxnMetadataIfMissing(admin, clusterData, this.conf);
+        }
 
         if (enableSchemaRegistry) {
             admin.topics().createPartitionedTopic(KAFKASTORE_TOPIC, 1);
