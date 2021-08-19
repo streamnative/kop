@@ -16,7 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 /**
  * Unit test for Authorization with `entryFormat=pulsar`.
  */
-public class KafkaAuthorizationPulsarTest extends KafkaAuthorizationTestBase{
+public class KafkaAuthorizationPulsarTest extends KafkaAuthorizationTestBase {
     public KafkaAuthorizationPulsarTest() {
         super("pulsar");
     }

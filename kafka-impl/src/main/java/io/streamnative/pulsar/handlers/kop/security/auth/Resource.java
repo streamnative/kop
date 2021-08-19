@@ -14,12 +14,14 @@
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
 
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 
 /**
  * The Authorization resource.
  */
 @Getter
+@EqualsAndHashCode
 public class Resource {
 
     private final ResourceType resourceType;

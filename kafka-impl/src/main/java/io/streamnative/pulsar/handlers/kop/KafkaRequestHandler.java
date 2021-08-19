@@ -258,7 +258,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ? new SaslAuthenticator(pulsarService, kafkaConfig.getSaslAllowedMechanisms(), kafkaConfig)
                 : null;
         final boolean authorizationEnabled = pulsarService.getBrokerService().isAuthorizationEnabled();
-        this.authorizer =  authorizationEnabled && authenticationEnabled
+        this.authorizer = authorizationEnabled && authenticationEnabled
                 ? new SimpleAclAuthorizer(pulsarService)
                 : null;
         this.adminManager = adminManager;
@@ -564,8 +564,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             if (kafkaConfig.isAllowAutoTopicCreation()
                                                     && metadataRequest.allowAutoTopicCreation()) {
                                                 authorize(AclOperation.CREATE,
-                                                        Resource.of(ResourceType.NAMESPACE,
-                                                                TopicName.get(fullTopicName).getNamespace())
+                                                        Resource.of(ResourceType.TOPIC, fullTopicName)
                                                 ).whenComplete((canCreateTopic, authEx) -> {
                                                     if (authEx != null) {
                                                         completeOneAuthFailedTopic.accept(topic, fullTopicName);
@@ -2271,7 +2270,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         RequestStats.BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE.set(numMessages);
     }
 
-    private CompletableFuture<Boolean> authorize(AclOperation operation, Resource resource) {
+    @VisibleForTesting
+    protected CompletableFuture<Boolean> authorize(AclOperation operation, Resource resource) {
         if (authorizer == null) {
             return CompletableFuture.completedFuture(true);
         }
@@ -2293,9 +2293,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 isAuthorizedFuture = authorizer.canLookupAsync(session.getPrincipal(), resource);
                 break;
             case CREATE:
-            case DELETE:
-                isAuthorizedFuture = authorizer.canManageTopicAsync(session.getPrincipal(), resource);
+                isAuthorizedFuture = authorizer.canCreateTopicAsync(session.getPrincipal(), resource);
                 break;
+            case DELETE:
             case CLUSTER_ACTION:
             case DESCRIBE_CONFIGS:
             case ALTER_CONFIGS:

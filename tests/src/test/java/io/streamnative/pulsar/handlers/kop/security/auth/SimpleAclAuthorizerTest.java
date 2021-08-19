@@ -33,7 +33,6 @@ import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
-import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterMethod;
@@ -51,6 +50,7 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
     private static final String SIMPLE_USER = "muggle_user";
     private static final String ANOTHER_USER = "death_eater_user";
     private static final String ADMIN_USER = "admin_user";
+    private static final String TENANT_ADMIN_USER = "tenant_admin_user";
 
     private static final String TENANT = "SimpleAcl";
     private static final String NAMESPACE = "ns1";
@@ -95,7 +95,7 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
 
         admin.tenants().createTenant(TENANT,
                 TenantInfo.builder()
-                        .adminRoles(Collections.singleton(ADMIN_USER))
+                        .adminRoles(Collections.singleton(TENANT_ADMIN_USER))
                         .allowedClusters(Collections.singleton(configClusterName))
                         .build());
         admin.namespaces().createNamespace(TENANT + "/" + NAMESPACE);
@@ -158,7 +158,7 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
         assertFalse(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canConsumeAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ANOTHER_USER),
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER),
                 Resource.of(ResourceType.TOPIC, NOT_EXISTS_TENANT_TOPIC)).get();
 
         assertFalse(isAuthorized);
@@ -178,35 +178,57 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
         assertFalse(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canLookupAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ANOTHER_USER),
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER),
                 Resource.of(ResourceType.TOPIC, NOT_EXISTS_TENANT_TOPIC)).get();
 
         assertFalse(isAuthorized);
     }
 
     @Test
-    public void testAuthorizeManageTopic() throws ExecutionException, InterruptedException {
+    public void testAuthorizeCreateTopic() throws ExecutionException, InterruptedException {
 
-        Boolean isAuthorized = simpleAclAuthorizer.canManageTopicAsync(
+        // SIMPLE_USER can't create topic because don't have package permission.
+        Boolean isAuthorized = simpleAclAuthorizer.canCreateTopicAsync(
                 new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER),
-                Resource.of(ResourceType.NAMESPACE, TopicName.get(TOPIC).getNamespace())).get();
+                Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertFalse(isAuthorized);
 
-        isAuthorized = simpleAclAuthorizer.canManageTopicAsync(
+        // ADMIN_USER can create topic, because is superuser.
+        isAuthorized = simpleAclAuthorizer.canCreateTopicAsync(
                 new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ADMIN_USER),
-                Resource.of(ResourceType.NAMESPACE, TopicName.get(TOPIC).getNamespace())).get();
+                Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertTrue(isAuthorized);
 
-        isAuthorized = simpleAclAuthorizer.canManageTopicAsync(
+        // ANOTHER_USER don't have any permission.
+        isAuthorized = simpleAclAuthorizer.canCreateTopicAsync(
                 new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ANOTHER_USER),
-                Resource.of(ResourceType.NAMESPACE, TopicName.get(TOPIC).getNamespace())).get();
-
+                Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertFalse(isAuthorized);
 
-        isAuthorized = simpleAclAuthorizer.canManageTopicAsync(
+        // ANOTHER_USER can't create don't exist tenant's topic.
+        isAuthorized = simpleAclAuthorizer.canCreateTopicAsync(
                 new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ANOTHER_USER),
-                Resource.of(ResourceType.NAMESPACE, TopicName.get(NOT_EXISTS_TENANT_TOPIC).getNamespace())).get();
-
+                Resource.of(ResourceType.TOPIC, NOT_EXISTS_TENANT_TOPIC)).get();
         assertFalse(isAuthorized);
+
+        // TENANT_ADMIN_USER can't create don't exist tenant's topic, because tenant admin depend on exist topic.
+        isAuthorized = simpleAclAuthorizer.canCreateTopicAsync(
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TENANT_ADMIN_USER),
+                Resource.of(ResourceType.TOPIC, NOT_EXISTS_TENANT_TOPIC)).get();
+        assertFalse(isAuthorized);
+
+        // ADMIN_USER can create don't exist tenant's topic, because is superuser
+        isAuthorized = simpleAclAuthorizer.canCreateTopicAsync(
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ADMIN_USER),
+                Resource.of(ResourceType.TOPIC, NOT_EXISTS_TENANT_TOPIC)).get();
+        assertTrue(isAuthorized);
+
+        // TENANT_ADMIN_USER can create topic.
+        isAuthorized = simpleAclAuthorizer.canCreateTopicAsync(
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TENANT_ADMIN_USER),
+                Resource.of(ResourceType.TOPIC, TOPIC)).get();
+
+        assertTrue(isAuthorized);
+
     }
 }

@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.security.auth;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
+import com.google.common.base.Joiner;
 import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
 import java.util.Map;
 import java.util.Set;
@@ -26,6 +27,7 @@ import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.AuthAction;
+import org.apache.pulsar.common.policies.data.TenantInfo;
 
 /**
  * Simple acl authorizer.
@@ -33,7 +35,7 @@ import org.apache.pulsar.common.policies.data.AuthAction;
 @Slf4j
 public class SimpleAclAuthorizer implements Authorizer {
 
-    private static final String POLICY_ROOT = "/admin/policies";
+    private static final String POLICY_ROOT = "/admin/policies/";
 
     private final PulsarService pulsarService;
 
@@ -50,83 +52,88 @@ public class SimpleAclAuthorizer implements Authorizer {
 
     private CompletableFuture<Boolean> authorize(KafkaPrincipal principal, AuthAction action, Resource resource) {
         CompletableFuture<Boolean> permissionFuture = new CompletableFuture<>();
-        String namespaceName = "";
+        NamespaceName namespace = null;
         if (resource.getResourceType() == ResourceType.NAMESPACE) {
-            namespaceName = NamespaceName.get(resource.getName()).toString();
+            namespace = NamespaceName.get(resource.getName());
         } else if (resource.getResourceType() == ResourceType.TOPIC) {
-            namespaceName = TopicName.get(resource.getName()).getNamespace();
+            namespace = TopicName.get(resource.getName()).getNamespaceObject();
         }
-        String policiesPath = String.format("%s/%s", POLICY_ROOT, namespaceName);
-        isSuperUser(principal.getName()).whenComplete((isSuper, exception) -> {
+        if (namespace == null) {
+            permissionFuture.completeExceptionally(
+                    new IllegalArgumentException("Resource name must contains namespace."));
+            return permissionFuture;
+        }
+        String policiesPath = path(namespace.toString());
+        String tenantName = namespace.getTenant();
+        isSuperUserOrTenantAdmin(tenantName, principal.getName()).whenComplete((isSuperUserOrAdmin, exception) -> {
             if (exception != null) {
-                log.error("Check super user error: {}", exception.getMessage());
+                if (log.isDebugEnabled()) {
+                    log.debug("Verify if role {} is allowed to {} to resource {}: isSuperUserOrAdmin={}",
+                            principal.getName(), action, resource.getName(), isSuperUserOrAdmin);
+                }
+                isSuperUserOrAdmin = false;
+            }
+            if (isSuperUserOrAdmin) {
+                permissionFuture.complete(true);
                 return;
             }
-            if (isSuper) {
-                permissionFuture.complete(true);
-            } else {
-                getPulsarService()
-                        .getPulsarResources()
-                        .getNamespaceResources()
-                        .getAsync(policiesPath)
-                        .thenAccept(policies -> {
-                            if (!policies.isPresent()) {
-                                if (log.isDebugEnabled()) {
-                                    log.debug("Policies node couldn't be found for namespace : {}", principal);
-                                }
-                            } else {
-                                String role = principal.getName();
+            getPulsarService()
+                    .getPulsarResources()
+                    .getNamespaceResources()
+                    .getAsync(policiesPath)
+                    .thenAccept(policies -> {
+                        if (!policies.isPresent()) {
+                            if (log.isDebugEnabled()) {
+                                log.debug("Policies node couldn't be found for namespace : {}", principal);
+                            }
+                        } else {
+                            String role = principal.getName();
 
-                                // Check Topic level policies
-                                if (resource.getResourceType() == ResourceType.TOPIC) {
-                                    TopicName topicName = TopicName.get(resource.getName());
-                                    Map<String, Set<AuthAction>> topicRoles = policies.get()
-                                            .auth_policies
-                                            .getTopicAuthentication()
-                                            .get(topicName.toString());
-                                    if (topicRoles != null && role != null) {
-                                        // Topic has custom policy
-                                        Set<AuthAction> topicActions = topicRoles.get(role);
-                                        if (topicActions != null && topicActions.contains(action)) {
-                                            permissionFuture.complete(true);
-                                            return;
-                                        }
+                            // Check Topic level policies
+                            if (resource.getResourceType() == ResourceType.TOPIC) {
+                                TopicName topicName = TopicName.get(resource.getName());
+                                Map<String, Set<AuthAction>> topicRoles = policies.get()
+                                        .auth_policies
+                                        .getTopicAuthentication()
+                                        .get(topicName.toString());
+                                if (topicRoles != null && role != null) {
+                                    // Topic has custom policy
+                                    Set<AuthAction> topicActions = topicRoles.get(role);
+                                    if (topicActions != null && topicActions.contains(action)) {
+                                        permissionFuture.complete(true);
+                                        return;
                                     }
                                 }
-
-                                // Check Namespace level policies
-                                Map<String, Set<AuthAction>> namespaceRoles = policies.get().auth_policies
-                                        .getNamespaceAuthentication();
-                                Set<AuthAction> namespaceActions = namespaceRoles.get(role);
-                                if (namespaceActions != null && namespaceActions.contains(action)) {
-                                    permissionFuture.complete(true);
-                                    return;
-                                }
-
-                                // Check wildcard policies
-                                if (conf.isAuthorizationAllowWildcardsMatching()
-                                        && checkWildcardPermission(role, action, namespaceRoles)) {
-                                    // The role has namespace level permission by wildcard match
-                                    permissionFuture.complete(true);
-                                    return;
-                                }
                             }
-                            permissionFuture.complete(false);
-                        }).exceptionally(ex -> {
-                            log.warn("Client with Principal - {} failed to get permissions for resource - {}. {}",
-                                    principal, resource, ex.getMessage());
-                            permissionFuture.completeExceptionally(ex);
-                            return null;
-                        });
-            }
+
+                            // Check Namespace level policies
+                            Map<String, Set<AuthAction>> namespaceRoles = policies.get().auth_policies
+                                    .getNamespaceAuthentication();
+                            Set<AuthAction> namespaceActions = namespaceRoles.get(role);
+                            if (namespaceActions != null && namespaceActions.contains(action)) {
+                                permissionFuture.complete(true);
+                                return;
+                            }
+
+                            // Check wildcard policies
+                            if (conf.isAuthorizationAllowWildcardsMatching()
+                                    && checkWildcardPermission(role, action, namespaceRoles)) {
+                                // The role has namespace level permission by wildcard match
+                                permissionFuture.complete(true);
+                                return;
+                            }
+                        }
+                        permissionFuture.complete(false);
+                    }).exceptionally(ex -> {
+                        log.warn("Client with Principal - {} failed to get permissions for resource - {}. {}",
+                                principal, resource, ex.getMessage());
+                        permissionFuture.completeExceptionally(ex);
+                        return null;
+                    });
+
         });
 
         return permissionFuture;
-    }
-
-    private CompletableFuture<Boolean> isSuperUser(String role) {
-        Set<String> superUserRoles = conf.getSuperUserRoles();
-        return CompletableFuture.completedFuture(role != null && superUserRoles.contains(role));
     }
 
     private boolean checkWildcardPermission(String checkedRole, AuthAction checkedAction,
@@ -152,6 +159,51 @@ public class SimpleAclAuthorizer implements Authorizer {
         }
         return false;
     }
+
+    private CompletableFuture<Boolean> isSuperUser(String role) {
+        Set<String> superUserRoles = conf.getSuperUserRoles();
+        return CompletableFuture.completedFuture(role != null && superUserRoles.contains(role));
+    }
+
+    /**
+     * Check if specified role is an admin of the tenant or superuser.
+     *
+     * @param tenant the tenant to check
+     * @param role the role to check
+     * @return a CompletableFuture containing a boolean in which true means the role is an admin user
+     * and false if it is not
+     */
+    private CompletableFuture<Boolean> isSuperUserOrTenantAdmin(String tenant, String role) {
+        CompletableFuture<Boolean> future = new CompletableFuture<>();
+        isSuperUser(role).whenComplete((isSuperUser, ex) -> {
+            if (ex != null || !isSuperUser) {
+                pulsarService.getPulsarResources()
+                        .getTenantResources()
+                        .getAsync(path(tenant))
+                        .thenAccept(tenantInfo -> {
+                            if (!tenantInfo.isPresent()) {
+                                future.complete(false);
+                                return;
+                            }
+                            TenantInfo info = tenantInfo.get();
+                            future.complete(role != null
+                                    && info.getAdminRoles() != null
+                                    && info.getAdminRoles().contains(role));
+                        });
+                return;
+            }
+            future.complete(true);
+        });
+        return future;
+    }
+
+    private static String path(String... parts) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(POLICY_ROOT);
+        Joiner.on('/').appendTo(sb, parts);
+        return sb.toString();
+    }
+
 
     @Override
     public CompletableFuture<Boolean> canLookupAsync(KafkaPrincipal principal, Resource resource) {
@@ -202,9 +254,11 @@ public class SimpleAclAuthorizer implements Authorizer {
     }
 
     @Override
-    public CompletableFuture<Boolean> canManageTopicAsync(KafkaPrincipal principal, Resource resource) {
-        checkArgument(resource.getResourceType() == ResourceType.NAMESPACE,
-                String.format("Expected resource type is NAMESPACE, but have [%s]", resource.getResourceType()));
+    public CompletableFuture<Boolean> canCreateTopicAsync(KafkaPrincipal principal, Resource resource) {
+        checkArgument(resource.getResourceType() == ResourceType.TOPIC
+                || resource.getResourceType() == ResourceType.NAMESPACE,
+                String.format("Expected resource type is TOPIC or NAMESPACE, but have [%s]",
+                        resource.getResourceType()));
         return authorize(principal, AuthAction.packages, resource);
     }
 
