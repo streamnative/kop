@@ -81,7 +81,8 @@ public class KafkaEntryFormatter implements EntryFormatter {
                     if (batchMagic > magic) {
                         MemoryRecords memoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
                         //down converted, batch magic will be set to client magic
-                        ConvertedRecords<MemoryRecords> convertedRecords = memoryRecords.downConvert(magic, startOffset, time);
+                        ConvertedRecords<MemoryRecords> convertedRecords =
+                                memoryRecords.downConvert(magic, startOffset, time);
 
                         final ByteBuf kafkaBuffer = Unpooled.wrappedBuffer(convertedRecords.records().buffer());
                         orderedByteBuf.add(kafkaBuffer);
@@ -110,10 +111,10 @@ public class KafkaEntryFormatter implements EntryFormatter {
                     }
                     optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(kafkaBuffer));
                 }
-                // Almost all exceptions in Kafka inherit from KafkaException and will be captured and processed in KafkaApis.
-                // Here, whether it is down-conversion or the IOException in builder.appendWithOffset in
-                // decodePulsarEntryToKafkaRecords will be caught by Kafka and the KafkaException will be thrown.
-                // So we need to catch KafkaException here.
+                // Almost all exceptions in Kafka inherit from KafkaException and will be captured
+                // and processed in KafkaApis. Here, whether it is down-conversion or the IOException
+                // in builder.appendWithOffset in decodePulsarEntryToKafkaRecords will be caught by Kafka
+                // and the KafkaException will be thrown. So we need to catch KafkaException here.
             } catch (KoPMessageMetadataNotFoundException | IOException | KafkaException e) { // skip failed decode entry
                 log.error("[{}:{}] Failed to decode entry. ", entry.getLedgerId(), entry.getEntryId(), e);
                 entry.release();
