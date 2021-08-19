@@ -434,7 +434,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             topicMapFuture.completeExceptionally(e);
                             return;
                         }
-
+                        if (topicMapFuture.isCompletedExceptionally()) {
+                            return;
+                        }
                         for (String topic : topics) {
                             final TopicName topicName = TopicName.get(topic);
                             final String key = topicName.getPartitionedTopicName();
