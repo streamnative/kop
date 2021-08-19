@@ -479,26 +479,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             // clean all cache when get all metadata for librdkafka(<1.0.0).
             KafkaTopicManager.clearTopicManagerCache();
             // get all topics, filter by permissions.
-            pulsarTopicsFuture = getAllTopicsAsync().thenApply((allTopicMap)->{
+            pulsarTopicsFuture = getAllTopicsAsync().thenApply((allTopicMap) -> {
                 final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
                 allTopicMap.forEach((topic, list) -> {
-                   list.forEach((topicName -> {
-                       authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, topicName.toString()))
-                               .whenComplete((authorized, ex) -> {
-                                   if (ex != null || !authorized) {
-                                       allTopicMetadata.add(new TopicMetadata(
-                                               Errors.TOPIC_AUTHORIZATION_FAILED,
-                                               topic,
-                                               isInternalTopic(topicName.toString()),
-                                               Collections.emptyList()));
-                                       return;
-                                   }
-                                   topicMap.computeIfAbsent(
+                   list.forEach((topicName ->
+                           authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, topicName.toString()))
+                           .whenComplete((authorized, ex) -> {
+                               if (ex != null || !authorized) {
+                                   allTopicMetadata.add(new TopicMetadata(
+                                           Errors.TOPIC_AUTHORIZATION_FAILED,
                                            topic,
-                                           ignored -> Collections.synchronizedList(new ArrayList<>())
-                                   ).add(topicName);
-                               });
-                   }));
+                                           isInternalTopic(topicName.toString()),
+                                           Collections.emptyList()));
+                                   return;
+                               }
+                               topicMap.computeIfAbsent(
+                                       topic,
+                                       ignored -> Collections.synchronizedList(new ArrayList<>())
+                               ).add(topicName);
+                           })));
                 });
 
                 return topicMap;
@@ -550,11 +549,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             completeOneAuthFailedTopic.accept(topic, fullTopicName);
                             return;
                         }
-                        if (authorized) {
-                            // get partition numbers for each topic.
-                            // If topic doesn't exist and allowAutoTopicCreation is enabled,
-                            // the topic will be created first.
-                            getPartitionedTopicMetadataAsync(fullTopicName)
+                        if (!authorized) {
+                            // Permission denied
+                            completeOneAuthFailedTopic.accept(topic, fullTopicName);
+                            return;
+                        }
+                        // get partition numbers for each topic.
+                        // If topic doesn't exist and allowAutoTopicCreation is enabled,
+                        // the topic will be created first.
+                        getPartitionedTopicMetadataAsync(fullTopicName)
                                 .whenComplete((partitionedTopicMetadata, throwable) -> {
                                     if (throwable != null) {
                                         if (throwable instanceof PulsarAdminException.NotFoundException) {
@@ -568,15 +571,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                         completeOneAuthFailedTopic.accept(topic, fullTopicName);
                                                         return;
                                                     }
-                                                    if (canCreateTopic){
-                                                        log.info("[{}] Request {}: Topic {} doesn't exist, "
-                                                                        + "auto create it with {} partitions",
-                                                                ctx.channel(), metadataHar.getHeader(),
-                                                                topic, defaultNumPartitions);
-                                                        admin.topics()
-                                                            .createPartitionedTopicAsync(
-                                                                    fullTopicName,
-                                                                    defaultNumPartitions)
+                                                    if (!canCreateTopic){
+                                                        completeOneAuthFailedTopic.accept(topic, fullTopicName);
+                                                        return;
+                                                    }
+                                                    log.info("[{}] Request {}: Topic {} doesn't exist, "
+                                                                    + "auto create it with {} partitions",
+                                                            ctx.channel(), metadataHar.getHeader(),
+                                                            topic, defaultNumPartitions);
+                                                    admin.topics().createPartitionedTopicAsync(
+                                                            fullTopicName, defaultNumPartitions)
                                                             .whenComplete((ignored, e) -> {
                                                                 if (e == null) {
                                                                     addTopicPartition.accept(topic,
@@ -588,9 +592,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                                     completeOneTopic.run();
                                                                 }
                                                             });
-                                                    } else {
-                                                        completeOneAuthFailedTopic.accept(topic, fullTopicName);
-                                                    }
                                                 });
                                             } else {
                                                 log.error("[{}] Request {}: Topic {} doesn't exist and it's "
@@ -638,10 +639,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         }
                                     }
                                 });
-                        } else {
-                            // Permission denied
-                            completeOneAuthFailedTopic.accept(topic, fullTopicName);
-                        }
                     });
 
                 });

@@ -23,6 +23,7 @@ import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.AuthAction;
 
@@ -51,7 +52,7 @@ public class SimpleAclAuthorizer implements Authorizer {
         CompletableFuture<Boolean> permissionFuture = new CompletableFuture<>();
         String namespaceName = "";
         if (resource.getResourceType() == ResourceType.NAMESPACE) {
-            namespaceName = resource.getName();
+            namespaceName = NamespaceName.get(resource.getName()).toString();
         } else if (resource.getResourceType() == ResourceType.TOPIC) {
             namespaceName = TopicName.get(resource.getName()).getNamespace();
         }
