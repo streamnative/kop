@@ -547,6 +547,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullTopicName))
                     .whenComplete((authorized, ex) -> {
                         if (ex != null) {
+                            log.error("Describe topic authorize failed, topic - {}. {}",
+                                    fullTopicName, ex.getMessage());
                             // Authentication failed
                             completeOneAuthFailedTopic.accept(topic, fullTopicName);
                             return;

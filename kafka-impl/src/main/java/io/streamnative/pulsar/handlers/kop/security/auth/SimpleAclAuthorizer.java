@@ -125,8 +125,10 @@ public class SimpleAclAuthorizer implements Authorizer {
                         }
                         permissionFuture.complete(false);
                     }).exceptionally(ex -> {
-                        log.warn("Client with Principal - {} failed to get permissions for resource - {}. {}",
-                                principal, resource, ex.getMessage());
+                        if (log.isDebugEnabled()) {
+                            log.debug("Client with Principal - {} failed to get permissions for resource - {}. {}",
+                                    principal, resource, ex.getMessage());
+                        }
                         permissionFuture.completeExceptionally(ex);
                         return null;
                     });
