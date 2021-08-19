@@ -69,8 +69,6 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
     private static final String ADMIN_USER = "admin_user";
 
-    private String adminToken;
-
     private KafkaRequestHandler handler;
     private AdminManager adminManager;
 
@@ -87,7 +85,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         authConf.setProperties(properties);
         provider.initialize(authConf);
 
-        adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
+        String adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
 
         super.resetConfig();
         conf.setDefaultNumPartitions(DEFAULT_PARTITION_NUM);

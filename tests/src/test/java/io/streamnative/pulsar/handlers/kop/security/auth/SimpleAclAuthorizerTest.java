@@ -211,13 +211,14 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
                 Resource.of(ResourceType.TOPIC, NOT_EXISTS_TENANT_TOPIC)).get();
         assertFalse(isAuthorized);
 
-        // TENANT_ADMIN_USER can't create don't exist tenant's topic, because tenant admin depend on exist topic.
+        // TENANT_ADMIN_USER can't create don't exist tenant's topic,
+        // because tenant admin depend on exist tenant.
         isAuthorized = simpleAclAuthorizer.canCreateTopicAsync(
                 new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TENANT_ADMIN_USER),
                 Resource.of(ResourceType.TOPIC, NOT_EXISTS_TENANT_TOPIC)).get();
         assertFalse(isAuthorized);
 
-        // ADMIN_USER can create don't exist tenant's topic, because is superuser
+        // ADMIN_USER can create don't exist tenant's topic, because is superuser.
         isAuthorized = simpleAclAuthorizer.canCreateTopicAsync(
                 new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ADMIN_USER),
                 Resource.of(ResourceType.TOPIC, NOT_EXISTS_TENANT_TOPIC)).get();
