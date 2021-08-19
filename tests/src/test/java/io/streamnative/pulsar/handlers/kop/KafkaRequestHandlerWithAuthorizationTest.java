@@ -18,6 +18,8 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNull;
+import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
@@ -29,6 +31,7 @@ import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
@@ -254,8 +257,21 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                         header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
                 responseFuture);
         final MetadataResponse response = (MetadataResponse) responseFuture.get();
-        assertEquals(response.topicMetadata().size(), 1);
-        assertEquals(response.errors().size(), 0);
+        String localName = TopicName.get(topic).getLocalName();
+
+        HashMap<String, MetadataResponse.TopicMetadata> topicMap = new HashMap<>();
+        response.topicMetadata().forEach(metadata -> {
+            topicMap.put(metadata.topic(), metadata);
+        });
+        assertTrue(topicMap.containsKey(localName));
+        assertEquals(topicMap.get(localName).partitionMetadata().size(), DEFAULT_PARTITION_NUM);
+        assertNull(response.errors().get(localName));
+
+        response.errors().forEach((t, errors) -> {
+            if (!localName.equals(t)) {
+                assertEquals(errors, Errors.TOPIC_AUTHORIZATION_FAILED);
+            }
+        });
     }
 
 
