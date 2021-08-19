@@ -28,7 +28,10 @@ import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
+import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.record.ConvertedRecords;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.KeyValue;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
@@ -43,6 +46,8 @@ public class KafkaEntryFormatter implements EntryFormatter {
     // These key-value identifies the entry's format as kafka
     private static final String IDENTITY_KEY = "entry.format";
     private static final String IDENTITY_VALUE = EntryFormatterFactory.EntryFormat.KAFKA.name().toLowerCase();
+    // Kafka MemoryRecords downConvert method needs time
+    private static final Time time = Time.SYSTEM;
 
     @Override
     public ByteBuf encode(MemoryRecords records, int numMessages) {
@@ -61,15 +66,41 @@ public class KafkaEntryFormatter implements EntryFormatter {
 
         // reset header information
         final List<ByteBuf> orderedByteBuf = new ArrayList<>();
+
         for (Entry entry : entries) {
             try {
                 long startOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
                 final ByteBuf byteBuf = entry.getDataBuffer();
                 final MessageMetadata metadata = Commands.parseMessageMetadata(byteBuf);
                 if (isKafkaEntryFormat(metadata)) {
+                    byte batchMagic = byteBuf.getByte(byteBuf.readerIndex() + MAGIC_OFFSET);
                     byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
-                    byteBuf.setByte(byteBuf.readerIndex() + MAGIC_OFFSET, magic);
-                    orderedByteBuf.add(byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes()));
+
+                    // batch magic greater than the magic corresponding to the version requested by the client
+                    // need down converted
+                    if (batchMagic > magic) {
+                        MemoryRecords memoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
+                        //down converted, batch magic will be set to client magic
+                        ConvertedRecords<MemoryRecords> convertedRecords =
+                                memoryRecords.downConvert(magic, startOffset, time);
+
+                        final ByteBuf kafkaBuffer = Unpooled.wrappedBuffer(convertedRecords.records().buffer());
+                        orderedByteBuf.add(kafkaBuffer);
+                        if (!optionalByteBufs.isPresent()) {
+                            optionalByteBufs = Optional.of(new ArrayList<>());
+                        }
+                        optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(byteBuf));
+                        optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(kafkaBuffer));
+
+                        if (log.isTraceEnabled()) {
+                            log.trace("[{}:{}] downConvert record, start offset {}, entry magic: {}, client magic: {}"
+                                    , entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
+                        }
+
+                    } else {
+                        //not need down converted, batch magic retains the magic value written in production
+                        orderedByteBuf.add(byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes()));
+                    }
                 } else {
                     final MemoryRecords records =
                             ByteBufUtils.decodePulsarEntryToKafkaRecords(metadata, byteBuf, startOffset, magic);
@@ -80,7 +111,11 @@ public class KafkaEntryFormatter implements EntryFormatter {
                     }
                     optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(kafkaBuffer));
                 }
-            } catch (KoPMessageMetadataNotFoundException | IOException e) { // skip failed decode entry
+                // Almost all exceptions in Kafka inherit from KafkaException and will be captured
+                // and processed in KafkaApis. Here, whether it is down-conversion or the IOException
+                // in builder.appendWithOffset in decodePulsarEntryToKafkaRecords will be caught by Kafka
+                // and the KafkaException will be thrown. So we need to catch KafkaException here.
+            } catch (KoPMessageMetadataNotFoundException | IOException | KafkaException e) { // skip failed decode entry
                 log.error("[{}:{}] Failed to decode entry. ", entry.getLedgerId(), entry.getEntryId(), e);
                 entry.release();
             }

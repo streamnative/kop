@@ -109,7 +109,6 @@ public class ByteBufUtils {
                     new EndTransactionMarker(metadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
                             ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0));
         }
-
         final int uncompressedSize = metadata.getUncompressedSize();
         final CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(metadata.getCompression());
         final ByteBuf uncompressedPayload = codec.decode(payload, uncompressedSize);
@@ -145,24 +144,39 @@ public class ByteBufUtils {
                 final ByteBuffer value = singleMessageMetadata.isNullValue()
                         ? null
                         : getNioBuffer(singleMessagePayload);
-                final Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
-                builder.appendWithOffset(baseOffset + i,
-                        timestamp,
-                        getKeyByteBuffer(singleMessageMetadata),
-                        value,
-                        headers);
+                if (magic >= RecordBatch.MAGIC_VALUE_V2) {
+                    final Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
+                    builder.appendWithOffset(baseOffset + i,
+                            timestamp,
+                            getKeyByteBuffer(singleMessageMetadata),
+                            value,
+                            headers);
+                } else {
+                    // record less than magic=2, no header attribute
+                    builder.appendWithOffset(baseOffset + i,
+                            timestamp,
+                            getKeyByteBuffer(singleMessageMetadata),
+                            value);
+                }
                 singleMessagePayload.release();
             }
         } else {
             final long timestamp = (metadata.getEventTime() > 0)
                     ? metadata.getEventTime()
                     : metadata.getPublishTime();
-            final Header[] headers = getHeadersFromMetadata(metadata.getPropertiesList());
-            builder.appendWithOffset(baseOffset,
-                    timestamp,
-                    getKeyByteBuffer(metadata),
-                    getNioBuffer(uncompressedPayload),
-                    headers);
+            if (magic >= RecordBatch.MAGIC_VALUE_V2) {
+                final Header[] headers = getHeadersFromMetadata(metadata.getPropertiesList());
+                builder.appendWithOffset(baseOffset,
+                        timestamp,
+                        getKeyByteBuffer(metadata),
+                        getNioBuffer(uncompressedPayload),
+                        headers);
+            } else {
+                builder.appendWithOffset(baseOffset,
+                        timestamp,
+                        getKeyByteBuffer(metadata),
+                        getNioBuffer(uncompressedPayload));
+            }
         }
 
         final MemoryRecords records = builder.build();
