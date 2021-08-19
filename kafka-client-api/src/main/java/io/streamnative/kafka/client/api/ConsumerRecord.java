@@ -13,6 +13,7 @@
  */
 package io.streamnative.kafka.client.api;
 
+import java.util.ArrayList;
 import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -44,5 +45,20 @@ public class ConsumerRecord<K, V> {
                 (int) ReflectionUtils.invoke(clazz, "partition", originalRecord),
                 (long) ReflectionUtils.invoke(clazz, "offset", originalRecord),
                 headers);
+    }
+
+    //support kafka message before 0.11.x
+    public static <K, V, T> ConsumerRecord<K, V> createOldRecord(T originalRecord) {
+        final Class<?> clazz = originalRecord.getClass();
+
+        final List<Header> headerList = new ArrayList<>();
+        headerList.add(new Header(null, null));
+
+        return new ConsumerRecord<>((K) ReflectionUtils.invoke(clazz, "key", originalRecord),
+                (V) ReflectionUtils.invoke(clazz, "value", originalRecord),
+                (String) ReflectionUtils.invoke(clazz, "topic", originalRecord),
+                (int) ReflectionUtils.invoke(clazz, "partition", originalRecord),
+                (long) ReflectionUtils.invoke(clazz, "offset", originalRecord),
+                headerList);
     }
 }

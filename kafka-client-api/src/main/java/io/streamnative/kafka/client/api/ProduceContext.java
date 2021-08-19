@@ -38,7 +38,8 @@ public class ProduceContext<K, V> {
     private final CompletableFuture<RecordMetadata> future = new CompletableFuture<>();
 
     /**
-     * Create an instance of Kafka's ProducerRecord.
+     * Create an instance of Kafka's ProducerRecord
+     * for kafka version higher than or equal to 0.11.x.
      *
      * @param clazz the class type of Kafka's ProducerRecord
      * @param headerConstructor the constructor of Kafka's Header implementation
@@ -52,6 +53,27 @@ public class ProduceContext<K, V> {
             return clazz.getConstructor(
                     String.class, Integer.class, Long.class, Object.class, Object.class, Iterable.class
             ).newInstance(topic, partition, timestamp, key, value, Header.toHeaders(headers, headerConstructor));
+        } catch (InstantiationException
+                | IllegalAccessException
+                | InvocationTargetException
+                | NoSuchMethodException e) {
+            throw new IllegalArgumentException(e);
+        }
+    }
+
+    /**
+     * Create an instance of Kafka's ProducerRecord less than 0.11.x.
+     * Because there is no header in ProducerRecord before 0.11.x.
+     *
+     * @param clazz the class type of Kafka's ProducerRecord
+     * @param <T> it should be org.apache.kafka.clients.producer.ProducerRecord
+     * @return an instance of org.apache.kafka.clients.producer.ProducerRecord
+     */
+    public <T> T createProducerRecord(final Class<T> clazz) {
+        try {
+            return clazz.getConstructor(
+                    String.class, Integer.class, Long.class, Object.class, Object.class
+            ).newInstance(topic, partition, timestamp, key, value);
         } catch (InstantiationException
                 | IllegalAccessException
                 | InvocationTargetException

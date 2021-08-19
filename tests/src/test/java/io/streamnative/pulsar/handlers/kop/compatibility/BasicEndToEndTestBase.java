@@ -72,6 +72,15 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
+    /**
+     * Test Kafka production and Kafka consumption.
+     * after kafka client 0.11.x versions, producer will send record with magic=2.
+     * Therefore, the previous test will not appear issue: https://github.com/streamnative/kop/issues/656
+     * After introducing the kafka 0-10 module, we can reuse the current test,
+     * Because 0.10 will produce a message with magic=1, and the kafka-1-0 and default modules
+     * will use the apiVersion corresponding to magic=2 to send FETCH requests
+     * @throws Exception
+     */
     protected void testKafkaProduceKafkaConsume() throws Exception {
         final String topic = "test-kafka-produce-kafka-consume";
         admin.topics().createPartitionedTopic(topic, 1);
@@ -101,7 +110,10 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
             value = "value-from-" + version.name() + offset;
             keys.add(key);
             values.add(value);
-            headers.add(new Header("header-" + key, "header-" + value));
+            // Because there is no header in ProducerRecord before 0.11.x.
+            if (!version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
+                headers.add(new Header("header-" + key, "header-" + value));
+            }
 
             metadata = producer.newContextBuilder(topic, value)
                     .key(key)
@@ -119,6 +131,11 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
         }
 
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
+            // Due to some known issues, kop return the minimum Fetch apiVersion is 4,
+            // kafka client versions before 0.11.x not support apiVersion=4
+            if (version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
+                continue;
+            }
             final Consumer<String, String> consumer = kafkaClientFactories.get(version)
                     .createConsumer(consumerConfiguration(version));
             consumer.subscribe(topic);
