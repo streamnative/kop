@@ -74,27 +74,29 @@ public class KafkaEntryFormatter implements EntryFormatter {
                 if (isKafkaEntryFormat(metadata)) {
                     byte batchMagic = byteBuf.getByte(byteBuf.readerIndex() + MAGIC_OFFSET);
                     byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
-                    ConvertedRecords<MemoryRecords> convertedRecords = null;
 
                     // batch magic greater than the magic corresponding to the version requested by the client
                     // need down converted
                     if (batchMagic > magic) {
+                        ConvertedRecords<MemoryRecords> convertedRecords = null;
                         MemoryRecords memoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
                         //down converted, batch magic will be set to client magic
                         convertedRecords = memoryRecords.downConvert(magic, startOffset, time);
                         log.trace("[{}:{}] downConvert record, start offset {}, entry magic: {}, client magic: {}"
                                 , entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
-                    }
-                    if (convertedRecords != null) {
-                        final ByteBuf kafkaBuffer = Unpooled.wrappedBuffer(convertedRecords.records().buffer());
-                        orderedByteBuf.add(kafkaBuffer);
-                        if (!optionalByteBufs.isPresent()) {
-                            optionalByteBufs = Optional.of(new ArrayList<>());
+                        if (convertedRecords != null) {
+                            final ByteBuf kafkaBuffer = Unpooled.wrappedBuffer(convertedRecords.records().buffer());
+                            orderedByteBuf.add(kafkaBuffer);
+                            if (!optionalByteBufs.isPresent()) {
+                                optionalByteBufs = Optional.of(new ArrayList<>());
+                            }
+                            optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(byteBuf));
+                            optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(kafkaBuffer));
+                            log.trace("[{}:{}] down convertedRecords not null {}, {}, {}"
+                                    , entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
+                        } else {
+                            throw new IOException("DownConvert failed, convertedRecords is null");
                         }
-                        optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(byteBuf));
-                        optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(kafkaBuffer));
-                        log.trace("[{}:{}] down convertedRecords not null {}, {}, {}"
-                                , entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
                     } else {
                         //not need down converted, batch magic retains the magic value written in production
                         orderedByteBuf.add(byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes()));
