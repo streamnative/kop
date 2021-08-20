@@ -54,15 +54,4 @@ public interface Authorizer {
      */
     CompletableFuture<Boolean> canConsumeAsync(KafkaPrincipal principal, Resource resource);
 
-    /**
-     * Check whether the specified role can create topics.
-     *
-     * For that the caller needs to have created topic permission.
-     *
-     * @param principal login info
-     * @param resource resources to be authorized
-     * @return a boolean to determine whether authorized or not
-     */
-    CompletableFuture<Boolean> canCreateTopicAsync(KafkaPrincipal principal, Resource resource);
-
 }

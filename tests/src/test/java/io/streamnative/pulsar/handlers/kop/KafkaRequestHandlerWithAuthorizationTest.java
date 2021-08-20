@@ -190,10 +190,6 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         doReturn(CompletableFuture.completedFuture(true))
                 .when(spyHandler)
                 .authorize(eq(AclOperation.DESCRIBE), eq(Resource.of(ResourceType.TOPIC, topic)));
-        doReturn(CompletableFuture.completedFuture(true))
-                .when(spyHandler)
-                .authorize(eq(AclOperation.CREATE), eq(Resource.of(ResourceType.TOPIC, topic)));
-
         final RequestHeader header = new RequestHeader(ApiKeys.METADATA, version, "client", 0);
         final MetadataRequest request =
                 new MetadataRequest(Collections.singletonList(topic), true, version);
@@ -207,30 +203,6 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         assertEquals(response.errors().size(), 0);
     }
 
-    @Test(timeOut = 10000, dataProvider = "metadataVersions")
-    public void testMetadataForPartitionedTopicWithNoCreatePermission(short version) throws Exception {
-        final String topic = "persistent://" + TENANT + "/" + NAMESPACE + "/" + "noCreatePermissionTopic";
-        KafkaRequestHandler spyHandler = spy(handler);
-        doReturn(CompletableFuture.completedFuture(true))
-                .when(spyHandler)
-                .authorize(eq(AclOperation.DESCRIBE), eq(Resource.of(ResourceType.TOPIC, topic)));
-        doReturn(CompletableFuture.completedFuture(false))
-                .when(spyHandler)
-                .authorize(eq(AclOperation.CREATE), eq(Resource.of(ResourceType.TOPIC, topic)));
-        final RequestHeader header = new RequestHeader(ApiKeys.METADATA, version, "client", 0);
-        final MetadataRequest request =
-                new MetadataRequest(Collections.singletonList(topic), true, version);
-        final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
-        spyHandler.handleTopicMetadataRequest(
-                new KafkaCommandDecoder.KafkaHeaderAndRequest(
-                        header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
-                responseFuture);
-        final MetadataResponse response = (MetadataResponse) responseFuture.get();
-        assertEquals(response.topicMetadata().size(), 1);
-        assertEquals(response.errors().size(), 1);
-        assertEquals(response.errors().get(topic), Errors.TOPIC_AUTHORIZATION_FAILED);
-    }
-
     @Test(timeOut = 10000)
     public void testMetadataListTopic() throws Exception {
         final String topic = TOPIC;
@@ -239,11 +211,6 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
             doReturn(CompletableFuture.completedFuture(true))
                     .when(spyHandler)
                     .authorize(eq(AclOperation.DESCRIBE),
-                            eq(Resource.of(ResourceType.TOPIC, TopicName.get(topic).getPartition(i).toString()))
-                    );
-            doReturn(CompletableFuture.completedFuture(false))
-                    .when(spyHandler)
-                    .authorize(eq(AclOperation.CREATE),
                             eq(Resource.of(ResourceType.TOPIC, TopicName.get(topic).getPartition(i).toString()))
                     );
         }

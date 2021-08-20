@@ -567,35 +567,21 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         if (throwable instanceof PulsarAdminException.NotFoundException) {
                                             if (kafkaConfig.isAllowAutoTopicCreation()
                                                     && metadataRequest.allowAutoTopicCreation()) {
-                                                authorize(AclOperation.CREATE,
-                                                        Resource.of(ResourceType.TOPIC, fullTopicName)
-                                                ).whenComplete((canCreateTopic, authEx) -> {
-                                                    if (authEx != null) {
-                                                        completeOneAuthFailedTopic.accept(topic, fullTopicName);
-                                                        return;
-                                                    }
-                                                    if (!canCreateTopic){
-                                                        completeOneAuthFailedTopic.accept(topic, fullTopicName);
-                                                        return;
-                                                    }
-                                                    log.info("[{}] Request {}: Topic {} doesn't exist, "
-                                                                    + "auto create it with {} partitions",
-                                                            ctx.channel(), metadataHar.getHeader(),
-                                                            topic, defaultNumPartitions);
-                                                    admin.topics().createPartitionedTopicAsync(
-                                                            fullTopicName, defaultNumPartitions)
-                                                            .whenComplete((ignored, e) -> {
-                                                                if (e == null) {
-                                                                    addTopicPartition.accept(topic,
-                                                                            defaultNumPartitions);
-                                                                } else {
-                                                                    log.error("[{}] Failed to create "
-                                                                                    + "partitioned topic {}",
-                                                                            ctx.channel(), topic, e);
-                                                                    completeOneTopic.run();
-                                                                }
-                                                            });
-                                                });
+                                                log.info("[{}] Request {}: Topic {} doesn't exist, "
+                                                                + "auto create it with {} partitions",
+                                                        ctx.channel(), metadataHar.getHeader(),
+                                                        topic, defaultNumPartitions);
+                                                admin.topics().createPartitionedTopicAsync(
+                                                                fullTopicName, defaultNumPartitions)
+                                                        .whenComplete((ignored, e) -> {
+                                                            if (e == null) {
+                                                                addTopicPartition.accept(topic, defaultNumPartitions);
+                                                            } else {
+                                                                log.error("[{}] Failed to create partitioned topic {}",
+                                                                        ctx.channel(), topic, e);
+                                                                completeOneTopic.run();
+                                                            }
+                                                        });
                                             } else {
                                                 log.error("[{}] Request {}: Topic {} doesn't exist and it's "
                                                                 + "not allowed to auto create partitioned topic",
@@ -2297,8 +2283,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 isAuthorizedFuture = authorizer.canLookupAsync(session.getPrincipal(), resource);
                 break;
             case CREATE:
-                isAuthorizedFuture = authorizer.canCreateTopicAsync(session.getPrincipal(), resource);
-                break;
             case DELETE:
             case CLUSTER_ACTION:
             case DESCRIBE_CONFIGS:

@@ -155,11 +155,11 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     @Test(timeOut = 20000)
-    void testSuccessAutoCreateTopicBySuperUser() throws PulsarAdminException {
-        String topic = "testSuccessAutoCreateTopic";
+    void testAuthorizationSuccess() throws PulsarAdminException {
+        String topic = "testAuthorizationSuccessTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
         KProducer kProducer = new KProducer(topic, false, "localhost", getKafkaBrokerPort(),
-                TENANT + "/" + NAMESPACE, "token:" + adminToken);
+                TENANT + "/" + NAMESPACE, "token:" + userToken);
         int totalMsgs = 10;
         String messageStrPrefix = topic + "_message_";
 
@@ -168,7 +168,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             kProducer.getProducer().send(new ProducerRecord<>(topic, i, messageStr));
         }
         KConsumer kConsumer = new KConsumer(topic, "localhost", getKafkaBrokerPort(), false,
-                TENANT + "/" + NAMESPACE, "token:" + adminToken, "DemoKafkaOnPulsarConsumer");
+                TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
         kConsumer.getConsumer().subscribe(Collections.singleton(topic));
 
         int i = 0;
@@ -196,21 +196,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         kProducer.close();
         kConsumer.close();
         admin.topics().deletePartitionedTopic(fullNewTopicName);
-    }
-
-    @Test(timeOut = 20000)
-    void testAutoCreateTopicFailedBySimpleUser() {
-        try {
-            String topic = "testAutoCreateTopic";
-            @Cleanup
-            KProducer kProducer = new KProducer(topic, false, "localhost", getKafkaBrokerPort(),
-                    TENANT + "/" + NAMESPACE, "token:" + userToken);
-            kProducer.getProducer().send(new ProducerRecord<>(topic, 0, "")).get();
-            fail("should have failed");
-        } catch (Exception e) {
-            e.printStackTrace();
-            assertTrue(e.getMessage().contains("TopicAuthorizationException"));
-        }
     }
 
     @Test(timeOut = 20000)
