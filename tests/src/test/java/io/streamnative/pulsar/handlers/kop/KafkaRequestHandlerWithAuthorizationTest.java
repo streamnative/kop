@@ -198,7 +198,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                 new KafkaCommandDecoder.KafkaHeaderAndRequest(
                         header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
                 responseFuture);
-         final MetadataResponse response = (MetadataResponse) responseFuture.get();
+        final MetadataResponse response = (MetadataResponse) responseFuture.get();
         assertEquals(response.topicMetadata().size(), 1);
         assertEquals(response.errors().size(), 0);
     }
