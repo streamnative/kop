@@ -66,7 +66,7 @@ public class SaslOauthDefaultHandlersTest extends SaslOauthBearerTestBase {
         admin.namespaces().grantPermissionOnNamespace(
                 tenant + "/" + namespace,
                 USER,
-                Sets.newHashSet(AuthAction.consume, AuthAction.produce, AuthAction.packages)
+                Sets.newHashSet(AuthAction.consume, AuthAction.produce)
         );
     }
 
