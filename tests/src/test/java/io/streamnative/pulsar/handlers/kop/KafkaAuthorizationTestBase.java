@@ -50,6 +50,9 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
+/**
+ * Unit test for KoP enable authorization.
+ */
 @Test
 @Slf4j
 public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestBase {
