@@ -199,6 +199,50 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     @Test(timeOut = 20000)
+    void testAuthorizationSuccessByAdmin() throws PulsarAdminException {
+        String topic = "testAuthorizationSuccessByAdminTopic";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
+        KProducer kProducer = new KProducer(topic, false, "localhost", getKafkaBrokerPort(),
+                TENANT + "/" + NAMESPACE, "token:" + adminToken);
+        int totalMsgs = 10;
+        String messageStrPrefix = topic + "_message_";
+
+        for (int i = 0; i < totalMsgs; i++) {
+            String messageStr = messageStrPrefix + i;
+            kProducer.getProducer().send(new ProducerRecord<>(topic, i, messageStr));
+        }
+        KConsumer kConsumer = new KConsumer(topic, "localhost", getKafkaBrokerPort(), false,
+                TENANT + "/" + NAMESPACE, "token:" + adminToken, "DemoKafkaOnPulsarConsumer");
+        kConsumer.getConsumer().subscribe(Collections.singleton(topic));
+
+        int i = 0;
+        while (i < totalMsgs) {
+            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<Integer, String> record : records) {
+                Integer key = record.key();
+                assertEquals(messageStrPrefix + key.toString(), record.value());
+                i++;
+            }
+        }
+        assertEquals(i, totalMsgs);
+
+        // no more records
+        ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+
+        // ensure that we can list the topic
+        Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
+        assertEquals(result.size(), 2);
+        assertTrue(result.containsKey(topic),
+                "list of topics " + result.keySet() + "  does not contains " + topic);
+
+        // Cleanup
+        kProducer.close();
+        kConsumer.close();
+        admin.topics().deletePartitionedTopic(fullNewTopicName);
+    }
+
+    @Test(timeOut = 20000)
     void testListTopic() throws Exception {
         String newTopic = "newTestListTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
