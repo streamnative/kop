@@ -42,6 +42,7 @@ import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
+import org.apache.pulsar.common.policies.data.AuthAction;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -52,6 +53,7 @@ import org.testng.annotations.Test;
 public class CustomOAuthBearerCallbackHandlerTest extends KopProtocolHandlerTestBase {
 
     private static final String ADMIN_USER = "admin_user";
+    private static final String USER = "user";
 
     public CustomOAuthBearerCallbackHandlerTest() {
         super("kafka");
@@ -78,6 +80,11 @@ public class CustomOAuthBearerCallbackHandlerTest extends KopProtocolHandlerTest
         conf.setKopOauth2AuthenticateCallbackHandler(MockedAuthenticateCallbackHandler.class.getName());
 
         super.internalSetup();
+        admin.namespaces().grantPermissionOnNamespace(
+                tenant + "/" + namespace,
+                USER,
+                Sets.newHashSet(AuthAction.consume, AuthAction.produce)
+        );
     }
 
     @AfterClass
@@ -99,21 +106,20 @@ public class CustomOAuthBearerCallbackHandlerTest extends KopProtocolHandlerTest
     @Test(timeOut = 10000)
     public void testNumAuthenticateSuccess() throws Exception {
         final String topic = "testNumAuthenticateSuccess";
-        final String user = "user";
 
         final Properties props = newKafkaProducerProperties();
         final String jaasTemplate = "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule"
                 + " required unsecuredLoginStringClaim_sub=\"%s\";";
         props.setProperty("security.protocol", "SASL_PLAINTEXT");
         props.setProperty("sasl.mechanism", "OAUTHBEARER");
-        props.setProperty("sasl.jaas.config", String.format(jaasTemplate, user));
+        props.setProperty("sasl.jaas.config", String.format(jaasTemplate, USER));
 
         @Cleanup
         final KafkaProducer<String, String> producer = new KafkaProducer<>(props);
 
         assertTrue(MockedAuthenticateCallbackHandler.getAuthenticatedUsers().isEmpty());
         producer.send(new ProducerRecord<>(topic, "hello")).get();
-        assertEquals(MockedAuthenticateCallbackHandler.getAuthenticatedUsers(), Sets.newHashSet(user));
+        assertEquals(MockedAuthenticateCallbackHandler.getAuthenticatedUsers(), Sets.newHashSet(USER));
     }
 
     /**

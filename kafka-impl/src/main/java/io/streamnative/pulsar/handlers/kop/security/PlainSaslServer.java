@@ -18,18 +18,15 @@ import io.streamnative.pulsar.handlers.kop.utils.SaslUtils;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Map;
-import java.util.Set;
 import javax.naming.AuthenticationException;
 import javax.security.sasl.SaslException;
 import javax.security.sasl.SaslServer;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authentication.AuthenticationState;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.api.AuthData;
-import org.apache.pulsar.common.policies.data.AuthAction;
 
 /**
  * The SaslServer implementation for SASL/PLAIN.
@@ -72,19 +69,15 @@ public class PlainSaslServer implements SaslServer {
         try {
             final AuthenticationState authState = authenticationProvider.newAuthState(
                     AuthData.of(saslAuth.getAuthData().getBytes(StandardCharsets.UTF_8)), null, null);
-            // TODO: we need to let KafkaRequestHandler do the authorization works. Here we just check the permissions
-            //  of the namespace, which is the namespace. See https://github.com/streamnative/kop/issues/236
-            final String namespace = saslAuth.getUsername();
-            Map<String, Set<AuthAction>> permissions = admin.namespaces().getPermissions(namespace);
             final String role = authState.getAuthRole();
-            if (!permissions.containsKey(role)) {
-                throw new AuthenticationException("Role: " + role + " is not allowed on namespace " + namespace);
+            if (StringUtils.isEmpty(role)) {
+                throw new AuthenticationException("Role cannot be empty.");
             }
 
-            authorizationId = role;
+            authorizationId = authState.getAuthRole();
             complete = true;
             return null;
-        } catch (AuthenticationException | PulsarAdminException e) {
+        } catch (AuthenticationException e) {
             throw new SaslException(e.getMessage());
         }
     }

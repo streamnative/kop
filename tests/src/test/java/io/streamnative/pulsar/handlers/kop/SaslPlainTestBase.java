@@ -190,21 +190,11 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
             kProducer.getProducer().send(new ProducerRecord<>(TOPIC, 0, "")).get();
             fail("should have failed");
         } catch (Exception e) {
-            assertTrue(e.getMessage().contains("SaslAuthenticationException"));
+            e.printStackTrace();
+            assertTrue(e.getMessage().contains("TopicAuthorizationException"));
         }
     }
 
-    @Test(timeOut = 20000)
-    void badNamespaceProvided() throws Exception {
-        try {
-            KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
-                TENANT + "/ns2", "token:" + userToken);
-            kProducer.getProducer().send(new ProducerRecord<>(TOPIC, 0, "")).get();
-            fail("should have failed");
-        } catch (Exception e) {
-            assertTrue(e.getMessage().contains("SaslAuthenticationException"));
-        }
-    }
 
     @Test(timeOut = 20000)
     void clientWithoutAuth() throws Exception {

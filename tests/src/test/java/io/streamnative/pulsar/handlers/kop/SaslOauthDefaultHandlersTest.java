@@ -25,6 +25,7 @@ import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
+import org.apache.pulsar.common.policies.data.AuthAction;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -39,6 +40,7 @@ import org.testng.annotations.Test;
 public class SaslOauthDefaultHandlersTest extends SaslOauthBearerTestBase {
 
     private static final String ADMIN_USER = "admin_user";
+    private static final String USER = "user";
 
     @BeforeClass
     @Override
@@ -60,6 +62,12 @@ public class SaslOauthDefaultHandlersTest extends SaslOauthBearerTestBase {
         conf.setSaslAllowedMechanisms(Sets.newHashSet("OAUTHBEARER"));
         conf.setKopOauth2ConfigFile("src/test/resources/kop-default-oauth2.properties");
         super.internalSetup();
+
+        admin.namespaces().grantPermissionOnNamespace(
+                tenant + "/" + namespace,
+                USER,
+                Sets.newHashSet(AuthAction.consume, AuthAction.produce)
+        );
     }
 
     @AfterClass
@@ -94,6 +102,6 @@ public class SaslOauthDefaultHandlersTest extends SaslOauthBearerTestBase {
                 + " required unsecuredLoginStringClaim_sub=\"%s\";";
         props.setProperty("security.protocol", "SASL_PLAINTEXT");
         props.setProperty("sasl.mechanism", "OAUTHBEARER");
-        props.setProperty("sasl.jaas.config", String.format(jaasTemplate, "user"));
+        props.setProperty("sasl.jaas.config", String.format(jaasTemplate, USER));
     }
 }
