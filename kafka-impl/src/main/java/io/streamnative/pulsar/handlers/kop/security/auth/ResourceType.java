@@ -34,6 +34,7 @@ public enum ResourceType {
      * A Pulsar topic.
      */
     TOPIC((byte) 2),
+
     ;
 
 

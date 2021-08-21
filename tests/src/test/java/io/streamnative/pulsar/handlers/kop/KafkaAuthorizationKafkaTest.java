@@ -11,30 +11,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop.security.auth;
-
-
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
+package io.streamnative.pulsar.handlers.kop;
 
 /**
- * The Authorization resource.
+ * Unit test for Authorization with `entryFormat=kafka`.
  */
-@Getter
-@EqualsAndHashCode
-public class Resource {
-
-    private final ResourceType resourceType;
-
-    private final String name;
-
-    private Resource(ResourceType resourceType, String name) {
-        this.resourceType = resourceType;
-        this.name = name;
+public class KafkaAuthorizationKafkaTest extends KafkaAuthorizationTestBase {
+    public KafkaAuthorizationKafkaTest() {
+        super("kafka");
     }
-
-    public static Resource of(ResourceType resourceType, String name) {
-        return new Resource(resourceType, name);
-    }
-
 }
