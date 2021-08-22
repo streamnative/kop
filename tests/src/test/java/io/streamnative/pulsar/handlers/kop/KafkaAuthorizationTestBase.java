@@ -290,5 +290,72 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         admin.topics().deletePartitionedTopic(fullNewTopicName);
     }
 
+    @Test
+    void testProduceFailed() throws PulsarAdminException {
+        String newTenant = "newProduceFailed";
+        String testTopic = "persistent://" + newTenant + "/" + NAMESPACE + "/topic1";
+        boolean isStageOneComplete = false;
+        try {
+            admin.tenants().createTenant(newTenant,
+                    TenantInfo.builder()
+                            .adminRoles(Collections.singleton(ADMIN_USER))
+                            .allowedClusters(Collections.singleton(configClusterName))
+                            .build());
+            admin.namespaces().createNamespace(newTenant + "/" + NAMESPACE);
+            admin.namespaces().grantPermissionOnNamespace(newTenant + "/" + NAMESPACE, SIMPLE_USER,
+                    Sets.newHashSet(AuthAction.consume));
+            admin.topics().createPartitionedTopic(testTopic, 1);
+
+            // Admin must have produce permissions
+            @Cleanup
+            KProducer adminProducer = new KProducer(testTopic, false, "localhost", getKafkaBrokerPort(),
+                    newTenant + "/" + NAMESPACE, "token:" + adminToken);
+            int totalMsgs = 10;
+            String messageStrPrefix = testTopic + "_message_";
+
+            for (int i = 0; i < totalMsgs; i++) {
+                String messageStr = messageStrPrefix + i;
+                adminProducer.getProducer().send(new ProducerRecord<>(testTopic, i, messageStr)).get();
+            }
+
+            // Ensure can consume message.
+            KConsumer kConsumer = new KConsumer(testTopic, "localhost", getKafkaBrokerPort(), false,
+                    TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
+            kConsumer.getConsumer().subscribe(Collections.singleton(testTopic));
+
+            int i = 0;
+            while (i < totalMsgs) {
+                ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+                for (ConsumerRecord<Integer, String> record : records) {
+                    Integer key = record.key();
+                    assertEquals(messageStrPrefix + key.toString(), record.value());
+                    i++;
+                }
+            }
+            assertEquals(i, totalMsgs);
+
+            // no more records
+            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofMillis(200));
+            assertTrue(records.isEmpty());
+
+            // Make sure previous code is complete.
+            isStageOneComplete = true;
+
+            // User can't produce, because don't have produce action.
+            @Cleanup
+            KProducer kProducer = new KProducer(testTopic, false, "localhost", getKafkaBrokerPort(),
+                    TENANT + "/" + NAMESPACE, "token:" + userToken);
+            kProducer.getProducer().send(new ProducerRecord<>(testTopic, 0, "")).get();
+            fail("expected TopicAuthorizationException");
+        } catch (Exception e) {
+            assertTrue(e.getMessage().contains("TopicAuthorizationException"));
+        } finally {
+            // Cleanup
+            admin.topics().deletePartitionedTopic(testTopic);
+            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
+            admin.tenants().deleteTenant(newTenant);
+        }
+        assertTrue(isStageOneComplete);
+    }
 
 }

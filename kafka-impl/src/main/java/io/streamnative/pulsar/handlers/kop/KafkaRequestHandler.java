@@ -881,63 +881,79 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     errors -> addPartitionResponse.accept(topicPartition, new PartitionResponse(errors));
             final Consumer<Throwable> exceptionConsumer =
                     e -> addPartitionResponse.accept(topicPartition, new PartitionResponse(Errors.forException(e)));
-
             final String fullPartitionName = KopTopic.toString(topicPartition);
 
-            // check KOP inner topic
-            if (isOffsetTopic(fullPartitionName) || isTransactionTopic(fullPartitionName)) {
-                log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
-                        ctx.channel(), produceHar.getHeader(), topicPartition);
-                errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
-                return;
-            }
+            authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
+                    .whenComplete((isAuthorized, ex) -> {
+                        if (ex != null) {
+                            log.error("Write topic authorize failed, topic - {}. {}",
+                                    fullPartitionName, ex.getMessage());
+                            errorsConsumer.accept(Errors.TOPIC_AUTHORIZATION_FAILED);
+                            return;
+                        }
+                        if (!isAuthorized) {
+                            errorsConsumer.accept(Errors.TOPIC_AUTHORIZATION_FAILED);
+                            return;
+                        }
 
-            try {
-                final long beforeRecordsProcess = MathUtils.nowInNano();
-                final MemoryRecords validRecords =
-                        validateRecords(produceHar.getHeader().apiVersion(), topicPartition, records);
-                final int numMessages = EntryFormatter.parseNumMessages(validRecords);
-                final ByteBuf byteBuf = entryFormatter.encode(validRecords, numMessages);
-                requestStats.getProduceEncodeStats().registerSuccessfulEvent(
-                        MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
-                startSendOperationForThrottling(byteBuf.readableBytes());
+                        // check KOP inner topic
+                        if (isOffsetTopic(fullPartitionName) || isTransactionTopic(fullPartitionName)) {
+                            log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
+                                    ctx.channel(), produceHar.getHeader(), topicPartition);
+                            errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
+                            return;
+                        }
 
-                if (log.isDebugEnabled()) {
-                    log.debug("[{}] Request {}: Produce messages for topic {} partition {}, request size: {} ",
-                            ctx.channel(), produceHar.getHeader(),
-                            topicPartition.topic(), topicPartition.partition(), numPartitions);
-                }
+                        try {
+                            final long beforeRecordsProcess = MathUtils.nowInNano();
+                            final MemoryRecords validRecords =
+                                    validateRecords(produceHar.getHeader().apiVersion(), topicPartition, records);
+                            final int numMessages = EntryFormatter.parseNumMessages(validRecords);
+                            final ByteBuf byteBuf = entryFormatter.encode(validRecords, numMessages);
+                            requestStats.getProduceEncodeStats().registerSuccessfulEvent(
+                                    MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
+                            startSendOperationForThrottling(byteBuf.readableBytes());
 
-                final CompletableFuture<PersistentTopic> topicFuture = topicManager.getTopic(fullPartitionName);
-                if (topicFuture.isCompletedExceptionally()) {
-                    topicFuture.exceptionally(e -> {
-                        exceptionConsumer.accept(e);
-                        return null;
+                            if (log.isDebugEnabled()) {
+                                log.debug("[{}] Request {}: Produce messages for topic {} partition {}, "
+                                                + "request size: {} ", ctx.channel(), produceHar.getHeader(),
+                                        topicPartition.topic(), topicPartition.partition(), numPartitions);
+                            }
+
+                            final CompletableFuture<PersistentTopic> topicFuture =
+                                    topicManager.getTopic(fullPartitionName);
+                            if (topicFuture.isCompletedExceptionally()) {
+                                topicFuture.exceptionally(e -> {
+                                    exceptionConsumer.accept(e);
+                                    return null;
+                                });
+                                return;
+                            }
+                            if (topicFuture.isDone() && topicFuture.getNow(null) == null) {
+                                errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
+                                return;
+                            }
+
+                            final Consumer<PersistentTopic> persistentTopicConsumer = persistentTopic -> {
+                                publishMessages(persistentTopic, byteBuf, numMessages, validRecords, topicPartition,
+                                        offsetConsumer, errorsConsumer);
+                            };
+
+                            if (topicFuture.isDone()) {
+                                persistentTopicConsumer.accept(topicFuture.getNow(null));
+                            } else {
+                                // topic is not available now
+                                pendingTopicFuturesMap
+                                        .computeIfAbsent(topicPartition, ignored ->
+                                                new PendingTopicFutures(requestStats))
+                                        .addListener(topicFuture, persistentTopicConsumer, exceptionConsumer);
+                            }
+                        } catch (Exception e) {
+                            log.error("[{}] Failed to handle produce request for {}",
+                                    ctx.channel(), topicPartition, e);
+                            exceptionConsumer.accept(e);
+                        }
                     });
-                    return;
-                }
-                if (topicFuture.isDone() && topicFuture.getNow(null) == null) {
-                    errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
-                    return;
-                }
-
-                final Consumer<PersistentTopic> persistentTopicConsumer = persistentTopic -> {
-                    publishMessages(persistentTopic, byteBuf, numMessages, validRecords, topicPartition,
-                            offsetConsumer, errorsConsumer);
-                };
-
-                if (topicFuture.isDone()) {
-                    persistentTopicConsumer.accept(topicFuture.getNow(null));
-                } else {
-                    // topic is not available now
-                    pendingTopicFuturesMap
-                            .computeIfAbsent(topicPartition, ignored -> new PendingTopicFutures(requestStats))
-                            .addListener(topicFuture, persistentTopicConsumer, exceptionConsumer);
-                }
-            } catch (Exception e) {
-                log.error("[{}] Failed to handle produce request for {}", ctx.channel(), topicPartition, e);
-                exceptionConsumer.accept(e);
-            }
         });
         // delay produce
         if (timeoutMs <= 0) {

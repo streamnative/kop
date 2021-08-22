@@ -32,17 +32,24 @@ import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import javax.crypto.SecretKey;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.record.CompressionType;
+import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
+import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
@@ -58,6 +65,7 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
+import org.testng.collections.Maps;
 
 /**
  * Unit test for {@link KafkaRequestHandler} with authorization enabled.
@@ -241,5 +249,29 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         });
     }
 
+    @Test
+    public void testHandleProduceRequest() throws ExecutionException, InterruptedException {
+        KafkaRequestHandler spyHandler = spy(handler);
+        final RequestHeader header = new RequestHeader(ApiKeys.PRODUCE, (short) 1, "client", 0);
+        final ProduceRequest request = createProduceRequest(TOPIC);
+        final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+
+        spyHandler.handleProduceRequest(new KafkaCommandDecoder.KafkaHeaderAndRequest(
+                header,
+                request,
+                PulsarByteBufAllocator.DEFAULT.heapBuffer(),
+                null), responseFuture);
+        AbstractResponse response = responseFuture.get();
+        assertEquals((int) response.errorCounts().get(Errors.TOPIC_AUTHORIZATION_FAILED), 1);
+    }
+
+
+    private ProduceRequest createProduceRequest(String topic) {
+        Map<TopicPartition, MemoryRecords> partitionRecords = new HashMap<>();
+        TopicPartition topicPartition = new TopicPartition(topic, 0);
+        partitionRecords.put(topicPartition,
+                MemoryRecords.withRecords(CompressionType.NONE, new SimpleRecord("test".getBytes())));
+        return ProduceRequest.Builder.forCurrentMagic((short) 1, 5000, partitionRecords).build();
+    }
 
 }
