@@ -105,6 +105,7 @@ public class KafkaEntryFormatter implements EntryFormatter {
                     final DecodeResult decodeResult =
                             ByteBufUtils.decodePulsarEntryToKafkaRecords(metadata, byteBuf, startOffset, magic);
                     final ByteBuf kafkaBuffer = decodeResult.getOrCreateByteBuf();
+                    orderedByteBuf.add(kafkaBuffer);
                     if (!optionalByteBufs.isPresent()) {
                         optionalByteBufs = Optional.of(new ArrayList<>());
                     }
