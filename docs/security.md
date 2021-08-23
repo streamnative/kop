@@ -28,11 +28,10 @@ If you want to enable the authentication feature for KoP using the `PLAIN` mecha
 
     For the `PLAIN` mechanism, the Kafka authentication is forwarded to the [JWT authentication](https://pulsar.apache.org/docs/en/security-jwt/) of Pulsar, so you need to configure the JWT authentication and set the following properties in the `conf/broker.conf` or `conf/standalone.conf` file.
 
-    (1) Enable authentication and authorization for the Pulsar broker.
+    (1) Enable authentication for the Pulsar broker.
 
     ```properties
     authenticationEnabled=true
-    authorizationEnabled=true
     authenticationProviders=org.apache.pulsar.broker.authentication.AuthenticationProviderToken
     ```
 
@@ -80,8 +79,8 @@ If you want to enable the authentication feature for KoP using the `PLAIN` mecha
 
     Property | Description | Example value
     |---|---|---
-    `username` | `username` of Kafka JAAS is the `tenant/namespace`, where Kafka’s topics are stored in Pulsar.|`public/default`
-    `password`|`password` must be your token authentication parameters from Pulsar.<br><br>The token can be created by Pulsar token tools. The role is the `subject` for the token. It is embedded in the created token and the broker can get `role` by parsing this token.<br><br> **Note**: make sure the role of `password` has the permission to produce or consume the namespace of `username`. For more information, see [Authorization](http://pulsar.apache.org/docs/en/security-jwt/#authorization).|`token:xxx`
+    `username` | `username` of Kafka JAAS is the `tenant/namespace`, where Kafka’s topics are stored in Pulsar. <br><br> **Note** In KoP 2.9.0 or above, the username is only used to be compatible with version history, has‘t actual function. |`public/default`
+    `password`|`password` must be your token authentication parameters from Pulsar.<br><br>The token can be created by Pulsar token tools. The role is the `subject` for the token. It is embedded in the created token and the broker can get `role` by parsing this token.|`token:xxx`
 
     ```properties
     security.protocol=SASL_PLAINTEXT  # or security.protocol=SASL_SSL if SSL connection is used
@@ -110,7 +109,6 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
 
     ```properties
     authenticationEnabled=true
-    authorizationEnabled=true
     authenticationProviders=org.apache.pulsar.broker.authentication.AuthenticationProviderToken
     superUserRoles=<super-user-roles>
     brokerClientAuthenticationPlugin=org.apache.pulsar.client.impl.auth.oauth2.AuthenticationOAuth2
@@ -254,6 +252,39 @@ sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginMo
    oauth.credentials.url="file:///path/to/credentials_file.json"\
    oauth.audience="https://broker.example.com";
 ```
+
+## Authorization
+To enable authorization on KoP, please make sure the authentication is enabled.
+
+**Note**: For more information, see [Authorization](http://pulsar.apache.org/docs/en/security-jwt/#authorization).
+
+1. Enable authorization and assign superusers for the Pulsar broker.
+
+   ```properties
+   authorizationEnabled=true
+   ```
+   
+2. Generate JWT tokens.
+
+    A token is the credential associated with a user. The association is done through the "`principal`" or "`role`". In the case of JWT tokens, this field is typically referred as `subject`, though they are exactly the same concept.
+    Then, you need to use this command to require the generated token to have a `subject` field set.
+
+    ```shell
+    $ bin/pulsar tokens create --secret-key file:///path/to/secret.key \
+         --subject <user-role>
+    ```
+   This command prints the token string on stdout.
+
+3. Grant permission to specific role.
+
+   The token itself does not have any permission associated. The authorization engine determines whether the token should have permissions or not. Once you have created the token, you can grant permission for this token to do certain actions. <br/>The following is an example.
+      
+   ```shell
+   $ bin/pulsar-admin --auth-plugin "org.apache.pulsar.client.impl.auth.AuthenticationToken" --auth-params "token:<token-of-super-user-role>" \
+            namespaces grant-permission <tenant>/<namespace> \
+            --role <user-role> \
+            --actions produce,consume
+   ```
 
 ## SSL connection
 
