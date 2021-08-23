@@ -67,7 +67,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -1038,48 +1037,72 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkState(groupCoordinator != null,
             "Group Coordinator not started");
 
-        Map<TopicPartition, OffsetFetchResponse.PartitionData> unknownPartitions = new HashMap<>();
+        CompletableFuture<List<TopicPartition>> authorizeFuture = new CompletableFuture<>();
 
         // replace
         Map<TopicPartition, TopicPartition> replacingIndex = new HashMap<>();
-        KeyValue<Errors, Map<TopicPartition, OffsetFetchResponse.PartitionData>> keyValue =
-            groupCoordinator.handleFetchOffsets(
-                    request.groupId(),
-                    request.partitions() == null ? Optional.ofNullable(request.partitions()) : Optional.of(
-                            request.partitions()
-                            .stream()
-                            .map(tp -> {
-                                try {
-                                    TopicPartition newTopicPartition = new TopicPartition(
-                                            new KopTopic(tp.topic()).getFullName(), tp.partition());
-                                    replacingIndex.put(newTopicPartition, tp);
-                                    return newTopicPartition;
-                                } catch (KoPTopicException e) {
-                                    log.warn("Invalid topic name: {}", tp.topic(), e);
-                                    unknownPartitions.put(tp, OffsetFetchResponse.UNKNOWN_PARTITION);
-                                    return null;
-                                }
-                            })
-                            .filter(Objects::nonNull)
-                            .collect(Collectors.toList()))
-            );
 
-        if (log.isDebugEnabled()) {
-            log.debug("OFFSET_FETCH Unknown partitions: {}", unknownPartitions);
+        List<TopicPartition> authorizedPartitions = new ArrayList<>();
+        Map<TopicPartition, OffsetFetchResponse.PartitionData> unauthorizedPartitionData = new HashMap<>();
+
+        if (request.partitions() == null || request.partitions().isEmpty()) {
+            authorizeFuture.complete(null);
+        } else {
+            AtomicInteger partitionCount = new AtomicInteger(request.partitions().size());
+
+            Runnable completeOneAuthorization = () -> {
+                if (partitionCount.decrementAndGet() == 0) {
+                    authorizeFuture.complete(authorizedPartitions);
+                }
+            };
+            request.partitions().forEach(tp -> {
+                String fullName =  new KopTopic(tp.topic()).getFullName();
+                authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullName))
+                        .whenComplete((isAuthorized, ex) -> {
+                            if (ex != null) {
+                                log.error("Describe topic authorize failed, topic - {}. {}",
+                                        fullName, ex.getMessage());
+                                unauthorizedPartitionData.put(tp, OffsetFetchResponse.UNAUTHORIZED_PARTITION);
+                                completeOneAuthorization.run();
+                                return;
+                            }
+                            if (!isAuthorized) {
+                                unauthorizedPartitionData.put(tp, OffsetFetchResponse.UNAUTHORIZED_PARTITION);
+                                completeOneAuthorization.run();
+                                return;
+                            }
+                            TopicPartition newTopicPartition = new TopicPartition(
+                                    fullName, tp.partition());
+                            replacingIndex.put(newTopicPartition, tp);
+                            authorizedPartitions.add(newTopicPartition);
+                            completeOneAuthorization.run();
+                        });
+            });
         }
 
-        if (log.isTraceEnabled()) {
-            StringBuffer traceInfo = new StringBuffer();
-            replacingIndex.forEach((inner, outer) ->
-                    traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
-            log.trace("OFFSET_FETCH TopicPartition relations: \n{}", traceInfo.toString());
-        }
+        authorizeFuture.whenComplete((partitionList, ex) -> {
+            KeyValue<Errors, Map<TopicPartition, OffsetFetchResponse.PartitionData>> keyValue =
+                    groupCoordinator.handleFetchOffsets(
+                            request.groupId(),
+                            Optional.ofNullable(partitionList)
+                    );
+            if (log.isDebugEnabled()) {
+                log.debug("OFFSET_FETCH Unauthorized partitions: {}", unauthorizedPartitionData);
+            }
 
-        // recover to original topic name
-        replaceTopicPartition(keyValue.getValue(), replacingIndex);
-        keyValue.getValue().putAll(unknownPartitions);
+            if (log.isTraceEnabled()) {
+                StringBuffer traceInfo = new StringBuffer();
+                replacingIndex.forEach((inner, outer) ->
+                        traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
+                log.trace("OFFSET_FETCH TopicPartition relations: \n{}", traceInfo.toString());
+            }
 
-        resultFuture.complete(new OffsetFetchResponse(keyValue.getKey(), keyValue.getValue()));
+            // recover to original topic name
+            replaceTopicPartition(keyValue.getValue(), replacingIndex);
+            keyValue.getValue().putAll(unauthorizedPartitionData);
+
+            resultFuture.complete(new OffsetFetchResponse(keyValue.getKey(), keyValue.getValue()));
+        });
     }
 
     private CompletableFuture<ListOffsetResponse.PartitionData>

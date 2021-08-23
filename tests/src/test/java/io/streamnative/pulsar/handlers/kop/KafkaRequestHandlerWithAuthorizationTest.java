@@ -33,6 +33,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -62,6 +63,8 @@ import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
+import org.apache.kafka.common.requests.OffsetFetchRequest;
+import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.pulsar.broker.ServiceConfiguration;
@@ -69,6 +72,7 @@ import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
@@ -361,6 +365,72 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         AbstractResponse response = responseFuture.get();
         ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
         assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.TOPIC_AUTHORIZATION_FAILED);
+    }
+
+
+    @Test(timeOut = 20000)
+    public void testHandleOffsetFetchRequestAuthorizationSuccess()
+            throws PulsarAdminException, ExecutionException, InterruptedException {
+        KafkaRequestHandler spyHandler = spy(handler);
+        String topicName = "persistent://" + TENANT + "/" + NAMESPACE + "/"
+                + "testHandleOffsetFetchRequestAuthorizationSuccess";
+        String groupId = "DemoKafkaOnPulsarConsumer";
+
+        // create partitioned topic.
+        admin.topics().createPartitionedTopic(topicName, 1);
+        TopicPartition tp = new TopicPartition(topicName, 0);
+        doReturn(CompletableFuture.completedFuture(true))
+                .when(spyHandler)
+                .authorize(eq(AclOperation.DESCRIBE),
+                        eq(Resource.of(ResourceType.TOPIC, new KopTopic(tp.topic()).getFullName()))
+                );
+        OffsetFetchRequest.Builder builder =
+                new OffsetFetchRequest.Builder(groupId, Collections.singletonList(tp));
+
+        KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+
+        spyHandler.handleOffsetFetchRequest(request, responseFuture);
+
+        AbstractResponse response = responseFuture.get();
+
+        assertTrue(response instanceof OffsetFetchResponse);
+        OffsetFetchResponse offsetFetchResponse = (OffsetFetchResponse) response;
+        assertEquals(offsetFetchResponse.responseData().size(), 1);
+        assertEquals(offsetFetchResponse.error(), Errors.NONE);
+        offsetFetchResponse.responseData().forEach((topicPartition, partitionData) -> {
+            assertEquals(partitionData.error, Errors.NONE);
+        });
+    }
+
+    @Test(timeOut = 20000)
+    public void testHandleOffsetFetchRequestAuthorizationFailed()
+            throws PulsarAdminException, ExecutionException, InterruptedException {
+        KafkaRequestHandler spyHandler = spy(handler);
+        String topicName = "persistent://" + TENANT + "/" + NAMESPACE + "/"
+                + "testHandleOffsetFetchRequestAuthorizationFailed";
+        String groupId = "DemoKafkaOnPulsarConsumer";
+
+        // create partitioned topic.
+        admin.topics().createPartitionedTopic(topicName, 1);
+        TopicPartition tp = new TopicPartition(topicName, 0);
+        OffsetFetchRequest.Builder builder =
+                new OffsetFetchRequest.Builder(groupId, Collections.singletonList(tp));
+
+        KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+
+        spyHandler.handleOffsetFetchRequest(request, responseFuture);
+
+        AbstractResponse response = responseFuture.get();
+
+        assertTrue(response instanceof OffsetFetchResponse);
+        OffsetFetchResponse offsetFetchResponse = (OffsetFetchResponse) response;
+        assertEquals(offsetFetchResponse.responseData().size(), 1);
+        assertEquals(offsetFetchResponse.error(), Errors.NONE);
+        offsetFetchResponse.responseData().forEach((topicPartition, partitionData) -> {
+            assertEquals(partitionData.error, Errors.TOPIC_AUTHORIZATION_FAILED);
+        });
     }
 
     KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
