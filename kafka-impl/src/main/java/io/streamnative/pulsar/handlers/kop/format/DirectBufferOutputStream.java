@@ -57,8 +57,9 @@ public class DirectBufferOutputStream extends ByteBufferOutputStream {
 
     @Override
     public ByteBuffer buffer() {
-        // When MemoryRecordsBuilder call buffer() method, it treats this ByteBuffer as a buffer that has only been
-        // written. In this case, the position is the same with the limit.
+        // When this method is called, the internal NIO ByteBuffer should be treated as a buffer that has only been
+        // written, i.e. only `ByteBuffer#putXXX()` methods are called. In this case, the position should be the same
+        // with the limit because the caller side will usually call `ByteBuffer#flip()` to reset position and limit.
         final ByteBuffer byteBuffer = byteBuf.nioBuffer();
         byteBuffer.position(byteBuffer.limit());
         return byteBuffer;
