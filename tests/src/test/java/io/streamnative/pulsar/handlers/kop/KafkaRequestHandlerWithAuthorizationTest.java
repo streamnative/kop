@@ -292,18 +292,17 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         String topicName = "persistent://" + TENANT + "/" + NAMESPACE + "/"
                 + "testHandleListOffsetRequestAuthorizationSuccess";
 
+        // Mock all authorize call
         doReturn(CompletableFuture.completedFuture(true))
                 .when(spyHandler)
                 .authorize(eq(AclOperation.DESCRIBE),
                         eq(Resource.of(ResourceType.TOPIC, TopicName.get(topicName).getPartition(0).toString()))
                 );
-        // create partitioned topic.
+
+        // Create partitioned topic.
         admin.topics().createPartitionedTopic(topicName, 1);
         TopicPartition tp = new TopicPartition(topicName, 0);
 
-        // 1. prepare topic:
-        //    use kafka producer to produce 10 messages.
-        //    use pulsar consumer to get message offset.
         @Cleanup
         KProducer kProducer = new KProducer(topicName,
                 false,
