@@ -320,7 +320,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
             // Ensure can consume message.
             KConsumer kConsumer = new KConsumer(testTopic, "localhost", getKafkaBrokerPort(), false,
-                    TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
+                    newTenant + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
             kConsumer.getConsumer().subscribe(Collections.singleton(testTopic));
 
             int i = 0;
@@ -356,6 +356,49 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             admin.tenants().deleteTenant(newTenant);
         }
         assertTrue(isStageOneComplete);
+    }
+
+
+    @Test
+    void testConsumeFailed() throws PulsarAdminException {
+        String newTenant = "testConsumeFailed";
+        String testTopic = "persistent://" + newTenant + "/" + NAMESPACE + "/topic1";
+        boolean isProduceComplete = false;
+        try {
+            admin.tenants().createTenant(newTenant,
+                    TenantInfo.builder()
+                            .adminRoles(Collections.singleton(ADMIN_USER))
+                            .allowedClusters(Collections.singleton(configClusterName))
+                            .build());
+            admin.namespaces().createNamespace(newTenant + "/" + NAMESPACE);
+            admin.namespaces().grantPermissionOnNamespace(newTenant + "/" + NAMESPACE, SIMPLE_USER,
+                    Sets.newHashSet(AuthAction.produce));
+            admin.topics().createPartitionedTopic(testTopic, 1);
+
+            // SIMPLE_USER can produce
+            @Cleanup
+            KProducer adminProducer = new KProducer(testTopic, false, "localhost", getKafkaBrokerPort(),
+                    newTenant + "/" + NAMESPACE, "token:" + userToken);
+            adminProducer.getProducer().send(new ProducerRecord<>(testTopic, 0, "message")).get();
+            isProduceComplete = true;
+
+            // consume should be failed.
+            KConsumer kConsumer = new KConsumer(testTopic, "localhost", getKafkaBrokerPort(), false,
+                    newTenant + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
+            kConsumer.getConsumer().subscribe(Collections.singleton(testTopic));
+
+            kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+
+            fail("expected TopicAuthorizationException");
+        } catch (Exception e) {
+            assertTrue(e.toString().contains("TopicAuthorizationException"));
+        } finally {
+            // Cleanup
+            admin.topics().deletePartitionedTopic(testTopic);
+            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
+            admin.tenants().deleteTenant(newTenant);
+        }
+        assertTrue(isProduceComplete);
     }
 
 }

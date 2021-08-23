@@ -378,7 +378,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         // create partitioned topic.
         admin.topics().createPartitionedTopic(topicName, 1);
-        TopicPartition tp = new TopicPartition(topicName, 0);
+        TopicPartition tp = new TopicPartition(new KopTopic(topicName).getFullName(), 0);
         doReturn(CompletableFuture.completedFuture(true))
                 .when(spyHandler)
                 .authorize(eq(AclOperation.DESCRIBE),
@@ -413,7 +413,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         // create partitioned topic.
         admin.topics().createPartitionedTopic(topicName, 1);
-        TopicPartition tp = new TopicPartition(topicName, 0);
+        TopicPartition tp = new TopicPartition(new KopTopic(topicName).getFullName(), 0);
         OffsetFetchRequest.Builder builder =
                 new OffsetFetchRequest.Builder(groupId, Collections.singletonList(tp));
 
