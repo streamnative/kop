@@ -40,6 +40,7 @@ If you want to enable the authentication feature for KoP using the `PLAIN` mecha
     ```properties
     brokerClientAuthenticationPlugin=org.apache.pulsar.client.impl.auth.AuthenticationToken
     brokerClientAuthenticationParameters=token:<token-of-super-user-role>
+    superUserRoles=<super-user-roles>
     ```
 
     (3) Specify the key.
@@ -108,7 +109,6 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
 
     ```properties
     authenticationEnabled=true
-    authorizationEnabled=true
     authenticationProviders=org.apache.pulsar.broker.authentication.AuthenticationProviderToken
     superUserRoles=<super-user-roles>
     brokerClientAuthenticationPlugin=org.apache.pulsar.client.impl.auth.oauth2.AuthenticationOAuth2
@@ -264,7 +264,6 @@ To enable authorization on KoP, please make sure the authentication is enabled.
 
    ```properties
    authorizationEnabled=true
-   superUserRoles=<super-user-roles>
    ```
    (2). Generate JWT tokens.
 
@@ -279,10 +278,11 @@ To enable authorization on KoP, please make sure the authentication is enabled.
 
    (3). Grant permission to specific role.
 
-   The token itself does not have any permission associated. The authorization engine determines whether the token should have permissions or not. Once you have created the token, you can grant permission for this token to do certain actions. The following is an example to grand `produce` and `consume` permission to role `test-user`.
+   The token itself does not have any permission associated. The authorization engine determines whether the token should have permissions or not. Once you have created the token, you can grant permission for this token to do certain actions. <br/>The following is an example.
    
    ```shell
-   $ bin/pulsar-admin namespaces grant-permission my-tenant/my-namespace \
+   $ bin/pulsar-admin --auth-plugin "org.apache.pulsar.client.impl.auth.AuthenticationToken" --auth-params "token:<token-of-super-user-role>" \
+			namespaces grant-permission <tenant>/<namespace> \
             --role <user-role> \
             --actions produce,consume
    ```
