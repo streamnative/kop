@@ -285,7 +285,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     @Test(timeOut = 20000)
     public void testHandleListOffsetRequestAuthorizationSuccess() throws Exception {
         KafkaRequestHandler spyHandler = spy(handler);
-        String topicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + "testHandleListOffsetRequestAuthorizationSuccess";
+        String topicName = "persistent://" + TENANT + "/" + NAMESPACE + "/"
+                + "testHandleListOffsetRequestAuthorizationSuccess";
 
         doReturn(CompletableFuture.completedFuture(true))
                 .when(spyHandler)
@@ -340,7 +341,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     @Test(timeOut = 20000)
     public void testHandleListOffsetRequestAuthorizationFailed() throws Exception {
         KafkaRequestHandler spyHandler = spy(handler);
-        String topicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + "testHandleListOffsetRequestAuthorizationFailed";
+        String topicName = "persistent://" + TENANT + "/" + NAMESPACE + "/"
+                + "testHandleListOffsetRequestAuthorizationFailed";
 
         // create partitioned topic.
         admin.topics().createPartitionedTopic(topicName, 1);
