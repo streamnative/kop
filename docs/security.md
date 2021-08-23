@@ -258,31 +258,30 @@ To enable authorization on KoP, please make sure the authentication is enabled.
 
 **Note**: For more information, see [Authorization](http://pulsar.apache.org/docs/en/security-jwt/#authorization).
 
-1. Enable authorization on Pulsar broker.
-
-   (1). Enable authorization and assign superusers for the Pulsar broker.
+1. Enable authorization and assign superusers for the Pulsar broker.
 
    ```properties
    authorizationEnabled=true
    ```
-   (2). Generate JWT tokens.
+   
+2. Generate JWT tokens.
 
-   A token is the credential associated with a user. The association is done through the "`principal`" or "`role`". In the case of JWT tokens, this field is typically referred as `subject`, though they are exactly the same concept.
-   Then, you need to use this command to require the generated token to have a `subject` field set.
+    A token is the credential associated with a user. The association is done through the "`principal`" or "`role`". In the case of JWT tokens, this field is typically referred as `subject`, though they are exactly the same concept.
+    Then, you need to use this command to require the generated token to have a `subject` field set.
 
-   ```shell
-   $ bin/pulsar tokens create --secret-key file:///path/to/secret.key \
-            --subject <user-role>
-   ```
+    ```shell
+    $ bin/pulsar tokens create --secret-key file:///path/to/secret.key \
+         --subject <user-role>
+    ```
    This command prints the token string on stdout.
 
-   (3). Grant permission to specific role.
+3. Grant permission to specific role.
 
    The token itself does not have any permission associated. The authorization engine determines whether the token should have permissions or not. Once you have created the token, you can grant permission for this token to do certain actions. <br/>The following is an example.
-   
+      
    ```shell
    $ bin/pulsar-admin --auth-plugin "org.apache.pulsar.client.impl.auth.AuthenticationToken" --auth-params "token:<token-of-super-user-role>" \
-			namespaces grant-permission <tenant>/<namespace> \
+            namespaces grant-permission <tenant>/<namespace> \
             --role <user-role> \
             --actions produce,consume
    ```
