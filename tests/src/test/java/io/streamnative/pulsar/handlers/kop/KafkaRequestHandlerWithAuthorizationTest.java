@@ -322,7 +322,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
             log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
         }
 
-        // 2. real test, for ListOffset request verify Earliest get earliest
+        // Test for ListOffset request verify Earliest get earliest
         Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
         targetTimes.put(tp, ListOffsetRequest.EARLIEST_TIMESTAMP);
 

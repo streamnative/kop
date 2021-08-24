@@ -1273,25 +1273,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             )));
                             return;
                         }
-                        if (isAuthorized) {
-                            fetchOffsetForTimestamp(fullPartitionName, times, false)
-                                    .whenComplete((data, e) -> {
-                                        if (e != null) {
-                                            future.complete(Pair.of(topic, new ListOffsetResponse
-                                                    .PartitionData(
-                                                    Errors.UNKNOWN_SERVER_ERROR,
-                                                    Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET))));
-                                        } else {
-                                            future.complete(Pair.of(topic, data));
-                                        }
-                                    });
+                        if (!isAuthorized) {
+                            future.complete(Pair.of(topic, new ListOffsetResponse
+                                    .PartitionData(
+                                    Errors.TOPIC_AUTHORIZATION_FAILED,
+                                    Collections.emptyList()
+                            )));
                             return;
                         }
-                        future.complete(Pair.of(topic, new ListOffsetResponse
-                                .PartitionData(
-                                Errors.TOPIC_AUTHORIZATION_FAILED,
-                                Collections.emptyList()
-                        )));
+                        fetchOffsetForTimestamp(fullPartitionName, times, false)
+                                .whenComplete((data, e) -> {
+                                    if (e != null) {
+                                        future.complete(Pair.of(topic, new ListOffsetResponse
+                                                .PartitionData(
+                                                Errors.UNKNOWN_SERVER_ERROR,
+                                                Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET))));
+                                    } else {
+                                        future.complete(Pair.of(topic, data));
+                                    }
+                                });
                     });
             allFutures.add(future);
         });
@@ -1340,35 +1340,35 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             )));
                             return;
                         }
-                        if (isAuthorized) {
-                            // num_num_offsets > 1 is not handled for now, returning an error
-                            if (value.maxNumOffsets > 1) {
-                                log.warn("request is asking for multiples offsets for {}, not supported for now",
-                                        fullPartitionName);
-                                future.complete(Pair.of(topic, new ListOffsetResponse
-                                        .PartitionData(
-                                        Errors.UNKNOWN_SERVER_ERROR,
-                                        Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET))));
-                                return;
-                            }
-                            fetchOffsetForTimestamp(fullPartitionName, times, true)
-                                    .whenComplete((data, e) -> {
-                                        if (e != null) {
-                                            future.complete(Pair.of(topic, new ListOffsetResponse
-                                                    .PartitionData(
-                                                    Errors.UNKNOWN_SERVER_ERROR,
-                                                    Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET))));
-                                        } else {
-                                            future.complete(Pair.of(topic, data));
-                                        }
-                                    });
+                        if (!isAuthorized) {
+                            future.complete(Pair.of(topic, new ListOffsetResponse
+                                    .PartitionData(
+                                    Errors.TOPIC_AUTHORIZATION_FAILED,
+                                    Collections.emptyList()
+                            )));
                             return;
                         }
-                        future.complete(Pair.of(topic, new ListOffsetResponse
-                                .PartitionData(
-                                Errors.TOPIC_AUTHORIZATION_FAILED,
-                                Collections.emptyList()
-                        )));
+                        // num_num_offsets > 1 is not handled for now, returning an error
+                        if (value.maxNumOffsets > 1) {
+                            log.warn("request is asking for multiples offsets for {}, not supported for now",
+                                    fullPartitionName);
+                            future.complete(Pair.of(topic, new ListOffsetResponse
+                                    .PartitionData(
+                                    Errors.UNKNOWN_SERVER_ERROR,
+                                    Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET))));
+                            return;
+                        }
+                        fetchOffsetForTimestamp(fullPartitionName, times, true)
+                                .whenComplete((data, e) -> {
+                                    if (e != null) {
+                                        future.complete(Pair.of(topic, new ListOffsetResponse
+                                                .PartitionData(
+                                                Errors.UNKNOWN_SERVER_ERROR,
+                                                Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET))));
+                                    } else {
+                                        future.complete(Pair.of(topic, data));
+                                    }
+                                });
                     });
             allFutures.add(future);
         });

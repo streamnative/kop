@@ -365,6 +365,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         String testTopic = "persistent://" + newTenant + "/" + NAMESPACE + "/topic1";
         boolean isProduceComplete = false;
         try {
+            // Create new tenant, namespace and topic
             admin.tenants().createTenant(newTenant,
                     TenantInfo.builder()
                             .adminRoles(Collections.singleton(ADMIN_USER))
@@ -380,9 +381,11 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             KProducer adminProducer = new KProducer(testTopic, false, "localhost", getKafkaBrokerPort(),
                     newTenant + "/" + NAMESPACE, "token:" + userToken);
             adminProducer.getProducer().send(new ProducerRecord<>(testTopic, 0, "message")).get();
+
+            // Mark produce complete
             isProduceComplete = true;
 
-            // consume should be failed.
+            // Consume should be failed.
             KConsumer kConsumer = new KConsumer(testTopic, "localhost", getKafkaBrokerPort(), false,
                     newTenant + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
             kConsumer.getConsumer().subscribe(Collections.singleton(testTopic));
@@ -398,6 +401,8 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
             admin.tenants().deleteTenant(newTenant);
         }
+
+        // Verify produce is completed
         assertTrue(isProduceComplete);
     }
 
