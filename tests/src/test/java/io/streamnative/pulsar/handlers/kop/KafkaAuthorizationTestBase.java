@@ -319,8 +319,9 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             }
 
             // Ensure can consume message.
+            @Cleanup
             KConsumer kConsumer = new KConsumer(testTopic, "localhost", getKafkaBrokerPort(), false,
-                    newTenant + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
+                    newTenant + "/" + NAMESPACE, "token:" + adminToken, "DemoKafkaOnPulsarConsumer");
             kConsumer.getConsumer().subscribe(Collections.singleton(testTopic));
 
             int i = 0;
@@ -344,7 +345,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             // User can't produce, because don't have produce action.
             @Cleanup
             KProducer kProducer = new KProducer(testTopic, false, "localhost", getKafkaBrokerPort(),
-                    TENANT + "/" + NAMESPACE, "token:" + userToken);
+                    newTenant + "/" + NAMESPACE, "token:" + userToken);
             kProducer.getProducer().send(new ProducerRecord<>(testTopic, 0, "")).get();
             fail("expected TopicAuthorizationException");
         } catch (Exception e) {
@@ -385,6 +386,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             isProduceComplete = true;
 
             // Consume should be failed.
+            @Cleanup
             KConsumer kConsumer = new KConsumer(testTopic, "localhost", getKafkaBrokerPort(), false,
                     newTenant + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
             kConsumer.getConsumer().subscribe(Collections.singleton(testTopic));
