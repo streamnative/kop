@@ -342,11 +342,6 @@ public class SaslAuthenticator {
                     });
                 }
             } catch (SaslException e) {
-                sendKafkaResponse(ctx,
-                        new RequestHeader(ApiKeys.SASL_HANDSHAKE, (short) 0, "", Integer.MAX_VALUE),
-                        null,
-                        new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()),
-                        null);
                 if (log.isDebugEnabled()) {
                     log.debug("Authenticate failed for SASL_HANDSHAKE v0 old client, reason {}",
                             e.getMessage());
