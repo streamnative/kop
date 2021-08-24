@@ -60,7 +60,6 @@ import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.AuthAction;
-import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
@@ -69,12 +68,13 @@ import org.testng.annotations.Test;
 @Slf4j
 public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
     private static final String SIMPLE_USER = "muggle_user";
-    private static final String TENANT = "SaslPlainTest";
+    private static final String TENANT = "public";
     private static final String ANOTHER_USER = "death_eater_user";
     private static final String ADMIN_USER = "admin_user";
-    private static final String NAMESPACE = "ns1";
+    private static final String NAMESPACE = "default";
     private static final String KAFKA_TOPIC = "topic1";
     private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/" + KAFKA_TOPIC;
+    private String adminToken;
     private String userToken;
     private String anotherToken;
     private File jaasConfigFile;
@@ -111,7 +111,7 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
         provider.initialize(authConf);
 
         userToken = AuthTokenUtils.createToken(secretKey, SIMPLE_USER, Optional.empty());
-        String adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
+        adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
         anotherToken = AuthTokenUtils.createToken(secretKey, ANOTHER_USER, Optional.empty());
 
         super.resetConfig();
@@ -134,15 +134,8 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
 
         super.internalSetup();
 
-        admin.tenants().createTenant(TENANT,
-                TenantInfo.builder()
-                        .adminRoles(Collections.singleton(ADMIN_USER))
-                        .allowedClusters(Collections.singleton(configClusterName))
-                        .build());
-        admin.namespaces().createNamespace(TENANT + "/" + NAMESPACE);
         admin.topics().createPartitionedTopic(TOPIC, 1);
-        admin
-                .namespaces().grantPermissionOnNamespace(TENANT + "/" + NAMESPACE, SIMPLE_USER,
+        admin.namespaces().grantPermissionOnNamespace(TENANT + "/" + NAMESPACE, SIMPLE_USER,
                 Sets.newHashSet(AuthAction.consume, AuthAction.produce));
     }
 
@@ -165,7 +158,7 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
         Configuration.setConfiguration(null);
     }
 
-    protected void writeJaasFile(String username, String password) throws IOException {
+    protected void writeJaasFile(String password) throws IOException {
         jaasConfigFile = File.createTempFile("jaas", ".conf");
         jaasConfigFile.deleteOnExit();
         System.setProperty(JaasUtils.JAVA_LOGIN_CONFIG_PARAM, jaasConfigFile.toString());
@@ -176,7 +169,7 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
         builder.append(' ');
         builder.append("username");
         builder.append('=');
-        builder.append(username);
+        builder.append("public/default");
         builder.append(' ');
         builder.append("password");
         builder.append('=');
@@ -186,10 +179,11 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
         Files.write(jaasConfigFile.toPath(), lines, StandardCharsets.UTF_8);
     }
 
-    @Test(timeOut = 40000)
-    void simpleProduceAndConsume() throws Exception {
+    @Test(timeOut = 62000)
+    void testKafkaProduceAndConsumeWithSaslPlain() throws Exception {
 
-        writeJaasFile(TENANT + "/" + NAMESPACE, "token:" + userToken);
+        // need java.security.auth.login.config for sasl/plain in kafka client 0.10.0.0
+        writeJaasFile("token:" + userToken);
 
         final List<String> keys = new ArrayList<>();
         final List<String> values = new ArrayList<>();
@@ -201,6 +195,7 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
                     .createProducer(producerConfigurationWithSaslPlain(version,
                             TENANT + "/" + NAMESPACE,
                             "token:" + userToken));
+
             // send a message that only contains value
             String value = "value-from-" + version.name() + offset;
             values.add("value-from-" + version.name() + offset);
@@ -278,13 +273,13 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
 
     @Test(timeOut = 20000)
     void badCredentialFail() throws Exception {
-        writeJaasFile(TENANT + "/" + NAMESPACE, "token:dsa");
+        writeJaasFile("token:dsa");
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
             try {
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(producerConfigurationWithSaslPlain(version,
                                 TENANT + "/" + NAMESPACE,
-                                "token:" + userToken));
+                                "token:dsa"));
                 producer.newContextBuilder(KAFKA_TOPIC, "").build().sendAsync().get();
                 fail("should have failed");
             } catch (Exception e) {
@@ -296,14 +291,14 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
     @Test(timeOut = 20000)
     void badUserFail() throws Exception {
 
-        writeJaasFile(TENANT + "/" + NAMESPACE, "token:" + anotherToken);
+        writeJaasFile("token:" + anotherToken);
 
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
             try {
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(producerConfigurationWithSaslPlain(version,
                                 TENANT + "/" + NAMESPACE,
-                                "token:" + userToken));
+                                "token:" + anotherToken));
                 producer.newContextBuilder(KAFKA_TOPIC, "").build().sendAsync().get();
                 fail("should have failed");
             } catch (Exception e) {
@@ -330,6 +325,7 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
                 producer.newContextBuilder(KAFKA_TOPIC, "hello").build().sendAsync().get();
                 fail("should have failed");
             } catch (Exception e) {
+                log.error("clientWithoutAuth222 {}", e.getMessage());
                 assertTrue(e.getCause() instanceof TimeoutException);
                 assertTrue(e.getMessage().contains("Failed to update metadata"));
             }
@@ -358,6 +354,7 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
                 .groupId("group-" + version.name())
                 .keyDeserializer(version.getStringDeserializer())
                 .valueDeserializer(version.getStringDeserializer())
+                .requestTimeoutMs(String.valueOf(10000))
                 .securityProtocol("SASL_PLAINTEXT")
                 .saslMechanism("PLAIN")
                 .userName(username)

@@ -40,6 +40,6 @@ public class ConsumerImpl<K, V> extends KafkaConsumer<K, V> implements Consumer<
 
     @Override
     public Map<String, List<PartitionInfo>> listTopics(long timeoutMS) {
-        return listTopics(timeoutMS);
+        return listTopics();
     }
 }

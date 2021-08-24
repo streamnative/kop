@@ -32,6 +32,7 @@ public class ConsumerConfiguration {
     private String saslMechanism;
     private String userName;
     private String password;
+    private String requestTimeoutMs;
 
     public Properties toProperties() {
         final Properties props = new Properties();
@@ -59,6 +60,9 @@ public class ConsumerConfiguration {
             final String kafkaAuth = String.format("username=\"%s\" password=\"%s\";", userName, password);
             props.put("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required "
                     + kafkaAuth);
+        }
+        if (requestTimeoutMs != null) {
+            props.put("request.timeout.ms", requestTimeoutMs);
         }
         return props;
     }
