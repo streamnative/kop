@@ -42,8 +42,8 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         final String localAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(null);
         conf.setInternalListenerName("pulsar");
         final String advertisedListeners =
-                "pulsar:pulsar://" + localAddress + ":" + brokerPort +
-                        ",kafka:pulsar://" + localAddress + ":" + kafkaBrokerPort;
+                "pulsar:pulsar://" + localAddress + ":" + brokerPort
+                        + ",kafka:pulsar://" + localAddress + ":" + kafkaBrokerPort;
         conf.setAdvertisedListeners(advertisedListeners);
         conf.setKafkaListenerName("kafka");
         log.info("Set advertisedListeners to {}", advertisedListeners);
