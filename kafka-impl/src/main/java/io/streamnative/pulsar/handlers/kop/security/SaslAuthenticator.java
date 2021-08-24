@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.security;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static org.apache.kafka.common.protocol.ApiKeys.API_VERSIONS;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -294,10 +293,9 @@ public class SaslAuthenticator {
             backResponse = abstractResponse;
         }
 
-        if (apiKey == API_VERSIONS){
-            if (!ApiKeys.API_VERSIONS.isVersionSupported(version)) {
-                version = ApiKeys.API_VERSIONS.oldestVersion();
-            }
+        if (apiKey == ApiKeys.API_VERSIONS
+                && !ApiKeys.API_VERSIONS.isVersionSupported(version)){
+            version = ApiKeys.API_VERSIONS.oldestVersion();
         }
         ByteBuf response = ResponseUtils.serializeResponse(
                 version,

@@ -1,14 +1,27 @@
+/**
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.streamnative.pulsar.handlers.kop.compatibility.saslplain;
 
-
 import static org.mockito.Mockito.spy;
-import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.streamnative.kafka.client.api.Consumer;
+import io.streamnative.kafka.client.api.ConsumerConfiguration;
 import io.streamnative.kafka.client.api.ConsumerRecord;
 import io.streamnative.kafka.client.api.Header;
 import io.streamnative.kafka.client.api.KafkaClientFactory;
@@ -18,7 +31,24 @@ import io.streamnative.kafka.client.api.Producer;
 import io.streamnative.kafka.client.api.ProducerConfiguration;
 import io.streamnative.kafka.client.api.RecordMetadata;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.compatibility.DefaultKafkaClientFactory;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
+import javax.crypto.SecretKey;
+import javax.security.auth.login.Configuration;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.PartitionInfo;
@@ -31,27 +61,10 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.policies.data.TenantInfo;
-import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import javax.crypto.SecretKey;
-import javax.security.auth.login.Configuration;
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.util.Arrays;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.TreeMap;
-import java.util.stream.Collectors;
 
 @Slf4j
 public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
@@ -62,7 +75,6 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
     private static final String NAMESPACE = "ns1";
     private static final String KAFKA_TOPIC = "topic1";
     private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/" + KAFKA_TOPIC;
-    private String adminToken;
     private String userToken;
     private String anotherToken;
     private File jaasConfigFile;
@@ -99,7 +111,7 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
         provider.initialize(authConf);
 
         userToken = AuthTokenUtils.createToken(secretKey, SIMPLE_USER, Optional.empty());
-        adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
+        String adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
         anotherToken = AuthTokenUtils.createToken(secretKey, ANOTHER_USER, Optional.empty());
 
         super.resetConfig();
@@ -195,9 +207,9 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
 
             RecordMetadata metadata = producer.newContextBuilder(KAFKA_TOPIC, value).build().sendAsync().get();
             log.info("Kafka client {} sent {} to {}", version, value, metadata);
-            Assert.assertEquals(metadata.getTopic(), KAFKA_TOPIC);
-            Assert.assertEquals(metadata.getPartition(), 0);
-            Assert.assertEquals(metadata.getOffset(), offset);
+            assertEquals(metadata.getTopic(), KAFKA_TOPIC);
+            assertEquals(metadata.getPartition(), 0);
+            assertEquals(metadata.getOffset(), offset);
             offset++;
 
             // send a message that contains key and headers, which are optional
@@ -217,9 +229,9 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
                     .sendAsync()
                     .get();
             log.info("Kafka client {} sent {} (key={}) to {}", version, value, key, metadata);
-            Assert.assertEquals(metadata.getTopic(), KAFKA_TOPIC);
-            Assert.assertEquals(metadata.getPartition(), 0);
-            Assert.assertEquals(metadata.getOffset(), offset);
+            assertEquals(metadata.getTopic(), KAFKA_TOPIC);
+            assertEquals(metadata.getPartition(), 0);
+            assertEquals(metadata.getOffset(), offset);
             offset++;
 
             producer.close();
@@ -232,20 +244,20 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
                             "token:" + userToken));
             consumer.subscribe(KAFKA_TOPIC);
             final List<ConsumerRecord<String, String>> records = consumer.receiveUntil(values.size(), 6000);
-            Assert.assertEquals(records.stream().map(ConsumerRecord::getValue).collect(Collectors.toList()), values);
+            assertEquals(records.stream().map(ConsumerRecord::getValue).collect(Collectors.toList()), values);
             if (conf.getEntryFormat().equals("pulsar")) {
                 // NOTE: PulsarEntryFormatter will encode an empty String as key if key doesn't exist
-                Assert.assertEquals(records.stream()
+                assertEquals(records.stream()
                         .map(ConsumerRecord::getKey)
                         .filter(key -> key != null && !key.isEmpty())
                         .collect(Collectors.toList()), keys);
             } else {
-                Assert.assertEquals(records.stream()
+                assertEquals(records.stream()
                         .map(ConsumerRecord::getKey)
                         .filter(Objects::nonNull)
                         .collect(Collectors.toList()), keys);
             }
-            Assert.assertEquals(records.stream()
+            assertEquals(records.stream()
                     .map(ConsumerRecord::getHeaders)
                     .filter(Objects::nonNull)
                     .map(headerList -> headerList.get(0))
@@ -322,5 +334,35 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
                 assertTrue(e.getMessage().contains("Failed to update metadata"));
             }
         }
+    }
+
+    protected ProducerConfiguration producerConfigurationWithSaslPlain(final KafkaVersion version,
+                                                                       String username,
+                                                                       String password) {
+        return ProducerConfiguration.builder()
+                .bootstrapServers("localhost:" + getKafkaBrokerPort())
+                .keySerializer(version.getStringSerializer())
+                .valueSerializer(version.getStringSerializer())
+                .securityProtocol("SASL_PLAINTEXT")
+                .saslMechanism("PLAIN")
+                .userName(username)
+                .password(password)
+                .build();
+    }
+
+    protected ConsumerConfiguration consumerConfigurationWithSaslPlain(final KafkaVersion version,
+                                                                       String username,
+                                                                       String password) {
+        return ConsumerConfiguration.builder()
+                .bootstrapServers("localhost:" + getKafkaBrokerPort())
+                .groupId("group-" + version.name())
+                .keyDeserializer(version.getStringDeserializer())
+                .valueDeserializer(version.getStringDeserializer())
+                .securityProtocol("SASL_PLAINTEXT")
+                .saslMechanism("PLAIN")
+                .userName(username)
+                .password(password)
+                .fromEarliest(true)
+                .build();
     }
 }

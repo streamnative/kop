@@ -53,7 +53,8 @@ public class ProducerConfiguration {
         }
         if (userName != null && password != null) {
             final String kafkaAuth = String.format("username=\"%s\" password=\"%s\";", userName, password);
-            props.put("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required " + kafkaAuth);
+            props.put("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required "
+                    + kafkaAuth);
         }
         return props;
     }

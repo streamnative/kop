@@ -16,12 +16,9 @@ package io.streamnative.kafka.client.zero.ten;
 import io.streamnative.kafka.client.api.Consumer;
 import io.streamnative.kafka.client.api.ConsumerConfiguration;
 import io.streamnative.kafka.client.api.ConsumerRecord;
-
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.PartitionInfo;
 

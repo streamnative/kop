@@ -14,7 +14,11 @@
 package io.streamnative.kafka.client.api;
 
 import java.io.Closeable;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.NonNull;
 import org.apache.kafka.common.PartitionInfo;

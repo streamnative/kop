@@ -179,30 +179,4 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
                 .fromEarliest(true)
                 .build();
     }
-
-    protected ProducerConfiguration producerConfigurationWithSaslPlain(final KafkaVersion version, String username, String password) {
-        return ProducerConfiguration.builder()
-                .bootstrapServers("localhost:" + getKafkaBrokerPort())
-                .keySerializer(version.getStringSerializer())
-                .valueSerializer(version.getStringSerializer())
-                .securityProtocol("SASL_PLAINTEXT")
-                .saslMechanism("PLAIN")
-                .userName(username)
-                .password(password)
-                .build();
-    }
-
-    protected ConsumerConfiguration consumerConfigurationWithSaslPlain(final KafkaVersion version, String username, String password) {
-        return ConsumerConfiguration.builder()
-                .bootstrapServers("localhost:" + getKafkaBrokerPort())
-                .groupId("group-" + version.name())
-                .keyDeserializer(version.getStringDeserializer())
-                .valueDeserializer(version.getStringDeserializer())
-                .securityProtocol("SASL_PLAINTEXT")
-                .saslMechanism("PLAIN")
-                .userName(username)
-                .password(password)
-                .fromEarliest(true)
-                .build();
-    }
 }
