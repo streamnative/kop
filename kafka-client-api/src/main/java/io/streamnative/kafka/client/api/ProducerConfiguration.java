@@ -25,6 +25,11 @@ public class ProducerConfiguration {
     private String bootstrapServers;
     private Object keySerializer;
     private Object valueSerializer;
+    private String maxBlockMs;
+    private String securityProtocol;
+    private String saslMechanism;
+    private String userName;
+    private String password;
 
     public Properties toProperties() {
         final Properties props = new Properties();
@@ -36,6 +41,19 @@ public class ProducerConfiguration {
         }
         if (valueSerializer != null) {
             props.put("value.serializer", valueSerializer);
+        }
+        if (maxBlockMs != null) {
+            props.put("max.block.ms", maxBlockMs);
+        }
+        if (securityProtocol != null) {
+            props.put("security.protocol", securityProtocol);
+        }
+        if (saslMechanism != null) {
+            props.put("sasl.mechanism", saslMechanism);
+        }
+        if (userName != null && password != null) {
+            final String kafkaAuth = String.format("username=\"%s\" password=\"%s\";", userName, password);
+            props.put("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required " + kafkaAuth);
         }
         return props;
     }

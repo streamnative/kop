@@ -28,6 +28,10 @@ public class ConsumerConfiguration {
     private Object valueDeserializer;
     @Builder.Default
     private boolean fromEarliest = true;
+    private String securityProtocol;
+    private String saslMechanism;
+    private String userName;
+    private String password;
 
     public Properties toProperties() {
         final Properties props = new Properties();
@@ -44,6 +48,17 @@ public class ConsumerConfiguration {
             props.put("value.deserializer", valueDeserializer);
         }
         props.put("auto.offset.reset", fromEarliest ? "earliest" : "latest");
+
+        if (securityProtocol != null) {
+            props.put("security.protocol", securityProtocol);
+        }
+        if (saslMechanism != null) {
+            props.put("sasl.mechanism", saslMechanism);
+        }
+        if (userName != null && password != null) {
+            final String kafkaAuth = String.format("username=\"%s\" password=\"%s\";", userName, password);
+            props.put("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required " + kafkaAuth);
+        }
         return props;
     }
 }

@@ -154,10 +154,26 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
+    protected Boolean channelReady() {
+        return hasAuthenticated();
+    }
+
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         // Get a buffer that contains the full frame
         ByteBuf buffer = (ByteBuf) msg;
+
+        if (isActive.get() && !channelReady()) {
+            try {
+                channelPrepare(ctx, buffer);
+                return;
+            } catch (AuthenticationException e) {
+                log.error("unexpected error in authenticate:", e);
+                close();
+            } finally {
+                buffer.release();
+            }
+        }
 
         Channel channel = ctx.channel();
         SocketAddress remoteAddress = null;
@@ -206,10 +222,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             if (!isActive.get()) {
                 handleInactive(kafkaHeaderAndRequest, responseFuture);
             } else {
-                if (!hasAuthenticated(kafkaHeaderAndRequest)) {
-                    authenticate(kafkaHeaderAndRequest, responseFuture);
-                    return;
-                }
                 switch (kafkaHeaderAndRequest.getHeader().apiKey()) {
                     case API_VERSIONS:
                         handleApiVersionsRequest(kafkaHeaderAndRequest, responseFuture);
@@ -295,9 +307,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                         handleError(kafkaHeaderAndRequest, responseFuture);
                 }
             }
-        } catch (AuthenticationException e) {
-            log.error("unexpected error in authenticate:", e);
-            close();
         } catch (Exception e) {
             log.error("error while handle command:", e);
             close();
@@ -409,10 +418,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    protected abstract boolean hasAuthenticated(KafkaHeaderAndRequest kafkaHeaderAndRequest);
+    protected abstract boolean hasAuthenticated();
 
-    protected abstract void
-    authenticate(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response)
+    protected abstract void channelPrepare(ChannelHandlerContext ctx, ByteBuf requestBuffer)
             throws AuthenticationException;
 
     protected abstract void
