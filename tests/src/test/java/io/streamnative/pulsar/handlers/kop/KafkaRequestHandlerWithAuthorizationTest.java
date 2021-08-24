@@ -270,7 +270,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         });
     }
 
-    @Test
+    @Test(timeOut = 20000)
     public void testHandleProduceRequest() throws ExecutionException, InterruptedException {
         KafkaRequestHandler spyHandler = spy(handler);
         final RequestHeader header = new RequestHeader(ApiKeys.PRODUCE, (short) 1, "client", 0);

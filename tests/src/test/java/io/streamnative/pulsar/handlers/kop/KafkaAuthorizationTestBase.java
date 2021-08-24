@@ -290,7 +290,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         admin.topics().deletePartitionedTopic(fullNewTopicName);
     }
 
-    @Test
+    @Test(timeOut = 20000)
     void testProduceFailed() throws PulsarAdminException {
         String newTenant = "newProduceFailed";
         String testTopic = "persistent://" + newTenant + "/" + NAMESPACE + "/topic1";
@@ -358,8 +358,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         assertTrue(isStageOneComplete);
     }
 
-
-    @Test
+    @Test(timeOut = 20000)
     void testConsumeFailed() throws PulsarAdminException {
         String newTenant = "testConsumeFailed";
         String testTopic = "persistent://" + newTenant + "/" + NAMESPACE + "/topic1";
