@@ -65,8 +65,9 @@ import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
+@Test
 @Slf4j
-public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
+public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
     private static final String SIMPLE_USER = "muggle_user";
     private static final String TENANT = "public";
     private static final String ANOTHER_USER = "death_eater_user";
@@ -74,7 +75,6 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
     private static final String NAMESPACE = "default";
     private static final String KAFKA_TOPIC = "topic1";
     private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/" + KAFKA_TOPIC;
-    private String adminToken;
     private String userToken;
     private String anotherToken;
     private File jaasConfigFile;
@@ -110,8 +110,8 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
         authConf.setProperties(properties);
         provider.initialize(authConf);
 
+        String adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
         userToken = AuthTokenUtils.createToken(secretKey, SIMPLE_USER, Optional.empty());
-        adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
         anotherToken = AuthTokenUtils.createToken(secretKey, ANOTHER_USER, Optional.empty());
 
         super.resetConfig();
@@ -160,23 +160,23 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
 
     protected void writeJaasFile(String password) throws IOException {
         jaasConfigFile = File.createTempFile("jaas", ".conf");
-        jaasConfigFile.deleteOnExit();
         System.setProperty(JaasUtils.JAVA_LOGIN_CONFIG_PARAM, jaasConfigFile.toString());
         StringBuilder builder = new StringBuilder();
-        builder.append("org.apache.kafka.common.security.plain.PlainLoginModule");
+        builder.append("\torg.apache.kafka.common.security.plain.PlainLoginModule");
         builder.append(' ');
-        builder.append("required");
-        builder.append(' ');
+        builder.append("required \n");
+        builder.append('\t');
         builder.append("username");
-        builder.append('=');
-        builder.append("public/default");
-        builder.append(' ');
+        builder.append("=\"");
+        builder.append("public/default\" \n");
+        builder.append('\t');
         builder.append("password");
-        builder.append('=');
+        builder.append("=\"");
         builder.append(password);
-        builder.append(';');
-        List<String> lines = Arrays.asList("KafkaClient { ", builder.toString(), "};");
+        builder.append("\";");
+        List<String> lines = Arrays.asList("KafkaClient {", builder.toString(), "};");
         Files.write(jaasConfigFile.toPath(), lines, StandardCharsets.UTF_8);
+        System.out.println(jaasConfigFile.getPath());
     }
 
     @Test(timeOut = 62000)
@@ -191,6 +191,7 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
 
         long offset = 0;
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
+            log.error("testKafkaProduceAndConsumeWithSaslPlain version {}", version);
             final Producer<String, String> producer = kafkaClientFactories.get(version)
                     .createProducer(producerConfigurationWithSaslPlain(version,
                             TENANT + "/" + NAMESPACE,
@@ -276,6 +277,7 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
         writeJaasFile("token:dsa");
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
             try {
+                log.error("badCredentialFail version {}", version);
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(producerConfigurationWithSaslPlain(version,
                                 TENANT + "/" + NAMESPACE,
@@ -283,6 +285,7 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
                 producer.newContextBuilder(KAFKA_TOPIC, "").build().sendAsync().get();
                 fail("should have failed");
             } catch (Exception e) {
+                log.error("badCredentialFail222 {}", e.getMessage());
                 assertTrue(e.getMessage().contains("SaslAuthenticationException"));
             }
         }
@@ -295,6 +298,7 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
 
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
             try {
+                log.error("badUserFail version {}", version);
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(producerConfigurationWithSaslPlain(version,
                                 TENANT + "/" + NAMESPACE,
@@ -302,6 +306,7 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
                 producer.newContextBuilder(KAFKA_TOPIC, "").build().sendAsync().get();
                 fail("should have failed");
             } catch (Exception e) {
+                log.error("badUserFail222 {}", e.getMessage());
                 assertTrue(e.getMessage().contains("TopicAuthorizationException"));
             }
         }
@@ -314,6 +319,7 @@ public class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
 
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
             try {
+                log.error("clientWithoutAuth version {}", version);
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(ProducerConfiguration.builder()
                                 .bootstrapServers("localhost:" + getKafkaBrokerPort())
