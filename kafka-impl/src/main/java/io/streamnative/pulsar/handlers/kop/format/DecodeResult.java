@@ -14,8 +14,10 @@
 package io.streamnative.pulsar.handlers.kop.format;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NonNull;
 import org.apache.kafka.common.record.MemoryRecords;
 
 /**
@@ -25,16 +27,24 @@ import org.apache.kafka.common.record.MemoryRecords;
 @AllArgsConstructor
 public class DecodeResult {
 
-    private MemoryRecords records;
+    private @NonNull MemoryRecords records;
     private ByteBuf releasedByteBuf;
 
-    public DecodeResult(MemoryRecords records) {
+    public DecodeResult(@NonNull MemoryRecords records) {
         this.records = records;
     }
 
     public void release() {
         if (releasedByteBuf != null) {
             releasedByteBuf.release();
+        }
+    }
+
+    public @NonNull ByteBuf getOrCreateByteBuf() {
+        if (releasedByteBuf != null) {
+            return releasedByteBuf;
+        } else {
+            return Unpooled.wrappedBuffer(records.buffer());
         }
     }
 }

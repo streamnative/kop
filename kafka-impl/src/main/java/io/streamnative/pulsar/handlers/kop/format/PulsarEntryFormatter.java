@@ -48,6 +48,9 @@ public class PulsarEntryFormatter implements EntryFormatter {
     private static final int INITIAL_BATCH_BUFFER_SIZE = 1024;
     private static final int MAX_MESSAGE_BATCH_SIZE_BYTES = 128 * 1024;
 
+    private static final DecodeResult EMPTY_DECODE_RESULT = new DecodeResult(
+            MemoryRecords.readableRecords(ByteBuffer.allocate(0)));
+
     @Override
     public ByteBuf encode(final MemoryRecords records, final int numMessages) {
         long currentBatchSizeBytes = 0;
@@ -100,7 +103,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
 
     @Override
     public DecodeResult decode(final List<Entry> entries, final byte magic) {
-        final List<MemoryRecords> recordsList = new ArrayList<>();
+        final List<DecodeResult> decodeResults = new ArrayList<>();
 
         entries.parallelStream().forEachOrdered(entry -> {
             try {
@@ -111,7 +114,7 @@ public class PulsarEntryFormatter implements EntryFormatter {
                 Commands.skipBrokerEntryMetadataIfExist(metadataAndPayload);
                 MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
 
-                recordsList.add(ByteBufUtils.decodePulsarEntryToKafkaRecords(
+                decodeResults.add(ByteBufUtils.decodePulsarEntryToKafkaRecords(
                         msgMetadata, metadataAndPayload, baseOffset, magic));
             } catch (KoPMessageMetadataNotFoundException | IOException e) { // skip failed decode entry
                 log.error("[{}:{}] Failed to decode entry", entry.getLedgerId(), entry.getEntryId());
@@ -120,14 +123,17 @@ public class PulsarEntryFormatter implements EntryFormatter {
             }
         });
 
-        if (recordsList.isEmpty()) {
-            return new DecodeResult(MemoryRecords.readableRecords(ByteBuffer.allocate(0)));
-        } else if (recordsList.size() == 1) {
-            return new DecodeResult(recordsList.get(0));
+        if (decodeResults.isEmpty()) {
+            return EMPTY_DECODE_RESULT;
+        } else if (decodeResults.size() == 1) {
+            return decodeResults.get(0);
         } else {
-            final int totalSize = recordsList.stream().mapToInt(MemoryRecords::sizeInBytes).sum();
+            final int totalSize = decodeResults.stream()
+                    .mapToInt(decodeResult -> decodeResult.getRecords().sizeInBytes())
+                    .sum();
             final ByteBuf mergedBuffer = PulsarByteBufAllocator.DEFAULT.directBuffer(totalSize);
-            recordsList.forEach(records -> mergedBuffer.writeBytes(records.buffer()));
+            decodeResults.forEach(decodeResult -> mergedBuffer.writeBytes(decodeResult.getRecords().buffer()));
+            decodeResults.forEach(DecodeResult::release);
             return new DecodeResult(MemoryRecords.readableRecords(mergedBuffer.nioBuffer()), mergedBuffer);
         }
     }

@@ -16,6 +16,8 @@ package io.streamnative.pulsar.handlers.kop.utils;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import io.netty.buffer.ByteBuf;
+import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
+import io.streamnative.pulsar.handlers.kop.format.DirectBufferOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Base64;
@@ -93,28 +95,28 @@ public class ByteBufUtils {
         return ByteBuffer.wrap(bytes);
     }
 
-    public static MemoryRecords decodePulsarEntryToKafkaRecords(final MessageMetadata metadata,
-                                                                final ByteBuf payload,
-                                                                final long baseOffset,
-                                                                final byte magic) throws IOException {
+    public static DecodeResult decodePulsarEntryToKafkaRecords(final MessageMetadata metadata,
+                                                               final ByteBuf payload,
+                                                               final long baseOffset,
+                                                               final byte magic) throws IOException {
         if (metadata.hasMarkerType()
                 && (metadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
                 || metadata.getMarkerType() == MarkerType.TXN_ABORT_VALUE)) {
-            return MemoryRecords.withEndTransactionMarker(
+            return new DecodeResult(MemoryRecords.withEndTransactionMarker(
                     baseOffset,
                     metadata.getPublishTime(),
                     0,
                     metadata.getTxnidMostBits(),
                     (short) metadata.getTxnidLeastBits(),
                     new EndTransactionMarker(metadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
-                            ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0));
+                            ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0)));
         }
         final int uncompressedSize = metadata.getUncompressedSize();
         final CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(metadata.getCompression());
         final ByteBuf uncompressedPayload = codec.decode(payload, uncompressedSize);
 
-        final ByteBuffer byteBuffer = ByteBuffer.allocate(DEFAULT_BUFFER_SIZE);
-        final MemoryRecordsBuilder builder = new MemoryRecordsBuilder(byteBuffer,
+        final DirectBufferOutputStream directBufferOutputStream = new DirectBufferOutputStream(DEFAULT_BUFFER_SIZE);
+        final MemoryRecordsBuilder builder = new MemoryRecordsBuilder(directBufferOutputStream,
                 magic,
                 CompressionType.NONE,
                 TimestampType.CREATE_TIME,
@@ -181,8 +183,7 @@ public class ByteBufUtils {
 
         final MemoryRecords records = builder.build();
         uncompressedPayload.release();
-        byteBuffer.flip();
-        return records;
+        return new DecodeResult(records, directBufferOutputStream.getByteBuf());
     }
 
     @NonNull
