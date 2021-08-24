@@ -52,7 +52,6 @@ import javax.security.auth.login.Configuration;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.PartitionInfo;
-import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.security.JaasUtils;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
@@ -190,7 +189,6 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
 
         long offset = 0;
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
-            log.error("testKafkaProduceAndConsumeWithSaslPlain version {}", version);
             final Producer<String, String> producer = kafkaClientFactories.get(version)
                     .createProducer(producerConfigurationWithSaslPlain(version,
                             TENANT + "/" + NAMESPACE,
@@ -252,11 +250,13 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
                         .filter(Objects::nonNull)
                         .collect(Collectors.toList()), keys);
             }
-            assertEquals(records.stream()
-                    .map(ConsumerRecord::getHeaders)
-                    .filter(Objects::nonNull)
-                    .map(headerList -> headerList.get(0))
-                    .collect(Collectors.toList()), headers);
+            if (!version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
+                assertEquals(records.stream()
+                        .map(ConsumerRecord::getHeaders)
+                        .filter(Objects::nonNull)
+                        .map(headerList -> headerList.get(0))
+                        .collect(Collectors.toList()), headers);
+            }
 
             // no more records
             List<ConsumerRecord<String, String>> emptyRecords = consumer.receive(200);
@@ -279,7 +279,6 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
 
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
             try {
-                log.error("badCredentialFail version {}", version);
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(ProducerConfiguration.builder()
                                         .bootstrapServers("localhost:" + getKafkaBrokerPort())
@@ -294,10 +293,9 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
                 producer.newContextBuilder(KAFKA_TOPIC, "").build().sendAsync().get();
                 fail("should have failed");
             } catch (Exception e) {
-                log.error("badCredentialFail222 {}", e.getMessage());
+                // v0 sasl_handshake failed but not receive response, so need catch TimeoutException
                 if (version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
-//                    assertTrue(e.getMessage().contains(""));
-                    log.error("Skip badCredentialFail222 assert");
+                    assertTrue(e.getMessage().contains("Failed to update metadata"));
                 } else {
                     assertTrue(e.getMessage().contains("SaslAuthenticationException"));
                 }
@@ -331,7 +329,6 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
 
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
             try {
-                log.error("clientWithoutAuth version {}", version);
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(ProducerConfiguration.builder()
                                 .bootstrapServers("localhost:" + getKafkaBrokerPort())
@@ -343,8 +340,6 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
                 producer.newContextBuilder(KAFKA_TOPIC, "hello").build().sendAsync().get();
                 fail("should have failed");
             } catch (Exception e) {
-                log.error("clientWithoutAuth222 {}", e.getMessage());
-                assertTrue(e.getCause() instanceof TimeoutException);
                 assertTrue(e.getMessage().contains("Failed to update metadata"));
             }
         }

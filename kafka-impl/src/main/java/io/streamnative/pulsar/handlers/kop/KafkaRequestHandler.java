@@ -345,15 +345,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
-//    @Override
-//    protected void authenticate(KafkaHeaderAndRequest kafkaHeaderAndRequest,
-//                                CompletableFuture<AbstractResponse> responseFuture) throws AuthenticationException {
-//        if (authenticator != null) {
-//            authenticator.authenticate(
-//                    kafkaHeaderAndRequest.getHeader(), kafkaHeaderAndRequest.getRequest(), responseFuture);
-//        }
-//    }
-
     protected void handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest,
                                             CompletableFuture<AbstractResponse> resultFuture) {
         if (!ApiKeys.API_VERSIONS.isVersionSupported(apiVersionRequest.getHeader().apiVersion())) {
