@@ -65,7 +65,6 @@ import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
-@Test
 @Slf4j
 public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
     private static final String SIMPLE_USER = "muggle_user";
@@ -179,7 +178,7 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
         System.out.println(jaasConfigFile.getPath());
     }
 
-    @Test(timeOut = 62000)
+    @Test(timeOut = 120000)
     void testKafkaProduceAndConsumeWithSaslPlain() throws Exception {
 
         // need java.security.auth.login.config for sasl/plain in kafka client 0.10.0.0
@@ -360,7 +359,7 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
                 .groupId("group-" + version.name())
                 .keyDeserializer(version.getStringDeserializer())
                 .valueDeserializer(version.getStringDeserializer())
-                .requestTimeoutMs(String.valueOf(10000))
+                .requestTimeoutMs(String.valueOf(20000))
                 .securityProtocol("SASL_PLAINTEXT")
                 .saslMechanism("PLAIN")
                 .userName(username)

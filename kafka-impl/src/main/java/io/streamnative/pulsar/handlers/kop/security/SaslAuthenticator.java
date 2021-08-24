@@ -331,7 +331,8 @@ public class SaslAuthenticator {
                             log.error("[{}] Failed to write {}", ctx.channel(), future.cause());
                         } else {
                             if (log.isDebugEnabled()) {
-                                log.debug("Send sasl response to old Client {} successfully", ctx.channel());
+                                log.debug("Send sasl response to SASL_HANDSHAKE v0 old client {} successfully",
+                                        ctx.channel());
                             }
 
                             this.session = new Session(
@@ -341,8 +342,15 @@ public class SaslAuthenticator {
                     });
                 }
             } catch (SaslException e) {
-                log.debug("Authenticate failed for oldClient, reason {}", e.getMessage());
-                throw new AuthenticationException("Failed during handleSaslToken " + e.getMessage());
+                sendKafkaResponse(ctx,
+                        new RequestHeader(ApiKeys.SASL_HANDSHAKE, (short) 0, "", Integer.MAX_VALUE),
+                        null,
+                        new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()),
+                        null);
+                if (log.isDebugEnabled()) {
+                    log.debug("Authenticate failed for SASL_HANDSHAKE v0 old client, reason {}",
+                            e.getMessage());
+                }
             }
         } else {
             RequestHeader header = RequestHeader.parse(nioBuffer);
