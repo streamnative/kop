@@ -32,6 +32,7 @@ import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.policies.data.TenantInfo;
@@ -53,6 +54,7 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
     private static final String ANOTHER_USER = "death_eater_user";
     private static final String ADMIN_USER = "admin_user";
     private static final String TENANT_ADMIN_USER = "tenant_admin_user";
+    private static final String TOPIC_LEVEL_PERMISSIONS_USER = "topic_level_permission_user";
 
     private static final String TENANT = "SimpleAcl";
     private static final String NAMESPACE = "ns1";
@@ -236,5 +238,32 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertTrue(isAuthorized);
 
+    }
+
+    @Test
+    public void testTopicLevelPermissions() throws PulsarAdminException, ExecutionException, InterruptedException {
+        String topic = "persistent://" + TENANT + "/" + NAMESPACE + "/topic_level_permission_test_topic";
+        admin.topics().createPartitionedTopic(topic, 1);
+        admin.topics().grantPermission(topic, TOPIC_LEVEL_PERMISSIONS_USER, Sets.newHashSet(AuthAction.produce));
+
+        Boolean isAuthorized = simpleAclAuthorizer.canLookupAsync(
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TOPIC_LEVEL_PERMISSIONS_USER),
+                Resource.of(ResourceType.TOPIC, topic)).get();
+        assertTrue(isAuthorized);
+
+        isAuthorized = simpleAclAuthorizer.canProduceAsync(
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TOPIC_LEVEL_PERMISSIONS_USER),
+                Resource.of(ResourceType.TOPIC, topic)).get();
+        assertTrue(isAuthorized);
+
+        isAuthorized = simpleAclAuthorizer.canConsumeAsync(
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TOPIC_LEVEL_PERMISSIONS_USER),
+                Resource.of(ResourceType.TOPIC, topic)).get();
+        assertFalse(isAuthorized);
+
+        isAuthorized = simpleAclAuthorizer.canProduceAsync(
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TOPIC_LEVEL_PERMISSIONS_USER),
+                Resource.of(ResourceType.TOPIC, TOPIC)).get();
+        assertFalse(isAuthorized);
     }
 }
