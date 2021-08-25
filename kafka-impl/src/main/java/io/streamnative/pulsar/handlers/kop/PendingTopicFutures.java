@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.annotations.VisibleForTesting;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -52,8 +53,8 @@ public class PendingTopicFutures {
         }
     }
 
-    public void addListener(CompletableFuture<PersistentTopic> topicFuture,
-                            @NonNull Consumer<PersistentTopic> persistentTopicConsumer,
+    public void addListener(CompletableFuture<Optional<PersistentTopic>> topicFuture,
+                            @NonNull Consumer<Optional<PersistentTopic>> persistentTopicConsumer,
                             @NonNull Consumer<Throwable> exceptionConsumer) {
         if (count.compareAndSet(0, 1)) {
             // The first pending future comes
@@ -73,7 +74,7 @@ public class PendingTopicFutures {
             currentTopicFuture = currentTopicFuture.thenApply(topicThrowablePair -> {
                 if (topicThrowablePair.getThrowable() == null) {
                     registerQueueLatency(true);
-                    persistentTopicConsumer.accept(topicThrowablePair.getPersistentTopic());
+                    persistentTopicConsumer.accept(topicThrowablePair.getPersistentTopicOpt());
                 } else {
                     registerQueueLatency(false);
                     exceptionConsumer.accept(topicThrowablePair.getThrowable());
@@ -104,20 +105,20 @@ public class PendingTopicFutures {
 
 class TopicThrowablePair {
     @Getter
-    private final PersistentTopic persistentTopic;
+    private final Optional<PersistentTopic> persistentTopicOpt;
     @Getter
     private final Throwable throwable;
 
-    public static TopicThrowablePair withTopic(final PersistentTopic persistentTopic) {
-        return new TopicThrowablePair(persistentTopic, null);
+    public static TopicThrowablePair withTopic(final Optional<PersistentTopic> persistentTopicOpt) {
+        return new TopicThrowablePair(persistentTopicOpt, null);
     }
 
     public static TopicThrowablePair withThrowable(final Throwable throwable) {
         return new TopicThrowablePair(null, throwable);
     }
 
-    private TopicThrowablePair(final PersistentTopic persistentTopic, final Throwable throwable) {
-        this.persistentTopic = persistentTopic;
+    private TopicThrowablePair(final Optional<PersistentTopic> persistentTopicOpt, final Throwable throwable) {
+        this.persistentTopicOpt = persistentTopicOpt;
         this.throwable = throwable;
     }
 };

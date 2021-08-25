@@ -783,18 +783,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
-    private void publishMessages(final PersistentTopic persistentTopic,
+    private void publishMessages(final Optional<PersistentTopic> persistentTopicOpt,
                                  final ByteBuf byteBuf,
                                  final int numMessages,
                                  final MemoryRecords records,
                                  final TopicPartition topicPartition,
                                  final Consumer<Long> offsetConsumer,
                                  final Consumer<Errors> errorsConsumer) {
-        if (persistentTopic == null) {
+        if (!persistentTopicOpt.isPresent()) {
             // It will trigger a retry send of Kafka client
             errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
             return;
         }
+        PersistentTopic persistentTopic = persistentTopicOpt.get();
         if (persistentTopic.isSystemTopic()) {
             log.error("Not support producing message to system topic: {}", persistentTopic);
             errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
@@ -896,63 +897,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             return;
                         }
 
-                        // check KOP inner topic
-                        if (isOffsetTopic(fullPartitionName) || isTransactionTopic(fullPartitionName)) {
-                            log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
-                                    ctx.channel(), produceHar.getHeader(), topicPartition);
-                            errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
-                            return;
-                        }
-
-                        try {
-                            final long beforeRecordsProcess = MathUtils.nowInNano();
-                            final MemoryRecords validRecords =
-                                    validateRecords(produceHar.getHeader().apiVersion(), topicPartition, records);
-                            final int numMessages = EntryFormatter.parseNumMessages(validRecords);
-                            final ByteBuf byteBuf = entryFormatter.encode(validRecords, numMessages);
-                            requestStats.getProduceEncodeStats().registerSuccessfulEvent(
-                                    MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
-                            startSendOperationForThrottling(byteBuf.readableBytes());
-
-                            if (log.isDebugEnabled()) {
-                                log.debug("[{}] Request {}: Produce messages for topic {} partition {}, "
-                                                + "request size: {} ", ctx.channel(), produceHar.getHeader(),
-                                        topicPartition.topic(), topicPartition.partition(), numPartitions);
-                            }
-
-                            final CompletableFuture<PersistentTopic> topicFuture =
-                                    topicManager.getTopic(fullPartitionName);
-                            if (topicFuture.isCompletedExceptionally()) {
-                                topicFuture.exceptionally(e -> {
-                                    exceptionConsumer.accept(e);
-                                    return null;
-                                });
-                                return;
-                            }
-                            if (topicFuture.isDone() && topicFuture.getNow(null) == null) {
-                                errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
-                                return;
-                            }
-
-                            final Consumer<PersistentTopic> persistentTopicConsumer = persistentTopic -> {
-                                publishMessages(persistentTopic, byteBuf, numMessages, validRecords, topicPartition,
-                                        offsetConsumer, errorsConsumer);
-                            };
-
-                            if (topicFuture.isDone()) {
-                                persistentTopicConsumer.accept(topicFuture.getNow(null));
-                            } else {
-                                // topic is not available now
-                                pendingTopicFuturesMap
-                                        .computeIfAbsent(topicPartition, ignored ->
-                                                new PendingTopicFutures(requestStats))
-                                        .addListener(topicFuture, persistentTopicConsumer, exceptionConsumer);
-                            }
-                        } catch (Exception e) {
-                            log.error("[{}] Failed to handle produce request for {}",
-                                    ctx.channel(), topicPartition, e);
-                            exceptionConsumer.accept(e);
-                        }
+                        handlePartitionRecords(produceHar,
+                                topicPartition,
+                                records,
+                                numPartitions,
+                                fullPartitionName,
+                                offsetConsumer,
+                                errorsConsumer,
+                                exceptionConsumer);
                     });
         });
         // delay produce
@@ -964,6 +916,73 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
             DelayedProduceAndFetch delayedProduce = new DelayedProduceAndFetch(timeoutMs, topicPartitionNum, complete);
             producePurgatory.tryCompleteElseWatch(delayedProduce, delayedCreateKeys);
+        }
+    }
+
+    private void handlePartitionRecords(final KafkaHeaderAndRequest produceHar,
+                                        final TopicPartition topicPartition,
+                                        final MemoryRecords records,
+                                        final int numPartitions,
+                                        final String fullPartitionName,
+                                        final Consumer<Long> offsetConsumer,
+                                        final Consumer<Errors> errorsConsumer,
+                                        final Consumer<Throwable> exceptionConsumer) {
+        // check KOP inner topic
+        if (isOffsetTopic(fullPartitionName) || isTransactionTopic(fullPartitionName)) {
+            log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
+                    ctx.channel(), produceHar.getHeader(), topicPartition);
+            errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
+            return;
+        }
+
+        try {
+            final long beforeRecordsProcess = MathUtils.nowInNano();
+            final MemoryRecords validRecords =
+                    validateRecords(produceHar.getHeader().apiVersion(), topicPartition, records);
+            final int numMessages = EntryFormatter.parseNumMessages(validRecords);
+            final ByteBuf byteBuf = entryFormatter.encode(validRecords, numMessages);
+            requestStats.getProduceEncodeStats().registerSuccessfulEvent(
+                    MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
+            startSendOperationForThrottling(byteBuf.readableBytes());
+
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] Request {}: Produce messages for topic {} partition {}, "
+                                + "request size: {} ", ctx.channel(), produceHar.getHeader(),
+                        topicPartition.topic(), topicPartition.partition(), numPartitions);
+            }
+
+            final CompletableFuture<Optional<PersistentTopic>> topicFuture =
+                    topicManager.getTopic(fullPartitionName);
+            if (topicFuture.isCompletedExceptionally()) {
+                topicFuture.exceptionally(e -> {
+                    exceptionConsumer.accept(e);
+                    return Optional.empty();
+                });
+                return;
+            }
+            if (topicFuture.isDone() && !topicFuture.getNow(Optional.empty()).isPresent()) {
+                errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
+                return;
+            }
+
+            final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
+                publishMessages(persistentTopicOpt, byteBuf, numMessages, validRecords, topicPartition,
+                        offsetConsumer, errorsConsumer);
+            };
+
+            if (topicFuture.isDone()) {
+                persistentTopicConsumer.accept(topicFuture.getNow(Optional.empty()));
+            } else {
+                // topic is not available now
+                pendingTopicFuturesMap
+                        .computeIfAbsent(topicPartition, ignored ->
+                                new PendingTopicFutures(requestStats))
+                        .addListener(topicFuture, persistentTopicConsumer, exceptionConsumer);
+            }
+        } catch (Exception e) {
+            log.error("[{}] Failed to handle produce request for {}",
+                    ctx.channel(), topicPartition, e);
+            exceptionConsumer.accept(e);
         }
     }
 
@@ -1109,24 +1128,24 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     fetchOffsetForTimestamp(String topicName, Long timestamp, boolean legacyMode) {
         CompletableFuture<ListOffsetResponse.PartitionData> partitionData = new CompletableFuture<>();
 
-        topicManager.getTopic(topicName).whenComplete((perTopic, t) -> {
+        topicManager.getTopic(topicName).whenComplete((perTopicOpt, t) -> {
             if (t != null) {
                 log.error("Failed while get persistentTopic topic: {} ts: {}. ",
-                    perTopic == null ? "null" : perTopic.getName(), timestamp, t);
+                    !perTopicOpt.isPresent() ? "null" : perTopicOpt.get().getName(), timestamp, t);
                 partitionData.complete(new ListOffsetResponse.PartitionData(
                         Errors.forException(t),
                         ListOffsetResponse.UNKNOWN_TIMESTAMP,
                         ListOffsetResponse.UNKNOWN_OFFSET));
                 return;
             }
-            if (perTopic == null) {
+            if (!perTopicOpt.isPresent()) {
                 partitionData.complete(new ListOffsetResponse.PartitionData(
                         Errors.UNKNOWN_TOPIC_OR_PARTITION,
                         ListOffsetResponse.UNKNOWN_TIMESTAMP,
                         ListOffsetResponse.UNKNOWN_OFFSET));
                 return;
             }
-
+            PersistentTopic perTopic = perTopicOpt.get();
             ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) perTopic.getManagedLedger();
             PositionImpl lac = (PositionImpl) managedLedger.getLastConfirmedEntry();
             if (timestamp == ListOffsetRequest.LATEST_TIMESTAMP) {
@@ -2028,15 +2047,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String fullPartitionName = KopTopic.toString(topicPartition);
         TopicName topicName = TopicName.get(fullPartitionName);
         topicManager.getTopic(topicName.toString())
-                .whenComplete((persistentTopic, throwable) -> {
+                .whenComplete((persistentTopicOpt, throwable) -> {
                     if (throwable != null) {
                         offsetFuture.completeExceptionally(throwable);
                         return;
                     }
-                    if (persistentTopic == null) {
+                    if (!persistentTopicOpt.isPresent()) {
                         offsetFuture.complete(null);
                         return;
                     }
+                    PersistentTopic persistentTopic = persistentTopicOpt.get();
                     persistentTopic.publishMessage(generateTxnMarker(transactionResult, producerId, producerEpoch),
                             MessagePublishContext.get(offsetFuture, persistentTopic,
                                     1, SystemTime.SYSTEM.milliseconds()));
