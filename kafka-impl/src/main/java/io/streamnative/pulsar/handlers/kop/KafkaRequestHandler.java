@@ -1061,7 +1061,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         Map<TopicPartition, TopicPartition> replacingIndex = new HashMap<>();
 
         List<TopicPartition> authorizedPartitions = new ArrayList<>();
-        Map<TopicPartition, OffsetFetchResponse.PartitionData> unauthorizedPartitionData = new HashMap<>();
+        Map<TopicPartition, OffsetFetchResponse.PartitionData> unauthorizedPartitionData =
+                Maps.newConcurrentMap();
+        Map<TopicPartition, OffsetFetchResponse.PartitionData> unknownPartitionData =
+                Maps.newConcurrentMap();
 
         if (request.partitions() == null || request.partitions().isEmpty()) {
             authorizeFuture.complete(null);
@@ -1074,27 +1077,32 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
             };
             request.partitions().forEach(tp -> {
-                String fullName =  new KopTopic(tp.topic()).getFullName();
-                authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullName))
-                        .whenComplete((isAuthorized, ex) -> {
-                            if (ex != null) {
-                                log.error("Describe topic authorize failed, topic - {}. {}",
-                                        fullName, ex.getMessage());
-                                unauthorizedPartitionData.put(tp, OffsetFetchResponse.UNAUTHORIZED_PARTITION);
+                try {
+                    String fullName =  new KopTopic(tp.topic()).getFullName();
+                    authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullName))
+                            .whenComplete((isAuthorized, ex) -> {
+                                if (ex != null) {
+                                    log.error("Describe topic authorize failed, topic - {}. {}",
+                                            fullName, ex.getMessage());
+                                    unauthorizedPartitionData.put(tp, OffsetFetchResponse.UNAUTHORIZED_PARTITION);
+                                    completeOneAuthorization.run();
+                                    return;
+                                }
+                                if (!isAuthorized) {
+                                    unauthorizedPartitionData.put(tp, OffsetFetchResponse.UNAUTHORIZED_PARTITION);
+                                    completeOneAuthorization.run();
+                                    return;
+                                }
+                                TopicPartition newTopicPartition = new TopicPartition(
+                                        fullName, tp.partition());
+                                replacingIndex.put(newTopicPartition, tp);
+                                authorizedPartitions.add(newTopicPartition);
                                 completeOneAuthorization.run();
-                                return;
-                            }
-                            if (!isAuthorized) {
-                                unauthorizedPartitionData.put(tp, OffsetFetchResponse.UNAUTHORIZED_PARTITION);
-                                completeOneAuthorization.run();
-                                return;
-                            }
-                            TopicPartition newTopicPartition = new TopicPartition(
-                                    fullName, tp.partition());
-                            replacingIndex.put(newTopicPartition, tp);
-                            authorizedPartitions.add(newTopicPartition);
-                            completeOneAuthorization.run();
-                        });
+                            });
+                } catch (KoPTopicException e) {
+                    log.warn("Invalid topic name: {}", tp.topic(), e);
+                    unknownPartitionData.put(tp, OffsetFetchResponse.UNKNOWN_PARTITION);
+                }
             });
         }
 
@@ -1105,19 +1113,21 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             Optional.ofNullable(partitionList)
                     );
             if (log.isDebugEnabled()) {
-                log.debug("OFFSET_FETCH Unauthorized partitions: {}", unauthorizedPartitionData);
+                log.debug("OFFSET_FETCH Unknown partitions: {}, Unauthorized partitions: {}.",
+                        unknownPartitionData, unauthorizedPartitionData);
             }
 
             if (log.isTraceEnabled()) {
                 StringBuffer traceInfo = new StringBuffer();
                 replacingIndex.forEach((inner, outer) ->
                         traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
-                log.trace("OFFSET_FETCH TopicPartition relations: \n{}", traceInfo.toString());
+                log.trace("OFFSET_FETCH TopicPartition relations: \n{}", traceInfo);
             }
 
             // recover to original topic name
             replaceTopicPartition(keyValue.getValue(), replacingIndex);
             keyValue.getValue().putAll(unauthorizedPartitionData);
+            keyValue.getValue().putAll(unknownPartitionData);
 
             resultFuture.complete(new OffsetFetchResponse(keyValue.getKey(), keyValue.getValue()));
         });
