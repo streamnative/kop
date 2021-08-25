@@ -89,7 +89,6 @@ import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
@@ -1271,59 +1270,44 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private void handleListOffsetRequestV1AndAbove(KafkaHeaderAndRequest listOffset,
                                                    CompletableFuture<AbstractResponse> resultFuture) {
         ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
-
-        List<CompletableFuture<Pair<TopicPartition, ListOffsetResponse.PartitionData>>>
-                allFutures = new ArrayList<>(request.partitionTimestamps().size());
-        Map<TopicPartition, ListOffsetResponse.PartitionData> responseMap = Maps.newConcurrentMap();
+        Map<TopicPartition, CompletableFuture<ListOffsetResponse.PartitionData>> responseData =
+                Maps.newConcurrentMap();
 
         request.partitionTimestamps().forEach((topic, times) -> {
-            CompletableFuture<Pair<TopicPartition, ListOffsetResponse.PartitionData>> future =
-                    new CompletableFuture<>();
             String fullPartitionName = KopTopic.toString(topic);
             authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullPartitionName))
                     .whenComplete((isAuthorized, ex) -> {
-                        if (ex != null) {
-                            log.error("Describe topic authorize failed, topic - {}. {}",
-                                    fullPartitionName, ex.getMessage());
-                            future.complete(Pair.of(topic, new ListOffsetResponse
-                                    .PartitionData(
-                                    Errors.TOPIC_AUTHORIZATION_FAILED,
-                                    Collections.emptyList()
-                            )));
-                            return;
-                        }
-                        if (!isAuthorized) {
-                            future.complete(Pair.of(topic, new ListOffsetResponse
-                                    .PartitionData(
-                                    Errors.TOPIC_AUTHORIZATION_FAILED,
-                                    Collections.emptyList()
-                            )));
-                            return;
-                        }
-                        fetchOffsetForTimestamp(fullPartitionName, times, false)
-                                .whenComplete((data, e) -> {
-                                    if (e != null) {
-                                        future.complete(Pair.of(topic, new ListOffsetResponse
-                                                .PartitionData(
-                                                Errors.UNKNOWN_SERVER_ERROR,
-                                                Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET))));
-                                    } else {
-                                        future.complete(Pair.of(topic, data));
-                                    }
-                                });
-                    });
-            allFutures.add(future);
+                                if (ex != null) {
+                                    log.error("Describe topic authorize failed, topic - {}. {}",
+                                            fullPartitionName, ex.getMessage());
+                                    responseData.put(topic, CompletableFuture.completedFuture(new ListOffsetResponse
+                                            .PartitionData(
+                                            Errors.TOPIC_AUTHORIZATION_FAILED,
+                                            Collections.emptyList()
+                                    )));
+                                    return;
+                                }
+                                if (!isAuthorized) {
+                                    responseData.put(topic, CompletableFuture.completedFuture(new ListOffsetResponse
+                                            .PartitionData(
+                                            Errors.TOPIC_AUTHORIZATION_FAILED,
+                                            Collections.emptyList()
+                                    )));
+                                    return;
+                                }
+                                responseData.put(topic,
+                                        fetchOffsetForTimestamp(fullPartitionName, times, false));
+                            }
+                        );
+
         });
 
-        CompletableFuture.allOf(allFutures.stream().map(
-                pairCompletableFuture -> pairCompletableFuture
-                        .thenAccept(topicPartitionPartitionDataPair ->
-                                        responseMap.put(topicPartitionPartitionDataPair.getKey(),
-                                                topicPartitionPartitionDataPair.getValue())
-                                        )
-                        ).toArray(CompletableFuture[]::new))
+        CompletableFuture
+                .allOf(responseData.values().toArray(new CompletableFuture<?>[0]))
                 .whenComplete((ignore, ex) -> {
-                    resultFuture.complete(new ListOffsetResponse(responseMap));
+                    ListOffsetResponse response =
+                            new ListOffsetResponse(CoreUtils.mapValue(responseData, CompletableFuture::join));
+                    resultFuture.complete(response);
                 });
     }
 
@@ -1333,9 +1317,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                            CompletableFuture<AbstractResponse> resultFuture) {
         ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
 
-        List<CompletableFuture<Pair<TopicPartition, ListOffsetResponse.PartitionData>>>
-                allFutures = new ArrayList<>(request.offsetData().size());
-        Map<TopicPartition, ListOffsetResponse.PartitionData> responseMap = Maps.newConcurrentMap();
+        Map<TopicPartition, CompletableFuture<ListOffsetResponse.PartitionData>> responseData =
+                Maps.newConcurrentMap();
 
         // in v0, the iterator is offsetData,
         // in v1, the iterator is partitionTimestamps,
@@ -1344,62 +1327,51 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         request.offsetData().forEach((topic, value) -> {
             String fullPartitionName = KopTopic.toString(topic);
-            Long times = value.timestamp;
-            CompletableFuture<Pair<TopicPartition, ListOffsetResponse.PartitionData>> future =
-                    new CompletableFuture<>();
+
             authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullPartitionName))
                     .whenComplete((isAuthorized, ex) -> {
                         if (ex != null) {
                             log.error("Describe topic authorize failed, topic - {}. {}",
                                     fullPartitionName, ex.getMessage());
-                            future.complete(Pair.of(topic, new ListOffsetResponse
+                            responseData.put(topic, CompletableFuture.completedFuture(new ListOffsetResponse
                                     .PartitionData(
                                     Errors.TOPIC_AUTHORIZATION_FAILED,
-                                    Collections.emptyList()
-                            )));
+                                    Collections.emptyList())));
                             return;
                         }
                         if (!isAuthorized) {
-                            future.complete(Pair.of(topic, new ListOffsetResponse
+                            responseData.put(topic, CompletableFuture.completedFuture(new ListOffsetResponse
                                     .PartitionData(
                                     Errors.TOPIC_AUTHORIZATION_FAILED,
-                                    Collections.emptyList()
-                            )));
+                                    Collections.emptyList())));
                             return;
                         }
+                        Long times = value.timestamp;
+
+                        CompletableFuture<ListOffsetResponse.PartitionData> partitionData;
                         // num_num_offsets > 1 is not handled for now, returning an error
                         if (value.maxNumOffsets > 1) {
                             log.warn("request is asking for multiples offsets for {}, not supported for now",
                                     fullPartitionName);
-                            future.complete(Pair.of(topic, new ListOffsetResponse
+                            partitionData = new CompletableFuture<>();
+                            partitionData.complete(new ListOffsetResponse
                                     .PartitionData(
                                     Errors.UNKNOWN_SERVER_ERROR,
-                                    Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET))));
-                            return;
+                                    Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET)));
                         }
-                        fetchOffsetForTimestamp(fullPartitionName, times, true)
-                                .whenComplete((data, e) -> {
-                                    if (e != null) {
-                                        future.complete(Pair.of(topic, new ListOffsetResponse
-                                                .PartitionData(
-                                                Errors.UNKNOWN_SERVER_ERROR,
-                                                Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET))));
-                                    } else {
-                                        future.complete(Pair.of(topic, data));
-                                    }
-                                });
+
+                        partitionData = fetchOffsetForTimestamp(fullPartitionName, times, true);
+                        responseData.put(topic, partitionData);
                     });
-            allFutures.add(future);
+
         });
 
-        CompletableFuture.allOf(allFutures.stream()
-                        .map(pairCompletableFuture ->
-                                pairCompletableFuture.thenAccept(topicPartitionPartitionDataPair ->
-                                        responseMap.put(topicPartitionPartitionDataPair.getKey(),
-                                                topicPartitionPartitionDataPair.getValue())))
-                        .toArray(CompletableFuture[]::new))
+        CompletableFuture
+                .allOf(responseData.values().toArray(new CompletableFuture<?>[0]))
                 .whenComplete((ignore, ex) -> {
-                    resultFuture.complete(new ListOffsetResponse(responseMap));
+                    ListOffsetResponse response =
+                            new ListOffsetResponse(CoreUtils.mapValue(responseData, CompletableFuture::join));
+                    resultFuture.complete(response);
                 });
     }
 
