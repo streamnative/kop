@@ -381,19 +381,7 @@ public final class MessageFetchContext {
                 ? tc.getLastStableOffset(TopicName.get(fullTopicName), highWatermark) : highWatermark);
         List<Entry> committedEntries = entries;
         if (readCommitted) {
-            committedEntries = new ArrayList<>();
-            for (Entry entry : entries) {
-                try {
-                    if (lso >= MessageIdUtils.peekBaseOffsetFromEntry(entry)) {
-                        committedEntries.add(entry);
-                    } else {
-                        break;
-                    }
-                } catch (KoPMessageMetadataNotFoundException e) {
-                    log.error("[{}:{}] Failed to peek base offset from entry.",
-                            entry.getLedgerId(), entry.getEntryId());
-                }
-            }
+            committedEntries = getCommittedEntries(entries, lso);
             if (log.isDebugEnabled()) {
                 log.debug("Request {}: read {} entries but only {} entries are committed",
                         header, entries.size(), committedEntries.size());
@@ -453,6 +441,24 @@ public final class MessageFetchContext {
                 abortedTransactions,
                 decodeResult.getRecords()));
         tryComplete();
+    }
+
+    private List<Entry> getCommittedEntries(List<Entry> entries, long lso) {
+        List<Entry> committedEntries;
+        committedEntries = new ArrayList<>();
+        for (Entry entry : entries) {
+            try {
+                if (lso >= MessageIdUtils.peekBaseOffsetFromEntry(entry)) {
+                    committedEntries.add(entry);
+                } else {
+                    break;
+                }
+            } catch (KoPMessageMetadataNotFoundException e) {
+                log.error("[{}:{}] Failed to peek base offset from entry.",
+                        entry.getLedgerId(), entry.getEntryId());
+            }
+        }
+        return committedEntries;
     }
 
     private CompletableFuture<List<Entry>> readEntries(final ManagedCursor cursor,
