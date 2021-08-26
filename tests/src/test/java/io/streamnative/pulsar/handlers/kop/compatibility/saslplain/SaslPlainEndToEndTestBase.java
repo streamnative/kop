@@ -177,6 +177,7 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
         System.out.println(jaasConfigFile.getPath());
     }
 
+    // Test production and consumption sasl/plain authentication.
     @Test(timeOut = 120000)
     void testKafkaProduceAndConsumeWithSaslPlain() throws Exception {
 
@@ -188,6 +189,7 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
         final List<Header> headers = new ArrayList<>();
 
         long offset = 0;
+        // 2.0.0, 1.0.0 and 0.10.0.0 kafka clients will authenticate and perform write operations.
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
             final Producer<String, String> producer = kafkaClientFactories.get(version)
                     .createProducer(producerConfigurationWithSaslPlain(version,
@@ -230,6 +232,7 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
             producer.close();
         }
 
+        // 2.0.0, 1.0.0 and 0.10.0.0 kafka clients will authenticate and perform read operations.
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
             final Consumer<String, String> consumer = kafkaClientFactories.get(version)
                     .createConsumer(consumerConfigurationWithSaslPlain(version,
@@ -271,6 +274,7 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
         }
     }
 
+    // Test bad credential will fail to produce.
     @Test(timeOut = 20000)
     void badCredentialFail() throws Exception {
         final int metadataTimeoutMs = 5000;
@@ -303,6 +307,7 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
         }
     }
 
+    // Test user without topic permission will fail produce.
     @Test(timeOut = 20000)
     void badUserFail() throws Exception {
         String badUser = "token:" + anotherToken;
@@ -323,6 +328,8 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
     }
 
 
+    // Test that the client without authentication configuration cannot complete
+    // the authentication and will capture the get metadata exception.
     @Test(timeOut = 60000)
     void clientWithoutAuth() throws Exception {
         final int metadataTimeoutMs = 3000;
