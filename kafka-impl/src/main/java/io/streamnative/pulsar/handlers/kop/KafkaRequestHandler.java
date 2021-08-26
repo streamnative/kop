@@ -156,6 +156,7 @@ import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitResponse;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
@@ -177,6 +178,7 @@ import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.metadata.api.MetadataCache;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
+import org.eclipse.jetty.util.StringUtil;
 
 /**
  * This class contains all the request handling methods.
@@ -2108,6 +2110,22 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (future != null) {
             return future;
         }
+
+        // if kafkaListenerName is set, the lookup result is the advertised address
+        if (!StringUtil.isBlank(kafkaConfig.getKafkaListenerName())) {
+            // TODO:　should add SecurityProtocol according to which endpoint is handling the request.
+            //  firstly we only support PLAINTEXT when lookup with kafkaListenerName
+            String kafkaAdvertisedAddress = String.format("%s://%s:%s", SecurityProtocol.PLAINTEXT.name(),
+                    pulsarAddress.getHostName(), pulsarAddress.getPort());
+            KafkaTopicManager.KOP_ADDRESS_CACHE.put(topic.toString(), returnFuture);
+            returnFuture.complete(Optional.ofNullable(kafkaAdvertisedAddress));
+            if (log.isDebugEnabled()) {
+                log.debug("{} get kafka Advertised Address through kafkaListenerName: {}",
+                        topic, pulsarAddress);
+            }
+            return returnFuture;
+        }
+
         // advertised data is write in  /loadbalance/brokers/advertisedAddress:webServicePort
         // here we get the broker url, need to find related webServiceUrl.
         pulsarService.getPulsarResources()

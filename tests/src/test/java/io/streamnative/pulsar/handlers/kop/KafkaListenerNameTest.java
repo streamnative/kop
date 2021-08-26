@@ -39,15 +39,13 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
     public void testListenerName() throws Exception {
         super.resetConfig();
         conf.setAdvertisedAddress(null);
-        conf.setInternalListenerName("external");
-        // There's a limit that PulsarService doesn't use advertised listener's address as it's brokerServiceUrl's
-        // address. So here the "external" listener's port should be the same with brokerPort and address should be
-        // localhost.
         final String localAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(null);
+        conf.setInternalListenerName("pulsar");
         final String advertisedListeners =
-                "internal:pulsar://192.168.0.2:6650,external:pulsar://" + localAddress + ":" + brokerPort;
+                "pulsar:pulsar://" + localAddress + ":" + brokerPort
+                        + ",kafka:pulsar://" + "localhost:" + kafkaBrokerPort;
         conf.setAdvertisedListeners(advertisedListeners);
-        conf.setKafkaListenerName("external");
+        conf.setKafkaListenerName("kafka");
         log.info("Set advertisedListeners to {}", advertisedListeners);
         super.internalSetup();
 

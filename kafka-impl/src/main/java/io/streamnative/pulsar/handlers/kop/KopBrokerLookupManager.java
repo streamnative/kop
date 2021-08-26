@@ -23,6 +23,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
@@ -32,6 +33,7 @@ import org.apache.pulsar.metadata.api.MetadataCache;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 import org.apache.pulsar.zookeeper.ZooKeeperCache;
+import org.eclipse.jetty.util.StringUtil;
 
 
 /**
@@ -165,6 +167,22 @@ public class KopBrokerLookupManager {
         if (KOP_ADDRESS_CACHE.containsKey(topic.toString())) {
             return KOP_ADDRESS_CACHE.get(topic.toString());
         }
+
+        // if kafkaListenerName is set, the lookup result is the advertised address
+        if (!StringUtil.isBlank(lookupClient.getPulsarClient().getConfiguration().getListenerName())) {
+            // TODO:　should add SecurityProtocol according to which endpoint is handling the request.
+            //  firstly we only support PLAINTEXT when lookup with kafkaListenerName
+            String kafkaAdvertisedAddress = String.format("%s://%s:%s", SecurityProtocol.PLAINTEXT.name(),
+                    pulsarAddress.getHostName(), pulsarAddress.getPort());
+            KOP_ADDRESS_CACHE.put(topic.toString(), kopAddressFuture);
+            if (log.isDebugEnabled()) {
+                log.debug("{} get kafka Advertised Address through kafkaListenerName: {}",
+                        topic, pulsarAddress);
+            }
+            kopAddressFuture.complete(Optional.ofNullable(kafkaAdvertisedAddress));
+            return kopAddressFuture;
+        }
+
         // advertised data is write in  /loadbalance/brokers/advertisedAddress:webServicePort
         // here we get the broker url, need to find related webServiceUrl.
         ZooKeeperCache zkCache = pulsarService.getLocalZkCache();
