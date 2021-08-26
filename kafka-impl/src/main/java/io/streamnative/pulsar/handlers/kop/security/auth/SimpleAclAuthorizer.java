@@ -211,7 +211,7 @@ public class SimpleAclAuthorizer implements Authorizer {
                 if (log.isDebugEnabled()) {
                     log.debug(
                             "Resource [{}] Principal [{}] exception occurred while trying to "
-                                    + "check Produce permissions. {}",
+                                    + "check Consume permissions. {}",
                             resource, principal, ex.getMessage());
                 }
                 hasProducePermission = false;
@@ -225,7 +225,7 @@ public class SimpleAclAuthorizer implements Authorizer {
                     if (log.isDebugEnabled()) {
                         log.debug(
                                 "Resource [{}] Principal [{}] exception occurred while trying to "
-                                        + "check Consume permissions. {}",
+                                        + "check Produce permissions. {}",
                                 resource, principal, e.getMessage());
                     }
                     canLookupFuture.completeExceptionally(e);

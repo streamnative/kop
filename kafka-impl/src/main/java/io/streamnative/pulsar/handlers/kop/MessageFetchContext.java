@@ -333,8 +333,7 @@ public final class MessageFetchContext {
 
                 final ManagedCursor cursor = cursorLongPair.getLeft();
                 final AtomicLong cursorOffset = new AtomicLong(cursorLongPair.getRight());
-                final long highWatermark = MessageIdUtils.getHighWatermark(
-                        cursorLongPair.getLeft().getManagedLedger());
+
                 statsLogger.getPrepareMetadataStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
                 readEntries(cursor, topicPartition, cursorOffset).whenComplete((entries, throwable) -> {
@@ -358,7 +357,6 @@ public final class MessageFetchContext {
                             tcm,
                             cursor,
                             cursorOffset,
-                            highWatermark,
                             readCommitted);
                 });
             });
@@ -372,8 +370,8 @@ public final class MessageFetchContext {
                                final KafkaTopicConsumerManager tcm,
                                final ManagedCursor cursor,
                                final AtomicLong cursorOffset,
-                               final long highWatermark,
                                final boolean readCommitted) {
+        final long highWatermark = MessageIdUtils.getHighWatermark(cursor.getManagedLedger());
         // Add new offset back to TCM after entries are read successfully
         tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
 

@@ -114,7 +114,7 @@ class TopicThrowablePair {
     }
 
     public static TopicThrowablePair withThrowable(final Throwable throwable) {
-        return new TopicThrowablePair(null, throwable);
+        return new TopicThrowablePair(Optional.empty(), throwable);
     }
 
     private TopicThrowablePair(final Optional<PersistentTopic> persistentTopicOpt, final Throwable throwable) {
