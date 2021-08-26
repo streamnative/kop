@@ -206,12 +206,12 @@ public class SimpleAclAuthorizer implements Authorizer {
                 String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
 
         CompletableFuture<Boolean> canLookupFuture = new CompletableFuture<>();
-        authorize(principal, AuthAction.produce, resource).whenComplete((hasProducePermission, ex) -> {
+        authorize(principal, AuthAction.consume, resource).whenComplete((hasProducePermission, ex) -> {
             if (ex != null) {
                 if (log.isDebugEnabled()) {
                     log.debug(
                             "Resource [{}] Principal [{}] exception occurred while trying to "
-                                    + "check Produce permissions. {}",
+                                    + "check Consume permissions. {}",
                             resource, principal, ex.getMessage());
                 }
                 hasProducePermission = false;
@@ -220,12 +220,12 @@ public class SimpleAclAuthorizer implements Authorizer {
                 canLookupFuture.complete(true);
                 return;
             }
-            authorize(principal, AuthAction.consume, resource).whenComplete((hasConsumerPermission, e) -> {
+            authorize(principal, AuthAction.produce, resource).whenComplete((hasConsumerPermission, e) -> {
                 if (e != null) {
                     if (log.isDebugEnabled()) {
                         log.debug(
                                 "Resource [{}] Principal [{}] exception occurred while trying to "
-                                        + "check Consume permissions. {}",
+                                        + "check Produce permissions. {}",
                                 resource, principal, e.getMessage());
                     }
                     canLookupFuture.completeExceptionally(e);

@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import lombok.extern.slf4j.Slf4j;
@@ -54,9 +55,9 @@ public class PendingTopicFuturesTest {
     @Test(timeOut = 10000)
     void testNormalComplete() throws ExecutionException, InterruptedException {
         final PendingTopicFutures pendingTopicFutures = new PendingTopicFutures(null);
-        final CompletableFuture<PersistentTopic> topicFuture = CompletableFuture.supplyAsync(() -> {
+        final CompletableFuture<Optional<PersistentTopic>> topicFuture = CompletableFuture.supplyAsync(() -> {
             sleep(800);
-            return null;
+            return Optional.empty();
         });
         final List<Integer> completedIndexes = new ArrayList<>();
         final List<Integer> changesOfPendingCount = new ArrayList<>();
@@ -86,7 +87,7 @@ public class PendingTopicFuturesTest {
     @Test(timeOut = 10000)
     void testExceptionalComplete() throws ExecutionException, InterruptedException {
         final PendingTopicFutures pendingTopicFutures = new PendingTopicFutures(null);
-        final CompletableFuture<PersistentTopic> topicFuture = CompletableFuture.supplyAsync(() -> {
+        final CompletableFuture<Optional<PersistentTopic>> topicFuture = CompletableFuture.supplyAsync(() -> {
             sleep(800);
             throw new RuntimeException("error");
         });

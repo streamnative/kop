@@ -52,7 +52,7 @@ public class KafkaTopicManager {
 
     // cache for topics: <topicName, persistentTopic>, for removing producer
     @Getter
-    private static final ConcurrentHashMap<String, CompletableFuture<PersistentTopic>>
+    private static final ConcurrentHashMap<String, CompletableFuture<Optional<PersistentTopic>>>
         topics = new ConcurrentHashMap<>();
     // cache for references in PersistentTopic: <topicName, producer>
     @Getter
@@ -123,12 +123,12 @@ public class KafkaTopicManager {
             t -> {
                 final CompletableFuture<KafkaTopicConsumerManager> tcmFuture = new CompletableFuture<>();
                 getTopic(t).whenComplete((persistentTopic, throwable) -> {
-                    if (persistentTopic != null && throwable == null) {
+                    if (persistentTopic.isPresent() && throwable == null) {
                         if (log.isDebugEnabled()) {
                             log.debug("[{}] Call getTopicConsumerManager for {}, and create TCM for {}.",
                                     requestHandler.ctx.channel(), topicName, persistentTopic);
                         }
-                        tcmFuture.complete(new KafkaTopicConsumerManager(requestHandler, persistentTopic));
+                        tcmFuture.complete(new KafkaTopicConsumerManager(requestHandler, persistentTopic.get()));
                     } else {
                         if (throwable != null) {
                             log.error("[{}] Failed to getTopicConsumerManager caused by getTopic '{}' throws {}",
@@ -201,22 +201,22 @@ public class KafkaTopicManager {
     }
 
     // A wrapper of `BrokerService#getTopic` that is to find the topic's associated `PersistentTopic` instance
-    public CompletableFuture<PersistentTopic> getTopic(String topicName) {
+    public CompletableFuture<Optional<PersistentTopic>> getTopic(String topicName) {
         if (closed.get()) {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Return null for getTopic({}) since channel is closing",
                         requestHandler.ctx.channel(), topicName);
             }
-            return CompletableFuture.completedFuture(null);
+            return CompletableFuture.completedFuture(Optional.empty());
         }
-        CompletableFuture<PersistentTopic> topicCompletableFuture = new CompletableFuture<>();
+        CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture = new CompletableFuture<>();
         brokerService.getTopicIfExists(topicName).whenComplete((t2, throwable) -> {
             if (throwable != null) {
                 // The ServiceUnitNotReadyException is retriable so we should print a warning log instead of error log
                 if (throwable instanceof BrokerServiceException.ServiceUnitNotReadyException) {
                     log.warn("[{}] Failed to getTopic {}: {}",
                             requestHandler.ctx.channel(), topicName, throwable.getMessage());
-                    topicCompletableFuture.complete(null);
+                    topicCompletableFuture.complete(Optional.empty());
                 } else {
                     log.error("[{}] Failed to getTopic {}. exception:",
                             requestHandler.ctx.channel(), topicName, throwable);
@@ -228,11 +228,11 @@ public class KafkaTopicManager {
             }
             if (t2.isPresent()) {
                 PersistentTopic persistentTopic = (PersistentTopic) t2.get();
-                topicCompletableFuture.complete(persistentTopic);
+                topicCompletableFuture.complete(Optional.of(persistentTopic));
             } else {
                 log.error("[{}]Get empty topic for name {}", requestHandler.ctx.channel(), topicName);
                 removeTopicManagerCache(topicName);
-                topicCompletableFuture.complete(null);
+                topicCompletableFuture.complete(Optional.empty());
             }
         });
         // cache for removing producer
@@ -291,7 +291,7 @@ public class KafkaTopicManager {
 
     private static void removePersistentTopicAndReferenceProducer(final String topicName) {
         // 1. Remove PersistentTopic and Producer from caches, these calls are thread safe
-        final CompletableFuture<PersistentTopic> topicFuture = topics.remove(topicName);
+        final CompletableFuture<Optional<PersistentTopic>> topicFuture = topics.remove(topicName);
         final Producer producer = references.remove(topicName);
 
         if (topicFuture == null) {
@@ -303,10 +303,10 @@ public class KafkaTopicManager {
         try {
             // It's safe to wait until the future is completed because it's completed when
             // `BrokerService#getTopicIfExists` completed and it won't block too long.
-            final PersistentTopic persistentTopic = topicFuture.get();
-            if (producer != null && persistentTopic != null) {
+            final Optional<PersistentTopic> persistentTopic = topicFuture.get();
+            if (producer != null && persistentTopic.isPresent()) {
                 try {
-                    persistentTopic.removeProducer(producer);
+                    persistentTopic.get().removeProducer(producer);
                 } catch (IllegalArgumentException ignored) {
                     log.error("[{}] The producer's topic ({}) doesn't match the current PersistentTopic",
                             topicName, (producer.getTopic() == null) ? "null" : producer.getTopic().getName());
