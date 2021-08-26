@@ -389,8 +389,8 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             try {
                 kConsumer.getConsumer().poll(Duration.ofSeconds(1));
                 fail("expected TopicAuthorizationException");
-            } catch (Exception e) {
-                assertTrue(e instanceof TopicAuthorizationException);
+            } catch (TopicAuthorizationException ignore) {
+                log.info("Has TopicAuthorizationException.");
             }
         } finally {
             // Cleanup
