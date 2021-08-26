@@ -228,12 +228,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 registerRequestLatency.accept(kafkaHeaderAndRequest.getHeader().apiKey().name,
                         startProcessRequestTimestamp);
 
-                requestStats.getStatsLogger()
-                        .scopeLabel(KopServerStats.REQUEST_SCOPE, kafkaHeaderAndRequest.getHeader().apiKey().name)
-                        .getOpStatsLogger(KopServerStats.REQUEST_LATENCY)
-                        .registerSuccessfulEvent(MathUtils.elapsedNanos(startProcessRequestTimestamp),
-                                TimeUnit.NANOSECONDS);
-
                 ctx.channel().eventLoop().execute(() -> {
                     writeAndFlushResponseToClient(channel);
                 });
