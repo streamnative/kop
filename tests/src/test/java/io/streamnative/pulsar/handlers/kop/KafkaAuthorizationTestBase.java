@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import javax.crypto.SecretKey;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +39,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.errors.TopicAuthorizationException;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
@@ -290,5 +292,112 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         admin.topics().deletePartitionedTopic(fullNewTopicName);
     }
 
+    @Test(timeOut = 20000)
+    void testProduceFailed() throws PulsarAdminException, ExecutionException, InterruptedException {
+        String newTenant = "newProduceFailed";
+        String testTopic = "persistent://" + newTenant + "/" + NAMESPACE + "/topic1";
+        try {
+            admin.tenants().createTenant(newTenant,
+                    TenantInfo.builder()
+                            .adminRoles(Collections.singleton(ADMIN_USER))
+                            .allowedClusters(Collections.singleton(configClusterName))
+                            .build());
+            admin.namespaces().createNamespace(newTenant + "/" + NAMESPACE);
+            admin.namespaces().grantPermissionOnNamespace(newTenant + "/" + NAMESPACE, SIMPLE_USER,
+                    Sets.newHashSet(AuthAction.consume));
+            admin.topics().createPartitionedTopic(testTopic, 1);
+
+            // Admin must have produce permissions
+            @Cleanup
+            KProducer adminProducer = new KProducer(testTopic, false, "localhost", getKafkaBrokerPort(),
+                    newTenant + "/" + NAMESPACE, "token:" + adminToken);
+            int totalMsgs = 10;
+            String messageStrPrefix = testTopic + "_message_";
+
+            for (int i = 0; i < totalMsgs; i++) {
+                String messageStr = messageStrPrefix + i;
+                adminProducer.getProducer().send(new ProducerRecord<>(testTopic, i, messageStr)).get();
+            }
+
+            // Ensure can consume message.
+            @Cleanup
+            KConsumer kConsumer = new KConsumer(testTopic, "localhost", getKafkaBrokerPort(), false,
+                    newTenant + "/" + NAMESPACE, "token:" + adminToken, "DemoKafkaOnPulsarConsumer");
+            kConsumer.getConsumer().subscribe(Collections.singleton(testTopic));
+
+            int i = 0;
+            while (i < totalMsgs) {
+                ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+                for (ConsumerRecord<Integer, String> record : records) {
+                    Integer key = record.key();
+                    assertEquals(messageStrPrefix + key.toString(), record.value());
+                    i++;
+                }
+            }
+            assertEquals(i, totalMsgs);
+
+            // no more records
+            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofMillis(200));
+            assertTrue(records.isEmpty());
+
+            // User can't produce, because don't have produce action.
+            @Cleanup
+            KProducer kProducer = new KProducer(testTopic, false, "localhost", getKafkaBrokerPort(),
+                    newTenant + "/" + NAMESPACE, "token:" + userToken);
+            try {
+                kProducer.getProducer().send(new ProducerRecord<>(testTopic, 0, "")).get();
+                fail("expected TopicAuthorizationException");
+            } catch (ExecutionException e) {
+                assertTrue(e.getCause() instanceof TopicAuthorizationException);
+            }
+        } finally {
+            // Cleanup
+            admin.topics().deletePartitionedTopic(testTopic);
+            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
+            admin.tenants().deleteTenant(newTenant);
+        }
+    }
+
+    @Test(timeOut = 20000)
+    void testConsumeFailed() throws PulsarAdminException, ExecutionException, InterruptedException {
+        String newTenant = "testConsumeFailed";
+        String testTopic = "persistent://" + newTenant + "/" + NAMESPACE + "/topic1";
+        try {
+            // Create new tenant, namespace and topic
+            admin.tenants().createTenant(newTenant,
+                    TenantInfo.builder()
+                            .adminRoles(Collections.singleton(ADMIN_USER))
+                            .allowedClusters(Collections.singleton(configClusterName))
+                            .build());
+            admin.namespaces().createNamespace(newTenant + "/" + NAMESPACE);
+            admin.namespaces().grantPermissionOnNamespace(newTenant + "/" + NAMESPACE, SIMPLE_USER,
+                    Sets.newHashSet(AuthAction.produce));
+            admin.topics().createPartitionedTopic(testTopic, 1);
+
+            // SIMPLE_USER can produce
+            @Cleanup
+            KProducer adminProducer = new KProducer(testTopic, false, "localhost", getKafkaBrokerPort(),
+                    newTenant + "/" + NAMESPACE, "token:" + userToken);
+            adminProducer.getProducer().send(new ProducerRecord<>(testTopic, 0, "message")).get();
+
+
+            // Consume should be failed.
+            @Cleanup
+            KConsumer kConsumer = new KConsumer(testTopic, "localhost", getKafkaBrokerPort(), false,
+                    newTenant + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
+            kConsumer.getConsumer().subscribe(Collections.singleton(testTopic));
+            try {
+                kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+                fail("expected TopicAuthorizationException");
+            } catch (TopicAuthorizationException ignore) {
+                log.info("Has TopicAuthorizationException.");
+            }
+        } finally {
+            // Cleanup
+            admin.topics().deletePartitionedTopic(testTopic);
+            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
+            admin.tenants().deleteTenant(newTenant);
+        }
+    }
 
 }
