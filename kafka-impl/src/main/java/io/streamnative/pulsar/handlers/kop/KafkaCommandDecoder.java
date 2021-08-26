@@ -164,11 +164,13 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         // Get a buffer that contains the full frame
         ByteBuf buffer = (ByteBuf) msg;
 
+        // Update parse request latency metrics
         final BiConsumer<Long, Throwable> registerRequestParseLatency = (timeBeforeParse, throwable) -> {
             requestStats.getRequestParseLatencyStats().registerSuccessfulEvent(
                     MathUtils.elapsedNanos(timeBeforeParse), TimeUnit.NANOSECONDS);
         };
 
+        // Update handle request latency metrics
         final BiConsumer<String, Long> registerRequestLatency = (apiName, startProcessTime) -> {
             requestStats.getStatsLogger()
                     .scopeLabel(KopServerStats.REQUEST_SCOPE, apiName)
