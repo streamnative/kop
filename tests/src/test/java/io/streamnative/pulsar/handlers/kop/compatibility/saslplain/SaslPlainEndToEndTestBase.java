@@ -178,7 +178,7 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
     }
 
     // Test production and consumption sasl/plain authentication.
-    @Test(timeOut = 120000)
+    @Test(timeOut = 60000)
     void testKafkaProduceAndConsumeWithSaslPlain() throws Exception {
 
         // need java.security.auth.login.config for sasl/plain in kafka client 0.10.0.0
