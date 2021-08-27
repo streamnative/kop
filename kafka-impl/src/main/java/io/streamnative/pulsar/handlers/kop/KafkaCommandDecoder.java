@@ -348,8 +348,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
             final CompletableFuture<AbstractResponse> responseFuture = responseAndRequest.getResponseFuture();
             final long nanoSecondsSinceCreated = responseAndRequest.nanoSecondsSinceCreated();
-            final boolean expired =
-                    (nanoSecondsSinceCreated > TimeUnit.MILLISECONDS.toNanos(kafkaConfig.getRequestTimeoutMs()));
+            final boolean expired = responseAndRequest.expired(kafkaConfig.getRequestTimeoutMs());
             if (!responseFuture.isDone() && !expired) {
                 // case 1: responseFuture is not completed or expired, stop polling responses from responseQueue
                 requestStats.getResponseBlockedTimes().inc();
