@@ -228,12 +228,12 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
             // 10.Use the same consumer group to start a new consumer group,
             // and consumers will start to consume from the offset manually committed above
             consumer = kafkaClientFactories.get(version)
-                    .createConsumer(consumerConfiguration(version));
+                    .createConsumer(consumerConfiguration(version, false));
             consumer.subscribe(topic);
 
             // 11.Consume messages and verify that the number of messages is the same
             // as the number of messages calculated according to the commit offset
-            List<ConsumerRecord<String, String>> commitRecordList = consumer.receiveUntil(messagesSize, 6000);
+            List<ConsumerRecord<String, String>> commitRecordList = consumer.receiveUntil(messagesSize, 12000);
             Assert.assertEquals(messagesSize, commitRecordList.size());
 
             // 12.The results of consumption are grouped according to partitions to facilitate
