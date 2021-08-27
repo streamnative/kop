@@ -27,9 +27,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Future;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.internals.RecordHeader;
 
 /**
@@ -77,6 +79,11 @@ public class DefaultKafkaClientFactory implements KafkaClientFactory {
         @Override
         public Map<String, List<PartitionInfo>> listTopics(long timeoutMS) {
             return listTopics(Duration.ofMillis(timeoutMS));
+        }
+
+        @Override
+        public void commitOffsetSync(Map<TopicPartition, OffsetAndMetadata> offsets, Duration timeout) {
+            commitSync(offsets, timeout);
         }
     }
 }

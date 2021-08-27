@@ -16,11 +16,15 @@ package io.streamnative.kafka.client.zero.ten;
 import io.streamnative.kafka.client.api.Consumer;
 import io.streamnative.kafka.client.api.ConsumerConfiguration;
 import io.streamnative.kafka.client.api.ConsumerRecord;
+
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.TopicPartition;
 
 /**
  * The implementation of Kafka consumer 0.10.0.0.
@@ -41,5 +45,10 @@ public class Consumer010Impl<K, V> extends KafkaConsumer<K, V> implements Consum
     @Override
     public Map<String, List<PartitionInfo>> listTopics(long timeoutMS) {
         return listTopics();
+    }
+
+    @Override
+    public void commitOffsetSync(Map<TopicPartition, OffsetAndMetadata> offsets, Duration timeout) {
+        commitSync(offsets);
     }
 }

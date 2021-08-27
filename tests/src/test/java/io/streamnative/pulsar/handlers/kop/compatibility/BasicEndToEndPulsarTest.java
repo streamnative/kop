@@ -51,6 +51,11 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
     }
 
     @Test(timeOut = 30000)
+    protected void testKafkaProduceKafkaCommitOffset() throws Exception {
+        super.testKafkaProduceKafkaCommitOffset();
+    }
+
+    @Test(timeOut = 30000)
     public void testKafkaProducePulsarConsume() throws Exception {
         final String topic = "test-kafka-produce-pulsar-consume";
         admin.topics().createPartitionedTopic(topic, 1);
