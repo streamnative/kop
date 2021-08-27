@@ -159,22 +159,14 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
     protected void writeJaasFile(String password) throws IOException {
         jaasConfigFile = File.createTempFile("jaas", ".conf");
         System.setProperty(JaasUtils.JAVA_LOGIN_CONFIG_PARAM, jaasConfigFile.toString());
-        StringBuilder builder = new StringBuilder();
-        builder.append("\torg.apache.kafka.common.security.plain.PlainLoginModule");
-        builder.append(' ');
-        builder.append("required \n");
-        builder.append('\t');
-        builder.append("username");
-        builder.append("=\"");
-        builder.append("public/default\" \n");
-        builder.append('\t');
-        builder.append("password");
-        builder.append("=\"");
-        builder.append(password);
-        builder.append("\";");
-        List<String> lines = Arrays.asList("KafkaClient {", builder.toString(), "};");
+
+        String jaasTemplate = "\torg.apache.kafka.common.security.plain.PlainLoginModule required\n"
+                + "\tusername=\"%s\" \n"
+                + "\tpassword=\"%s\";";
+        String jaasContent = String.format(jaasTemplate, String.join("/", TENANT, NAMESPACE), password);
+        List<String> lines = Arrays.asList("KafkaClient {", jaasContent, "};");
+
         Files.write(jaasConfigFile.toPath(), lines, StandardCharsets.UTF_8);
-        System.out.println(jaasConfigFile.getPath());
     }
 
     // Test production and consumption sasl/plain authentication.
