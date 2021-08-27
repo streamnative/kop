@@ -29,6 +29,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 import javax.naming.AuthenticationException;
 import lombok.Getter;
 import lombok.Setter;
@@ -154,10 +155,46 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
+    protected Boolean channelReady() {
+        return hasAuthenticated();
+    }
+
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         // Get a buffer that contains the full frame
         ByteBuf buffer = (ByteBuf) msg;
+
+        // Update parse request latency metrics
+        final BiConsumer<Long, Throwable> registerRequestParseLatency = (timeBeforeParse, throwable) -> {
+            requestStats.getRequestParseLatencyStats().registerSuccessfulEvent(
+                    MathUtils.elapsedNanos(timeBeforeParse), TimeUnit.NANOSECONDS);
+        };
+
+        // Update handle request latency metrics
+        final BiConsumer<String, Long> registerRequestLatency = (apiName, startProcessTime) -> {
+            requestStats.getStatsLogger()
+                    .scopeLabel(KopServerStats.REQUEST_SCOPE, apiName)
+                    .getOpStatsLogger(KopServerStats.REQUEST_LATENCY)
+                    .registerSuccessfulEvent(MathUtils.elapsedNanos(startProcessTime),
+                            TimeUnit.NANOSECONDS);
+        };
+
+        // If kop is enabled for authentication and the client
+        // has not completed the handshake authentication,
+        // execute channelPrepare to complete authentication
+        if (isActive.get() && !channelReady()) {
+            try {
+
+                channelPrepare(ctx, buffer, registerRequestParseLatency, registerRequestLatency);
+                return;
+            } catch (AuthenticationException e) {
+                log.error("unexpected error in authenticate:", e);
+                close();
+                return;
+            } finally {
+                buffer.release();
+            }
+        }
 
         Channel channel = ctx.channel();
         SocketAddress remoteAddress = null;
@@ -168,8 +205,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         final long timeBeforeParse = MathUtils.nowInNano();
         KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress);
         // potentially blocking until there is room in the queue for the request.
-        requestStats.getRequestParseLatencyStats().registerSuccessfulEvent(
-                MathUtils.elapsedNanos(timeBeforeParse), TimeUnit.NANOSECONDS);
+        registerRequestParseLatency.accept(timeBeforeParse, null);
+
         try {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Received kafka cmd {}, the request content is: {}",
@@ -189,11 +226,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     // no need to call `writeAndFlushResponseToClient` again.
                     return;
                 }
-                requestStats.getStatsLogger()
-                        .scopeLabel(KopServerStats.REQUEST_SCOPE, kafkaHeaderAndRequest.getHeader().apiKey().name)
-                        .getOpStatsLogger(KopServerStats.REQUEST_LATENCY)
-                        .registerSuccessfulEvent(MathUtils.elapsedNanos(startProcessRequestTimestamp),
-                                TimeUnit.NANOSECONDS);
+
+                registerRequestLatency.accept(kafkaHeaderAndRequest.getHeader().apiKey().name,
+                        startProcessRequestTimestamp);
 
                 ctx.channel().eventLoop().execute(() -> {
                     writeAndFlushResponseToClient(channel);
@@ -206,10 +241,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             if (!isActive.get()) {
                 handleInactive(kafkaHeaderAndRequest, responseFuture);
             } else {
-                if (!hasAuthenticated(kafkaHeaderAndRequest)) {
-                    authenticate(kafkaHeaderAndRequest, responseFuture);
-                    return;
-                }
                 switch (kafkaHeaderAndRequest.getHeader().apiKey()) {
                     case API_VERSIONS:
                         handleApiVersionsRequest(kafkaHeaderAndRequest, responseFuture);
@@ -295,9 +326,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                         handleError(kafkaHeaderAndRequest, responseFuture);
                 }
             }
-        } catch (AuthenticationException e) {
-            log.error("unexpected error in authenticate:", e);
-            close();
         } catch (Exception e) {
             log.error("error while handle command:", e);
             close();
@@ -409,10 +437,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    protected abstract boolean hasAuthenticated(KafkaHeaderAndRequest kafkaHeaderAndRequest);
+    protected abstract boolean hasAuthenticated();
 
-    protected abstract void
-    authenticate(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response)
+    protected abstract void channelPrepare(ChannelHandlerContext ctx,
+                                           ByteBuf requestBuf,
+                                           BiConsumer<Long, Throwable> registerRequestParseLatency,
+                                           BiConsumer<String, Long> registerRequestLatency)
             throws AuthenticationException;
 
     protected abstract void
