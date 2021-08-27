@@ -16,7 +16,6 @@ package io.streamnative.kafka.client.zero.ten;
 import io.streamnative.kafka.client.api.Consumer;
 import io.streamnative.kafka.client.api.ConsumerConfiguration;
 import io.streamnative.kafka.client.api.ConsumerRecord;
-
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;

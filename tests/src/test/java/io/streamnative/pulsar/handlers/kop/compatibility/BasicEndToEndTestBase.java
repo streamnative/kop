@@ -24,7 +24,6 @@ import io.streamnative.kafka.client.api.Producer;
 import io.streamnative.kafka.client.api.ProducerConfiguration;
 import io.streamnative.kafka.client.api.RecordMetadata;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
-
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -197,7 +196,8 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
                 // and later we will use it to compare the consumption results.
                 valuesMap.put(partition, values);
 
-                RecordMetadata recordMetadata = producer.newContextBuilder(topic, value, partition).build().sendAsync().get();
+                RecordMetadata recordMetadata = producer.newContextBuilder(topic, value, partition).
+                        build().sendAsync().get();
                 log.info("Kafka client {} sent {} to {}", version, value, recordMetadata);
                 Assert.assertEquals(recordMetadata.getTopic(), topic);
                 Assert.assertEquals(recordMetadata.getPartition(), partition);
@@ -224,7 +224,9 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
             // and the records of each partition are compared with the partition data recorded above.
             totalRecordsGroupByPartition.keySet().forEach(
                     partition -> Assert.assertEquals(
-                            totalRecordsGroupByPartition.get(partition).stream().map(ConsumerRecord::getValue).collect(Collectors.toList()),
+                            totalRecordsGroupByPartition.get(partition).stream()
+                                    .map(ConsumerRecord::getValue)
+                                    .collect(Collectors.toList()),
                             valuesMap.get(partition))
             );
 
@@ -236,7 +238,8 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
                 long offset = record.getOffset();
                 String value = record.getValue();
 
-                Map<Long, String> offsetAndValue = partitionAndOffsetValue.computeIfAbsent(partition, k -> new HashMap<>());
+                Map<Long, String> offsetAndValue = partitionAndOffsetValue
+                        .computeIfAbsent(partition, k -> new HashMap<>());
 
                 offsetAndValue.put(offset, value);
                 partitionAndOffsetValue.put(partition, offsetAndValue);
