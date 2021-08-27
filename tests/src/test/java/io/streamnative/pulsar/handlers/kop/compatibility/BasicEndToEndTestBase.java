@@ -24,6 +24,7 @@ import io.streamnative.kafka.client.api.Producer;
 import io.streamnative.kafka.client.api.ProducerConfiguration;
 import io.streamnative.kafka.client.api.RecordMetadata;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -167,47 +168,11 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
         }
     }
 
-    protected void testKafkaProduceKafkaCommitOffset() throws Exception {
-        final String topic = "test-kafka-produce-kafka-commit-offset";
-        int numPartitions = 5;
-        admin.topics().createPartitionedTopic(topic, numPartitions);
-
-        Map<Integer, List<String>> valuesMap = Maps.newHashMap();
-
-        // The number of messages sent by the producer of each version
-        long sends = 25;
-
-        // Record the total number of messages
-        int count = 0;
-        // 1.Produce messages with different versions
+    protected void verifyManualCommitOffset(String topic,
+                                            int count,
+                                            int numPartitions,
+                                            Map<Integer, List<String>> valuesMap) throws IOException {
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
-
-            Producer<String, String> producer = kafkaClientFactories.get(version)
-                    .createProducer(producerConfiguration(version));
-
-            for (int i = 0; i < sends; i++) {
-                String value = "value-commit-from" + version.name() + i;
-
-                // (Round Robin) Select the partition to send record
-                int partition = i % numPartitions;
-                List<String> values = valuesMap.computeIfAbsent(partition, k -> new ArrayList<>());
-                values.add(value);
-                // Record the message corresponding to each partition,
-                // and later we will use it to compare the consumption results.
-                valuesMap.put(partition, values);
-
-                RecordMetadata recordMetadata = producer.newContextBuilder(topic, value, partition).
-                        build().sendAsync().get();
-                log.info("Kafka client {} sent {} to {}", version, value, recordMetadata);
-                Assert.assertEquals(recordMetadata.getTopic(), topic);
-                Assert.assertEquals(recordMetadata.getPartition(), partition);
-                count++;
-            }
-        }
-
-        // 2.Consume messagesUse with different versions
-        for (KafkaVersion version : kafkaClientFactories.keySet()) {
-
             // 3.Forbidden to commit the offset automatically.
             // We will manually submit the offset later.
             Consumer<String, String> consumer = kafkaClientFactories.get(version)
@@ -289,7 +254,51 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
                 Assert.assertEquals(partitionAndOffsetValue.get(record.getPartition()).get(record.getOffset()),
                         record.getValue());
             });
+
+            consumer.close();
         }
+    }
+
+    protected void testKafkaProduceKafkaCommitOffset() throws Exception {
+        final String topic = "test-kafka-produce-kafka-commit-offset";
+        int numPartitions = 5;
+        admin.topics().createPartitionedTopic(topic, numPartitions);
+
+        Map<Integer, List<String>> valuesMap = Maps.newHashMap();
+
+        // The number of messages sent by the producer of each version
+        long sends = 25;
+
+        // Record the total number of messages
+        int count = 0;
+        // 1.Produce messages with different versions
+        for (KafkaVersion version : kafkaClientFactories.keySet()) {
+
+            Producer<String, String> producer = kafkaClientFactories.get(version)
+                    .createProducer(producerConfiguration(version));
+
+            for (int i = 0; i < sends; i++) {
+                String value = "value-commit-from" + version.name() + i;
+
+                // (Round Robin) Select the partition to send record
+                int partition = i % numPartitions;
+                List<String> values = valuesMap.computeIfAbsent(partition, k -> new ArrayList<>());
+                values.add(value);
+                // Record the message corresponding to each partition,
+                // and later we will use it to compare the consumption results.
+                valuesMap.put(partition, values);
+
+                RecordMetadata recordMetadata = producer.newContextBuilder(topic, value, partition).
+                        build().sendAsync().get();
+                log.info("Kafka client {} sent {} to {}", version, value, recordMetadata);
+                Assert.assertEquals(recordMetadata.getTopic(), topic);
+                Assert.assertEquals(recordMetadata.getPartition(), partition);
+                count++;
+            }
+        }
+
+        // 2.Consume messages with different versions
+        verifyManualCommitOffset(topic, count, numPartitions, valuesMap);
     }
 
     protected ProducerConfiguration producerConfiguration(final KafkaVersion version) {
