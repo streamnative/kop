@@ -22,9 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.NonNull;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.PartitionInfo;
-import org.apache.kafka.common.TopicPartition;
 
 /**
  * A common interface of Kafka consumer.
@@ -65,5 +63,5 @@ public interface Consumer<K, V> extends Closeable {
 
     Map<String, List<PartitionInfo>> listTopics(long timeoutMS);
 
-    void commitOffsetSync(Map<TopicPartition, OffsetAndMetadata> offsets, Duration timeout);
+    void commitOffsetSync(List<TopicOffsetAndMetadata> offsets, Duration timeout);
 }

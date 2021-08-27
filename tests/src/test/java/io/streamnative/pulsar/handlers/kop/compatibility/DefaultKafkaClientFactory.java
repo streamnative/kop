@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.compatibility;
 
+import com.google.common.collect.Maps;
 import io.streamnative.kafka.client.api.Consumer;
 import io.streamnative.kafka.client.api.ConsumerConfiguration;
 import io.streamnative.kafka.client.api.ConsumerRecord;
@@ -21,8 +22,10 @@ import io.streamnative.kafka.client.api.ProduceContext;
 import io.streamnative.kafka.client.api.Producer;
 import io.streamnative.kafka.client.api.ProducerConfiguration;
 import io.streamnative.kafka.client.api.RecordMetadata;
+import io.streamnative.kafka.client.api.TopicOffsetAndMetadata;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Future;
@@ -82,8 +85,15 @@ public class DefaultKafkaClientFactory implements KafkaClientFactory {
         }
 
         @Override
-        public void commitOffsetSync(Map<TopicPartition, OffsetAndMetadata> offsets, Duration timeout) {
-            commitSync(offsets, timeout);
+        public void commitOffsetSync(List<TopicOffsetAndMetadata> offsets, Duration timeout) {
+            HashMap<TopicPartition, OffsetAndMetadata> offsetsMap = Maps.newHashMap();
+            offsets.forEach(
+                    offsetAndMetadata -> offsetsMap.put(
+                            offsetAndMetadata.createTopicPartition(TopicPartition.class),
+                            offsetAndMetadata.createOffsetAndMetadata(OffsetAndMetadata.class)
+                    )
+            );
+            commitSync(offsetsMap, timeout);
         }
     }
 }

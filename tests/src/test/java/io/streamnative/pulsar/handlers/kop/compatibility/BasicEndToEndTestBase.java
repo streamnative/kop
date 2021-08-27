@@ -23,6 +23,7 @@ import io.streamnative.kafka.client.api.KafkaVersion;
 import io.streamnative.kafka.client.api.Producer;
 import io.streamnative.kafka.client.api.ProducerConfiguration;
 import io.streamnative.kafka.client.api.RecordMetadata;
+import io.streamnative.kafka.client.api.TopicOffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import java.io.IOException;
 import java.time.Duration;
@@ -36,8 +37,6 @@ import java.util.Objects;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.common.TopicPartition;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -168,10 +167,10 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
         }
     }
 
-    protected void verifyManualCommitOffset(String topic,
-                                            int count,
-                                            int numPartitions,
-                                            Map<Integer, List<String>> valuesMap) throws IOException {
+    protected void verifyManualCommitOffset(final String topic,
+                                            final int count,
+                                            final int numPartitions,
+                                            final Map<Integer, List<String>> valuesMap) throws IOException {
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
             // 3.Forbidden to commit the offset automatically.
             // We will manually submit the offset later.
@@ -212,10 +211,11 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
 
             // 7.Manually commit offset of each partition as the int value of the partition number,
             // this is for the convenience of calculation
-            Map<TopicPartition, OffsetAndMetadata> commitOffsets = Maps.newHashMap();
+            List<TopicOffsetAndMetadata> commitOffsets = new ArrayList<>();
+
             int messagesSize = count;
             for (int i = 0; i < numPartitions; i++) {
-                commitOffsets.put(new TopicPartition(topic, i), new OffsetAndMetadata(i));
+                commitOffsets.add(new TopicOffsetAndMetadata(topic, i, i));
                 messagesSize -= i;
             }
 
@@ -243,9 +243,8 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
 
             // 13.Compare the number of messages consumed by each partition
             // is the same as the number calculated by manual commit offset
-            int finalCount = count;
             recordsGroupByPartition.keySet().forEach(
-                    partition -> Assert.assertEquals(finalCount / numPartitions - partition,
+                    partition -> Assert.assertEquals(count / numPartitions - partition,
                             recordsGroupByPartition.getOrDefault(partition, Collections.emptyList()).size())
             );
 
