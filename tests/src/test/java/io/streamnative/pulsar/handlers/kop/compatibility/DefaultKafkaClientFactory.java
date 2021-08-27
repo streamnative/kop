@@ -24,10 +24,12 @@ import io.streamnative.kafka.client.api.RecordMetadata;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Future;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.header.internals.RecordHeader;
 
 /**
@@ -70,6 +72,11 @@ public class DefaultKafkaClientFactory implements KafkaClientFactory {
             final List<ConsumerRecord<K, V>> records = new ArrayList<>();
             poll(Duration.ofMillis(timeoutMs)).forEach(record -> records.add(ConsumerRecord.create(record)));
             return records;
+        }
+
+        @Override
+        public Map<String, List<PartitionInfo>> listTopics(long timeoutMS) {
+            return listTopics(Duration.ofMillis(timeoutMS));
         }
     }
 }

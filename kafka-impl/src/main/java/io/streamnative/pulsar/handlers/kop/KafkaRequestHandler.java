@@ -334,16 +334,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     @Override
-    protected boolean hasAuthenticated(KafkaHeaderAndRequest request) {
+    protected boolean hasAuthenticated() {
         return authenticator == null || authenticator.complete();
     }
 
     @Override
-    protected void authenticate(KafkaHeaderAndRequest kafkaHeaderAndRequest,
-                                CompletableFuture<AbstractResponse> responseFuture) throws AuthenticationException {
+    protected void channelPrepare(ChannelHandlerContext ctx,
+                                  ByteBuf requestBuf,
+                                  BiConsumer<Long, Throwable> registerRequestParseLatency,
+                                  BiConsumer<String, Long> registerRequestLatency)
+            throws AuthenticationException {
         if (authenticator != null) {
-            authenticator.authenticate(
-                    kafkaHeaderAndRequest.getHeader(), kafkaHeaderAndRequest.getRequest(), responseFuture);
+            authenticator.authenticate(ctx, requestBuf, registerRequestParseLatency, registerRequestLatency);
         }
     }
 

@@ -18,7 +18,9 @@ import io.streamnative.kafka.client.api.ConsumerConfiguration;
 import io.streamnative.kafka.client.api.ConsumerRecord;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.PartitionInfo;
 
 /**
  * The implementation of Kafka consumer 0.10.0.0.
@@ -34,5 +36,10 @@ public class Consumer010Impl<K, V> extends KafkaConsumer<K, V> implements Consum
         final List<ConsumerRecord<K, V>> records = new ArrayList<>();
         poll(timeoutMs).forEach(record -> records.add(ConsumerRecord.createOldRecord(record)));
         return records;
+    }
+
+    @Override
+    public Map<String, List<PartitionInfo>> listTopics(long timeoutMS) {
+        return listTopics();
     }
 }

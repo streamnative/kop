@@ -76,7 +76,7 @@ public class PlainSaslServer implements SaslServer {
 
             authorizationId = authState.getAuthRole();
             complete = true;
-            return null;
+            return new byte[0];
         } catch (AuthenticationException e) {
             throw new SaslException(e.getMessage());
         }
