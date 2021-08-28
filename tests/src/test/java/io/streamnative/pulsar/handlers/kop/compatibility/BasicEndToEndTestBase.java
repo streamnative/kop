@@ -171,7 +171,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
                                             final int count,
                                             final int numPartitions,
                                             final Map<Integer, List<String>> valuesMap)
-            throws IOException, InterruptedException {
+            throws IOException {
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
             // 3.Forbidden to commit the offset automatically.
             // We will manually submit the offset later.
@@ -226,14 +226,6 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
 
             // 9.Close current consumer
             consumer.close();
-
-            // for version 0.10.0.0, default SESSION_TIMEOUT_MS_CONFIG=30000ms
-            // in consumerConfiguration method, we set sessionTimeOutMs=10000
-            // In order for the previous consumer instance to leave the group completely,
-            // we let the thread wait for 10 seconds
-//            Thread.sleep(10000);
-
-            log.error("commitOffsetTest version {}", version);
 
             // 10.Use the same consumer group to start a new consumer group,
             // and consumers will start to consume from the offset manually committed above
