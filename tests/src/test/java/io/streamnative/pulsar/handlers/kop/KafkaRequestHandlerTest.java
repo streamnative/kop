@@ -708,7 +708,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 responseFuture);
         final MetadataResponse response = (MetadataResponse) responseFuture.get();
         assertEquals(response.topicMetadata().size(), 1);
-        assertEquals(response.errors().size(), 1);
-        assertEquals(response.errors().get(topic), Errors.INVALID_TOPIC_EXCEPTION);
+        assertEquals(response.errors().size(), 0);
     }
 }

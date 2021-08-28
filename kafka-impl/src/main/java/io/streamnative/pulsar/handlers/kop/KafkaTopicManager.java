@@ -24,6 +24,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerService;
@@ -63,6 +64,7 @@ public class KafkaTopicManager {
     private static final long checkPeriodMillis = 1 * 60 * 1000;
     private static final long expirePeriodMillis = 2 * 60 * 1000;
     private static volatile ScheduledFuture<?> cursorExpireTask = null;
+    private static final String PARTITIONED_ZERO_SUFFIX_NAME = TopicName.PARTITIONED_TOPIC_SUFFIX + "0";
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -174,8 +176,9 @@ public class KafkaTopicManager {
         return producer;
     }
 
-    // call pulsarclient.lookup.getbroker to get and own a topic.
-    // when error happens, the returned future will complete with null.
+    // call pulsarclient.lookup.getbroker to get and
+    // own a topic.
+    //    // when error happens, the returned future will complete with null.
     public CompletableFuture<InetSocketAddress> getTopicBroker(String topicName) {
         if (closed.get()) {
             if (log.isDebugEnabled()) {
@@ -215,33 +218,71 @@ public class KafkaTopicManager {
         }
         CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture = new CompletableFuture<>();
         brokerService.getTopicIfExists(topicName).whenComplete((t2, throwable) -> {
+            boolean isPartitionZero = topicName.endsWith(PARTITIONED_ZERO_SUFFIX_NAME);
             if (throwable != null) {
-                // The ServiceUnitNotReadyException is retriable so we should print a warning log instead of error log
-                if (throwable instanceof BrokerServiceException.ServiceUnitNotReadyException) {
-                    log.warn("[{}] Failed to getTopic {}: {}",
-                            requestHandler.ctx.channel(), topicName, throwable.getMessage());
-                    topicCompletableFuture.complete(Optional.empty());
+                if (isPartitionZero) {
+                    log.warn("Get partition-0 error [{}].", throwable.getMessage());
                 } else {
-                    log.error("[{}] Failed to getTopic {}. exception:",
-                            requestHandler.ctx.channel(), topicName, throwable);
-                    topicCompletableFuture.completeExceptionally(throwable);
+                    handleGetTopicEx(topicName, topicCompletableFuture, throwable);
+                    // Failed to getTopic from current broker, remove cache, which added in getTopicBroker.
+                    removeTopicManagerCache(topicName);
+                    return;
                 }
-                // failed to getTopic from current broker, remove cache, which added in getTopicBroker.
-                removeTopicManagerCache(topicName);
-                return;
             }
-            if (t2.isPresent()) {
+            if (t2 != null && t2.isPresent()) {
                 PersistentTopic persistentTopic = (PersistentTopic) t2.get();
                 topicCompletableFuture.complete(Optional.of(persistentTopic));
-            } else {
-                log.error("[{}]Get empty topic for name {}", requestHandler.ctx.channel(), topicName);
-                removeTopicManagerCache(topicName);
-                topicCompletableFuture.complete(Optional.empty());
+                return;
             }
+            // Fallback try use non-partitioned topic
+            if (isPartitionZero) {
+                String nonPartitionedTopicName = TopicName.get(topicName).getPartitionedTopicName();
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}]Try to get non-partitioned topic for name {}",
+                            requestHandler.ctx.channel(), nonPartitionedTopicName);
+                }
+                brokerService.getTopicIfExists(nonPartitionedTopicName).whenComplete((nonPartitionedTopic, ex) -> {
+                    if (ex != null) {
+                        handleGetTopicEx(nonPartitionedTopicName, topicCompletableFuture, ex);
+                        // Failed to getTopic from current broker, remove cache, which added in getTopicBroker.
+                        removeTopicManagerCache(topicName);
+                        return;
+                    }
+                    if (nonPartitionedTopic.isPresent()) {
+                        PersistentTopic persistentTopic = (PersistentTopic) nonPartitionedTopic.get();
+                        topicCompletableFuture.complete(Optional.of(persistentTopic));
+                    } else {
+                        log.error("[{}]Get empty non-partitioned topic for name {}",
+                                requestHandler.ctx.channel(), nonPartitionedTopicName);
+                        removeTopicManagerCache(topicName);
+                        topicCompletableFuture.complete(Optional.empty());
+                    }
+                });
+                return;
+            }
+            log.error("[{}]Get empty topic for name {}", requestHandler.ctx.channel(), topicName);
+            removeTopicManagerCache(topicName);
+            topicCompletableFuture.complete(Optional.empty());
         });
         // cache for removing producer
         topics.put(topicName, topicCompletableFuture);
         return topicCompletableFuture;
+    }
+
+    private void handleGetTopicEx(@NonNull final String topicName,
+                                  @NonNull final CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture,
+                                  @NonNull final Throwable ex) {
+        // The ServiceUnitNotReadyException is retryable, so we should print a warning log instead of error log
+        if (ex instanceof BrokerServiceException.ServiceUnitNotReadyException) {
+            log.warn("[{}] Failed to getTopic {}: {}",
+                    requestHandler.ctx.channel(), topicName, ex.getMessage());
+            topicCompletableFuture.complete(Optional.empty());
+        } else {
+            log.error("[{}] Failed to getTopic {}. exception:",
+                    requestHandler.ctx.channel(), topicName, ex);
+            topicCompletableFuture.completeExceptionally(ex);
+        }
+
     }
 
     public void registerProducerInPersistentTopic(String topicName, PersistentTopic persistentTopic) {

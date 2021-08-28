@@ -475,6 +475,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         //   2. topics provided, get provided topics.
         CompletableFuture<Map<String, List<TopicName>>> pulsarTopicsFuture;
 
+        final Map<String, TopicName> nonPartitionedTopicMap = Maps.newConcurrentMap();
+
         if (topics == null || topics.isEmpty()) {
             // clean all cache when get all metadata for librdkafka(<1.0.0).
             KafkaTopicManager.clearTopicManagerCache();
@@ -505,7 +507,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         } else {
             pulsarTopicsFuture = new CompletableFuture<>();
             // get only the provided topics
-            final Map<String, List<TopicName>> pulsarTopics = new ConcurrentHashMap<>();
+            final Map<String, List<TopicName>> pulsarTopics = Maps.newConcurrentMap();
 
             List<String> requestTopics = metadataRequest.topics();
             final int topicsNumber = requestTopics.size();
@@ -615,14 +617,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             }
                                             addTopicPartition.accept(topic, partitionedTopicMetadata.partitions);
                                         } else {
-                                            log.error("Topic {} is a non-partitioned topic", topic);
-                                            allTopicMetadata.add(
-                                                    new TopicMetadata(
-                                                            Errors.INVALID_TOPIC_EXCEPTION,
-                                                            topic,
-                                                            isInternalTopic(fullTopicName),
-                                                            Collections.emptyList()));
-                                            completeOneTopic.run();
+                                            nonPartitionedTopicMap.put(TopicName
+                                                            .get(fullTopicName)
+                                                            .getPartition(0)
+                                                            .toString(),
+                                                    TopicName.get(fullTopicName)
+                                            );
+                                            addTopicPartition.accept(topic, 1);
                                         }
                                     }
                                 });
@@ -672,63 +673,67 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 List<PartitionMetadata> partitionMetadatas = Collections
                     .synchronizedList(Lists.newArrayListWithExpectedSize(partitionsNumber));
 
-                list.forEach(topicName ->
-                    findBroker(topicName)
-                        .whenComplete(((partitionMetadata, throwable) -> {
-                            if (throwable != null || partitionMetadata == null) {
-                                log.warn("[{}] Request {}: Exception while find Broker metadata",
-                                    ctx.channel(), metadataHar.getHeader(), throwable);
-                                partitionMetadatas.add(newFailedPartitionMetadata(topicName));
-                            } else {
-                                Node newNode = partitionMetadata.leader();
-                                synchronized (allNodes) {
-                                    if (!allNodes.stream().anyMatch(node1 -> node1.equals(newNode))) {
-                                        allNodes.add(newNode);
+                list.forEach(topicName -> {
+                    TopicName realTopic = nonPartitionedTopicMap.getOrDefault(topicName.toString(), topicName);
+                    findBroker(realTopic)
+                            .whenComplete(((partitionMetadata, throwable) -> {
+                                if (throwable != null || partitionMetadata == null) {
+                                    log.warn("[{}] Request {}: Exception while find Broker metadata",
+                                            ctx.channel(), metadataHar.getHeader(), throwable);
+                                    partitionMetadatas.add(newFailedPartitionMetadata(realTopic));
+                                } else {
+                                    Node newNode = partitionMetadata.leader();
+                                    synchronized (allNodes) {
+                                        if (!allNodes.stream().anyMatch(node1 -> node1.equals(newNode))) {
+                                            allNodes.add(newNode);
+                                        }
+                                    }
+                                    partitionMetadatas.add(partitionMetadata);
+                                }
+
+                                // whether completed this topic's partitions list.
+                                int finishedPartitions = partitionsCompleted.incrementAndGet();
+                                if (log.isDebugEnabled()) {
+                                    log.debug("[{}] Request {}: FindBroker for topic {}, partitions found/all: {}/{}.",
+                                            ctx.channel(), metadataHar.getHeader(),
+                                            topic, finishedPartitions, partitionsNumber);
+                                }
+                                if (finishedPartitions == partitionsNumber) {
+                                    // new TopicMetadata for this topic
+                                    allTopicMetadata.add(
+                                            new TopicMetadata(
+                                                    Errors.NONE,
+                                                    // The topic returned to Kafka clients should be
+                                                    // the same with what it sent
+                                                    topic,
+                                                    isInternalTopic(new KopTopic(topic).getFullName()),
+                                                    partitionMetadatas));
+
+                                    // whether completed all the topics requests.
+                                    int finishedTopics = topicsCompleted.incrementAndGet();
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("[{}] Request {}: Completed findBroker for topic {}, "
+                                                        + "partitions found/all: {}/{}. \n dump All Metadata:",
+                                                ctx.channel(), metadataHar.getHeader(), topic,
+                                                finishedTopics, topicsNumber);
+
+                                        allTopicMetadata.stream()
+                                                .forEach(data -> log.debug("TopicMetadata response: {}",
+                                                        data.toString()));
+                                    }
+                                    if (finishedTopics == topicsNumber) {
+                                        // TODO: confirm right value for controller_id
+                                        MetadataResponse finalResponse =
+                                                new MetadataResponse(
+                                                        allNodes,
+                                                        clusterName,
+                                                        controllerId,
+                                                        allTopicMetadata);
+                                        resultFuture.complete(finalResponse);
                                     }
                                 }
-                                partitionMetadatas.add(partitionMetadata);
-                            }
-
-                            // whether completed this topic's partitions list.
-                            int finishedPartitions = partitionsCompleted.incrementAndGet();
-                            if (log.isDebugEnabled()) {
-                                log.debug("[{}] Request {}: FindBroker for topic {}, partitions found/all: {}/{}.",
-                                    ctx.channel(), metadataHar.getHeader(),
-                                    topic, finishedPartitions, partitionsNumber);
-                            }
-                            if (finishedPartitions == partitionsNumber) {
-                                // new TopicMetadata for this topic
-                                allTopicMetadata.add(
-                                    new TopicMetadata(
-                                        Errors.NONE,
-                                        // The topic returned to Kafka clients should be the same with what it sent
-                                        topic,
-                                        isInternalTopic(new KopTopic(topic).getFullName()),
-                                        partitionMetadatas));
-
-                                // whether completed all the topics requests.
-                                int finishedTopics = topicsCompleted.incrementAndGet();
-                                if (log.isDebugEnabled()) {
-                                    log.debug("[{}] Request {}: Completed findBroker for topic {}, "
-                                            + "partitions found/all: {}/{}. \n dump All Metadata:",
-                                        ctx.channel(), metadataHar.getHeader(), topic,
-                                        finishedTopics, topicsNumber);
-
-                                    allTopicMetadata.stream()
-                                        .forEach(data -> log.debug("TopicMetadata response: {}", data.toString()));
-                                }
-                                if (finishedTopics == topicsNumber) {
-                                    // TODO: confirm right value for controller_id
-                                    MetadataResponse finalResponse =
-                                        new MetadataResponse(
-                                            allNodes,
-                                            clusterName,
-                                            controllerId,
-                                            allTopicMetadata);
-                                    resultFuture.complete(finalResponse);
-                                }
-                            }
-                        })));
+                            }));
+                });
             });
         });
     }
@@ -2084,7 +2089,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private CompletableFuture<Optional<String>>
     getProtocolDataToAdvertise(InetSocketAddress pulsarAddress,
                                TopicName topic) {
-
         CompletableFuture<Optional<String>> returnFuture = new CompletableFuture<>();
 
         if (pulsarAddress == null) {
@@ -2178,7 +2182,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     }
 
                                     if (lookupDataContainsAddress(data, hostAndPort)) {
-                                        topicManager.KOP_ADDRESS_CACHE.put(topic.toString(), returnFuture);
+                                        KafkaTopicManager.KOP_ADDRESS_CACHE.put(topic.toString(), returnFuture);
                                         returnFuture.complete(data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
                                         return;
                                     }

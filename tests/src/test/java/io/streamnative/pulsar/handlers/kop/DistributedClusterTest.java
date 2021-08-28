@@ -25,6 +25,7 @@ import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -430,6 +431,147 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kProducer.close();
         kConsumer1.close();
         kConsumer2.close();
+    }
+
+
+    /**
+     * Unit test for test in distributed cluster env produce and consume non-partitioned topic,
+     * verify it works well.
+     */
+    @Test(timeOut = 30000)
+    public void testMultiBrokerProduceAndConsumeNonPartitionedTopic() throws Exception {
+        String kafkaTopicName = "kopMultiBrokerNonPartitionedTopic";
+        String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
+        String kopNamespace = "public/default";
+        int totalMsgs = 50;
+        List<TopicPartition> topicPartitions =
+                Collections.singletonList(new TopicPartition(pulsarTopicName, 0));
+        String messageStrPrefix = "Message_" + kafkaTopicName + "_";
+        KProducer kProducer1 = null;
+        KProducer kProducer2 = null;
+        KConsumer kConsumer1 = null;
+        KConsumer kConsumer2 = null;
+        // 0.  Preparing: create non-partitioned topic.
+        pulsarService1.getAdminClient().topics().createNonPartitionedTopic(kafkaTopicName);
+        try {
+            // 1. check lookup result.
+            String result = admin.lookups().lookupTopic(pulsarTopicName);
+            log.info("Server address:{}", result);
+            int kafkaPort;
+            if (result.endsWith(String.valueOf(primaryBrokerPort))) {
+                kafkaPort = secondaryKafkaBrokerPort;
+            } else {
+                kafkaPort = primaryKafkaBrokerPort;
+            }
+
+            // 2. produce consume message with Kafka producer.
+            kProducer1 = new KProducer(kafkaTopicName, false, kafkaPort, true);
+            kafkaPublishMessage(kProducer1, totalMsgs / 2, messageStrPrefix);
+
+            kProducer2 = new KProducer(kafkaTopicName, false, kafkaPort, true);
+            kafkaPublishMessage(kProducer2, totalMsgs / 2, messageStrPrefix);
+
+            kConsumer1 = new KConsumer(kafkaTopicName, kafkaPort, "consumer-group-1");
+            kConsumer2 = new KConsumer(kafkaTopicName, kafkaPort, "consumer-group-2");
+
+            log.info("Partition size: {}, will consume and commitOffset for 2 consumers",
+                    topicPartitions.size());
+            kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
+            kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
+
+            // 3. unload
+            log.info("Unload namespace, lookup will trigger another reload.");
+            pulsarService1.getAdminClient().namespaces().unload(kopNamespace);
+
+            // 4. publish consume again
+            log.info("Re Publish / Consume again.");
+            kafkaPublishMessage(kProducer1, totalMsgs, messageStrPrefix);
+            kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
+            kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
+
+        } finally {
+            if (kProducer1 != null) {
+                kProducer1.close();
+            }
+            if (kProducer2 != null) {
+                kProducer2.close();
+            }
+            if (kConsumer1 != null) {
+                kConsumer1.close();
+            }
+            if (kConsumer2 != null) {
+                kConsumer2.close();
+            }
+            pulsarService1.getAdminClient().topics().delete(pulsarTopicName);
+        }
+
+    }
+
+    /**
+     * Unit test for test in distributed cluster env produce and consume one partition topic,
+     * verify it works well.
+     */
+    @Test(timeOut = 20000, invocationCount = 50)
+    public void testMultiBrokerProduceAndConsumeOnePartitionedTopic() throws Exception {
+        String kafkaTopicName = "kopMultiBrokerOnePartitionedTopic";
+        String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
+        String kopNamespace = "public/default";
+        int totalMsgs = 50;
+        List<TopicPartition> topicPartitions =
+                Collections.singletonList(new TopicPartition(kafkaTopicName, 0));
+        String messageStrPrefix = "Message_" + kafkaTopicName + "_";
+        KProducer kProducer1 = null;
+        KProducer kProducer2 = null;
+        KConsumer kConsumer1 = null;
+        KConsumer kConsumer2 = null;
+        // 0.  Preparing: create non-partitioned topic.
+        pulsarService1.getAdminClient().topics().createPartitionedTopic(pulsarTopicName, 1);
+        try {
+            // 1. check lookup result.
+            String result = admin.lookups().lookupTopic(pulsarTopicName);
+            log.info("Server address:{}", result);
+
+            // 2. produce consume message with Kafka producer.
+            kProducer1 = new KProducer(kafkaTopicName, false, getKafkaBrokerPort(), true);
+            kafkaPublishMessage(kProducer1, totalMsgs / 2, messageStrPrefix);
+
+            kProducer2 = new KProducer(kafkaTopicName, false, getKafkaBrokerPort(), true);
+            kafkaPublishMessage(kProducer2, totalMsgs / 2, messageStrPrefix);
+
+            kConsumer1 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-1");
+            kConsumer2 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-2");
+
+            log.info("Partition size: {}, will consume and commitOffset for 2 consumers",
+                    topicPartitions.size());
+            kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
+            kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
+
+            // 3. unload
+            log.info("Unload namespace, lookup will trigger another reload.");
+            pulsarService1.getAdminClient().namespaces().unload(kopNamespace);
+
+            // 4. publish consume again
+            log.info("Re Publish / Consume again.");
+            kafkaPublishMessage(kProducer1, totalMsgs, messageStrPrefix);
+            kafkaConsumeCommitMessage(kConsumer1, totalMsgs, messageStrPrefix, topicPartitions);
+            kafkaConsumeCommitMessage(kConsumer2, totalMsgs, messageStrPrefix, topicPartitions);
+
+        } finally {
+            if (kProducer1 != null) {
+                kProducer1.close();
+            }
+            if (kProducer2 != null) {
+                kProducer2.close();
+            }
+            if (kConsumer1 != null) {
+                kConsumer1.close();
+            }
+            if (kConsumer2 != null) {
+                kConsumer2.close();
+            }
+            pulsarService1.getAdminClient().topics().deletePartitionedTopic(pulsarTopicName);
+        }
+
     }
 
     @Test(timeOut = 30000)
