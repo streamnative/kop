@@ -327,7 +327,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
                 .valueDeserializer(version.getStringDeserializer())
                 .fromEarliest(true)
                 .enableAutoCommit(enableAutoCommit)
-                .sessionTimeOutMs("1000")
+                .sessionTimeOutMs("10000")
                 .build();
     }
 
