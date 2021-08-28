@@ -182,6 +182,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
 
             // 4.Consume all messages
             List<ConsumerRecord<String, String>> records = consumer.receiveUntil(count, 6000);
+            Assert.assertEquals(count, records.size());
             Map<Integer, List<ConsumerRecord<String, String>>> totalRecordsGroupByPartition = records.stream()
                     .collect(Collectors.groupingBy(ConsumerRecord::getPartition));
 
