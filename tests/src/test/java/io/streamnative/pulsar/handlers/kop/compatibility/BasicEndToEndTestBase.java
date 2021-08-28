@@ -230,7 +230,9 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
             // in consumerConfiguration method, we set sessionTimeOutMs=10000
             // In order for the previous consumer instance to leave the group completely,
             // we let the thread wait for 10 seconds
-            Thread.sleep(10000);
+//            Thread.sleep(10000);
+
+            log.error("commitOffsetTest version {}", version);
 
             // 10.Use the same consumer group to start a new consumer group,
             // and consumers will start to consume from the offset manually committed above
