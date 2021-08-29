@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.security;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static org.apache.kafka.common.protocol.ApiKeys.API_VERSIONS;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -224,6 +225,22 @@ public class SaslAuthenticator {
         }
     }
 
+    private static boolean isUnsupportedApiVersionsRequest(RequestHeader header) {
+        return header.apiKey() == API_VERSIONS && !API_VERSIONS.isVersionSupported(header.apiVersion());
+    }
+
+    private AbstractRequest parseRequest(RequestHeader header, ByteBuffer nioBuffer) {
+        if (isUnsupportedApiVersionsRequest(header)) {
+            return new ApiVersionsRequest((short) 0, header.apiVersion());
+        } else {
+            ApiKeys apiKey = header.apiKey();
+            short apiVersion = header.apiVersion();
+            Struct struct = apiKey.parseRequest(apiVersion, nioBuffer);
+            return AbstractRequest.parseRequest(apiKey, apiVersion, struct);
+        }
+
+    }
+
     // Parsing request, for here, only support ApiVersions and SaslHandshake request
     private void handleKafkaRequest(ChannelHandlerContext ctx,
                                     ByteBuf requestBuf,
@@ -235,9 +252,7 @@ public class SaslAuthenticator {
         RequestHeader header = RequestHeader.parse(nioBuffer);
         ApiKeys apiKey = header.apiKey();
 
-        short apiVersion = header.apiVersion();
-        Struct struct = apiKey.parseRequest(apiVersion, nioBuffer);
-        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
+        AbstractRequest body = parseRequest(header, nioBuffer);
         registerRequestParseLatency.accept(beforeParseTime, null);
 
         // Raise an error prior to parsing if the api cannot be handled at this layer. This avoids
