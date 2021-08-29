@@ -171,7 +171,11 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
         int sends = 75;
 
         // 1.Produce messages with pulsar producer
-        org.apache.pulsar.client.api.Producer<String> producer = null;
+        org.apache.pulsar.client.api.Producer<String> producer =
+                pulsarClient.newProducer(Schema.STRING)
+                        .topic(topic)
+                        .create();
+
         Hash hash = JavaStringHash.getInstance();
         for (int i = 0; i < sends; i++) {
             final String key = "pulsar-key-" + i;
@@ -183,10 +187,6 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
             // Record the message corresponding to each partition,
             // and later we will use it to compare the consumption results.
             valuesMap.put(partition, values);
-
-            producer = pulsarClient.newProducer(Schema.STRING)
-                    .topic(topic)
-                    .create();
 
             producer.newMessage(Schema.STRING)
                     .key(key)
