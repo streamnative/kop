@@ -50,7 +50,6 @@ public class KopRecordsUtil {
                 records.add(record);
                 batchIndex++;
             }
-            log.error("batchStartOffset {}, batchIndex {}", batchStartOffset, batchIndex);
 
             if (records.isEmpty()) {
                 continue;
