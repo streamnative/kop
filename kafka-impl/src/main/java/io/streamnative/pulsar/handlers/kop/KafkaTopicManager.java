@@ -64,7 +64,6 @@ public class KafkaTopicManager {
     private static final long checkPeriodMillis = 1 * 60 * 1000;
     private static final long expirePeriodMillis = 2 * 60 * 1000;
     private static volatile ScheduledFuture<?> cursorExpireTask = null;
-    private static final String PARTITIONED_ZERO_SUFFIX_NAME = TopicName.PARTITIONED_TOPIC_SUFFIX + "0";
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -218,9 +217,9 @@ public class KafkaTopicManager {
         }
         CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture = new CompletableFuture<>();
         brokerService.getTopicIfExists(topicName).whenComplete((t2, throwable) -> {
-            boolean isFirstPartition = topicName.endsWith(PARTITIONED_ZERO_SUFFIX_NAME);
+            TopicName topicNameObject = TopicName.get(topicName);
             if (throwable != null) {
-                if (isFirstPartition) {
+                if (topicNameObject.getPartitionIndex() == 0) {
                     log.warn("Get partition-0 error [{}].", throwable.getMessage());
                 } else {
                     handleGetTopicEx(topicName, topicCompletableFuture, throwable);
@@ -234,8 +233,8 @@ public class KafkaTopicManager {
                 return;
             }
             // Fallback try use non-partitioned topic
-            if (isFirstPartition) {
-                String nonPartitionedTopicName = TopicName.get(topicName).getPartitionedTopicName();
+            if (topicNameObject.getPartitionIndex() == 0) {
+                String nonPartitionedTopicName = topicNameObject.getPartitionedTopicName();
                 if (log.isDebugEnabled()) {
                     log.debug("[{}]Try to get non-partitioned topic for name {}",
                             requestHandler.ctx.channel(), nonPartitionedTopicName);
