@@ -328,8 +328,11 @@ public class SaslAuthenticator {
         ByteBuffer sizeBuffer = ByteBuffer.allocate(4);
         sizeBuffer.putInt(0, buffer.remaining());
         ByteBuf byteBuf = Unpooled.buffer(sizeBuffer.capacity() + buffer.remaining());
+        // why we reset writer index? see https://github.com/streamnative/kop/issues/696
+        byteBuf.markWriterIndex();
         byteBuf.writeBytes(sizeBuffer);
         byteBuf.writeBytes(buffer);
+        byteBuf.resetWriterIndex();
         return byteBuf;
     }
 
