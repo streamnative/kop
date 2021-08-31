@@ -362,4 +362,9 @@ public class KafkaTopicManager {
     public static int getNumberOfKafkaTopicConsumerManagers() {
         return consumerTopicManagers.size();
     }
+
+    @VisibleForTesting
+    public static KafkaTopicConsumerManager getKafkaTopicConsumerManager(final String topic) {
+        return consumerTopicManagers.get(topic).join();
+    }
 }
