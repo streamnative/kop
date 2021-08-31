@@ -62,6 +62,7 @@ public class CursorCreationTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 20000)
     public void testCursorCountForMultiGroups() throws Exception {
         final String topic = "test-cursor-count-for-multi-groups";
+        final String partitionName = new KopTopic(topic).getPartitionName(0);
         final int numMessages = 100;
         final int numConsumers = 5;
 
@@ -108,8 +109,11 @@ public class CursorCreationTest extends KopProtocolHandlerTestBase {
                 .orElse(null);
         Assert.assertNotNull(persistentTopic);
 
-        final KafkaTopicConsumerManager tcm =
-                KafkaTopicManager.getKafkaTopicConsumerManager(new KopTopic(topic).getPartitionName(0));
+        final List<KafkaTopicConsumerManager> tcmList =
+                KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(partitionName);
+        Assert.assertEquals(tcmList.size(), 1);
+
+        final KafkaTopicConsumerManager tcm = tcmList.get(0);
         Assert.assertNotNull(tcm);
 
         //Assert.assertEquals(tcm.getNumCreatedCursors(), numConsumers);

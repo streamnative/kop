@@ -14,7 +14,9 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.ServerCnx;
@@ -73,5 +75,9 @@ public class InternalServerCnx extends ServerCnx {
     @Override
     public void cancelPublishBufferLimiting() {
         // do nothing is this mock
+    }
+
+    public @NonNull SocketAddress getRemoteAddress() {
+        return remoteAddress;
     }
 }

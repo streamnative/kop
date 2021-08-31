@@ -281,7 +281,7 @@ public final class MessageFetchContext {
                 statsLogger.getPrepareMetadataStats().registerFailedEvent(
                         MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
                 // remove null future cache
-                KafkaTopicManager.removeKafkaTopicConsumerManager(fullTopicName);
+                KafkaTopicConsumerManagerCache.getInstance().removeAndClose(fullTopicName);
                 addErrorPartitionResponse(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
                 return;
             }
@@ -315,7 +315,7 @@ public final class MessageFetchContext {
                 // tcm is closed, just return a NONE error because the channel may be still active
                 log.warn("[{}] KafkaTopicConsumerManager is closed, remove TCM of {}",
                         requestHandler.ctx, fullTopicName);
-                KafkaTopicManager.removeKafkaTopicConsumerManager(fullTopicName);
+                KafkaTopicConsumerManagerCache.getInstance().removeAndClose(fullTopicName);
                 addErrorPartitionResponse(topicPartition, Errors.NONE);
                 return;
             }

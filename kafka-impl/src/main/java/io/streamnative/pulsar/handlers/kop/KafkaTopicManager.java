@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import com.google.common.annotations.VisibleForTesting;
 import java.net.InetSocketAddress;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -22,7 +21,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -41,14 +39,11 @@ import org.apache.pulsar.common.naming.TopicName;
 @Slf4j
 public class KafkaTopicManager {
 
+    private static final KafkaTopicConsumerManagerCache TCM_CACHE = KafkaTopicConsumerManagerCache.getInstance();
+
     private final KafkaRequestHandler requestHandler;
-    private final PulsarService pulsarService;
     private final BrokerService brokerService;
     private final LookupClient lookupClient;
-
-    // consumerTopicManagers for consumers cache.
-    private static final ConcurrentHashMap<String, CompletableFuture<KafkaTopicConsumerManager>>
-        consumerTopicManagers = new ConcurrentHashMap<>();
 
     // cache for topics: <topicName, persistentTopic>, for removing producer
     @Getter
@@ -77,7 +72,7 @@ public class KafkaTopicManager {
 
     KafkaTopicManager(KafkaRequestHandler kafkaRequestHandler) {
         this.requestHandler = kafkaRequestHandler;
-        this.pulsarService = kafkaRequestHandler.getPulsarService();
+        PulsarService pulsarService = kafkaRequestHandler.getPulsarService();
         this.brokerService = pulsarService.getBrokerService();
         this.internalServerCnx = new InternalServerCnx(requestHandler);
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
@@ -92,7 +87,7 @@ public class KafkaTopicManager {
                     // check expired cursor every 1 min.
                     cursorExpireTask = executor.scheduleWithFixedDelay(() -> {
                         long current = System.currentTimeMillis();
-                        consumerTopicManagers.values().forEach(future -> {
+                        TCM_CACHE.forEach(future -> {
                             if (future != null && future.isDone() && !future.isCompletedExceptionally()) {
                                 future.join().deleteExpiredCursor(current, expirePeriodMillis);
                             }
@@ -118,11 +113,12 @@ public class KafkaTopicManager {
             }
             return CompletableFuture.completedFuture(null);
         }
-        return consumerTopicManagers.computeIfAbsent(
+        return TCM_CACHE.computeIfAbsent(
             topicName,
-            t -> {
+            internalServerCnx.getRemoteAddress(),
+            () -> {
                 final CompletableFuture<KafkaTopicConsumerManager> tcmFuture = new CompletableFuture<>();
-                getTopic(t).whenComplete((persistentTopic, throwable) -> {
+                getTopic(topicName).whenComplete((persistentTopic, throwable) -> {
                     if (persistentTopic.isPresent() && throwable == null) {
                         if (log.isDebugEnabled()) {
                             log.debug("[{}] Call getTopicConsumerManager for {}, and create TCM for {}.",
@@ -321,23 +317,11 @@ public class KafkaTopicManager {
         try {
             removeTopicManagerCache(topicName);
 
-            Optional.ofNullable(consumerTopicManagers.remove(topicName)).ifPresent(
-                    // Use thenAccept to avoid blocking
-                    tcmFuture -> tcmFuture.thenAccept(tcm -> {
-                        if (tcm != null) {
-                            tcm.close();
-                        }
-                    })
-            );
-
+            TCM_CACHE.removeAndClose(topicName);
             removePersistentTopicAndReferenceProducer(topicName);
         } catch (Exception e) {
             log.error("Failed to close reference for individual topic {}. exception:", topicName, e);
         }
-    }
-
-    public static void removeKafkaTopicConsumerManager(String topicName) {
-        consumerTopicManagers.remove(topicName);
     }
 
     public static void closeKafkaTopicConsumerManagers() {
@@ -347,24 +331,6 @@ public class KafkaTopicManager {
                 cursorExpireTask = null;
             }
         }
-        consumerTopicManagers.forEach((topic, tcmFuture) -> {
-            try {
-                Optional.ofNullable(tcmFuture.get(300, TimeUnit.SECONDS))
-                        .ifPresent(KafkaTopicConsumerManager::close);
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                log.warn("Failed to get TCM future of {} when trying to close it", topic);
-            }
-        });
-        consumerTopicManagers.clear();
-    }
-
-    @VisibleForTesting
-    public static int getNumberOfKafkaTopicConsumerManagers() {
-        return consumerTopicManagers.size();
-    }
-
-    @VisibleForTesting
-    public static KafkaTopicConsumerManager getKafkaTopicConsumerManager(final String topic) {
-        return consumerTopicManagers.get(topic).join();
+        TCM_CACHE.close();
     }
 }
