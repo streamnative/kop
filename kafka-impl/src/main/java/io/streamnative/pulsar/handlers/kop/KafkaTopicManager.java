@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,6 +45,7 @@ public class KafkaTopicManager {
     private final KafkaRequestHandler requestHandler;
     private final BrokerService brokerService;
     private final LookupClient lookupClient;
+    private volatile SocketAddress remoteAddress;
 
     // cache for topics: <topicName, persistentTopic>, for removing producer
     @Getter
@@ -99,8 +101,9 @@ public class KafkaTopicManager {
     }
 
     // update Ctx information, since at internalServerCnx create time there is no ctx passed into kafkaRequestHandler.
-    public void updateCtx() {
-        internalServerCnx.updateCtx();
+    public void setRemoteAddress(SocketAddress remoteAddress) {
+        internalServerCnx.updateCtx(remoteAddress);
+        this.remoteAddress = remoteAddress;
     }
 
     // topicName is in pulsar format. e.g. persistent://public/default/topic-partition-0
@@ -113,9 +116,14 @@ public class KafkaTopicManager {
             }
             return CompletableFuture.completedFuture(null);
         }
+        if (remoteAddress == null) {
+            log.error("[{}] Try to getTopicConsumerManager({}) while remoteAddress is not set",
+                    requestHandler.ctx.channel(), topicName);
+            return CompletableFuture.completedFuture(null);
+        }
         return TCM_CACHE.computeIfAbsent(
             topicName,
-            internalServerCnx.getRemoteAddress(),
+            remoteAddress,
             () -> {
                 final CompletableFuture<KafkaTopicConsumerManager> tcmFuture = new CompletableFuture<>();
                 getTopic(topicName).whenComplete((persistentTopic, throwable) -> {

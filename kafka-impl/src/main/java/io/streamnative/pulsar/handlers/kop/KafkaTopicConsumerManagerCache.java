@@ -63,7 +63,7 @@ public class KafkaTopicConsumerManagerCache {
 
     public void forEach(final Consumer<CompletableFuture<KafkaTopicConsumerManager>> action) {
         cache.values().forEach(internalMap -> {
-            internalMap.values().forEach(action::accept);
+            internalMap.values().forEach(action);
         });
     }
 

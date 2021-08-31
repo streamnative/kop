@@ -26,15 +26,24 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -46,6 +55,7 @@ import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.policies.data.TopicStats;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
+import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
@@ -87,6 +97,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         kafkaRequestHandler.ctx = mockCtx;
 
         kafkaTopicManager = new KafkaTopicManager(kafkaRequestHandler);
+        kafkaTopicManager.setRemoteAddress(InternalServerCnx.MOCKED_REMOTE_ADDRESS);
     }
 
     @AfterMethod
@@ -325,6 +336,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 20000)
     public void testOnlyOneCursorCreated() throws Exception {
         final String topic = "testOnlyOneCursorCreated";
+        final String partitionName = new KopTopic(topic).getPartitionName(0);
         admin.topics().createPartitionedTopic(topic, 1);
 
         final int numMessages = 100;
@@ -344,10 +356,72 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
             numReceived += consumer.poll(Duration.ofSeconds(1)).count();
         }
 
-        final KafkaTopicConsumerManager tcm =
-                kafkaTopicManager.getTopicConsumerManager(new KopTopic(topic).getPartitionName(0)).get();
+        final List<KafkaTopicConsumerManager> tcmList =
+                KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(partitionName);
+        Assert.assertFalse(tcmList.isEmpty());
         // Only 1 cursor should be created for a consumer even if there were a lot of FETCH requests
         // This check is to ensure that KafkaTopicConsumerManager#add is called in FETCH request handler
-        assertEquals(tcm.getCreatedCursors().size(), 1);
+        assertEquals(tcmList.get(0).getCreatedCursors().size(), 1);
+        assertEquals(tcmList.get(0).getNumCreatedCursors(), 1);
+    }
+
+    @Test(timeOut = 20000)
+    public void testCursorCountForMultiGroups() throws Exception {
+        final String topic = "test-cursor-count-for-multi-groups";
+        final String partitionName = new KopTopic(topic).getPartitionName(0);
+        final int numMessages = 100;
+        final int numConsumers = 5;
+
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+        for (int i = 0; i < numMessages; i++) {
+            producer.send(new ProducerRecord<>(topic, "msg-" + i)).get();
+        }
+        producer.close();
+
+        final List<KafkaConsumer<String, String>> consumers = IntStream.range(0, numConsumers)
+                .mapToObj(i -> {
+                    final Properties props = newKafkaConsumerProperties();
+                    props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "group-" + i);
+                    final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
+                    consumer.subscribe(Collections.singleton(topic));
+                    return consumer;
+                }).collect(Collectors.toList());
+
+        final ExecutorService executor = Executors.newFixedThreadPool(numConsumers);
+        final List<Future<?>> futures = new ArrayList<>();
+        for (int i = 0; i < numConsumers; i++) {
+            final int index = i;
+            final KafkaConsumer<String, String> consumer = consumers.get(i);
+            futures.add(executor.submit(() -> {
+                int numReceived = 0;
+                while (numReceived < numMessages) {
+                    final ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
+                    records.forEach(record -> {
+                        if (log.isDebugEnabled()) {
+                            log.debug("Group {} received message {}", index, record.value());
+                        }
+                    });
+                    numReceived += records.count();
+                }
+            }));
+        }
+        for (Future<?> future : futures) {
+            future.get();
+        }
+
+        final List<KafkaTopicConsumerManager> tcmList =
+                KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(partitionName);
+        Assert.assertEquals(tcmList.size(), numConsumers);
+
+        for (int i = 0; i < numConsumers; i++) {
+            Assert.assertEquals(tcmList.get(i).getNumCreatedCursors(), 1);
+        }
+
+        // Since consumer close will make connection disconnected and all TCMs will be cleared, we should call it after
+        // the test is verified.
+        consumers.forEach(KafkaConsumer::close);
+        for (int i = 0; i < numConsumers; i++) {
+            Assert.assertEquals(tcmList.get(i).getNumCreatedCursors(), 0);
+        }
     }
 }
