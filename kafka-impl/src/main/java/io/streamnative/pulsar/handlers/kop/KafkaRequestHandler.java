@@ -475,6 +475,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         //   2. topics provided, get provided topics.
         CompletableFuture<Map<String, List<TopicName>>> pulsarTopicsFuture;
 
+        // Map for <partition-zero, non-partitioned-topic>, use for findBroker
+        // e.g. <persistent://public/default/topic1-partition-0, persistent://public/default/topic1>
         final Map<String, TopicName> nonPartitionedTopicMap = Maps.newConcurrentMap();
 
         if (topics == null || topics.isEmpty()) {
@@ -617,6 +619,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             }
                                             addTopicPartition.accept(topic, partitionedTopicMetadata.partitions);
                                         } else {
+                                            // In case non-partitioned topic, treat as a one partitioned topic.
                                             nonPartitionedTopicMap.put(TopicName
                                                             .get(fullTopicName)
                                                             .getPartition(0)
@@ -674,13 +677,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     .synchronizedList(Lists.newArrayListWithExpectedSize(partitionsNumber));
 
                 list.forEach(topicName -> {
-                    TopicName realTopic = nonPartitionedTopicMap.getOrDefault(topicName.toString(), topicName);
-                    findBroker(realTopic)
+                    // For non-partitioned topic.
+                    TopicName realTopicName = nonPartitionedTopicMap.getOrDefault(topicName.toString(), topicName);
+                    findBroker(realTopicName)
                             .whenComplete(((partitionMetadata, throwable) -> {
                                 if (throwable != null || partitionMetadata == null) {
                                     log.warn("[{}] Request {}: Exception while find Broker metadata",
                                             ctx.channel(), metadataHar.getHeader(), throwable);
-                                    partitionMetadatas.add(newFailedPartitionMetadata(realTopic));
+                                    partitionMetadatas.add(newFailedPartitionMetadata(realTopicName));
                                 } else {
                                     Node newNode = partitionMetadata.leader();
                                     synchronized (allNodes) {
@@ -2229,8 +2233,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             .thenCompose(address -> getProtocolDataToAdvertise(address, topic))
             .whenComplete((stringOptional, throwable) -> {
                 if (!stringOptional.isPresent() || throwable != null) {
-                    log.error("Not get advertise data for Kafka topic:{}. throwable",
-                        topic, throwable);
+                    log.error("Not get advertise data for Kafka topic:{}. throwable: [{}]",
+                        topic, throwable.getMessage());
                     KafkaTopicManager.removeTopicManagerCache(topic.toString());
                     returnFuture.complete(null);
                     return;

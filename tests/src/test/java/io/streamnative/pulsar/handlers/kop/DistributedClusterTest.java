@@ -37,6 +37,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.junit.Assert;
 import org.slf4j.Logger;
@@ -453,26 +454,29 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         KConsumer kConsumer2 = null;
         // 0.  Preparing: create non-partitioned topic.
         pulsarService1.getAdminClient().topics().createNonPartitionedTopic(kafkaTopicName);
+        PartitionedTopicMetadata partitionedTopicMetadata = admin.topics().getPartitionedTopicMetadata(pulsarTopicName);
+        assertEquals(partitionedTopicMetadata.partitions, 0);
         try {
-            // 1. check lookup result.
+            // 1. check lookup result, use other kafka broker port as bootstrap port.
             String result = admin.lookups().lookupTopic(pulsarTopicName);
             log.info("Server address:{}", result);
-            int kafkaPort;
+            int kafkaBrokerPort;
             if (result.endsWith(String.valueOf(primaryBrokerPort))) {
-                kafkaPort = secondaryKafkaBrokerPort;
+                kafkaBrokerPort = secondaryKafkaBrokerPort;
             } else {
-                kafkaPort = primaryKafkaBrokerPort;
+                kafkaBrokerPort = primaryKafkaBrokerPort;
             }
+            log.info("kafkaBrokerPort:{}", kafkaBrokerPort);
 
             // 2. produce consume message with Kafka producer.
-            kProducer1 = new KProducer(kafkaTopicName, false, kafkaPort, true);
+            kProducer1 = new KProducer(kafkaTopicName, false, kafkaBrokerPort, true);
             kafkaPublishMessage(kProducer1, totalMsgs / 2, messageStrPrefix);
 
-            kProducer2 = new KProducer(kafkaTopicName, false, kafkaPort, true);
+            kProducer2 = new KProducer(kafkaTopicName, false, kafkaBrokerPort, true);
             kafkaPublishMessage(kProducer2, totalMsgs / 2, messageStrPrefix);
 
-            kConsumer1 = new KConsumer(kafkaTopicName, kafkaPort, "consumer-group-1");
-            kConsumer2 = new KConsumer(kafkaTopicName, kafkaPort, "consumer-group-2");
+            kConsumer1 = new KConsumer(kafkaTopicName, kafkaBrokerPort, "consumer-group-1");
+            kConsumer2 = new KConsumer(kafkaTopicName, kafkaBrokerPort, "consumer-group-2");
 
             log.info("Partition size: {}, will consume and commitOffset for 2 consumers",
                     topicPartitions.size());
@@ -509,9 +513,9 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
 
     /**
      * Unit test for test in distributed cluster env produce and consume one partition topic,
-     * verify it works well.
+     * verify it works well (This test case is used to compare with non-partitioned topic behavior).
      */
-    @Test(timeOut = 20000, invocationCount = 50)
+    @Test(timeOut = 30000)
     public void testMultiBrokerProduceAndConsumeOnePartitionedTopic() throws Exception {
         String kafkaTopicName = "kopMultiBrokerOnePartitionedTopic";
         String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
@@ -530,16 +534,22 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
             // 1. check lookup result.
             String result = admin.lookups().lookupTopic(pulsarTopicName);
             log.info("Server address:{}", result);
+            int kafkaPort;
+            if (result.endsWith(String.valueOf(primaryBrokerPort))) {
+                kafkaPort = secondaryKafkaBrokerPort;
+            } else {
+                kafkaPort = primaryKafkaBrokerPort;
+            }
 
             // 2. produce consume message with Kafka producer.
-            kProducer1 = new KProducer(kafkaTopicName, false, getKafkaBrokerPort(), true);
+            kProducer1 = new KProducer(kafkaTopicName, false, kafkaPort, true);
             kafkaPublishMessage(kProducer1, totalMsgs / 2, messageStrPrefix);
 
-            kProducer2 = new KProducer(kafkaTopicName, false, getKafkaBrokerPort(), true);
+            kProducer2 = new KProducer(kafkaTopicName, false, kafkaPort, true);
             kafkaPublishMessage(kProducer2, totalMsgs / 2, messageStrPrefix);
 
-            kConsumer1 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-1");
-            kConsumer2 = new KConsumer(kafkaTopicName, getKafkaBrokerPort(), "consumer-group-2");
+            kConsumer1 = new KConsumer(kafkaTopicName, kafkaPort, "consumer-group-1");
+            kConsumer2 = new KConsumer(kafkaTopicName, kafkaPort, "consumer-group-2");
 
             log.info("Partition size: {}, will consume and commitOffset for 2 consumers",
                     topicPartitions.size());

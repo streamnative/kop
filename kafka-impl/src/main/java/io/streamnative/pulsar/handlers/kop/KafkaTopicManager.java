@@ -244,8 +244,9 @@ public class KafkaTopicManager {
                 brokerService.getTopicIfExists(nonPartitionedTopicName).whenComplete((nonPartitionedTopic, ex) -> {
                     if (ex != null) {
                         handleGetTopicEx(nonPartitionedTopicName, topicCompletableFuture, ex);
-                        // Failed to getTopic from current broker, remove cache, which added in getTopicBroker.
-                        removeTopicManagerCache(topicName);
+                        // Failed to getTopic from current broker, remove non-partitioned topic cache,
+                        // which added in getTopicBroker.
+                        removeTopicManagerCache(nonPartitionedTopicName);
                         return;
                     }
                     if (nonPartitionedTopic.isPresent()) {
@@ -254,7 +255,7 @@ public class KafkaTopicManager {
                     } else {
                         log.error("[{}]Get empty non-partitioned topic for name {}",
                                 requestHandler.ctx.channel(), nonPartitionedTopicName);
-                        removeTopicManagerCache(topicName);
+                        removeTopicManagerCache(nonPartitionedTopicName);
                         topicCompletableFuture.complete(Optional.empty());
                     }
                 });
