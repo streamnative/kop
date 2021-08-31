@@ -263,6 +263,6 @@ public class KafkaTopicConsumerManager implements Closeable {
 
     @VisibleForTesting
     public int getNumCreatedCursors() {
-        return NUM_CREATED_CURSORS_UPDATER.get(this);
+        return numCreatedCursors;
     }
 }

@@ -411,17 +411,17 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
 
         final List<KafkaTopicConsumerManager> tcmList =
                 KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(partitionName);
-        Assert.assertEquals(tcmList.size(), numConsumers);
+        assertEquals(tcmList.size(), numConsumers);
 
         for (int i = 0; i < numConsumers; i++) {
-            Assert.assertEquals(tcmList.get(i).getNumCreatedCursors(), 1);
+            assertEquals(tcmList.get(i).getNumCreatedCursors(), 1);
         }
 
         // Since consumer close will make connection disconnected and all TCMs will be cleared, we should call it after
         // the test is verified.
         consumers.forEach(KafkaConsumer::close);
         for (int i = 0; i < numConsumers; i++) {
-            Assert.assertEquals(tcmList.get(i).getNumCreatedCursors(), 0);
+            assertEquals(tcmList.get(i).getNumCreatedCursors(), 0);
         }
     }
 }
