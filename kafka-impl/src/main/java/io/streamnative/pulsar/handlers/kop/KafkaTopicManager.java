@@ -218,9 +218,9 @@ public class KafkaTopicManager {
         }
         CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture = new CompletableFuture<>();
         brokerService.getTopicIfExists(topicName).whenComplete((t2, throwable) -> {
-            boolean isPartitionZero = topicName.endsWith(PARTITIONED_ZERO_SUFFIX_NAME);
+            boolean isFirstPartition = topicName.endsWith(PARTITIONED_ZERO_SUFFIX_NAME);
             if (throwable != null) {
-                if (isPartitionZero) {
+                if (isFirstPartition) {
                     log.warn("Get partition-0 error [{}].", throwable.getMessage());
                 } else {
                     handleGetTopicEx(topicName, topicCompletableFuture, throwable);
@@ -230,12 +230,11 @@ public class KafkaTopicManager {
                 }
             }
             if (t2 != null && t2.isPresent()) {
-                PersistentTopic persistentTopic = (PersistentTopic) t2.get();
-                topicCompletableFuture.complete(Optional.of(persistentTopic));
+                topicCompletableFuture.complete(Optional.of((PersistentTopic) t2.get()));
                 return;
             }
             // Fallback try use non-partitioned topic
-            if (isPartitionZero) {
+            if (isFirstPartition) {
                 String nonPartitionedTopicName = TopicName.get(topicName).getPartitionedTopicName();
                 if (log.isDebugEnabled()) {
                     log.debug("[{}]Try to get non-partitioned topic for name {}",
