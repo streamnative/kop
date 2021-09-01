@@ -19,7 +19,6 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.record.AbstractRecords;
-import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.ConvertedRecords;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
@@ -41,6 +40,7 @@ public class KopRecordsUtil {
         int totalSizeEstimate = 0;
 
         long batchStartOffset = firstOffset;
+        byte toBatchMagic = toMagic;
         for (RecordBatch batch : batches) {
             if (toMagic < RecordBatch.MAGIC_VALUE_V2) {
                 if (batch.isControlBatch()) {
@@ -48,8 +48,8 @@ public class KopRecordsUtil {
                 }
 
                 if (batch.compressionType().name.equals("zstd")) {
-                    throw new IOException("Down-conversion of zstandard-compressed batches " +
-                            "is not supported");
+                    throw new IOException("Down-conversion of zstandard-compressed batches "
+                            + "is not supported");
                 }
             }
 
@@ -63,15 +63,25 @@ public class KopRecordsUtil {
             if (records.isEmpty()) {
                 continue;
             }
+
+            // handle the batch.magic() <= toMagic case
+            // Since the internal message set of magic 0 and magic 1 has an offset,
+            // the internal offset may be destroyed, so we still need
+            // to deal with the message of batch.magic <= toMagic.
+            // The only thing that remains unchanged is to ensure that the magic remains unchanged.
+            if (batch.magic() < toMagic) {
+                toBatchMagic = batch.magic();
+            }
+
             totalSizeEstimate += AbstractRecords.estimateSizeInBytes(
-                    toMagic, batchStartOffset, batch.compressionType(), records);
-            recordBatchAndRecordsList.add(new RecordBatchAndRecords(batch, records, batchStartOffset));
+                    toBatchMagic, batchStartOffset, batch.compressionType(), records);
+            recordBatchAndRecordsList.add(new RecordBatchAndRecords(batch, records, batchStartOffset, toBatchMagic));
             batchStartOffset += batchIndex;
         }
 
         ByteBuffer buffer = ByteBuffer.allocate(totalSizeEstimate);
         for (RecordBatchAndRecords recordBatchAndRecords : recordBatchAndRecordsList) {
-            MemoryRecordsBuilder builder = convertRecordBatch(toMagic, buffer, recordBatchAndRecords);
+            MemoryRecordsBuilder builder = convertRecordBatch(buffer, recordBatchAndRecords);
             buffer = builder.buffer();
         }
 
@@ -80,20 +90,20 @@ public class KopRecordsUtil {
         return new ConvertedRecords<>(MemoryRecords.readableRecords(buffer), null);
     }
 
-    private static MemoryRecordsBuilder convertRecordBatch(byte magic,
-                                                           ByteBuffer buffer,
+    private static MemoryRecordsBuilder convertRecordBatch(ByteBuffer buffer,
                                                            RecordBatchAndRecords recordBatchAndRecords) {
         RecordBatch batch = recordBatchAndRecords.batch;
+        byte toBatchMagic = recordBatchAndRecords.toBatchMagic;
         final TimestampType timestampType = batch.timestampType();
         long logAppendTime = timestampType
                 == TimestampType.LOG_APPEND_TIME ? batch.maxTimestamp() : RecordBatch.NO_TIMESTAMP;
 
-        MemoryRecordsBuilder builder = MemoryRecords.builder(buffer, magic, batch.compressionType(),
+        MemoryRecordsBuilder builder = MemoryRecords.builder(buffer, toBatchMagic, batch.compressionType(),
                 timestampType, recordBatchAndRecords.baseOffset, logAppendTime);
 
         long startOffset = recordBatchAndRecords.baseOffset;
         for (Record record : recordBatchAndRecords.records) {
-            if (magic > RecordBatch.MAGIC_VALUE_V1) {
+            if (toBatchMagic > RecordBatch.MAGIC_VALUE_V1) {
                 builder.appendWithOffset(startOffset++,
                         record.timestamp(),
                         record.key(),
@@ -115,11 +125,16 @@ public class KopRecordsUtil {
         private final RecordBatch batch;
         private final List<Record> records;
         private final Long baseOffset;
+        private final byte toBatchMagic;
 
-        private RecordBatchAndRecords(RecordBatch batch, List<Record> records, Long baseOffset) {
+        private RecordBatchAndRecords(RecordBatch batch,
+                                      List<Record> records,
+                                      Long baseOffset,
+                                      byte toBatchMagic) {
             this.batch = batch;
             this.records = records;
             this.baseOffset = baseOffset;
+            this.toBatchMagic = toBatchMagic;
         }
     }
 }
