@@ -26,14 +26,14 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -387,12 +387,12 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
                     return consumer;
                 }).collect(Collectors.toList());
 
+        final CountDownLatch latch = new CountDownLatch(numConsumers);
         final ExecutorService executor = Executors.newFixedThreadPool(numConsumers);
-        final List<Future<?>> futures = new ArrayList<>();
         for (int i = 0; i < numConsumers; i++) {
             final int index = i;
             final KafkaConsumer<String, String> consumer = consumers.get(i);
-            futures.add(executor.submit(() -> {
+            executor.execute(() -> {
                 int numReceived = 0;
                 while (numReceived < numMessages) {
                     final ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
@@ -403,11 +403,10 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
                     });
                     numReceived += records.count();
                 }
-            }));
+                latch.countDown();
+            });
         }
-        for (Future<?> future : futures) {
-            future.get();
-        }
+        latch.await(10, TimeUnit.SECONDS);
 
         final List<KafkaTopicConsumerManager> tcmList =
                 KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(partitionName);
