@@ -324,7 +324,7 @@ public class SaslAuthenticator {
         });
     }
 
-    private static ByteBuf sizePrefixed(ByteBuffer buffer) {
+    public static ByteBuf sizePrefixed(ByteBuffer buffer) {
         ByteBuffer sizeBuffer = ByteBuffer.allocate(4);
         sizeBuffer.putInt(0, buffer.remaining());
         ByteBuf byteBuf = Unpooled.buffer(sizeBuffer.capacity() + buffer.remaining());
