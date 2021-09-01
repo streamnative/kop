@@ -40,8 +40,8 @@ public class KopRecordsUtil {
         int totalSizeEstimate = 0;
 
         long batchStartOffset = firstOffset;
-        byte toBatchMagic = toMagic;
         for (RecordBatch batch : batches) {
+            byte toBatchMagic = toMagic;
             if (toMagic < RecordBatch.MAGIC_VALUE_V2) {
                 if (batch.isControlBatch()) {
                     continue;
