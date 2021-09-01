@@ -368,7 +368,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     switch (apiKey) {
                         case FETCH:
                             // V4 added MessageSets responses. We need to make sure RecordBatch format is not used
-                            versionList.add(new ApiVersionsResponse.ApiVersion((short) 1, (short) 4,
+                            versionList.add(new ApiVersionsResponse.ApiVersion((short) 1, (short) 0,
                                     apiKey.latestVersion()));
                             break;
                         case LIST_OFFSETS:
