@@ -33,6 +33,8 @@ public class ConsumerConfiguration {
     private String userName;
     private String password;
     private String requestTimeoutMs;
+    private Boolean enableAutoCommit;
+    private String sessionTimeOutMs;
 
     public Properties toProperties() {
         final Properties props = new Properties();
@@ -63,6 +65,12 @@ public class ConsumerConfiguration {
         }
         if (requestTimeoutMs != null) {
             props.put("request.timeout.ms", requestTimeoutMs);
+        }
+        if (enableAutoCommit != null) {
+            props.put("enable.auto.commit", enableAutoCommit);
+        }
+        if (sessionTimeOutMs != null) {
+            props.put("session.timeout.ms", sessionTimeOutMs);
         }
         return props;
     }

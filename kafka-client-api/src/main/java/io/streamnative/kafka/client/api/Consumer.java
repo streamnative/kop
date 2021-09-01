@@ -14,6 +14,7 @@
 package io.streamnative.kafka.client.api;
 
 import java.io.Closeable;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -61,4 +62,6 @@ public interface Consumer<K, V> extends Closeable {
     }
 
     Map<String, List<PartitionInfo>> listTopics(long timeoutMS);
+
+    void commitOffsetSync(List<TopicOffsetAndMetadata> offsets, Duration timeout);
 }

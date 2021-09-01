@@ -29,11 +29,15 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.util.MathUtils;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
+import org.apache.pulsar.client.impl.Hash;
+import org.apache.pulsar.client.impl.JavaStringHash;
 import org.testng.Assert;
 import org.testng.annotations.Test;
+import org.testng.collections.Maps;
 
 /**
  * Basic end-to-end test for different versions of Kafka clients with `entryFormat=kafka`.
@@ -48,6 +52,11 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
     @Test(timeOut = 30000)
     protected void testKafkaProduceKafkaConsume() throws Exception {
         super.testKafkaProduceKafkaConsume();
+    }
+
+    @Test(timeOut = 60000)
+    protected void testKafkaProduceKafkaCommitOffset() throws Exception {
+        super.testKafkaProduceKafkaCommitOffset();
     }
 
     @Test(timeOut = 30000)
@@ -149,6 +158,47 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
             }
             consumer.close();
         }
+    }
+
+    @Test(timeOut = 60000)
+    public void testPulsarProduceKafkaCommit() throws Exception {
+        final String topic = "test-pulsar-produce-kafka-commit-offset";
+        int numPartitions = 5;
+        admin.topics().createPartitionedTopic(topic, numPartitions);
+
+        Map<Integer, List<String>> valuesMap = Maps.newHashMap();
+
+        int sends = 75;
+
+        // 1.Produce messages with pulsar producer
+        org.apache.pulsar.client.api.Producer<String> producer =
+                pulsarClient.newProducer(Schema.STRING)
+                        .topic(topic)
+                        .create();
+
+        Hash hash = JavaStringHash.getInstance();
+        for (int i = 0; i < sends; i++) {
+            final String key = "pulsar-key-" + i;
+            final String value = "pulsar-value-" + i;
+
+            int partition = MathUtils.signSafeMod(hash.makeHash(key), numPartitions);
+            List<String> values = valuesMap.computeIfAbsent(partition, k -> new ArrayList<>());
+            values.add(value);
+            // Record the message corresponding to each partition,
+            // and later we will use it to compare the consumption results.
+            valuesMap.put(partition, values);
+
+            producer.newMessage(Schema.STRING)
+                    .key(key)
+                    .value(value)
+                    .send();
+        }
+
+        producer.close();
+
+        // 2.Consume messages with different kafka client versions
+        super.verifyManualCommitOffset(topic, sends, numPartitions, valuesMap);
+
     }
 
     private static Header convertFirstPropertyToHeader(final Map<String, String> properties) {
