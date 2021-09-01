@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetSearchPredicate;
 import java.io.Closeable;
 import java.util.ArrayList;
@@ -24,6 +25,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteCursorCallback;
@@ -42,6 +44,10 @@ import org.apache.pulsar.broker.service.persistent.PersistentTopic;
  */
 @Slf4j
 public class KafkaTopicConsumerManager implements Closeable {
+
+    private static final AtomicIntegerFieldUpdater<KafkaTopicConsumerManager> NUM_CREATED_CURSORS_UPDATER =
+            AtomicIntegerFieldUpdater.newUpdater(KafkaTopicConsumerManager.class, "numCreatedCursors");
+
     private final PersistentTopic topic;
     private final KafkaRequestHandler requestHandler;
 
@@ -59,6 +65,9 @@ public class KafkaTopicConsumerManager implements Closeable {
     // track last access time(millis) for offsets <offset, time>
     @Getter
     private final Map<Long, Long> lastAccessTimes;
+
+    // Record the number of created cursor
+    private volatile int numCreatedCursors = 0;
 
     KafkaTopicConsumerManager(KafkaRequestHandler requestHandler, PersistentTopic topic) {
         this.topic = topic;
@@ -191,6 +200,7 @@ public class KafkaTopicConsumerManager implements Closeable {
             log.debug("[{}] Close TCM for topic {}.",
                 requestHandler.ctx.channel(), topic.getName());
         }
+        NUM_CREATED_CURSORS_UPDATER.set(this, 0);
         final List<CompletableFuture<Pair<ManagedCursor, Long>>> cursorFuturesToClose = new ArrayList<>();
         cursors.forEach((ignored, cursorFuture) -> cursorFuturesToClose.add(cursorFuture));
         cursors.clear();
@@ -235,6 +245,7 @@ public class KafkaTopicConsumerManager implements Closeable {
             }
             try {
                 final ManagedCursor newCursor = ledger.newNonDurableCursor(previous, cursorName);
+                NUM_CREATED_CURSORS_UPDATER.incrementAndGet(this);
                 createdCursors.putIfAbsent(newCursor.getName(), newCursor);
                 lastAccessTimes.put(offset, System.currentTimeMillis());
                 return Pair.of(newCursor, offset);
@@ -248,5 +259,10 @@ public class KafkaTopicConsumerManager implements Closeable {
 
     public ManagedLedger getManagedLedger() {
         return topic.getManagedLedger();
+    }
+
+    @VisibleForTesting
+    public int getNumCreatedCursors() {
+        return numCreatedCursors;
     }
 }

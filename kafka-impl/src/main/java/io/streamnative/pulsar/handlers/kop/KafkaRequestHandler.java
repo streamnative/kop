@@ -294,7 +294,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         super.channelActive(ctx);
-        getTopicManager().updateCtx();
+        topicManager.setRemoteAddress(ctx.channel().remoteAddress());
         if (authenticator != null) {
             authenticator.reset();
         }
