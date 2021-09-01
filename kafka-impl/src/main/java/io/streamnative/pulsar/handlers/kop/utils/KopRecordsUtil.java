@@ -13,11 +13,13 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.record.AbstractRecords;
+import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.ConvertedRecords;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
@@ -33,15 +35,22 @@ public class KopRecordsUtil {
 
     public static ConvertedRecords<MemoryRecords> convertAndAssignOffsets(Iterable<? extends RecordBatch> batches,
                                                               byte toMagic,
-                                                              long firstOffset) {
+                                                              long firstOffset) throws IOException {
         // maintain the batch along with the decompressed records to avoid the need to decompress again
         List<RecordBatchAndRecords> recordBatchAndRecordsList = new ArrayList<>();
         int totalSizeEstimate = 0;
 
         long batchStartOffset = firstOffset;
         for (RecordBatch batch : batches) {
-            if (toMagic < RecordBatch.MAGIC_VALUE_V2 && batch.isControlBatch()) {
-                continue;
+            if (toMagic < RecordBatch.MAGIC_VALUE_V2) {
+                if (batch.isControlBatch()) {
+                    continue;
+                }
+
+                if (batch.compressionType().name.equals("zstd")) {
+                    throw new IOException("Down-conversion of zstandard-compressed batches " +
+                            "is not supported");
+                }
             }
 
             List<Record> records = new ArrayList<>();
