@@ -21,6 +21,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.util.ReferenceCounted;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
 import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
+import io.streamnative.pulsar.handlers.kop.utils.KopRecordsUtil;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -31,7 +32,7 @@ import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.record.ConvertedRecords;
 import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.common.record.RecordBatch;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.KeyValue;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
@@ -46,8 +47,6 @@ public class KafkaEntryFormatter implements EntryFormatter {
     // These key-value identifies the entry's format as kafka
     private static final String IDENTITY_KEY = "entry.format";
     private static final String IDENTITY_VALUE = EntryFormatterFactory.EntryFormat.KAFKA.name().toLowerCase();
-    // Kafka MemoryRecords downConvert method needs time
-    private static final Time time = Time.SYSTEM;
 
     @Override
     public ByteBuf encode(MemoryRecords records, int numMessages) {
@@ -78,23 +77,24 @@ public class KafkaEntryFormatter implements EntryFormatter {
 
                     // batch magic greater than the magic corresponding to the version requested by the client
                     // need down converted
-                    if (batchMagic > magic) {
+                    if (batchMagic > magic || batchMagic != RecordBatch.MAGIC_VALUE_V2) {
                         MemoryRecords memoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
                         //down converted, batch magic will be set to client magic
                         ConvertedRecords<MemoryRecords> convertedRecords =
-                                memoryRecords.downConvert(magic, startOffset, time);
+                                KopRecordsUtil.convertAndAssignOffsets(memoryRecords.batches(), magic, startOffset);
 
                         final ByteBuf kafkaBuffer = Unpooled.wrappedBuffer(convertedRecords.records().buffer());
                         orderedByteBuf.add(kafkaBuffer);
                         if (!optionalByteBufs.isPresent()) {
                             optionalByteBufs = Optional.of(new ArrayList<>());
                         }
-                        optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(byteBuf));
                         optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(kafkaBuffer));
 
                         if (log.isTraceEnabled()) {
-                            log.trace("[{}:{}] downConvert record, start offset {}, entry magic: {}, client magic: {}"
-                                    , entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
+                            log.trace("[{}:{}] convertAndAssignOffsets record for down converted"
+                                            + " or assign offsets with v0 and v1 magic, start offset {},"
+                                            + " entry magic: {}, client magic: {}",
+                                    entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
                         }
 
                     } else {

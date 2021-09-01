@@ -28,4 +28,9 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
     protected void testKafkaProduceKafkaConsume() throws Exception {
         super.testKafkaProduceKafkaConsume();
     }
+
+    @Test(timeOut = 60000)
+    protected void testKafkaProduceKafkaCommitOffset() throws Exception {
+        super.testKafkaProduceKafkaCommitOffset();
+    }
 }

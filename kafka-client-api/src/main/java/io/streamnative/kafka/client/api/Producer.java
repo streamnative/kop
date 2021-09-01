@@ -23,9 +23,14 @@ public interface Producer<K, V> extends AutoCloseable {
     Future<RecordMetadata> sendAsync(ProduceContext<K, V> context);
 
     default ProduceContext.ProduceContextBuilder<K, V> newContextBuilder(String topic, V value) {
+        return newContextBuilder(topic, value, null);
+    }
+
+    default ProduceContext.ProduceContextBuilder<K, V> newContextBuilder(String topic, V value, Integer partition) {
         return ProduceContext.<K, V>builder()
                 .producer(this)
                 .topic(topic)
-                .value(value);
+                .value(value)
+                .partition(partition);
     }
 }
