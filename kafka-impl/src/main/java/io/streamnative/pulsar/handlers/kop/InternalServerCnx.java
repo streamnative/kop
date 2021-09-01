@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.service.Producer;
@@ -27,6 +28,9 @@ import org.apache.pulsar.broker.service.ServerCnx;
  */
 @Slf4j
 public class InternalServerCnx extends ServerCnx {
+
+    public static final SocketAddress MOCKED_REMOTE_ADDRESS = new InetSocketAddress("localhost", 9999);
+
     @Getter
     KafkaRequestHandler kafkaRequestHandler;
 
@@ -39,7 +43,7 @@ public class InternalServerCnx extends ServerCnx {
         // mock some values, or Producer create will meet NPE.
         // used in test, which will not call channel.active, and not call updateCtx.
         if (this.remoteAddress == null) {
-            this.remoteAddress = new InetSocketAddress("localhost", 9999);
+            this.remoteAddress = MOCKED_REMOTE_ADDRESS;
         }
     }
 
@@ -56,8 +60,8 @@ public class InternalServerCnx extends ServerCnx {
     }
 
     // called after channel active
-    public void updateCtx() {
-        this.remoteAddress = kafkaRequestHandler.remoteAddress;
+    public void updateCtx(final SocketAddress remoteAddress) {
+        this.remoteAddress = remoteAddress;
     }
 
     @Override
