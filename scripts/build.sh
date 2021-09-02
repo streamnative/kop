@@ -36,5 +36,5 @@ cp README.md ./$ASSETS_DIR/pulsar-protocol-handler-kafka-readme.md
 
 OAUTH_CLIENT="./oauth-client/target/oauth-client-${version}.jar"
 if [[ -f $OAUTH_CLIENT ]]; then
-    cp $OAUTH_CLIENT ./$ASSETS_DIR
+    cp "$OAUTH_CLIENT" "./$ASSETS_DIR"
 fi
