@@ -34,12 +34,12 @@ import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -331,8 +331,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         int maxResponseBytes = 800;
         int maxPartitionBytes = 900;
-        int maxWaitMs = 10000;//10s
-
+        int maxWaitMs = 10000;
         //case1: consuming an empty topic
         KafkaHeaderAndRequest fetchRequest1 = createFetchRequest(maxWaitMs,
                 1,
@@ -352,7 +351,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         produceData(kProducer, topicPartitions, 10);
 
         Map<TopicPartition, Long> offsetMaps = Maps.newHashMap();
-        offsetMaps.put(tp, 0l);
+        offsetMaps.put(tp, 0L);
 
         Map<TopicPartition, Long> offsetMap = new HashMap<>();
         KafkaHeaderAndRequest fetchRequest2 = createFetchRequest(maxWaitMs,
