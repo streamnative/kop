@@ -28,7 +28,7 @@ ASSETS_DIR=release
 mkdir $ASSETS_DIR
 
 # Set to a new version
-mvn versions:set -DnewVersion=${version}
+mvn versions:set -DnewVersion="${version}"
 
 mvn clean install -DskipTests
 cp kafka-impl/target/pulsar-protocol-handler-kafka-*.nar  ./$ASSETS_DIR
