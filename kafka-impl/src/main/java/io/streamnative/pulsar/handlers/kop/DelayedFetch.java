@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
-
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 

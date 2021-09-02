@@ -33,6 +33,9 @@ import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,10 +47,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
-
-import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
-import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
-import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.MarkDeleteCallback;
@@ -196,7 +195,8 @@ public final class MessageFetchContext {
             Runnable sendResponse = () -> {
                 complete();
             };
-            DelayedFetch delayedFetch = new DelayedFetch(fetchRequest.maxWait(), bytesReadable, fetchRequest.minBytes(), sendResponse);
+            DelayedFetch delayedFetch = new DelayedFetch(fetchRequest.maxWait(), bytesReadable,
+                    fetchRequest.minBytes(), sendResponse);
             List<Object> delayedFetchKeys =
                     fetchRequest.fetchData().keySet().stream()
                             .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
