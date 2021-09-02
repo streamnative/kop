@@ -143,8 +143,16 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                 }
                                 groupCoordinator.handleGroupImmigration(name.getPartitionIndex());
                             }
-                            KafkaTopicManager.removeTopicManagerCache(name.toString());
-                            KopBrokerLookupManager.removeTopicManagerCache(name.toString());
+                            // deReference topic when unload
+                            KopBrokerLookupManager.removeTopicManagerCache(topic);
+                            KafkaTopicManager.deReference(topic);
+
+                            // For non-partitioned topic.
+                            if (!name.isPartitioned()) {
+                                String partitionedZeroTopicName = name.getPartition(0).toString();
+                                KafkaTopicManager.deReference(partitionedZeroTopicName);
+                                KopBrokerLookupManager.removeTopicManagerCache(partitionedZeroTopicName);
+                            }
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
@@ -180,8 +188,16 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                                 groupCoordinator.handleGroupEmigration(name.getPartitionIndex());
                             }
                             // deReference topic when unload
-                            KopBrokerLookupManager.removeTopicManagerCache(name.toString());
-                            KafkaTopicManager.deReference(name.toString());
+                            KopBrokerLookupManager.removeTopicManagerCache(topic);
+                            KafkaTopicManager.deReference(topic);
+
+                            // For non-partitioned topic.
+                            if (!name.isPartitioned()) {
+                                String partitionedZeroTopicName = name.getPartition(0).toString();
+                                KafkaTopicManager.deReference(partitionedZeroTopicName);
+                                KopBrokerLookupManager.removeTopicManagerCache(partitionedZeroTopicName);
+                            }
+
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
