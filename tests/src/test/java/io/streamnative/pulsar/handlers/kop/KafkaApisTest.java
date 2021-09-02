@@ -38,6 +38,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -314,6 +316,66 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(0));
     }
 
+    /**
+     * Test the sending speed of fetch request when the readable data is less than fetch.minBytes.
+     */
+    @Test(timeOut = 60000)
+    public void testFetchMinBytes() throws Exception {
+        String topicName = "testMinBytesTopic";
+        TopicPartition tp = new TopicPartition(topicName, 0);
+
+        // create partitioned topic.
+        admin.topics().createPartitionedTopic(topicName, 1);
+        List<TopicPartition> topicPartitions = new ArrayList<>();
+        topicPartitions.add(tp);
+
+        int maxResponseBytes = 800;
+        int maxPartitionBytes = 900;
+        int maxWaitMs = 10000;//10s
+
+        //case1: consuming an empty topic
+        KafkaHeaderAndRequest fetchRequest1 = createFetchRequest(maxWaitMs,
+                1,
+                maxResponseBytes,
+                maxPartitionBytes,
+                topicPartitions,
+                Collections.EMPTY_MAP);
+        CompletableFuture<AbstractResponse> responseFuture1 = new CompletableFuture<>();
+        Long startTime1 = System.currentTimeMillis();
+        kafkaRequestHandler.handleFetchRequest(fetchRequest1, responseFuture1);
+        responseFuture1.get();
+        Long endTime1 = System.currentTimeMillis();
+        System.out.println("cost time1:" + (endTime1 - startTime1));
+
+        //case2: consuming an  topic after produceing data
+        KafkaProducer<String, String> kProducer = createKafkaProducer();
+        produceData(kProducer, topicPartitions, 10);
+
+        Map<TopicPartition, Long> offsetMaps = Maps.newHashMap();
+        offsetMaps.put(tp, 0l);
+
+        Map<TopicPartition, Long> offsetMap = new HashMap<>();
+        KafkaHeaderAndRequest fetchRequest2 = createFetchRequest(maxWaitMs,
+                1,
+                maxResponseBytes,
+                maxPartitionBytes,
+                topicPartitions,
+                offsetMaps);
+        CompletableFuture<AbstractResponse> responseFuture2 = new CompletableFuture<>();
+        Long startTime2 = System.currentTimeMillis();
+        kafkaRequestHandler.handleFetchRequest(fetchRequest2, responseFuture2);
+        responseFuture2.get();
+        Long endTime2 = System.currentTimeMillis();
+        System.out.println("cost time2:" + (endTime2 - startTime2));
+
+        //When consuming an empty topic, minBytes=1, because there is no readable data,
+        // it will delay maxWait time before receiving the response.
+        assertEquals(endTime1 - startTime1 >= maxWaitMs, true);
+        // When the amount of readable data is not less than minBytes,
+        // the time-consuming is usually less than maxWait time.
+        assertEquals(endTime2 - startTime2 < maxWaitMs, true);
+    }
+
     @Test(timeOut = 80000)
     public void testConsumerListOffset() throws Exception {
         String topicName = "listOffset";
@@ -499,6 +561,20 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         AbstractRequest.Builder builder = FetchRequest.Builder
             .forConsumer(Integer.MAX_VALUE, 0, createPartitionMap(maxPartitionBytes, topicPartitions, offsetMap))
             .setMaxBytes(maxResponseBytes);
+
+        return buildRequest(builder);
+    }
+
+    private KafkaHeaderAndRequest createFetchRequest(int maxWait,
+                                                     int minBytes,
+                                                     int maxResponseBytes,
+                                                     int maxPartitionBytes,
+                                                     List<TopicPartition> topicPartitions,
+                                                     Map<TopicPartition, Long> offsetMap) {
+
+        AbstractRequest.Builder builder = FetchRequest.Builder
+                .forConsumer(maxWait, minBytes, createPartitionMap(maxPartitionBytes, topicPartitions, offsetMap))
+                .setMaxBytes(maxResponseBytes);
 
         return buildRequest(builder);
     }
