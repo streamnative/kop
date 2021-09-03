@@ -206,6 +206,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final String advertisedListeners;
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
+    private final int failedAuthenticationDelayMs;
     private final String offsetsTopicName;
     private final String txnTopicName;
     private final Set<String> allowedNamespaces;
@@ -286,6 +287,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
+        this.failedAuthenticationDelayMs = kafkaConfig.getFailedAuthenticationDelayMs();
 
         // update alive channel count stats
         RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
@@ -301,7 +303,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         // update active channel count stats
         RequestStats.ACTIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
-        log.info("channel active: {}", ctx.channel());
+        if (log.isDebugEnabled()) {
+            log.debug("channel active: {}", ctx.channel());
+        }
     }
 
     @Override
@@ -310,7 +314,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         // update active channel count stats
         RequestStats.ACTIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
-        log.info("channel inactive {}", ctx.channel());
+        if (log.isDebugEnabled()) {
+            log.debug("channel inactive {}", ctx.channel());
+        }
 
         close();
     }
@@ -346,6 +352,35 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             throws AuthenticationException {
         if (authenticator != null) {
             authenticator.authenticate(ctx, requestBuf, registerRequestParseLatency, registerRequestLatency);
+        }
+    }
+
+    @Override
+    protected void maybeDelayCloseOnAuthenticationFailure() {
+        if (this.failedAuthenticationDelayMs > 0) {
+            this.ctx.executor().schedule(
+                    this::handleCloseOnAuthenticationFailure,
+                    this.failedAuthenticationDelayMs,
+                    TimeUnit.MILLISECONDS);
+        } else {
+            handleCloseOnAuthenticationFailure();
+        }
+    }
+
+    private void handleCloseOnAuthenticationFailure() {
+        try {
+            this.completeCloseOnAuthenticationFailure();
+        } catch (Exception e) {
+            log.error("Exception handling close on authentication failure node [{}]", this.ctx, e);
+        } finally {
+            this.close();
+        }
+    }
+
+    @Override
+    protected void completeCloseOnAuthenticationFailure() {
+        if (isActive.get() && authenticator != null) {
+            authenticator.sendAuthenticationFailureResponse();
         }
     }
 

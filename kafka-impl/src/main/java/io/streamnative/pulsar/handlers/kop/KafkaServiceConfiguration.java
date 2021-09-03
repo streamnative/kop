@@ -210,6 +210,14 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private int requestTimeoutMs = 30000;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Connection close delay on failed authentication: "
+                    + "this is the time (in milliseconds) by which connection close "
+                    + "will be delayed on authentication failure. "
+    )
+    private int failedAuthenticationDelayMs = 300;
+
     // Kafka SSL configs
     @FieldContext(
         category = CATEGORY_KOP_SSL,

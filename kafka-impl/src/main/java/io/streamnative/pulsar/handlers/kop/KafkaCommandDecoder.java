@@ -86,7 +86,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected void close() {
         // Clear the request queue
-        log.info("close channel {} with {} pending responses", ctx.channel(), requestQueue.size());
+        if (log.isDebugEnabled()) {
+            log.debug("close channel {} with {} pending responses", ctx.channel(), requestQueue.size());
+        }
         while (true) {
             final ResponseAndRequest responseAndRequest = requestQueue.poll();
             if (responseAndRequest != null) {
@@ -184,12 +186,11 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         // execute channelPrepare to complete authentication
         if (isActive.get() && !channelReady()) {
             try {
-
                 channelPrepare(ctx, buffer, registerRequestParseLatency, registerRequestLatency);
                 return;
             } catch (AuthenticationException e) {
-                log.error("unexpected error in authenticate:", e);
-                close();
+                log.error("Failed authentication with [{}] ({})", this.remoteAddress, e.getMessage());
+                maybeDelayCloseOnAuthenticationFailure();
                 return;
             } finally {
                 buffer.release();
@@ -444,6 +445,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                                            BiConsumer<Long, Throwable> registerRequestParseLatency,
                                            BiConsumer<String, Long> registerRequestLatency)
             throws AuthenticationException;
+
+    protected abstract void maybeDelayCloseOnAuthenticationFailure();
+
+    protected abstract void completeCloseOnAuthenticationFailure();
 
     protected abstract void
     handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
