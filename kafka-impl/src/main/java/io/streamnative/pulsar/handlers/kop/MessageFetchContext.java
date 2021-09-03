@@ -192,11 +192,8 @@ public final class MessageFetchContext {
     private void tryComplete() {
         if (resultFuture != null && responseData.size() >= fetchRequest.fetchData().size()
                 && hasComplete.compareAndSet(false, true)) {
-            Runnable sendResponse = () -> {
-                complete();
-            };
             DelayedFetch delayedFetch = new DelayedFetch(fetchRequest.maxWait(), bytesReadable,
-                    fetchRequest.minBytes(), sendResponse);
+                    fetchRequest.minBytes(), this::complete);
             List<Object> delayedFetchKeys =
                     fetchRequest.fetchData().keySet().stream()
                             .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());

@@ -331,7 +331,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         int maxResponseBytes = 800;
         int maxPartitionBytes = 900;
-        int maxWaitMs = 10000;
+        int maxWaitMs = 3000;
         //case1: consuming an empty topic
         KafkaHeaderAndRequest fetchRequest1 = createFetchRequest(maxWaitMs,
                 1,
@@ -344,7 +344,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         kafkaRequestHandler.handleFetchRequest(fetchRequest1, responseFuture1);
         responseFuture1.get();
         Long endTime1 = System.currentTimeMillis();
-        System.out.println("cost time1:" + (endTime1 - startTime1));
+        log.info("cost time1:" + (endTime1 - startTime1));
 
         //case2: consuming an  topic after produceing data
         KafkaProducer<String, String> kProducer = createKafkaProducer();
@@ -353,7 +353,6 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         Map<TopicPartition, Long> offsetMaps = Maps.newHashMap();
         offsetMaps.put(tp, 0L);
 
-        Map<TopicPartition, Long> offsetMap = new HashMap<>();
         KafkaHeaderAndRequest fetchRequest2 = createFetchRequest(maxWaitMs,
                 1,
                 maxResponseBytes,
@@ -365,14 +364,14 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         kafkaRequestHandler.handleFetchRequest(fetchRequest2, responseFuture2);
         responseFuture2.get();
         Long endTime2 = System.currentTimeMillis();
-        System.out.println("cost time2:" + (endTime2 - startTime2));
+        log.info("cost time2:" + (endTime2 - startTime2));
 
         //When consuming an empty topic, minBytes=1, because there is no readable data,
         // it will delay maxWait time before receiving the response.
-        assertEquals(endTime1 - startTime1 >= maxWaitMs, true);
+        assertTrue(endTime1 - startTime1 >= maxWaitMs);
         // When the amount of readable data is not less than minBytes,
         // the time-consuming is usually less than maxWait time.
-        assertEquals(endTime2 - startTime2 < maxWaitMs, true);
+        assertTrue(endTime2 - startTime2 < maxWaitMs);
     }
 
     @Test(timeOut = 80000)

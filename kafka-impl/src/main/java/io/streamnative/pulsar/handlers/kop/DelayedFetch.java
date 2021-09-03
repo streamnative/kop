@@ -19,8 +19,8 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class DelayedFetch extends DelayedOperation {
     private final Runnable callback;
-    private AtomicLong bytesReadable;
-    private int minBytes;
+    private final AtomicLong bytesReadable;
+    private final int minBytes;
 
     protected DelayedFetch(long delayMs, AtomicLong bytesReadable, int minBytes, Runnable callback) {
         super(delayMs, Optional.empty());
