@@ -31,6 +31,7 @@ import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.CoordinatorEventManager;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
@@ -191,6 +192,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
     private final GroupCoordinator groupCoordinator;
+    private final CoordinatorEventManager coordinatorEventManager;
     private final TransactionCoordinator transactionCoordinator;
 
     private final String clusterName;
@@ -240,6 +242,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
                                GroupCoordinator groupCoordinator,
+                               CoordinatorEventManager coordinatorEventManager,
                                TransactionCoordinator transactionCoordinator,
                                AdminManager adminManager,
                                MetadataCache<LocalBrokerData> localBrokerDataCache,
@@ -249,6 +252,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         super(statsLogger, kafkaConfig);
         this.pulsarService = pulsarService;
         this.groupCoordinator = groupCoordinator;
+        this.coordinatorEventManager = coordinatorEventManager;
         this.transactionCoordinator = transactionCoordinator;
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = pulsarService.getExecutor();

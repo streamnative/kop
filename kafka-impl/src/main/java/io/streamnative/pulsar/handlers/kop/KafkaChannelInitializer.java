@@ -20,6 +20,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslHandler;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.CoordinatorEventManager;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
@@ -44,6 +45,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     @Getter
     private final GroupCoordinator groupCoordinator;
     @Getter
+    private final CoordinatorEventManager coordinatorEventManager;
+    @Getter
     private final TransactionCoordinator transactionCoordinator;
     private final AdminManager adminManager;
     @Getter
@@ -59,6 +62,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
                                    GroupCoordinator groupCoordinator,
+                                   CoordinatorEventManager coordinatorEventManager,
                                    TransactionCoordinator transactionCoordinator,
                                    AdminManager adminManager,
                                    boolean enableTLS,
@@ -69,6 +73,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
         this.groupCoordinator = groupCoordinator;
+        this.coordinatorEventManager = coordinatorEventManager;
         this.transactionCoordinator = transactionCoordinator;
         this.adminManager = adminManager;
         this.enableTls = enableTLS;
@@ -93,8 +98,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
             new KafkaRequestHandler(pulsarService, kafkaConfig,
-                    groupCoordinator, transactionCoordinator, adminManager, localBrokerDataCache,
-                    enableTls, advertisedEndPoint, statsLogger));
+                    groupCoordinator, coordinatorEventManager, transactionCoordinator, adminManager,
+                    localBrokerDataCache, enableTls, advertisedEndPoint, statsLogger));
     }
 
 }

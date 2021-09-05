@@ -29,6 +29,8 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.Group
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import io.streamnative.pulsar.handlers.kop.utils.KopZkClient;
+import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperClient;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.GroupKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.MemberKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
@@ -50,6 +52,9 @@ import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import kafka.zookeeper.ZNodeChangeHandler;
+import kafka.zookeeper.ZNodeChildChangeHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.TopicPartition;
@@ -70,6 +75,7 @@ import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.client.impl.ReaderBuilderImpl;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
+import org.apache.zookeeper.KeeperException;
 
 /**
  * Group coordinator.
@@ -82,7 +88,9 @@ public class GroupCoordinator {
         GroupConfig groupConfig,
         OffsetConfig offsetConfig,
         Timer timer,
-        Time time
+        Time time,
+        CoordinatorEventManager coordinatorEventManager,
+        KopZkClient kopZkClient
     ) {
         ScheduledExecutorService coordinatorExecutor = OrderedScheduler.newSchedulerBuilder()
             .name("group-coordinator-executor")
@@ -115,11 +123,13 @@ public class GroupCoordinator {
                 .build();
 
         return new GroupCoordinator(
-            groupConfig,
-            metadataManager,
-            heartbeatPurgatory,
-            joinPurgatory,
-            time
+                groupConfig,
+                metadataManager,
+                heartbeatPurgatory,
+                joinPurgatory,
+                time,
+                coordinatorEventManager,
+                kopZkClient
         );
     }
 
@@ -148,18 +158,26 @@ public class GroupCoordinator {
     private final DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory;
     private final DelayedOperationPurgatory<DelayedJoin> joinPurgatory;
     private final Time time;
+    private final CoordinatorEventManager coordinatorEventManager;
+    private final KopZkClient kopZkClient;
+    private DeletionTopicsHandler deletionTopicsHandler;
 
     public GroupCoordinator(
         GroupConfig groupConfig,
         GroupMetadataManager groupManager,
         DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory,
         DelayedOperationPurgatory<DelayedJoin> joinPurgatory,
-        Time time) {
+        Time time,
+        CoordinatorEventManager coordinatorEventManager,
+        KopZkClient kopZkClient) {
         this.groupConfig = groupConfig;
         this.groupManager = groupManager;
         this.heartbeatPurgatory = heartbeatPurgatory;
         this.joinPurgatory = joinPurgatory;
         this.time = time;
+        this.coordinatorEventManager = coordinatorEventManager;
+        this.kopZkClient = kopZkClient;
+        this.deletionTopicsHandler = new DeletionTopicsHandler(coordinatorEventManager);
     }
 
     /**
@@ -168,6 +186,8 @@ public class GroupCoordinator {
     public void startup(boolean enableMetadataExpiration) {
         log.info("Starting up group coordinator.");
         groupManager.startup(enableMetadataExpiration);
+        coordinatorEventManager.start();
+        kopZkClient.registerZNodeChildChangeHandler(deletionTopicsHandler);
         isActive.set(true);
         log.info("Group coordinator started.");
     }
@@ -180,6 +200,7 @@ public class GroupCoordinator {
         log.info("Shutting down group coordinator ...");
         isActive.set(false);
         groupManager.shutdown();
+        coordinatorEventManager.close();
         heartbeatPurgatory.shutdown();
         joinPurgatory.shutdown();
         log.info("Shutdown group coordinator completely.");
@@ -1295,6 +1316,53 @@ public class GroupCoordinator {
 
     private boolean isCoordinatorLoadInProgress(String groupId) {
         return groupManager.isGroupLoading(groupId);
+    }
+
+    class DeletionTopicsHandler implements ZNodeChildChangeHandler {
+        private final CoordinatorEventManager coordinatorEventManager;
+
+        public DeletionTopicsHandler(CoordinatorEventManager coordinatorEventManager) {
+            this.coordinatorEventManager = coordinatorEventManager;
+        }
+
+        @Override
+        public String path() {
+            return KopZkClient.getDeleteTopicsZNodePath();
+        }
+
+        @Override
+        public void handleChildChange() {
+            coordinatorEventManager.put(new DeleteTopicsEvent());
+        }
+    }
+
+    interface CoordinatorEvent {
+        void process();
+    }
+
+    class DeleteTopicsEvent implements CoordinatorEvent {
+
+        @Override
+        public void process() {
+//            groupManager
+
+            if (!isActive.get()) {
+                return;
+            }
+
+            List<String> topicDeletions = null;
+            try {
+                topicDeletions = kopZkClient.getTopicDeletions();
+                log.debug("Delete topics listener fired for topics {} to be deleted", topicDeletions);
+                Iterable<GroupMetadata> groupMetadataIterable = groupManager.currentGroups();
+                ZooKeeperClient zkClient = kopZkClient.getZooKeeperClient();
+
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } catch (KeeperException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
 }

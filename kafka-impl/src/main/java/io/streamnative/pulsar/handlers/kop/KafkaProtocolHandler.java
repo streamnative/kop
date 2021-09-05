@@ -21,6 +21,7 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 import com.google.common.collect.ImmutableMap;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.CoordinatorEventManager;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
@@ -30,7 +31,9 @@ import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import io.streamnative.pulsar.handlers.kop.utils.KopZkClient;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
+import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperClient;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
@@ -95,6 +98,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     private GroupCoordinator groupCoordinator;
     @Getter
     private TransactionCoordinator transactionCoordinator;
+    @Getter
+    private CoordinatorEventManager coordinatorEventManager;
+    @Getter
+    private KopZkClient kopZkClient;
 
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
@@ -320,6 +327,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             throw new IllegalStateException(e);
         }
 
+        kopZkClient = createKopZkClient(kafkaConfig.getZookeeperServers());
+        // init coordinatorEventManager
+        coordinatorEventManager = new CoordinatorEventManager();
+
         // init and start group coordinator
         startGroupCoordinator(pulsarClient);
         // and listener for Offset topics load/unload
@@ -375,14 +386,16 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, false,
-                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
+                                kafkaConfig, groupCoordinator, coordinatorEventManager,
+                                transactionCoordinator, adminManager, false,
+                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, true,
-                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
+                                kafkaConfig, groupCoordinator, coordinatorEventManager,
+                                transactionCoordinator, adminManager, true,
+                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
                         break;
                 }
             });
@@ -426,13 +439,15 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             .build();
 
         this.groupCoordinator = GroupCoordinator.of(
-            (PulsarClientImpl) pulsarClient,
-            groupConfig,
-            offsetConfig,
-            SystemTimer.builder()
-                .executorName("group-coordinator-timer")
-                .build(),
-            Time.SYSTEM
+                (PulsarClientImpl) pulsarClient,
+                groupConfig,
+                offsetConfig,
+                SystemTimer.builder()
+                        .executorName("group-coordinator-timer")
+                        .build(),
+                Time.SYSTEM,
+                coordinatorEventManager,
+                kopZkClient
         );
         // always enable metadata expiration
         this.groupCoordinator.startup(true);
@@ -499,4 +514,14 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public static @NonNull LookupClient getLookupClient(final PulsarService pulsarService) {
         return LOOKUP_CLIENT_MAP.computeIfAbsent(pulsarService, ignored -> new LookupClient(pulsarService));
     }
+
+    private static KopZkClient createKopZkClient(String zkConnect) {
+        ZooKeeperClient zooKeeperClient = new ZooKeeperClient(zkConnect,
+                30000,
+                15000,
+                Integer.MAX_VALUE);
+
+        return new KopZkClient(zooKeeperClient);
+    }
+
 }
