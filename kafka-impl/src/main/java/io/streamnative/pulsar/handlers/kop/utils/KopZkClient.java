@@ -3,11 +3,11 @@ package io.streamnative.pulsar.handlers.kop.utils;
 import com.google.api.client.util.Lists;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Streams;
-import kafka.zookeeper.ZNodeChangeHandler;
-import kafka.zookeeper.ZNodeChildChangeHandler;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.zookeeper.KeeperException;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperClient.AsyncRequest;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperClient.AsyncResponse;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+@Slf4j
 public class KopZkClient {
 
     private final ZooKeeperClient zooKeeperClient;
@@ -28,7 +29,7 @@ public class KopZkClient {
         return zooKeeperClient;
     }
 
-    public void registerZNodeChildChangeHandler(ZNodeChildChangeHandler zNodeChildChangeHandler) {
+    public void registerZNodeChildChangeHandler(ZooKeeperClient.ZNodeChildChangeHandler zNodeChildChangeHandler) {
         zooKeeperClient.registerZNodeChildChangeHandler(zNodeChildChangeHandler);
     }
 
@@ -36,7 +37,7 @@ public class KopZkClient {
         zooKeeperClient.unregisterZNodeChildChangeHandler(path);
     }
 
-    private boolean registerZNodeChangeHandlerAndCheckExistence(ZNodeChangeHandler zNodeChangeHandler)
+    private boolean registerZNodeChangeHandlerAndCheckExistence(ZooKeeperClient.ZNodeChangeHandler zNodeChangeHandler)
             throws InterruptedException, KeeperException {
         zooKeeperClient.registerZNodeChangeHandler(zNodeChangeHandler);
         AsyncResponse existsResponse = retryRequestUntilConnected(
@@ -98,10 +99,14 @@ public class KopZkClient {
      * @return set of topics marked for deletion.
      */
     public List<String> getTopicDeletions() throws InterruptedException, KeeperException {
+        return getChildren(getDeleteTopicsZNodePath());
+    }
+
+    public List<String> getChildren(String path) throws InterruptedException, KeeperException {
         ZooKeeperClient.GetChildrenResponse getChildrenResponse =
                 (ZooKeeperClient.GetChildrenResponse) retryRequestUntilConnected(
                         new ZooKeeperClient.GetChildrenRequest(
-                                getDeleteTopicsZNodePath(),
+                                path,
                                 true,
                                 Optional.empty()));
 
@@ -113,6 +118,35 @@ public class KopZkClient {
             default:
                 throw getChildrenResponse.resultException().get();
         }
+    }
+
+    public byte[] getDataForPath(String path) throws InterruptedException, KeeperException {
+        ZooKeeperClient.GetDataRequest getDataRequest =
+                new ZooKeeperClient.GetDataRequest(path, Optional.empty());
+        ZooKeeperClient.GetDataResponse getDataResponse =
+                (ZooKeeperClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
+        switch (getDataResponse.getResultCode()) {
+            case OK:
+                return getDataResponse.getData();
+            case NONODE:
+                return new byte[0];
+            default:
+                throw getDataResponse.resultException().get();
+        }
+    }
+
+    public void deleteNodesForPaths(String prePath, Set<String> paths) throws InterruptedException {
+        HashSet<AsyncRequest> deleteRequests = Sets.newHashSet();
+        paths.forEach(path -> {
+            deleteRequests.add(new ZooKeeperClient.DeleteRequest(
+                    prePath + "/" + path, -1, Optional.empty()));
+        });
+
+        retryRequestsUntilConnected(deleteRequests);
+    }
+
+    public static String getKopZNodePath() {
+        return "/kop";
     }
 
     public static String getDeleteTopicsZNodePath() {

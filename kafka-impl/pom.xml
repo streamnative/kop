@@ -33,12 +33,6 @@
   <!-- include the dependencies -->
   <dependencies>
     <!-- runtime dependencies -->
-    <dependency>
-      <groupId>org.apache.kafka</groupId>
-      <artifactId>kafka_2.11</artifactId>
-      <version>2.0.0-cp1</version>
-      <scope>compile</scope>
-    </dependency>
   </dependencies>
 
   <build>

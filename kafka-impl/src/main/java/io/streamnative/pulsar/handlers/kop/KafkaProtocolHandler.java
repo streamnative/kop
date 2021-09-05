@@ -292,6 +292,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
                 kafkaConfig.getGroupIdZooKeeperPath(), new byte[0]);
 
+        ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
+                KopZkClient.getKopZNodePath(), new byte[0]);
+
+        ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
+                KopZkClient.getDeleteTopicsZNodePath(), new byte[0]);
+
         PulsarAdmin pulsarAdmin;
         try {
             pulsarAdmin = brokerService.getPulsar().getAdminClient();
@@ -519,7 +525,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         ZooKeeperClient zooKeeperClient = new ZooKeeperClient(zkConnect,
                 30000,
                 15000,
-                Integer.MAX_VALUE);
+                10);
+
+        zooKeeperClient.init();
 
         return new KopZkClient(zooKeeperClient);
     }

@@ -27,6 +27,8 @@ import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -588,6 +590,13 @@ public class GroupMetadata {
                 pendingOffsets.remove(topicPartition);
             });
             CommitRecordMetadataAndOffset removedOffset = offsets.remove(topicPartition);
+            // removedOffset.offsetAndMetadata() have an NPE
+            if (removedOffset == null) {
+                return new KeyValue<>(
+                        topicPartition,
+                        OffsetAndMetadata.apply(0)
+                );
+            }
             return new KeyValue<>(
                 topicPartition,
                 removedOffset.offsetAndMetadata()
@@ -596,6 +605,27 @@ public class GroupMetadata {
             e -> e.getKey(),
             e -> e.getValue()
         ));
+    }
+
+    public Set<TopicPartition> collectPartitionsWithTopics(Set<String> topics) {
+        HashSet<TopicPartition> topicPartitions = Sets.newHashSet();
+
+        topicPartitions.addAll(pendingOffsetCommits.keySet().stream().filter(
+                topicPartition -> topics.contains(topicPartition.topic())
+        ).collect(Collectors.toSet()));
+
+        pendingTransactionalOffsetCommits.values().stream().map(Map::keySet)
+                .collect(Collectors.toList()).forEach(partitionSet -> {
+            topicPartitions.addAll(partitionSet.stream().filter(
+                    topicPartition -> topics.contains(topicPartition.topic()))
+                    .collect(Collectors.toList()));
+        });
+
+        topicPartitions.addAll(offsets.keySet().stream().filter(
+                topicPartition -> topics.contains(topicPartition.topic())
+        ).collect(Collectors.toList()));
+
+        return topicPartitions;
     }
 
     public Map<TopicPartition, OffsetAndMetadata> removeExpiredOffsets(long startMs) {

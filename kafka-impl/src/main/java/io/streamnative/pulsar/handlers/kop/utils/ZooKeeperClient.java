@@ -6,19 +6,15 @@ import static org.apache.zookeeper.Watcher.Event.EventType.NodeDataChanged;
 import static org.apache.zookeeper.Watcher.Event.EventType.NodeDeleted;
 
 import com.google.api.client.util.Lists;
-import kafka.zookeeper.StateChangeHandler;
-import kafka.zookeeper.ZNodeChangeHandler;
-import kafka.zookeeper.ZNodeChildChangeHandler;
-import kafka.zookeeper.ZooKeeperClientAuthFailedException;
-import kafka.zookeeper.ZooKeeperClientExpiredException;
-import kafka.zookeeper.ZooKeeperClientTimeoutException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.zookeeper.AsyncCallback;
+import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Stat;
 
 import java.io.IOException;
@@ -36,16 +32,29 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.BiConsumer;
 
 
 @Slf4j
 @Getter
 public class ZooKeeperClient {
-    private String connectString;
-    private int sessionTimeoutMs;
-    private int connectionTimeoutMs;
+    private final String connectString;
+    private final int sessionTimeoutMs;
+    private final int connectionTimeoutMs;
     private int maxInFlightRequests;
     private volatile ZooKeeper zooKeeper;
+    private final ReentrantReadWriteLock initializationLock = new ReentrantReadWriteLock();
+    private static final ReentrantLock isConnectedOrExpiredLock = new ReentrantLock();
+    private static final Condition isConnectedOrExpiredCondition = isConnectedOrExpiredLock.newCondition();
+    private final ConcurrentHashMap<String, ZNodeChangeHandler> zNodeChangeHandlers =
+            new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ZNodeChildChangeHandler> zNodeChildChangeHandlers =
+            new ConcurrentHashMap<>();
+    private final Semaphore inFlightRequests;
+    private static final ConcurrentHashMap<String, StateChangeHandler> stateChangeHandlers =
+            new ConcurrentHashMap<>();
+    private static final ScheduledExecutorService expiryScheduler =
+            new ScheduledThreadPoolExecutor(1);
 
     public ZooKeeperClient(String connectString,
                            int sessionTimeoutMs,
@@ -55,42 +64,59 @@ public class ZooKeeperClient {
         this.sessionTimeoutMs = sessionTimeoutMs;
         this.connectionTimeoutMs = connectionTimeoutMs;
         this.maxInFlightRequests = maxInFlightRequests;
+        this.inFlightRequests = new Semaphore(maxInFlightRequests);
     }
-
-    private final ReentrantReadWriteLock initializationLock = new ReentrantReadWriteLock();
-    private static final ReentrantLock isConnectedOrExpiredLock = new ReentrantLock();
-    private static final Condition isConnectedOrExpiredCondition = isConnectedOrExpiredLock.newCondition();
-    private final ConcurrentHashMap<String, ZNodeChangeHandler> zNodeChangeHandlers =
-            new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, ZNodeChildChangeHandler> zNodeChildChangeHandlers =
-            new ConcurrentHashMap<>();
-    private final Semaphore inFlightRequests = new Semaphore(maxInFlightRequests);
-    private static final ConcurrentHashMap<String, StateChangeHandler> stateChangeHandlers =
-            new ConcurrentHashMap<>();
-    private static final ScheduledExecutorService expiryScheduler =
-            new ScheduledThreadPoolExecutor(1);
 
     public void init() {
         log.info("Initializing a new session to {}.", connectString);
         try {
-            zooKeeper = new ZooKeeper(connectString, sessionTimeoutMs, new ZooKeeperClientWatcher());
-        } catch (IOException e) {
+            this.zooKeeper = new ZooKeeper(connectString, sessionTimeoutMs, new ZooKeeperClientWatcher());
+            waitUntilConnected(connectionTimeoutMs, TimeUnit.MILLISECONDS);
+        } catch (IOException | InterruptedException e) {
             log.error("Initializing a new session failed {}", e.getMessage());
+            close();
         }
     }
 
+    /**
+     * Register the handler to ZooKeeperClient. This is just a local operation. This does not actually register a watcher.
+     * <p>
+     * The watcher is only registered once the user calls handle(AsyncRequest) or handle(Seq[AsyncRequest])
+     * with either a GetDataRequest or ExistsRequest.
+     * <p>
+     * NOTE: zookeeper only allows registration to a nonexistent znode with ExistsRequest.
+     *
+     * @param zNodeChangeHandler the handler to register
+     */
     public void registerZNodeChangeHandler(ZNodeChangeHandler zNodeChangeHandler) {
         zNodeChangeHandlers.put(zNodeChangeHandler.path(), zNodeChangeHandler);
     }
 
+    /**
+     * Unregister the handler from ZooKeeperClient. This is just a local operation.
+     *
+     * @param path the path of the handler to unregister
+     */
     public void unregisterZNodeChangeHandler(String path) {
         zNodeChangeHandlers.remove(path);
     }
 
+    /**
+     * Register the handler to ZooKeeperClient. This is just a local operation. This does not actually register a watcher.
+     * <p>
+     * The watcher is only registered once the user calls handle(AsyncRequest) or handle(Seq[AsyncRequest]) with a GetChildrenRequest.
+     *
+     * @param zNodeChildChangeHandler the handler to register
+     */
     public void registerZNodeChildChangeHandler(ZNodeChildChangeHandler zNodeChildChangeHandler) {
         zNodeChildChangeHandlers.put(zNodeChildChangeHandler.path(), zNodeChildChangeHandler);
     }
 
+    /**
+     * Unregister the handler from ZooKeeperClient. This is just a local operation.
+     *
+     * @param path the path of the handler to unregister
+     */
     public void unregisterZNodeChildChangeHandler(String path) {
         zNodeChildChangeHandlers.remove(path);
     }
@@ -117,7 +143,7 @@ public class ZooKeeperClient {
     private boolean shouldWatch(AsyncRequest request) {
         switch (request.getName()) {
             case "GetChildrenRequest":
-                return zNodeChildChangeHandlers.contains(request.getPath());
+                return zNodeChildChangeHandlers.containsKey(request.getPath());
             case "ExistsRequest":
             case "GetDataRequest":
                 return zNodeChangeHandlers.contains(request.getPath());
@@ -165,6 +191,7 @@ public class ZooKeeperClient {
     public void close() {
         log.info("Closing.");
         try {
+            expiryScheduler.shutdown();
             initializationLock.writeLock().lock();
             zNodeChangeHandlers.clear();
             zNodeChildChangeHandlers.clear();
@@ -175,7 +202,6 @@ public class ZooKeeperClient {
         } finally {
             initializationLock.writeLock().unlock();
         }
-        expiryScheduler.shutdown();
         log.info("Closed.");
     }
 
@@ -188,17 +214,17 @@ public class ZooKeeperClient {
             ArrayBlockingQueue<AsyncResponse> responseQueue =
                     new ArrayBlockingQueue<>(requests.size());
 
+            final BiConsumer<AsyncResponse, Throwable> responseCallback = (response, throwable) -> {
+                responseQueue.add(response);
+                inFlightRequests.release();
+                countDownLatch.countDown();
+            };
+
             for (AsyncRequest request : requests) {
                 try {
                     inFlightRequests.acquire();
                     initializationLock.readLock().lock();
-                    send(request).whenComplete(
-                            (response, throwable) -> {
-                                responseQueue.add(response);
-                                inFlightRequests.release();
-                                countDownLatch.countDown();
-                            });
-
+                    send(request, responseCallback);
                 } catch (Exception e) {
                     inFlightRequests.release();
                     throw e;
@@ -206,53 +232,77 @@ public class ZooKeeperClient {
                     initializationLock.readLock().unlock();
                 }
             }
+
             countDownLatch.await();
 
             return Lists.newArrayList(responseQueue.iterator());
         }
     }
 
-    private CompletableFuture<AsyncResponse> send(AsyncRequest request) {
-        CompletableFuture<AsyncResponse> completableFuture = new CompletableFuture<>();
+    private void send(AsyncRequest request,
+                      BiConsumer<AsyncResponse, Throwable> callback) {
 
         long sendTimeMs = System.currentTimeMillis();
         switch (request.getName()) {
             case "ExistsRequest":
-                zooKeeper.exists(request.getPath(), shouldWatch(request), new AsyncCallback.StatCallback() {
-                    @Override
-                    public void processResult(int rc, String path, Object ctx, Stat stat) {
-                        completableFuture.complete(new ExistsResponse(
+                zooKeeper.exists(request.getPath(), shouldWatch(request),
+                        (rc, path, ctx, stat) -> callback.accept(new ExistsResponse(
                                 KeeperException.Code.get(rc),
                                 path,
                                 ctx,
                                 stat,
                                 new ResponseMetadata(sendTimeMs, System.currentTimeMillis())
-                        ));
-
-                    }
-                }, request.getCtx().orElse(null));
+                        ), null), request.getCtx());
                 break;
             case "GetChildrenRequest":
-                zooKeeper.getChildren(request.path, shouldWatch(request), new AsyncCallback.Children2Callback() {
-                    @Override
-                    public void processResult(int rc, String path, Object ctx, List<String> children, Stat stat) {
-                        completableFuture.complete(new GetChildrenResponse(
+                zooKeeper.getChildren(request.getPath(), shouldWatch(request),
+                        (rc, path, ctx, children, stat) -> callback.accept(new GetChildrenResponse(
                                 KeeperException.Code.get(rc),
                                 path,
                                 ctx,
                                 children,
                                 stat,
                                 new ResponseMetadata(sendTimeMs, System.currentTimeMillis())
-                        ));
-                    }
-                }, request.getCtx().orElse(null));
+                        ), null), request.getCtx());
                 break;
+            case "CreateRequest":
+                CreateRequest createRequest = (CreateRequest) request;
+                zooKeeper.create(createRequest.getPath(),
+                        createRequest.getData(),
+                        createRequest.getAcls(),
+                        createRequest.getCreateMode(),
+                        (rc, path, ctx, name, stat) -> callback.accept(new CreateResponse(
+                                KeeperException.Code.get(rc),
+                                path,
+                                ctx,
+                                name,
+                                new ResponseMetadata(sendTimeMs, System.currentTimeMillis())
+                        ), null), createRequest.getCtx());
+                break;
+            case "DeleteRequest":
+                DeleteRequest deleteRequest = (DeleteRequest) request;
+                zooKeeper.delete(deleteRequest.getPath(), deleteRequest.getVersion(),
+                        (rc, path, ctx) -> callback.accept(new DeleteResponse(
+                                KeeperException.Code.get(rc),
+                                path,
+                                ctx,
+                                new ResponseMetadata(sendTimeMs, System.currentTimeMillis())
+                        ), null), deleteRequest.getCtx());
+                break;
+            case "GetDataRequest":
+                zooKeeper.getData(request.getPath(), shouldWatch(request),
+                        (rc, path, ctx, data, stat) -> callback.accept(new GetDataResponse(
+                                KeeperException.Code.get(rc),
+                                path,
+                                ctx,
+                                data,
+                                stat,
+                                new ResponseMetadata(sendTimeMs, System.currentTimeMillis())
+                        ), null), request.getCtx());
             default:
                 throw new IllegalStateException("Unexpected value: " + request);
         }
 
-        completableFuture.complete(null);
-        return completableFuture;
     }
 
     private void scheduleSessionExpiryHandler() {
@@ -293,7 +343,7 @@ public class ZooKeeperClient {
                 boolean connected = false;
                 while (!connected) {
                     try {
-                        zooKeeper = new ZooKeeper(connectString, sessionTimeoutMs, new ZooKeeperClientWatcher());
+                        this.zooKeeper = new ZooKeeper(connectString, sessionTimeoutMs, new ZooKeeperClientWatcher());
                         connected = true;
                     } catch (Exception e) {
                         log.info("Error when recreating ZooKeeper, retrying after a short sleep", e);
@@ -310,7 +360,6 @@ public class ZooKeeperClient {
     }
 
 
-    // package level visibility for testing only
     private class ZooKeeperClientWatcher implements Watcher {
 
         @Override
@@ -333,6 +382,7 @@ public class ZooKeeperClient {
                 }
             } else {
                 Event.EventType eventType = watchedEvent.getType();
+
                 if (eventType == NodeChildrenChanged) {
                     zNodeChildChangeHandlers.get(path).handleChildChange();
                 } else if (eventType == NodeCreated) {
@@ -385,6 +435,59 @@ public class ZooKeeperClient {
             this.path = path;
             this.registerWatch = registerWatch;
             this.ctx = ctx;
+        }
+    }
+
+    @Getter
+    static class CreateRequest extends AsyncRequest {
+        private final String path;
+        private final byte[] data;
+        private final List<ACL> acls;
+        private final CreateMode createMode;
+        private final Optional ctx;
+        private final static String name = "CreateRequest";
+
+        CreateRequest(String path,
+                      byte[] data,
+                      List<ACL> acls,
+                      CreateMode createMode,
+                      Object ctx) {
+            super(path, Optional.of(createMode), name);
+            this.path = path;
+            this.data = data;
+            this.acls = acls;
+            this.createMode = createMode;
+            this.ctx = Optional.of(ctx);
+        }
+    }
+
+    @Getter
+    static class DeleteRequest extends AsyncRequest {
+        private final String path;
+        private final int version;
+        private final Optional ctx;
+        private final static String name = "DeleteRequest";
+
+        DeleteRequest(String path,
+                      int version,
+                      Object ctx) {
+            super(path, Optional.of(ctx), name);
+            this.path = path;
+            this.version = version;
+            this.ctx = Optional.of(ctx);
+        }
+    }
+
+    @Getter
+    static class GetDataRequest extends AsyncRequest {
+        private final String path;
+        private final Optional ctx;
+        private final static String name = "GetDataRequest";
+
+        GetDataRequest(String path, Object ctx) {
+            super(path, Optional.of(ctx), name);
+            this.path = path;
+            this.ctx = Optional.of(ctx);
         }
     }
 
@@ -483,6 +586,122 @@ public class ZooKeeperClient {
             this.children = children;
             this.stat = stat;
             this.metadata = metadata;
+        }
+    }
+
+    @Getter
+    static class CreateResponse extends AsyncResponse {
+        private final KeeperException.Code resultCode;
+        private final String path;
+        private final Optional ctx;
+        private final String name;
+        private final ResponseMetadata metadata;
+
+        CreateResponse(KeeperException.Code resultCode,
+                       String path,
+                       Object ctx,
+                       String name,
+                       ResponseMetadata metadata) {
+            super(resultCode, path, Optional.of(ctx), null, metadata);
+            this.resultCode = resultCode;
+            this.path = path;
+            this.ctx = Optional.of(ctx);
+            this.name = name;
+            this.metadata = metadata;
+        }
+    }
+
+    @Getter
+    static class DeleteResponse extends AsyncResponse {
+        private final KeeperException.Code resultCode;
+        private final String path;
+        private final Optional ctx;
+        private final ResponseMetadata metadata;
+
+        DeleteResponse(KeeperException.Code resultCode,
+                       String path,
+                       Object ctx,
+                       ResponseMetadata metadata) {
+            super(resultCode, path, Optional.of(ctx), null, metadata);
+            this.resultCode = resultCode;
+            this.path = path;
+            this.ctx = Optional.of(ctx);
+            this.metadata = metadata;
+        }
+    }
+
+    @Getter
+    static class GetDataResponse extends AsyncResponse {
+        private final KeeperException.Code resultCode;
+        private final String path;
+        private final Optional ctx;
+        private final byte[] data;
+        private final Stat stat;
+        private final ResponseMetadata metadata;
+
+        GetDataResponse(KeeperException.Code resultCode,
+                        String path,
+                        Object ctx,
+                        byte[] data,
+                        Stat stat,
+                        ResponseMetadata metadata) {
+            super(resultCode, path, Optional.of(ctx), stat, metadata);
+            this.resultCode = resultCode;
+            this.path = path;
+            this.ctx = Optional.of(ctx);
+            this.data = data;
+            this.stat = stat;
+            this.metadata = metadata;
+        }
+    }
+
+    public interface StateChangeHandler {
+        String name();
+
+        void beforeInitializingSession();
+
+        void afterInitializingSession();
+
+        void onAuthFailure();
+    }
+
+    public interface ZNodeChangeHandler {
+        String path();
+
+        void handleCreation();
+
+        void handleDeletion();
+
+        void handleDataChange();
+    }
+
+    public interface ZNodeChildChangeHandler {
+        String path();
+
+        void handleChildChange();
+    }
+
+    static class ZooKeeperClientException extends RuntimeException {
+        public ZooKeeperClientException(String message) {
+            super(message);
+        }
+    }
+
+    static class ZooKeeperClientExpiredException extends ZooKeeperClientException {
+        public ZooKeeperClientExpiredException(String message) {
+            super(message);
+        }
+    }
+
+    static class ZooKeeperClientAuthFailedException extends ZooKeeperClientException {
+        public ZooKeeperClientAuthFailedException(String message) {
+            super(message);
+        }
+    }
+
+    static class ZooKeeperClientTimeoutException extends ZooKeeperClientException {
+        public ZooKeeperClientTimeoutException(String message) {
+            super(message);
         }
     }
 }

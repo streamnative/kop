@@ -31,7 +31,6 @@ import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.CommitRecordMetadataAndOffset;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
-import io.streamnative.pulsar.handlers.kop.utils.KopZkClient;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -56,9 +55,6 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
-import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperClient;
-import kafka.zookeeper.ZNodeChangeHandler;
 import lombok.Data;
 import lombok.Getter;
 import lombok.experimental.Accessors;
@@ -1407,29 +1403,4 @@ public class GroupMetadataManager {
                     .createAsync();
             });
     }
-
-    public static class TopicChangeHandler implements ZNodeChangeHandler {
-
-        @Override
-        public String path() {
-            return "/deletetopics";
-        }
-
-        @Override
-        public void handleCreation() {
-            ZNodeChangeHandler.super.handleCreation();
-        }
-
-        @Override
-        public void handleDeletion() {
-            ZNodeChangeHandler.super.handleDeletion();
-        }
-
-        @Override
-        public void handleDataChange() {
-            ZNodeChangeHandler.super.handleDataChange();
-        }
-    }
-
-
 }
