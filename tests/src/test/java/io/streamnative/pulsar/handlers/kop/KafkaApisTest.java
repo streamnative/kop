@@ -34,6 +34,7 @@ import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -47,6 +48,8 @@ import java.util.stream.Collectors;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -70,6 +73,7 @@ import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetCommitRequest.PartitionData;
 import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.RequestHeader;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
@@ -349,19 +353,11 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         KafkaProducer<String, String> kProducer = createKafkaProducer();
         produceData(kProducer, topicPartitions, 10);
 
-        Map<TopicPartition, Long> offsetMaps = Maps.newHashMap();
-        offsetMaps.put(tp, 0L);
-
-        KafkaHeaderAndRequest fetchRequest2 = createFetchRequest(maxWaitMs,
-                1,
-                maxResponseBytes,
-                maxPartitionBytes,
-                topicPartitions,
-                offsetMaps);
-        CompletableFuture<AbstractResponse> responseFuture2 = new CompletableFuture<>();
+        KafkaConsumer<String, String> consumer = createKafkaConsumer();
+        consumer.assign(topicPartitions);
+        consumer.seekToBeginning(topicPartitions);
         Long startTime2 = System.currentTimeMillis();
-        kafkaRequestHandler.handleFetchRequest(fetchRequest2, responseFuture2);
-        responseFuture2.get();
+        consumer.poll(Duration.ofMillis(maxWaitMs));
         Long endTime2 = System.currentTimeMillis();
         log.info("cost time2:" + (endTime2 - startTime2));
 
@@ -619,6 +615,19 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         KafkaProducer<String, String> producer = new KafkaProducer<>(props);
         return producer;
+    }
+
+    private KafkaConsumer<String, String>  createKafkaConsumer() {
+        final Properties props = new Properties();
+        props.put(ConsumerConfig.CLIENT_ID_CONFIG, "test_client");
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + getKafkaBrokerPort());
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        props.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
+
+        final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
+
+        return consumer;
     }
 
     private void produceData(KafkaProducer<String, String> producer,
