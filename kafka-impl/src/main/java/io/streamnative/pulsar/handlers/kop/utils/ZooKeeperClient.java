@@ -1,3 +1,16 @@
+/**
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import static org.apache.zookeeper.Watcher.Event.EventType.NodeChildrenChanged;
@@ -5,24 +18,12 @@ import static org.apache.zookeeper.Watcher.Event.EventType.NodeCreated;
 import static org.apache.zookeeper.Watcher.Event.EventType.NodeDataChanged;
 import static org.apache.zookeeper.Watcher.Event.EventType.NodeDeleted;
 
-import com.google.api.client.util.Lists;
-import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.zookeeper.AsyncCallback;
-import org.apache.zookeeper.CreateMode;
-import org.apache.zookeeper.KeeperException;
-import org.apache.zookeeper.WatchedEvent;
-import org.apache.zookeeper.Watcher;
-import org.apache.zookeeper.ZooKeeper;
-import org.apache.zookeeper.data.ACL;
-import org.apache.zookeeper.data.Stat;
-
+import com.google.common.collect.Lists;
 import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledExecutorService;
@@ -33,6 +34,15 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BiConsumer;
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.WatchedEvent;
+import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Stat;
 
 
 @Slf4j
@@ -79,10 +89,12 @@ public class ZooKeeperClient {
     }
 
     /**
-     * Register the handler to ZooKeeperClient. This is just a local operation. This does not actually register a watcher.
+     * Register the handler to ZooKeeperClient.
+     * This is just a local operation.
+     * This does not actually register a watcher.
      * <p>
-     * The watcher is only registered once the user calls handle(AsyncRequest) or handle(Seq[AsyncRequest])
-     * with either a GetDataRequest or ExistsRequest.
+     * The watcher is only registered once the user calls handle(AsyncRequest)
+     * or handle(Seq[AsyncRequest]) with either a GetDataRequest or ExistsRequest.
      * <p>
      * NOTE: zookeeper only allows registration to a nonexistent znode with ExistsRequest.
      *
@@ -102,9 +114,12 @@ public class ZooKeeperClient {
     }
 
     /**
-     * Register the handler to ZooKeeperClient. This is just a local operation. This does not actually register a watcher.
+     * Register the handler to ZooKeeperClient.
+     * This is just a local operation.
+     * This does not actually register a watcher.
      * <p>
-     * The watcher is only registered once the user calls handle(AsyncRequest) or handle(Seq[AsyncRequest]) with a GetChildrenRequest.
+     * The watcher is only registered once the user calls handle(AsyncRequest)
+     * or handle(Seq[AsyncRequest]) with a GetChildrenRequest.
      *
      * @param zNodeChildChangeHandler the handler to register
      */
@@ -124,8 +139,9 @@ public class ZooKeeperClient {
     public void registerStateChangeHandler(StateChangeHandler stateChangeHandler) {
         try {
             initializationLock.readLock().lock();
-            if (stateChangeHandler != null)
+            if (stateChangeHandler != null) {
                 stateChangeHandlers.put(stateChangeHandler.name(), stateChangeHandler);
+            }
         } finally {
             initializationLock.readLock().unlock();
         }
@@ -413,12 +429,12 @@ public class ZooKeeperClient {
 
     @Getter
     static class ExistsRequest extends AsyncRequest {
+        private final String name = "ExistsRequest";
         private final String path;
         private final Optional ctx;
-        private final static String name = "ExistsRequest";
 
         public ExistsRequest(String path, Optional ctx) {
-            super(path, ctx, name);
+            super(path, ctx, "ExistsRequest");
             this.path = path;
             this.ctx = ctx;
         }
@@ -426,13 +442,13 @@ public class ZooKeeperClient {
 
     @Getter
     static class GetChildrenRequest extends AsyncRequest {
+        private final String name = "GetChildrenRequest";
         private final String path;
         private final boolean registerWatch;
         private final Optional ctx;
-        private final static String name = "GetChildrenRequest";
 
         public GetChildrenRequest(String path, boolean registerWatch, Optional ctx) {
-            super(path, ctx, name);
+            super(path, ctx, "GetChildrenRequest");
             this.path = path;
             this.registerWatch = registerWatch;
             this.ctx = ctx;
@@ -441,19 +457,19 @@ public class ZooKeeperClient {
 
     @Getter
     static class CreateRequest extends AsyncRequest {
+        private final String name = "CreateRequest";
         private final String path;
         private final byte[] data;
         private final List<ACL> acls;
         private final CreateMode createMode;
         private final Optional ctx;
-        private final static String name = "CreateRequest";
 
         CreateRequest(String path,
                       byte[] data,
                       List<ACL> acls,
                       CreateMode createMode,
                       Object ctx) {
-            super(path, Optional.of(createMode), name);
+            super(path, Optional.of(createMode), "CreateRequest");
             this.path = path;
             this.data = data;
             this.acls = acls;
@@ -464,15 +480,15 @@ public class ZooKeeperClient {
 
     @Getter
     static class DeleteRequest extends AsyncRequest {
+        private final String name = "DeleteRequest";
         private final String path;
         private final int version;
         private final Optional ctx;
-        private final static String name = "DeleteRequest";
 
         DeleteRequest(String path,
                       int version,
                       Object ctx) {
-            super(path, Optional.of(ctx), name);
+            super(path, Optional.of(ctx), "DeleteRequest");
             this.path = path;
             this.version = version;
             this.ctx = Optional.of(ctx);
@@ -481,12 +497,12 @@ public class ZooKeeperClient {
 
     @Getter
     static class GetDataRequest extends AsyncRequest {
+        private final String name = "GetDataRequest";
         private final String path;
         private final Optional ctx;
-        private final static String name = "GetDataRequest";
 
         GetDataRequest(String path, Object ctx) {
-            super(path, Optional.of(ctx), name);
+            super(path, Optional.of(ctx), "GetDataRequest");
             this.path = path;
             this.ctx = Optional.of(ctx);
         }

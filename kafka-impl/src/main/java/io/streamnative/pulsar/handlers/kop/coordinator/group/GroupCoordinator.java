@@ -25,12 +25,10 @@ import static org.apache.kafka.common.record.RecordBatch.NO_PRODUCER_ID;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import io.streamnative.pulsar.handlers.kop.KopEventManager;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
-import io.streamnative.pulsar.handlers.kop.utils.KopZkClient;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.GroupKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.MemberKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;

@@ -16,13 +16,12 @@ package io.streamnative.pulsar.handlers.kop;
 import static io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.TopicKey;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
-import com.google.api.client.util.Sets;
+import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
-
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
