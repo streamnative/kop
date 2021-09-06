@@ -127,7 +127,7 @@ public class SaslAuthenticator {
     }
 
     /**
-     * Used by external usages like KOP Proxy
+     * Used by external usages like KOP Proxy.
      * @param admin
      * @param authenticationService
      * @param allowedMechanisms
