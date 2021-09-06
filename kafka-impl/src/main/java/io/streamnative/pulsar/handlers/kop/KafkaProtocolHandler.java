@@ -21,7 +21,6 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 import com.google.common.collect.ImmutableMap;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.CoordinatorEventManager;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
@@ -99,7 +98,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     @Getter
     private TransactionCoordinator transactionCoordinator;
     @Getter
-    private CoordinatorEventManager coordinatorEventManager;
+    private KopEventManager kopEventManager;
     @Getter
     private KopZkClient kopZkClient;
 
@@ -334,11 +333,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         }
 
         kopZkClient = createKopZkClient(kafkaConfig.getZookeeperServers());
-        // init coordinatorEventManager
-        coordinatorEventManager = new CoordinatorEventManager();
 
         // init and start group coordinator
         startGroupCoordinator(pulsarClient);
+        // init KopEventManager
+        kopEventManager = new KopEventManager(groupCoordinator, kopZkClient, adminManager);
+        kopEventManager.start();
+
         // and listener for Offset topics load/unload
         brokerService.pulsar()
                 .getNamespaceService()
@@ -392,15 +393,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, coordinatorEventManager,
-                                transactionCoordinator, adminManager, false,
+                                kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, false,
                                 advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, coordinatorEventManager,
-                                transactionCoordinator, adminManager, true,
+                                kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, true,
                                 advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
                         break;
                 }
@@ -451,9 +450,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 SystemTimer.builder()
                         .executorName("group-coordinator-timer")
                         .build(),
-                Time.SYSTEM,
-                coordinatorEventManager,
-                kopZkClient
+                Time.SYSTEM
         );
         // always enable metadata expiration
         this.groupCoordinator.startup(true);

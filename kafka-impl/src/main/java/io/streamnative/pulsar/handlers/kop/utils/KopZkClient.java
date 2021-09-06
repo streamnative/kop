@@ -4,6 +4,7 @@ import com.google.api.client.util.Lists;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Streams;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.zookeeper.KeeperException;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperClient.AsyncRequest;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperClient.AsyncResponse;
@@ -94,12 +95,21 @@ public class KopZkClient {
     }
 
     /**
-     * Get all topics marked for deletion.
+     * Get all topics have deleted.
      *
-     * @return set of topics marked for deletion.
+     * @return list of topics which have deleted.
      */
     public List<String> getTopicDeletions() throws InterruptedException, KeeperException {
         return getChildren(getDeleteTopicsZNodePath());
+    }
+
+    /**
+     * Get all brokers.
+     *
+     * @return list of all pulsar brokers.
+     */
+    public List<String> getBrokers() throws InterruptedException, KeeperException {
+        return getChildren(getBrokersChangeZNodePath());
     }
 
     public List<String> getChildren(String path) throws InterruptedException, KeeperException {
@@ -150,7 +160,11 @@ public class KopZkClient {
     }
 
     public static String getDeleteTopicsZNodePath() {
-        return "/kop/delete_topics";
+        return getKopZNodePath() + "/delete_topics";
+    }
+
+    public static String getBrokersChangeZNodePath() {
+        return LoadManager.LOADBALANCE_BROKERS_ROOT;
     }
 
 }

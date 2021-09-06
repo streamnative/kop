@@ -24,15 +24,13 @@ import static org.apache.kafka.common.record.RecordBatch.NO_PRODUCER_EPOCH;
 import static org.apache.kafka.common.record.RecordBatch.NO_PRODUCER_ID;
 
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.KopEventManager;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
-import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.KopZkClient;
-import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperClient;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.GroupKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.MemberKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
@@ -41,8 +39,6 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -76,7 +72,6 @@ import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.client.impl.ReaderBuilderImpl;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
-import org.apache.zookeeper.KeeperException;
 
 /**
  * Group coordinator.
@@ -89,9 +84,7 @@ public class GroupCoordinator {
         GroupConfig groupConfig,
         OffsetConfig offsetConfig,
         Timer timer,
-        Time time,
-        CoordinatorEventManager coordinatorEventManager,
-        KopZkClient kopZkClient
+        Time time
     ) {
         ScheduledExecutorService coordinatorExecutor = OrderedScheduler.newSchedulerBuilder()
             .name("group-coordinator-executor")
@@ -128,9 +121,7 @@ public class GroupCoordinator {
                 metadataManager,
                 heartbeatPurgatory,
                 joinPurgatory,
-                time,
-                coordinatorEventManager,
-                kopZkClient
+                time
         );
     }
 
@@ -159,27 +150,19 @@ public class GroupCoordinator {
     private final DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory;
     private final DelayedOperationPurgatory<DelayedJoin> joinPurgatory;
     private final Time time;
-    private final CoordinatorEventManager coordinatorEventManager;
-    private final KopZkClient kopZkClient;
-    private final DeletionTopicsHandler deletionTopicsHandler;
 
     public GroupCoordinator(
         GroupConfig groupConfig,
         GroupMetadataManager groupManager,
         DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory,
         DelayedOperationPurgatory<DelayedJoin> joinPurgatory,
-        Time time,
-        CoordinatorEventManager coordinatorEventManager,
-        KopZkClient kopZkClient
+        Time time
         ) {
         this.groupConfig = groupConfig;
         this.groupManager = groupManager;
         this.heartbeatPurgatory = heartbeatPurgatory;
         this.joinPurgatory = joinPurgatory;
         this.time = time;
-        this.coordinatorEventManager = coordinatorEventManager;
-        this.kopZkClient = kopZkClient;
-        this.deletionTopicsHandler = new DeletionTopicsHandler(coordinatorEventManager);
     }
 
     /**
@@ -188,8 +171,6 @@ public class GroupCoordinator {
     public void startup(boolean enableMetadataExpiration) {
         log.info("Starting up group coordinator.");
         groupManager.startup(enableMetadataExpiration);
-        coordinatorEventManager.start();
-        registerZNodeChildChangeHandler();
         isActive.set(true);
         log.info("Group coordinator started.");
     }
@@ -202,7 +183,6 @@ public class GroupCoordinator {
         log.info("Shutting down group coordinator ...");
         isActive.set(false);
         groupManager.shutdown();
-        coordinatorEventManager.close();
         heartbeatPurgatory.shutdown();
         joinPurgatory.shutdown();
         log.info("Shutdown group coordinator completely.");
@@ -1320,90 +1300,7 @@ public class GroupCoordinator {
         return groupManager.isGroupLoading(groupId);
     }
 
-    private void registerZNodeChildChangeHandler() {
-        kopZkClient.registerZNodeChildChangeHandler(deletionTopicsHandler);
-        try {
-            // Really register ZNodeChildChange to zk.
-            kopZkClient.getTopicDeletions();
-        } catch (InterruptedException | KeeperException e) {
-            e.printStackTrace();
-        }
+    public boolean isActive() {
+        return isActive.get();
     }
-
-    class DeletionTopicsHandler implements ZooKeeperClient.ZNodeChildChangeHandler {
-        private final CoordinatorEventManager coordinatorEventManager;
-
-        public DeletionTopicsHandler(CoordinatorEventManager coordinatorEventManager) {
-            this.coordinatorEventManager = coordinatorEventManager;
-        }
-
-        @Override
-        public String path() {
-            return KopZkClient.getDeleteTopicsZNodePath();
-        }
-
-        @Override
-        public void handleChildChange() {
-            coordinatorEventManager.put(new DeleteTopicsEvent());
-        }
-    }
-
-    interface CoordinatorEvent {
-        void process();
-    }
-
-    class DeleteTopicsEvent implements CoordinatorEvent {
-
-        @Override
-        public void process() {
-            if (!isActive.get()) {
-                return;
-            }
-
-            try {
-                List<String> topicsDeletions = kopZkClient.getTopicDeletions();
-
-                HashSet<String> topicsFullNameDeletionsSets = Sets.newHashSet();
-                HashSet<KopTopic> kopTopicsSet = Sets.newHashSet();
-                topicsDeletions.forEach(topic -> {
-                    KopTopic kopTopic = new KopTopic(topic);
-                    kopTopicsSet.add(kopTopic);
-                    topicsFullNameDeletionsSets.add(kopTopic.getFullName());
-                });
-
-                log.debug("Delete topics listener fired for topics {} to be deleted", topicsDeletions);
-                Iterable<GroupMetadata> groupMetadataIterable = groupManager.currentGroups();
-                HashSet<TopicPartition> topicPartitionsToBeDeletions = Sets.newHashSet();
-
-                groupMetadataIterable.forEach(groupMetadata -> {
-                    topicPartitionsToBeDeletions.addAll(
-                            groupMetadata.collectPartitionsWithTopics(topicsFullNameDeletionsSets));
-                });
-
-                Set<String> deletedTopics = Sets.newHashSet();
-                if (!topicPartitionsToBeDeletions.isEmpty()) {
-                    handleDeletedPartitions(topicPartitionsToBeDeletions);
-                    Set<String> collectDeleteTopics = topicPartitionsToBeDeletions
-                            .stream()
-                            .map(TopicPartition::topic)
-                            .collect(Collectors.toSet());
-
-                    deletedTopics = kopTopicsSet.stream().filter(
-                            kopTopic -> collectDeleteTopics.contains(kopTopic.getFullName())
-                    ).map(KopTopic::getOriginalName).collect(Collectors.toSet());
-
-                    kopZkClient.deleteNodesForPaths(
-                            KopZkClient.getDeleteTopicsZNodePath(), deletedTopics);
-                }
-
-                log.info("GroupMetadata delete topics {}, no matching topics {}",
-                        deletedTopics, Sets.difference(topicsFullNameDeletionsSets , deletedTopics));
-
-            } catch (Exception e) {
-                log.error("DeleteTopicsEvent process have an error {}", e.getMessage());
-                e.printStackTrace();
-            }
-        }
-    }
-
 }

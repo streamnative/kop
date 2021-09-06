@@ -25,13 +25,13 @@ import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NA
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
+import com.google.api.client.util.Sets;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.CoordinatorEventManager;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
@@ -63,6 +63,7 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -193,7 +194,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
     private final GroupCoordinator groupCoordinator;
-    private final CoordinatorEventManager coordinatorEventManager;
     private final TransactionCoordinator transactionCoordinator;
 
     private final String clusterName;
@@ -243,7 +243,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
                                GroupCoordinator groupCoordinator,
-                               CoordinatorEventManager coordinatorEventManager,
                                TransactionCoordinator transactionCoordinator,
                                AdminManager adminManager,
                                MetadataCache<LocalBrokerData> localBrokerDataCache,
@@ -253,7 +252,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         super(statsLogger, kafkaConfig);
         this.pulsarService = pulsarService;
         this.groupCoordinator = groupCoordinator;
-        this.coordinatorEventManager = coordinatorEventManager;
         this.transactionCoordinator = transactionCoordinator;
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = pulsarService.getExecutor();
@@ -468,7 +466,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         // Command response for all topics
         List<TopicMetadata> allTopicMetadata = Collections.synchronizedList(Lists.newArrayList());
-        List<Node> allNodes = Collections.synchronizedList(Lists.newArrayList());
+        Set<Node> allNodes = Collections.synchronizedSet(Sets.newHashSet());
+        // Get all kop brokers in local cache
+        allNodes.addAll(adminManager.getBrokers());
 
         List<String> topics = metadataRequest.topics();
         // topics in format : persistent://%s/%s/abc-partition-x, will be grouped by as:
@@ -651,11 +651,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     ctx.channel(), metadataHar.getHeader(), e);
                 allNodes.add(newSelfNode());
                 MetadataResponse finalResponse =
-                    new MetadataResponse(
-                        allNodes,
-                        clusterName,
-                        controllerId,
-                        Collections.emptyList());
+                        new MetadataResponse(
+                                Lists.newArrayList(allNodes),
+                                clusterName,
+                                controllerId,
+                                Collections.emptyList());
                 resultFuture.complete(finalResponse);
                 return;
             }
@@ -666,11 +666,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 // no topic partitions added, return now.
                 allNodes.add(newSelfNode());
                 MetadataResponse finalResponse =
-                    new MetadataResponse(
-                        allNodes,
-                        clusterName,
-                        controllerId,
-                        allTopicMetadata);
+                        new MetadataResponse(
+                                Lists.newArrayList(allNodes),
+                                clusterName,
+                                controllerId,
+                                allTopicMetadata);
                 resultFuture.complete(finalResponse);
                 return;
             }
@@ -734,7 +734,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         // TODO: confirm right value for controller_id
                                         MetadataResponse finalResponse =
                                                 new MetadataResponse(
-                                                        allNodes,
+                                                        Lists.newArrayList(allNodes),
                                                         clusterName,
                                                         controllerId,
                                                         allTopicMetadata);

@@ -146,7 +146,7 @@ public class ZooKeeperClient {
                 return zNodeChildChangeHandlers.containsKey(request.getPath());
             case "ExistsRequest":
             case "GetDataRequest":
-                return zNodeChangeHandlers.contains(request.getPath());
+                return zNodeChangeHandlers.containsKey(request.getPath());
             default:
                 throw new IllegalStateException("Unexpected value: " + request.getName());
         }
@@ -299,6 +299,7 @@ public class ZooKeeperClient {
                                 stat,
                                 new ResponseMetadata(sendTimeMs, System.currentTimeMillis())
                         ), null), request.getCtx());
+                break;
             default:
                 throw new IllegalStateException("Unexpected value: " + request);
         }
