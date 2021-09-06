@@ -551,21 +551,6 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         return buildRequest(builder);
     }
 
-    private KafkaHeaderAndRequest createFetchRequest(int maxWait,
-                                                     int minBytes,
-                                                     int maxResponseBytes,
-                                                     int maxPartitionBytes,
-                                                     List<TopicPartition> topicPartitions,
-                                                     Map<TopicPartition, Long> offsetMap) {
-
-        AbstractRequest.Builder builder = FetchRequest.Builder
-                .forConsumer(maxWait, minBytes, createPartitionMap(maxPartitionBytes, topicPartitions, offsetMap))
-                .setMaxBytes(maxResponseBytes);
-
-        return buildRequest(builder);
-    }
-
-
     private List<TopicPartition> createTopics(String topicName, int numTopics, int numPartitions) throws Exception {
         List<TopicPartition> result = Lists.newArrayListWithExpectedSize(numPartitions * numTopics);
 
