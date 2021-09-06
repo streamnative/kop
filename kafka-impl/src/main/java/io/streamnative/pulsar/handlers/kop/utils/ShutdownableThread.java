@@ -56,10 +56,8 @@ public abstract class ShutdownableThread extends Thread {
     }
 
     public synchronized boolean initiateShutdown() {
-        if (isRunning()) {
-            if (log.isDebugEnabled()) {
-                log.debug("{} Shutting down", logIdent);
-            }
+        if (isRunning() && log.isDebugEnabled()) {
+            log.debug("{} Shutting down", logIdent);
         }
         shutdownInitiated.countDown();
         if (isInterruptible) {
