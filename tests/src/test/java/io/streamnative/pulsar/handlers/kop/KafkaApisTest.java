@@ -334,7 +334,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         int maxWaitMs = 3000;
         int minBytes = 1;
-        // case1: consuming an empty topic
+        // case1: consuming an empty topic.
         KafkaConsumer<String, String> consumer1 = createKafkaConsumer(maxWaitMs, minBytes);
         consumer1.assign(topicPartitions);
         Long startTime1 = System.currentTimeMillis();
@@ -342,7 +342,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         Long endTime1 = System.currentTimeMillis();
         log.info("cost time1:" + (endTime1 - startTime1));
 
-        // case2: consuming an topic after producing data
+        // case2: consuming an topic after producing data.
         KafkaProducer<String, String> kProducer = createKafkaProducer();
         produceData(kProducer, topicPartitions, 10);
 
