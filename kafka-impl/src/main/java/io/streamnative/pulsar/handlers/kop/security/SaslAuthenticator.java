@@ -358,14 +358,15 @@ public class SaslAuthenticator {
                         if (!future.isSuccess()) {
                             log.error("[{}] Failed to write {}", ctx.channel(), future.cause());
                         } else {
-                            if (log.isDebugEnabled()) {
-                                log.debug("Send sasl response to SASL_HANDSHAKE v0 old client {} successfully",
-                                        ctx.channel());
-                            }
                             // This session is required for authorization.
                             this.session = new Session(
                                     new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID()),
                                     "old-clientId");
+
+                            if (log.isDebugEnabled()) {
+                                log.debug("Send sasl response to SASL_HANDSHAKE v0 old client {} successfully, "
+                                        + "session {}", ctx.channel(), session);
+                            }
                         }
                     });
                 }
