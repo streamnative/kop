@@ -610,7 +610,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         return producer;
     }
 
-    private KafkaConsumer<String, String>  createKafkaConsumer(int maxWait,int minBytes) {
+    private KafkaConsumer<String, String> createKafkaConsumer(int maxWait, int minBytes) {
         final Properties props = new Properties();
         props.put(ConsumerConfig.CLIENT_ID_CONFIG, "test_client");
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + getKafkaBrokerPort());
