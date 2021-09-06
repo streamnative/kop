@@ -117,7 +117,7 @@ public class SaslAuthenticator {
     public SaslAuthenticator(PulsarService pulsarService,
                              Set<String> allowedMechanisms,
                              KafkaServiceConfiguration config) throws PulsarServerException {
-        setCurrentAuthenticationService(pulsarService.getBrokerService().getAuthenticationService())
+        setCurrentAuthenticationService(pulsarService.getBrokerService().getAuthenticationService());
         this.admin = pulsarService.getAdminClient();
         this.allowedMechanisms = allowedMechanisms;
         this.proxyRoles = config.getProxyRoles();
