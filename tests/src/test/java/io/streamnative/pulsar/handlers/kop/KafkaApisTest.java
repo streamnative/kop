@@ -332,36 +332,29 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         List<TopicPartition> topicPartitions = new ArrayList<>();
         topicPartitions.add(tp);
 
-        int maxResponseBytes = 800;
-        int maxPartitionBytes = 900;
         int maxWaitMs = 3000;
-        //case1: consuming an empty topic
-        KafkaHeaderAndRequest fetchRequest1 = createFetchRequest(maxWaitMs,
-                1,
-                maxResponseBytes,
-                maxPartitionBytes,
-                topicPartitions,
-                Collections.EMPTY_MAP);
-        CompletableFuture<AbstractResponse> responseFuture1 = new CompletableFuture<>();
+        int minBytes = 1;
+        // case1: consuming an empty topic
+        KafkaConsumer<String, String> consumer1 = createKafkaConsumer(maxWaitMs, minBytes);
+        consumer1.assign(topicPartitions);
         Long startTime1 = System.currentTimeMillis();
-        kafkaRequestHandler.handleFetchRequest(fetchRequest1, responseFuture1);
-        responseFuture1.get();
+        consumer1.poll(Duration.ofMillis(maxWaitMs));
         Long endTime1 = System.currentTimeMillis();
         log.info("cost time1:" + (endTime1 - startTime1));
 
-        //case2: consuming an  topic after produceing data
+        // case2: consuming an topic after producing data
         KafkaProducer<String, String> kProducer = createKafkaProducer();
         produceData(kProducer, topicPartitions, 10);
 
-        KafkaConsumer<String, String> consumer = createKafkaConsumer();
-        consumer.assign(topicPartitions);
-        consumer.seekToBeginning(topicPartitions);
+        KafkaConsumer<String, String> consumer2 = createKafkaConsumer(maxWaitMs, minBytes);
+        consumer2.assign(topicPartitions);
+        consumer2.seekToBeginning(topicPartitions);
         Long startTime2 = System.currentTimeMillis();
-        consumer.poll(Duration.ofMillis(maxWaitMs));
+        consumer2.poll(Duration.ofMillis(maxWaitMs));
         Long endTime2 = System.currentTimeMillis();
         log.info("cost time2:" + (endTime2 - startTime2));
 
-        //When consuming an empty topic, minBytes=1, because there is no readable data,
+        // When consuming an empty topic, minBytes=1, because there is no readable data,
         // it will delay maxWait time before receiving the response.
         assertTrue(endTime1 - startTime1 >= maxWaitMs);
         // When the amount of readable data is not less than minBytes,
@@ -617,17 +610,16 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         return producer;
     }
 
-    private KafkaConsumer<String, String>  createKafkaConsumer() {
+    private KafkaConsumer<String, String>  createKafkaConsumer(int maxWait,int minBytes) {
         final Properties props = new Properties();
         props.put(ConsumerConfig.CLIENT_ID_CONFIG, "test_client");
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + getKafkaBrokerPort());
+        props.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG, maxWait);
+        props.put(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, minBytes);
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-        props.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
 
-        final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
-
-        return consumer;
+        return new KafkaConsumer<>(props);
     }
 
     private void produceData(KafkaProducer<String, String> producer,
