@@ -22,7 +22,6 @@ import java.util.Set;
 import javax.naming.AuthenticationException;
 import javax.security.sasl.SaslException;
 import javax.security.sasl.SaslServer;
-
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
@@ -84,7 +83,7 @@ public class PlainSaslServer implements SaslServer {
                 authorizationId = saslAuth.getUsername();
                 log.info("Authenticated Proxy role {} as user role {}", authState.getAuthRole(), authorizationId);
                 if (proxyRoles.contains(authorizationId)) {
-                    throw new SaslException("The proxy (with role "+authState.getAuthRole()
+                    throw new SaslException("The proxy (with role " + authState.getAuthRole()
                             + ") tried to forward another proxy user (with role " + authorizationId + ")");
                 }
             } else {

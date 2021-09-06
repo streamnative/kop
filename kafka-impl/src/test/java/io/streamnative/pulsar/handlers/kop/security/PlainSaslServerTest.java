@@ -13,27 +13,23 @@
  */
 package io.streamnative.pulsar.handlers.kop.security;
 
-import io.netty.buffer.ByteBuf;
-import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
-import org.apache.pulsar.broker.authentication.AuthenticationProvider;
-import org.apache.pulsar.broker.authentication.AuthenticationService;
-import org.apache.pulsar.broker.authentication.AuthenticationState;
-import org.apache.pulsar.common.api.AuthData;
-import org.testng.Assert;
-import org.testng.annotations.Test;
-
-import javax.naming.AuthenticationException;
-import javax.security.sasl.SaslException;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
-import java.util.Set;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
+
+import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.Set;
+import javax.naming.AuthenticationException;
+import javax.security.sasl.SaslException;
+import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
+import org.apache.pulsar.broker.authentication.AuthenticationProvider;
+import org.apache.pulsar.broker.authentication.AuthenticationService;
+import org.apache.pulsar.broker.authentication.AuthenticationState;
+import org.apache.pulsar.common.api.AuthData;
+import org.testng.annotations.Test;
 
 /**
  * Test SaslAuthenticator.
@@ -57,7 +53,8 @@ public class PlainSaslServerTest {
         testAssignPrincipal("proxy", "secondproxy", null);
     }
 
-    private void testAssignPrincipal(String username, String role, String expectedRole) throws AuthenticationException, SaslException {
+    private void testAssignPrincipal(String username, String role, String expectedRole)
+            throws AuthenticationException, SaslException {
         Set<String> proxyRoles = new HashSet<>();
         proxyRoles.add("proxy");
         proxyRoles.add("secondproxy");
@@ -88,7 +85,7 @@ public class PlainSaslServerTest {
         when(provider.newAuthState(any(AuthData.class), any(), any())).thenReturn(state);
         PlainSaslServer server = new PlainSaslServer(authenticationService, null, proxyRoles);
 
-        String challengeNoProxy = "XXXXX\000"+ username +"\000token:xxxxx";
+        String challengeNoProxy = "XXXXX\000" + username + "\000token:xxxxx";
         server.evaluateResponse(challengeNoProxy.getBytes(StandardCharsets.US_ASCII));
         String detectedRole = server.getAuthorizationID();
         assertEquals(detectedRole, expectedRole);

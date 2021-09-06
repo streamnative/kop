@@ -22,7 +22,6 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -59,7 +58,6 @@ import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
-import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 
 /**
@@ -438,8 +436,6 @@ public class SaslAuthenticator {
                     log.debug("Authenticate successfully for client, header {}, request {}, session {}",
                             header, saslAuthenticateRequest, session);
                 }
-                log.info("Authenticate successfully for client, header {}, request {}, session {} saslServerComplete {}",
-                        header, saslAuthenticateRequest, session, saslServer.isComplete());
             } catch (SaslException e) {
                 registerRequestLatency.accept(apiKey.name, startProcessTime);
                 sendKafkaResponse(ctx,
