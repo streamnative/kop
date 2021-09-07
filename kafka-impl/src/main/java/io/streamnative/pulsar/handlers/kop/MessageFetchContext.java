@@ -357,7 +357,8 @@ public final class MessageFetchContext {
                 statsLogger.getPrepareMetadataStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
                 long adjustedMaxBytes = Math.min(partitionData.maxBytes, limitBytes.get());
-                readEntries(cursor, topicPartition, cursorOffset, adjustedMaxBytes).whenComplete((entries, throwable) -> {
+                readEntries(cursor, topicPartition, cursorOffset, adjustedMaxBytes)
+                .whenComplete((entries, throwable) -> {
                     if (throwable != null) {
                         tcm.deleteOneCursorAsync(cursorLongPair.getLeft(),
                                 "cursor.readEntry fail. deleteCursor");
