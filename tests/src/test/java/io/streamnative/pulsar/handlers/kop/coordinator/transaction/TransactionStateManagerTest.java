@@ -21,9 +21,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.RecordBatch;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfoImpl;
 import org.junit.Assert;
@@ -77,7 +79,7 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test()
-    public void loadTest() throws Exception {
+    public void txnLogStoreAndTCImmigrationTest() throws Exception {
         Map<String, Long> pidMappings = Maps.newHashMap();
         pidMappings.put("zero", 0L);
         pidMappings.put("one", 1L);
@@ -93,6 +95,9 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
         transactionStates.put(3L, TransactionState.COMPLETE_COMMIT);
         transactionStates.put(4L, TransactionState.PREPARE_ABORT);
         transactionStates.put(5L, TransactionState.COMPLETE_ABORT);
+
+        // Currently, there is lack of TC fence mechanism
+        waitTCImmigrationComplete();
 
         Class<TransactionStateManager> stateManagerClass = TransactionStateManager.class;
         Field txnMetadataCacheField = stateManagerClass.getDeclaredField("transactionMetadataCache");
@@ -148,9 +153,18 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
         stopBroker();
         // when stop broker, clear the cache
         Assert.assertEquals(0, txnMetadataCache.size());
+        Assert.assertNull(transactionStateManager.getLoadPartitionFuture(0));
         startBroker();
 
+        waitTCImmigrationComplete();
+
         // verify the loaded transaction metadata
+        verifyImmigration(txnMetadataCacheField, beforeTxnMetadataCache);
+    }
+
+    private void verifyImmigration(Field txnMetadataCacheField,
+                                   Map<Integer, Map<String, TransactionMetadata>> beforeTxnMetadataCache)
+            throws IllegalAccessException {
         Map<Integer, Map<String, TransactionMetadata>> loadedTxnMetadataCache =
                 (Map<Integer, Map<String, TransactionMetadata>>) txnMetadataCacheField.get(getTxnManager());
         for (int i = 0; i < conf.getTxnLogTopicNumPartitions(); i++) {
@@ -173,18 +187,47 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
                 Assert.assertEquals(txnMetadata.getTxnStartTimestamp(), loadedTxnMetadata.getTxnStartTimestamp());
                 if (txnMetadata.getState().equals(TransactionState.PREPARE_ABORT)) {
                     // the prepare state will complete
-                    Assert.assertEquals(TransactionState.COMPLETE_ABORT, loadedTxnMetadata.getState());
-                    Assert.assertTrue(loadedTxnMetadata.getTxnLastUpdateTimestamp() > 0);
+                    waitTxnComplete(loadedTxnMetadata, TransactionState.COMPLETE_ABORT);
                 } else if (txnMetadata.getState().equals(TransactionState.PREPARE_COMMIT)) {
                     // the prepare state will complete
-                    Assert.assertEquals(TransactionState.COMPLETE_COMMIT, loadedTxnMetadata.getState());
-                    Assert.assertTrue(loadedTxnMetadata.getTxnLastUpdateTimestamp() > 0);
+                    waitTxnComplete(loadedTxnMetadata, TransactionState.COMPLETE_COMMIT);
                 } else {
                     Assert.assertEquals(txnMetadata.getState(), loadedTxnMetadata.getState());
                     Assert.assertEquals(txnMetadata.getTxnLastUpdateTimestamp(),
                             loadedTxnMetadata.getTxnLastUpdateTimestamp());
                 }
             });
+        }
+    }
+
+    private void waitTxnComplete(TransactionMetadata loadedTxnMetadata, TransactionState expectedState) {
+        for (int retryCnt = 0; retryCnt < 10; retryCnt++) {
+            if (!expectedState.equals(loadedTxnMetadata.getState())) {
+                try {
+                    Thread.sleep(500);
+                    continue;
+                } catch (InterruptedException e) {
+                    log.error("Failed to wait transaction complete.", e);
+                    Assert.fail("Failed to wait transaction complete.");
+                }
+            }
+            break;
+        }
+        Assert.assertEquals(expectedState, loadedTxnMetadata.getState());
+        Assert.assertTrue(loadedTxnMetadata.getTxnLastUpdateTimestamp() > 0);
+    }
+
+    private void waitTCImmigrationComplete() throws PulsarAdminException, ExecutionException, InterruptedException {
+        admin.lookups().lookupTopic("public/default/__transaction_state-partition-0");
+        TransactionStateManager txnStateManager = getTxnManager();
+        for (int i = 0; i < 10; i++) {
+            // the load future may be not added
+            if (txnStateManager.getLoadPartitionFuture(0) == null) {
+                Thread.sleep(1000);
+                continue;
+            }
+            txnStateManager.getLoadPartitionFuture(0).get();
+            break;
         }
     }
 

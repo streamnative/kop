@@ -71,8 +71,7 @@ public class TransactionLogTest {
         try {
             new TransactionLogValue(txnMetadata.prepareNoTransit()).toBytes();
             Assert.fail("Transaction state is empty, topicPartitions should be empty.");
-        } catch (Exception e) {
-            Assert.assertTrue(e instanceof IllegalStateException);
+        } catch (IllegalStateException e) {
             Assert.assertTrue(e.getMessage().contains(
                     "Transaction is not expected to have any partitions since its state is EMPTY"));
         }

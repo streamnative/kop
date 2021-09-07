@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
-import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.collect.ImmutableMap;
 import io.netty.channel.ChannelInitializer;
@@ -34,15 +33,10 @@ import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -58,7 +52,6 @@ import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.namespace.NamespaceBundleOwnershipListener;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
-import org.apache.pulsar.client.admin.Lookup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClient;
@@ -67,7 +60,6 @@ import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
-import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.metadata.api.MetadataCache;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 
@@ -347,6 +339,17 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
         // init and start group coordinator
         startGroupCoordinator(pulsarClient);
+
+        if (kafkaConfig.isEnableTransactionCoordinator()) {
+            try {
+                initTransactionCoordinator(pulsarAdmin, clusterData);
+                startTransactionCoordinator();
+            } catch (Exception e) {
+                log.error("Initialized transaction coordinator failed.", e);
+                throw new IllegalStateException(e);
+            }
+        }
+
         // and listener for Offset topics load/unload
         brokerService.pulsar()
                 .getNamespaceService()
@@ -360,16 +363,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         } catch (PulsarAdminException e) {
             // no need to throw exception since we can create kafka namespace later
             log.warn("init kafka failed, need to create it manually later", e);
-        }
-
-        if (kafkaConfig.isEnableTransactionCoordinator()) {
-            try {
-                initTransactionCoordinator(pulsarAdmin, clusterData);
-                startTransactionCoordinator();
-            } catch (Exception e) {
-                log.error("Initialized transaction coordinator failed.", e);
-                throw new IllegalStateException(e);
-            }
         }
 
         Configuration conf = new PropertiesConfiguration();
@@ -481,8 +474,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 kafkaConfig.getBrokerId(),
                 brokerService.getPulsar().getZkClient(),
                 kopBrokerLookupManager);
-
-        loadTxnLogTopics(transactionCoordinator);
     }
 
     public void startTransactionCoordinator() throws Exception {
@@ -490,39 +481,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             this.transactionCoordinator.startup().get();
         } else {
             log.error("Failed to start transaction coordinator. Need init it first.");
-        }
-    }
-
-    /**
-     * This method discovers ownership of offset topic partitions and attempts to load transaction topics
-     * assigned to this broker.
-     */
-    private void loadTxnLogTopics(TransactionCoordinator txnCoordinator) throws Exception {
-        Lookup lookupService = brokerService.pulsar().getAdminClient().lookups();
-        String currentBroker = brokerService.pulsar().getBrokerServiceUrl();
-        String topicBase = MetadataUtils.constructTxnLogTopicBaseName(kafkaConfig);
-        int numPartitions = kafkaConfig.getTxnLogTopicNumPartitions();
-
-        Map<String, List<Integer>> mapBrokerToPartition = new HashMap<>();
-
-        for (int i = 0; i < numPartitions; i++) {
-            String broker = lookupService.lookupTopic(topicBase + PARTITIONED_TOPIC_SUFFIX + i);
-            mapBrokerToPartition.putIfAbsent(broker, new ArrayList<>());
-            mapBrokerToPartition.get(broker).add(i);
-        }
-
-        mapBrokerToPartition.forEach(
-                (key, value) -> log.info("Discovered broker: {} owns txn log topic partitions: {} ", key, value));
-
-        List<Integer> partitionsOwnedByCurrentBroker = mapBrokerToPartition.get(currentBroker);
-
-        if (null != partitionsOwnedByCurrentBroker && !partitionsOwnedByCurrentBroker.isEmpty()) {
-            List<CompletableFuture<Void>> lists = partitionsOwnedByCurrentBroker.stream().map(
-                (partition) -> txnCoordinator.handleTxnImmigration(partition)).collect(Collectors.toList());
-
-            FutureUtil.waitForAll(lists).get();
-        } else {
-            log.info("Current broker: {} does not own any of the txn log topic partitions", currentBroker);
         }
     }
 

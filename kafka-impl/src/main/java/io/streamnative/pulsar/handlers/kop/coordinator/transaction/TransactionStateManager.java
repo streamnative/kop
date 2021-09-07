@@ -60,6 +60,7 @@ public class TransactionStateManager {
 
     // Partitions of transaction topic that are being loaded, state lock should be called BEFORE accessing this set.
     private final Set<Integer> loadingPartitions = new HashSet<>();
+    private final Map<Integer, CompletableFuture<Void>> loadPartitions = new HashMap<>();
 
     private Map<Integer, CompletableFuture<Producer<byte[]>>> txnLogProducerMap = new HashMap<>();
     private Map<Integer, CompletableFuture<Reader<byte[]>>> txnLogReaderMap = new HashMap<>();
@@ -432,6 +433,7 @@ public class TransactionStateManager {
 
         CoreUtils.inWriteLock(stateLock, () -> {
             loadingPartitions.add(partitionId);
+            loadPartitions.put(partitionId, new CompletableFuture<>());
             transactionMetadataCache.putIfAbsent(topicPartition.partition(), Maps.newConcurrentMap());
             return null;
         });
@@ -512,11 +514,10 @@ public class TransactionStateManager {
 
     private CompletableFuture<Void> completeLoadedTransactions(TopicPartition topicPartition, long startTimeMs,
                                                                SendTxnMarkersCallback sendTxnMarkersCallback) {
-        CompletableFuture<Void> completableFuture = new CompletableFuture<>();
         Map<String, TransactionMetadata> loadedTransactions = transactionMetadataCache.get(topicPartition.partition());
         long endTimeMs = SystemTime.SYSTEM.milliseconds();
         long totalLoadingTimeMs = endTimeMs - startTimeMs;
-        log.info("Finished loading {} transaction metadata from {} in {} milliseconds",
+        log.info("Finished loading transaction metadata {} from {} in {} milliseconds",
                 loadedTransactions.size(), topicPartition, totalLoadingTimeMs);
 
         CoreUtils.inWriteLock(stateLock, () -> {
@@ -565,9 +566,10 @@ public class TransactionStateManager {
             return null;
         });
 
+        CompletableFuture<Void> loadFuture = loadPartitions.get(topicPartition.partition());
+        loadFuture.complete(null);
         log.info("Completed loading transaction metadata from {}", topicPartition);
-        completableFuture.complete(null);
-        return completableFuture;
+        return loadFuture;
     }
 
     public void removeTransactionsForTxnTopicPartition(int partition) {
@@ -576,6 +578,11 @@ public class TransactionStateManager {
         executor.submit(() -> {
             CoreUtils.inWriteLock(stateLock, () -> {
                 loadingPartitions.remove(partition);
+                CompletableFuture<Void> loadFuture = loadPartitions.get(partition);
+                if (loadFuture != null && !loadFuture.isDone()) {
+                    loadFuture.cancel(true);
+                }
+                loadPartitions.remove(partition);
                 transactionMetadataCache.remove(partition).forEach((txnId, metadata) -> {
                     log.info("Unloaded transaction metadata {} for {} following local partition deletion",
                             metadata, topicPartition);
@@ -635,8 +642,18 @@ public class TransactionStateManager {
         });
     }
 
+    public CompletableFuture<Void> getLoadPartitionFuture(int partition) {
+        return loadPartitions.get(partition);
+    }
+
     public void shutdown() {
         shuttingDown.set(true);
+        for (CompletableFuture<Void> future : loadPartitions.values()) {
+            if (!future.isDone()) {
+                future.cancel(true);
+            }
+        }
+        loadPartitions.clear();
         loadingPartitions.clear();
         transactionMetadataCache.clear();
         executor.shutdown();
