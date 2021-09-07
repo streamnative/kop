@@ -65,7 +65,7 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(invocationCount = 100)
-    public void testDeleteTopicsAndDescribeGroupStable() throws Exception {
+    public void testDeleteTopicsAndGroupStable() throws Exception {
         // 1. create topics
         final String topic1 = "test-topic1";
         final String topic2 = "test-topic2";
