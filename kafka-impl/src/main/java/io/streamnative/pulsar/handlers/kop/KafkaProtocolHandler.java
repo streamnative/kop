@@ -400,7 +400,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                         break;
                 }
             });
-
             return builder.build();
         } catch (Exception e){
             log.error("KafkaProtocolHandler newChannelInitializers failed with ", e);
