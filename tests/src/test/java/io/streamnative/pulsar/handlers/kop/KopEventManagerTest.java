@@ -23,7 +23,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.ConsumerGroupDescription;
@@ -64,7 +67,7 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    @Test(invocationCount = 100)
+    @Test
     public void testDeleteTopicsGroupStable() throws Exception {
         // 1. create topics
         final String topic1 = "test-topic1";
@@ -137,17 +140,12 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(ConsumerGroupState.EMPTY, describeGroup2.get(groupId1).state());
         // 8. delete topic1
         adminClient.deleteTopics(Collections.singletonList(topic1));
-        // Since the removal of the deleted partition by the consumer group is triggered by the MetadataStore
+        // 9. Since the removal of the deleted partition by the consumer group is triggered by the MetadataStore
         // and operated asynchronously by the kopEventThread, we will wait here for a while
         Thread.sleep(3000);
-        // 9. describe group who only consume topic1 which have been deleted
-        Map<String, ConsumerGroupDescription> describeGroup3 =
-                adminClient.describeConsumerGroups(Collections.singletonList(groupId1))
-                        .all()
-                        .get(2000, TimeUnit.MILLISECONDS);
-        assertTrue(describeGroup3.containsKey(groupId1));
-        // 10. check group state must be Dead
-        assertEquals(ConsumerGroupState.DEAD, describeGroup3.get(groupId1).state());
+        // 10. describe group who only consume topic1 which have been deleted
+        // check group state must be Dead
+        retryUntilTrue(groupId1, 20);
 
         // 11. check group state which consumed two topics
         properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId2);
@@ -189,12 +187,27 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         Thread.sleep(3000);
 
         // 17. check group state must be Dead
-        Map<String, ConsumerGroupDescription> describeGroup6 =
-                adminClient.describeConsumerGroups(Collections.singletonList(groupId2))
-                        .all()
-                        .get(2000, TimeUnit.MILLISECONDS);
-        assertTrue(describeGroup6.containsKey(groupId2));
-        assertEquals(ConsumerGroupState.DEAD, describeGroup6.get(groupId2).state());
+        retryUntilTrue(groupId2, 20);
+
+    }
+
+    private void retryUntilTrue(String groupId, int timeOutSec) throws Exception {
+        long startTimeMs = System.currentTimeMillis();
+        long deadTimeMs = startTimeMs + timeOutSec * 1000L;
+
+        Map<String, ConsumerGroupDescription> describeGroup = null;
+
+        while (System.currentTimeMillis() < deadTimeMs) {
+            describeGroup = adminClient.describeConsumerGroups(Collections.singletonList(groupId))
+                    .all()
+                    .get(2000, TimeUnit.MILLISECONDS);
+            assertTrue(describeGroup.containsKey(groupId));
+            if (describeGroup.get(groupId).state().name().equals("Dead")) {
+                break;
+            }
+        }
+
+        assertEquals(ConsumerGroupState.DEAD, describeGroup.get(groupId).state());
 
     }
 
