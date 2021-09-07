@@ -334,6 +334,27 @@ public class TransactionMarkerChannelManager {
         }, null);
     }
 
+    public void removeMarkersForTxnTopicPartition(Integer txnTopicPartitionId) {
+        BlockingQueue<TxnIdAndMarkerEntry> unKnownBrokerMarkerEntries;
+        unKnownBrokerMarkerEntries =
+                markersQueueForUnknownBroker.removeMarkersForTxnTopicPartition(txnTopicPartitionId);
+        if (unKnownBrokerMarkerEntries != null) {
+            unKnownBrokerMarkerEntries.forEach(markerEntry -> {
+                removeMarkersForTxnId(markerEntry.getTransactionalId());
+            });
+        }
+
+        markersQueuePerBroker.forEach((address, txnMarkerQueue) -> {
+            BlockingQueue<TxnIdAndMarkerEntry> markerEntries =
+                    txnMarkerQueue.removeMarkersForTxnTopicPartition(txnTopicPartitionId);
+            if (markerEntries != null) {
+                markerEntries.forEach(markerEntry -> {
+                    removeMarkersForTxnId(markerEntry.getTransactionalId());
+                });
+            }
+        });
+    }
+
     public void removeMarkersForTxnId(String transactionalId) {
         transactionsWithPendingMarkers.remove(transactionalId);
     }

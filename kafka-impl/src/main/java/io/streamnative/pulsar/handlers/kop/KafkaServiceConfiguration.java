@@ -54,6 +54,8 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private static final int OffsetsMessageTTL = 3 * 24 * 3600;
     // txn configuration
     public static final int DefaultTxnLogTopicNumPartitions = 50;
+    public static final int DefaultTxnCoordinatorSchedulerNum = 1;
+    public static final int DefaultTxnStateManagerSchedulerNum = 1;
 
     @Category
     private static final String CATEGORY_KOP = "Kafka on Pulsar";
@@ -337,6 +339,18 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             doc = "Number of partitions for the transaction log topic"
     )
     private int txnLogTopicNumPartitions = DefaultTxnLogTopicNumPartitions;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "Transaction coordinator scheduler threads num, used to handle timeout transactions."
+    )
+    private int txnCoordinatorSchedulerNum = DefaultTxnCoordinatorSchedulerNum;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "Transaction state manager scheduler threads num, used to handle async operations."
+    )
+    private int txnStateManagerSchedulerNum = DefaultTxnStateManagerSchedulerNum;
 
     @FieldContext(
             category = CATEGORY_KOP,

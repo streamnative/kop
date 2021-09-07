@@ -1829,7 +1829,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         CompletableFuture<AbstractResponse> response) {
         InitProducerIdRequest request = (InitProducerIdRequest) kafkaHeaderAndRequest.getRequest();
         transactionCoordinator.handleInitProducerId(
-                request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(), this, response);
+                request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(), response);
     }
 
     @Override
@@ -1933,7 +1933,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 request.producerId(),
                 request.producerEpoch(),
                 request.command(),
-                this,
                 response);
     }
 
