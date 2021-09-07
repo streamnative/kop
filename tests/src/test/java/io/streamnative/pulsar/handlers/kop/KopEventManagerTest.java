@@ -45,6 +45,9 @@ import org.testng.annotations.Test;
 public class KopEventManagerTest extends KopProtocolHandlerTestBase {
     private AdminClient adminClient;
     private String broker;
+    private final String topic1 = "test-topic1";
+    private final String topic2 = "test-topic2";
+    private final String topic3 = "test-topic3";
 
     @BeforeMethod
     @Override
@@ -65,11 +68,8 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test
-    public void testGroupStable() throws Exception {
+    public void testGroupState() throws Exception {
         // 1. create topics
-        final String topic1 = "test-topic1";
-        final String topic2 = "test-topic2";
-        final String topic3 = "test-topic3";
         List<NewTopic> topicsList = Lists.newArrayList();
         NewTopic newTopic1 = new NewTopic(topic1, 1, (short) 1);
         topicsList.add(newTopic1);
@@ -80,27 +80,8 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
 
         adminClient.createTopics(topicsList).all().get();
 
-        final String groupId1 = "test-group1";
-        final String groupId2 = "test-group2";
-
         // 2. send messages
-        int totalMsg = 15;
-        final Properties producerPro = new Properties();
-        producerPro.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, broker);
-        producerPro.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        producerPro.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        final KafkaProducer<String, String> kafkaProducer = new KafkaProducer<>(producerPro);
-        String topic = topic1;
-        for (int i = 0; i < totalMsg; i++) {
-            if (i >= 10) {
-                topic = topic3;
-            } else if (i >= 5) {
-                topic = topic2;
-            }
-
-            kafkaProducer.send(new ProducerRecord<>(topic, null, "test-value" + i));
-        }
-        kafkaProducer.close();
+        sendMessages();
 
         // 3. check group state which only consumed one topic
         final Properties properties = new Properties();
@@ -108,6 +89,7 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        final String groupId1 = "test-group1";
         properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId1);
 
         final KafkaConsumer<String, String> kafkaConsumer1 = new KafkaConsumer<>(properties);
@@ -142,9 +124,10 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         Thread.sleep(3000);
         // 10. describe group who only consume topic1 which have been deleted
         // check group state must be Dead
-        retryUntilTrue(groupId1, 20);
+        retryUntilStateDead(groupId1, 20);
 
         // 11. check group state which consumed two topics
+        final String groupId2 = "test-group2";
         properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId2);
         final KafkaConsumer<String, String> kafkaConsumer2 = new KafkaConsumer<>(properties);
         kafkaConsumer2.subscribe(Arrays.asList(topic2, topic3));
@@ -184,11 +167,31 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         Thread.sleep(3000);
 
         // 17. check group state must be Dead
-        retryUntilTrue(groupId2, 20);
+        retryUntilStateDead(groupId2, 20);
 
     }
 
-    private void retryUntilTrue(String groupId, int timeOutSec) throws Exception {
+    private void sendMessages() {
+        int totalMsg = 15;
+        final Properties producerPro = new Properties();
+        producerPro.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, broker);
+        producerPro.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        producerPro.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        final KafkaProducer<String, String> kafkaProducer = new KafkaProducer<>(producerPro);
+        String topic = topic1;
+        for (int i = 0; i < totalMsg; i++) {
+            if (i >= 10) {
+                topic = topic3;
+            } else if (i >= 5) {
+                topic = topic2;
+            }
+
+            kafkaProducer.send(new ProducerRecord<>(topic, null, "test-value" + i));
+        }
+        kafkaProducer.close();
+    }
+
+    private void retryUntilStateDead(String groupId, int timeOutSec) throws Exception {
         long startTimeMs = System.currentTimeMillis();
         long deadTimeMs = startTimeMs + timeOutSec * 1000L;
 
