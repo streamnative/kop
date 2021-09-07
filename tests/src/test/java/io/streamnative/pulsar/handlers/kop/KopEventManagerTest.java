@@ -23,10 +23,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.ConsumerGroupDescription;
@@ -68,7 +65,7 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test
-    public void testDeleteTopicsGroupStable() throws Exception {
+    public void testGroupStable() throws Exception {
         // 1. create topics
         final String topic1 = "test-topic1";
         final String topic2 = "test-topic2";
