@@ -30,9 +30,7 @@ import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
-import io.streamnative.pulsar.handlers.kop.utils.KopZkClient;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
-import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperClient;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
@@ -99,8 +97,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     private TransactionCoordinator transactionCoordinator;
     @Getter
     private KopEventManager kopEventManager;
-    @Getter
-    private KopZkClient kopZkClient;
 
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
@@ -292,10 +288,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                 kafkaConfig.getGroupIdZooKeeperPath(), new byte[0]);
 
         ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
-                KopZkClient.getKopZNodePath(), new byte[0]);
+                KopEventManager.getKopPath(), new byte[0]);
 
         ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
-                KopZkClient.getDeleteTopicsZNodePath(), new byte[0]);
+                KopEventManager.getDeleteTopicsPath(), new byte[0]);
 
         PulsarAdmin pulsarAdmin;
         try {
@@ -332,12 +328,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             throw new IllegalStateException(e);
         }
 
-        kopZkClient = createKopZkClient(kafkaConfig.getZookeeperServers());
-
         // init and start group coordinator
         startGroupCoordinator(pulsarClient);
         // init KopEventManager
-        kopEventManager = new KopEventManager(groupCoordinator, kopZkClient, adminManager);
+        kopEventManager = new KopEventManager(groupCoordinator,
+                adminManager,
+                brokerService.getPulsar().getLocalMetadataStore());
         kopEventManager.start();
 
         // and listener for Offset topics load/unload
@@ -516,17 +512,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
     public static @NonNull LookupClient getLookupClient(final PulsarService pulsarService) {
         return LOOKUP_CLIENT_MAP.computeIfAbsent(pulsarService, ignored -> new LookupClient(pulsarService));
-    }
-
-    private static KopZkClient createKopZkClient(String zkConnect) {
-        ZooKeeperClient zooKeeperClient = new ZooKeeperClient(zkConnect,
-                30000,
-                15000,
-                10);
-
-        zooKeeperClient.init();
-
-        return new KopZkClient(zooKeeperClient);
     }
 
 }

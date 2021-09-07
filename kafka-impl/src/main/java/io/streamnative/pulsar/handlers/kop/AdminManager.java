@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.TopicKey;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
-import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
@@ -31,8 +30,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.Node;
@@ -57,7 +56,8 @@ class AdminManager {
 
     private final PulsarAdmin admin;
     private final int defaultNumPartitions;
-    private final CopyOnWriteArraySet<Node> brokersCache = new CopyOnWriteArraySet<>();
+    private volatile Set<Node> brokersCache = new HashSet<>();
+    private final ReentrantReadWriteLock brokersCacheLock = new ReentrantReadWriteLock();
 
 
     public AdminManager(PulsarAdmin admin, KafkaServiceConfiguration conf) {
@@ -230,12 +230,15 @@ class AdminManager {
     }
 
     public Collection<? extends Node> getBrokers() {
-        HashSet<Node> kopBrokers = Sets.newHashSet();
-        kopBrokers.addAll(brokersCache);
-        return kopBrokers;
+        return brokersCache;
     }
 
-    public boolean addBrokers(Set<Node> brokers) {
-        return brokersCache.addAll(brokers);
+    public void addBrokers(Set<Node> brokers) {
+        try {
+            brokersCacheLock.writeLock().lock();
+            this.brokersCache = brokers;
+        } finally {
+            brokersCacheLock.writeLock().unlock();
+        }
     }
 }

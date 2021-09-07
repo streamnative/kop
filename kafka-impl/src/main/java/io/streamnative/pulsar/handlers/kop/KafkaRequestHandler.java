@@ -51,7 +51,6 @@ import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
-import io.streamnative.pulsar.handlers.kop.utils.KopZkClient;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
@@ -2031,7 +2030,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         deleteTopicsResponse.forEach((topic, errors) -> {
             if (errors == Errors.NONE) {
                 ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(),
-                        KopZkClient.getDeleteTopicsZNodePath() + "/" + topic,
+                        KopEventManager.getDeleteTopicsPath() + "/" + topic,
                         new byte[0]);
             }
         });
