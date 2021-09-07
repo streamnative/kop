@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkState;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Sets;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -179,7 +180,8 @@ public class KopEventManager {
         return parser.parse(info).getAsJsonObject();
     }
 
-    private Node getNode(String kopBrokerStr) {
+    @VisibleForTesting
+    public static Node getNode(String kopBrokerStr) {
         final String errorMessage = "kopBrokerStr " + kopBrokerStr + " is invalid";
         final Matcher matcher = PATTERN.matcher(kopBrokerStr);
         checkState(matcher.find(), errorMessage);

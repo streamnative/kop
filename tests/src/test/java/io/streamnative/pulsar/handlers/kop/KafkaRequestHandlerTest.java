@@ -710,4 +710,34 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertEquals(response.topicMetadata().size(), 1);
         assertEquals(response.errors().size(), 0);
     }
+
+    @Test(timeOut = 10000)
+    public void testDeleteTopicsAndCheckChildPath() throws Exception {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(props);
+        Map<String, Integer> topicToNumPartitions = new HashMap<String, Integer>(){{
+            put("testCreateTopics-0", 1);
+            put("testCreateTopics-1", 3);
+            put("my-tenant/my-ns/testCreateTopics-2", 1);
+            put("persistent://my-tenant/my-ns/testCreateTopics-3", 5);
+        }};
+        // create
+        createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
+        verifyTopicsCreatedByPulsarAdmin(topicToNumPartitions);
+        // delete
+        deleteTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions.keySet());
+        verifyTopicsDeletedByPulsarAdmin(topicToNumPartitions);
+        // check deleted topics path
+        List<String> deletedTopics = handler.getPulsarService()
+                .getBrokerService()
+                .getPulsar()
+                .getLocalMetadataStore()
+                .getChildren(KopEventManager.getDeleteTopicsPath())
+                .join();
+
+        assertTrue(topicToNumPartitions.keySet().containsAll(deletedTopics));
+    }
 }
