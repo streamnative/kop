@@ -30,12 +30,12 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
-import javax.naming.AuthenticationException;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.common.errors.ApiException;
+import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.AbstractRequest;
@@ -546,6 +546,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             this.request = request;
             this.buffer = buffer.retain();
             this.remoteAddress = remoteAddress;
+        }
+
+        public ByteBuf getBuffer() {
+            return buffer;
         }
 
         public RequestHeader getHeader() {
