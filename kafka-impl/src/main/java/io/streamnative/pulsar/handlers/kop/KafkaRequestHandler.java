@@ -365,8 +365,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private void handleCloseOnAuthenticationFailure() {
         try {
             this.completeCloseOnAuthenticationFailure();
-        } catch (Exception e) {
-            log.error("Exception handling close on authentication failure node [{}]", this.ctx, e);
         } finally {
             this.close();
         }
