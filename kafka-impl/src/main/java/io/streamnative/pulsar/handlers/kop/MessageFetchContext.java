@@ -33,6 +33,9 @@ import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,6 +46,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.MarkDeleteCallback;
@@ -95,11 +99,14 @@ public final class MessageFetchContext {
     private RequestHeader header;
     private volatile CompletableFuture<AbstractResponse> resultFuture;
     private AtomicBoolean hasComplete;
+    private AtomicLong bytesReadable;
+    private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
 
     // recycler and get for this object
     public static MessageFetchContext get(KafkaRequestHandler requestHandler,
                                           KafkaHeaderAndRequest kafkaHeaderAndRequest,
-                                          CompletableFuture<AbstractResponse> resultFuture) {
+                                          CompletableFuture<AbstractResponse> resultFuture,
+                                          DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
         MessageFetchContext context = RECYCLER.get();
         context.responseData = new ConcurrentHashMap<>();
         context.decodeResults = new ConcurrentLinkedQueue<>();
@@ -113,6 +120,8 @@ public final class MessageFetchContext {
         context.header = kafkaHeaderAndRequest.getHeader();
         context.resultFuture = resultFuture;
         context.hasComplete = new AtomicBoolean(false);
+        context.bytesReadable = new AtomicLong(0);
+        context.fetchPurgatory = fetchPurgatory;
         return context;
     }
 
@@ -153,6 +162,8 @@ public final class MessageFetchContext {
         header = null;
         resultFuture = null;
         hasComplete = null;
+        bytesReadable = null;
+        fetchPurgatory = null;
         recyclerHandle.recycle(this);
     }
 
@@ -182,7 +193,12 @@ public final class MessageFetchContext {
     private void tryComplete() {
         if (resultFuture != null && responseData.size() >= fetchRequest.fetchData().size()
                 && hasComplete.compareAndSet(false, true)) {
-            complete();
+            DelayedFetch delayedFetch = new DelayedFetch(fetchRequest.maxWait(), bytesReadable,
+                    fetchRequest.minBytes(), this::complete);
+            List<Object> delayedFetchKeys =
+                    fetchRequest.fetchData().keySet().stream()
+                            .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
+            fetchPurgatory.tryCompleteElseWatch(delayedFetch, delayedFetchKeys);
         }
     }
 
@@ -423,9 +439,10 @@ public final class MessageFetchContext {
                 MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
         decodeResults.add(decodeResult);
 
+        MemoryRecords kafkaRecords = decodeResult.getRecords();
         // collect consumer metrics
         updateConsumerStats(topicPartition,
-                decodeResult.getRecords(),
+                kafkaRecords,
                 entries.size(),
                 groupName);
 
@@ -437,7 +454,8 @@ public final class MessageFetchContext {
                 lso,
                 highWatermark, // TODO: should it be changed to the logStartOffset?
                 abortedTransactions,
-                decodeResult.getRecords()));
+                kafkaRecords));
+        bytesReadable.getAndAdd(kafkaRecords.sizeInBytes());
         tryComplete();
     }
 
