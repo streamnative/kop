@@ -79,7 +79,8 @@ public class SaslAuthenticator {
     private SaslServer saslServer;
     private Session session;
     private boolean enableKafkaSaslAuthenticateHeaders;
-
+    private ByteBuf authenticationFailureResponse = null;
+    private ChannelHandlerContext ctx = null;
 
     private enum State {
         HANDSHAKE_OR_VERSIONS_REQUEST,
@@ -106,6 +107,28 @@ public class SaslAuthenticator {
         public UnsupportedSaslMechanismException(String mechanism) {
             super("SASL mechanism '" + mechanism + "' requested by client is not supported");
         }
+    }
+
+    /**
+     * Build a {@link ByteBuf} response on authenticate failure. The actual response is sent out when
+     * {@link #sendAuthenticationFailureResponse()} is called.
+     */
+    private void buildResponseOnAuthenticateFailure(RequestHeader header,
+                                                    AbstractRequest request,
+                                                    AbstractResponse abstractResponse,
+                                                    Exception e) {
+        this.authenticationFailureResponse = buildKafkaResponse(header, request, abstractResponse, e);
+    }
+
+    /**
+     * Send any authentication failure response that may have been previously built.
+     */
+    public void sendAuthenticationFailureResponse() {
+        if (authenticationFailureResponse == null) {
+            return;
+        }
+        this.sendKafkaResponse(authenticationFailureResponse);
+        authenticationFailureResponse = null;
     }
 
     private static void setCurrentAuthenticationService(AuthenticationService authenticationService) {
@@ -154,6 +177,8 @@ public class SaslAuthenticator {
             throws AuthenticationException {
         checkArgument(requestBuf.readableBytes() > 0);
         log.info("Authenticate {} {} {}", ctx, saslServer, state);
+
+        this.ctx = ctx;
         if (saslServer != null && saslServer.isComplete()) {
             setState(State.COMPLETE);
             return;
@@ -307,11 +332,7 @@ public class SaslAuthenticator {
             try {
                 createSaslServer(clientMechanism);
             } catch (AuthenticationException e) {
-                sendKafkaResponse(ctx,
-                        header,
-                        body,
-                        null,
-                        e);
+                this.authenticationFailureResponse = buildKafkaResponse(header, body, null, e);
                 throw e;
             }
 
@@ -325,6 +346,22 @@ public class SaslAuthenticator {
                                           AbstractRequest request,
                                           AbstractResponse abstractResponse,
                                           Exception e) {
+        ByteBuf response = buildKafkaResponse(header, request, abstractResponse, e);
+        ctx.channel().eventLoop().execute(() -> {
+            ctx.channel().writeAndFlush(response);
+        });
+    }
+
+    private void sendKafkaResponse(ByteBuf response) {
+        ctx.channel().eventLoop().execute(() -> {
+            ctx.channel().writeAndFlush(response);
+        });
+    }
+
+    private static ByteBuf buildKafkaResponse(RequestHeader header,
+                                              AbstractRequest request,
+                                              AbstractResponse abstractResponse,
+                                              Exception e) {
         short version = header.apiVersion();
         ApiKeys apiKey = header.apiKey();
         AbstractResponse backResponse;
@@ -339,14 +376,11 @@ public class SaslAuthenticator {
                 && !ApiKeys.API_VERSIONS.isVersionSupported(version)){
             version = ApiKeys.API_VERSIONS.oldestVersion();
         }
-        ByteBuf response = ResponseUtils.serializeResponse(
+        return ResponseUtils.serializeResponse(
                 version,
                 header.toResponseHeader(),
                 backResponse
         );
-        ctx.channel().eventLoop().execute(() -> {
-            ctx.channel().writeAndFlush(response);
-        });
     }
 
     @VisibleForTesting
@@ -415,11 +449,7 @@ public class SaslAuthenticator {
                 AuthenticationException e = new AuthenticationException(
                         "Unexpected Kafka request of type " + apiKey + " during SASL authentication");
                 registerRequestLatency.accept(apiKey.name, startProcessTime);
-                sendKafkaResponse(ctx,
-                        header,
-                        request,
-                        null,
-                        e);
+                buildResponseOnAuthenticateFailure(header, request, null, e);
                 throw e;
             }
             if (!apiKey.isVersionSupported(version)) {
@@ -448,11 +478,9 @@ public class SaslAuthenticator {
                 }
             } catch (SaslException e) {
                 registerRequestLatency.accept(apiKey.name, startProcessTime);
-                sendKafkaResponse(ctx,
-                        header,
-                        request,
-                        new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()),
-                        null);
+                buildResponseOnAuthenticateFailure(header, request,
+                        new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()), null);
+                sendAuthenticationFailureResponse();
                 if (log.isDebugEnabled()) {
                     log.debug("Authenticate failed for client, header {}, request {}, reason {}",
                             header, saslAuthenticateRequest, e.getMessage());
@@ -475,9 +503,7 @@ public class SaslAuthenticator {
         }
         if (request.hasUnsupportedRequestVersion()) {
             registerRequestLatency.accept(header.apiKey().name, startProcessTime);
-            sendKafkaResponse(ctx,
-                    header,
-                    request,
+            sendKafkaResponse(ctx, header, request,
                     request.getErrorResponse(0, Errors.UNSUPPORTED_VERSION.exception()),
                     null);
         } else {
@@ -532,9 +558,7 @@ public class SaslAuthenticator {
                 log.debug("SASL mechanism '{}' requested by client is not supported", mechanism);
             }
             registerRequestLatency.accept(header.apiKey().name, startProcessTime);
-            sendKafkaResponse(ctx,
-                    header,
-                    request,
+            buildResponseOnAuthenticateFailure(header, request,
                     new SaslHandshakeResponse(Errors.UNSUPPORTED_SASL_MECHANISM, allowedMechanisms),
                     null);
             throw new UnsupportedSaslMechanismException(mechanism);
