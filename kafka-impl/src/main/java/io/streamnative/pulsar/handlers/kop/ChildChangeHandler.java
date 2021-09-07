@@ -33,7 +33,7 @@ class DeletionTopicsHandler implements ChildChangeHandler {
 
     @Override
     public void handleChildChange() {
-        kopEventManager.put(new KopEventManager.DeleteTopicsEvent());
+        kopEventManager.put(kopEventManager.getDeleteTopicEvent());
     }
 }
 
@@ -51,7 +51,7 @@ class BrokersChangeHandler implements ChildChangeHandler {
 
     @Override
     public void handleChildChange() {
-        kopEventManager.put(new KopEventManager.BrokersChangeEvent());
+        kopEventManager.put(kopEventManager.getBrokersChangeEvent());
     }
 
 }

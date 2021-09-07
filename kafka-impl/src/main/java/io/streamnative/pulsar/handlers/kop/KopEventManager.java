@@ -24,6 +24,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.ShutdownableThread;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -54,11 +55,11 @@ public class KopEventManager {
             new LinkedBlockingQueue<>();
     private final KopEventThread thread =
             new KopEventThread(kopEventThreadName);
-    private static GroupCoordinator coordinator;
-    private static AdminManager adminManager;
+    private final GroupCoordinator coordinator;
+    private final AdminManager adminManager;
     private final DeletionTopicsHandler deletionTopicsHandler;
     private final BrokersChangeHandler brokersChangeHandler;
-    private static MetadataStore metadataStore;
+    private final MetadataStore metadataStore;
 
     public KopEventManager(GroupCoordinator coordinator,
                            AdminManager adminManager,
@@ -108,7 +109,7 @@ public class KopEventManager {
         }
     }
 
-    static class KopEventThread extends ShutdownableThread {
+    class KopEventThread extends ShutdownableThread {
 
         public KopEventThread(String name) {
             super(name);
@@ -144,7 +145,7 @@ public class KopEventManager {
         }
     }
 
-    private static void getBrokers(List<String> pulsarBrokers) {
+    private void getBrokers(List<String> pulsarBrokers) {
         HashSet<Node> kopBrokers = Sets.newHashSet();
         pulsarBrokers.forEach(broker -> {
             try {
@@ -152,7 +153,7 @@ public class KopEventManager {
                         getBrokersChangePath() + "/" + broker).join();
 
                 if (brokerData.isPresent()) {
-                    JsonObject jsonObject = parseJsonObject(new String(brokerData.get().getValue()));
+                    JsonObject jsonObject = parseJsonObject(new String(brokerData.get().getValue(), StandardCharsets.UTF_8));
                     JsonObject protocols = jsonObject.getAsJsonObject("protocols");
                     JsonElement element = protocols.get("kafka");
 
@@ -173,12 +174,12 @@ public class KopEventManager {
                 adminManager.getBrokers(), oldKopBrokers);
     }
 
-    private static JsonObject parseJsonObject(String info) {
+    private JsonObject parseJsonObject(String info) {
         JsonParser parser = new JsonParser();
         return parser.parse(info).getAsJsonObject();
     }
 
-    private static Node getNode(String kopBrokerStr) {
+    private Node getNode(String kopBrokerStr) {
         final String errorMessage = "kopBrokerStr " + kopBrokerStr + " is invalid";
         final Matcher matcher = PATTERN.matcher(kopBrokerStr);
         checkState(matcher.find(), errorMessage);
@@ -197,7 +198,7 @@ public class KopEventManager {
         void process();
     }
 
-    static class DeleteTopicsEvent implements KopEvent {
+    class DeleteTopicsEvent implements KopEvent {
 
         @Override
         public void process() {
@@ -253,7 +254,7 @@ public class KopEventManager {
         }
     }
 
-    static class BrokersChangeEvent implements KopEvent {
+    class BrokersChangeEvent implements KopEvent {
         @Override
         public void process() {
             try {
@@ -263,6 +264,14 @@ public class KopEventManager {
                 e.printStackTrace();
             }
         }
+    }
+
+    public DeleteTopicsEvent getDeleteTopicEvent() {
+        return new DeleteTopicsEvent();
+    }
+
+    public BrokersChangeEvent getBrokersChangeEvent() {
+        return new BrokersChangeEvent();
     }
 
     public static String getKopPath() {
