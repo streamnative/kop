@@ -92,9 +92,9 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         ch.pipeline().addLast("frameDecoder",
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
-            new KafkaRequestHandler(pulsarService, kafkaConfig,
-                    groupCoordinator, transactionCoordinator, adminManager,
-                    localBrokerDataCache, enableTls, advertisedEndPoint, statsLogger));
+                new KafkaRequestHandler(pulsarService, kafkaConfig,
+                        groupCoordinator, transactionCoordinator, adminManager, localBrokerDataCache,
+                        enableTls, advertisedEndPoint, statsLogger));
     }
 
 }
