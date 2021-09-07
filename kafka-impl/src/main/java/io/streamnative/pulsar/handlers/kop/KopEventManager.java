@@ -108,7 +108,7 @@ public class KopEventManager {
         }
     }
 
-    class KopEventThread extends ShutdownableThread {
+    static class KopEventThread extends ShutdownableThread {
 
         public KopEventThread(String name) {
             super(name);
