@@ -303,9 +303,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         // update active channel count stats
         RequestStats.ACTIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
-        if (log.isDebugEnabled()) {
-            log.debug("channel active: {}", ctx.channel());
-        }
+        log.info("channel active: {}", ctx.channel());
     }
 
     @Override
@@ -314,9 +312,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         // update active channel count stats
         RequestStats.ACTIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
-        if (log.isDebugEnabled()) {
-            log.debug("channel inactive {}", ctx.channel());
-        }
 
         close();
     }

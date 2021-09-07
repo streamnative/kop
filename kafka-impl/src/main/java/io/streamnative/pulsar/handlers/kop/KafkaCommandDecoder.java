@@ -86,9 +86,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected void close() {
         // Clear the request queue
-        if (log.isDebugEnabled()) {
-            log.debug("close channel {} with {} pending responses", ctx.channel(), requestQueue.size());
-        }
+        log.info("close channel {} with {} pending responses", ctx.channel(), requestQueue.size());
         while (true) {
             final ResponseAndRequest responseAndRequest = requestQueue.poll();
             if (responseAndRequest != null) {
