@@ -105,9 +105,13 @@ public class TransactionCoordinator {
     }
 
     public int partitionFor(String transactionalId) {
+        return partitionFor(transactionalId, transactionConfig.getTransactionLogNumPartitions());
+    }
+
+    public static int partitionFor(String transactionalId, int transactionLogNumPartitions) {
         return MathUtils.signSafeMod(
                 transactionalId.hashCode(),
-                transactionConfig.getTransactionLogNumPartitions()
+                transactionLogNumPartitions
         );
     }
 
@@ -116,7 +120,11 @@ public class TransactionCoordinator {
     }
 
     public String getTopicPartitionName(int partitionId) {
-        return getTopicPartitionName() + PARTITIONED_TOPIC_SUFFIX + partitionId;
+        return getTopicPartitionName(getTopicPartitionName(), partitionId);
+    }
+
+    public static String getTopicPartitionName(String topicPartitionName, int partitionId) {
+        return topicPartitionName + PARTITIONED_TOPIC_SUFFIX + partitionId;
     }
 
     public void handleInitProducerId(String transactionalId, int transactionTimeoutMs,

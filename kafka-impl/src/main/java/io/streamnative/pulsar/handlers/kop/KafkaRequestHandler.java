@@ -79,7 +79,6 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import javax.naming.AuthenticationException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
@@ -92,6 +91,7 @@ import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
+import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -1579,7 +1579,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         }
 
-        MessageFetchContext.get(this, fetch, resultFuture).handleFetch();
+        MessageFetchContext.get(this, fetch, resultFuture, fetchPurgatory).handleFetch();
     }
 
     protected void handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup,

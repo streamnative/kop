@@ -56,6 +56,9 @@ You can configure and manage KoP based on your requirements. Check the following
 
 -   [@aloyszhang](https://github.com/aloyszhang)
 -   [@BewareMyPower](https://github.com/BewareMyPower)
+-   [@Demogorgon314](https://github.com/Demogorgon314)
 -   [@dockerzhang](https://github.com/dockerzhang)
+-   [@hangc0276](https://github.com/hangc0276)
 -   [@jiazhai](https://github.com/jiazhai)
 -   [@PierreZ](https://github.com/PierreZ)
+-   [@wuzhanpeng](https://github.com/wuzhanpeng)
