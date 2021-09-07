@@ -376,17 +376,16 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, false,
-                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
+                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, true,
-                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
+                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
                         break;
                 }
             });
-
             return builder.build();
         } catch (Exception e){
             log.error("KafkaProtocolHandler newChannelInitializers failed with ", e);
