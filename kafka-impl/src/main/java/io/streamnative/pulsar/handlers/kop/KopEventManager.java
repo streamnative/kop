@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkState;
-import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.collect.Sets;
 import com.google.gson.JsonElement;
@@ -153,7 +152,8 @@ public class KopEventManager {
                         getBrokersChangePath() + "/" + broker).join();
 
                 if (brokerData.isPresent()) {
-                    JsonObject jsonObject = parseJsonObject(new String(brokerData.get().getValue(), StandardCharsets.UTF_8));
+                    JsonObject jsonObject = parseJsonObject(
+                            new String(brokerData.get().getValue(), StandardCharsets.UTF_8));
                     JsonObject protocols = jsonObject.getAsJsonObject("protocols");
                     JsonElement element = protocols.get("kafka");
 
@@ -188,7 +188,7 @@ public class KopEventManager {
         String port = matcher.group(3);
 
         return new Node(
-                Murmur3_32Hash.getInstance().makeHash((host + port).getBytes(UTF_8)),
+                Murmur3_32Hash.getInstance().makeHash((host + port).getBytes(StandardCharsets.UTF_8)),
                 host,
                 Integer.parseInt(port));
     }
