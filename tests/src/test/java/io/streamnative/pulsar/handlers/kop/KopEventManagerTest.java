@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -70,19 +71,9 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
     @Test
     public void testGroupState() throws Exception {
         // 1. create topics
-        List<NewTopic> topicsList = Lists.newArrayList();
-        NewTopic newTopic1 = new NewTopic(topic1, 1, (short) 1);
-        topicsList.add(newTopic1);
-        NewTopic newTopic2 = new NewTopic(topic2, 1, (short) 1);
-        topicsList.add(newTopic2);
-        NewTopic newTopic3 = new NewTopic(topic3, 1, (short) 1);
-        topicsList.add(newTopic3);
-
-        adminClient.createTopics(topicsList).all().get();
-
+        createTopics();
         // 2. send messages
         sendMessages();
-
         // 3. check group state which only consumed one topic
         final Properties properties = new Properties();
         properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, broker);
@@ -137,7 +128,6 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         }
         // 12. manually trigger commit offset
         kafkaConsumer2.commitSync(Duration.ofMillis(2000));
-
         // 13. check group state must be Stable
         Map<String, ConsumerGroupDescription> describeGroup4 =
                 adminClient.describeConsumerGroups(Collections.singletonList(groupId2))
@@ -165,10 +155,20 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         // Since the removal of the deleted partition by the consumer group is triggered by the MetadataStore
         // and operated asynchronously by the kopEventThread, we will wait here for a while
         Thread.sleep(3000);
-
         // 17. check group state must be Dead
         retryUntilStateDead(groupId2, 20);
+    }
 
+    private void createTopics() throws ExecutionException, InterruptedException {
+        List<NewTopic> topicsList = Lists.newArrayList();
+        NewTopic newTopic1 = new NewTopic(topic1, 1, (short) 1);
+        topicsList.add(newTopic1);
+        NewTopic newTopic2 = new NewTopic(topic2, 1, (short) 1);
+        topicsList.add(newTopic2);
+        NewTopic newTopic3 = new NewTopic(topic3, 1, (short) 1);
+        topicsList.add(newTopic3);
+
+        adminClient.createTopics(topicsList).all().get();
     }
 
     private void sendMessages() {
