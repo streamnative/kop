@@ -163,6 +163,7 @@ public final class MessageFetchContext {
         resultFuture = null;
         hasComplete = null;
         bytesReadable = null;
+        fetchPurgatory = null;
         recyclerHandle.recycle(this);
     }
 
