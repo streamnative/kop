@@ -548,6 +548,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             this.remoteAddress = remoteAddress;
         }
 
+        public ByteBuf getBuffer() {
+            return buffer;
+        }
+
         public RequestHeader getHeader() {
             return this.header;
         }
