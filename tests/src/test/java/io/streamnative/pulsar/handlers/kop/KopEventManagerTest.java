@@ -65,7 +65,7 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(invocationCount = 100)
-    public void testDeleteTopicsAndGroupStable() throws Exception {
+    public void testDeleteTopicsGroupStable() throws Exception {
         // 1. create topics
         final String topic1 = "test-topic1";
         final String topic2 = "test-topic2";
@@ -137,6 +137,9 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(ConsumerGroupState.EMPTY, describeGroup2.get(groupId1).state());
         // 8. delete topic1
         adminClient.deleteTopics(Collections.singletonList(topic1));
+        // Since the removal of the deleted partition by the consumer group is triggered by the MetadataStore
+        // and operated asynchronously by the kopEventThread, we will wait here for a while
+        Thread.sleep(3000);
         // 9. describe group who only consume topic1 which have been deleted
         Map<String, ConsumerGroupDescription> describeGroup3 =
                 adminClient.describeConsumerGroups(Collections.singletonList(groupId1))
@@ -181,6 +184,9 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         deleteTopics.add(topic2);
         deleteTopics.add(topic3);
         adminClient.deleteTopics(deleteTopics);
+        // Since the removal of the deleted partition by the consumer group is triggered by the MetadataStore
+        // and operated asynchronously by the kopEventThread, we will wait here for a while
+        Thread.sleep(3000);
 
         // 17. check group state must be Dead
         Map<String, ConsumerGroupDescription> describeGroup6 =
