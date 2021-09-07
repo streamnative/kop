@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import static com.google.common.base.Preconditions.checkArgument;
+
 import io.netty.util.concurrent.FastThreadLocal;
 import java.nio.ByteBuffer;
 import java.util.Base64;
@@ -24,7 +25,7 @@ import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 
 /**
- * Manually build {@link MessageImpl}
+ * Manually build {@link MessageImpl}.
  */
 public class PulsarMessageBuilder {
     private static final ByteBuffer EMPTY_CONTENT = ByteBuffer.allocate(0);

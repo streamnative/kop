@@ -101,7 +101,7 @@ public class KafkaServiceConfigurationTest {
         printWriter.println("brokerDeleteInactiveTopicsEnabled=true");
         printWriter.println("statusFilePath=/tmp/status.html");
         printWriter.println("managedLedgerDefaultEnsembleSize=1");
-        printWriter.println("backlogQuotaDefaultLimitGB=18");
+        printWriter.println("backlogQuotaDefaultLimitBytes=18874368");
         printWriter.println("clusterName=usc");
         printWriter.println("brokerClientAuthenticationPlugin=test.xyz.client.auth.plugin");
         printWriter.println("brokerClientAuthenticationParameters=role:my-role");
@@ -124,8 +124,8 @@ public class KafkaServiceConfigurationTest {
 
         assertNotNull(kafkaServiceConfig);
         assertEquals(kafkaServiceConfig.getZookeeperServers(), zkServer);
-        assertEquals(kafkaServiceConfig.isBrokerDeleteInactiveTopicsEnabled(), true);
-        assertEquals(kafkaServiceConfig.getBacklogQuotaDefaultLimitGB(), 18);
+        assertTrue(kafkaServiceConfig.isBrokerDeleteInactiveTopicsEnabled());
+        assertEquals(kafkaServiceConfig.getBacklogQuotaDefaultLimitBytes(), 18874368);
         assertEquals(kafkaServiceConfig.getClusterName(), "usc");
         assertEquals(kafkaServiceConfig.getBrokerClientAuthenticationParameters(), "role:my-role");
         assertEquals(kafkaServiceConfig.getBrokerServicePort().get(), new Integer(7777));

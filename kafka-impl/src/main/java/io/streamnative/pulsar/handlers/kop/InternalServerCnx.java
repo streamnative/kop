@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.Objects;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.service.Producer;
@@ -77,5 +78,25 @@ public class InternalServerCnx extends ServerCnx {
     @Override
     public void cancelPublishBufferLimiting() {
         // do nothing is this mock
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        if (o.hashCode() != this.hashCode()) {
+            return false;
+        }
+        ServerCnx other = (ServerCnx) o;
+        return Objects.equals(ctx().channel().id(), other.ctx().channel().id());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(ctx().channel().id());
     }
 }
