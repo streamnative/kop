@@ -78,7 +78,7 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
         internalCleanup();
     }
 
-    @Test()
+    @Test(timeOut = 1000 * 10)
     public void txnLogStoreAndTCImmigrationTest() throws Exception {
         Map<String, Long> pidMappings = Maps.newHashMap();
         pidMappings.put("zero", 0L);
@@ -202,16 +202,15 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
 
     private void waitTxnComplete(TransactionMetadata loadedTxnMetadata, TransactionState expectedState) {
         for (int retryCnt = 0; retryCnt < 10; retryCnt++) {
-            if (!expectedState.equals(loadedTxnMetadata.getState())) {
-                try {
-                    Thread.sleep(500);
-                    continue;
-                } catch (InterruptedException e) {
-                    log.error("Failed to wait transaction complete.", e);
-                    Assert.fail("Failed to wait transaction complete.");
-                }
+            if (expectedState.equals(loadedTxnMetadata.getState())) {
+                break;
             }
-            break;
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                log.error("Failed to wait transaction complete.", e);
+                Assert.fail("Failed to wait transaction complete.");
+            }
         }
         Assert.assertEquals(expectedState, loadedTxnMetadata.getState());
         Assert.assertTrue(loadedTxnMetadata.getTxnLastUpdateTimestamp() > 0);
