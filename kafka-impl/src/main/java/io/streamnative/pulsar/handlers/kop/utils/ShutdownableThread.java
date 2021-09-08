@@ -56,8 +56,8 @@ public abstract class ShutdownableThread extends Thread {
     }
 
     public synchronized boolean initiateShutdown() {
-        if (isRunning()) {
-            log.info("{} Shutting down", logIdent);
+        if (isRunning() && log.isDebugEnabled()) {
+            log.debug("{} Shutting down", logIdent);
         }
         shutdownInitiated.countDown();
         if (isInterruptible) {
@@ -73,7 +73,9 @@ public abstract class ShutdownableThread extends Thread {
      */
     public void awaitShutdown() throws InterruptedException {
         shutdownComplete.await();
-        log.info("{} Shutdown completed", logIdent);
+        if (log.isDebugEnabled()) {
+            log.debug("{} Shutdown completed", logIdent);
+        }
     }
 
     /**
@@ -98,7 +100,9 @@ public abstract class ShutdownableThread extends Thread {
 
     @Override
     public void run() {
-        log.info("{} Starting", logIdent);
+        if (log.isDebugEnabled()) {
+            log.debug("{} Starting", logIdent);
+        }
         try {
             while (isRunning()) {
                 doWork();
@@ -106,7 +110,9 @@ public abstract class ShutdownableThread extends Thread {
         } catch (FatalExitError e) {
             shutdownInitiated.countDown();
             shutdownComplete.countDown();
-            log.info("{} Stopped", logIdent);
+            if (log.isDebugEnabled()) {
+                log.debug("{} Stopped", logIdent);
+            }
             Exit.exit(e.statusCode());
         } catch (Throwable cause) {
             if (isRunning()) {
