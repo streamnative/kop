@@ -220,15 +220,17 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
     private void waitTCImmigrationComplete() throws PulsarAdminException, ExecutionException, InterruptedException {
         admin.lookups().lookupTopic("public/default/__transaction_state-partition-0");
         TransactionStateManager txnStateManager = getTxnManager();
+        // The lookup request will trigger topic on-load operation,
+        // the TC partition log will recover when the namespace on-load, it's asynchronously,
+        // so wait the TC partition log load complete.
         for (int i = 0; i < 10; i++) {
             // the load future may be not added
             if (txnStateManager.getLoadPartitionFuture(0) == null) {
-                Thread.sleep(1000);
-                continue;
+                Thread.sleep(500);
             }
-            txnStateManager.getLoadPartitionFuture(0).get();
-            break;
         }
+        Assert.assertNotNull(txnStateManager.getLoadPartitionFuture(0));
+        txnStateManager.getLoadPartitionFuture(0).get();
     }
 
     private TransactionStateManager getTxnManager() {
