@@ -30,7 +30,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -40,7 +43,6 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
-import org.apache.pulsar.metadata.api.GetResult;
 import org.apache.pulsar.metadata.api.MetadataStore;
 import org.apache.pulsar.metadata.api.Notification;
 
@@ -88,20 +90,20 @@ public class KopEventManager {
 
 
     public void put(KopEvent event) {
+        putLock.lock();
         try {
-            putLock.lock();
             queue.put(event);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("Error put event {} to coordinator event queue {}", event, e);
+            log.error("Error put event {} to coordinator event queue", event, e);
         } finally {
             putLock.unlock();
         }
     }
 
     public void clearAndPut(KopEvent event) {
+        putLock.lock();
         try {
-            putLock.lock();
             queue.clear();
             put(event);
         } finally {
@@ -122,7 +124,7 @@ public class KopEventManager {
                 event = queue.take();
                 event.process();
             } catch (InterruptedException e) {
-                log.error("Error processing event {}, {}", event, e);
+                log.error("Error processing event {}", event, e);
             }
         }
 
@@ -146,33 +148,57 @@ public class KopEventManager {
     }
 
     private void getBrokers(List<String> pulsarBrokers) {
-        HashSet<Node> kopBrokers = Sets.newHashSet();
+        final Set<Node> kopBrokers = Sets.newConcurrentHashSet();
+        final AtomicInteger pendingBrokers = new AtomicInteger(pulsarBrokers.size());
+        CompletableFuture<Set<Node>> kopBrokersFuture = new CompletableFuture<>();
         pulsarBrokers.forEach(broker -> {
-            try {
-                Optional<GetResult> brokerData = metadataStore.get(
-                        getBrokersChangePath() + "/" + broker).join();
+            metadataStore.get(getBrokersChangePath() + "/" + broker).whenComplete(
+                    (brokerData, e) -> {
+                        if (e != null) {
+                            log.error("Get broker {} path data failed which have an error", broker, e);
+                            kopBrokersFuture.completeExceptionally(e);
+                            return;
+                        }
 
-                if (brokerData.isPresent()) {
-                    JsonObject jsonObject = parseJsonObject(
-                            new String(brokerData.get().getValue(), StandardCharsets.UTF_8));
-                    JsonObject protocols = jsonObject.getAsJsonObject("protocols");
-                    JsonElement element = protocols.get("kafka");
+                        if (brokerData.isPresent()) {
+                            JsonObject jsonObject = parseJsonObject(
+                                    new String(brokerData.get().getValue(), StandardCharsets.UTF_8));
+                            JsonObject protocols = jsonObject.getAsJsonObject("protocols");
+                            JsonElement element = protocols.get("kafka");
 
-                    if (element != null) {
-                        String kopBrokerStr = element.getAsString();
-                        Node kopNode = getNode(kopBrokerStr);
-                        kopBrokers.add(kopNode);
+                            if (element != null) {
+                                String kopBrokerStr = element.getAsString();
+                                Node kopNode = getNode(kopBrokerStr);
+                                kopBrokers.add(kopNode);
+                            } else {
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Get broker {} path currently not a kop broker, skip it.", broker);
+                                }
+                            }
+                        } else {
+                            if (log.isDebugEnabled()) {
+                                log.debug("Get broker {} path data empty.", broker);
+                            }
+                        }
+
+                        if (pendingBrokers.decrementAndGet() == 0) {
+                            kopBrokersFuture.complete(kopBrokers);
+                        }
                     }
-                }
-            } catch (Exception e) {
-                log.error("Get broker {} path data failed which have an error {}", broker, e.getMessage());
-                e.printStackTrace();
-            }
+            );
         });
-        Collection<? extends Node> oldKopBrokers = adminManager.getBrokers();
-        adminManager.addBrokers(kopBrokers);
-        log.info("Refresh kop brokers new cache {}, old brokers cache {}",
-                adminManager.getBrokers(), oldKopBrokers);
+
+        kopBrokersFuture.whenComplete((brokers, e) -> {
+            if (e != null) {
+                log.error("Get pulsar brokers {} failed", pulsarBrokers, e);
+                return;
+            }
+
+            Collection<? extends Node> oldKopBrokers = adminManager.getBrokers();
+            adminManager.addBrokers(brokers);
+            log.info("Refresh kop brokers new cache {}, old brokers cache {}",
+                    adminManager.getBrokers(), oldKopBrokers);
+        });
     }
 
     private JsonObject parseJsonObject(String info) {
@@ -209,7 +235,7 @@ public class KopEventManager {
             }
 
             try {
-                List<String> topicsDeletions = metadataStore.getChildren(getDeleteTopicsPath()).join();
+                List<String> topicsDeletions = metadataStore.getChildren(getDeleteTopicsPath()).get();
 
                 HashSet<String> topicsFullNameDeletionsSets = Sets.newHashSet();
                 HashSet<KopTopic> kopTopicsSet = Sets.newHashSet();
@@ -249,9 +275,8 @@ public class KopEventManager {
                 log.info("GroupMetadata delete topics {}, no matching topics {}",
                         deletedTopics, Sets.difference(topicsFullNameDeletionsSets, deletedTopics));
 
-            } catch (Exception e) {
-                log.error("DeleteTopicsEvent process have an error {}", e.getMessage());
-                e.printStackTrace();
+            } catch (ExecutionException | InterruptedException e) {
+                log.error("DeleteTopicsEvent process have an error", e);
             }
         }
     }
@@ -259,12 +284,14 @@ public class KopEventManager {
     class BrokersChangeEvent implements KopEvent {
         @Override
         public void process() {
-            try {
-                getBrokers(metadataStore.getChildren(getBrokersChangePath()).join());
-            } catch (Exception e) {
-                log.error("BrokersChangeEvent process have an error {}", e.getMessage());
-                e.printStackTrace();
-            }
+            metadataStore.getChildren(getBrokersChangePath()).whenComplete(
+                    (brokers, e) -> {
+                        if (e != null) {
+                            log.error("BrokersChangeEvent process have an error", e);
+                            return;
+                        }
+                        getBrokers(brokers);
+                    });
         }
     }
 

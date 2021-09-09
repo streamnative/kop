@@ -234,8 +234,8 @@ class AdminManager {
     }
 
     public void addBrokers(Set<Node> brokers) {
+        brokersCacheLock.writeLock().lock();
         try {
-            brokersCacheLock.writeLock().lock();
             this.brokersCache = brokers;
         } finally {
             brokersCacheLock.writeLock().unlock();

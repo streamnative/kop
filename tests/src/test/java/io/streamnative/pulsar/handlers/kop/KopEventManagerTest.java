@@ -42,9 +42,9 @@ import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
-
 public class KopEventManagerTest extends KopProtocolHandlerTestBase {
     private AdminClient adminClient;
+    private KafkaProducer<String, String> kafkaProducer;
     private String broker;
     private final String topic1 = "test-topic1";
     private final String topic2 = "test-topic2";
@@ -59,21 +59,27 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         Properties adminPro = new Properties();
         adminPro.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, broker);
         this.adminClient = AdminClient.create(adminPro);
+        final Properties producerPro = new Properties();
+        producerPro.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, broker);
+        producerPro.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        producerPro.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        this.kafkaProducer = new KafkaProducer<>(producerPro);
     }
 
     @AfterMethod
     @Override
     protected void cleanup() throws Exception {
         adminClient.close();
+        kafkaProducer.close();
         super.internalCleanup();
     }
 
-    @Test
-    public void testGroupState() throws Exception {
+    @Test(timeOut = 6000)
+    public void testOneTopicGroupState() throws Exception {
         // 1. create topics
-        createTopics();
+        createTopics(Collections.singletonList(topic1));
         // 2. send messages
-        sendMessages();
+        sendOneMessages(topic1);
         // 3. check group state which only consumed one topic
         final Properties properties = new Properties();
         properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, broker);
@@ -85,110 +91,96 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
 
         final KafkaConsumer<String, String> kafkaConsumer1 = new KafkaConsumer<>(properties);
         kafkaConsumer1.subscribe(Collections.singletonList(topic1));
-        int consumeCount = 0;
-        while (consumeCount < 5) {
-            ConsumerRecords<String, String> records = kafkaConsumer1.poll(Duration.ofMillis(5000));
-            consumeCount += records.count();
-        }
-        // 4. manually trigger commit offset
-        kafkaConsumer1.commitSync(Duration.ofMillis(2000));
-        // 5. check group state must be Stable
+        ConsumerRecords<String, String> records = kafkaConsumer1.poll(Duration.ofMillis(500));
+        assertEquals(records.count(), 1);
+
+        // 4. check group state must be Stable
         Map<String, ConsumerGroupDescription> describeGroup1 =
                 adminClient.describeConsumerGroups(Collections.singletonList(groupId1))
                         .all()
-                        .get(2000, TimeUnit.MILLISECONDS);
+                        .get(1000, TimeUnit.MILLISECONDS);
         assertTrue(describeGroup1.containsKey(groupId1));
         assertEquals(ConsumerGroupState.STABLE, describeGroup1.get(groupId1).state());
-        // 6. close consumer1
+        // 5. close consumer1
         kafkaConsumer1.close();
-        // 7. check group state must be Empty
+        // 6. check group state must be Empty
         Map<String, ConsumerGroupDescription> describeGroup2 =
                 adminClient.describeConsumerGroups(Collections.singletonList(groupId1))
                         .all()
-                        .get(2000, TimeUnit.MILLISECONDS);
+                        .get(1000, TimeUnit.MILLISECONDS);
         assertTrue(describeGroup1.containsKey(groupId1));
         assertEquals(ConsumerGroupState.EMPTY, describeGroup2.get(groupId1).state());
-        // 8. delete topic1
+        // 7. delete topic1
         adminClient.deleteTopics(Collections.singletonList(topic1));
-        // 9. Since the removal of the deleted partition by the consumer group is triggered by the MetadataStore
-        // and operated asynchronously by the kopEventThread, we will wait here for a while
-        Thread.sleep(3000);
-        // 10. describe group who only consume topic1 which have been deleted
+        // 8. describe group who only consume topic1 which have been deleted
         // check group state must be Dead
-        retryUntilStateDead(groupId1, 20);
+        retryUntilStateDead(groupId1, 5);
+    }
 
-        // 11. check group state which consumed two topics
+    @Test(timeOut = 6000)
+    public void testTwoTopicsGroupState() throws Exception {
+        // 1. create topics
+        createTopics(Arrays.asList(topic2, topic3));
+        // 2. send messages
+        sendOneMessages(topic2);
+        sendOneMessages(topic3);
+
+        // 3. check group state which consumed two topics
+        final Properties properties = new Properties();
+        properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, broker);
+        properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         final String groupId2 = "test-group2";
         properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId2);
         final KafkaConsumer<String, String> kafkaConsumer2 = new KafkaConsumer<>(properties);
         kafkaConsumer2.subscribe(Arrays.asList(topic2, topic3));
-        while (consumeCount < 15) {
-            ConsumerRecords<String, String> records = kafkaConsumer2.poll(Duration.ofMillis(5000));
+        int consumeCount = 0;
+        while (consumeCount < 2) {
+            ConsumerRecords<String, String> records = kafkaConsumer2.poll(Duration.ofMillis(500));
             consumeCount += records.count();
         }
-        // 12. manually trigger commit offset
-        kafkaConsumer2.commitSync(Duration.ofMillis(2000));
-        // 13. check group state must be Stable
-        Map<String, ConsumerGroupDescription> describeGroup4 =
+        // 4. check group state must be Stable
+        Map<String, ConsumerGroupDescription> describeGroup1 =
                 adminClient.describeConsumerGroups(Collections.singletonList(groupId2))
                         .all()
-                        .get(2000, TimeUnit.MILLISECONDS);
-        assertTrue(describeGroup4.containsKey(groupId2));
-        assertEquals(ConsumerGroupState.STABLE, describeGroup4.get(groupId2).state());
+                        .get(1000, TimeUnit.MILLISECONDS);
+        assertTrue(describeGroup1.containsKey(groupId2));
+        assertEquals(ConsumerGroupState.STABLE, describeGroup1.get(groupId2).state());
 
-        // 14. close consumer2
+        // 5. close consumer2
         kafkaConsumer2.close();
 
-        // 15. check group state must be Empty
-        Map<String, ConsumerGroupDescription> describeGroup5 =
+        // 6. check group state must be Empty
+        Map<String, ConsumerGroupDescription> describeGroup2 =
                 adminClient.describeConsumerGroups(Collections.singletonList(groupId2))
                         .all()
-                        .get(2000, TimeUnit.MILLISECONDS);
-        assertTrue(describeGroup5.containsKey(groupId2));
-        assertEquals(ConsumerGroupState.EMPTY, describeGroup5.get(groupId2).state());
+                        .get(1000, TimeUnit.MILLISECONDS);
+        assertTrue(describeGroup2.containsKey(groupId2));
+        assertEquals(ConsumerGroupState.EMPTY, describeGroup2.get(groupId2).state());
 
-        // 16. delete topic2 and topic3
+        // 7. delete topic2 and topic3
         List<String> deleteTopics = Lists.newArrayList();
         deleteTopics.add(topic2);
         deleteTopics.add(topic3);
         adminClient.deleteTopics(deleteTopics);
-        // Since the removal of the deleted partition by the consumer group is triggered by the MetadataStore
-        // and operated asynchronously by the kopEventThread, we will wait here for a while
-        Thread.sleep(3000);
-        // 17. check group state must be Dead
-        retryUntilStateDead(groupId2, 20);
+        // 8. check group state must be Dead
+        retryUntilStateDead(groupId2, 5);
     }
 
-    private void createTopics() throws ExecutionException, InterruptedException {
+    private void createTopics(List<String> topics) throws ExecutionException, InterruptedException {
         List<NewTopic> topicsList = Lists.newArrayList();
-        NewTopic newTopic1 = new NewTopic(topic1, 1, (short) 1);
-        topicsList.add(newTopic1);
-        NewTopic newTopic2 = new NewTopic(topic2, 1, (short) 1);
-        topicsList.add(newTopic2);
-        NewTopic newTopic3 = new NewTopic(topic3, 1, (short) 1);
-        topicsList.add(newTopic3);
-
+        topics.forEach(
+                topic -> {
+                    NewTopic newTopic = new NewTopic(topic, 1, (short) 1);
+                    topicsList.add(newTopic);
+                }
+        );
         adminClient.createTopics(topicsList).all().get();
     }
 
-    private void sendMessages() {
-        int totalMsg = 15;
-        final Properties producerPro = new Properties();
-        producerPro.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, broker);
-        producerPro.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        producerPro.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        final KafkaProducer<String, String> kafkaProducer = new KafkaProducer<>(producerPro);
-        String topic = topic1;
-        for (int i = 0; i < totalMsg; i++) {
-            if (i >= 10) {
-                topic = topic3;
-            } else if (i >= 5) {
-                topic = topic2;
-            }
-
-            kafkaProducer.send(new ProducerRecord<>(topic, null, "test-value" + i));
-        }
-        kafkaProducer.close();
+    private void sendOneMessages(String topic) {
+        kafkaProducer.send(new ProducerRecord<>(topic, null, "test-value"));
     }
 
     private void retryUntilStateDead(String groupId, int timeOutSec) throws Exception {
@@ -200,9 +192,9 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         while (System.currentTimeMillis() < deadTimeMs) {
             describeGroup = adminClient.describeConsumerGroups(Collections.singletonList(groupId))
                     .all()
-                    .get(2000, TimeUnit.MILLISECONDS);
+                    .get(1000, TimeUnit.MILLISECONDS);
             assertTrue(describeGroup.containsKey(groupId));
-            if (describeGroup.get(groupId).state().name().equals("Dead")) {
+            if (describeGroup.get(groupId).state().name().equals("DEAD")) {
                 break;
             }
         }
