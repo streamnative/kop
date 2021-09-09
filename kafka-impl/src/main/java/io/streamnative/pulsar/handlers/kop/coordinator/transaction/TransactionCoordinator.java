@@ -123,6 +123,11 @@ public class TransactionCoordinator {
      */
     public CompletableFuture<Void> handleTxnImmigration(int partition) {
         log.info("Elected as the txn coordinator for partition {}.", partition);
+        CompletableFuture<Void> loadFuture = txnManager.getLoadPartitionFuture(partition);
+        if (loadFuture != null) {
+            log.warn("This txn coordinator for partition {} is onload.", partition);
+            return loadFuture;
+        }
         // The operations performed during immigration must be resilient to any previous errors we saw or partial state
         // we left off during the unloading phase. Ensure we remove all associated state for this partition before we
         // continue loading it.
