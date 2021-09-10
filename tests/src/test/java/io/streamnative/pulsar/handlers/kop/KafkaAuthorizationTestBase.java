@@ -117,6 +117,12 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         admin.topics().createPartitionedTopic(TOPIC, 1);
         admin.namespaces().grantPermissionOnNamespace(TENANT + "/" + NAMESPACE, SIMPLE_USER,
                         Sets.newHashSet(AuthAction.consume, AuthAction.produce));
+
+        // in Pulsar in order to list topics you must be in the AdminRoles for the tenant
+        TenantInfo tenantInfo = admin.tenants().getTenantInfo(TENANT);
+        tenantInfo.getAdminRoles().add(SIMPLE_USER);
+        admin.tenants().updateTenant(TENANT, tenantInfo);
+
     }
 
     @Override
@@ -249,6 +255,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
     @Test(timeOut = 20000)
     void testListTopic() throws Exception {
+
         String newTopic = "newTestListTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
 
@@ -260,11 +267,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
         // Create newTopic
         admin.topics().createPartitionedTopic(fullNewTopicName, 1);
-
-        // Grant topic level permission to ANOTHER_USER
-        admin.topics().grantPermission(fullNewTopicName,
-                ANOTHER_USER,
-                Sets.newHashSet(AuthAction.consume, AuthAction.produce));
 
         // Use consumer to list topic
         result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
@@ -283,8 +285,17 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         AdminClient adminClient = AdminClient.create(props);
         ListTopicsResult listTopicsResult = adminClient.listTopics();
         Set<String> topics = listTopicsResult.names().get();
-        assertEquals(topics.size(), 1);
-        assertTrue(topics.contains(newTopic));
+        assertEquals(topics.size(), 0);
+
+        // in Pulsar in order to list topics you must be in the AdminRoles for the tenant
+        TenantInfo tenantInfo = admin.tenants().getTenantInfo(TENANT);
+        tenantInfo.getAdminRoles().add(ANOTHER_USER);
+        admin.tenants().updateTenant(TENANT, tenantInfo);
+
+        listTopicsResult = adminClient.listTopics();
+        topics = listTopicsResult.names().get();
+
+        assertEquals(topics.size(), 2);
 
         // Cleanup
         kConsumer.close();

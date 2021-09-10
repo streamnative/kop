@@ -161,9 +161,13 @@ import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.authentication.AuthenticationDataHttps;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
+import org.apache.pulsar.broker.web.PulsarWebResource;
+import org.apache.pulsar.broker.web.RestException;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.api.proto.MarkerType;
@@ -171,6 +175,7 @@ import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
+import org.apache.pulsar.common.policies.data.NamespaceOperation;
 import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
@@ -179,6 +184,8 @@ import org.apache.pulsar.metadata.api.MetadataCache;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 import org.eclipse.jetty.util.StringUtil;
+
+import javax.ws.rs.core.Response;
 
 /**
  * This class contains all the request handling methods.
@@ -452,8 +459,28 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
         final AtomicInteger pendingNamespacesCount = new AtomicInteger(allowedNamespaces.size());
 
+        MyPulsarWebResource authorizationChecker = new MyPulsarWebResource();
         for (String namespace : allowedNamespaces) {
-            pulsarService.getNamespaceService().getListOfPersistentTopics(NamespaceName.get(namespace))
+            
+            NamespaceName namespaceName = NamespaceName.get(namespace);
+            try {
+                authorizationChecker.validateNamespaceOperation(namespaceName, NamespaceOperation.GET_TOPICS);
+                log.debug("User is authorized to access namespace {}", namespaceName);
+            } catch (RestException err) {
+                if (err.getResponse().getStatusInfo() == Response.Status.UNAUTHORIZED) {
+                    log.debug("User is not authorized to access namespace {}", namespaceName);
+                    if (pendingNamespacesCount.decrementAndGet() == 0) {
+                        topicMapFuture.complete(topicMap);
+                    }
+                    continue;
+                } else {
+                    topicMapFuture.completeExceptionally(err);
+                    return topicMapFuture;
+                }
+            }
+
+
+            pulsarService.getNamespaceService().getListOfPersistentTopics(namespaceName)
                     .whenComplete((topics, e) -> {
                         if (e != null) {
                             log.error("Failed to getListOfPersistentTopic of {}", namespace, e);
@@ -2455,5 +2482,44 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         new IllegalStateException("AclOperation [" + operation.name() + "] is not supported."));
         }
         return isAuthorizedFuture;
+    }
+
+    private class MyPulsarWebResource extends PulsarWebResource {
+        @Override
+        protected PulsarService pulsar() {
+            return pulsarService;
+        }
+
+        @Override
+        protected ServiceConfiguration config() {
+            return pulsarService.getConfiguration();
+        }
+
+        @Override
+        public AuthenticationDataHttps clientAuthData() {
+            return null;
+        }
+
+        @Override
+        public String clientAppId() {
+            if (authenticator != null && authenticator.session() != null && authenticator.session().getPrincipal() != null) {
+                return authenticator.session().getPrincipal().getName();
+            } else{
+                return null;
+            }
+        }
+
+        @Override
+        public String originalPrincipal() {
+            if (authenticator != null && authenticator.session() != null && authenticator.session().getPrincipal() != null) {
+                return authenticator.session().getPrincipal().getName();
+            } else{
+                return null;
+            }
+        }
+
+        public void validateAdminAccessForTenant(String tenant) {
+            super.validateAdminAccessForTenant(tenant);
+        }
     }
 }
