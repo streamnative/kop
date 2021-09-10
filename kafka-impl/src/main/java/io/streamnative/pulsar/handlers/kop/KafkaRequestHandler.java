@@ -2258,34 +2258,35 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
 
         topicManager.getTopicBroker(topic.toString())
-            .thenCompose(address -> getProtocolDataToAdvertise(address, topic))
-            .whenComplete((stringOptional, throwable) -> {
-                if (!stringOptional.isPresent() || throwable != null) {
-                    log.error("Not get advertise data for Kafka topic:{}. throwable: [{}]",
-                        topic, throwable.getMessage());
-                    KafkaTopicManager.removeTopicManagerCache(topic.toString());
-                    returnFuture.complete(null);
-                    return;
-                }
+                .thenCompose(address -> getProtocolDataToAdvertise(address, topic))
+                .whenComplete((stringOptional, throwable) -> {
+                    if (stringOptional == null || !stringOptional.isPresent() || throwable != null) {
+                        log.error("Not get advertise data for Kafka topic:{}. throwable: [{}]",
+                            topic, throwable.getMessage());
+                        KafkaTopicManager.removeTopicManagerCache(topic.toString());
+                        returnFuture.complete(null);
+                        return;
+                    }
 
-                // It's the `kafkaAdvertisedListeners` config that's written to ZK
-                final String listeners = stringOptional.get();
-                final EndPoint endPoint =
-                        (tlsEnabled ? EndPoint.getSslEndPoint(listeners) : EndPoint.getPlainTextEndPoint(listeners));
-                final Node node = newNode(endPoint.getInetAddress());
+                    // It's the `kafkaAdvertisedListeners` config that's written to ZK
+                    final String listeners = stringOptional.get();
+                    final EndPoint endPoint =
+                            (tlsEnabled ? EndPoint.getSslEndPoint(listeners)
+                                    : EndPoint.getPlainTextEndPoint(listeners));
+                    final Node node = newNode(endPoint.getInetAddress());
 
-                if (log.isDebugEnabled()) {
-                    log.debug("Found broker localListeners: {} for topicName: {}, "
-                            + "localListeners: {}, found Listeners: {}",
-                        listeners, topic, advertisedListeners, listeners);
-                }
+                    if (log.isDebugEnabled()) {
+                        log.debug("Found broker localListeners: {} for topicName: {}, "
+                                + "localListeners: {}, found Listeners: {}",
+                            listeners, topic, advertisedListeners, listeners);
+                    }
 
-                // here we found topic broker: broker2, but this is in broker1,
-                // how to clean the lookup cache?
-                if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
-                    KafkaTopicManager.removeTopicManagerCache(topic.toString());
-                }
-                returnFuture.complete(newPartitionMetadata(topic, node));
+                    // here we found topic broker: broker2, but this is in broker1,
+                    // how to clean the lookup cache?
+                    if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
+                        KafkaTopicManager.removeTopicManagerCache(topic.toString());
+                    }
+                    returnFuture.complete(newPartitionMetadata(topic, node));
             });
         return returnFuture;
     }

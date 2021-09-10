@@ -68,7 +68,7 @@ public class KopBrokerLookupManager {
         getTopicBroker(topic)
                 .thenCompose(pair -> getProtocolDataToAdvertise(pair, TopicName.get(topic)))
                 .whenComplete((listeners, throwable) -> {
-                    if (!listeners.isPresent() || throwable != null) {
+                    if (listeners == null || !listeners.isPresent() || throwable != null) {
                         log.error("Not get advertise data for Kafka topic:{}. throwable", topic, throwable);
                         returnFuture.complete(null);
                         return;

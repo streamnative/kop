@@ -381,9 +381,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
     }
 
     // Unit test for unload / reload user topic bundle, verify it works well.
-    // NOTE: Currently the testMultiBrokerUnloadReload is flaky. If it ran after other tests, it would be easy to fail.
-    //   So we just change the priority to make it run first to avoid CI failing at this test for this moment.
-    @Test(timeOut = 30000, priority = -1)
+    @Test(timeOut = 30000)
     public void testMultiBrokerUnloadReload() throws Exception {
         int partitionNumber = 10;
         String kafkaTopicName = "kopMultiBrokerUnloadReload" + partitionNumber;
