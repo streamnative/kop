@@ -2258,18 +2258,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
 
         topicManager.getTopicBroker(topic.toString())
-                .thenCompose(address -> getProtocolDataToAdvertise(address, topic))
-                .whenComplete((stringOptional, throwable) -> {
-                    if (stringOptional == null || !stringOptional.isPresent() || throwable != null) {
-                        log.error("Not get advertise data for Kafka topic:{}. throwable: [{}]",
-                            topic, throwable.getMessage());
+                .thenApply(address -> getProtocolDataToAdvertise(address, topic))
+                .thenAccept(kopAddressFuture -> kopAddressFuture.thenAccept(listenersOptional -> {
+                    if (!listenersOptional.isPresent()) {
+                        log.error("Not get advertise data for Kafka topic:{}.", topic);
                         KafkaTopicManager.removeTopicManagerCache(topic.toString());
                         returnFuture.complete(null);
                         return;
                     }
 
                     // It's the `kafkaAdvertisedListeners` config that's written to ZK
-                    final String listeners = stringOptional.get();
+                    final String listeners = listenersOptional.get();
                     final EndPoint endPoint =
                             (tlsEnabled ? EndPoint.getSslEndPoint(listeners)
                                     : EndPoint.getPlainTextEndPoint(listeners));
@@ -2277,8 +2276,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                     if (log.isDebugEnabled()) {
                         log.debug("Found broker localListeners: {} for topicName: {}, "
-                                + "localListeners: {}, found Listeners: {}",
-                            listeners, topic, advertisedListeners, listeners);
+                                        + "localListeners: {}, found Listeners: {}",
+                                listeners, topic, advertisedListeners, listeners);
                     }
 
                     // here we found topic broker: broker2, but this is in broker1,
@@ -2287,7 +2286,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         KafkaTopicManager.removeTopicManagerCache(topic.toString());
                     }
                     returnFuture.complete(newPartitionMetadata(topic, node));
-            });
+                })).exceptionally(throwable -> {
+                    log.error("Not get advertise data for Kafka topic:{}. throwable: [{}]",
+                            topic, throwable.getMessage());
+                    KafkaTopicManager.removeTopicManagerCache(topic.toString());
+                    returnFuture.complete(null);
+                    return null;
+                });
         return returnFuture;
     }
 
