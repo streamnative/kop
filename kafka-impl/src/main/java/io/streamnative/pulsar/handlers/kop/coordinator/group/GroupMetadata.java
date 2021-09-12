@@ -612,20 +612,17 @@ public class GroupMetadata {
 
         topicPartitions.addAll(pendingOffsetCommits.keySet().stream().filter(
                 topicPartition -> topics.contains(topicPartition.topic())
-                        && !topicPartitions.contains(topicPartition)
         ).collect(Collectors.toList()));
 
         pendingTransactionalOffsetCommits.values().stream().map(Map::keySet)
                 .collect(Collectors.toList()).forEach(partitionSet -> {
             topicPartitions.addAll(partitionSet.stream().filter(
-                    topicPartition -> topics.contains(topicPartition.topic())
-                            && !topicPartitions.contains(topicPartition))
+                    topicPartition -> topics.contains(topicPartition.topic()))
                     .collect(Collectors.toList()));
         });
 
         topicPartitions.addAll(offsets.keySet().stream().filter(
                 topicPartition -> topics.contains(topicPartition.topic())
-                        && !topicPartitions.contains(topicPartition)
         ).collect(Collectors.toList()));
         return topicPartitions;
     }
