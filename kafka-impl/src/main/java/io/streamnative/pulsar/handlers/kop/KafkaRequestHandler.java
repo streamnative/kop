@@ -330,7 +330,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             fetchPurgatory.shutdown();
 
             // update alive channel count stat
-            RequestStats.ACTIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
+            RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
         }
     }
 
