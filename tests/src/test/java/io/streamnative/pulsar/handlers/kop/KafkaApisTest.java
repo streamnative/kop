@@ -325,8 +325,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 60000)
     public void testFetchMaxBytes() throws Exception {
         String topicName = "testMaxBytesTopic";
-        int maxBytes = 1000;
-        int maxPartitionBytes = 500;
+        String clientId = "testClient";
+        int maxBytes = 500;
+        int maxPartitionBytes = 100;
 
         // create partitioned topic.
         admin.topics().createPartitionedTopic(topicName, 2);
@@ -339,12 +340,32 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         // producing data and then consuming.
         KafkaProducer<String, String> kProducer = createKafkaProducer();
         produceData(kProducer, topicPartitions, 20);
-        KafkaConsumer<String, String> consumer = createKafkaConsumer(5000, 1, maxBytes, maxPartitionBytes);
+        KafkaConsumer<String, String> consumer = createKafkaConsumer(5000, 1, maxBytes, maxPartitionBytes, clientId);
         consumer.assign(topicPartitions);
         consumer.seekToBeginning(topicPartitions);
 
         for (int i = 0; i < 5; i++) {
             ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
+            int fetchPartitionSize1 = records.records(tp1).stream().mapToInt((record) -> {
+                return record.serializedKeySize() + record.serializedValueSize();
+            }).sum();
+
+            int fetchPartitionSize2 = records.records(tp2).stream().mapToInt((record) -> {
+                return record.serializedKeySize() + record.serializedValueSize();
+            }).sum();
+
+            assertTrue(fetchPartitionSize1 <= maxPartitionBytes);
+            assertTrue(fetchPartitionSize2 <= maxPartitionBytes);
+            assertTrue(fetchPartitionSize1 + fetchPartitionSize2 <= maxBytes);
+        }
+
+
+        KafkaConsumer<String, String> consumer2 = createKafkaConsumer(5000, 1);
+        consumer2.assign(topicPartitions);
+        consumer2.seekToBeginning(topicPartitions);
+
+        for (int i = 0; i < 5; i++) {
+            ConsumerRecords<String, String> records = consumer2.poll(Duration.ofMillis(1000));
             int fetchPartitionSize1 = records.records(tp1).stream().mapToInt((record) -> {
                 return record.serializedKeySize() + record.serializedValueSize();
             }).sum();
@@ -636,9 +657,10 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     }
 
     private KafkaConsumer<String, String> createKafkaConsumer(int maxWait, int minBytes,
-                                                              int maxBytes, int maxPartitionBytes) {
+                                                              int maxBytes, int maxPartitionBytes,
+                                                              String clientId) {
         final Properties props = new Properties();
-        props.put(ConsumerConfig.CLIENT_ID_CONFIG, "test_client");
+        props.put(ConsumerConfig.CLIENT_ID_CONFIG, clientId);
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + getKafkaBrokerPort());
         props.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG, maxWait);
         props.put(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, minBytes);
@@ -651,7 +673,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     }
 
     private KafkaConsumer<String, String> createKafkaConsumer(int maxWaitMs, int minBytes) {
-        return createKafkaConsumer(maxWaitMs, minBytes, DEFAULT_FETCH_MAX_BYTES, DEFAULT_MAX_PARTITION_FETCH_BYTES);
+        return createKafkaConsumer(maxWaitMs, minBytes, DEFAULT_FETCH_MAX_BYTES,
+                DEFAULT_MAX_PARTITION_FETCH_BYTES, "defaultClient");
     }
 
     private void produceData(KafkaProducer<String, String> producer,
