@@ -66,10 +66,11 @@ public class KopBrokerLookupManager {
 
         CompletableFuture<InetSocketAddress> returnFuture = new CompletableFuture<>();
         getTopicBroker(topic)
-                .thenCompose(pair -> getProtocolDataToAdvertise(pair, TopicName.get(topic)))
-                .whenComplete((listeners, throwable) -> {
-                    if (!listeners.isPresent() || throwable != null) {
-                        log.error("Not get advertise data for Kafka topic:{}. throwable", topic, throwable);
+                .thenApply(address -> getProtocolDataToAdvertise(address, TopicName.get(topic)))
+                .thenAccept(kopAddressFuture -> kopAddressFuture.thenAccept(listeners -> {
+                    if (!listeners.isPresent()) {
+                        log.error("Not get advertise data for Kafka topic:{}", topic);
+                        removeTopicManagerCache(topic);
                         returnFuture.complete(null);
                         return;
                     }
@@ -93,6 +94,12 @@ public class KopBrokerLookupManager {
                     }
 
                     checkTopicOwner(returnFuture, topic, endPoint);
+                })).exceptionally(throwable -> {
+                    log.error("Not get advertise data for Kafka topic:{}. throwable: [{}]",
+                            topic, throwable.getMessage());
+                    removeTopicManagerCache(topic);
+                    returnFuture.complete(null);
+                    return null;
                 });
         return returnFuture;
     }
