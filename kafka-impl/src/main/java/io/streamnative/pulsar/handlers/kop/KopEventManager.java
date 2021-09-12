@@ -30,7 +30,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -150,13 +149,12 @@ public class KopEventManager {
     private void getBrokers(List<String> pulsarBrokers) {
         final Set<Node> kopBrokers = Sets.newConcurrentHashSet();
         final AtomicInteger pendingBrokers = new AtomicInteger(pulsarBrokers.size());
-        CompletableFuture<Set<Node>> kopBrokersFuture = new CompletableFuture<>();
+
         pulsarBrokers.forEach(broker -> {
             metadataStore.get(getBrokersChangePath() + "/" + broker).whenComplete(
                     (brokerData, e) -> {
                         if (e != null) {
                             log.error("Get broker {} path data failed which have an error", broker, e);
-                            kopBrokersFuture.completeExceptionally(e);
                             return;
                         }
 
@@ -182,23 +180,15 @@ public class KopEventManager {
                         }
 
                         if (pendingBrokers.decrementAndGet() == 0) {
-                            kopBrokersFuture.complete(kopBrokers);
+                            Collection<? extends Node> oldKopBrokers = adminManager.getBrokers();
+                            adminManager.setBrokers(kopBrokers);
+                            log.info("Refresh kop brokers new cache {}, old brokers cache {}",
+                                    adminManager.getBrokers(), oldKopBrokers);
                         }
                     }
             );
         });
 
-        kopBrokersFuture.whenComplete((brokers, e) -> {
-            if (e != null) {
-                log.error("Get pulsar brokers {} failed", pulsarBrokers, e);
-                return;
-            }
-
-            Collection<? extends Node> oldKopBrokers = adminManager.getBrokers();
-            adminManager.addBrokers(brokers);
-            log.info("Refresh kop brokers new cache {}, old brokers cache {}",
-                    adminManager.getBrokers(), oldKopBrokers);
-        });
     }
 
     private JsonObject parseJsonObject(String info) {

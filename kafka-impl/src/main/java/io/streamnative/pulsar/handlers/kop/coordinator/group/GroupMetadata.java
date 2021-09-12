@@ -21,12 +21,14 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.P
 import com.google.common.base.MoreObjects;
 import com.google.common.base.MoreObjects.ToStringHelper;
 import com.google.common.base.Supplier;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.MemberMetadata.MemberSummary;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -605,24 +607,26 @@ public class GroupMetadata {
         ));
     }
 
-    public Set<TopicPartition> collectPartitionsWithTopics(Set<String> topics) {
-        HashSet<TopicPartition> topicPartitions = Sets.newHashSet();
+    public List<TopicPartition> collectPartitionsWithTopics(Set<String> topics) {
+        ArrayList<TopicPartition> topicPartitions = Lists.newArrayList();
 
         topicPartitions.addAll(pendingOffsetCommits.keySet().stream().filter(
                 topicPartition -> topics.contains(topicPartition.topic())
-        ).collect(Collectors.toSet()));
+                        && !topicPartitions.contains(topicPartition)
+        ).collect(Collectors.toList()));
 
         pendingTransactionalOffsetCommits.values().stream().map(Map::keySet)
                 .collect(Collectors.toList()).forEach(partitionSet -> {
             topicPartitions.addAll(partitionSet.stream().filter(
-                    topicPartition -> topics.contains(topicPartition.topic()))
+                    topicPartition -> topics.contains(topicPartition.topic())
+                            && !topicPartitions.contains(topicPartition))
                     .collect(Collectors.toList()));
         });
 
         topicPartitions.addAll(offsets.keySet().stream().filter(
                 topicPartition -> topics.contains(topicPartition.topic())
+                        && !topicPartitions.contains(topicPartition)
         ).collect(Collectors.toList()));
-
         return topicPartitions;
     }
 
