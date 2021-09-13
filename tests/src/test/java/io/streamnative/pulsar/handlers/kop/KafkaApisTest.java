@@ -374,9 +374,11 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                 return record.serializedKeySize() + record.serializedValueSize();
             }).sum();
 
-            assertTrue(fetchPartitionSize1 <= maxPartitionBytes);
-            assertTrue(fetchPartitionSize2 <= maxPartitionBytes);
-            assertTrue(fetchPartitionSize1 + fetchPartitionSize2 <= maxBytes);
+            if (i != 0) {
+                assertTrue(fetchPartitionSize1 > maxPartitionBytes);
+                assertTrue(fetchPartitionSize2 > maxPartitionBytes);
+                assertTrue(fetchPartitionSize1 + fetchPartitionSize2 > maxBytes);
+            }
         }
     }
 
