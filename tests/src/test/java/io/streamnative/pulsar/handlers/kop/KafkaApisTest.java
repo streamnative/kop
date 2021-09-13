@@ -344,7 +344,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         consumer.assign(topicPartitions);
         consumer.seekToBeginning(topicPartitions);
 
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 3; i++) {
             ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
             int fetchPartitionSize1 = records.records(tp1).stream().mapToInt((record) -> {
                 return record.serializedKeySize() + record.serializedValueSize();
@@ -364,7 +364,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         consumer2.assign(topicPartitions);
         consumer2.seekToBeginning(topicPartitions);
 
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 3; i++) {
             ConsumerRecords<String, String> records = consumer2.poll(Duration.ofMillis(1000));
             int fetchPartitionSize1 = records.records(tp1).stream().mapToInt((record) -> {
                 return record.serializedKeySize() + record.serializedValueSize();
