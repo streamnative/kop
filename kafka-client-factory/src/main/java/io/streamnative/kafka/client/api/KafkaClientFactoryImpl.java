@@ -17,6 +17,8 @@ import io.streamnative.kafka.client.one.zero.ConsumerImpl;
 import io.streamnative.kafka.client.one.zero.ProducerImpl;
 import io.streamnative.kafka.client.zero.ten.Consumer010Impl;
 import io.streamnative.kafka.client.zero.ten.Producer010Impl;
+import io.streamnative.kafka.client.two.eight.Consumer280Impl;
+import io.streamnative.kafka.client.two.eight.Producer280Impl;
 
 /**
  * The factory class to create Kafka producers or consumers with a specific version.
@@ -35,6 +37,8 @@ public class KafkaClientFactoryImpl implements KafkaClientFactory {
             return new ProducerImpl<>(conf);
         } else if (kafkaVersion.equals(KafkaVersion.KAFKA_0_10_0_0)) {
             return new Producer010Impl<>(conf);
+        } else if (kafkaVersion.equals(KafkaVersion.KAFKA_2_8_0)) {
+            return new Producer280Impl<>(conf);
         }
         throw new IllegalArgumentException("No producer for version: " + kafkaVersion);
     }
@@ -45,6 +49,8 @@ public class KafkaClientFactoryImpl implements KafkaClientFactory {
             return new ConsumerImpl<>(conf);
         } else if (kafkaVersion.equals(KafkaVersion.KAFKA_0_10_0_0)) {
             return new Consumer010Impl<>(conf);
+        } else if (kafkaVersion.equals(KafkaVersion.KAFKA_2_8_0)) {
+            return new Consumer280Impl<>(conf);
         }
         throw new IllegalArgumentException("No consumer for version: " + kafkaVersion);
     }
