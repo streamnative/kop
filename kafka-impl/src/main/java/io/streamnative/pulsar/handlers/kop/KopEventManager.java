@@ -291,11 +291,11 @@ public class KopEventManager {
         }
     }
 
-    class ShutdownEventThread implements KopEvent {
+    static class ShutdownEventThread implements KopEvent {
 
         @Override
         public void process() {
-
+            // Here is only record shutdown KopEventThread event.
         }
     }
 
