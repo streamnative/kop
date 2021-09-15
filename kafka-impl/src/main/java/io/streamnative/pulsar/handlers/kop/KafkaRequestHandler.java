@@ -492,6 +492,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // Command response for all topics
         List<TopicMetadata> allTopicMetadata = Collections.synchronizedList(Lists.newArrayList());
         List<Node> allNodes = Collections.synchronizedList(Lists.newArrayList());
+        // Get all kop brokers in local cache
+        allNodes.addAll(adminManager.getBrokers());
 
         List<String> topics = metadataRequest.topics();
         // topics in format : persistent://%s/%s/abc-partition-x, will be grouped by as:
@@ -672,13 +674,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (e != null) {
                 log.warn("[{}] Request {}: Exception fetching metadata, will return null Response",
                     ctx.channel(), metadataHar.getHeader(), e);
-                allNodes.add(newSelfNode());
                 MetadataResponse finalResponse =
-                    new MetadataResponse(
-                        allNodes,
-                        clusterName,
-                        controllerId,
-                        Collections.emptyList());
+                        new MetadataResponse(
+                                allNodes,
+                                clusterName,
+                                controllerId,
+                                Collections.emptyList());
                 resultFuture.complete(finalResponse);
                 return;
             }
@@ -687,13 +688,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             if (topicsNumber == 0) {
                 // no topic partitions added, return now.
-                allNodes.add(newSelfNode());
                 MetadataResponse finalResponse =
-                    new MetadataResponse(
-                        allNodes,
-                        clusterName,
-                        controllerId,
-                        allTopicMetadata);
+                        new MetadataResponse(
+                                allNodes,
+                                clusterName,
+                                controllerId,
+                                allTopicMetadata);
                 resultFuture.complete(finalResponse);
                 return;
             }
@@ -2049,7 +2049,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(deleteTopics.getRequest() instanceof DeleteTopicsRequest);
         DeleteTopicsRequest request = (DeleteTopicsRequest) deleteTopics.getRequest();
         Set<String> topicsToDelete = request.topics();
-        resultFuture.complete(new DeleteTopicsResponse(adminManager.deleteTopics(topicsToDelete)));
+        Map<String, Errors> deleteTopicsResponse = adminManager.deleteTopics(topicsToDelete);
+
+        // create topic znode to trigger the coordinator DeleteTopicsEvent event
+        deleteTopicsResponse.forEach((topic, errors) -> {
+            if (errors == Errors.NONE) {
+                ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(),
+                        KopEventManager.getDeleteTopicsPath() + "/" + topic,
+                        new byte[0]);
+            }
+        });
+
+        resultFuture.complete(new DeleteTopicsResponse(deleteTopicsResponse));
     }
 
     /**

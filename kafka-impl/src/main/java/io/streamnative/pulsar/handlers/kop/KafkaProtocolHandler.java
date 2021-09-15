@@ -95,6 +95,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     private GroupCoordinator groupCoordinator;
     @Getter
     private TransactionCoordinator transactionCoordinator;
+    @Getter
+    private KopEventManager kopEventManager;
 
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
@@ -285,6 +287,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
                 kafkaConfig.getGroupIdZooKeeperPath(), new byte[0]);
 
+        ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
+                KopEventManager.getKopPath(), new byte[0]);
+
+        ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
+                KopEventManager.getDeleteTopicsPath(), new byte[0]);
+
         PulsarAdmin pulsarAdmin;
         try {
             pulsarAdmin = brokerService.getPulsar().getAdminClient();
@@ -322,6 +330,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
         // init and start group coordinator
         startGroupCoordinator(pulsarClient);
+        // init KopEventManager
+        kopEventManager = new KopEventManager(groupCoordinator,
+                adminManager,
+                brokerService.getPulsar().getLocalMetadataStore());
+        kopEventManager.start();
+
         // and listener for Offset topics load/unload
         brokerService.pulsar()
                 .getNamespaceService()
@@ -425,13 +439,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             .build();
 
         this.groupCoordinator = GroupCoordinator.of(
-            (PulsarClientImpl) pulsarClient,
-            groupConfig,
-            offsetConfig,
-            SystemTimer.builder()
-                .executorName("group-coordinator-timer")
-                .build(),
-            Time.SYSTEM
+                (PulsarClientImpl) pulsarClient,
+                groupConfig,
+                offsetConfig,
+                SystemTimer.builder()
+                        .executorName("group-coordinator-timer")
+                        .build(),
+                Time.SYSTEM
         );
         // always enable metadata expiration
         this.groupCoordinator.startup(true);
@@ -498,4 +512,5 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public static @NonNull LookupClient getLookupClient(final PulsarService pulsarService) {
         return LOOKUP_CLIENT_MAP.computeIfAbsent(pulsarService, ignored -> new LookupClient(pulsarService));
     }
+
 }
