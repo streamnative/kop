@@ -21,6 +21,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 
+import com.google.common.collect.Lists;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
@@ -258,6 +259,7 @@ public final class MessageFetchContext {
         final boolean readCommitted =
                 (tc != null && fetchRequest.isolationLevel().equals(IsolationLevel.READ_COMMITTED));
 
+        AtomicLong limitBytes = new AtomicLong(fetchRequest.maxBytes());
         fetchRequest.fetchData().forEach((topicPartition, partitionData) -> {
             final long startPrepareMetadataNanos = MathUtils.nowInNano();
 
@@ -280,7 +282,8 @@ public final class MessageFetchContext {
                                 partitionData,
                                 fullTopicName,
                                 startPrepareMetadataNanos,
-                                readCommitted);
+                                readCommitted,
+                                limitBytes);
                     });
         });
     }
@@ -289,7 +292,8 @@ public final class MessageFetchContext {
                                      final FetchRequest.PartitionData partitionData,
                                      final String fullTopicName,
                                      final long startPrepareMetadataNanos,
-                                     final boolean readCommitted) {
+                                     final boolean readCommitted,
+                                     AtomicLong limitBytes) {
         final long offset = partitionData.fetchOffset;
         // the future that is returned by getTopicConsumerManager is always completed normally
         topicManager.getTopicConsumerManager(fullTopicName).thenAccept(tcm -> {
@@ -352,7 +356,9 @@ public final class MessageFetchContext {
 
                 statsLogger.getPrepareMetadataStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
-                readEntries(cursor, topicPartition, cursorOffset).whenComplete((entries, throwable) -> {
+                long adjustedMaxBytes = Math.min(partitionData.maxBytes, limitBytes.get());
+                readEntries(cursor, topicPartition, cursorOffset, adjustedMaxBytes)
+                .whenComplete((entries, throwable) -> {
                     if (throwable != null) {
                         tcm.deleteOneCursorAsync(cursorLongPair.getLeft(),
                                 "cursor.readEntry fail. deleteCursor");
@@ -364,7 +370,8 @@ public final class MessageFetchContext {
                                 Errors.forException(new ApiException("Cursor is null")));
                         return;
                     }
-
+                    long readSize = entries.stream().mapToLong(Entry::getLength).sum();
+                    limitBytes.addAndGet(-1 * readSize);
                     handleEntries(
                             entries,
                             topicPartition,
@@ -479,14 +486,20 @@ public final class MessageFetchContext {
 
     private CompletableFuture<List<Entry>> readEntries(final ManagedCursor cursor,
                                                        final TopicPartition topicPartition,
-                                                       final AtomicLong cursorOffset) {
+                                                       final AtomicLong cursorOffset,
+                                                       long adjustedMaxBytes) {
         final OpStatsLogger messageReadStats = statsLogger.getMessageReadStats();
         // read readeEntryNum size entry.
         final long startReadingMessagesNanos = MathUtils.nowInNano();
 
         final CompletableFuture<List<Entry>> readFuture = new CompletableFuture<>();
+        if (adjustedMaxBytes <= 0) {
+            readFuture.complete(Lists.newArrayList());
+            return readFuture;
+        }
+
         final long originalOffset = cursorOffset.get();
-        cursor.asyncReadEntries(maxReadEntriesNum, new ReadEntriesCallback() {
+        cursor.asyncReadEntries(maxReadEntriesNum, adjustedMaxBytes, new ReadEntriesCallback() {
 
             @Override
             public void readEntriesComplete(List<Entry> entries, Object ctx) {
