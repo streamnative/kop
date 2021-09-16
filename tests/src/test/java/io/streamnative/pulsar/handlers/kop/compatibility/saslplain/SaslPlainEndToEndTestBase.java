@@ -147,12 +147,16 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
     @AfterClass
     protected void cleanup() throws Exception {
         super.internalCleanup();
-        jaasConfigFile.delete();
+        if (jaasConfigFile != null) {
+            jaasConfigFile.delete();
+        }
     }
 
     @AfterMethod
     protected void cleanJaasConf() {
-        jaasConfigFile.delete();
+        if (jaasConfigFile != null) {
+            jaasConfigFile.delete();
+        }
         Configuration.setConfiguration(null);
     }
 
@@ -339,7 +343,13 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
                 producer.newContextBuilder(KAFKA_TOPIC, "hello").build().sendAsync().get();
                 fail("should have failed");
             } catch (Exception e) {
-                assertTrue(e.getMessage().contains("Failed to update metadata"));
+                log.error("error", e);
+                if (version == KafkaVersion.KAFKA_2_8_0) {
+                    assertTrue(e.getMessage().contains("Topic " + KAFKA_TOPIC +
+                            " not present in metadata after " + metadataTimeoutMs + " ms."));
+                } else {
+                    assertTrue(e.getMessage().contains("Failed to update metadata"));
+                }
             }
         }
     }
