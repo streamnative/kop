@@ -23,7 +23,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.header.internals.RecordHeader;
 
 /**
- * The implementation of Kafka producer 1.0.0.
+ * The implementation of Kafka producer 2.8.0.
  */
 public class Producer280Impl<K, V> extends KafkaProducer<K, V> implements Producer<K, V> {
 

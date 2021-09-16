@@ -29,7 +29,7 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 
 /**
- * The implementation of Kafka consumer 1.0.0.
+ * The implementation of Kafka consumer 2.8.0.
  */
 public class Consumer280Impl<K, V> extends KafkaConsumer<K, V> implements Consumer<K, V> {
 
@@ -40,7 +40,7 @@ public class Consumer280Impl<K, V> extends KafkaConsumer<K, V> implements Consum
     @Override
     public List<ConsumerRecord<K, V>> receive(long timeoutMs) {
         final List<ConsumerRecord<K, V>> records = new ArrayList<>();
-        poll(timeoutMs).forEach(record -> records.add(ConsumerRecord.create(record)));
+        poll(Duration.ofMillis(timeoutMs)).forEach(record -> records.add(ConsumerRecord.create(record)));
         return records;
     }
 
