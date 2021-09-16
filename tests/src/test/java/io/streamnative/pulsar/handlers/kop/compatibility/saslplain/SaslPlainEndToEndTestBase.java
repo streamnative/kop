@@ -345,8 +345,8 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
             } catch (Exception e) {
                 log.error("error", e);
                 if (version == KafkaVersion.KAFKA_2_8_0) {
-                    assertTrue(e.getMessage().contains("Topic " + KAFKA_TOPIC +
-                            " not present in metadata after " + metadataTimeoutMs + " ms."));
+                    assertTrue(e.getMessage().contains("Topic " + KAFKA_TOPIC
+                            + " not present in metadata after " + metadataTimeoutMs + " ms."));
                 } else {
                     assertTrue(e.getMessage().contains("Failed to update metadata"));
                 }
