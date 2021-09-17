@@ -82,8 +82,6 @@ public class KopResponseManager {
     private KopEventManager getResponseKopEventManager(Channel channel) {
         String channelId = requestManager.getChannels().get(channel);
         int responseHandleIndex = Math.abs(channelId.hashCode()) % responseHandles.size();
-        log.error("getKopEventManager channelId {}, responseHandleIndex {}, responseHandles size {},  channel {}",
-                channelId, responseHandleIndex, responseHandles.size(), channel);
         return responseHandles.get(responseHandleIndex);
     }
 
