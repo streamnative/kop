@@ -52,6 +52,8 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();
         TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler).getTransactionCoordinator();
+        KopRequestManager requestManager = ((KafkaProtocolHandler) handler).getRequestManager();
+        KopResponseManager responseManager = ((KafkaProtocolHandler) handler).getResponseManager();
 
         adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         kafkaRequestHandler = new KafkaRequestHandler(
@@ -63,7 +65,9 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
                 pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
                 false,
                 getPlainEndPoint(),
-                NullStatsLogger.INSTANCE);
+                NullStatsLogger.INSTANCE,
+                requestManager,
+                responseManager);
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();

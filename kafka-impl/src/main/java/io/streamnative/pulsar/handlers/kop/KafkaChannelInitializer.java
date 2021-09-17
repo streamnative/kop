@@ -57,6 +57,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     @Getter
     private final StatsLogger statsLogger;
     private final MetadataCache<LocalBrokerData> localBrokerDataCache;
+    private final KopRequestManager requestManager;
+    private final KopResponseManager responseManager;
 
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
@@ -66,7 +68,9 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    boolean enableTLS,
                                    EndPoint advertisedEndPoint,
                                    StatsLogger statsLogger,
-                                   MetadataCache<LocalBrokerData> localBrokerDataCache) {
+                                   MetadataCache<LocalBrokerData> localBrokerDataCache,
+                                   KopRequestManager requestManager,
+                                   KopResponseManager responseManager) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -77,6 +81,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.advertisedEndPoint = advertisedEndPoint;
         this.statsLogger = statsLogger;
         this.localBrokerDataCache = localBrokerDataCache;
+        this.requestManager = requestManager;
+        this.responseManager = responseManager;
         if (enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
         } else {
@@ -101,7 +107,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         ch.pipeline().addLast("handler",
                 new KafkaRequestHandler(pulsarService, kafkaConfig,
                         groupCoordinator, transactionCoordinator, adminManager, localBrokerDataCache,
-                        enableTls, advertisedEndPoint, statsLogger));
+                        enableTls, advertisedEndPoint, statsLogger, requestManager, responseManager));
     }
 
 }

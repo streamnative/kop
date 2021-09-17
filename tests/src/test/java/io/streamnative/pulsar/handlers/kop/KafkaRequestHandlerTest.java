@@ -140,18 +140,22 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         ProtocolHandler handler1 = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler1).getGroupCoordinator();
         TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler1).getTransactionCoordinator();
+        KopRequestManager requestManager = ((KafkaProtocolHandler) handler1).getRequestManager();
+        KopResponseManager responseManager = ((KafkaProtocolHandler) handler1).getResponseManager();
 
         adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         handler = new KafkaRequestHandler(
-            pulsar,
-            (KafkaServiceConfiguration) conf,
-            groupCoordinator,
-            transactionCoordinator,
-            adminManager,
-            pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
-            false,
-            getPlainEndPoint(),
-            NullStatsLogger.INSTANCE);
+                pulsar,
+                (KafkaServiceConfiguration) conf,
+                groupCoordinator,
+                transactionCoordinator,
+                adminManager,
+                pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
+                false,
+                getPlainEndPoint(),
+                NullStatsLogger.INSTANCE,
+                requestManager,
+                responseManager);
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
@@ -215,7 +219,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             kopRequest, apiVersionsResponse);
 
         // 1. serialize response into ByteBuf
-        ByteBuf serializedResponse = handler.responseToByteBuf(kopResponse.getResponse(), kopRequest);
+        ByteBuf serializedResponse = KopResponseManager.responseToByteBuf(kopResponse.getResponse(), kopRequest);
 
         // 2. verify responseToByteBuf works well.
         ByteBuffer byteBuffer = serializedResponse.nioBuffer();

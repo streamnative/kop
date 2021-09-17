@@ -14,12 +14,15 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.pulsar.handlers.kop.KopResponseManager.responseToByteBuf;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Sets;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.Channel;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -30,50 +33,65 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.ApiException;
+import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.metadata.api.MetadataStore;
 import org.apache.pulsar.metadata.api.Notification;
 
 @Slf4j
+@Getter
 public class KopEventManager {
     private static final String REGEX = "^(.*)://\\[?([0-9a-zA-Z\\-%._:]*)\\]?:(-?[0-9]+)";
     private static final Pattern PATTERN = Pattern.compile(REGEX);
 
-    private static final String kopEventThreadName = "kop-event-thread";
+    private final String kopEventThreadName;
     private final ReentrantLock putLock = new ReentrantLock();
-    private static final LinkedBlockingQueue<KopEvent> queue =
-            new LinkedBlockingQueue<>();
-    private final KopEventThread thread =
-            new KopEventThread(kopEventThreadName);
+    private final LinkedBlockingQueue<KopEvent> queue;
+    private final KopEventThread thread;
     private final GroupCoordinator coordinator;
     private final AdminManager adminManager;
-    private final DeletionTopicsHandler deletionTopicsHandler;
-    private final BrokersChangeHandler brokersChangeHandler;
+    private DeletionTopicsHandler deletionTopicsHandler;
+    private BrokersChangeHandler brokersChangeHandler;
     private final MetadataStore metadataStore;
 
     public KopEventManager(GroupCoordinator coordinator,
                            AdminManager adminManager,
-                           MetadataStore metadataStore) {
+                           MetadataStore metadataStore,
+                           String kopEventThreadName) {
         this.coordinator = coordinator;
         this.adminManager = adminManager;
+        this.metadataStore = metadataStore;
+        this.kopEventThreadName = kopEventThreadName;
+        this.queue = new LinkedBlockingQueue<>();
+        this.thread = new KopEventThread(kopEventThreadName, this);
+    }
+
+    public void registerAndStart() {
         this.deletionTopicsHandler = new DeletionTopicsHandler(this);
         this.brokersChangeHandler = new BrokersChangeHandler(this);
-        this.metadataStore = metadataStore;
+        registerChildChangeHandler();
+        start();
     }
 
     public void start() {
-        registerChildChangeHandler();
         thread.start();
     }
 
@@ -111,17 +129,46 @@ public class KopEventManager {
     }
 
     static class KopEventThread extends ShutdownableThread {
+        private final KopEventManager kopEventManager;
 
-        public KopEventThread(String name) {
+        public KopEventThread(String name,
+                              KopEventManager kopEventManager) {
             super(name);
+            this.kopEventManager = kopEventManager;
         }
 
         @Override
         protected void doWork() {
             KopEvent event = null;
             try {
-                event = queue.take();
-                event.process();
+                event = kopEventManager.getQueue().take();
+                if (event instanceof KopRequestEvent) {
+                    KopRequestEvent requestEvent = (KopRequestEvent) event;
+                    requestEvent.process();
+                    KafkaCommandDecoder.ResponseAndRequest responseAndRequest = requestEvent.getResponseAndRequest();
+                    ApiKeys apiKeys = responseAndRequest.getRequest().getHeader().apiKey();
+
+                    while (true) {
+                        if (requestEvent.isCompleted()) {
+                            break;
+                        }
+                        if (apiKeys == ApiKeys.PRODUCE || apiKeys == ApiKeys.FETCH) {
+                            final long nanoSecondsSinceCreated = responseAndRequest.nanoSecondsSinceCreated();
+                            final boolean expired =
+                                    (nanoSecondsSinceCreated > TimeUnit.MILLISECONDS.toNanos(
+                                            requestEvent.getRequestTimeoutMs()));
+
+                            if (expired) {
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Handle {} timeout.", responseAndRequest.getRequest().getRequest());
+                                }
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    event.process();
+                }
             } catch (InterruptedException e) {
                 log.error("Error processing event {}", event, e);
             }
@@ -285,12 +332,159 @@ public class KopEventManager {
         }
     }
 
+    static class KopResponseEvent implements KopEvent {
+        private final Channel channel;
+        private final KafkaCommandDecoder.ResponseAndRequest responseAndRequest;
+        private final RequestStats requestStats;
+        private final int requestTimeoutMs;
+
+        public KopResponseEvent(Channel channel,
+                                KafkaCommandDecoder.ResponseAndRequest responseAndRequest,
+                                RequestStats requestStats,
+                                int requestTimeoutMs) {
+            this.channel = channel;
+            this.responseAndRequest = responseAndRequest;
+            this.requestStats = requestStats;
+            this.requestTimeoutMs = requestTimeoutMs;
+        }
+
+        @Override
+        public void process() {
+            if (channel.isActive()) {
+                if (responseAndRequest == null) {
+                    return;
+                }
+
+                final CompletableFuture<AbstractResponse> responseFuture = responseAndRequest.getResponseFuture();
+                final long nanoSecondsSinceCreated = responseAndRequest.nanoSecondsSinceCreated();
+                final boolean expired =
+                        (nanoSecondsSinceCreated > TimeUnit.MILLISECONDS.toNanos(requestTimeoutMs));
+                responseAndRequest.updateStats(requestStats);
+
+                if (responseAndRequest.getFirstBlockedTimestamp() != 0) {
+                    requestStats.getResponseBlockedLatency().registerSuccessfulEvent(
+                            MathUtils.elapsedNanos(responseAndRequest.getFirstBlockedTimestamp()),
+                            TimeUnit.NANOSECONDS);
+                }
+
+                final KafkaCommandDecoder.KafkaHeaderAndRequest request = responseAndRequest.getRequest();
+
+                // responseFuture is completed exceptionally
+                if (responseFuture.isCompletedExceptionally()) {
+                    responseFuture.exceptionally(e -> {
+                        log.error("[{}] request {} completed exceptionally", channel, request.getHeader(), e);
+                        channel.writeAndFlush(request.createErrorResponse(e));
+
+                        requestStats.getStatsLogger()
+                                .scopeLabel(KopServerStats.REQUEST_SCOPE,
+                                        responseAndRequest.getRequest().getHeader().apiKey().name)
+                                .getOpStatsLogger(KopServerStats.REQUEST_QUEUED_LATENCY)
+                                .registerFailedEvent(MathUtils.elapsedNanos(responseAndRequest.getCreatedTimestamp()),
+                                        TimeUnit.NANOSECONDS);
+                        return null;
+                    }); // send exception to client?
+                    return;
+                }
+
+                // responseFuture is completed normally
+                if (responseFuture.isDone()) {
+                    responseFuture.thenAccept(response -> {
+                        if (response == null) {
+                            // It should not be null, just check it for safety
+                            log.error("[{}] Unexpected null completed future for request {}",
+                                    channel, request.getHeader());
+                            channel.writeAndFlush(request.createErrorResponse(new ApiException("response is null")));
+                            return;
+                        }
+                        if (log.isDebugEnabled()) {
+                            log.debug("Write kafka cmd to client."
+                                            + " request content: {}"
+                                            + " responseAndRequest content: {}",
+                                    request, response.toString(request.getRequest().version()));
+                        }
+
+                        final ByteBuf result = responseToByteBuf(response, request);
+                        channel.writeAndFlush(result).addListener(future -> {
+                            if (response instanceof ResponseCallbackWrapper) {
+                                ((ResponseCallbackWrapper) response).responseComplete();
+                            }
+                            if (!future.isSuccess()) {
+                                log.error("[{}] Failed to write {}", channel, request.getHeader(), future.cause());
+                            }
+                        });
+                    });
+                    return;
+                }
+
+                // responseFuture is expired
+                if (expired) {
+                    log.error("[{}] request {} is not completed for {} ns (> {} ms)",
+                            channel, request.getHeader(), nanoSecondsSinceCreated, requestTimeoutMs);
+                    responseFuture.cancel(true);
+                    channel.writeAndFlush(
+                            request.createErrorResponse(new ApiException("request is expired from server side")));
+
+                    requestStats.getStatsLogger()
+                            .scopeLabel(KopServerStats.REQUEST_SCOPE,
+                                    responseAndRequest.getRequest().getHeader().apiKey().name)
+                            .getOpStatsLogger(KopServerStats.REQUEST_QUEUED_LATENCY)
+                            .registerFailedEvent(MathUtils.elapsedNanos(responseAndRequest.getCreatedTimestamp()),
+                                    TimeUnit.NANOSECONDS);
+                }
+            }
+        }
+    }
+
+    @Getter
+    static class KopRequestEvent implements KopEvent {
+        private final KafkaCommandDecoder.ResponseAndRequest responseAndRequest;
+        private final KafkaCommandDecoder decoder;
+        private final long requestTimeoutMs;
+
+        public KopRequestEvent(KafkaCommandDecoder.ResponseAndRequest responseAndRequest,
+                               KafkaCommandDecoder decoder,
+                               long requestTimeoutMs) {
+            this.responseAndRequest = responseAndRequest;
+            this.decoder = decoder;
+            this.requestTimeoutMs = requestTimeoutMs;
+        }
+
+        private boolean isCompleted() {
+            return responseAndRequest.getResponseFuture().isDone()
+                    || responseAndRequest.getResponseFuture().isCompletedExceptionally()
+                    || responseAndRequest.getResponseFuture().isCancelled();
+        }
+
+        @Override
+        public void process() {
+            decoder.handleKafkaRequest(responseAndRequest.getRequest(), responseAndRequest.getResponseFuture());
+        }
+    }
+
     public DeleteTopicsEvent getDeleteTopicEvent() {
         return new DeleteTopicsEvent();
     }
 
     public BrokersChangeEvent getBrokersChangeEvent() {
         return new BrokersChangeEvent();
+    }
+
+    public KopResponseEvent getKopResponseEvent(Channel channel,
+                                                KafkaCommandDecoder.ResponseAndRequest responseAndRequest,
+                                                RequestStats requestStats,
+                                                int requestTimeoutMs) {
+        return new KopResponseEvent(channel,
+                responseAndRequest,
+                requestStats,
+                requestTimeoutMs);
+    }
+
+    public KopRequestEvent getKopRequestEvent(KafkaCommandDecoder.ResponseAndRequest responseAndRequest,
+                                              KafkaCommandDecoder decoder,
+                                              long requestTimeoutMs) {
+        return new KopRequestEvent(responseAndRequest,
+                decoder,
+                requestTimeoutMs);
     }
 
     public static String getKopPath() {

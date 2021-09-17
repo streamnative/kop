@@ -78,18 +78,22 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator();
         TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler).getTransactionCoordinator();
+        KopRequestManager requestManager = ((KafkaProtocolHandler) handler).getRequestManager();
+        KopResponseManager responseManager = ((KafkaProtocolHandler) handler).getResponseManager();
 
         adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         kafkaRequestHandler = new KafkaRequestHandler(
-            pulsar,
-            (KafkaServiceConfiguration) conf,
-            groupCoordinator,
-            transactionCoordinator,
-            adminManager,
-            pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
-            false,
-            getPlainEndPoint(),
-            NullStatsLogger.INSTANCE);
+                pulsar,
+                (KafkaServiceConfiguration) conf,
+                groupCoordinator,
+                transactionCoordinator,
+                adminManager,
+                pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
+                false,
+                getPlainEndPoint(),
+                NullStatsLogger.INSTANCE,
+                requestManager,
+                responseManager);
 
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);

@@ -154,6 +154,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         ProtocolHandler handler1 = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler1).getGroupCoordinator();
         TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler1).getTransactionCoordinator();
+        KopRequestManager requestManager = ((KafkaProtocolHandler) handler1).getRequestManager();
+        KopResponseManager responseManager = ((KafkaProtocolHandler) handler1).getResponseManager();
 
         adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         handler = new KafkaRequestHandler(
@@ -165,7 +167,9 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                 pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
                 false,
                 getPlainEndPoint(),
-                NullStatsLogger.INSTANCE);
+                NullStatsLogger.INSTANCE,
+                requestManager,
+                responseManager);
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();

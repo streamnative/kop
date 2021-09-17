@@ -97,6 +97,10 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     private TransactionCoordinator transactionCoordinator;
     @Getter
     private KopEventManager kopEventManager;
+    @Getter
+    private KopRequestManager requestManager;
+    @Getter
+    private KopResponseManager responseManager;
 
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
@@ -333,8 +337,17 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         // init KopEventManager
         kopEventManager = new KopEventManager(groupCoordinator,
                 adminManager,
-                brokerService.getPulsar().getLocalMetadataStore());
-        kopEventManager.start();
+                brokerService.getPulsar().getLocalMetadataStore(),
+                "kop-event-thread");
+        kopEventManager.registerAndStart();
+
+        // init KopRequestManager
+        requestManager = new KopRequestManager(kafkaConfig);
+        requestManager.start();
+
+        // init KopResponseManager
+        responseManager = new KopResponseManager(kafkaConfig, requestManager);
+        responseManager.start();
 
         // and listener for Offset topics load/unload
         brokerService.pulsar()
@@ -390,13 +403,15 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, false,
-                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
+                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache,
+                                requestManager, responseManager));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, true,
-                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
+                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache,
+                                requestManager, responseManager));
                         break;
                 }
             });
@@ -410,6 +425,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     @Override
     public void close() {
         Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
+        responseManager.close();
         adminManager.shutdown();
         groupCoordinator.shutdown();
         KafkaTopicManager.LOOKUP_CACHE.clear();

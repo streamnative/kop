@@ -246,8 +246,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                MetadataCache<LocalBrokerData> localBrokerDataCache,
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
-                               StatsLogger statsLogger) throws Exception {
-        super(statsLogger, kafkaConfig);
+                               StatsLogger statsLogger,
+                               KopRequestManager requestManager,
+                               KopResponseManager responseManager) throws Exception {
+        super(statsLogger, kafkaConfig, requestManager, responseManager);
         this.pulsarService = pulsarService;
         this.groupCoordinator = groupCoordinator;
         this.transactionCoordinator = transactionCoordinator;

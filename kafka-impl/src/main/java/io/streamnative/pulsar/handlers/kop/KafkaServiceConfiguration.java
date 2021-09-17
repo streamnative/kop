@@ -382,6 +382,18 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private Set<String> kopAllowedNamespaces;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "limit the response thread size."
+    )
+    private int numResponseThreads = 8;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "limit the request thread size."
+    )
+    private int numRequestThreads = 8;
+
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();
         for (String listener : advertisedListeners.split(END_POINT_SEPARATOR)) {
