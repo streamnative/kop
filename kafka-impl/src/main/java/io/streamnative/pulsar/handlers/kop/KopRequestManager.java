@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 
 
 @Slf4j
@@ -68,19 +69,19 @@ public class KopRequestManager {
                     kafkaConfig.getRequestTimeoutMs()));
             if (log.isDebugEnabled()) {
                 log.debug("AddRequest for request {} to kopEventManager {}, channel {}",
-                        responseAndRequest.getRequest().getRequest(), eventManager.getKopEventThreadName(), channel);
+                        responseAndRequest.getRequest(), eventManager.getKopEventThreadName(), channel);
             }
         } else {
             if (log.isDebugEnabled()) {
                 log.debug("AddResponse for request {} failed, because channel {} not active.",
-                        responseAndRequest.getRequest().getRequest(), channel);
+                        responseAndRequest.getRequest(), channel);
             }
         }
     }
 
     private KopEventManager getRequestKopEventManager(Channel channel) {
         String channelId = channels.get(channel);
-        int requestHandleIndex = Math.abs(channelId.hashCode()) % requestHandles.size();
+        int requestHandleIndex = MathUtils.signSafeMod(channelId.hashCode(), requestHandles.size());
         return requestHandles.get(requestHandleIndex);
     }
 

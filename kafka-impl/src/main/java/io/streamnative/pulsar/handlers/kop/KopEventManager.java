@@ -159,9 +159,14 @@ public class KopEventManager {
                                             requestEvent.getRequestTimeoutMs()));
 
                             if (expired) {
+
                                 if (log.isDebugEnabled()) {
-                                    log.debug("Handle {} timeout.", responseAndRequest.getRequest().getRequest());
+                                    log.debug("Handle {} timeout.", responseAndRequest.getRequest());
                                 }
+
+                                // Immediately trigger request processing failure
+                                responseAndRequest.getResponseFuture().completeExceptionally(
+                                        new ApiException("request is expired from server side"));
                                 break;
                             }
                         }
@@ -359,7 +364,6 @@ public class KopEventManager {
                 final long nanoSecondsSinceCreated = responseAndRequest.nanoSecondsSinceCreated();
                 final boolean expired =
                         (nanoSecondsSinceCreated > TimeUnit.MILLISECONDS.toNanos(requestTimeoutMs));
-                responseAndRequest.updateStats(requestStats);
 
                 if (responseAndRequest.getFirstBlockedTimestamp() != 0) {
                     requestStats.getResponseBlockedLatency().registerSuccessfulEvent(

@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ResponseUtils;
@@ -81,7 +82,7 @@ public class KopResponseManager {
 
     private KopEventManager getResponseKopEventManager(Channel channel) {
         String channelId = requestManager.getChannels().get(channel);
-        int responseHandleIndex = Math.abs(channelId.hashCode()) % responseHandles.size();
+        int responseHandleIndex = MathUtils.signSafeMod(channelId.hashCode(), responseHandles.size());
         return responseHandles.get(responseHandleIndex);
     }
 
@@ -93,10 +94,9 @@ public class KopResponseManager {
             // Kafka-Clients 2.4.x and above compatible and prevent KoP from panicking \
             // when it comes across a higher API_VERSION.
             short apiVersion = kafkaHeaderAndResponse.getApiVersion();
-            if (request.getHeader().apiKey() == API_VERSIONS) {
-                if (!ApiKeys.API_VERSIONS.isVersionSupported(apiVersion)) {
-                    apiVersion = ApiKeys.API_VERSIONS.oldestVersion();
-                }
+            if (request.getHeader().apiKey() == API_VERSIONS
+                    && !ApiKeys.API_VERSIONS.isVersionSupported(apiVersion)) {
+                apiVersion = ApiKeys.API_VERSIONS.oldestVersion();
             }
             return ResponseUtils.serializeResponse(
                     apiVersion,

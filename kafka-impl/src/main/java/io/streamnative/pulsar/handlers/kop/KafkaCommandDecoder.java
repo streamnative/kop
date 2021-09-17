@@ -347,10 +347,11 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     // write responseAndRequest to responseManager
     protected void sendKafkaResponse(Channel channel, ResponseAndRequest responseAndRequest) {
-        if (isActive.get()) {
-            if (requestQueue.remove(responseAndRequest)) {
-                responseManager.addResponse(channel, responseAndRequest, requestStats);
-            }
+        if (isActive.get() && requestQueue.remove(responseAndRequest)) {
+            // The first blocked timestamp starts from entering the response queue
+            responseAndRequest.setFirstBlockedTimestamp(MathUtils.nowInNano());
+            responseAndRequest.updateStats(requestStats);
+            responseManager.addResponse(channel, responseAndRequest, requestStats);
         }
     }
 
