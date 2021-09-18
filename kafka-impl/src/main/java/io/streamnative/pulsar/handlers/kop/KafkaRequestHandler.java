@@ -79,7 +79,6 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import javax.naming.AuthenticationException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
@@ -92,6 +91,7 @@ import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
+import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -206,6 +206,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final String advertisedListeners;
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
+    private final int failedAuthenticationDelayMs;
     private final String offsetsTopicName;
     private final String txnTopicName;
     private final Set<String> allowedNamespaces;
@@ -286,6 +287,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
+        this.failedAuthenticationDelayMs = kafkaConfig.getFailedAuthenticationDelayMs();
 
         // update alive channel count stats
         RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
@@ -310,7 +312,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         // update active channel count stats
         RequestStats.ACTIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
-        log.info("channel inactive {}", ctx.channel());
 
         close();
     }
@@ -329,7 +330,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             fetchPurgatory.shutdown();
 
             // update alive channel count stat
-            RequestStats.ACTIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
+            RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
         }
     }
 
@@ -346,6 +347,33 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             throws AuthenticationException {
         if (authenticator != null) {
             authenticator.authenticate(ctx, requestBuf, registerRequestParseLatency, registerRequestLatency);
+        }
+    }
+
+    @Override
+    protected void maybeDelayCloseOnAuthenticationFailure() {
+        if (this.failedAuthenticationDelayMs > 0) {
+            this.ctx.executor().schedule(
+                    this::handleCloseOnAuthenticationFailure,
+                    this.failedAuthenticationDelayMs,
+                    TimeUnit.MILLISECONDS);
+        } else {
+            handleCloseOnAuthenticationFailure();
+        }
+    }
+
+    private void handleCloseOnAuthenticationFailure() {
+        try {
+            this.completeCloseOnAuthenticationFailure();
+        } finally {
+            this.close();
+        }
+    }
+
+    @Override
+    protected void completeCloseOnAuthenticationFailure() {
+        if (isActive.get() && authenticator != null) {
+            authenticator.sendAuthenticationFailureResponse();
         }
     }
 
@@ -464,6 +492,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // Command response for all topics
         List<TopicMetadata> allTopicMetadata = Collections.synchronizedList(Lists.newArrayList());
         List<Node> allNodes = Collections.synchronizedList(Lists.newArrayList());
+        // Get all kop brokers in local cache
+        allNodes.addAll(adminManager.getBrokers());
 
         List<String> topics = metadataRequest.topics();
         // topics in format : persistent://%s/%s/abc-partition-x, will be grouped by as:
@@ -644,13 +674,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (e != null) {
                 log.warn("[{}] Request {}: Exception fetching metadata, will return null Response",
                     ctx.channel(), metadataHar.getHeader(), e);
-                allNodes.add(newSelfNode());
                 MetadataResponse finalResponse =
-                    new MetadataResponse(
-                        allNodes,
-                        clusterName,
-                        controllerId,
-                        Collections.emptyList());
+                        new MetadataResponse(
+                                allNodes,
+                                clusterName,
+                                controllerId,
+                                Collections.emptyList());
                 resultFuture.complete(finalResponse);
                 return;
             }
@@ -659,13 +688,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             if (topicsNumber == 0) {
                 // no topic partitions added, return now.
-                allNodes.add(newSelfNode());
                 MetadataResponse finalResponse =
-                    new MetadataResponse(
-                        allNodes,
-                        clusterName,
-                        controllerId,
-                        allTopicMetadata);
+                        new MetadataResponse(
+                                allNodes,
+                                clusterName,
+                                controllerId,
+                                allTopicMetadata);
                 resultFuture.complete(finalResponse);
                 return;
             }
@@ -1579,7 +1607,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         }
 
-        MessageFetchContext.get(this, fetch, resultFuture).handleFetch();
+        MessageFetchContext.get(this, fetch, resultFuture, fetchPurgatory).handleFetch();
     }
 
     protected void handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup,
@@ -2020,7 +2048,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(deleteTopics.getRequest() instanceof DeleteTopicsRequest);
         DeleteTopicsRequest request = (DeleteTopicsRequest) deleteTopics.getRequest();
         Set<String> topicsToDelete = request.topics();
-        resultFuture.complete(new DeleteTopicsResponse(adminManager.deleteTopics(topicsToDelete)));
+        Map<String, Errors> deleteTopicsResponse = adminManager.deleteTopics(topicsToDelete);
+
+        // create topic znode to trigger the coordinator DeleteTopicsEvent event
+        deleteTopicsResponse.forEach((topic, errors) -> {
+            if (errors == Errors.NONE) {
+                ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(),
+                        KopEventManager.getDeleteTopicsPath() + "/" + topic,
+                        new byte[0]);
+            }
+        });
+
+        resultFuture.complete(new DeleteTopicsResponse(deleteTopicsResponse));
     }
 
     /**
@@ -2229,35 +2268,41 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
 
         topicManager.getTopicBroker(topic.toString())
-            .thenCompose(address -> getProtocolDataToAdvertise(address, topic))
-            .whenComplete((stringOptional, throwable) -> {
-                if (!stringOptional.isPresent() || throwable != null) {
+                .thenApply(address -> getProtocolDataToAdvertise(address, topic))
+                .thenAccept(kopAddressFuture -> kopAddressFuture.thenAccept(listenersOptional -> {
+                    if (!listenersOptional.isPresent()) {
+                        log.error("Not get advertise data for Kafka topic:{}.", topic);
+                        KafkaTopicManager.removeTopicManagerCache(topic.toString());
+                        returnFuture.complete(null);
+                        return;
+                    }
+
+                    // It's the `kafkaAdvertisedListeners` config that's written to ZK
+                    final String listeners = listenersOptional.get();
+                    final EndPoint endPoint =
+                            (tlsEnabled ? EndPoint.getSslEndPoint(listeners)
+                                    : EndPoint.getPlainTextEndPoint(listeners));
+                    final Node node = newNode(endPoint.getInetAddress());
+
+                    if (log.isDebugEnabled()) {
+                        log.debug("Found broker localListeners: {} for topicName: {}, "
+                                        + "localListeners: {}, found Listeners: {}",
+                                listeners, topic, advertisedListeners, listeners);
+                    }
+
+                    // here we found topic broker: broker2, but this is in broker1,
+                    // how to clean the lookup cache?
+                    if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
+                        KafkaTopicManager.removeTopicManagerCache(topic.toString());
+                    }
+                    returnFuture.complete(newPartitionMetadata(topic, node));
+                })).exceptionally(throwable -> {
                     log.error("Not get advertise data for Kafka topic:{}. throwable: [{}]",
-                        topic, throwable.getMessage());
+                            topic, throwable.getMessage());
                     KafkaTopicManager.removeTopicManagerCache(topic.toString());
                     returnFuture.complete(null);
-                    return;
-                }
-
-                // It's the `kafkaAdvertisedListeners` config that's written to ZK
-                final String listeners = stringOptional.get();
-                final EndPoint endPoint =
-                        (tlsEnabled ? EndPoint.getSslEndPoint(listeners) : EndPoint.getPlainTextEndPoint(listeners));
-                final Node node = newNode(endPoint.getInetAddress());
-
-                if (log.isDebugEnabled()) {
-                    log.debug("Found broker localListeners: {} for topicName: {}, "
-                            + "localListeners: {}, found Listeners: {}",
-                        listeners, topic, advertisedListeners, listeners);
-                }
-
-                // here we found topic broker: broker2, but this is in broker1,
-                // how to clean the lookup cache?
-                if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
-                    KafkaTopicManager.removeTopicManagerCache(topic.toString());
-                }
-                returnFuture.complete(newPartitionMetadata(topic, node));
-            });
+                    return null;
+                });
         return returnFuture;
     }
 

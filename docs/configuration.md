@@ -53,6 +53,8 @@ This section lists configurations that may affect the performance.
 | ----------------- | ------------------------------------------------------------ | ------- |
 | maxQueuedRequests | Limit the queue size for request, like `queued.max.requests` in Kafka server. | 500     |
 | requestTimeoutMs  | Limit the timeout in milliseconds for request, like `request.timeout.ms` in Kafka client.<br>If a request was not processed in the timeout, KoP would return an error response to client. | 30000   |
+| connectionMaxIdleMs | The idle connection timeout in milliseconds. If the idle connection timeout (such as `connections.max.idle.ms` used in the Kafka server) is reached, the server handler will close this idle connection.<br>**Note**: If it is set to `-1`, it indicates that the idle connection timeout is disabled. | 600000 |
+| failedAuthenticationDelayMs | Connection close delay on failed authentication: this is the time (in milliseconds) by which connection close will be delayed on authentication failure, like `connection.failed.authentication.delay.ms` in Kafka server. | 300 |
 
 > **NOTE**
 > 

@@ -20,6 +20,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.handler.timeout.IdleStateEvent;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.io.Closeable;
 import java.net.SocketAddress;
@@ -30,12 +31,12 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
-import javax.naming.AuthenticationException;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.common.errors.ApiException;
+import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.AbstractRequest;
@@ -76,6 +77,21 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         this.remoteAddress = ctx.channel().remoteAddress();
         this.ctx = ctx;
         isActive.set(true);
+    }
+
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+        // Handle idle connection closing
+        if (evt instanceof IdleStateEvent) {
+            if (log.isDebugEnabled()) {
+                log.debug("About to close the idle connection from {} due to being idle for {} millis",
+                        this.getRemoteAddress(), kafkaConfig.getConnectionMaxIdleMs());
+            }
+            this.close();
+        } else {
+            super.userEventTriggered(ctx, evt);
+        }
+
     }
 
     @Override
@@ -184,12 +200,11 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         // execute channelPrepare to complete authentication
         if (isActive.get() && !channelReady()) {
             try {
-
                 channelPrepare(ctx, buffer, registerRequestParseLatency, registerRequestLatency);
                 return;
             } catch (AuthenticationException e) {
-                log.error("unexpected error in authenticate:", e);
-                close();
+                log.error("Failed authentication with [{}] ({})", this.remoteAddress, e.getMessage());
+                maybeDelayCloseOnAuthenticationFailure();
                 return;
             } finally {
                 buffer.release();
@@ -445,6 +460,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                                            BiConsumer<String, Long> registerRequestLatency)
             throws AuthenticationException;
 
+    protected abstract void maybeDelayCloseOnAuthenticationFailure();
+
+    protected abstract void completeCloseOnAuthenticationFailure();
+
     protected abstract void
     handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
@@ -546,6 +565,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             this.request = request;
             this.buffer = buffer.retain();
             this.remoteAddress = remoteAddress;
+        }
+
+        public ByteBuf getBuffer() {
+            return buffer;
         }
 
         public RequestHeader getHeader() {

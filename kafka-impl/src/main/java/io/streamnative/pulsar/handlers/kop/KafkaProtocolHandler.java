@@ -95,6 +95,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     private GroupCoordinator groupCoordinator;
     @Getter
     private TransactionCoordinator transactionCoordinator;
+    @Getter
+    private KopEventManager kopEventManager;
 
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
@@ -310,6 +312,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
                 kafkaConfig.getGroupIdZooKeeperPath(), new byte[0]);
 
+        ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
+                KopEventManager.getKopPath(), new byte[0]);
+
+        ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
+                KopEventManager.getDeleteTopicsPath(), new byte[0]);
+
         PulsarAdmin pulsarAdmin;
         try {
             pulsarAdmin = brokerService.getPulsar().getAdminClient();
@@ -358,6 +366,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             }
         }
 
+        // init KopEventManager
+        kopEventManager = new KopEventManager(groupCoordinator,
+                adminManager,
+                brokerService.getPulsar().getLocalMetadataStore());
+        kopEventManager.start();
+
         // and listener for Offset topics load/unload
         brokerService.pulsar()
                 .getNamespaceService()
@@ -403,17 +417,16 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, false,
-                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
+                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, true,
-                            advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
+                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
                         break;
                 }
             });
-
             return builder.build();
         } catch (Exception e){
             log.error("KafkaProtocolHandler newChannelInitializers failed with ", e);
@@ -456,13 +469,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             .build();
 
         this.groupCoordinator = GroupCoordinator.of(
-            (PulsarClientImpl) pulsarClient,
-            groupConfig,
-            offsetConfig,
-            SystemTimer.builder()
-                .executorName("group-coordinator-timer")
-                .build(),
-            Time.SYSTEM
+                (PulsarClientImpl) pulsarClient,
+                groupConfig,
+                offsetConfig,
+                SystemTimer.builder()
+                        .executorName("group-coordinator-timer")
+                        .build(),
+                Time.SYSTEM
         );
         // always enable metadata expiration
         this.groupCoordinator.startup(true);
@@ -530,4 +543,5 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     public static @NonNull LookupClient getLookupClient(final PulsarService pulsarService) {
         return LOOKUP_CLIENT_MAP.computeIfAbsent(pulsarService, ignored -> new LookupClient(pulsarService));
     }
+
 }

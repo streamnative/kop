@@ -21,6 +21,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 
+import com.google.common.collect.Lists;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
@@ -33,6 +34,9 @@ import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,6 +47,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.MarkDeleteCallback;
@@ -95,11 +100,14 @@ public final class MessageFetchContext {
     private RequestHeader header;
     private volatile CompletableFuture<AbstractResponse> resultFuture;
     private AtomicBoolean hasComplete;
+    private AtomicLong bytesReadable;
+    private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
 
     // recycler and get for this object
     public static MessageFetchContext get(KafkaRequestHandler requestHandler,
                                           KafkaHeaderAndRequest kafkaHeaderAndRequest,
-                                          CompletableFuture<AbstractResponse> resultFuture) {
+                                          CompletableFuture<AbstractResponse> resultFuture,
+                                          DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
         MessageFetchContext context = RECYCLER.get();
         context.responseData = new ConcurrentHashMap<>();
         context.decodeResults = new ConcurrentLinkedQueue<>();
@@ -113,6 +121,8 @@ public final class MessageFetchContext {
         context.header = kafkaHeaderAndRequest.getHeader();
         context.resultFuture = resultFuture;
         context.hasComplete = new AtomicBoolean(false);
+        context.bytesReadable = new AtomicLong(0);
+        context.fetchPurgatory = fetchPurgatory;
         return context;
     }
 
@@ -153,6 +163,8 @@ public final class MessageFetchContext {
         header = null;
         resultFuture = null;
         hasComplete = null;
+        bytesReadable = null;
+        fetchPurgatory = null;
         recyclerHandle.recycle(this);
     }
 
@@ -182,7 +194,12 @@ public final class MessageFetchContext {
     private void tryComplete() {
         if (resultFuture != null && responseData.size() >= fetchRequest.fetchData().size()
                 && hasComplete.compareAndSet(false, true)) {
-            complete();
+            DelayedFetch delayedFetch = new DelayedFetch(fetchRequest.maxWait(), bytesReadable,
+                    fetchRequest.minBytes(), this::complete);
+            List<Object> delayedFetchKeys =
+                    fetchRequest.fetchData().keySet().stream()
+                            .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
+            fetchPurgatory.tryCompleteElseWatch(delayedFetch, delayedFetchKeys);
         }
     }
 
@@ -242,6 +259,7 @@ public final class MessageFetchContext {
         final boolean readCommitted =
                 (tc != null && fetchRequest.isolationLevel().equals(IsolationLevel.READ_COMMITTED));
 
+        AtomicLong limitBytes = new AtomicLong(fetchRequest.maxBytes());
         fetchRequest.fetchData().forEach((topicPartition, partitionData) -> {
             final long startPrepareMetadataNanos = MathUtils.nowInNano();
 
@@ -264,7 +282,8 @@ public final class MessageFetchContext {
                                 partitionData,
                                 fullTopicName,
                                 startPrepareMetadataNanos,
-                                readCommitted);
+                                readCommitted,
+                                limitBytes);
                     });
         });
     }
@@ -273,7 +292,8 @@ public final class MessageFetchContext {
                                      final FetchRequest.PartitionData partitionData,
                                      final String fullTopicName,
                                      final long startPrepareMetadataNanos,
-                                     final boolean readCommitted) {
+                                     final boolean readCommitted,
+                                     AtomicLong limitBytes) {
         final long offset = partitionData.fetchOffset;
         // the future that is returned by getTopicConsumerManager is always completed normally
         topicManager.getTopicConsumerManager(fullTopicName).thenAccept(tcm -> {
@@ -336,7 +356,9 @@ public final class MessageFetchContext {
 
                 statsLogger.getPrepareMetadataStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
-                readEntries(cursor, topicPartition, cursorOffset).whenComplete((entries, throwable) -> {
+                long adjustedMaxBytes = Math.min(partitionData.maxBytes, limitBytes.get());
+                readEntries(cursor, topicPartition, cursorOffset, adjustedMaxBytes)
+                .whenComplete((entries, throwable) -> {
                     if (throwable != null) {
                         tcm.deleteOneCursorAsync(cursorLongPair.getLeft(),
                                 "cursor.readEntry fail. deleteCursor");
@@ -348,7 +370,8 @@ public final class MessageFetchContext {
                                 Errors.forException(new ApiException("Cursor is null")));
                         return;
                     }
-
+                    long readSize = entries.stream().mapToLong(Entry::getLength).sum();
+                    limitBytes.addAndGet(-1 * readSize);
                     handleEntries(
                             entries,
                             topicPartition,
@@ -423,9 +446,10 @@ public final class MessageFetchContext {
                 MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
         decodeResults.add(decodeResult);
 
+        MemoryRecords kafkaRecords = decodeResult.getRecords();
         // collect consumer metrics
         updateConsumerStats(topicPartition,
-                decodeResult.getRecords(),
+                kafkaRecords,
                 entries.size(),
                 groupName);
 
@@ -437,7 +461,8 @@ public final class MessageFetchContext {
                 lso,
                 highWatermark, // TODO: should it be changed to the logStartOffset?
                 abortedTransactions,
-                decodeResult.getRecords()));
+                kafkaRecords));
+        bytesReadable.getAndAdd(kafkaRecords.sizeInBytes());
         tryComplete();
     }
 
@@ -461,14 +486,20 @@ public final class MessageFetchContext {
 
     private CompletableFuture<List<Entry>> readEntries(final ManagedCursor cursor,
                                                        final TopicPartition topicPartition,
-                                                       final AtomicLong cursorOffset) {
+                                                       final AtomicLong cursorOffset,
+                                                       long adjustedMaxBytes) {
         final OpStatsLogger messageReadStats = statsLogger.getMessageReadStats();
         // read readeEntryNum size entry.
         final long startReadingMessagesNanos = MathUtils.nowInNano();
 
         final CompletableFuture<List<Entry>> readFuture = new CompletableFuture<>();
+        if (adjustedMaxBytes <= 0) {
+            readFuture.complete(Lists.newArrayList());
+            return readFuture;
+        }
+
         final long originalOffset = cursorOffset.get();
-        cursor.asyncReadEntries(maxReadEntriesNum, new ReadEntriesCallback() {
+        cursor.asyncReadEntries(maxReadEntriesNum, adjustedMaxBytes, new ReadEntriesCallback() {
 
             @Override
             public void readEntriesComplete(List<Entry> entries, Object ctx) {
