@@ -64,6 +64,7 @@ public class KopRequestManager {
                            KafkaCommandDecoder decoder) {
         if (channels.containsKey(channel)) {
             KopEventManager eventManager = getRequestKopEventManager(channel);
+            log.error("addRequest {}, {}", responseAndRequest.getRequest().getHeader(), responseAndRequest.getRequest().getClientHost());
             eventManager.put(eventManager.getKopRequestEvent(responseAndRequest,
                     decoder,
                     kafkaConfig.getRequestTimeoutMs()));

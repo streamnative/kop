@@ -149,26 +149,9 @@ public class KopEventManager {
                     ApiKeys apiKeys = responseAndRequest.getRequest().getHeader().apiKey();
 
                     while (true) {
-                        if (requestEvent.isCompleted()) {
+                        if (requestEvent.isCompleted()
+                                || (apiKeys == ApiKeys.PRODUCE || apiKeys == ApiKeys.FETCH)) {
                             break;
-                        }
-                        if (apiKeys == ApiKeys.PRODUCE || apiKeys == ApiKeys.FETCH) {
-                            final long nanoSecondsSinceCreated = responseAndRequest.nanoSecondsSinceCreated();
-                            final boolean expired =
-                                    (nanoSecondsSinceCreated > TimeUnit.MILLISECONDS.toNanos(
-                                            requestEvent.getRequestTimeoutMs()));
-
-                            if (expired) {
-
-                                if (log.isDebugEnabled()) {
-                                    log.debug("Handle {} timeout.", responseAndRequest.getRequest());
-                                }
-
-                                // Immediately trigger request processing failure
-                                responseAndRequest.getResponseFuture().completeExceptionally(
-                                        new ApiException("request is expired from server side"));
-                                break;
-                            }
                         }
                     }
                 } else {
@@ -461,6 +444,7 @@ public class KopEventManager {
 
         @Override
         public void process() {
+            log.error("KopRequestEvent {}, {}", responseAndRequest.getRequest().getHeader(), responseAndRequest.getRequest().getClientHost());
             decoder.handleKafkaRequest(responseAndRequest.getRequest(), responseAndRequest.getResponseFuture());
         }
     }

@@ -1043,8 +1043,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         // store group name to zk for current client
         String groupId = request.coordinatorKey();
+        log.error("findCoordinator.getClientHost() {}, {}",
+                findCoordinator.getClientHost(), findCoordinator.getHeader().clientId());
         String zkSubPath = ZooKeeperUtils.groupIdPathFormat(findCoordinator.getClientHost(),
                 findCoordinator.getHeader().clientId());
+        log.error("zkSubPath {}", zkSubPath);
         byte[] groupIdBytes = groupId.getBytes(Charset.forName("UTF-8"));
         ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(), groupIdStoredPath + zkSubPath, groupIdBytes);
 
