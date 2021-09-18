@@ -205,7 +205,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
         final long timeBeforeParse = MathUtils.nowInNano();
         KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress);
-        log.error("after byteBufToRequest {}, {}", kafkaHeaderAndRequest.getHeader(), kafkaHeaderAndRequest.getClientHost());
         // potentially blocking until there is room in the queue for the request.
         registerRequestParseLatency.accept(timeBeforeParse, null);
 
@@ -220,7 +219,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
             // potentially blocking until there is room in the queue for the request.
             ResponseAndRequest responseAndRequest = ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest);
-            log.error("after ResponseAndRequest.of {}, {}", responseAndRequest.getRequest().getHeader(), responseAndRequest.getRequest().getClientHost());
             final long startProcessRequestTimestamp = MathUtils.nowInNano();
             requestQueue.put(responseAndRequest);
             RequestStats.REQUEST_QUEUE_SIZE_INSTANCE.incrementAndGet();
@@ -243,7 +241,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     sendKafkaResponse(channel, responseAndRequest);
                 });
             });
-            log.error("before addRequest {}, {}", responseAndRequest.getRequest().getHeader(), responseAndRequest.getRequest().getClientHost());
             requestManager.addRequest(channel, responseAndRequest, this);
 
         } catch (Exception e) {

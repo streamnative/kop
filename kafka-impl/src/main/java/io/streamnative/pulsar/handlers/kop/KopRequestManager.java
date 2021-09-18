@@ -64,7 +64,6 @@ public class KopRequestManager {
                            KafkaCommandDecoder decoder) {
         if (channels.containsKey(channel)) {
             KopEventManager eventManager = getRequestKopEventManager(channel);
-            log.error("addRequest {}, {}", responseAndRequest.getRequest().getHeader(), responseAndRequest.getRequest().getClientHost());
             eventManager.put(eventManager.getKopRequestEvent(responseAndRequest,
                     decoder,
                     kafkaConfig.getRequestTimeoutMs()));
@@ -101,9 +100,9 @@ public class KopRequestManager {
     protected String channelId(Channel channel) {
         InetSocketAddress localAddress = (InetSocketAddress) channel.localAddress();
         InetSocketAddress remoteAddress = (InetSocketAddress) channel.remoteAddress();
-        String localHost = localAddress.getHostName();
+        String localHost = localAddress.getHostString();
         int localPort = localAddress.getPort();
-        String remoteHost = remoteAddress.getHostName();
+        String remoteHost = remoteAddress.getHostString();
         int remotePort = remoteAddress.getPort();
         String channelId = localHost + ":" + localPort + "-" + remoteHost + ":" + remotePort + "-" + nextChannelIndex;
         if (nextChannelIndex.get() == Integer.MAX_VALUE) {

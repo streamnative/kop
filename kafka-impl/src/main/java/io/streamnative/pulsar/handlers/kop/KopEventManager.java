@@ -444,7 +444,6 @@ public class KopEventManager {
 
         @Override
         public void process() {
-            log.error("KopRequestEvent {}, {}", responseAndRequest.getRequest().getHeader(), responseAndRequest.getRequest().getClientHost());
             decoder.handleKafkaRequest(responseAndRequest.getRequest(), responseAndRequest.getResponseFuture());
         }
     }
