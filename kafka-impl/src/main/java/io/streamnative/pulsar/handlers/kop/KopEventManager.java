@@ -370,11 +370,8 @@ public class KopEventManager {
                                         TimeUnit.NANOSECONDS);
                         return null;
                     }); // send exception to client?
-                    return;
-                }
-
-                // responseFuture is completed normally
-                if (responseFuture.isDone()) {
+                } else if (responseFuture.isDone()) {
+                    // responseFuture is completed normally
                     responseFuture.thenAccept(response -> {
                         if (response == null) {
                             // It should not be null, just check it for safety
@@ -400,11 +397,8 @@ public class KopEventManager {
                             }
                         });
                     });
-                    return;
-                }
-
-                // responseFuture is expired
-                if (expired) {
+                } else if (expired) {
+                    // responseFuture is expired
                     log.error("[{}] request {} is not completed for {} ns (> {} ms)",
                             channel, request.getHeader(), nanoSecondsSinceCreated, requestTimeoutMs);
                     responseFuture.cancel(true);
