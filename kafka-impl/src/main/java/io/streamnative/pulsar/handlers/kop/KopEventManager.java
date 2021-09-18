@@ -48,7 +48,6 @@ import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ApiException;
-import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
@@ -146,11 +145,26 @@ public class KopEventManager {
                     KopRequestEvent requestEvent = (KopRequestEvent) event;
                     requestEvent.process();
                     KafkaCommandDecoder.ResponseAndRequest responseAndRequest = requestEvent.getResponseAndRequest();
-                    ApiKeys apiKeys = responseAndRequest.getRequest().getHeader().apiKey();
 
                     while (true) {
-                        if (requestEvent.isCompleted()
-                                || (apiKeys == ApiKeys.PRODUCE || apiKeys == ApiKeys.FETCH)) {
+                        if (requestEvent.isCompleted()) {
+                            break;
+                        }
+
+                        final long nanoSecondsSinceCreated = responseAndRequest.nanoSecondsSinceCreated();
+                        final boolean expired =
+                                (nanoSecondsSinceCreated > TimeUnit.MILLISECONDS.toNanos(
+                                        requestEvent.getRequestTimeoutMs()));
+
+                        if (expired) {
+
+                            if (log.isDebugEnabled()) {
+                                log.debug("Handle {} timeout.", responseAndRequest.getRequest());
+                            }
+
+                            // Immediately trigger request processing failure
+                            responseAndRequest.getResponseFuture().completeExceptionally(
+                                    new ApiException("request is expired from server side"));
                             break;
                         }
                     }
