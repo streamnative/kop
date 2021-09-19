@@ -21,7 +21,9 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,8 +31,10 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.Node;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.InvalidRequestException;
 import org.apache.kafka.common.errors.TopicExistsException;
@@ -52,6 +56,9 @@ class AdminManager {
 
     private final PulsarAdmin admin;
     private final int defaultNumPartitions;
+    private volatile Set<Node> brokersCache = new HashSet<>();
+    private final ReentrantReadWriteLock brokersCacheLock = new ReentrantReadWriteLock();
+
 
     public AdminManager(PulsarAdmin admin, KafkaServiceConfiguration conf) {
         this.admin = admin;
@@ -220,5 +227,18 @@ class AdminManager {
             }
         });
         return result;
+    }
+
+    public Collection<? extends Node> getBrokers() {
+        return brokersCache;
+    }
+
+    public void setBrokers(Set<Node> newBrokers) {
+        brokersCacheLock.writeLock().lock();
+        try {
+            this.brokersCache = newBrokers;
+        } finally {
+            brokersCacheLock.writeLock().unlock();
+        }
     }
 }

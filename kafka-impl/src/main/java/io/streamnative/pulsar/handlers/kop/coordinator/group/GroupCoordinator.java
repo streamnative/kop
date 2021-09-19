@@ -115,11 +115,11 @@ public class GroupCoordinator {
                 .build();
 
         return new GroupCoordinator(
-            groupConfig,
-            metadataManager,
-            heartbeatPurgatory,
-            joinPurgatory,
-            time
+                groupConfig,
+                metadataManager,
+                heartbeatPurgatory,
+                joinPurgatory,
+                time
         );
     }
 
@@ -154,7 +154,8 @@ public class GroupCoordinator {
         GroupMetadataManager groupManager,
         DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory,
         DelayedOperationPurgatory<DelayedJoin> joinPurgatory,
-        Time time) {
+        Time time
+        ) {
         this.groupConfig = groupConfig;
         this.groupManager = groupManager;
         this.heartbeatPurgatory = heartbeatPurgatory;
@@ -894,7 +895,7 @@ public class GroupCoordinator {
         );
     }
 
-    public CompletableFuture<Integer> handleDeletedPartitions(List<TopicPartition> topicPartitions) {
+    public CompletableFuture<Integer> handleDeletedPartitions(Set<TopicPartition> topicPartitions) {
         return groupManager.cleanGroupMetadata(groupManager.currentGroupsStream(), group ->
             group.removeOffsets(topicPartitions.stream())
         ).thenApply(offsetsRemoved -> {
@@ -1297,4 +1298,7 @@ public class GroupCoordinator {
         return groupManager.isGroupLoading(groupId);
     }
 
+    public boolean isActive() {
+        return isActive.get();
+    }
 }

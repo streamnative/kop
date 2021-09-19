@@ -213,11 +213,12 @@ public class GroupMetadataManager {
             time,
             // Be same with kafka: abs(groupId.hashCode) % groupMetadataTopicPartitionCount
             // return a partitionId
-            groupId -> MathUtils.signSafeMod(
-                groupId.hashCode(),
-                offsetConfig.offsetsTopicNumPartitions()
-            )
+            groupId -> getPartitionId(groupId, offsetConfig.offsetsTopicNumPartitions())
         );
+    }
+
+    public static int getPartitionId(String groupId, int offsetsTopicNumPartitions) {
+        return MathUtils.signSafeMod(groupId.hashCode(), offsetsTopicNumPartitions);
     }
 
     GroupMetadataManager(OffsetConfig offsetConfig,
@@ -320,7 +321,11 @@ public class GroupMetadataManager {
     }
 
     public String getTopicPartitionName(int partitionId) {
-        return offsetConfig.offsetsTopicName() + PARTITIONED_TOPIC_SUFFIX + partitionId;
+        return getTopicPartitionName(offsetConfig.offsetsTopicName(), partitionId);
+    }
+
+    public static String getTopicPartitionName(String offsetsTopicName, int partitionId) {
+        return offsetsTopicName + PARTITIONED_TOPIC_SUFFIX + partitionId;
     }
 
     public int getGroupMetadataTopicPartitionCount() {

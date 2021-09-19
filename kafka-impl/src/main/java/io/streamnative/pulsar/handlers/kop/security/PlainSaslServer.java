@@ -18,9 +18,11 @@ import io.streamnative.pulsar.handlers.kop.utils.SaslUtils;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Set;
 import javax.naming.AuthenticationException;
 import javax.security.sasl.SaslException;
 import javax.security.sasl.SaslServer;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
@@ -31,6 +33,7 @@ import org.apache.pulsar.common.api.AuthData;
 /**
  * The SaslServer implementation for SASL/PLAIN.
  */
+@Slf4j
 public class PlainSaslServer implements SaslServer {
 
     public static final String PLAIN_MECHANISM = "PLAIN";
@@ -40,10 +43,12 @@ public class PlainSaslServer implements SaslServer {
 
     private boolean complete;
     private String authorizationId;
+    private Set<String> proxyRoles;
 
-    public PlainSaslServer(AuthenticationService authenticationService, PulsarAdmin admin) {
+    public PlainSaslServer(AuthenticationService authenticationService, PulsarAdmin admin, Set<String> proxyRoles) {
         this.authenticationService = authenticationService;
         this.admin = admin;
+        this.proxyRoles = proxyRoles;
     }
 
     @Override
@@ -73,8 +78,18 @@ public class PlainSaslServer implements SaslServer {
             if (StringUtils.isEmpty(role)) {
                 throw new AuthenticationException("Role cannot be empty.");
             }
-
-            authorizationId = authState.getAuthRole();
+            if (proxyRoles != null && proxyRoles.contains(authState.getAuthRole())) {
+                // the Proxy passes the OriginalPrincipal as "username"
+                authorizationId = saslAuth.getUsername();
+                log.info("Authenticated Proxy role {} as user role {}", authState.getAuthRole(), authorizationId);
+                if (proxyRoles.contains(authorizationId)) {
+                    throw new SaslException("The proxy (with role " + authState.getAuthRole()
+                            + ") tried to forward another proxy user (with role " + authorizationId + ")");
+                }
+            } else {
+                authorizationId = authState.getAuthRole();
+                log.info("Authenticated User {}", authorizationId);
+            }
             complete = true;
             return new byte[0];
         } catch (AuthenticationException e) {

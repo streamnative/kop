@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.apache.kafka.clients.consumer.ConsumerConfig.DEFAULT_FETCH_MAX_BYTES;
+import static org.apache.kafka.clients.consumer.ConsumerConfig.DEFAULT_MAX_PARTITION_FETCH_BYTES;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -34,6 +36,8 @@ import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -46,6 +50,9 @@ import java.util.stream.Collectors;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -69,6 +76,7 @@ import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetCommitRequest.PartitionData;
 import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.RequestHeader;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
@@ -314,6 +322,109 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(0));
     }
 
+    @Test(timeOut = 60000)
+    public void testFetchMaxBytes() throws Exception {
+        String topicName = "testMaxBytesTopic";
+        String clientId = "testClient";
+        int maxBytes = 500;
+        int maxPartitionBytes = 100;
+
+        // create partitioned topic.
+        admin.topics().createPartitionedTopic(topicName, 2);
+        List<TopicPartition> topicPartitions = new ArrayList<>();
+        TopicPartition tp1 = new TopicPartition(topicName, 0);
+        TopicPartition tp2 = new TopicPartition(topicName, 1);
+        topicPartitions.add(tp1);
+        topicPartitions.add(tp2);
+
+        // producing data and then consuming.
+        KafkaProducer<String, String> kProducer = createKafkaProducer();
+        produceData(kProducer, topicPartitions, 20);
+        KafkaConsumer<String, String> consumer = createKafkaConsumer(5000, 1, maxBytes, maxPartitionBytes, clientId);
+        consumer.assign(topicPartitions);
+        consumer.seekToBeginning(topicPartitions);
+
+        for (int i = 0; i < 3; i++) {
+            ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
+            int fetchPartitionSize1 = records.records(tp1).stream().mapToInt((record) -> {
+                return record.serializedKeySize() + record.serializedValueSize();
+            }).sum();
+
+            int fetchPartitionSize2 = records.records(tp2).stream().mapToInt((record) -> {
+                return record.serializedKeySize() + record.serializedValueSize();
+            }).sum();
+
+            assertTrue(fetchPartitionSize1 <= maxPartitionBytes);
+            assertTrue(fetchPartitionSize2 <= maxPartitionBytes);
+            assertTrue(fetchPartitionSize1 + fetchPartitionSize2 <= maxBytes);
+        }
+
+
+        KafkaConsumer<String, String> consumer2 = createKafkaConsumer(5000, 1);
+        consumer2.assign(topicPartitions);
+        consumer2.seekToBeginning(topicPartitions);
+
+        for (int i = 0; i < 3; i++) {
+            ConsumerRecords<String, String> records = consumer2.poll(Duration.ofMillis(1000));
+            int fetchPartitionSize1 = records.records(tp1).stream().mapToInt((record) -> {
+                return record.serializedKeySize() + record.serializedValueSize();
+            }).sum();
+
+            int fetchPartitionSize2 = records.records(tp2).stream().mapToInt((record) -> {
+                return record.serializedKeySize() + record.serializedValueSize();
+            }).sum();
+
+            if (i != 0) {
+                assertTrue(fetchPartitionSize1 > maxPartitionBytes);
+                assertTrue(fetchPartitionSize2 > maxPartitionBytes);
+                assertTrue(fetchPartitionSize1 + fetchPartitionSize2 > maxBytes);
+            }
+        }
+    }
+
+    /**
+     * Test the sending speed of fetch request when the readable data is less than fetch.minBytes.
+     */
+    @Test(timeOut = 60000)
+    public void testFetchMinBytes() throws Exception {
+        String topicName = "testMinBytesTopic";
+        TopicPartition tp = new TopicPartition(topicName, 0);
+
+        // create partitioned topic.
+        admin.topics().createPartitionedTopic(topicName, 1);
+        List<TopicPartition> topicPartitions = new ArrayList<>();
+        topicPartitions.add(tp);
+
+        int maxWaitMs = 3000;
+        int minBytes = 1;
+        // case1: consuming an empty topic.
+        KafkaConsumer<String, String> consumer1 = createKafkaConsumer(maxWaitMs, minBytes);
+        consumer1.assign(topicPartitions);
+        Long startTime1 = System.currentTimeMillis();
+        consumer1.poll(Duration.ofMillis(maxWaitMs));
+        Long endTime1 = System.currentTimeMillis();
+        log.info("cost time1:" + (endTime1 - startTime1));
+
+        // case2: consuming an topic after producing data.
+        KafkaProducer<String, String> kProducer = createKafkaProducer();
+        produceData(kProducer, topicPartitions, 10);
+
+        KafkaConsumer<String, String> consumer2 = createKafkaConsumer(maxWaitMs, minBytes);
+        consumer2.assign(topicPartitions);
+        consumer2.seekToBeginning(topicPartitions);
+        Long startTime2 = System.currentTimeMillis();
+        consumer2.poll(Duration.ofMillis(maxWaitMs));
+        Long endTime2 = System.currentTimeMillis();
+        log.info("cost time2:" + (endTime2 - startTime2));
+
+        // When consuming an empty topic, minBytes=1, because there is no readable data,
+        // it will delay maxWait time before receiving the response.
+        assertTrue(endTime1 - startTime1 >= maxWaitMs);
+        // When the amount of readable data is not less than minBytes,
+        // the time-consuming is usually less than maxWait time.
+        assertTrue(endTime2 - startTime2 < maxWaitMs);
+    }
+
     @Test(timeOut = 80000)
     public void testConsumerListOffset() throws Exception {
         String topicName = "listOffset";
@@ -503,7 +614,6 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         return buildRequest(builder);
     }
 
-
     private List<TopicPartition> createTopics(String topicName, int numTopics, int numPartitions) throws Exception {
         List<TopicPartition> result = Lists.newArrayListWithExpectedSize(numPartitions * numTopics);
 
@@ -546,6 +656,27 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         KafkaProducer<String, String> producer = new KafkaProducer<>(props);
         return producer;
+    }
+
+    private KafkaConsumer<String, String> createKafkaConsumer(int maxWait, int minBytes,
+                                                              int maxBytes, int maxPartitionBytes,
+                                                              String clientId) {
+        final Properties props = new Properties();
+        props.put(ConsumerConfig.CLIENT_ID_CONFIG, clientId);
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + getKafkaBrokerPort());
+        props.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG, maxWait);
+        props.put(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, minBytes);
+        props.put(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, maxBytes);
+        props.put(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, maxPartitionBytes);
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+
+        return new KafkaConsumer<>(props);
+    }
+
+    private KafkaConsumer<String, String> createKafkaConsumer(int maxWaitMs, int minBytes) {
+        return createKafkaConsumer(maxWaitMs, minBytes, DEFAULT_FETCH_MAX_BYTES,
+                DEFAULT_MAX_PARTITION_FETCH_BYTES, "defaultClient");
     }
 
     private void produceData(KafkaProducer<String, String> producer,
