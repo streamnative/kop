@@ -39,8 +39,8 @@ import org.testng.collections.Maps;
  */
 public class TransactionLogTest {
 
-    Short producerEpoch = 0;
-    Integer transactionTimeoutMs = 1000;
+    private static final Short producerEpoch = 0;
+    private static final Integer transactionTimeoutMs = 1000;
 
     Set<TopicPartition> topicPartitions = Sets.newSet(
             new TopicPartition("topic1", 0),

@@ -40,8 +40,8 @@ import org.testng.collections.Maps;
 @Slf4j
 public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
 
-    Short producerEpoch = 0;
-    Integer transactionTimeoutMs = 1000;
+    private static final Short producerEpoch = 0;
+    private static final Integer transactionTimeoutMs = 1000;
 
     @BeforeClass
     @Override

@@ -15,7 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
-import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
+import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicName;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.collect.ImmutableMap;
@@ -135,7 +135,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                         log.info("get owned topic list when onLoad bundle {}, topic size {} ", bundle, topics.size());
                         for (String topic : topics) {
                             TopicName name = TopicName.get(topic);
-                            String kafkaTopicName = getKafkaTopicNameFromPulsarTopicname(name);
+                            String kafkaTopicName = getKafkaTopicNameFromPulsarTopicName(name);
 
                             // already filtered namespace, check the local name without partition
                             if (Topic.GROUP_METADATA_TOPIC_NAME.equals(kafkaTopicName)) {
@@ -189,7 +189,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                         log.info("get owned topic list when unLoad bundle {}, topic size {} ", bundle, topics.size());
                         for (String topic : topics) {
                             TopicName name = TopicName.get(topic);
-                            String kafkaTopicName = getKafkaTopicNameFromPulsarTopicname(name);
+                            String kafkaTopicName = getKafkaTopicNameFromPulsarTopicName(name);
 
                             // already filtered namespace, check the local name without partition
                             if (Topic.GROUP_METADATA_TOPIC_NAME.equals(kafkaTopicName)) {

@@ -89,6 +89,8 @@ This section lists configurations about the transaction.
 | enableTransactionCoordinator | Whether to enable transaction coordinator.          | false   |
 | brokerId                     | The broker ID that is used to create the producer ID.  | 1       |
 | txnLogTopicNumPartitions     | the number of partitions for the transaction log topic. | 50      |
+| txnCoordinatorSchedulerNum   | Transaction coordinator scheduler threads num, used to handle timeout transactions. | 1 |
+| txnStateManagerSchedulerNum  | Transaction state manager scheduler threads num, used to handle transaction stat manager async operations. | 1 |
 
 ## Authentication
 
