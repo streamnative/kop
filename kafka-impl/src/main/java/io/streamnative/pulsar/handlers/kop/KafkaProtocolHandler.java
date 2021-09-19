@@ -410,6 +410,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     @Override
     public void close() {
         Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
+        kopEventManager.close();
         adminManager.shutdown();
         groupCoordinator.shutdown();
         KafkaTopicManager.LOOKUP_CACHE.clear();

@@ -79,7 +79,9 @@ public class KopEventManager {
 
     public void close() {
         try {
-            thread.shutdown();
+            thread.initiateShutdown();
+            clearAndPut(getShutdownEventThread());
+            thread.awaitShutdown();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("Interrupted at shutting down {}", kopEventThreadName);
@@ -121,7 +123,11 @@ public class KopEventManager {
             KopEvent event = null;
             try {
                 event = queue.take();
-                event.process();
+                if (event instanceof ShutdownEventThread) {
+                    log.info("Shutting down KopEventThread.");
+                } else {
+                    event.process();
+                }
             } catch (InterruptedException e) {
                 log.error("Error processing event {}", event, e);
             }
@@ -285,12 +291,24 @@ public class KopEventManager {
         }
     }
 
+    static class ShutdownEventThread implements KopEvent {
+
+        @Override
+        public void process() {
+            // Here is only record shutdown KopEventThread event.
+        }
+    }
+
     public DeleteTopicsEvent getDeleteTopicEvent() {
         return new DeleteTopicsEvent();
     }
 
     public BrokersChangeEvent getBrokersChangeEvent() {
         return new BrokersChangeEvent();
+    }
+
+    public ShutdownEventThread getShutdownEventThread() {
+        return new ShutdownEventThread();
     }
 
     public static String getKopPath() {
