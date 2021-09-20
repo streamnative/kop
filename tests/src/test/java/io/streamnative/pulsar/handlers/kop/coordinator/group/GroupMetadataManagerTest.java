@@ -119,7 +119,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
             .build();
 
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
-        groupMetadataManager = ((KafkaProtocolHandler) handler).getGroupCoordinator().getGroupManager();
+        groupMetadataManager = ((KafkaProtocolHandler) handler).getGroupCoordinator(conf.getKafkaMetadataTenant()).getGroupManager();
     }
 
     @AfterMethod
