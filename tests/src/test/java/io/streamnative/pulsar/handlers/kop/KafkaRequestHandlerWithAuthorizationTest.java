@@ -152,8 +152,10 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         log.info("created namespaces, init handler");
 
         ProtocolHandler handler1 = pulsar.getProtocolHandlers().protocol("kafka");
-        GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler1).getGroupCoordinator(conf.getKafkaMetadataTenant());
-        TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler1).getTransactionCoordinator(conf.getKafkaMetadataTenant());
+        GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler1)
+                .getGroupCoordinator(conf.getKafkaMetadataTenant());
+        TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler1)
+                .getTransactionCoordinator(conf.getKafkaMetadataTenant());
 
         adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         handler = new KafkaRequestHandler(

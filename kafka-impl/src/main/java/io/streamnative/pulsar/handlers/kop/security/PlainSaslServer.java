@@ -89,7 +89,8 @@ public class PlainSaslServer implements SaslServer {
                     username = authorizationId.substring(lastSlash + 1);
                     authorizationId = authorizationId.substring(0, lastSlash);
                 }
-                log.info("Authenticated Proxy role {} as user role {} tenant (username) {}", authState.getAuthRole(), authorizationId, username);
+                log.info("Authenticated Proxy role {} as user role {} tenant (username) {}", authState.getAuthRole(),
+                        authorizationId, username);
                 if (proxyRoles.contains(authorizationId)) {
                     throw new SaslException("The proxy (with role " + authState.getAuthRole()
                             + ") tried to forward another proxy user (with role " + authorizationId + ")");

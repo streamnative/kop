@@ -125,8 +125,10 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         log.info("created namespaces, init handler");
 
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
-        GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler).getGroupCoordinator(conf.getKafkaMetadataTenant());
-        TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler).getTransactionCoordinator(conf.getKafkaMetadataTenant());
+        GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler)
+                .getGroupCoordinator(conf.getKafkaMetadataTenant());
+        TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler)
+                .getTransactionCoordinator(conf.getKafkaMetadataTenant());
 
         adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         kafkaRequestHandler = new KafkaRequestHandler(

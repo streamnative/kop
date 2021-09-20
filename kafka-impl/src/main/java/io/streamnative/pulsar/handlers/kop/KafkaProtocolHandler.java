@@ -365,7 +365,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         GroupCoordinator groupCoordinator;
         try {
-            MetadataUtils.createOffsetMetadataIfMissing(tenant, brokerService.getPulsar().getAdminClient(), clusterData, kafkaConfig);
+            MetadataUtils.createOffsetMetadataIfMissing(tenant, brokerService.getPulsar().getAdminClient(),
+                    clusterData, kafkaConfig);
 
             // init and start group coordinator
             groupCoordinator = startGroupCoordinator(tenant, brokerService.getPulsar().getClient());
@@ -391,7 +392,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         // init kafka namespaces
         try {
-            MetadataUtils.createKafkaNamespaceIfMissing(brokerService.getPulsar().getAdminClient(), clusterData, kafkaConfig);
+            MetadataUtils.createKafkaNamespaceIfMissing(brokerService.getPulsar().getAdminClient(),
+                    clusterData, kafkaConfig);
         } catch (Exception e) {
             // no need to throw exception since we can create kafka namespace later
             log.warn("init kafka failed, need to create it manually later", e);
@@ -494,7 +496,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         return groupCoordinator;
     }
 
-    public TransactionCoordinator initTransactionCoordinator(String tenant, PulsarAdmin pulsarAdmin, ClusterData clusterData) throws Exception {
+    public TransactionCoordinator initTransactionCoordinator(String tenant, PulsarAdmin pulsarAdmin,
+                                                             ClusterData clusterData) throws Exception {
         TransactionConfig transactionConfig = TransactionConfig.builder()
                 .transactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions())
                 .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(tenant, kafkaConfig))

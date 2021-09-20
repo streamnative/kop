@@ -55,8 +55,10 @@ public class MetadataUtilsTest {
         conf.setSuperUserRoles(Sets.newHashSet("admin"));
         conf.setOffsetsTopicNumPartitions(8);
 
-        final KopTopic offsetsTopic = new KopTopic(MetadataUtils.constructOffsetsTopicBaseName(conf.getKafkaMetadataTenant(), conf));
-        final KopTopic txnTopic = new KopTopic(MetadataUtils.constructTxnLogTopicBaseName(conf.getKafkaMetadataTenant(), conf));
+        final KopTopic offsetsTopic = new KopTopic(MetadataUtils
+                .constructOffsetsTopicBaseName(conf.getKafkaMetadataTenant(), conf));
+        final KopTopic txnTopic = new KopTopic(MetadataUtils
+                .constructTxnLogTopicBaseName(conf.getKafkaMetadataTenant(), conf));
 
         List<String> emptyList = Lists.newArrayList();
 

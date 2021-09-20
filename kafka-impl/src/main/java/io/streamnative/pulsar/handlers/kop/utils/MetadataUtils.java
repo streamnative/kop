@@ -53,7 +53,8 @@ public class MetadataUtils {
                                                      KafkaServiceConfiguration conf)
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructOffsetsTopicBaseName(tenant, conf));
-        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic, conf.getOffsetsTopicNumPartitions());
+        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
+                conf.getOffsetsTopicNumPartitions());
     }
 
     public static void createTxnMetadataIfMissing(String tenant,
@@ -62,7 +63,8 @@ public class MetadataUtils {
                                                   KafkaServiceConfiguration conf)
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructTxnLogTopicBaseName(tenant, conf));
-        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic, conf.getTxnLogTopicNumPartitions());
+        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
+                conf.getTxnLogTopicNumPartitions());
     }
 
     /**

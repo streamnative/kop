@@ -886,7 +886,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             byteBuf.release();
             if (e == null) {
                 if (batch.isTransactional()) {
-                    getTransactionCoordinator().addActivePidOffset(TopicName.get(partitionName), batch.producerId(), offset);
+                    getTransactionCoordinator().addActivePidOffset(TopicName.get(partitionName), batch.producerId(),
+                                                                    offset);
                 }
                 requestStats.getMessagePublishStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(beforePublish), TimeUnit.NANOSECONDS);
