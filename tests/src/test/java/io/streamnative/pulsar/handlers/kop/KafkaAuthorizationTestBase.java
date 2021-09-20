@@ -59,14 +59,14 @@ import org.testng.annotations.Test;
 @Slf4j
 public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestBase {
 
-    private static final String TENANT = "KafkaAuthorizationTest";
-    private static final String NAMESPACE = "ns1";
+    protected static final String TENANT = "KafkaAuthorizationTest";
+    protected static final String NAMESPACE = "ns1";
     private static final String SHORT_TOPIC = "topic1";
     private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/" + SHORT_TOPIC;
 
-    private static final String SIMPLE_USER = "muggle_user";
-    private static final String ANOTHER_USER = "death_eater_user";
-    private static final String ADMIN_USER = "admin_user";
+    protected static final String SIMPLE_USER = "muggle_user";
+    protected static final String ANOTHER_USER = "death_eater_user";
+    protected static final String ADMIN_USER = "admin_user";
 
     private String adminToken;
     private String userToken;
@@ -150,12 +150,13 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             kProducer.getProducer().send(new ProducerRecord<>(testTopic, 0, "")).get();
             fail("should have failed");
         } catch (Exception e) {
+            log.info("the error", e);
             assertTrue(e.getMessage().contains("TopicAuthorizationException"));
         } finally {
             // Cleanup
             admin.topics().deletePartitionedTopic(testTopic);
-            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
-            admin.tenants().deleteTenant(newTenant);
+            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE, true);
+            admin.tenants().deleteTenant(newTenant, true);
         }
     }
 
@@ -283,6 +284,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         AdminClient adminClient = AdminClient.create(props);
         ListTopicsResult listTopicsResult = adminClient.listTopics();
         Set<String> topics = listTopicsResult.names().get();
+
         assertEquals(topics.size(), 1);
         assertTrue(topics.contains(newTopic));
 
@@ -353,8 +355,8 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         } finally {
             // Cleanup
             admin.topics().deletePartitionedTopic(testTopic);
-            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
-            admin.tenants().deleteTenant(newTenant);
+            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE, true);
+            admin.tenants().deleteTenant(newTenant, true);
         }
     }
 
@@ -395,8 +397,8 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         } finally {
             // Cleanup
             admin.topics().deletePartitionedTopic(testTopic);
-            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
-            admin.tenants().deleteTenant(newTenant);
+            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE, true);
+            admin.tenants().deleteTenant(newTenant, true);
         }
     }
 
