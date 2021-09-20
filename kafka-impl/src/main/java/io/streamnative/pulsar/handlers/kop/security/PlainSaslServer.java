@@ -43,6 +43,7 @@ public class PlainSaslServer implements SaslServer {
 
     private boolean complete;
     private String authorizationId;
+    private String username;
     private Set<String> proxyRoles;
 
     public PlainSaslServer(AuthenticationService authenticationService, PulsarAdmin admin, Set<String> proxyRoles) {
@@ -64,6 +65,7 @@ public class PlainSaslServer implements SaslServer {
         } catch (IOException e) {
             throw new SaslException(e.getMessage());
         }
+        username = saslAuth.getUsername();
 
         AuthenticationProvider authenticationProvider =
                 authenticationService.getAuthenticationProvider(saslAuth.getAuthMethod());
@@ -81,7 +83,13 @@ public class PlainSaslServer implements SaslServer {
             if (proxyRoles != null && proxyRoles.contains(authState.getAuthRole())) {
                 // the Proxy passes the OriginalPrincipal as "username"
                 authorizationId = saslAuth.getUsername();
-                log.info("Authenticated Proxy role {} as user role {}", authState.getAuthRole(), authorizationId);
+                username = null; // PULSAR TENANT
+                if (authorizationId.contains("/")) {
+                    int lastSlash = authorizationId.lastIndexOf('/');
+                    username = authorizationId.substring(lastSlash + 1);
+                    authorizationId = authorizationId.substring(0, lastSlash);
+                }
+                log.info("Authenticated Proxy role {} as user role {} tenant (username) {}", authState.getAuthRole(), authorizationId, username);
                 if (proxyRoles.contains(authorizationId)) {
                     throw new SaslException("The proxy (with role " + authState.getAuthRole()
                             + ") tried to forward another proxy user (with role " + authorizationId + ")");
@@ -127,6 +135,9 @@ public class PlainSaslServer implements SaslServer {
     public Object getNegotiatedProperty(String propName) {
         if (!complete) {
             throw new IllegalStateException("Authentication exchange has not completed");
+        }
+        if ("username".equals(propName)) {
+            return username;
         }
         return null;
     }

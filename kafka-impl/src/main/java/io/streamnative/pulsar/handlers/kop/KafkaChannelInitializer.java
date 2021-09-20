@@ -21,8 +21,6 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateHandler;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
-import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import java.util.concurrent.TimeUnit;
@@ -44,9 +42,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     @Getter
     private final KafkaServiceConfiguration kafkaConfig;
     @Getter
-    private final GroupCoordinator groupCoordinator;
-    @Getter
-    private final TransactionCoordinator transactionCoordinator;
+    private final TenantContextManager tenantContextManager;
+
     private final AdminManager adminManager;
     @Getter
     private final boolean enableTls;
@@ -60,8 +57,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
 
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
-                                   GroupCoordinator groupCoordinator,
-                                   TransactionCoordinator transactionCoordinator,
+                                   TenantContextManager tenantContextManager,
                                    AdminManager adminManager,
                                    boolean enableTLS,
                                    EndPoint advertisedEndPoint,
@@ -70,8 +66,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
-        this.groupCoordinator = groupCoordinator;
-        this.transactionCoordinator = transactionCoordinator;
+        this.tenantContextManager = tenantContextManager;
         this.adminManager = adminManager;
         this.enableTls = enableTLS;
         this.advertisedEndPoint = advertisedEndPoint;
@@ -100,7 +95,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
                 new KafkaRequestHandler(pulsarService, kafkaConfig,
-                        groupCoordinator, transactionCoordinator, adminManager, localBrokerDataCache,
+                        tenantContextManager, adminManager, localBrokerDataCache,
                         enableTls, advertisedEndPoint, statsLogger));
     }
 

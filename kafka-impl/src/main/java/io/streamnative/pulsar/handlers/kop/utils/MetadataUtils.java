@@ -38,30 +38,31 @@ public class MetadataUtils {
     // trigger compaction when the offset backlog reaches 100MB
     public static final int MAX_COMPACTION_THRESHOLD = 100 * 1024 * 1024;
 
-    public static String constructOffsetsTopicBaseName(KafkaServiceConfiguration conf) {
-        return conf.getKafkaMetadataTenant() + "/" + conf.getKafkaMetadataNamespace()
+    public static String constructOffsetsTopicBaseName(String tenant, KafkaServiceConfiguration conf) {
+        return tenant + "/" + conf.getKafkaMetadataNamespace()
             + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
     }
 
-    public static String constructTxnLogTopicBaseName(KafkaServiceConfiguration conf) {
-        return conf.getKafkaMetadataTenant() + "/" + conf.getKafkaMetadataNamespace()
+    public static String constructTxnLogTopicBaseName(String tenant, KafkaServiceConfiguration conf) {
+        return tenant + "/" + conf.getKafkaMetadataNamespace()
                 + "/" + Topic.TRANSACTION_STATE_TOPIC_NAME;
     }
 
-    public static void createOffsetMetadataIfMissing(PulsarAdmin pulsarAdmin,
+    public static void createOffsetMetadataIfMissing(String tenant, PulsarAdmin pulsarAdmin,
                                                      ClusterData clusterData,
                                                      KafkaServiceConfiguration conf)
             throws PulsarAdminException {
-        KopTopic kopTopic = new KopTopic(constructOffsetsTopicBaseName(conf));
-        createKafkaMetadataIfMissing(pulsarAdmin, clusterData, conf, kopTopic, conf.getOffsetsTopicNumPartitions());
+        KopTopic kopTopic = new KopTopic(constructOffsetsTopicBaseName(tenant, conf));
+        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic, conf.getOffsetsTopicNumPartitions());
     }
 
-    public static void createTxnMetadataIfMissing(PulsarAdmin pulsarAdmin,
+    public static void createTxnMetadataIfMissing(String tenant,
+                                                  PulsarAdmin pulsarAdmin,
                                                   ClusterData clusterData,
                                                   KafkaServiceConfiguration conf)
             throws PulsarAdminException {
-        KopTopic kopTopic = new KopTopic(constructTxnLogTopicBaseName(conf));
-        createKafkaMetadataIfMissing(pulsarAdmin, clusterData, conf, kopTopic, conf.getTxnLogTopicNumPartitions());
+        KopTopic kopTopic = new KopTopic(constructTxnLogTopicBaseName(tenant, conf));
+        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic, conf.getTxnLogTopicNumPartitions());
     }
 
     /**
@@ -78,14 +79,15 @@ public class MetadataUtils {
      * <li>If the offset topic exists but some partitions are missing, the missing partitions will be created</li>
      * </ul>
      */
-    private static void createKafkaMetadataIfMissing(PulsarAdmin pulsarAdmin,
+    private static void createKafkaMetadataIfMissing(String tenant,
+                                                     PulsarAdmin pulsarAdmin,
                                                      ClusterData clusterData,
                                                      KafkaServiceConfiguration conf,
                                                      KopTopic kopTopic,
                                                      int partitionNum)
         throws PulsarAdminException {
         String cluster = conf.getClusterName();
-        String kafkaMetadataTenant = conf.getKafkaMetadataTenant();
+        String kafkaMetadataTenant = tenant;
         String kafkaMetadataNamespace = kafkaMetadataTenant + "/" + conf.getKafkaMetadataNamespace();
 
         boolean clusterExists = false;

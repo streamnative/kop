@@ -418,7 +418,7 @@ public class SaslAuthenticator {
                         } else {
                             // This session is required for authorization.
                             this.session = new Session(
-                                    new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID()),
+                                    new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID(), (String) saslServer.getNegotiatedProperty("username")),
                                     "old-clientId");
 
                             if (log.isDebugEnabled()) {
@@ -464,7 +464,7 @@ public class SaslAuthenticator {
                 ByteBuffer responseBuf = (responseToken == null) ? EMPTY_BUFFER : ByteBuffer.wrap(responseToken);
                 String pulsarRole = saslServer.getAuthorizationID();
                 this.session = new Session(
-                        new KafkaPrincipal(KafkaPrincipal.USER_TYPE, pulsarRole),
+                        new KafkaPrincipal(KafkaPrincipal.USER_TYPE, pulsarRole, (String) saslServer.getNegotiatedProperty("username")),
                         header.clientId());
                 registerRequestLatency.accept(apiKey.name, startProcessTime);
                 sendKafkaResponse(ctx,
@@ -473,8 +473,8 @@ public class SaslAuthenticator {
                         new SaslAuthenticateResponse(Errors.NONE, null, responseBuf),
                         null);
                 if (log.isDebugEnabled()) {
-                    log.debug("Authenticate successfully for client, header {}, request {}, session {}",
-                            header, saslAuthenticateRequest, session);
+                    log.debug("Authenticate successfully for client, header {}, request {}, session {} username {}",
+                            header, saslAuthenticateRequest, session, saslServer.getNegotiatedProperty("username"));
                 }
             } catch (SaslException e) {
                 registerRequestLatency.accept(apiKey.name, startProcessTime);

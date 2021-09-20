@@ -37,4 +37,8 @@ public class KafkaPrincipal implements Principal {
      */
     private final String name;
 
+    /**
+     * SASL username, mapped to Pulsar tenant
+     */
+    private final String username;
 }

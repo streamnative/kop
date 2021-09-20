@@ -60,7 +60,6 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.Lookup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.NamespaceBundle;
@@ -75,7 +74,7 @@ import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
  * Kafka Protocol Handler load and run by Pulsar Service.
  */
 @Slf4j
-public class KafkaProtocolHandler implements ProtocolHandler {
+public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManager {
 
     public static final String PROTOCOL_NAME = "kafka";
     public static final String TLS_HANDLER = "tls";
@@ -91,13 +90,20 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     private KafkaServiceConfiguration kafkaConfig;
     @Getter
     private BrokerService brokerService;
-    @Getter
-    private GroupCoordinator groupCoordinator;
-    @Getter
-    private TransactionCoordinator transactionCoordinator;
-    @Getter
-    private KopEventManager kopEventManager;
 
+    private Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
+    private Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
+    private Map<String, KopEventManager> kopEventManagerByTenant = new ConcurrentHashMap<>();
+
+    @Override
+    public GroupCoordinator getGroupCoordinator(String tenant) {
+        return groupCoordinatorsByTenant.computeIfAbsent(tenant, this::createAndBootGroupCoordinator);
+    }
+
+    @Override
+    public TransactionCoordinator getTransactionCoordinator(String tenant) {
+        return transactionCoordinatorByTenant.computeIfAbsent(tenant, this::createAndBootTransactionCoordinator);
+    }
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
      */
@@ -110,14 +116,15 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         final String brokerUrl;
 
         public OffsetAndTopicListener(BrokerService service,
+                                   String tenant,
                                    KafkaServiceConfiguration kafkaConfig,
                                    GroupCoordinator groupCoordinator) {
             this.service = service;
             this.kafkaMetaNs = NamespaceName
-                .get(kafkaConfig.getKafkaMetadataTenant(), kafkaConfig.getKafkaMetadataNamespace());
+                .get(tenant, kafkaConfig.getKafkaMetadataNamespace());
             this.groupCoordinator = groupCoordinator;
             this.kafkaTopicNs = NamespaceName
-                    .get(kafkaConfig.getKafkaTenant(), kafkaConfig.getKafkaNamespace());
+                    .get(tenant, kafkaConfig.getKafkaNamespace());
             this.brokerUrl = service.pulsar().getBrokerServiceUrl();
         }
 
@@ -306,12 +313,6 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         // After it's created successfully, this method won't throw any exception.
         LOOKUP_CLIENT_MAP.put(brokerService.pulsar(), new LookupClient(brokerService.pulsar(), kafkaConfig));
 
-        final ClusterData clusterData = ClusterData.builder()
-                .serviceUrl(brokerService.getPulsar().getWebServiceAddress())
-                .serviceUrlTls(brokerService.getPulsar().getWebServiceAddressTls())
-                .brokerServiceUrl(brokerService.getPulsar().getBrokerServiceUrl())
-                .brokerServiceUrlTls(brokerService.getPulsar().getBrokerServiceUrlTls())
-                .build();
 
         // Use the builtin PulsarClient for creating producers and readers in group coordinator
         PulsarClient pulsarClient;
@@ -321,43 +322,12 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             log.error("Failed to create builtin PulsarClient", e);
             throw new IllegalStateException(e);
         }
-        try {
-            MetadataUtils.createOffsetMetadataIfMissing(pulsarAdmin, clusterData, kafkaConfig);
-        } catch (PulsarAdminException e) {
-            log.error("Failed to create offset metadata", e);
-            throw new IllegalStateException(e);
-        }
 
-        // init and start group coordinator
-        startGroupCoordinator(pulsarClient);
-        // init KopEventManager
-        kopEventManager = new KopEventManager(groupCoordinator,
-                adminManager,
-                brokerService.getPulsar().getLocalMetadataStore());
-        kopEventManager.start();
-
-        // and listener for Offset topics load/unload
-        brokerService.pulsar()
-                .getNamespaceService()
-                .addNamespaceBundleOwnershipListener(
-                        new OffsetAndTopicListener(brokerService, kafkaConfig, groupCoordinator));
-
-        // init kafka namespaces
-        try {
-            MetadataUtils.createKafkaNamespaceIfMissing(pulsarAdmin, clusterData, kafkaConfig);
-        } catch (PulsarAdminException e) {
-            // no need to throw exception since we can create kafka namespace later
-            log.warn("init kafka failed, need to create it manually later", e);
-        }
+        // initialize default Group Coordinator
+        getGroupCoordinator(kafkaConfig.getKafkaMetadataTenant());
 
         if (kafkaConfig.isEnableTransactionCoordinator()) {
-            try {
-                initTransactionCoordinator(pulsarAdmin, clusterData);
-                startTransactionCoordinator();
-            } catch (Exception e) {
-                log.error("Initialized transaction coordinator failed.", e);
-                throw new IllegalStateException(e);
-            }
+            getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
         }
 
         Configuration conf = new PropertiesConfiguration();
@@ -365,6 +335,69 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             kafkaConfig.getKopPrometheusStatsLatencyRolloverSeconds());
         statsProvider.start(conf);
         brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
+    }
+
+    private TransactionCoordinator createAndBootTransactionCoordinator(String tenant) {
+        log.info("createAndBootTransactionCoordinator {}", tenant);
+        final ClusterData clusterData = ClusterData.builder()
+                .serviceUrl(brokerService.getPulsar().getWebServiceAddress())
+                .serviceUrlTls(brokerService.getPulsar().getWebServiceAddressTls())
+                .brokerServiceUrl(brokerService.getPulsar().getBrokerServiceUrl())
+                .brokerServiceUrlTls(brokerService.getPulsar().getBrokerServiceUrlTls())
+                .build();
+
+        try {
+            return initTransactionCoordinator(tenant, brokerService.getPulsar().getAdminClient(), clusterData);
+        } catch (Exception e) {
+            log.error("Initialized transaction coordinator failed.", e);
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private GroupCoordinator createAndBootGroupCoordinator(String tenant) {
+        log.info("createAndBootGroupCoordinator {}", tenant);
+        final ClusterData clusterData = ClusterData.builder()
+                .serviceUrl(brokerService.getPulsar().getWebServiceAddress())
+                .serviceUrlTls(brokerService.getPulsar().getWebServiceAddressTls())
+                .brokerServiceUrl(brokerService.getPulsar().getBrokerServiceUrl())
+                .brokerServiceUrlTls(brokerService.getPulsar().getBrokerServiceUrlTls())
+                .build();
+
+        GroupCoordinator groupCoordinator;
+        try {
+            MetadataUtils.createOffsetMetadataIfMissing(tenant, brokerService.getPulsar().getAdminClient(), clusterData, kafkaConfig);
+
+            // init and start group coordinator
+            groupCoordinator = startGroupCoordinator(tenant, brokerService.getPulsar().getClient());
+
+            // init KopEventManager
+            KopEventManager kopEventManager = new KopEventManager(groupCoordinator,
+                    adminManager,
+                    brokerService.getPulsar().getLocalMetadataStore());
+            kopEventManager.start();
+            kopEventManagerByTenant.put(tenant, kopEventManager);
+
+            // and listener for Offset topics load/unload
+            brokerService.pulsar()
+                    .getNamespaceService()
+                    .addNamespaceBundleOwnershipListener(
+                            new OffsetAndTopicListener(brokerService, tenant, kafkaConfig, groupCoordinator));
+        } catch (Exception e) {
+            log.error("Failed to create offset metadata", e);
+            throw new IllegalStateException(e);
+        }
+
+
+
+        // init kafka namespaces
+        try {
+            MetadataUtils.createKafkaNamespaceIfMissing(brokerService.getPulsar().getAdminClient(), clusterData, kafkaConfig);
+        } catch (Exception e) {
+            // no need to throw exception since we can create kafka namespace later
+            log.warn("init kafka failed, need to create it manually later", e);
+        }
+
+        return groupCoordinator;
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
@@ -389,13 +422,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, false,
+                                kafkaConfig, this, adminManager, false,
                                 advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, true,
+                                kafkaConfig, this, adminManager, true,
                                 advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
                         break;
                 }
@@ -410,9 +443,16 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     @Override
     public void close() {
         Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
-        kopEventManager.close();
         adminManager.shutdown();
-        groupCoordinator.shutdown();
+        for (Map.Entry<String, GroupCoordinator> groupCoordinator : groupCoordinatorsByTenant.entrySet()) {
+            String tenant = groupCoordinator.getKey();
+            groupCoordinator.getValue().shutdown();
+            KopEventManager kopEventManager = kopEventManagerByTenant.get(tenant);
+            if (kopEventManager != null) {
+                kopEventManager.close();
+            }
+        }
+
         KafkaTopicManager.LOOKUP_CACHE.clear();
         KopBrokerLookupManager.clear();
         KafkaTopicManager.closeKafkaTopicConsumerManagers();
@@ -421,7 +461,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         statsProvider.stop();
     }
 
-    public void startGroupCoordinator(PulsarClient pulsarClient) {
+    private GroupCoordinator startGroupCoordinator(String tenant, PulsarClient pulsarClient) {
         GroupConfig groupConfig = new GroupConfig(
             kafkaConfig.getGroupMinSessionTimeoutMs(),
             kafkaConfig.getGroupMaxSessionTimeoutMs(),
@@ -429,7 +469,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         );
 
         OffsetConfig offsetConfig = OffsetConfig.builder()
-            .offsetsTopicName(kafkaConfig.getKafkaMetadataTenant() + "/"
+            .offsetsTopicName(tenant + "/"
                 + kafkaConfig.getKafkaMetadataNamespace()
                 + "/" + Topic.GROUP_METADATA_TOPIC_NAME)
             .offsetsTopicNumPartitions(kafkaConfig.getOffsetsTopicNumPartitions())
@@ -439,52 +479,50 @@ public class KafkaProtocolHandler implements ProtocolHandler {
             .offsetsRetentionMs(TimeUnit.MINUTES.toMillis(kafkaConfig.getOffsetsRetentionMinutes()))
             .build();
 
-        this.groupCoordinator = GroupCoordinator.of(
-                (PulsarClientImpl) pulsarClient,
-                groupConfig,
-                offsetConfig,
-                SystemTimer.builder()
-                        .executorName("group-coordinator-timer")
-                        .build(),
-                Time.SYSTEM
+        GroupCoordinator groupCoordinator = GroupCoordinator.of(
+            (PulsarClientImpl) pulsarClient,
+            groupConfig,
+            offsetConfig,
+            SystemTimer.builder()
+                .executorName("group-coordinator-timer")
+                .build(),
+            Time.SYSTEM
         );
         // always enable metadata expiration
-        this.groupCoordinator.startup(true);
+        groupCoordinator.startup(true);
+
+        return groupCoordinator;
     }
 
-    public void initTransactionCoordinator(PulsarAdmin pulsarAdmin, ClusterData clusterData) throws Exception {
+    public TransactionCoordinator initTransactionCoordinator(String tenant, PulsarAdmin pulsarAdmin, ClusterData clusterData) throws Exception {
         TransactionConfig transactionConfig = TransactionConfig.builder()
                 .transactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions())
-                .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(kafkaConfig))
+                .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(tenant, kafkaConfig))
                 .build();
 
-        MetadataUtils.createTxnMetadataIfMissing(pulsarAdmin, clusterData, kafkaConfig);
+        MetadataUtils.createTxnMetadataIfMissing(tenant, pulsarAdmin, clusterData, kafkaConfig);
 
-        this.transactionCoordinator = TransactionCoordinator.of(
+        TransactionCoordinator transactionCoordinator = TransactionCoordinator.of(
                 transactionConfig,
                 kafkaConfig.getBrokerId(),
                 brokerService.getPulsar().getZkClient(),
                 kopBrokerLookupManager);
 
-        loadTxnLogTopics(transactionCoordinator);
-    }
+        loadTxnLogTopics(tenant, transactionCoordinator);
 
-    public void startTransactionCoordinator() throws Exception {
-        if (this.transactionCoordinator != null) {
-            this.transactionCoordinator.startup().get();
-        } else {
-            log.error("Failed to start transaction coordinator. Need init it first.");
-        }
+        transactionCoordinator.startup().get();
+
+        return transactionCoordinator;
     }
 
     /**
      * This method discovers ownership of offset topic partitions and attempts to load offset topics
      * assigned to this broker.
      */
-    private void loadTxnLogTopics(TransactionCoordinator txnCoordinator) throws Exception {
+    private void loadTxnLogTopics(String tenant, TransactionCoordinator txnCoordinator) throws Exception {
         Lookup lookupService = brokerService.pulsar().getAdminClient().lookups();
         String currentBroker = brokerService.pulsar().getBrokerServiceUrl();
-        String topicBase = MetadataUtils.constructTxnLogTopicBaseName(kafkaConfig);
+        String topicBase = MetadataUtils.constructTxnLogTopicBaseName(tenant, kafkaConfig);
         int numPartitions = kafkaConfig.getTxnLogTopicNumPartitions();
 
         Map<String, List<Integer>> mapBrokerToPartition = new HashMap<>();

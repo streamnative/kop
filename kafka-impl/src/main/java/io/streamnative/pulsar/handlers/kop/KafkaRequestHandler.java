@@ -190,8 +190,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
-    private final GroupCoordinator groupCoordinator;
-    private final TransactionCoordinator transactionCoordinator;
+    private final TenantContextManager groupCoordinatorAccessor;
 
     private final String clusterName;
     private final ScheduledExecutorService executor;
@@ -207,8 +206,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
     private final int failedAuthenticationDelayMs;
-    private final String offsetsTopicName;
-    private final String txnTopicName;
     private final Set<String> allowedNamespaces;
     // store the group name for current connected client.
     private final ConcurrentHashMap<String, String> currentConnectedGroup;
@@ -238,10 +235,37 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final AtomicLong pendingBytes = new AtomicLong(0);
     private volatile boolean autoReadDisabledPublishBufferLimiting = false;
 
+    private String getCurrentTenant() {
+        if (kafkaConfig.isKafkaEnableMultitenantMetadata()
+                && authenticator != null
+                && authenticator.session() != null
+                && authenticator.session().getPrincipal() != null) {
+            String username =  authenticator.session().getPrincipal().getUsername();
+            if (username != null && !username.isEmpty()) {
+                // username can be "tenant" or "tenant/namespace"
+                if (username.contains("/")) {
+                    username = username.substring(0, username.indexOf('/'));
+                }
+                log.debug("using {} as tenant", username);
+                return username;
+            }
+        }
+        // fallback to using system (default) tenant
+        log.debug("using {} as tenant", kafkaConfig.getKafkaMetadataTenant());
+        return kafkaConfig.getKafkaMetadataTenant();
+    }
+
+    public GroupCoordinator getGroupCoordinator() {
+        return groupCoordinatorAccessor.getGroupCoordinator(getCurrentTenant());
+    }
+
+    public TransactionCoordinator getTransactionCoordinator() {
+        return groupCoordinatorAccessor.getTransactionCoordinator(getCurrentTenant());
+    }
+
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
-                               GroupCoordinator groupCoordinator,
-                               TransactionCoordinator transactionCoordinator,
+                               TenantContextManager groupCoordinatorAccessor,
                                AdminManager adminManager,
                                MetadataCache<LocalBrokerData> localBrokerDataCache,
                                Boolean tlsEnabled,
@@ -249,8 +273,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                StatsLogger statsLogger) throws Exception {
         super(statsLogger, kafkaConfig);
         this.pulsarService = pulsarService;
-        this.groupCoordinator = groupCoordinator;
-        this.transactionCoordinator = transactionCoordinator;
+        this.groupCoordinatorAccessor = groupCoordinatorAccessor;
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
@@ -271,16 +294,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
-        this.offsetsTopicName = new KopTopic(String.join("/",
-                kafkaConfig.getKafkaMetadataTenant(),
-                kafkaConfig.getKafkaMetadataNamespace(),
-                GROUP_METADATA_TOPIC_NAME)
-        ).getFullName();
-        this.txnTopicName = new KopTopic(String.join("/",
-                kafkaConfig.getKafkaMetadataTenant(),
-                kafkaConfig.getKafkaMetadataNamespace(),
-                TRANSACTION_STATE_TOPIC_NAME)
-        ).getFullName();
         this.allowedNamespaces = kafkaConfig.getKopAllowedNamespaces();
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
         this.currentConnectedGroup = new ConcurrentHashMap<>();
@@ -291,6 +304,22 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         // update alive channel count stats
         RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
+    }
+
+    private String getOffsetsTopicName() {
+        return new KopTopic(String.join("/",
+                getCurrentTenant(),
+                kafkaConfig.getKafkaMetadataNamespace(),
+                GROUP_METADATA_TOPIC_NAME)
+        ).getFullName();
+    }
+
+    private String getTxnTopicName() {
+        return new KopTopic(String.join("/",
+                getCurrentTenant(),
+                kafkaConfig.getKafkaMetadataNamespace(),
+                TRANSACTION_STATE_TOPIC_NAME)
+        ).getFullName();
     }
 
     @Override
@@ -438,7 +467,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private boolean isInternalTopic(final String fullTopicName) {
-        return fullTopicName.equals(offsetsTopicName) || fullTopicName.equals(txnTopicName);
+        return fullTopicName.equals(getOffsetsTopicName())
+                || fullTopicName.equals(getTxnTopicName());
     }
 
     // Get all topics in the configured allowed namespaces.
@@ -856,7 +886,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             byteBuf.release();
             if (e == null) {
                 if (batch.isTransactional()) {
-                    transactionCoordinator.addActivePidOffset(TopicName.get(partitionName), batch.producerId(), offset);
+                    getTransactionCoordinator().addActivePidOffset(TopicName.get(partitionName), batch.producerId(), offset);
                 }
                 requestStats.getMessagePublishStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(beforePublish), TimeUnit.NANOSECONDS);
@@ -1030,11 +1060,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         int partition;
 
         if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.TRANSACTION) {
+            TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
             partition = transactionCoordinator.partitionFor(request.coordinatorKey());
             pulsarTopicName = transactionCoordinator.getTopicPartitionName(partition);
         } else if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
-            partition = groupCoordinator.partitionFor(request.coordinatorKey());
-            pulsarTopicName = groupCoordinator.getTopicPartitionName(partition);
+            partition = getGroupCoordinator().partitionFor(request.coordinatorKey());
+            pulsarTopicName = getGroupCoordinator().getTopicPartitionName(partition);
         } else {
             throw new NotImplementedException("FindCoordinatorRequest not support TRANSACTION type "
                 + request.coordinatorType());
@@ -1088,7 +1119,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(offsetFetch.getRequest() instanceof OffsetFetchRequest);
         OffsetFetchRequest request = (OffsetFetchRequest) offsetFetch.getRequest();
-        checkState(groupCoordinator != null,
+        checkState(getGroupCoordinator() != null,
             "Group Coordinator not started");
 
         CompletableFuture<List<TopicPartition>> authorizeFuture = new CompletableFuture<>();
@@ -1144,7 +1175,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         authorizeFuture.whenComplete((partitionList, ex) -> {
             KeyValue<Errors, Map<TopicPartition, OffsetFetchResponse.PartitionData>> keyValue =
-                    groupCoordinator.handleFetchOffsets(
+                    getGroupCoordinator().handleFetchOffsets(
                             request.groupId(),
                             Optional.ofNullable(partitionList)
                     );
@@ -1516,7 +1547,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit,
                                              CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(offsetCommit.getRequest() instanceof OffsetCommitRequest);
-        checkState(groupCoordinator != null,
+        checkState(getGroupCoordinator() != null,
                 "Group Coordinator not started");
 
         OffsetCommitRequest request = (OffsetCommitRequest) offsetCommit.getRequest();
@@ -1569,10 +1600,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             request,
                             offsetCommit.getHeader().apiVersion(),
                             Time.SYSTEM.milliseconds(),
-                            groupCoordinator.offsetConfig().offsetsRetentionMs()
+                            getGroupCoordinator().offsetConfig().offsetsRetentionMs()
                     );
 
-            groupCoordinator.handleCommitOffsets(
+            getGroupCoordinator().handleCommitOffsets(
                     request.groupId(),
                     request.memberId(),
                     request.generationId(),
@@ -1613,7 +1644,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup,
                                           CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(joinGroup.getRequest() instanceof JoinGroupRequest);
-        checkState(groupCoordinator != null,
+        checkState(getGroupCoordinator() != null,
             "Group Coordinator not started");
 
         JoinGroupRequest request = (JoinGroupRequest) joinGroup.getRequest();
@@ -1622,7 +1653,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         request.groupProtocols()
             .stream()
             .forEach(protocol -> protocols.put(protocol.name(), Utils.toArray(protocol.metadata())));
-        groupCoordinator.handleJoinGroup(
+        getGroupCoordinator().handleJoinGroup(
             request.groupId(),
             request.memberId(),
             joinGroup.getHeader().clientId(),
@@ -1661,7 +1692,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         SyncGroupRequest request = (SyncGroupRequest) syncGroup.getRequest();
 
         groupIds.add(request.groupId());
-        groupCoordinator.handleSyncGroup(
+        getGroupCoordinator().handleSyncGroup(
             request.groupId(),
             request.generationId(),
             request.memberId(),
@@ -1684,7 +1715,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         HeartbeatRequest request = (HeartbeatRequest) heartbeat.getRequest();
 
         // let the coordinator to handle heartbeat
-        groupCoordinator.handleHeartbeat(
+        getGroupCoordinator().handleHeartbeat(
             request.groupId(),
             request.memberId(),
             request.groupGenerationId()
@@ -1707,7 +1738,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         LeaveGroupRequest request = (LeaveGroupRequest) leaveGroup.getRequest();
 
         // let the coordinator to handle heartbeat
-        groupCoordinator.handleLeaveGroup(
+        getGroupCoordinator().handleLeaveGroup(
             request.groupId(),
             request.memberId()
         ).thenAccept(errors -> {
@@ -1726,7 +1757,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // let the coordinator to handle heartbeat
         Map<String, GroupMetadata> groups = request.groupIds().stream()
             .map(groupId -> {
-                KeyValue<Errors, GroupSummary> describeResult = groupCoordinator
+                KeyValue<Errors, GroupSummary> describeResult = getGroupCoordinator()
                     .handleDescribeGroup(groupId);
                 GroupSummary summary = describeResult.getValue();
                 List<GroupMember> members = summary.members().stream()
@@ -1767,7 +1798,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleListGroupsRequest(KafkaHeaderAndRequest listGroups,
                                            CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(listGroups.getRequest() instanceof ListGroupsRequest);
-        KeyValue<Errors, List<GroupOverview>> listResult = groupCoordinator.handleListGroups();
+        KeyValue<Errors, List<GroupOverview>> listResult = getGroupCoordinator().handleListGroups();
         ListGroupsResponse response = new ListGroupsResponse(
             listResult.getKey(),
             listResult.getValue().stream()
@@ -1784,7 +1815,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(deleteGroups.getRequest() instanceof DeleteGroupsRequest);
         DeleteGroupsRequest request = (DeleteGroupsRequest) deleteGroups.getRequest();
 
-        Map<String, Errors> deleteResult = groupCoordinator.handleDeleteGroups(request.groups());
+        Map<String, Errors> deleteResult = getGroupCoordinator().handleDeleteGroups(request.groups());
         DeleteGroupsResponse response = new DeleteGroupsResponse(
             deleteResult
         );
@@ -1856,6 +1887,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleInitProducerId(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                         CompletableFuture<AbstractResponse> response) {
         InitProducerIdRequest request = (InitProducerIdRequest) kafkaHeaderAndRequest.getRequest();
+        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         transactionCoordinator.handleInitProducerId(
                 request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(), this, response);
     }
@@ -1864,6 +1896,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleAddPartitionsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                             CompletableFuture<AbstractResponse> response) {
         AddPartitionsToTxnRequest request = (AddPartitionsToTxnRequest) kafkaHeaderAndRequest.getRequest();
+        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
                 request.producerId(), request.producerEpoch(), request.partitions(), response);
     }
@@ -1872,8 +1905,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleAddOffsetsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         AddOffsetsToTxnRequest request = (AddOffsetsToTxnRequest) kafkaHeaderAndRequest.getRequest();
-        int partition = groupCoordinator.partitionFor(request.consumerGroupId());
-        String offsetTopicName = groupCoordinator.getGroupManager().getOffsetConfig().offsetsTopicName();
+        int partition = getGroupCoordinator().partitionFor(request.consumerGroupId());
+        String offsetTopicName = getGroupCoordinator().getGroupManager().getOffsetConfig().offsetsTopicName();
+        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         transactionCoordinator.handleAddPartitionsToTransaction(
                 request.transactionalId(),
                 request.producerId(),
@@ -1918,7 +1952,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // update the request data
         request.offsets().putAll(convertedOffsetData);
 
-        groupCoordinator.handleTxnCommitOffsets(
+        getGroupCoordinator().handleTxnCommitOffsets(
                 request.consumerGroupId(),
                 request.producerId(),
                 request.producerEpoch(),
@@ -1956,6 +1990,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleEndTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                 CompletableFuture<AbstractResponse> response) {
         EndTxnRequest request = (EndTxnRequest) kafkaHeaderAndRequest.getRequest();
+        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         transactionCoordinator.handleEndTransaction(
                 request.transactionalId(),
                 request.producerId(),
@@ -1971,6 +2006,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         WriteTxnMarkersRequest request = (WriteTxnMarkersRequest) kafkaHeaderAndRequest.getRequest();
         Map<Long, Map<TopicPartition, Errors>> resultMap = new HashMap<>();
         List<CompletableFuture<Void>> resultFutureList = new ArrayList<>();
+        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         for (WriteTxnMarkersRequest.TxnMarkerEntry txnMarkerEntry : request.markers()) {
             Map<TopicPartition, Errors> partitionErrorsMap =
                     resultMap.computeIfAbsent(txnMarkerEntry.producerId(), pid -> new HashMap<>());
@@ -1995,7 +2031,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                     CompletableFuture<Void> handleGroupFuture;
                     if (TopicName.get(topicPartition.topic()).getLocalName().equals(GROUP_METADATA_TOPIC_NAME)) {
-                        handleGroupFuture = groupCoordinator.scheduleHandleTxnCompletion(
+                        handleGroupFuture = getGroupCoordinator().scheduleHandleTxnCompletion(
                                 txnMarkerEntry.producerId(),
                                 Lists.newArrayList(topicPartition).stream(),
                                 txnMarkerEntry.transactionResult());
@@ -2013,6 +2049,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         }
                         String fullPartitionName = KopTopic.toString(topicPartition);
                         TopicName topicName = TopicName.get(fullPartitionName);
+
                         long firstOffset = transactionCoordinator.removeActivePidOffset(
                                 topicName, txnMarkerEntry.producerId());
                         long lastStableOffset = transactionCoordinator.getLastStableOffset(topicName, offset);
@@ -2247,7 +2284,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     protected boolean isOffsetTopic(String topic) {
-        String offsetsTopic = kafkaConfig.getKafkaMetadataTenant() + "/"
+        String offsetsTopic = getCurrentTenant() + "/"
             + kafkaConfig.getKafkaMetadataNamespace()
             + "/" + GROUP_METADATA_TOPIC_NAME;
 
@@ -2255,7 +2292,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     protected boolean isTransactionTopic(String topic) {
-        String transactionTopic = kafkaConfig.getKafkaMetadataTenant() + "/"
+        String transactionTopic = getCurrentTenant() + "/"
             + kafkaConfig.getKafkaMetadataNamespace()
             + "/" + TRANSACTION_STATE_TOPIC_NAME;
 
