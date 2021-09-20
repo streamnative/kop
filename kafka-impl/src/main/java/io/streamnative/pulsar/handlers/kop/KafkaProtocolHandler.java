@@ -313,16 +313,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         // After it's created successfully, this method won't throw any exception.
         LOOKUP_CLIENT_MAP.put(brokerService.pulsar(), new LookupClient(brokerService.pulsar(), kafkaConfig));
 
-
-        // Use the builtin PulsarClient for creating producers and readers in group coordinator
-        PulsarClient pulsarClient;
-        try {
-            pulsarClient = brokerService.getPulsar().getClient();
-        } catch (PulsarServerException e) {
-            log.error("Failed to create builtin PulsarClient", e);
-            throw new IllegalStateException(e);
-        }
-
         // initialize default Group Coordinator
         getGroupCoordinator(kafkaConfig.getKafkaMetadataTenant());
 
