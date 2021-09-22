@@ -101,7 +101,7 @@ public class SimpleAclAuthorizer implements Authorizer {
                         }
                         permissionFuture.completeExceptionally(ex);
                         return null;
-                    })
+                    });
 
         });
         return permissionFuture;
