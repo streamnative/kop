@@ -35,6 +35,8 @@ public class TransactionConfig {
     public static final int DefaultTransactionLogNumPartitions = 8;
 
     @Default
+    private int brokerId = 1;
+    @Default
     private String transactionMetadataTopicName = DefaultTransactionMetadataTopicName;
     @Default
     private long transactionMaxTimeoutMs = DefaultTransactionsMaxTimeoutMs;

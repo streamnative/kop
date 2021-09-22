@@ -356,18 +356,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private int txnLogTopicNumPartitions = DefaultTxnLogTopicNumPartitions;
 
     @FieldContext(
-            category = CATEGORY_KOP_TRANSACTION,
-            doc = "Transaction coordinator scheduler threads num, used to handle timeout transactions."
-    )
-    private int txnCoordinatorSchedulerNum = DefaultTxnCoordinatorSchedulerNum;
-
-    @FieldContext(
-            category = CATEGORY_KOP_TRANSACTION,
-            doc = "Transaction state manager scheduler threads num, used to handle async operations."
-    )
-    private int txnStateManagerSchedulerNum = DefaultTxnStateManagerSchedulerNum;
-
-    @FieldContext(
             category = CATEGORY_KOP,
             doc = "The fully qualified name of a SASL server callback handler class that implements the "
                     + "AuthenticateCallbackHandler interface, which is used for OAuth2 authentication. "

@@ -23,6 +23,8 @@ import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
+import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
+import io.streamnative.pulsar.handlers.kop.utils.timer.Timer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -33,14 +35,13 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
-import org.apache.bookkeeper.common.util.OrderedScheduler;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
@@ -69,7 +70,7 @@ public class TransactionCoordinator {
     @Getter
     private final TransactionStateManager txnManager;
     private final TransactionMarkerChannelManager transactionMarkerChannelManager;
-    private final ScheduledExecutorService scheduler;
+    private final Timer timer;
     private final AtomicBoolean isActive = new AtomicBoolean(false);
 
     // map from topic to the map from initial offset to producerId
@@ -79,37 +80,34 @@ public class TransactionCoordinator {
 
     private TransactionCoordinator(TransactionConfig transactionConfig,
                                    PulsarClient pulsarClient,
-                                   Integer brokerId,
                                    ZooKeeper zkClient,
                                    KopBrokerLookupManager kopBrokerLookupManager,
-                                   ScheduledExecutorService txnCoordinatorScheduler,
-                                   ScheduledExecutorService txnStateManagerScheduler) {
+                                   OrderedExecutor txnStateManagerScheduler,
+                                   Timer timer) {
         this.transactionConfig = transactionConfig;
         this.txnManager = new TransactionStateManager(transactionConfig, pulsarClient, txnStateManagerScheduler);
-        this.producerIdManager = new ProducerIdManager(brokerId, zkClient);
+        this.producerIdManager = new ProducerIdManager(transactionConfig.getBrokerId(), zkClient);
         this.transactionMarkerChannelManager =
                 new TransactionMarkerChannelManager(null, txnManager, kopBrokerLookupManager, false);
-        this.scheduler = txnCoordinatorScheduler;
+        this.timer = timer;
     }
 
     public static TransactionCoordinator of(TransactionConfig transactionConfig,
                                             PulsarClient pulsarClient,
-                                            Integer brokerId,
                                             ZooKeeper zkClient,
-                                            KopBrokerLookupManager kopBrokerLookupManager) {
-        ScheduledExecutorService txnCoordinatorScheduler = OrderedScheduler.newSchedulerBuilder()
-                .name("transaction-coordinator-executor")
-                .numThreads(transactionConfig.getTransactionCoordinatorSchedulerNum())
-                .build();
-
-        ScheduledExecutorService txnStateManagerScheduler = OrderedScheduler.newSchedulerBuilder()
-                .name("transaction-stage-manager-executor")
-                .numThreads(transactionConfig.getTransactionStateManagerSchedulerNum())
-                .build();
+                                            KopBrokerLookupManager kopBrokerLookupManager,
+                                            OrderedExecutor orderedExecutor) {
 
         return new TransactionCoordinator(
-                transactionConfig, pulsarClient, brokerId, zkClient, kopBrokerLookupManager,
-                txnCoordinatorScheduler, txnStateManagerScheduler);
+                transactionConfig,
+                pulsarClient,
+                zkClient,
+                kopBrokerLookupManager,
+                orderedExecutor,
+                SystemTimer.builder()
+                        .executorName("txn-coordinator-timer")
+                        .build()
+                );
     }
 
     interface EndTxnCallback {
@@ -868,7 +866,7 @@ public class TransactionCoordinator {
     public void shutdown() {
         log.info("Shutting down transaction coordinator ...");
         isActive.set(false);
-        scheduler.shutdown();
+        timer.shutdown();
         producerIdManager.shutdown();
         txnManager.shutdown();
         // TODO shutdown txn

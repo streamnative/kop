@@ -485,6 +485,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         TransactionConfig transactionConfig = TransactionConfig.builder()
                 .transactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions())
                 .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(kafkaConfig))
+                .brokerId(kafkaConfig.getBrokerId())
                 .build();
 
         MetadataUtils.createTxnMetadataIfMissing(pulsarAdmin, clusterData, kafkaConfig);
@@ -492,9 +493,9 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         this.transactionCoordinator = TransactionCoordinator.of(
                 transactionConfig,
                 brokerService.getPulsar().getClient(),
-                kafkaConfig.getBrokerId(),
                 brokerService.getPulsar().getZkClient(),
-                kopBrokerLookupManager);
+                kopBrokerLookupManager,
+                brokerService.getTopicOrderedExecutor());
 
         loadTxnLogTopics(transactionCoordinator);
     }

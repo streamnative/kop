@@ -31,6 +31,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.Errors;
@@ -62,16 +63,16 @@ public class TransactionStateManager {
     private final Set<Integer> loadingPartitions = new HashSet<>();
     private final Map<Integer, CompletableFuture<Void>> loadPartitions = new HashMap<>();
 
-    private Map<Integer, CompletableFuture<Producer<byte[]>>> txnLogProducerMap = new HashMap<>();
-    private Map<Integer, CompletableFuture<Reader<byte[]>>> txnLogReaderMap = new HashMap<>();
+    private final Map<Integer, CompletableFuture<Producer<byte[]>>> txnLogProducerMap = new HashMap<>();
+    private final Map<Integer, CompletableFuture<Reader<byte[]>>> txnLogReaderMap = new HashMap<>();
     // Transaction metadata cache indexed by assigned transaction topic partition ids
-    private Map<Integer, Map<String, TransactionMetadata>> transactionMetadataCache = new HashMap<>();
+    private final Map<Integer, Map<String, TransactionMetadata>> transactionMetadataCache = new HashMap<>();
 
-    private ExecutorService executor;
+    private final OrderedExecutor executor;
 
     public TransactionStateManager(TransactionConfig transactionConfig,
                                    PulsarClient pulsarClient,
-                                   ScheduledExecutorService executor) {
+                                   OrderedExecutor executor) {
         this.transactionConfig = transactionConfig;
         this.pulsarClient = pulsarClient;
         this.executor = executor;
@@ -441,18 +442,18 @@ public class TransactionStateManager {
         log.info("Start loading transaction metadata from {}.", topicPartition);
         long startTimeMs = SystemTime.SYSTEM.milliseconds();
         return getProducer(topicPartition.partition())
-                .thenComposeAsync(producer ->
-                        producer.newMessage().value(new byte[0]).sendAsync(), executor)
-                .thenComposeAsync(lastMsgId -> {
+                .thenCompose(producer ->
+                        producer.newMessage().value(new byte[0]).sendAsync())
+                .thenCompose(lastMsgId -> {
                     if (log.isDebugEnabled()) {
                         log.debug("Successfully write a placeholder record into {} @ {}",
                                 topicPartition, lastMsgId);
                     }
-                    return getReader(topicPartition.partition()).thenComposeAsync(reader ->
-                            loadTransactionMetadata(topicPartition.partition(), reader, lastMsgId), executor);
-                }, executor)
-                .thenComposeAsync(ignored ->
-                        completeLoadedTransactions(topicPartition, startTimeMs, sendTxnMarkers), executor);
+                    return getReader(topicPartition.partition()).thenCompose(reader ->
+                            loadTransactionMetadata(topicPartition.partition(), reader, lastMsgId));
+                })
+                .thenCompose(ignored ->
+                        completeLoadedTransactions(topicPartition, startTimeMs, sendTxnMarkers));
     }
 
     private CompletableFuture<Void> loadTransactionMetadata(int partition,
@@ -592,20 +593,20 @@ public class TransactionStateManager {
                 CompletableFuture<Producer<byte[]>> producer = txnLogProducerMap.remove(partition);
                 CompletableFuture<Reader<byte[]>> reader = txnLogReaderMap.remove(partition);
                 if (producer != null) {
-                    producer.thenApplyAsync(p -> p.closeAsync()).whenCompleteAsync((ignore, t) -> {
+                    producer.thenApply(p -> p.closeAsync()).whenCompleteAsync((ignore, t) -> {
                         if (t != null) {
                             log.error("Failed to close producer when remove partition {}.",
                                     producer.join().getTopic());
                         }
-                    }, executor);
+                    });
                 }
                 if (reader != null) {
-                    reader.thenApplyAsync(p -> p.closeAsync()).whenCompleteAsync((ignore, t) -> {
+                    reader.thenApply(p -> p.closeAsync()).whenCompleteAsync((ignore, t) -> {
                         if (t != null) {
                             log.error("Failed to close reader when remove partition {}.",
                                     reader.join().getTopic());
                         }
-                    }, executor);
+                    });
                 }
                 return null;
             });
@@ -629,8 +630,8 @@ public class TransactionStateManager {
                                                      TransactionMetadata.TxnTransitMetadata txnTransitMetadata) {
         byte[] keyBytes = new TransactionLogKey(transactionalId).toBytes();
         byte[] valueBytes = new TransactionLogValue(txnTransitMetadata).toBytes();
-        return getProducer(partitionFor(transactionalId)).thenComposeAsync(producer ->
-                producer.newMessage().keyBytes(keyBytes).value(valueBytes).sendAsync(), executor);
+        return getProducer(partitionFor(transactionalId)).thenCompose(producer ->
+                producer.newMessage().keyBytes(keyBytes).value(valueBytes).sendAsync());
     }
 
     private CompletableFuture<Reader<byte[]>> getReader(Integer partition) {
