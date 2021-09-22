@@ -79,7 +79,7 @@ If you want to enable the authentication feature for KoP using the `PLAIN` mecha
 
     Property | Description | Example value
     |---|---|---
-    `username` | `username` of Kafka JAAS is the `tenant/namespace`, where Kafka’s topics are stored in Pulsar. <br><br> **Note** In KoP 2.9.0 or above, the username is only used to be compatible with version history, has‘t actual function. |`public/default`
+    `username` | `username` of Kafka JAAS is the `tenant/namespace` or only `tenant`, where Kafka’s topics are stored in Pulsar. <br><br> **Note** In KoP 2.9.0 or above, the username can be used with `kafkaEnableMultitenantMetadata` to implement multi tenancy for metadata. | empty string
     `password`|`password` must be your token authentication parameters from Pulsar.<br><br>The token can be created by Pulsar token tools. The role is the `subject` for the token. It is embedded in the created token and the broker can get `role` by parsing this token.|`token:xxx`
 
     ```properties

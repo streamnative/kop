@@ -35,8 +35,14 @@ Pulsar is a multi-tenant system that requires users to specify the [tenant and n
 | kafkaTenant            | The default tenant of Kafka topics             | public  |
 | kafkaNamespace         | The default namespace of Kafka topics          | default |
 | kafkaMetadataTenant    | The tenant used for storing Kafka metadata topics    | public  |
+| kafkaEnableMultitenantMetadata    | Use the SASL username as `kafkaMetadataTenant`  | true  |
 | kafkaMetadataNamespace | The namespace used for storing Kafka metadata topics | __kafka |
 | kopAllowedNamespaces   | The allowed namespace to list topics with a comma separator.<br>For example, "public/default,public/kafka".<br>If it's not set or empty, the allowed namespaces will be "<kafkaTenant>/<kafkaNamespace>". | |
+
+When you enable `kafkaEnableMultitenantMetadata` KOP uses separate tenants for handling system metadata.
+This will allow you to fully isolate your tenants in your Pulsar cluster.
+This is something that is not available in pure Kafka, because usually you share system metadata among all the users
+of the Kafka cluster.
 
 ## Performance
 
