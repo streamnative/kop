@@ -82,6 +82,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
     private static final Map<PulsarService, LookupClient> LOOKUP_CLIENT_MAP = new ConcurrentHashMap<>();
 
     private StatsLogger rootStatsLogger;
+    private StatsLogger scopeStatsLogger;
     private PrometheusMetricsProvider statsProvider;
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
@@ -259,6 +260,7 @@ public class KafkaProtocolHandler implements ProtocolHandler {
 
         statsProvider = new PrometheusMetricsProvider();
         rootStatsLogger = statsProvider.getStatsLogger("");
+        scopeStatsLogger = rootStatsLogger.scope(SERVER_SCOPE);
     }
 
     // This method is called after initialize
@@ -333,7 +335,8 @@ public class KafkaProtocolHandler implements ProtocolHandler {
         // init KopEventManager
         kopEventManager = new KopEventManager(groupCoordinator,
                 adminManager,
-                brokerService.getPulsar().getLocalMetadataStore());
+                brokerService.getPulsar().getLocalMetadataStore(),
+                scopeStatsLogger);
         kopEventManager.start();
 
         // and listener for Offset topics load/unload
@@ -390,13 +393,13 @@ public class KafkaProtocolHandler implements ProtocolHandler {
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, false,
-                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
+                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, groupCoordinator, transactionCoordinator, adminManager, true,
-                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
+                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache));
                         break;
                 }
             });

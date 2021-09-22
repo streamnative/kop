@@ -26,6 +26,8 @@ public interface KopServerStats {
     String PARTITION_SCOPE = "partition";
     String GROUP_SCOPE = "group";
 
+    String KOP_EVENT_SCOPE = "kop_event";
+
     /**
      * Request stats.
      */
@@ -79,4 +81,11 @@ public interface KopServerStats {
     String BYTES_OUT = "BYTES_OUT";
     String MESSAGE_OUT = "MESSAGE_OUT";
     String ENTRIES_OUT = "ENTRIES_OUT";
+
+    /**
+     * Kop event queue stats.
+     */
+    String KOP_EVENT_QUEUE_SIZE = "KOP_EVENT_QUEUE_SIZE";
+    String KOP_EVENT_QUEUED_LATENCY = "KOP_EVENT_QUEUED_LATENCY";
+    String KOP_EVENT_LATENCY = "KOP_EVENT_LATENCY";
 }
