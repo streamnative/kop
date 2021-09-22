@@ -240,7 +240,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (kafkaConfig.isKafkaEnableMultitenantMetadata()
                 && authenticator != null
                 && authenticator.session() != null
-                && authenticator.session().getPrincipal() != null) {
+                && authenticator.session().getPrincipal() != null
+                && authenticator.session().getPrincipal().getTenantSpec() != null) {
             String tenantSpec =  authenticator.session().getPrincipal().getTenantSpec();
             return extractTenantFromTenantSpec(tenantSpec);
         }
@@ -2509,9 +2510,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private boolean validateTenantAccessForSession(Session session)
             throws AuthenticationException {
         if (!kafkaConfig.isKafkaEnableMultitenantMetadata()) {
+            // we are not leveraging lafkaEnableMultitenantMetadata feature
+            // the client will access only system tenant
             return true;
         }
         String tenantSpec = session.getPrincipal().getTenantSpec();
+        if (tenantSpec == null) {
+            // we are not leveraging kafkaEnableMultitenantMetadata feature
+            // the client will access only system tenant
+            return true;
+        }
         String currentTenant = extractTenantFromTenantSpec(tenantSpec);
         try {
             Boolean granted = authorize(AclOperation.ANY,
