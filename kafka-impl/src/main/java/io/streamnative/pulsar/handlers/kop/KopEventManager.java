@@ -67,6 +67,13 @@ public class KopEventManager {
     private final BrokersChangeHandler brokersChangeHandler;
     private final MetadataStore metadataStore;
     private KopEventManagerStats eventManagerStats;
+    public BiConsumer<String, Long> registerEventLatency = (eventName, createdTime) -> {
+        this.eventManagerStats.getStatsLogger()
+                .scopeLabel(KopServerStats.KOP_EVENT_SCOPE, eventName)
+                .getOpStatsLogger(KopServerStats.KOP_EVENT_LATENCY)
+                .registerSuccessfulEvent(MathUtils.elapsedNanos(createdTime),
+                        TimeUnit.NANOSECONDS);
+    };
 
     public KopEventManager(GroupCoordinator coordinator,
                            AdminManager adminManager,
@@ -131,14 +138,6 @@ public class KopEventManager {
                 .registerSuccessfulEvent(MathUtils.elapsedNanos(eventWrapper.getCreatedTime()),
                         TimeUnit.NANOSECONDS);
     }
-
-    public BiConsumer<String, Long> registerEventLatency = (eventName, createdTime) -> {
-        this.eventManagerStats.getStatsLogger()
-                .scopeLabel(KopServerStats.KOP_EVENT_SCOPE, eventName)
-                .getOpStatsLogger(KopServerStats.KOP_EVENT_LATENCY)
-                .registerSuccessfulEvent(MathUtils.elapsedNanos(createdTime),
-                        TimeUnit.NANOSECONDS);
-    };
 
     class KopEventThread extends ShutdownableThread {
 
