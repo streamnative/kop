@@ -460,8 +460,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private static boolean isInternalTopic(final String fullTopicName) {
-        return fullTopicName.endsWith("/" + GROUP_METADATA_TOPIC_NAME)
-                || fullTopicName.endsWith("/" + TRANSACTION_STATE_TOPIC_NAME);
+        String partitionedTopicName = TopicName.get(fullTopicName).getPartitionedTopicName();
+        return partitionedTopicName.endsWith("/" + GROUP_METADATA_TOPIC_NAME)
+                || partitionedTopicName.endsWith("/" + TRANSACTION_STATE_TOPIC_NAME);
     }
 
     // Get all topics in the configured allowed namespaces.
