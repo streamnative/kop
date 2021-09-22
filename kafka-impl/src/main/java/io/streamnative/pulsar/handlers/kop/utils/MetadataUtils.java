@@ -146,7 +146,8 @@ public class MetadataUtils {
         }
     }
 
-    private static void createTenantIfMissing(String tenant, KafkaServiceConfiguration conf, String cluster, Tenants tenants) throws PulsarAdminException {
+    private static void createTenantIfMissing(String tenant, KafkaServiceConfiguration conf,
+                                              String cluster, Tenants tenants) throws PulsarAdminException {
         if (!tenants.getTenants().contains(tenant)) {
             log.info("Tenant: {} does not exist, creating it ...", tenant);
             tenants.createTenant(tenant,
@@ -167,7 +168,8 @@ public class MetadataUtils {
     }
 
     private static void createNamespaceIfMissing(String tenant, KafkaServiceConfiguration conf, String cluster,
-                                                 String kafkaMetadataNamespace, Namespaces namespaces) throws PulsarAdminException {
+                                                 String kafkaMetadataNamespace, Namespaces namespaces)
+                                                 throws PulsarAdminException {
         if (!namespaces.getNamespaces(tenant).contains(kafkaMetadataNamespace)) {
             log.info("Namespaces: {} does not exist in tenant: {}, creating it ...",
                     kafkaMetadataNamespace, tenant);
