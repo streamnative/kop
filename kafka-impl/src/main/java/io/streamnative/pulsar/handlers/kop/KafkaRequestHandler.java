@@ -306,22 +306,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
     }
 
-    private String getOffsetsTopicName() {
-        return new KopTopic(String.join("/",
-                getCurrentTenant(),
-                kafkaConfig.getKafkaMetadataNamespace(),
-                GROUP_METADATA_TOPIC_NAME)
-        ).getFullName();
-    }
-
-    private String getTxnTopicName() {
-        return new KopTopic(String.join("/",
-                getCurrentTenant(),
-                kafkaConfig.getKafkaMetadataNamespace(),
-                TRANSACTION_STATE_TOPIC_NAME)
-        ).getFullName();
-    }
-
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         super.channelActive(ctx);
@@ -466,9 +450,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return admin.topics().getPartitionedTopicMetadataAsync(topicName);
     }
 
-    private boolean isInternalTopic(final String fullTopicName) {
-        return fullTopicName.equals(getOffsetsTopicName())
-                || fullTopicName.equals(getTxnTopicName());
+    private static boolean isInternalTopic(final String fullTopicName) {
+        return fullTopicName.endsWith("/" + GROUP_METADATA_TOPIC_NAME)
+                || fullTopicName.endsWith("/" + TRANSACTION_STATE_TOPIC_NAME);
     }
 
     // Get all topics in the configured allowed namespaces.
@@ -994,7 +978,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         final Consumer<Errors> errorsConsumer,
                                         final Consumer<Throwable> exceptionConsumer) {
         // check KOP inner topic
-        if (isOffsetTopic(fullPartitionName) || isTransactionTopic(fullPartitionName)) {
+        if (isInternalTopic(fullPartitionName)) {
             log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
                     ctx.channel(), produceHar.getHeader(), topicPartition);
             errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
@@ -2282,22 +2266,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     );
             });
         return returnFuture;
-    }
-
-    protected boolean isOffsetTopic(String topic) {
-        String offsetsTopic = getCurrentTenant() + "/"
-            + kafkaConfig.getKafkaMetadataNamespace()
-            + "/" + GROUP_METADATA_TOPIC_NAME;
-
-        return topic != null && topic.contains(offsetsTopic);
-    }
-
-    protected boolean isTransactionTopic(String topic) {
-        String transactionTopic = getCurrentTenant() + "/"
-            + kafkaConfig.getKafkaMetadataNamespace()
-            + "/" + TRANSACTION_STATE_TOPIC_NAME;
-
-        return topic != null && topic.contains(transactionTopic);
     }
 
     public CompletableFuture<PartitionMetadata> findBroker(TopicName topic) {
