@@ -240,14 +240,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 && authenticator != null
                 && authenticator.session() != null
                 && authenticator.session().getPrincipal() != null) {
-            String username =  authenticator.session().getPrincipal().getTenantSpec();
-            if (username != null && !username.isEmpty()) {
+            String tenantSpec =  authenticator.session().getPrincipal().getTenantSpec();
+            if (tenantSpec != null && !tenantSpec.isEmpty()) {
                 // username can be "tenant" or "tenant/namespace"
-                if (username.contains("/")) {
-                    username = username.substring(0, username.indexOf('/'));
+                if (tenantSpec.contains("/")) {
+                    tenantSpec = tenantSpec.substring(0, tenantSpec.indexOf('/'));
                 }
-                log.debug("using {} as tenant", username);
-                return username;
+                log.debug("using {} as tenant", tenantSpec);
+                return tenantSpec;
             }
         }
         // fallback to using system (default) tenant
