@@ -66,6 +66,8 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 @Slf4j
 public class SaslAuthenticator {
 
+    public static final String USER_NAME_PROP = "username";
+
     private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
 
     @Getter
@@ -419,7 +421,7 @@ public class SaslAuthenticator {
                             // This session is required for authorization.
                             this.session = new Session(
                                     new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID(),
-                                            (String) saslServer.getNegotiatedProperty("username")),
+                                            (String) saslServer.getNegotiatedProperty(USER_NAME_PROP)),
                                     "old-clientId");
 
                             if (log.isDebugEnabled()) {
@@ -466,7 +468,7 @@ public class SaslAuthenticator {
                 String pulsarRole = saslServer.getAuthorizationID();
                 this.session = new Session(
                         new KafkaPrincipal(KafkaPrincipal.USER_TYPE, pulsarRole,
-                                (String) saslServer.getNegotiatedProperty("username")),
+                                (String) saslServer.getNegotiatedProperty(USER_NAME_PROP)),
                         header.clientId());
                 registerRequestLatency.accept(apiKey.name, startProcessTime);
                 sendKafkaResponse(ctx,
@@ -477,7 +479,7 @@ public class SaslAuthenticator {
                 if (log.isDebugEnabled()) {
                     log.debug("Authenticate successfully for client, header {}, request {}, session {} username {}",
                             header, saslAuthenticateRequest, session,
-                            saslServer.getNegotiatedProperty("username"));
+                            saslServer.getNegotiatedProperty(USER_NAME_PROP));
                 }
             } catch (SaslException e) {
                 registerRequestLatency.accept(apiKey.name, startProcessTime);

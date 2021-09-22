@@ -91,9 +91,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Getter
     private BrokerService brokerService;
 
-    private Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
-    private Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
-    private Map<String, KopEventManager> kopEventManagerByTenant = new ConcurrentHashMap<>();
+    private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
+    private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
+    private final Map<String, KopEventManager> kopEventManagerByTenant = new ConcurrentHashMap<>();
 
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {

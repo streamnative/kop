@@ -30,6 +30,8 @@ import org.apache.pulsar.broker.authentication.AuthenticationState;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.common.api.AuthData;
 
+import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.USER_NAME_PROP;
+
 /**
  * The SaslServer implementation for SASL/PLAIN.
  */
@@ -85,6 +87,7 @@ public class PlainSaslServer implements SaslServer {
                 authorizationId = saslAuth.getUsername();
                 username = null; // PULSAR TENANT
                 if (authorizationId.contains("/")) {
+                    // the proxy uses username/originalPrincipal as "username"
                     int lastSlash = authorizationId.lastIndexOf('/');
                     username = authorizationId.substring(lastSlash + 1);
                     authorizationId = authorizationId.substring(0, lastSlash);
@@ -131,13 +134,12 @@ public class PlainSaslServer implements SaslServer {
         }
         return Arrays.copyOfRange(outgoing, offset, offset + len);
     }
-
     @Override
     public Object getNegotiatedProperty(String propName) {
         if (!complete) {
             throw new IllegalStateException("Authentication exchange has not completed");
         }
-        if ("username".equals(propName)) {
+        if (USER_NAME_PROP.equals(propName)) {
             return username;
         }
         return null;

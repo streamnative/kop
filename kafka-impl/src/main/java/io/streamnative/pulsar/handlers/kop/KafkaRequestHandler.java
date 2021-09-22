@@ -190,7 +190,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
-    private final TenantContextManager groupCoordinatorAccessor;
+    private final TenantContextManager tenantContextManager;
 
     private final String clusterName;
     private final ScheduledExecutorService executor;
@@ -240,7 +240,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 && authenticator != null
                 && authenticator.session() != null
                 && authenticator.session().getPrincipal() != null) {
-            String username =  authenticator.session().getPrincipal().getUsername();
+            String username =  authenticator.session().getPrincipal().getTenantSpec();
             if (username != null && !username.isEmpty()) {
                 // username can be "tenant" or "tenant/namespace"
                 if (username.contains("/")) {
@@ -256,16 +256,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     public GroupCoordinator getGroupCoordinator() {
-        return groupCoordinatorAccessor.getGroupCoordinator(getCurrentTenant());
+        return tenantContextManager.getGroupCoordinator(getCurrentTenant());
     }
 
     public TransactionCoordinator getTransactionCoordinator() {
-        return groupCoordinatorAccessor.getTransactionCoordinator(getCurrentTenant());
+        return tenantContextManager.getTransactionCoordinator(getCurrentTenant());
     }
 
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
-                               TenantContextManager groupCoordinatorAccessor,
+                               TenantContextManager tenantContextManager,
                                AdminManager adminManager,
                                MetadataCache<LocalBrokerData> localBrokerDataCache,
                                Boolean tlsEnabled,
@@ -273,7 +273,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                StatsLogger statsLogger) throws Exception {
         super(statsLogger, kafkaConfig);
         this.pulsarService = pulsarService;
-        this.groupCoordinatorAccessor = groupCoordinatorAccessor;
+        this.tenantContextManager = tenantContextManager;
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
