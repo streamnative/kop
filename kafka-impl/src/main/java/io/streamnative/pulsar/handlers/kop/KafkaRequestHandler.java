@@ -2454,7 +2454,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     @VisibleForTesting
     protected CompletableFuture<Boolean> authorize(AclOperation operation, Resource resource) {
-        return authorize(operation, resource, authenticator.session());
+        Session session = authenticator != null ? authenticator.session() : null;
+        return authorize(operation, resource, session);
     }
 
     protected CompletableFuture<Boolean> authorize(AclOperation operation, Resource resource, Session session) {
