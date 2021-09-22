@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.AssertJUnit.fail;
 
@@ -142,6 +143,9 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                             .adminRoles(Collections.singleton(ADMIN_USER))
                             .allowedClusters(Collections.singleton(configClusterName))
                             .build());
+            TenantInfo tenantInfo = admin.tenants().getTenantInfo(TENANT);
+            log.info("tenantInfo for {} {} in test", TENANT, tenantInfo);
+            assertNotNull(tenantInfo);
             admin.namespaces().createNamespace(newTenant + "/" + NAMESPACE);
             admin.topics().createPartitionedTopic(testTopic, 1);
             @Cleanup

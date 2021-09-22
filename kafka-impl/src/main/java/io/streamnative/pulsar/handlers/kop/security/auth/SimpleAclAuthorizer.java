@@ -51,6 +51,19 @@ public class SimpleAclAuthorizer implements Authorizer {
     }
 
     private CompletableFuture<Boolean> authorize(KafkaPrincipal principal, AuthAction action, Resource resource) {
+
+        switch (resource.getResourceType()) {
+            case TOPIC:
+                return authorizeTopicPermission(principal, action, resource);
+            case TENANT:
+                return authorizeTenantPermission(principal, resource);
+            default:
+                return CompletableFuture.completedFuture(false);
+        }
+    }
+
+    private CompletableFuture<Boolean> authorizeTopicPermission(KafkaPrincipal principal, AuthAction action,
+                                                                Resource resource) {
         CompletableFuture<Boolean> permissionFuture = new CompletableFuture<>();
         TopicName topicName = TopicName.get(resource.getName());
         NamespaceName namespace = topicName.getNamespaceObject();
@@ -127,7 +140,27 @@ public class SimpleAclAuthorizer implements Authorizer {
                     });
 
         });
+        return permissionFuture;
+    }
 
+    private CompletableFuture<Boolean> authorizeTenantPermission(KafkaPrincipal principal, Resource resource) {
+        CompletableFuture<Boolean> permissionFuture = new CompletableFuture<>();
+        // we can only check if the tenant exists
+        String tenant = resource.getName();
+        getPulsarService()
+                .getPulsarResources()
+                .getTenantResources()
+                .getAsync(path(tenant))
+                .thenAccept(tenantInfo -> {
+                    permissionFuture.complete(tenantInfo.isPresent());
+                }).exceptionally(ex -> {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Client with Principal - {} failed to get permissions for resource - {}. {}",
+                                principal, resource, ex.getMessage());
+                    }
+                    permissionFuture.completeExceptionally(ex);
+                    return null;
+                });
         return permissionFuture;
     }
 
@@ -199,6 +232,27 @@ public class SimpleAclAuthorizer implements Authorizer {
         return sb.toString();
     }
 
+    @Override
+    public CompletableFuture<Boolean> canAccessTenantAsync(KafkaPrincipal principal, Resource resource) {
+        checkArgument(resource.getResourceType() == ResourceType.TENANT,
+                String.format("Expected resource type is TENANT, but have [%s]", resource.getResourceType()));
+
+        CompletableFuture<Boolean> canAccessFuture = new CompletableFuture<>();
+        authorize(principal, null, resource).whenComplete((hasPermission, ex) -> {
+                if (ex != null) {
+                    if (log.isDebugEnabled()) {
+                        log.debug(
+                                "Resource [{}] Principal [{}] exception occurred while trying to "
+                                        + "check Tenant permissions. {}",
+                                resource, principal, ex.getMessage());
+                    }
+                    canAccessFuture.completeExceptionally(ex);
+                    return;
+                }
+            canAccessFuture.complete(hasPermission);
+        });
+        return canAccessFuture;
+    }
 
     @Override
     public CompletableFuture<Boolean> canLookupAsync(KafkaPrincipal principal, Resource resource) {

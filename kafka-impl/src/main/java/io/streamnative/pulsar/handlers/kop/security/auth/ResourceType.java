@@ -35,6 +35,11 @@ public enum ResourceType {
      */
     TOPIC((byte) 2),
 
+    /**
+     * A Pulsar tenant.
+     */
+    TENANT((byte) 3),
+
     ;
 
 

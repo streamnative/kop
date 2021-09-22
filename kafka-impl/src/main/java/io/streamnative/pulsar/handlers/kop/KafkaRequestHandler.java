@@ -71,6 +71,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -241,18 +242,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 && authenticator.session() != null
                 && authenticator.session().getPrincipal() != null) {
             String tenantSpec =  authenticator.session().getPrincipal().getTenantSpec();
-            if (tenantSpec != null && !tenantSpec.isEmpty()) {
-                // username can be "tenant" or "tenant/namespace"
-                if (tenantSpec.contains("/")) {
-                    tenantSpec = tenantSpec.substring(0, tenantSpec.indexOf('/'));
-                }
-                log.debug("using {} as tenant", tenantSpec);
-                return tenantSpec;
-            }
+            return extractTenantFromTenantSpec(tenantSpec);
         }
         // fallback to using system (default) tenant
         log.debug("using {} as tenant", kafkaConfig.getKafkaMetadataTenant());
         return kafkaConfig.getKafkaMetadataTenant();
+    }
+
+    private static String extractTenantFromTenantSpec(String tenantSpec) {
+        if (tenantSpec != null && !tenantSpec.isEmpty()) {
+            String tenant = tenantSpec;
+            // username can be "tenant" or "tenant/namespace"
+            if (tenantSpec.contains("/")) {
+                tenant = tenantSpec.substring(0, tenantSpec.indexOf('/'));
+            }
+            log.debug("using {} as tenant", tenant);
+            return tenant;
+        } else {
+            return tenantSpec;
+        }
     }
 
     public GroupCoordinator getGroupCoordinator() {
@@ -359,7 +367,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                   BiConsumer<String, Long> registerRequestLatency)
             throws AuthenticationException {
         if (authenticator != null) {
-            authenticator.authenticate(ctx, requestBuf, registerRequestParseLatency, registerRequestLatency);
+            authenticator.authenticate(ctx, requestBuf, registerRequestParseLatency, registerRequestLatency,
+                    this::validateTenantAccessForSession);
         }
     }
 
@@ -2444,15 +2453,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     @VisibleForTesting
     protected CompletableFuture<Boolean> authorize(AclOperation operation, Resource resource) {
+        return authorize(operation, resource, authenticator.session());
+    }
+
+    protected CompletableFuture<Boolean> authorize(AclOperation operation, Resource resource, Session session) {
         if (authorizer == null) {
             return CompletableFuture.completedFuture(true);
         }
-        if (authenticator.session() == null) {
+        if (session == null) {
             return CompletableFuture.completedFuture(false);
         }
-
-        CompletableFuture<Boolean> isAuthorizedFuture;
-        Session session = authenticator.session();
+        CompletableFuture<Boolean> isAuthorizedFuture = null;
         switch (operation) {
             case READ:
                 isAuthorizedFuture = authorizer.canConsumeAsync(session.getPrincipal(), resource);
@@ -2464,6 +2475,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             case DESCRIBE:
                 isAuthorizedFuture = authorizer.canLookupAsync(session.getPrincipal(), resource);
                 break;
+            case ANY:
+                if (resource.getResourceType() == ResourceType.TENANT) {
+                    isAuthorizedFuture = authorizer.canAccessTenantAsync(session.getPrincipal(), resource);
+                }
+                break;
             case CREATE:
             case DELETE:
             case CLUSTER_ACTION:
@@ -2472,11 +2488,37 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             case ALTER:
             case UNKNOWN:
             case ALL:
-            case ANY:
             default:
-                return FutureUtil.failedFuture(
-                        new IllegalStateException("AclOperation [" + operation.name() + "] is not supported."));
+                break;
+        }
+        if (isAuthorizedFuture == null) {
+            return FutureUtil.failedFuture(
+                    new IllegalStateException("AclOperation [" + operation.name() + "] is not supported."));
         }
         return isAuthorizedFuture;
+    }
+
+    /**
+     * If we are using afkaEnableMultitenantMetadata we need to ensure
+     * that the TenantSpec refer to an existing tenant.
+     * @param session
+     * @return whether the tenant is accessible
+     */
+    private boolean validateTenantAccessForSession(Session session)
+            throws AuthenticationException {
+        if (!kafkaConfig.isKafkaEnableMultitenantMetadata()) {
+            return true;
+        }
+        String tenantSpec = session.getPrincipal().getTenantSpec();
+        String currentTenant = extractTenantFromTenantSpec(tenantSpec);
+        try {
+            Boolean granted = authorize(AclOperation.ANY,
+                    Resource.of(ResourceType.TENANT, currentTenant), session)
+                    .get();
+            return granted != null && granted;
+        } catch (ExecutionException | InterruptedException err) {
+            log.error("Internal error while verifying tenant access", err);
+            throw new AuthenticationException("Internal error while verifying tenant access:" + err, err);
+        }
     }
 }
