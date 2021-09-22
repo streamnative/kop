@@ -256,10 +256,9 @@ public class MetadataUtils {
             createTenantIfMissing(tenant, conf, cluster, tenants);
             tenantExists = true;
 
-            String kafkaMetadataNamespace = tenant + "/" + conf.getKafkaMetadataNamespace();
             Namespaces namespaces = pulsarAdmin.namespaces();
             // Check if the kafka namespace exists and create it if not
-            createNamespaceIfMissing(tenant, conf, cluster, kafkaMetadataNamespace, namespaces);
+            createNamespaceIfMissing(tenant, conf, cluster, kafkaNamespace, namespaces);
             namespaceExists = true;
 
         } catch (PulsarAdminException e) {
