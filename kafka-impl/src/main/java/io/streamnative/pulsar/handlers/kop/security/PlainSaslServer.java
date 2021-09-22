@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.security;
 
+import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.USER_NAME_PROP;
+
 import io.streamnative.pulsar.handlers.kop.SaslAuth;
 import io.streamnative.pulsar.handlers.kop.utils.SaslUtils;
 import java.io.IOException;
@@ -29,8 +31,6 @@ import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authentication.AuthenticationState;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.common.api.AuthData;
-
-import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.USER_NAME_PROP;
 
 /**
  * The SaslServer implementation for SASL/PLAIN.
