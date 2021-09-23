@@ -93,8 +93,9 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         userToken = AuthTokenUtils.createToken(secretKey, SIMPLE_USER, Optional.empty());
         adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
         anotherToken = AuthTokenUtils.createToken(secretKey, ANOTHER_USER, Optional.empty());
-
+        boolean originalKafkaEnableMultiTenantMetadata = conf.isKafkaEnableMultiTenantMetadata();
         super.resetConfig();
+        conf.setKafkaEnableMultiTenantMetadata(originalKafkaEnableMultiTenantMetadata);
         conf.setSaslAllowedMechanisms(Sets.newHashSet("PLAIN"));
         conf.setKafkaMetadataTenant("internal");
         conf.setKafkaMetadataNamespace("__kafka");
