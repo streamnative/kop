@@ -93,6 +93,13 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private String kafkaMetadataTenant = "public";
 
     @FieldContext(
+            category = CATEGORY_KOP,
+            required = true,
+            doc = "Use the current tenant as namespace name for Metadata topics."
+    )
+    private boolean kafkaEnableMultiTenantMetadata = true;
+
+    @FieldContext(
         category = CATEGORY_KOP,
         required = true,
         doc = "The namespace used for storing Kafka metadata topics"

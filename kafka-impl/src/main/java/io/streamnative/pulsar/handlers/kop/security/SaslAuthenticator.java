@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 import javax.security.auth.login.AppConfigurationEntry;
 import javax.security.sasl.SaslException;
 import javax.security.sasl.SaslServer;
@@ -65,6 +66,8 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
  */
 @Slf4j
 public class SaslAuthenticator {
+
+    public static final String USER_NAME_PROP = "username";
 
     private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
 
@@ -173,7 +176,8 @@ public class SaslAuthenticator {
     public void authenticate(ChannelHandlerContext ctx,
                              ByteBuf requestBuf,
                              BiConsumer<Long, Throwable> registerRequestParseLatency,
-                             BiConsumer<String, Long> registerRequestLatency)
+                             BiConsumer<String, Long> registerRequestLatency,
+                             Function<Session, Boolean> tenantAccessValidationFunction)
             throws AuthenticationException {
         checkArgument(requestBuf.readableBytes() > 0);
         log.info("Authenticate {} {} {}", ctx, saslServer, state);
@@ -189,7 +193,8 @@ public class SaslAuthenticator {
                 handleKafkaRequest(ctx, requestBuf, registerRequestParseLatency, registerRequestLatency);
                 break;
             case AUTHENTICATE:
-                handleSaslToken(ctx, requestBuf, registerRequestParseLatency, registerRequestLatency);
+                handleSaslToken(ctx, requestBuf, registerRequestParseLatency, registerRequestLatency,
+                                                                            tenantAccessValidationFunction);
                 if (saslServer.isComplete()) {
                     setState(State.COMPLETE);
                 }
@@ -399,7 +404,8 @@ public class SaslAuthenticator {
     private void handleSaslToken(ChannelHandlerContext ctx,
                                  ByteBuf requestBuf,
                                  BiConsumer<Long, Throwable> registerRequestParseLatency,
-                                 BiConsumer<String, Long> registerRequestLatency)
+                                 BiConsumer<String, Long> registerRequestLatency,
+                                 Function<Session, Boolean> tenantAccessValidationFunction)
             throws AuthenticationException {
         final long timeBeforeParse = MathUtils.nowInNano();
         ByteBuffer nioBuffer = requestBuf.nioBuffer();
@@ -411,16 +417,20 @@ public class SaslAuthenticator {
                 nioBuffer.get(clientToken, 0, clientToken.length);
                 byte[] response = saslServer.evaluateResponse(clientToken);
                 if (response != null) {
+                    final Session newSession = new Session(
+                            new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID(),
+                                    (String) saslServer.getNegotiatedProperty(USER_NAME_PROP)),
+                            "old-clientId");
+                    if (!tenantAccessValidationFunction.apply(newSession)) {
+                        throw new AuthenticationException("User is not allowed to access this tenant");
+                    }
                     ByteBuf byteBuf = sizePrefixed(ByteBuffer.wrap(response));
                     ctx.channel().writeAndFlush(byteBuf).addListener(future -> {
                         if (!future.isSuccess()) {
                             log.error("[{}] Failed to write {}", ctx.channel(), future.cause());
                         } else {
                             // This session is required for authorization.
-                            this.session = new Session(
-                                    new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID()),
-                                    "old-clientId");
-
+                            session = newSession;
                             if (log.isDebugEnabled()) {
                                 log.debug("Send sasl response to SASL_HANDSHAKE v0 old client {} successfully, "
                                         + "session {}", ctx.channel(), session);
@@ -464,17 +474,26 @@ public class SaslAuthenticator {
                 ByteBuffer responseBuf = (responseToken == null) ? EMPTY_BUFFER : ByteBuffer.wrap(responseToken);
                 String pulsarRole = saslServer.getAuthorizationID();
                 this.session = new Session(
-                        new KafkaPrincipal(KafkaPrincipal.USER_TYPE, pulsarRole),
+                        new KafkaPrincipal(KafkaPrincipal.USER_TYPE, pulsarRole,
+                                (String) saslServer.getNegotiatedProperty(USER_NAME_PROP)),
                         header.clientId());
                 registerRequestLatency.accept(apiKey.name, startProcessTime);
+                if (!tenantAccessValidationFunction.apply(session)) {
+                    AuthenticationException e =
+                            new AuthenticationException("User is not allowed to access this tenant");
+                    registerRequestLatency.accept(apiKey.name, startProcessTime);
+                    buildResponseOnAuthenticateFailure(header, request, null, e);
+                    throw e;
+                }
                 sendKafkaResponse(ctx,
                         header,
                         request,
                         new SaslAuthenticateResponse(Errors.NONE, null, responseBuf),
                         null);
                 if (log.isDebugEnabled()) {
-                    log.debug("Authenticate successfully for client, header {}, request {}, session {}",
-                            header, saslAuthenticateRequest, session);
+                    log.debug("Authenticate successfully for client, header {}, request {}, session {} username {}",
+                            header, saslAuthenticateRequest, session,
+                            saslServer.getNegotiatedProperty(USER_NAME_PROP));
                 }
             } catch (SaslException e) {
                 registerRequestLatency.accept(apiKey.name, startProcessTime);
