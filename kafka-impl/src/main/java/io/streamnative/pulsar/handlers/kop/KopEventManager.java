@@ -125,7 +125,6 @@ public class KopEventManager {
             queue.clear();
             KopEventManagerStats.KOP_EVENT_QUEUE_SIZE_INSTANCE.set(0);
             put(eventWrapper);
-            KopEventManagerStats.KOP_EVENT_QUEUE_SIZE_INSTANCE.incrementAndGet();
         } finally {
             putLock.unlock();
         }
