@@ -100,7 +100,7 @@ public class SimpleAclAuthorizer implements Authorizer {
                             permissionFuture.complete(false);
                             return;
                         }
-                        authoriseTopicOverNamespacePolicies(principal, action, permissionFuture, topicName, policies);
+                        authoriseTopicOverNamespacePolicies(principal, action, permissionFuture, topicName, policies.get());
                     }).exceptionally(ex -> {
                         if (log.isDebugEnabled()) {
                             log.debug("Client with Principal - {} failed to get permissions for resource - {}. {}",
@@ -116,10 +116,10 @@ public class SimpleAclAuthorizer implements Authorizer {
 
     private void authoriseTopicOverNamespacePolicies(KafkaPrincipal principal, AuthAction action,
                                                      CompletableFuture<Boolean> permissionFuture,
-                                                     TopicName topicName, Optional<Policies> policies) {
+                                                     TopicName topicName, Policies policies) {
         String role = principal.getName();
         // Check Topic level policies
-        Map<String, Set<AuthAction>> topicRoles = policies.get()
+        Map<String, Set<AuthAction>> topicRoles = policies
                 .auth_policies
                 .getTopicAuthentication()
                 .get(topicName.toString());
@@ -133,7 +133,7 @@ public class SimpleAclAuthorizer implements Authorizer {
         }
 
         // Check Namespace level policies
-        Map<String, Set<AuthAction>> namespaceRoles = policies.get().auth_policies
+        Map<String, Set<AuthAction>> namespaceRoles = policies.auth_policies
                 .getNamespaceAuthentication();
         Set<AuthAction> namespaceActions = namespaceRoles.get(role);
         if (namespaceActions != null && namespaceActions.contains(action)) {
