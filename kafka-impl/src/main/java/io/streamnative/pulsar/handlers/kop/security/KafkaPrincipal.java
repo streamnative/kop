@@ -37,4 +37,9 @@ public class KafkaPrincipal implements Principal {
      */
     private final String name;
 
+    /**
+     * Pulsar Tenant Specs.
+     * It can be "tenant" or "tenant/namespace"
+     */
+    private final String tenantSpec;
 }
