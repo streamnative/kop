@@ -2502,7 +2502,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     /**
-     * If we are using afkaEnableMultitenantMetadata we need to ensure
+     * If we are using kafkaEnableMultiTenantMetadata we need to ensure
      * that the TenantSpec refer to an existing tenant.
      * @param session
      * @return whether the tenant is accessible
@@ -2510,7 +2510,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private boolean validateTenantAccessForSession(Session session)
             throws AuthenticationException {
         if (!kafkaConfig.isKafkaEnableMultiTenantMetadata()) {
-            // we are not leveraging lafkaEnableMultitenantMetadata feature
+            // we are not leveraging kafkaEnableMultiTenantMetadata feature
             // the client will access only system tenant
             return true;
         }
