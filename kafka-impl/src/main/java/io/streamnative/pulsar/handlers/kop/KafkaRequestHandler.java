@@ -2516,7 +2516,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         String tenantSpec = session.getPrincipal().getTenantSpec();
         if (tenantSpec == null) {
-            // we are not leveraging kafkaEnableMultitenantMetadata feature
+            // we are not leveraging kafkaEnableMultiTenantMetadata feature
             // the client will access only system tenant
             return true;
         }
