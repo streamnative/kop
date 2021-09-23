@@ -93,6 +93,13 @@ public class SimpleAclAuthorizer implements Authorizer {
                     .getNamespaceResources()
                     .getAsync(policiesPath)
                     .thenAccept(policies -> {
+                        if (!policies.isPresent()) {
+                            if (log.isDebugEnabled()) {
+                                log.debug("Policies node couldn't be found for namespace : {}", principal);
+                            }
+                            permissionFuture.complete(false);
+                            return;
+                        }
                         authoriseTopicOverNamespacePolicies(principal, action, permissionFuture, topicName, policies);
                     }).exceptionally(ex -> {
                         if (log.isDebugEnabled()) {
@@ -110,43 +117,36 @@ public class SimpleAclAuthorizer implements Authorizer {
     private void authoriseTopicOverNamespacePolicies(KafkaPrincipal principal, AuthAction action,
                                                      CompletableFuture<Boolean> permissionFuture,
                                                      TopicName topicName, Optional<Policies> policies) {
-        if (!policies.isPresent()) {
-            if (log.isDebugEnabled()) {
-                log.debug("Policies node couldn't be found for namespace : {}", principal);
-            }
-        } else {
-            String role = principal.getName();
-
-            // Check Topic level policies
-            Map<String, Set<AuthAction>> topicRoles = policies.get()
-                    .auth_policies
-                    .getTopicAuthentication()
-                    .get(topicName.toString());
-            if (topicRoles != null && role != null) {
-                // Topic has custom policy
-                Set<AuthAction> topicActions = topicRoles.get(role);
-                if (topicActions != null && topicActions.contains(action)) {
-                    permissionFuture.complete(true);
-                    return;
-                }
-            }
-
-            // Check Namespace level policies
-            Map<String, Set<AuthAction>> namespaceRoles = policies.get().auth_policies
-                    .getNamespaceAuthentication();
-            Set<AuthAction> namespaceActions = namespaceRoles.get(role);
-            if (namespaceActions != null && namespaceActions.contains(action)) {
+        String role = principal.getName();
+        // Check Topic level policies
+        Map<String, Set<AuthAction>> topicRoles = policies.get()
+                .auth_policies
+                .getTopicAuthentication()
+                .get(topicName.toString());
+        if (topicRoles != null && role != null) {
+            // Topic has custom policy
+            Set<AuthAction> topicActions = topicRoles.get(role);
+            if (topicActions != null && topicActions.contains(action)) {
                 permissionFuture.complete(true);
                 return;
             }
+        }
 
-            // Check wildcard policies
-            if (conf.isAuthorizationAllowWildcardsMatching()
-                    && checkWildcardPermission(role, action, namespaceRoles)) {
-                // The role has namespace level permission by wildcard match
-                permissionFuture.complete(true);
-                return;
-            }
+        // Check Namespace level policies
+        Map<String, Set<AuthAction>> namespaceRoles = policies.get().auth_policies
+                .getNamespaceAuthentication();
+        Set<AuthAction> namespaceActions = namespaceRoles.get(role);
+        if (namespaceActions != null && namespaceActions.contains(action)) {
+            permissionFuture.complete(true);
+            return;
+        }
+
+        // Check wildcard policies
+        if (conf.isAuthorizationAllowWildcardsMatching()
+                && checkWildcardPermission(role, action, namespaceRoles)) {
+            // The role has namespace level permission by wildcard match
+            permissionFuture.complete(true);
+            return;
         }
         permissionFuture.complete(false);
     }

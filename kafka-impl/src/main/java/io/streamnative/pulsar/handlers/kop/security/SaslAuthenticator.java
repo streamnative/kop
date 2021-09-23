@@ -422,9 +422,7 @@ public class SaslAuthenticator {
                                     (String) saslServer.getNegotiatedProperty(USER_NAME_PROP)),
                             "old-clientId");
                     if (!tenantAccessValidationFunction.apply(newSession)) {
-                        AuthenticationException e =
-                                new AuthenticationException("User is not allowed to access this tenant");
-                        throw e;
+                        throw new AuthenticationException("User is not allowed to access this tenant");
                     }
                     ByteBuf byteBuf = sizePrefixed(ByteBuffer.wrap(response));
                     ctx.channel().writeAndFlush(byteBuf).addListener(future -> {

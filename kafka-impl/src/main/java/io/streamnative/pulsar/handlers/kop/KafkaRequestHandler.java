@@ -237,7 +237,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private volatile boolean autoReadDisabledPublishBufferLimiting = false;
 
     private String getCurrentTenant() {
-        if (kafkaConfig.isKafkaEnableMultitenantMetadata()
+        if (kafkaConfig.isKafkaEnableMultiTenantMetadata()
                 && authenticator != null
                 && authenticator.session() != null
                 && authenticator.session().getPrincipal() != null
@@ -2509,7 +2509,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
      */
     private boolean validateTenantAccessForSession(Session session)
             throws AuthenticationException {
-        if (!kafkaConfig.isKafkaEnableMultitenantMetadata()) {
+        if (!kafkaConfig.isKafkaEnableMultiTenantMetadata()) {
             // we are not leveraging lafkaEnableMultitenantMetadata feature
             // the client will access only system tenant
             return true;

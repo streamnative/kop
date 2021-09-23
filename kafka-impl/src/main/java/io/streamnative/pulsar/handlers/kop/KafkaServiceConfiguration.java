@@ -97,7 +97,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             required = true,
             doc = "Use the current tenant as namespace name for Metadata topics."
     )
-    private boolean kafkaEnableMultitenantMetadata = true;
+    private boolean kafkaEnableMultiTenantMetadata = true;
 
     @FieldContext(
         category = CATEGORY_KOP,
