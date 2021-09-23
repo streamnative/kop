@@ -13,11 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.testng.Assert.assertFalse;
+
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
-import static org.testng.Assert.assertFalse;
-import static org.testng.Assert.assertTrue;
 
 /**
  * Unit test for Authorization with `KafkaEnableMultiTenantMetadata` = false.
