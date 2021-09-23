@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.AssertJUnit.fail;
 
@@ -59,14 +60,14 @@ import org.testng.annotations.Test;
 @Slf4j
 public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestBase {
 
-    private static final String TENANT = "KafkaAuthorizationTest";
-    private static final String NAMESPACE = "ns1";
+    protected static final String TENANT = "KafkaAuthorizationTest";
+    protected static final String NAMESPACE = "ns1";
     private static final String SHORT_TOPIC = "topic1";
     private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/" + SHORT_TOPIC;
 
-    private static final String SIMPLE_USER = "muggle_user";
-    private static final String ANOTHER_USER = "death_eater_user";
-    private static final String ADMIN_USER = "admin_user";
+    protected static final String SIMPLE_USER = "muggle_user";
+    protected static final String ANOTHER_USER = "death_eater_user";
+    protected static final String ADMIN_USER = "admin_user";
 
     private String adminToken;
     private String userToken;
@@ -92,8 +93,9 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         userToken = AuthTokenUtils.createToken(secretKey, SIMPLE_USER, Optional.empty());
         adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
         anotherToken = AuthTokenUtils.createToken(secretKey, ANOTHER_USER, Optional.empty());
-
+        boolean originalKafkaEnableMultiTenantMetadata = conf.isKafkaEnableMultiTenantMetadata();
         super.resetConfig();
+        conf.setKafkaEnableMultiTenantMetadata(originalKafkaEnableMultiTenantMetadata);
         conf.setSaslAllowedMechanisms(Sets.newHashSet("PLAIN"));
         conf.setKafkaMetadataTenant("internal");
         conf.setKafkaMetadataNamespace("__kafka");
@@ -142,6 +144,9 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                             .adminRoles(Collections.singleton(ADMIN_USER))
                             .allowedClusters(Collections.singleton(configClusterName))
                             .build());
+            TenantInfo tenantInfo = admin.tenants().getTenantInfo(TENANT);
+            log.info("tenantInfo for {} {} in test", TENANT, tenantInfo);
+            assertNotNull(tenantInfo);
             admin.namespaces().createNamespace(newTenant + "/" + NAMESPACE);
             admin.topics().createPartitionedTopic(testTopic, 1);
             @Cleanup
@@ -150,12 +155,13 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             kProducer.getProducer().send(new ProducerRecord<>(testTopic, 0, "")).get();
             fail("should have failed");
         } catch (Exception e) {
+            log.info("the error", e);
             assertTrue(e.getMessage().contains("TopicAuthorizationException"));
         } finally {
             // Cleanup
             admin.topics().deletePartitionedTopic(testTopic);
-            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
-            admin.tenants().deleteTenant(newTenant);
+            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE, true);
+            admin.tenants().deleteTenant(newTenant, true);
         }
     }
 
@@ -283,6 +289,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         AdminClient adminClient = AdminClient.create(props);
         ListTopicsResult listTopicsResult = adminClient.listTopics();
         Set<String> topics = listTopicsResult.names().get();
+
         assertEquals(topics.size(), 1);
         assertTrue(topics.contains(newTopic));
 
@@ -353,8 +360,8 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         } finally {
             // Cleanup
             admin.topics().deletePartitionedTopic(testTopic);
-            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
-            admin.tenants().deleteTenant(newTenant);
+            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE, true);
+            admin.tenants().deleteTenant(newTenant, true);
         }
     }
 
@@ -395,8 +402,8 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         } finally {
             // Cleanup
             admin.topics().deletePartitionedTopic(testTopic);
-            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
-            admin.tenants().deleteTenant(newTenant);
+            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE, true);
+            admin.tenants().deleteTenant(newTenant, true);
         }
     }
 
