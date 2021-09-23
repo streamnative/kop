@@ -19,7 +19,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 import com.google.common.base.Joiner;
 import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
@@ -100,7 +99,8 @@ public class SimpleAclAuthorizer implements Authorizer {
                             permissionFuture.complete(false);
                             return;
                         }
-                        authoriseTopicOverNamespacePolicies(principal, action, permissionFuture, topicName, policies.get());
+                        authoriseTopicOverNamespacePolicies(principal, action, permissionFuture, topicName,
+                                policies.get());
                     }).exceptionally(ex -> {
                         if (log.isDebugEnabled()) {
                             log.debug("Client with Principal - {} failed to get permissions for resource - {}. {}",
