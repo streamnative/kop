@@ -75,6 +75,6 @@ The KoP metrics are exposed under "/metrics" at port `8000` along with Pulsar me
 
 | Name | Type | Description |
 |---|---|---|
-| kop_server_KOP_EVENT_QUEUE_SIZE | Gauge | The total number of events in kop event processing queue. |
+| kop_server_KOP_EVENT_QUEUE_SIZE | Gauge | The total number of events in KoP event processing queue. |
 | kop_server_KOP_EVENT_QUEUED_LATENCY | Summary | The events queued latency calculated in milliseconds. <br> Available labels: *event* (DeleteTopicsEvent, BrokersChangeEvent, ShutdownEventThread). </br>|
-| kop_server_KOP_EVENT_LATENCY | Summary | The events processing total latency for all kop event type. <br> Available labels: *event* (DeleteTopicsEvent, BrokersChangeEvent, ShutdownEventThread). </br>|
+| kop_server_KOP_EVENT_LATENCY | Summary | The events processing total latency for all KoP event types. <br> Available labels: *event* (DeleteTopicsEvent, BrokersChangeEvent, ShutdownEventThread). </br>|
