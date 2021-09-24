@@ -79,6 +79,7 @@
     <module>kafka-0-10</module>
     <module>kafka-1-0</module>
     <module>kafka-2-8</module>
+    <module>kafka-3-0</module>
     <module>kafka-client-api</module>
     <module>kafka-client-factory</module>
     <module>kafka-impl</module>
