@@ -114,7 +114,8 @@ public class LookupClient implements Closeable {
         }
     }
 
-    private ConcurrentHashMap<String, PulsarClientImpl> createPulsarClientMap(PulsarService pulsarService, KafkaServiceConfiguration kafkaConfig) throws PulsarClientException {
+    private ConcurrentHashMap<String, PulsarClientImpl> createPulsarClientMap(
+            PulsarService pulsarService, KafkaServiceConfiguration kafkaConfig) throws PulsarClientException {
         ConcurrentHashMap<String, PulsarClientImpl> pulsarClientMap = new ConcurrentHashMap<>();
         final Map<String, SecurityProtocol> protocolMap = EndPoint.parseProtocolMap(kafkaConfig.getKafkaProtocolMap());
         if (protocolMap.isEmpty()) {
@@ -127,9 +128,9 @@ public class LookupClient implements Closeable {
         return pulsarClientMap;
     }
 
-    private static PulsarClientImpl createPulsarClient(final PulsarService pulsarService,
-                                                       final KafkaServiceConfiguration kafkaConfig, final String listenerName)
-            throws PulsarClientException {
+    private static PulsarClientImpl createPulsarClient(
+            final PulsarService pulsarService, final KafkaServiceConfiguration kafkaConfig,
+            final String listenerName) throws PulsarClientException {
         // It's migrated from PulsarService#getClient() but it can configure listener name
         final ClientConfigurationData conf = new ClientConfigurationData();
         conf.setServiceUrl(kafkaConfig.isTlsEnabled()

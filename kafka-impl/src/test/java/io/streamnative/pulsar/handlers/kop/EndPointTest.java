@@ -92,8 +92,8 @@ public class EndPointTest {
     @Test
     public void testValidMultiListeners() throws Exception {
         final String kafkaProtocolMap = "internal:PLAINTEXT,internal_ssl:SSL,external:PLAINTEXT,external_ssl:SSL";
-        final String kafkaListeners = "internal://localhost:9092,internal_ssl://localhost:9093," +
-                "external://externalhost:9094,external_ssl://externalhost:9095";
+        final String kafkaListeners = "internal://localhost:9092,internal_ssl://localhost:9093,"
+                + "external://externalhost:9094,external_ssl://externalhost:9095";
         final Map<String, EndPoint> endPointMap = EndPoint.parseListeners(kafkaListeners, kafkaProtocolMap);
         assertEquals(endPointMap.size(), 4);
 
@@ -103,11 +103,11 @@ public class EndPointTest {
         assertEquals(internal.getHostname(), "localhost");
         assertEquals(internal.getPort(), 9092);
 
-        final EndPoint internal_ssl = endPointMap.get("internal_ssl");
-        assertNotNull(internal_ssl);
-        assertEquals(internal_ssl.getSecurityProtocol(), SecurityProtocol.SSL);
-        assertEquals(internal_ssl.getHostname(), "localhost");
-        assertEquals(internal_ssl.getPort(), 9093);
+        final EndPoint internalSSL = endPointMap.get("internal_ssl");
+        assertNotNull(internalSSL);
+        assertEquals(internalSSL.getSecurityProtocol(), SecurityProtocol.SSL);
+        assertEquals(internalSSL.getHostname(), "localhost");
+        assertEquals(internalSSL.getPort(), 9093);
 
         final EndPoint external = endPointMap.get("external");
         assertNotNull(external);
@@ -115,11 +115,11 @@ public class EndPointTest {
         assertEquals(external.getHostname(), "externalhost");
         assertEquals(external.getPort(), 9094);
 
-        final EndPoint external_ssl = endPointMap.get("external_ssl");
-        assertNotNull(external_ssl);
-        assertEquals(external_ssl.getSecurityProtocol(), SecurityProtocol.SSL);
-        assertEquals(external_ssl.getHostname(), "externalhost");
-        assertEquals(external_ssl.getPort(), 9095);
+        final EndPoint externalSSL = endPointMap.get("external_ssl");
+        assertNotNull(externalSSL);
+        assertEquals(externalSSL.getSecurityProtocol(), SecurityProtocol.SSL);
+        assertEquals(externalSSL.getHostname(), "externalhost");
+        assertEquals(externalSSL.getPort(), 9095);
     }
 
     @Test

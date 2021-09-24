@@ -187,7 +187,7 @@ public class KafkaTopicManager {
             return CompletableFuture.completedFuture(null);
         }
 
-        ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>> topic_lookup_cache =
+        ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>> topicLookupCache =
                 LOOKUP_CACHE.computeIfAbsent(topicName, t-> {
                     if (log.isDebugEnabled()) {
                         log.debug("[{}] topic {} not in Lookup_cache, call lookupBroker",
@@ -198,7 +198,7 @@ public class KafkaTopicManager {
                     return cache;
                 });
 
-        return topic_lookup_cache.computeIfAbsent(listenerName == null ? "" : listenerName, t-> {
+        return topicLookupCache.computeIfAbsent(listenerName == null ? "" : listenerName, t-> {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] topic {} not in Lookup_cache, call lookupBroker",
                         requestHandler.ctx.channel(), topicName);

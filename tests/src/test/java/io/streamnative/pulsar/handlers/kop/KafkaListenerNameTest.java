@@ -13,17 +13,15 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import java.util.Properties;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.testng.annotations.Test;
 
-import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Test for kafkaListenerName config.
@@ -77,7 +75,8 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         final String kafkaProtocolMap = "kafka:PLAINTEXT,kafka_external:PLAINTEXT";
         conf.setKafkaProtocolMap(kafkaProtocolMap);
         int externalPort = PortManager.nextFreePort();
-        final String kafkaListeners = "kafka://0.0.0.0:" + kafkaBrokerPort + ",kafka_external://0.0.0.0:" + externalPort;
+        final String kafkaListeners = "kafka://0.0.0.0:" + kafkaBrokerPort
+                + ",kafka_external://0.0.0.0:" + externalPort;
         conf.setKafkaListeners(kafkaListeners);
         final String advertisedListeners =
                 "pulsar:pulsar://" + localAddress + ":" + brokerPort

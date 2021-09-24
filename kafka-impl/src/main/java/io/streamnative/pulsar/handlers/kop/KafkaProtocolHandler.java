@@ -443,8 +443,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
                     ImmutableMap.<InetSocketAddress, ChannelInitializer<SocketChannel>>builder();
 
-            EndPoint.parseListeners(kafkaConfig.getListeners(), kafkaConfig.getKafkaProtocolMap()).forEach((listener, endPoint) -> {
-
+            EndPoint.parseListeners(kafkaConfig.getListeners(), kafkaConfig.getKafkaProtocolMap()).
+                    forEach((listener, endPoint) -> {
                 switch (endPoint.getSecurityProtocol()) {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:

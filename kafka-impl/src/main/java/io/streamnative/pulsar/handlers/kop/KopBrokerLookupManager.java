@@ -53,7 +53,8 @@ public class KopBrokerLookupManager {
     public static final ConcurrentHashMap<String, CompletableFuture<Optional<String>>>
             KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
 
-    public KopBrokerLookupManager(PulsarService pulsarService, Boolean tlsEnabled, String advertisedListeners, String kafkaProtocolMap) {
+    public KopBrokerLookupManager(PulsarService pulsarService, Boolean tlsEnabled,
+                                  String advertisedListeners, String kafkaProtocolMap) {
         this.pulsarService = pulsarService;
         this.tlsEnabled = tlsEnabled;
         this.advertisedListeners = advertisedListeners;
