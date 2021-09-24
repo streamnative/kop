@@ -34,6 +34,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -110,9 +111,13 @@ public class TransactionMarkerChannelManager {
             markersQueue.add(txnIdAndMarker);
         }
 
-        public void getMarkerEntries(List<TxnIdAndMarkerEntry> list) {
-            for (BlockingQueue<TxnIdAndMarkerEntry> partitionQueue : markersPerPartition.values()) {
-                partitionQueue.drainTo(list);
+        public void forEachTxnTopicPartition(BiConsumer<Integer, BlockingQueue<TxnIdAndMarkerEntry>> f) {
+            for (Map.Entry<Integer, BlockingQueue<TxnIdAndMarkerEntry>> entry: markersPerPartition.entrySet()) {
+                Integer partition = entry.getKey();
+                BlockingQueue<TxnIdAndMarkerEntry> queue = entry.getValue();
+                if (!queue.isEmpty()) {
+                    f.accept(partition, queue);
+                }
             }
         }
     }
@@ -352,7 +357,7 @@ public class TransactionMarkerChannelManager {
     private void drainQueuedTransactionMarkers() {
         retryLogAppends();
         List<TxnIdAndMarkerEntry> txnIdAndMarkerEntries = new ArrayList<>();
-        markersQueueForUnknownBroker.getMarkerEntries(txnIdAndMarkerEntries);
+        markersQueueForUnknownBroker.forEachTxnTopicPartition((__, queue) -> queue.drainTo(txnIdAndMarkerEntries));
 
         for (TxnIdAndMarkerEntry txnIdAndMarker : txnIdAndMarkerEntries) {
             String transactionalId = txnIdAndMarker.getTransactionalId();
@@ -368,7 +373,7 @@ public class TransactionMarkerChannelManager {
 
         for (TxnMarkerQueue txnMarkerQueue : markersQueuePerBroker.values()) {
             txnIdAndMarkerEntries.clear();
-            txnMarkerQueue.getMarkerEntries(txnIdAndMarkerEntries);
+            txnMarkerQueue.forEachTxnTopicPartition((__, queue) -> queue.drainTo(txnIdAndMarkerEntries));
             if (!txnIdAndMarkerEntries.isEmpty()) {
                 getChannel(txnMarkerQueue.address).whenComplete((channelHandler, throwable) -> {
 
