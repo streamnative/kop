@@ -38,7 +38,7 @@ import org.testng.annotations.Test;
 public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
 
 
-    @Test(timeOut = 20000, enabled = false)
+    @Test(timeOut = 20000)
     public void testCacheInvalidatorIsTriggered() throws Exception {
         String topic = "testCacheInvalidatorIsTriggered";
         @Cleanup
