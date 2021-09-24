@@ -43,6 +43,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -104,6 +106,56 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     public TransactionCoordinator getTransactionCoordinator(String tenant) {
         return transactionCoordinatorByTenant.computeIfAbsent(tenant, this::createAndBootTransactionCoordinator);
     }
+
+    /**
+     * Listener for invalidating the global Broker ownership cache
+     */
+    @AllArgsConstructor
+    public static class CacheInvalidator implements NamespaceBundleOwnershipListener {
+        final BrokerService service;
+
+        @Override
+        public boolean test(NamespaceBundle namespaceBundle) {
+            // we are interested in every topic,
+            // because we do not know which topics are served by KOP
+            return true;
+        }
+
+        private void invalidateBundleCache(NamespaceBundle bundle) {
+            service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
+                    .whenComplete((topics, ex) -> {
+                        if (ex == null) {
+                            for (String topic : topics) {
+                                TopicName name = TopicName.get(topic);
+                                // deReference topic when unload
+                                KopBrokerLookupManager.removeTopicManagerCache(topic);
+                                KafkaTopicManager.deReference(topic);
+
+                                // For non-partitioned topic.
+                                if (!name.isPartitioned()) {
+                                    String partitionedZeroTopicName = name.getPartition(0).toString();
+                                    KafkaTopicManager.deReference(partitionedZeroTopicName);
+                                    KopBrokerLookupManager.removeTopicManagerCache(partitionedZeroTopicName);
+                                }
+                            }
+                        } else {
+                            log.error("Failed to get owned topic list for "
+                                            + "CacheInvalidator when triggering bundle ownership change {}.",
+                                    bundle, ex);
+                        }
+                    }
+                    );
+        }
+        @Override
+        public void onLoad(NamespaceBundle bundle) {
+            invalidateBundleCache(bundle);
+        }
+        @Override
+        public void unLoad(NamespaceBundle bundle) {
+            invalidateBundleCache(bundle);
+        }
+    }
+
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
      */
@@ -152,16 +204,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                                 }
                                 groupCoordinator.handleGroupImmigration(name.getPartitionIndex());
                             }
-                            // deReference topic when unload
-                            KopBrokerLookupManager.removeTopicManagerCache(topic);
-                            KafkaTopicManager.deReference(topic);
-
-                            // For non-partitioned topic.
-                            if (!name.isPartitioned()) {
-                                String partitionedZeroTopicName = name.getPartition(0).toString();
-                                KafkaTopicManager.deReference(partitionedZeroTopicName);
-                                KopBrokerLookupManager.removeTopicManagerCache(partitionedZeroTopicName);
-                            }
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
@@ -196,17 +238,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                                 }
                                 groupCoordinator.handleGroupEmigration(name.getPartitionIndex());
                             }
-                            // deReference topic when unload
-                            KopBrokerLookupManager.removeTopicManagerCache(topic);
-                            KafkaTopicManager.deReference(topic);
-
-                            // For non-partitioned topic.
-                            if (!name.isPartitioned()) {
-                                String partitionedZeroTopicName = name.getPartition(0).toString();
-                                KafkaTopicManager.deReference(partitionedZeroTopicName);
-                                KopBrokerLookupManager.removeTopicManagerCache(partitionedZeroTopicName);
-                            }
-
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
@@ -253,6 +284,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             kafkaConfig.setBindAddress(conf.getBindAddress());
         }
         KopTopic.initialize(kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace());
+
+        brokerService.pulsar()
+                .getNamespaceService()
+                .addNamespaceBundleOwnershipListener(
+                        new CacheInvalidator(brokerService));
 
         // Validate the namespaces
         for (String fullNamespace : kafkaConfig.getKopAllowedNamespaces()) {
