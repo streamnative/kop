@@ -23,8 +23,6 @@ import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
-
-import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -79,7 +77,8 @@ public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
         assertFalse(KopBrokerLookupManager.KOP_ADDRESS_CACHE.isEmpty());
         assertFalse(KopBrokerLookupManager.LOOKUP_CACHE.isEmpty());
 
-        BundlesData bundles = pulsar.getAdminClient().namespaces().getBundles(conf.getKafkaTenant() + "/" + conf.getKafkaNamespace());
+        BundlesData bundles = pulsar.getAdminClient().namespaces().getBundles(
+                conf.getKafkaTenant() + "/" + conf.getKafkaNamespace());
         List<String> boundaries = bundles.getBoundaries();
         for (int i = 0; i < boundaries.size() - 1; i++) {
             String bundle = String.format("%s_%s", boundaries.get(i), boundaries.get(i + 1));
