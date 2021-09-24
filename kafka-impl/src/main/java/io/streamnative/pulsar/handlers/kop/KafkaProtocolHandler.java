@@ -121,12 +121,14 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         }
 
         private void invalidateBundleCache(NamespaceBundle bundle) {
+            log.info("invalidateBundleCache for {}", bundle);
             service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
                     .whenComplete((topics, ex) -> {
                         if (ex == null) {
                             for (String topic : topics) {
                                 TopicName name = TopicName.get(topic);
-                                // deReference topic when unload
+
+                                log.info("invalidateBundleCache for topic {}", topic);
                                 KopBrokerLookupManager.removeTopicManagerCache(topic);
                                 KafkaTopicManager.deReference(topic);
 

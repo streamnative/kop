@@ -21,11 +21,19 @@ import static org.testng.Assert.assertTrue;
 
 import java.time.Duration;
 import java.util.Collections;
+import java.util.List;
+import java.util.Properties;
+
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.IntegerSerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.pulsar.common.policies.data.BundlesData;
 import org.awaitility.Awaitility;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -38,37 +46,52 @@ import org.testng.annotations.Test;
 public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
 
 
-    @Test(timeOut = 20000)
+    @Test
     public void testCacheInvalidatorIsTriggered() throws Exception {
-        String topic = "testCacheInvalidatorIsTriggered";
-        @Cleanup
-        KProducer kProducer = new KProducer(topic, false, getKafkaBrokerPort());
-        kProducer.getProducer().send(new ProducerRecord<>(topic, 1, "value"));
+        String topicName = "testCacheInvalidatorIsTriggered";
+        String kafkaServer = "localhost:" + getKafkaBrokerPort();
+        String transactionalId = "xxxx";
 
-        @Cleanup
-        KConsumer kConsumer = new KConsumer(topic, getKafkaBrokerPort(), true);
-        kConsumer.getConsumer().subscribe(Collections.singleton(topic));
+        Properties producerProps = new Properties();
+        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
+        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
+        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
+        producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
 
-        ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(5));
-        assertNotNull(records);
-        assertEquals(1, records.count());
-        ConsumerRecord<Integer, String> record = records.iterator().next();
-        assertEquals(1, record.key().intValue());
-        assertEquals("value", record.value());
+        try (KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);) {
+            producer.initTransactions();
+            producer.beginTransaction();
+            producer.send(new ProducerRecord<>(topicName, 1, "value")).get();
+            producer.commitTransaction();
+        }
 
-        log.info("LOOKUP_CACHE {}", KopBrokerLookupManager.LOOKUP_CACHE);
-        log.info("KOP_ADDRESS_CACHE {}", KopBrokerLookupManager.KOP_ADDRESS_CACHE);
+        try (KConsumer kConsumer = new KConsumer(topicName, getKafkaBrokerPort(), true);) {
+            kConsumer.getConsumer().subscribe(Collections.singleton(topicName));
+            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(5));
+            assertNotNull(records);
+            assertEquals(1, records.count());
+            ConsumerRecord<Integer, String> record = records.iterator().next();
+            assertEquals(1, record.key().intValue());
+            assertEquals("value", record.value());
+        }
 
-        assertFalse(KopBrokerLookupManager.LOOKUP_CACHE.isEmpty());
         assertFalse(KopBrokerLookupManager.KOP_ADDRESS_CACHE.isEmpty());
+        assertFalse(KopBrokerLookupManager.LOOKUP_CACHE.isEmpty());
 
-        pulsar.getAdminClient().topics().unload(topic);
+        BundlesData bundles = pulsar.getAdminClient().namespaces().getBundles(conf.getKafkaTenant() + "/" + conf.getKafkaNamespace());
+        List<String> boundaries = bundles.getBoundaries();
+        for (int i = 0; i < boundaries.size() - 1; i++) {
+            String bundle = String.format("%s_%s", boundaries.get(i), boundaries.get(i + 1));
+            pulsar.getAdminClient().namespaces()
+                    .unloadNamespaceBundle(conf.getKafkaTenant() + "/" + conf.getKafkaNamespace(), bundle);
+        }
 
         Awaitility.await().untilAsserted(() -> {
             log.info("LOOKUP_CACHE {}", KopBrokerLookupManager.LOOKUP_CACHE);
             log.info("KOP_ADDRESS_CACHE {}", KopBrokerLookupManager.KOP_ADDRESS_CACHE);
-            assertTrue(KopBrokerLookupManager.LOOKUP_CACHE.isEmpty());
             assertTrue(KopBrokerLookupManager.KOP_ADDRESS_CACHE.isEmpty());
+            assertTrue(KopBrokerLookupManager.LOOKUP_CACHE.isEmpty());
         });
 
     }
@@ -79,7 +102,7 @@ public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
         super.internalSetup();
     }
 
-    @AfterClass
+    @AfterClass(alwaysRun = true)
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
