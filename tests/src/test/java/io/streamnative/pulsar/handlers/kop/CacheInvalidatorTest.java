@@ -57,14 +57,14 @@ public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
         producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
         producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
 
-        try (KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);) {
+        try (KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps)) {
             producer.initTransactions();
             producer.beginTransaction();
             producer.send(new ProducerRecord<>(topicName, 1, "value")).get();
             producer.commitTransaction();
         }
 
-        try (KConsumer kConsumer = new KConsumer(topicName, getKafkaBrokerPort(), true);) {
+        try (KConsumer kConsumer = new KConsumer(topicName, getKafkaBrokerPort(), true)) {
             kConsumer.getConsumer().subscribe(Collections.singleton(topicName));
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(5));
             assertNotNull(records);
