@@ -43,7 +43,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NonNull;
@@ -108,7 +107,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     }
 
     /**
-     * Listener for invalidating the global Broker ownership cache
+     * Listener for invalidating the global Broker ownership cache.
      */
     @AllArgsConstructor
     public static class CacheInvalidator implements NamespaceBundleOwnershipListener {
@@ -285,11 +284,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         }
         KopTopic.initialize(kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace());
 
-        brokerService.pulsar()
-                .getNamespaceService()
-                .addNamespaceBundleOwnershipListener(
-                        new CacheInvalidator(brokerService));
-
         // Validate the namespaces
         for (String fullNamespace : kafkaConfig.getKopAllowedNamespaces()) {
             final String[] tokens = fullNamespace.split("/");
@@ -348,6 +342,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         // Create PulsarClient for topic lookup, the listenerName will be set if kafkaListenerName is configured.
         // After it's created successfully, this method won't throw any exception.
         LOOKUP_CLIENT_MAP.put(brokerService.pulsar(), new LookupClient(brokerService.pulsar(), kafkaConfig));
+
+        brokerService.pulsar()
+                .getNamespaceService()
+                .addNamespaceBundleOwnershipListener(
+                        new CacheInvalidator(brokerService));
 
         // initialize default Group Coordinator
         getGroupCoordinator(kafkaConfig.getKafkaMetadataTenant());
