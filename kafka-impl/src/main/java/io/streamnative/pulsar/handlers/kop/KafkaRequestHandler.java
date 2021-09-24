@@ -200,7 +200,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final MetadataCache<LocalBrokerData> localBrokerDataCache;
 
     private final Boolean tlsEnabled;
-    private final String kafkaProtocolMap;
     private final EndPoint advertisedEndPoint;
     private final String advertisedListeners;
     private final int defaultNumPartitions;
@@ -298,7 +297,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.localBrokerDataCache = localBrokerDataCache;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
-        this.kafkaProtocolMap = kafkaConfig.getKafkaProtocolMap();
         this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();

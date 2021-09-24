@@ -45,7 +45,6 @@ public class KopBrokerLookupManager {
     private final PulsarService pulsarService;
     private final Boolean tlsEnabled;
     private final String advertisedListeners;
-    private final String kafkaProtocolMap;
     private final LookupClient lookupClient;
 
     public static final ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>
@@ -54,11 +53,10 @@ public class KopBrokerLookupManager {
             KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
 
     public KopBrokerLookupManager(PulsarService pulsarService, Boolean tlsEnabled,
-                                  String advertisedListeners, String kafkaProtocolMap) {
+                                  String advertisedListeners) {
         this.pulsarService = pulsarService;
         this.tlsEnabled = tlsEnabled;
         this.advertisedListeners = advertisedListeners;
-        this.kafkaProtocolMap = kafkaProtocolMap;
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
     }
 

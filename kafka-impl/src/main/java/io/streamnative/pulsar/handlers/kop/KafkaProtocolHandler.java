@@ -312,8 +312,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         brokerService = service;
         kopBrokerLookupManager = new KopBrokerLookupManager(
                 brokerService.getPulsar(), false,
-                kafkaConfig.getKafkaAdvertisedListeners(),
-                kafkaConfig.getKafkaProtocolMap());
+                kafkaConfig.getKafkaAdvertisedListeners());
 
         log.info("Starting KafkaProtocolHandler, kop version is: '{}'", KopVersion.getVersion());
         log.info("Git Revision {}", KopVersion.getGitSha());
@@ -450,17 +449,15 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, this, adminManager, false,
-                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
-                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache));
-                                endPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
+                                endPoint, scopeStatsLogger, localBrokerDataCache));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, this, adminManager, true,
-                                endPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
-                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache));
+                                endPoint, scopeStatsLogger, localBrokerDataCache));
                         break;
+                    default:
                 }
             });
             return builder.build();
