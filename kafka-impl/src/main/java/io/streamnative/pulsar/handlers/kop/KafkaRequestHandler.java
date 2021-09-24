@@ -202,6 +202,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final MetadataCache<LocalBrokerData> localBrokerDataCache;
 
     private final Boolean tlsEnabled;
+    private final String kafkaProtocolMap;
     private final EndPoint advertisedEndPoint;
     private final String advertisedListeners;
     private final int defaultNumPartitions;
@@ -299,6 +300,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.localBrokerDataCache = localBrokerDataCache;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
+        this.kafkaProtocolMap = kafkaConfig.getKafkaProtocolMap();
         this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
@@ -2188,11 +2190,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             return future;
         }
 
-        // if kafkaListenerName is set, the lookup result is the advertised address
-        if (!StringUtil.isBlank(kafkaConfig.getKafkaListenerName())) {
-            // TODO:　should add SecurityProtocol according to which endpoint is handling the request.
-            //  firstly we only support PLAINTEXT when lookup with kafkaListenerName
-            String kafkaAdvertisedAddress = String.format("%s://%s:%s", SecurityProtocol.PLAINTEXT.name(),
+        if (advertisedEndPoint.isMultiListener()) {
+            // if kafkaProtocolMap is set, the lookup result is the advertised address
+            String kafkaAdvertisedAddress = String.format("%s://%s:%s", advertisedEndPoint.getSecurityProtocol().name,
                     pulsarAddress.getHostName(), pulsarAddress.getPort());
             KafkaTopicManager.KOP_ADDRESS_CACHE.put(topic.toString(), returnFuture);
             returnFuture.complete(Optional.ofNullable(kafkaAdvertisedAddress));
@@ -2285,7 +2285,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
 
-        topicManager.getTopicBroker(topic.toString())
+        topicManager.getTopicBroker(topic.toString(),
+                advertisedEndPoint.isMultiListener() ? advertisedEndPoint.getListenerName() : null)
                 .thenApply(address -> getProtocolDataToAdvertise(address, topic))
                 .thenAccept(kopAddressFuture -> kopAddressFuture.thenAccept(listenersOptional -> {
                     if (!listenersOptional.isPresent()) {
@@ -2298,8 +2299,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     // It's the `kafkaAdvertisedListeners` config that's written to ZK
                     final String listeners = listenersOptional.get();
                     final EndPoint endPoint =
-                            (tlsEnabled ? EndPoint.getSslEndPoint(listeners)
-                                    : EndPoint.getPlainTextEndPoint(listeners));
+                            (tlsEnabled ? EndPoint.getSslEndPoint(listeners) :
+                                    EndPoint.getPlainTextEndPoint(listeners));
                     final Node node = newNode(endPoint.getInetAddress());
 
                     if (log.isDebugEnabled()) {

@@ -44,20 +44,17 @@ public abstract class KafkaStreamsTestBase extends KopProtocolHandlerTestBase {
         super("kafka");
     }
 
-    @BeforeClass
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
         bootstrapServers = "localhost:" + getKafkaBrokerPort();
     }
 
-    @AfterClass
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
     }
 
-    @BeforeMethod
     protected void setupTestCase() throws Exception {
         testNo++;
         createTopics();
@@ -80,7 +77,6 @@ public abstract class KafkaStreamsTestBase extends KopProtocolHandlerTestBase {
         extraSetup();
     }
 
-    @AfterMethod
     protected void cleanupTestCase() throws Exception {
         if (kafkaStreams != null) {
             kafkaStreams.close(3, TimeUnit.SECONDS);
