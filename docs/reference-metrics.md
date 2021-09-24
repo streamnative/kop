@@ -70,3 +70,11 @@ The KoP metrics are exposed under "/metrics" at port `8000` along with Pulsar me
 | kop_server_BYTES_OUT | Counter | The consumer bytes out stats. <br> Available labels: *topic*, *partition*, *group*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li><li>*group*: the group id for consumer to consumer message from topic-partition</li></ul>|
 | kop_server_MESSAGE_OUT | Counter | The consumer message out stats. <br> Available labels: *topic*, *partition*, *group*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li><li>*group*: the group id for consumer to consumer message from topic-partition</li></ul>|
 | kop_server_ENTRIES_OUT | Counter | The consumer entries out stats. <br> Available labels: *topic*, *partition*, *group*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li><li>*group*: the group id for consumer to consumer message from topic-partition</li></ul>|
+
+### Kop event metrics
+
+| Name | Type | Description |
+|---|---|---|
+| kop_server_KOP_EVENT_QUEUE_SIZE | Gauge | The total number of events in KoP event processing queue. |
+| kop_server_KOP_EVENT_QUEUED_LATENCY | Summary | The events queued latency calculated in milliseconds. <br> Available labels: *event* (DeleteTopicsEvent, BrokersChangeEvent, ShutdownEventThread). </br>|
+| kop_server_KOP_EVENT_LATENCY | Summary | The events processing total latency for all KoP event types. <br> Available labels: *event* (DeleteTopicsEvent, BrokersChangeEvent, ShutdownEventThread). </br>|
