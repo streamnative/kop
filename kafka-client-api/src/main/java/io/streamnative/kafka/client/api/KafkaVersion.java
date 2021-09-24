@@ -24,7 +24,7 @@ import lombok.Getter;
  */
 public enum KafkaVersion {
 
-    DEFAULT("default"), KAFKA_2_8_0("280"), KAFKA_1_0_0("100"), KAFKA_0_10_0_0("010");
+    DEFAULT("default"), KAFKA_3_0_0("300"), KAFKA_2_8_0("280"), KAFKA_1_0_0("100"), KAFKA_0_10_0_0("010");
 
     @Getter
     private String name;
