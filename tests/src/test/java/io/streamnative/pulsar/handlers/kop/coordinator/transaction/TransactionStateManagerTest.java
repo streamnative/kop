@@ -186,10 +186,10 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
                 Assert.assertEquals(txnMetadata.getTopicPartitions(), loadedTxnMetadata.getTopicPartitions());
                 Assert.assertEquals(txnMetadata.getTxnStartTimestamp(), loadedTxnMetadata.getTxnStartTimestamp());
                 if (txnMetadata.getState().equals(TransactionState.PREPARE_ABORT)) {
-                    // the prepare state will complete
+                    // to prepare state will complete
                     waitTxnComplete(loadedTxnMetadata, TransactionState.COMPLETE_ABORT);
                 } else if (txnMetadata.getState().equals(TransactionState.PREPARE_COMMIT)) {
-                    // the prepare state will complete
+                    // to prepare state will complete
                     waitTxnComplete(loadedTxnMetadata, TransactionState.COMPLETE_COMMIT);
                 } else {
                     Assert.assertEquals(txnMetadata.getState(), loadedTxnMetadata.getState());
@@ -234,7 +234,7 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
 
     private TransactionStateManager getTxnManager() {
         return ((KafkaProtocolHandler) this.pulsar.getProtocolHandlers().protocol("kafka"))
-                .getTransactionCoordinator().getTxnManager();
+                .getTransactionCoordinator("public").getTxnManager();
     }
 
 }

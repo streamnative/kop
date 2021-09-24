@@ -229,14 +229,14 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     }
 
-    public static class TxnCoordinatorListener implements NamespaceBundleOwnershipListener {
+    public static class TxnNamespaceBundleListener implements NamespaceBundleOwnershipListener {
         private final BrokerService service;
         private final NamespaceName kafkaMetaNs;
         private final NamespaceName kafkaTopicNs;
         private final String brokerUrl;
         private final TransactionCoordinator txnCoordinator;
 
-        public TxnCoordinatorListener(
+        public TxnNamespaceBundleListener(
                 BrokerService service,
                 String tenant,
                 KafkaServiceConfiguration kafkaConfig,
@@ -260,7 +260,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
                     .whenComplete((topics, ex) -> {
                         if (ex == null) {
-                            log.info("get owned topic list when onLoad bundle {}, topic size {} ", bundle, topics.size());
+                            log.info("get owned topic list when onLoad bundle {}, topic size {} ",
+                                    bundle, topics.size());
                             for (String topic : topics) {
                                 TopicName name = TopicName.get(topic);
                                 String kafkaTopicName = getKafkaTopicNameFromPulsarTopicName(name);
@@ -279,7 +280,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                             }
                         } else {
                             log.error("Failed to get owned topic list for "
-                                            + "TxnCoordinatorListener when triggering on-loading bundle {}.",
+                                            + "TxnNamespaceBundleListener when triggering on-loading bundle {}.",
                                     bundle, ex);
                         }
                     });
@@ -295,7 +296,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
                     .whenComplete((topics, ex) -> {
                         if (ex == null) {
-                            log.info("get owned topic list when unLoad bundle {}, topic size {} ", bundle, topics.size());
+                            log.info("get owned topic list when unLoad bundle {}, topic size {} ",
+                                    bundle, topics.size());
                             for (String topic : topics) {
                                 TopicName name = TopicName.get(topic);
                                 String kafkaTopicName = getKafkaTopicNameFromPulsarTopicName(name);
@@ -446,7 +448,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             brokerService.pulsar()
                     .getNamespaceService()
                     .addNamespaceBundleOwnershipListener(
-                            new TxnCoordinatorListener(brokerService, tenant, kafkaConfig, transactionCoordinator));
+                            new TxnNamespaceBundleListener(brokerService, tenant, kafkaConfig, transactionCoordinator));
 
             return transactionCoordinator;
         } catch (Exception e) {
@@ -478,15 +480,16 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     brokerService.getPulsar().getLocalMetadataStore());
             kopEventManager.start();
             kopEventManagerByTenant.put(tenant, kopEventManager);
+
+            // and listener for Offset topics load/unload
+            brokerService.pulsar()
+                    .getNamespaceService()
+                    .addNamespaceBundleOwnershipListener(
+                            new OffsetAndTopicListener(brokerService, tenant, kafkaConfig, groupCoordinator));
         } catch (Exception e) {
             log.error("Failed to create offset metadata", e);
             throw new IllegalStateException(e);
         }
-        // and listener for Offset topics load/unload
-        brokerService.pulsar()
-                .getNamespaceService()
-                .addNamespaceBundleOwnershipListener(
-                        new OffsetAndTopicListener(brokerService, tenant, kafkaConfig, groupCoordinator));
         // init kafka namespaces
         try {
             MetadataUtils.createKafkaNamespaceIfMissing(brokerService.getPulsar().getAdminClient(),

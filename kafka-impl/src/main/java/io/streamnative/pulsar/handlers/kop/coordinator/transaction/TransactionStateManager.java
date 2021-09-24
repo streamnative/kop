@@ -24,8 +24,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.AllArgsConstructor;
@@ -593,7 +591,7 @@ public class TransactionStateManager {
                 CompletableFuture<Producer<byte[]>> producer = txnLogProducerMap.remove(partition);
                 CompletableFuture<Reader<byte[]>> reader = txnLogReaderMap.remove(partition);
                 if (producer != null) {
-                    producer.thenApply(p -> p.closeAsync()).whenCompleteAsync((ignore, t) -> {
+                    producer.thenApply(Producer::closeAsync).whenCompleteAsync((ignore, t) -> {
                         if (t != null) {
                             log.error("Failed to close producer when remove partition {}.",
                                     producer.join().getTopic());
@@ -601,7 +599,7 @@ public class TransactionStateManager {
                     });
                 }
                 if (reader != null) {
-                    reader.thenApply(p -> p.closeAsync()).whenCompleteAsync((ignore, t) -> {
+                    reader.thenApply(Reader::closeAsync).whenCompleteAsync((ignore, t) -> {
                         if (t != null) {
                             log.error("Failed to close reader when remove partition {}.",
                                     reader.join().getTopic());
