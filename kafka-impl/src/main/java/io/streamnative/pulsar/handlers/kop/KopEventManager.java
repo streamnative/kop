@@ -22,6 +22,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
+import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.ShutdownableThread;
 import java.nio.charset.StandardCharsets;
@@ -32,12 +33,16 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiConsumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
@@ -52,7 +57,7 @@ public class KopEventManager {
 
     private static final String kopEventThreadName = "kop-event-thread";
     private final ReentrantLock putLock = new ReentrantLock();
-    private static final LinkedBlockingQueue<KopEvent> queue =
+    private static final LinkedBlockingQueue<KopEventWrapper> queue =
             new LinkedBlockingQueue<>();
     private final KopEventThread thread =
             new KopEventThread(kopEventThreadName);
@@ -61,15 +66,25 @@ public class KopEventManager {
     private final DeletionTopicsHandler deletionTopicsHandler;
     private final BrokersChangeHandler brokersChangeHandler;
     private final MetadataStore metadataStore;
+    private KopEventManagerStats eventManagerStats;
+    public BiConsumer<String, Long> registerEventLatency = (eventName, createdTime) -> {
+        this.eventManagerStats.getStatsLogger()
+                .scopeLabel(KopServerStats.KOP_EVENT_SCOPE, eventName)
+                .getOpStatsLogger(KopServerStats.KOP_EVENT_LATENCY)
+                .registerSuccessfulEvent(MathUtils.elapsedNanos(createdTime),
+                        TimeUnit.NANOSECONDS);
+    };
 
     public KopEventManager(GroupCoordinator coordinator,
                            AdminManager adminManager,
-                           MetadataStore metadataStore) {
+                           MetadataStore metadataStore,
+                           StatsLogger statsLogger) {
         this.coordinator = coordinator;
         this.adminManager = adminManager;
         this.deletionTopicsHandler = new DeletionTopicsHandler(this);
         this.brokersChangeHandler = new BrokersChangeHandler(this);
         this.metadataStore = metadataStore;
+        this.eventManagerStats = new KopEventManagerStats(statsLogger);
     }
 
     public void start() {
@@ -90,29 +105,40 @@ public class KopEventManager {
     }
 
 
-    public void put(KopEvent event) {
+    public void put(KopEventWrapper eventWrapper) {
         putLock.lock();
         try {
-            queue.put(event);
+            queue.put(eventWrapper);
+            KopEventManagerStats.KOP_EVENT_QUEUE_SIZE_INSTANCE.incrementAndGet();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("Error put event {} to coordinator event queue", event, e);
+            log.error("Error put event {} to coordinator event queue",
+                    eventWrapper.toString(), e);
         } finally {
             putLock.unlock();
         }
     }
 
-    public void clearAndPut(KopEvent event) {
+    public void clearAndPut(KopEventWrapper eventWrapper) {
         putLock.lock();
         try {
             queue.clear();
-            put(event);
+            KopEventManagerStats.KOP_EVENT_QUEUE_SIZE_INSTANCE.set(0);
+            put(eventWrapper);
         } finally {
             putLock.unlock();
         }
     }
 
-    static class KopEventThread extends ShutdownableThread {
+    public void registerEventQueuedLatency(KopEventWrapper eventWrapper) {
+        this.eventManagerStats.getStatsLogger()
+                .scopeLabel(KopServerStats.KOP_EVENT_SCOPE, eventWrapper.kopEvent.name())
+                .getOpStatsLogger(KopServerStats.KOP_EVENT_QUEUED_LATENCY)
+                .registerSuccessfulEvent(MathUtils.elapsedNanos(eventWrapper.getCreatedTime()),
+                        TimeUnit.NANOSECONDS);
+    }
+
+    class KopEventThread extends ShutdownableThread {
 
         public KopEventThread(String name) {
             super(name);
@@ -120,16 +146,19 @@ public class KopEventManager {
 
         @Override
         protected void doWork() {
-            KopEvent event = null;
+            KopEventWrapper eventWrapper = null;
             try {
-                event = queue.take();
-                if (event instanceof ShutdownEventThread) {
+                eventWrapper = queue.take();
+                KopEventManagerStats.KOP_EVENT_QUEUE_SIZE_INSTANCE.decrementAndGet();
+                registerEventQueuedLatency(eventWrapper);
+
+                if (eventWrapper.kopEvent instanceof ShutdownEventThread) {
                     log.info("Shutting down KopEventThread.");
                 } else {
-                    event.process();
+                    eventWrapper.kopEvent.process(registerEventLatency, MathUtils.nowInNano());
                 }
             } catch (InterruptedException e) {
-                log.error("Error processing event {}", event, e);
+                log.error("Error processing event {}", eventWrapper, e);
             }
         }
 
@@ -141,7 +170,8 @@ public class KopEventManager {
         // Really register ChildChange notification.
         metadataStore.getChildren(getDeleteTopicsPath());
         // init local kop brokers cache
-        getBrokers(metadataStore.getChildren(getBrokersChangePath()).join());
+        getBrokers(metadataStore.getChildren(getBrokersChangePath()).join(),
+                null, "", -1);
     }
 
     private void handleChildChangePathNotification(Notification notification) {
@@ -152,7 +182,10 @@ public class KopEventManager {
         }
     }
 
-    private void getBrokers(List<String> pulsarBrokers) {
+    private void getBrokers(List<String> pulsarBrokers,
+                            BiConsumer<String, Long> registerEventLatency,
+                            String name,
+                            long startProcessTime) {
         final Set<Node> kopBrokers = Sets.newConcurrentHashSet();
         final AtomicInteger pendingBrokers = new AtomicInteger(pulsarBrokers.size());
 
@@ -160,6 +193,9 @@ public class KopEventManager {
             metadataStore.get(getBrokersChangePath() + "/" + broker).whenComplete(
                     (brokerData, e) -> {
                         if (e != null) {
+                            if (registerEventLatency != null) {
+                                registerEventLatency.accept(name, startProcessTime);
+                            }
                             log.error("Get broker {} path data failed which have an error", broker, e);
                             return;
                         }
@@ -188,6 +224,9 @@ public class KopEventManager {
                         if (pendingBrokers.decrementAndGet() == 0) {
                             Collection<? extends Node> oldKopBrokers = adminManager.getBrokers();
                             adminManager.setBrokers(kopBrokers);
+                            if (registerEventLatency != null) {
+                                registerEventLatency.accept(name, startProcessTime);
+                            }
                             log.info("Refresh kop brokers new cache {}, old brokers cache {}",
                                     adminManager.getBrokers(), oldKopBrokers);
                         }
@@ -217,15 +256,38 @@ public class KopEventManager {
                 Integer.parseInt(port));
     }
 
+    @Getter
+    static class KopEventWrapper {
+        private final KopEvent kopEvent;
+        private final long createdTime;
+
+        public KopEventWrapper(KopEvent kopEvent) {
+            this.kopEvent = kopEvent;
+            this.createdTime = MathUtils.nowInNano();
+        }
+
+        @Override
+        public String toString() {
+            return "KopEventWrapper("
+                    + "kopEvent=" + ((kopEvent == null) ? "null" : "'" + kopEvent + "'")
+                    + ", createdTime=" + "'" + createdTime + "'"
+                    + ")";
+        }
+
+    }
 
     interface KopEvent {
-        void process();
+        void process(BiConsumer<String, Long> registerEventLatency,
+                     long startProcessTime);
+
+        String name();
     }
 
     class DeleteTopicsEvent implements KopEvent {
 
         @Override
-        public void process() {
+        public void process(BiConsumer<String, Long> registerEventLatency,
+                            long startProcessTime) {
             if (!coordinator.isActive()) {
                 return;
             }
@@ -273,42 +335,62 @@ public class KopEventManager {
 
             } catch (ExecutionException | InterruptedException e) {
                 log.error("DeleteTopicsEvent process have an error", e);
+            } finally {
+                registerEventLatency.accept(name(), startProcessTime);
             }
+        }
+
+        @Override
+        public String name() {
+            return "DeleteTopicsEvent";
         }
     }
 
     class BrokersChangeEvent implements KopEvent {
         @Override
-        public void process() {
+        public void process(BiConsumer<String, Long> registerEventLatency,
+                            long startProcessTime) {
             metadataStore.getChildren(getBrokersChangePath()).whenComplete(
                     (brokers, e) -> {
                         if (e != null) {
                             log.error("BrokersChangeEvent process have an error", e);
                             return;
                         }
-                        getBrokers(brokers);
+                        getBrokers(brokers, registerEventLatency, name(), startProcessTime);
                     });
+        }
+
+        @Override
+        public String name() {
+            return "BrokersChangeEvent";
         }
     }
 
     static class ShutdownEventThread implements KopEvent {
 
         @Override
-        public void process() {
+        public void process(BiConsumer<String, Long> registerEventLatency,
+                            long startProcessTime) {
             // Here is only record shutdown KopEventThread event.
+            registerEventLatency.accept(name(), startProcessTime);
+        }
+
+        @Override
+        public String name() {
+            return "ShutdownEventThread";
         }
     }
 
-    public DeleteTopicsEvent getDeleteTopicEvent() {
-        return new DeleteTopicsEvent();
+    public KopEventWrapper getDeleteTopicEvent() {
+        return new KopEventWrapper(new DeleteTopicsEvent());
     }
 
-    public BrokersChangeEvent getBrokersChangeEvent() {
-        return new BrokersChangeEvent();
+    public KopEventWrapper getBrokersChangeEvent() {
+        return new KopEventWrapper(new BrokersChangeEvent());
     }
 
-    public ShutdownEventThread getShutdownEventThread() {
-        return new ShutdownEventThread();
+    public KopEventWrapper getShutdownEventThread() {
+        return new KopEventWrapper(new ShutdownEventThread());
     }
 
     public static String getKopPath() {

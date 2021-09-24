@@ -81,6 +81,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private static final Map<PulsarService, LookupClient> LOOKUP_CLIENT_MAP = new ConcurrentHashMap<>();
 
     private StatsLogger rootStatsLogger;
+    private StatsLogger scopeStatsLogger;
     private PrometheusMetricsProvider statsProvider;
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
@@ -266,6 +267,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         statsProvider = new PrometheusMetricsProvider();
         rootStatsLogger = statsProvider.getStatsLogger("");
+        scopeStatsLogger = rootStatsLogger.scope(SERVER_SCOPE);
     }
 
     // This method is called after initialize
@@ -364,7 +366,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             // init KopEventManager
             KopEventManager kopEventManager = new KopEventManager(groupCoordinator,
                     adminManager,
-                    brokerService.getPulsar().getLocalMetadataStore());
+                    brokerService.getPulsar().getLocalMetadataStore(),
+                    scopeStatsLogger);
             kopEventManager.start();
             kopEventManagerByTenant.put(tenant, kopEventManager);
 
@@ -415,13 +418,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, this, adminManager, false,
-                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
+                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, this, adminManager, true,
-                                advertisedEndPoint, rootStatsLogger.scope(SERVER_SCOPE), localBrokerDataCache));
+                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache));
                         break;
                 }
             });
