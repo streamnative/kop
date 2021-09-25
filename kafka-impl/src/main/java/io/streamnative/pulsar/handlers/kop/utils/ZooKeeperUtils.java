@@ -30,23 +30,31 @@ import org.apache.zookeeper.data.Stat;
 public class ZooKeeperUtils {
 
     public static void tryCreatePath(ZooKeeper zooKeeper, String path, byte[] data) {
+        tryCreatePath(zooKeeper, path, data, true);
+    }
+
+    public static void tryCreatePath(ZooKeeper zooKeeper, String path, byte[] data, boolean updateDataIfExists) {
         try {
             zooKeeper.create(path, data, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
             if (log.isDebugEnabled()) {
-                log.debug("Created ZK path: {} data: {}", path, new String(data, StandardCharsets.UTF_8));
+                log.debug("Created ZK path: {} data: {}",
+                        path, data == null ? "null" : new String(data, StandardCharsets.UTF_8));
             }
         } catch (KeeperException e) {
             if (!e.code().equals(KeeperException.Code.NODEEXISTS)) {
                 log.error("Failed to create ZooKeeper node {}: {}", path, e.getMessage());
             } else {
-                // update the group id
-                try {
-                    zooKeeper.setData(path, data, -1);
-                    if (log.isDebugEnabled()) {
-                        log.debug("Updated ZK path: {} data: {}", path, new String(data, StandardCharsets.UTF_8));
+                if (updateDataIfExists) {
+                    // update the group id
+                    try {
+                        zooKeeper.setData(path, data, -1);
+                        if (log.isDebugEnabled()) {
+                            log.debug("Updated ZK path: {} data: {}",
+                                    path, data == null ? "null" : new String(data, StandardCharsets.UTF_8));
+                        }
+                    } catch (KeeperException | InterruptedException setDataException) {
+                        log.error("Failed to set path '{}''s data to {}", path, data, setDataException);
                     }
-                } catch (KeeperException | InterruptedException setDataException) {
-                    log.error("Failed to set path '{}''s data to {}", path, data, setDataException);
                 }
             }
         } catch (InterruptedException e) {

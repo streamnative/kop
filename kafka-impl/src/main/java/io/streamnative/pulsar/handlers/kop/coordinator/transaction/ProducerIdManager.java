@@ -219,12 +219,12 @@ public class ProducerIdManager {
     }
 
     private void makeSurePathExists() {
-        ZooKeeperUtils.tryCreatePath(zkClient, KOP_PID_BLOCK_ZNODE, null);
+        ZooKeeperUtils.tryCreatePath(zkClient, KOP_PID_BLOCK_ZNODE, null, false);
     }
 
     public void initialize() {
         makeSurePathExists();
-        getNewProducerIdBlock();
+        getNewProducerIdBlock().join();
         nextProducerId = currentProducerIdBlock.blockStartId;
     }
 

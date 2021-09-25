@@ -54,9 +54,9 @@ public class ProducerIdManagerTest extends KopProtocolHandlerTestBase {
     @Test
     public void testGetProducerId() throws Exception {
         ProducerIdManager manager1 = new ProducerIdManager(0, mockZooKeeper);
-        manager1.initialize().get();
+        manager1.initialize();
         ProducerIdManager manager2 = new ProducerIdManager(1, mockZooKeeper);
-        manager2.initialize().get();
+        manager2.initialize();
 
         long pid1 = manager1.generateProducerId().get();
         long pid2 = manager2.generateProducerId().get();
@@ -86,7 +86,7 @@ public class ProducerIdManagerTest extends KopProtocolHandlerTestBase {
 
         ProducerIdManager producerIdManager = new ProducerIdManager(0, mockZooKeeper);
         try {
-            producerIdManager.initialize().get();
+            producerIdManager.initialize();
             fail("Have exhausted all producerIds, the initialize operation should be failed.");
         } catch (Exception e) {
             Assert.assertEquals(e.getCause().getMessage(), "Have exhausted all producerIds.");
