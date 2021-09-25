@@ -160,8 +160,8 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         } finally {
             // Cleanup
             admin.topics().deletePartitionedTopic(testTopic);
-            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE, true);
-            admin.tenants().deleteTenant(newTenant, true);
+            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
+            admin.tenants().deleteTenant(newTenant);
         }
     }
 
@@ -360,8 +360,8 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         } finally {
             // Cleanup
             admin.topics().deletePartitionedTopic(testTopic);
-            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE, true);
-            admin.tenants().deleteTenant(newTenant, true);
+            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
+            admin.tenants().deleteTenant(newTenant);
         }
     }
 
@@ -402,8 +402,8 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         } finally {
             // Cleanup
             admin.topics().deletePartitionedTopic(testTopic);
-            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE, true);
-            admin.tenants().deleteTenant(newTenant, true);
+            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE);
+            admin.tenants().deleteTenant(newTenant);
         }
     }
 
