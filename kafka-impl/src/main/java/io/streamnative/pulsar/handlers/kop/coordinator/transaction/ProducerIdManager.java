@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -217,34 +218,14 @@ public class ProducerIdManager {
         private int zkVersion;
     }
 
-    private CompletableFuture<Void> makeSurePathExists() {
-        CompletableFuture<Void> completableFuture = new CompletableFuture<>();
-        zkClient.create(KOP_PID_BLOCK_ZNODE, null, ZooDefs.Ids.OPEN_ACL_UNSAFE,
-                CreateMode.PERSISTENT, (rc, path, ctx, name) -> {
-                    if (rc != KeeperException.Code.OK.intValue() && rc != KeeperException.Code.NODEEXISTS.intValue()) {
-                        completableFuture.completeExceptionally(
-                                new Exception("Failed to create path " + KOP_PID_BLOCK_ZNODE
-                                        + " keeperException code " + rc));
-                        return;
-                    }
-                    completableFuture.complete(null);
-                }, null);
-        return completableFuture;
+    private void makeSurePathExists() {
+        ZooKeeperUtils.tryCreatePath(zkClient, KOP_PID_BLOCK_ZNODE, null);
     }
 
-    public CompletableFuture<Void> initialize() {
-        CompletableFuture<Void> future = new CompletableFuture<>();
-        makeSurePathExists()
-                .thenCompose(ignored -> getNewProducerIdBlock())
-                .thenAccept(ignored -> {
-                    nextProducerId = currentProducerIdBlock.blockStartId;
-                    future.complete(null);
-                })
-                .exceptionally(throwable -> {
-                    future.completeExceptionally(throwable);
-                    return null;
-                });
-        return future;
+    public void initialize() {
+        makeSurePathExists();
+        getNewProducerIdBlock();
+        nextProducerId = currentProducerIdBlock.blockStartId;
     }
 
     public synchronized CompletableFuture<Long> generateProducerId() {

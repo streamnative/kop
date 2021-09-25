@@ -661,7 +661,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         loadTxnLogTopics(tenant, transactionCoordinator);
 
-        transactionCoordinator.startup().get();
+        transactionCoordinator.start();
 
         return transactionCoordinator;
     }
