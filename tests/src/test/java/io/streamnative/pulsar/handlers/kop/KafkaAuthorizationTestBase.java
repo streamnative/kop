@@ -111,6 +111,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                 Sets.newHashSet(AuthenticationProviderToken.class.getName()));
         conf.setBrokerClientAuthenticationPlugin(AuthenticationToken.class.getName());
         conf.setBrokerClientAuthenticationParameters("token:" + adminToken);
+        conf.setEnableTransactionCoordinator(false);
         conf.setProperties(properties);
 
         super.internalSetup();
