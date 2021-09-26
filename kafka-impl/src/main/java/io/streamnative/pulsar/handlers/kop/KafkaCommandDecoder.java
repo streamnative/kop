@@ -595,6 +595,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             return responseToByteBuf(request.getErrorResponse(e), this);
         }
 
+        @Override
         public String toString() {
             return String.format("KafkaHeaderAndRequest(header=%s, request=%s, remoteAddress=%s)",
                 this.header, this.request, this.remoteAddress);
@@ -642,6 +643,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 response);
         }
 
+        @Override
         public String toString() {
             return String.format("KafkaHeaderAndResponse(header=%s,responseFuture=%s)",
                 this.header.toStruct().toString(), this.response.toString(this.getApiVersion()));

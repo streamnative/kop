@@ -157,7 +157,6 @@ import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitResponse;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
-import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
@@ -179,7 +178,6 @@ import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.metadata.api.MetadataCache;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
-import org.eclipse.jetty.util.StringUtil;
 
 /**
  * This class contains all the request handling methods.
@@ -246,7 +244,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             return extractTenantFromTenantSpec(tenantSpec);
         }
         // fallback to using system (default) tenant
-        log.debug("using {} as tenant", kafkaConfig.getKafkaMetadataTenant());
+        if (log.isDebugEnabled()) {
+            log.debug("using {} as tenant", kafkaConfig.getKafkaMetadataTenant());
+        }
         return kafkaConfig.getKafkaMetadataTenant();
     }
 
@@ -257,7 +257,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (tenantSpec.contains("/")) {
                 tenant = tenantSpec.substring(0, tenantSpec.indexOf('/'));
             }
-            log.debug("using {} as tenant", tenant);
+            if (log.isDebugEnabled()) {
+                log.debug("using {} as tenant", tenant);
+            }
             return tenant;
         } else {
             return tenantSpec;
@@ -400,6 +402,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
+    @Override
     protected void handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest,
                                             CompletableFuture<AbstractResponse> resultFuture) {
         if (!ApiKeys.API_VERSIONS.isVersionSupported(apiVersionRequest.getHeader().apiVersion())) {
@@ -434,6 +437,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
+    @Override
     protected void handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                CompletableFuture<AbstractResponse> resultFuture) {
         String err = String.format("Kafka API (%s) Not supported by kop server.",
@@ -445,6 +449,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         resultFuture.complete(apiResponse);
     }
 
+    @Override
     protected void handleInactive(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                   CompletableFuture<AbstractResponse> resultFuture) {
         AbstractRequest request = kafkaHeaderAndRequest.getRequest();
@@ -504,6 +509,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return topicMapFuture;
     }
 
+    @Override
     protected void handleTopicMetadataRequest(KafkaHeaderAndRequest metadataHar,
                                               CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(metadataHar.getRequest() instanceof MetadataRequest);
@@ -896,6 +902,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
+    @Override
     protected void handleProduceRequest(KafkaHeaderAndRequest produceHar,
                                         CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
@@ -1047,6 +1054,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
+    @Override
     protected void handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator,
                                                 CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(findCoordinator.getRequest() instanceof FindCoordinatorRequest);
@@ -1111,6 +1119,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         replacedMap.putAll(newMap);
     }
 
+    @Override
     protected void handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch,
                                             CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(offsetFetch.getRequest() instanceof OffsetFetchRequest);
@@ -1449,6 +1458,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     // get offset from underline managedLedger
+    @Override
     protected void handleListOffsetRequest(KafkaHeaderAndRequest listOffset,
                                            CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
@@ -1540,6 +1550,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     }
 
+    @Override
     protected void handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit,
                                              CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(offsetCommit.getRequest() instanceof OffsetCommitRequest);
@@ -1619,6 +1630,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
+    @Override
     protected void handleFetchRequest(KafkaHeaderAndRequest fetch,
                                       CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(fetch.getRequest() instanceof FetchRequest);
@@ -1637,6 +1649,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         MessageFetchContext.get(this, fetch, resultFuture, fetchPurgatory).handleFetch();
     }
 
+    @Override
     protected void handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup,
                                           CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(joinGroup.getRequest() instanceof JoinGroupRequest);
@@ -1682,6 +1695,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
+    @Override
     protected void handleSyncGroupRequest(KafkaHeaderAndRequest syncGroup,
                                           CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(syncGroup.getRequest() instanceof SyncGroupRequest);
@@ -1705,6 +1719,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
+    @Override
     protected void handleHeartbeatRequest(KafkaHeaderAndRequest heartbeat,
                                           CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(heartbeat.getRequest() instanceof HeartbeatRequest);
@@ -1863,6 +1878,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
+    @Override
     protected void handleDescribeConfigs(KafkaHeaderAndRequest describeConfigs,
                                          CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(describeConfigs.getRequest() instanceof DescribeConfigsRequest);
@@ -2156,6 +2172,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return new SaslHandshakeResponse(Errors.UNSUPPORTED_SASL_MECHANISM, new HashSet<>());
     }
 
+    @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("Caught error in handler, closing channel", cause);
         ctx.close();
@@ -2187,11 +2204,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             return future;
         }
 
-        // if kafkaListenerName is set, the lookup result is the advertised address
-        if (!StringUtil.isBlank(kafkaConfig.getKafkaListenerName())) {
-            // TODO:　should add SecurityProtocol according to which endpoint is handling the request.
-            //  firstly we only support PLAINTEXT when lookup with kafkaListenerName
-            String kafkaAdvertisedAddress = String.format("%s://%s:%s", SecurityProtocol.PLAINTEXT.name(),
+        if (advertisedEndPoint.isMultiListener()) {
+            // if kafkaProtocolMap is set, the lookup result is the advertised address
+            String kafkaAdvertisedAddress = String.format("%s://%s:%s", advertisedEndPoint.getSecurityProtocol().name,
                     pulsarAddress.getHostName(), pulsarAddress.getPort());
             KafkaTopicManager.KOP_ADDRESS_CACHE.put(topic.toString(), returnFuture);
             returnFuture.complete(Optional.ofNullable(kafkaAdvertisedAddress));
@@ -2284,7 +2299,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
 
-        topicManager.getTopicBroker(topic.toString())
+        topicManager.getTopicBroker(topic.toString(),
+                advertisedEndPoint.isMultiListener() ? advertisedEndPoint.getListenerName() : null)
                 .thenApply(address -> getProtocolDataToAdvertise(address, topic))
                 .thenAccept(kopAddressFuture -> kopAddressFuture.thenAccept(listenersOptional -> {
                     if (!listenersOptional.isPresent()) {
@@ -2297,8 +2313,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     // It's the `kafkaAdvertisedListeners` config that's written to ZK
                     final String listeners = listenersOptional.get();
                     final EndPoint endPoint =
-                            (tlsEnabled ? EndPoint.getSslEndPoint(listeners)
-                                    : EndPoint.getPlainTextEndPoint(listeners));
+                            (tlsEnabled ? EndPoint.getSslEndPoint(listeners) :
+                                    EndPoint.getPlainTextEndPoint(listeners));
                     final Node node = newNode(endPoint.getInetAddress());
 
                     if (log.isDebugEnabled()) {

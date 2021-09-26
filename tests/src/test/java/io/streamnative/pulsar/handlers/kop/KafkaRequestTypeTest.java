@@ -395,8 +395,10 @@ public class KafkaRequestTypeTest extends KopProtocolHandlerTestBase {
             for (ConsumerRecord<Integer, String> record : records) {
                 Integer key = record.key();
                 assertEquals(messageStrPrefix + key.toString(), record.value());
-                log.debug("Kafka Consumer Received message: {}, {} at offset {}",
-                    record.key(), record.value(), record.offset());
+                if (log.isDebugEnabled()) {
+                    log.debug("Kafka Consumer Received message: {}, {} at offset {}",
+                            record.key(), record.value(), record.offset());
+                }
                 i++;
             }
         }

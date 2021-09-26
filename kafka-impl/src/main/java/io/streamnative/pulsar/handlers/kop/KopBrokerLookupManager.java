@@ -52,7 +52,8 @@ public class KopBrokerLookupManager {
     public static final ConcurrentHashMap<String, CompletableFuture<Optional<String>>>
             KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
 
-    public KopBrokerLookupManager(PulsarService pulsarService, Boolean tlsEnabled, String advertisedListeners) {
+    public KopBrokerLookupManager(PulsarService pulsarService, Boolean tlsEnabled,
+                                  String advertisedListeners) {
         this.pulsarService = pulsarService;
         this.tlsEnabled = tlsEnabled;
         this.advertisedListeners = advertisedListeners;
@@ -82,8 +83,8 @@ public class KopBrokerLookupManager {
 
                     // It's the `kafkaAdvertisedListeners` config that's written to ZK
                     final EndPoint endPoint =
-                            tlsEnabled ? EndPoint.getSslEndPoint(listeners.get())
-                                    : EndPoint.getPlainTextEndPoint(listeners.get());
+                            (tlsEnabled ? EndPoint.getSslEndPoint(listeners.get()) :
+                                    EndPoint.getPlainTextEndPoint(listeners.get()));
 
                     // here we found topic broker: broker2, but this is in broker1,
                     // how to clean the lookup cache?
