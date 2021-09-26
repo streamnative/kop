@@ -81,7 +81,9 @@ public class EntryPublishTimeKafkaFormatTest extends EntryPublishTimeTest {
                             i,
                             messageStr))
                     .get();
-            log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+            if (log.isDebugEnabled()) {
+                log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+            }
         }
 
         KConsumer kConsumer = new KConsumer(topicName, "localhost", getKafkaBrokerPort(), false,
