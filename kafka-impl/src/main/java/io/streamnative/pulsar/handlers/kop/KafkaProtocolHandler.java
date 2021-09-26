@@ -588,15 +588,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     public void close() {
         Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
         adminManager.shutdown();
-        for (Map.Entry<String, GroupCoordinator> groupCoordinator : groupCoordinatorsByTenant.entrySet()) {
-            String tenant = groupCoordinator.getKey();
-            groupCoordinator.getValue().shutdown();
+        groupCoordinatorsByTenant.forEach((tenant, groupCoordinator) -> {
             KopEventManager kopEventManager = kopEventManagerByTenant.get(tenant);
             if (kopEventManager != null) {
                 kopEventManager.close();
             }
-        }
-
+            groupCoordinator.shutdown();
+        });
         transactionCoordinatorByTenant.forEach((__, txnCoordinator) -> {
             txnCoordinator.shutdown();
         });
