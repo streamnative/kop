@@ -67,7 +67,9 @@ public class EntryPublishTimePulsarFormatTest extends EntryPublishTimeTest {
                             i,
                             messageStr))
                     .get();
-            log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+            if (log.isDebugEnabled()) {
+                log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+            }
         }
 
         @Cleanup
