@@ -27,7 +27,6 @@ jobs:
 
     - name: tests module
       run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test' -pl tests
-      timeout-minutes: 30
 
     - name: package surefire artifacts
       if: failure()
