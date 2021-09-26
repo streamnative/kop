@@ -265,14 +265,14 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     /**
      * Listener for the changing of transaction topic when namespace bundle load or unload.
      */
-    public static class TxnImmigrationListener implements NamespaceBundleOwnershipListener {
+    public static class TransactionStateRecover implements NamespaceBundleOwnershipListener {
         private final BrokerService service;
         private final NamespaceName kafkaMetaNs;
         private final NamespaceName kafkaTopicNs;
         private final String brokerUrl;
         private final TransactionCoordinator txnCoordinator;
 
-        public TxnImmigrationListener(
+        public TransactionStateRecover(
                 BrokerService service,
                 String tenant,
                 KafkaServiceConfiguration kafkaConfig,
@@ -315,7 +315,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                             }
                         } else {
                             log.error("Failed to get owned topic list for "
-                                            + "TxnImmigrationListener when triggering on-loading bundle {}.",
+                                            + "TransactionStateRecover when triggering on-loading bundle {}.",
                                     bundle, ex);
                         }
                     });
@@ -344,7 +344,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                                             "TxnTopic should be partitioned in unLoad, but get " + name);
 
                                     if (log.isDebugEnabled()) {
-                                        log.debug("Txn partition unload:  {}, broker: {}",
+                                        log.debug("Txn partition unload: {}, broker: {}",
                                                 name, service.pulsar().getBrokerServiceUrl());
                                     }
                                     txnCoordinator.handleTxnEmigration(name.getPartitionIndex());
@@ -352,7 +352,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                             }
                         } else {
                             log.error("Failed to get owned topic list for "
-                                            + "TxnImmigrationListener when triggering un-loading bundle {}.",
+                                            + "TransactionStateRecover when triggering un-loading bundle {}.",
                                     bundle, ex);
                         }
                     });
@@ -489,7 +489,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             brokerService.pulsar()
                     .getNamespaceService()
                     .addNamespaceBundleOwnershipListener(
-                            new TxnImmigrationListener(brokerService, tenant, kafkaConfig, transactionCoordinator));
+                            new TransactionStateRecover(brokerService, tenant, kafkaConfig, transactionCoordinator));
 
             return transactionCoordinator;
         } catch (Exception e) {

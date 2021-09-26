@@ -13,12 +13,13 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import com.google.api.client.util.Sets;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -53,20 +54,33 @@ public class TransactionStateManager {
     private final PulsarClient pulsarClient;
     private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
+    private final AtomicBoolean loading = new AtomicBoolean(false);
 
     // Number of partitions for the transaction log topic.
     private final int transactionTopicPartitionCount;
 
     // Partitions of transaction topic that are being loaded, state lock should be called BEFORE accessing this set.
-    private final Set<Integer> loadingPartitions = new HashSet<>();
-    private final Map<Integer, CompletableFuture<Void>> loadPartitions = new HashMap<>();
+    @VisibleForTesting
+    protected final Set<Integer> loadingPartitions = Sets.newHashSet();
 
-    private final Map<Integer, CompletableFuture<Producer<byte[]>>> txnLogProducerMap = new HashMap<>();
-    private final Map<Integer, CompletableFuture<Reader<byte[]>>> txnLogReaderMap = new HashMap<>();
+    // partitions of transaction topic that are being removed, state lock should be called BEFORE accessing this set.
+    @VisibleForTesting
+    protected final Set<Integer> leavingPartitions = Sets.newHashSet();
+
+    private final Map<Integer, CompletableFuture<Producer<byte[]>>> txnLogProducerMap = Maps.newHashMap();
+    private final Map<Integer, CompletableFuture<Reader<byte[]>>> txnLogReaderMap = Maps.newHashMap();
+
     // Transaction metadata cache indexed by assigned transaction topic partition ids
-    private final Map<Integer, Map<String, TransactionMetadata>> transactionMetadataCache = new HashMap<>();
+    @VisibleForTesting
+    protected final Map<Integer, Map<String, TransactionMetadata>> transactionMetadataCache = Maps.newHashMap();
 
     private final OrderedExecutor executor;
+
+    @VisibleForTesting
+    protected boolean isLoading() {
+        return this.loading.get();
+    }
+
 
     public TransactionStateManager(TransactionConfig transactionConfig,
                                    PulsarClient pulsarClient,
@@ -389,7 +403,9 @@ public class TransactionStateManager {
         return CoreUtils.inReadLock(stateLock, () -> {
             int partitionId = partitionFor(transactionalId);
             if (loadingPartitions.stream().anyMatch(partition -> partition == partitionId)) {
-                return new ErrorsAndData<>(Errors.CONCURRENT_TRANSACTIONS);
+                return new ErrorsAndData<>(Errors.COORDINATOR_LOAD_IN_PROGRESS);
+            } else if (leavingPartitions.stream().anyMatch(partition -> partition == partitionId)) {
+                return new ErrorsAndData<>(Errors.NOT_COORDINATOR);
             } else {
                 Map<String, TransactionMetadata> metadataMap = transactionMetadataCache.get(partitionId);
                 if (metadataMap == null) {
@@ -431,13 +447,13 @@ public class TransactionStateManager {
         TopicPartition topicPartition = new TopicPartition(Topic.TRANSACTION_STATE_TOPIC_NAME, partitionId);
 
         CoreUtils.inWriteLock(stateLock, () -> {
+            leavingPartitions.remove(partitionId);
             loadingPartitions.add(partitionId);
-            loadPartitions.put(partitionId, new CompletableFuture<>());
             transactionMetadataCache.putIfAbsent(topicPartition.partition(), Maps.newConcurrentMap());
+            loading.set(true);
             return null;
         });
 
-        log.info("Start loading transaction metadata from {}.", topicPartition);
         long startTimeMs = SystemTime.SYSTEM.milliseconds();
         return getProducer(topicPartition.partition())
                 .thenCompose(producer ->
@@ -449,9 +465,13 @@ public class TransactionStateManager {
                     }
                     return getReader(topicPartition.partition()).thenCompose(reader ->
                             loadTransactionMetadata(topicPartition.partition(), reader, lastMsgId));
-                })
-                .thenCompose(ignored ->
-                        completeLoadedTransactions(topicPartition, startTimeMs, sendTxnMarkers));
+                }).thenAccept(__ ->
+                        completeLoadedTransactions(topicPartition, startTimeMs, sendTxnMarkers))
+                .exceptionally(ex -> {
+                    log.error("Error to load transactions exceptions : [{}]", ex.getMessage());
+                    loading.set(false);
+                    return null;
+                });
     }
 
     private CompletableFuture<Void> loadTransactionMetadata(int partition,
@@ -511,7 +531,7 @@ public class TransactionStateManager {
         });
     }
 
-    private CompletableFuture<Void> completeLoadedTransactions(TopicPartition topicPartition, long startTimeMs,
+    private void completeLoadedTransactions(TopicPartition topicPartition, long startTimeMs,
                                                                SendTxnMarkersCallback sendTxnMarkersCallback) {
         Map<String, TransactionMetadata> loadedTransactions = transactionMetadataCache.get(topicPartition.partition());
         long endTimeMs = SystemTime.SYSTEM.milliseconds();
@@ -564,51 +584,55 @@ public class TransactionStateManager {
             loadingPartitions.remove(topicPartition.partition());
             return null;
         });
-
-        CompletableFuture<Void> loadFuture = loadPartitions.get(topicPartition.partition());
-        loadFuture.complete(null);
+        if (!loading.compareAndSet(true, false)) {
+            log.error("Completed with error stat.");
+        }
         log.info("Completed loading transaction metadata from {}", topicPartition);
-        return loadFuture;
     }
 
     public void removeTransactionsForTxnTopicPartition(int partition) {
         TopicPartition topicPartition = new TopicPartition(Topic.TRANSACTION_STATE_TOPIC_NAME, partition);
         log.info("Scheduling unloading transaction metadata from {}", topicPartition);
-        executor.submit(() -> {
-            CoreUtils.inWriteLock(stateLock, () -> {
-                loadingPartitions.remove(partition);
-                CompletableFuture<Void> loadFuture = loadPartitions.get(partition);
-                if (loadFuture != null && !loadFuture.isDone()) {
-                    loadFuture.cancel(true);
-                }
-                loadPartitions.remove(partition);
-                transactionMetadataCache.remove(partition).forEach((txnId, metadata) -> {
-                    log.info("Unloaded transaction metadata {} for {} following local partition deletion",
-                            metadata, topicPartition);
-                });
 
-                // remove related producers and readers
-                CompletableFuture<Producer<byte[]>> producer = txnLogProducerMap.remove(partition);
-                CompletableFuture<Reader<byte[]>> reader = txnLogReaderMap.remove(partition);
-                if (producer != null) {
-                    producer.thenApply(Producer::closeAsync).whenCompleteAsync((ignore, t) -> {
-                        if (t != null) {
-                            log.error("Failed to close producer when remove partition {}.",
-                                    producer.join().getTopic());
-                        }
+        CoreUtils.inWriteLock(stateLock, () -> {
+            loadingPartitions.remove(partition);
+            leavingPartitions.add(partition);
+            return null;
+        });
+
+        Runnable removeTransactions = () -> {
+            CoreUtils.inWriteLock(stateLock, () -> {
+                if (leavingPartitions.contains(partition)) {
+                    transactionMetadataCache.remove(partition).forEach((txnId, metadata) -> {
+                        log.info("Unloaded transaction metadata {} for {} following local partition deletion",
+                                metadata, topicPartition);
                     });
-                }
-                if (reader != null) {
-                    reader.thenApply(Reader::closeAsync).whenCompleteAsync((ignore, t) -> {
-                        if (t != null) {
-                            log.error("Failed to close reader when remove partition {}.",
-                                    reader.join().getTopic());
-                        }
-                    });
+
+                    // remove related producers and readers
+                    CompletableFuture<Producer<byte[]>> producer = txnLogProducerMap.remove(partition);
+                    CompletableFuture<Reader<byte[]>> reader = txnLogReaderMap.remove(partition);
+                    if (producer != null) {
+                        producer.thenApply(Producer::closeAsync).whenCompleteAsync((ignore, t) -> {
+                            if (t != null) {
+                                log.error("Failed to close producer when remove partition {}.",
+                                        producer.join().getTopic());
+                            }
+                        });
+                    }
+                    if (reader != null) {
+                        reader.thenApply(Reader::closeAsync).whenCompleteAsync((ignore, t) -> {
+                            if (t != null) {
+                                log.error("Failed to close reader when remove partition {}.",
+                                        reader.join().getTopic());
+                            }
+                        });
+                    }
+                    leavingPartitions.remove(partition);
                 }
                 return null;
             });
-        });
+        };
+        executor.submit(removeTransactions);
     }
 
     interface SendTxnMarkersCallback {
@@ -641,18 +665,9 @@ public class TransactionStateManager {
         });
     }
 
-    public CompletableFuture<Void> getLoadPartitionFuture(int partition) {
-        return loadPartitions.get(partition);
-    }
 
     public void shutdown() {
         shuttingDown.set(true);
-        for (CompletableFuture<Void> future : loadPartitions.values()) {
-            if (!future.isDone()) {
-                future.cancel(true);
-            }
-        }
-        loadPartitions.clear();
         loadingPartitions.clear();
         transactionMetadataCache.clear();
         executor.shutdown();

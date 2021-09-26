@@ -13,21 +13,27 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import static org.junit.Assert.assertFalse;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
+
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
-import java.lang.reflect.Field;
+import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.common.policies.data.BundlesData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfoImpl;
+import org.awaitility.Awaitility;
 import org.junit.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -97,11 +103,7 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
         transactionStates.put(5L, TransactionState.COMPLETE_ABORT);
 
         // Currently, there is lack of TC fence mechanism
-        waitTCImmigrationComplete();
-
-        Class<TransactionStateManager> stateManagerClass = TransactionStateManager.class;
-        Field txnMetadataCacheField = stateManagerClass.getDeclaredField("transactionMetadataCache");
-        txnMetadataCacheField.setAccessible(true);
+//        waitTCImmigrationComplete();
 
         TransactionStateManager transactionStateManager = getTxnManager();
 
@@ -146,27 +148,29 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
         countDownLatch.await();
 
         Map<Integer, Map<String, TransactionMetadata>> txnMetadataCache =
-                (Map<Integer, Map<String, TransactionMetadata>>) txnMetadataCacheField.get(transactionStateManager);
+                transactionStateManager.transactionMetadataCache;
         // retain the transaction metadata cache
         Map<Integer, Map<String, TransactionMetadata>> beforeTxnMetadataCache = new HashMap<>(txnMetadataCache);
 
-        stopBroker();
-        // when stop broker, clear the cache
-        Assert.assertEquals(0, txnMetadataCache.size());
-        Assert.assertNull(transactionStateManager.getLoadPartitionFuture(0));
-        startBroker();
-
+        BundlesData bundles = pulsar.getAdminClient().namespaces().getBundles(
+                conf.getKafkaTenant() + "/" + conf.getKafkaNamespace());
+        List<String> boundaries = bundles.getBoundaries();
+        for (int i = 0; i < boundaries.size() - 1; i++) {
+            String bundle = String.format("%s_%s", boundaries.get(i), boundaries.get(i + 1));
+            pulsar.getAdminClient().namespaces()
+                    .unloadNamespaceBundle(conf.getKafkaTenant() + "/" + conf.getKafkaNamespace(), bundle);
+        }
         waitTCImmigrationComplete();
 
         // verify the loaded transaction metadata
-        verifyImmigration(txnMetadataCacheField, beforeTxnMetadataCache);
+        verifyImmigration(transactionStateManager, beforeTxnMetadataCache);
     }
 
-    private void verifyImmigration(Field txnMetadataCacheField,
-                                   Map<Integer, Map<String, TransactionMetadata>> beforeTxnMetadataCache)
-            throws IllegalAccessException {
+    private void verifyImmigration(TransactionStateManager transactionStateManager,
+                                   Map<Integer, Map<String, TransactionMetadata>> beforeTxnMetadataCache) {
         Map<Integer, Map<String, TransactionMetadata>> loadedTxnMetadataCache =
-                (Map<Integer, Map<String, TransactionMetadata>>) txnMetadataCacheField.get(getTxnManager());
+                transactionStateManager.transactionMetadataCache;
+
         for (int i = 0; i < conf.getTxnLogTopicNumPartitions(); i++) {
             Map<String, TransactionMetadata> txnMetadataMap = beforeTxnMetadataCache.get(i);
             Map<String, TransactionMetadata> loadedTxnMetadataMap = loadedTxnMetadataCache.get(i);
@@ -201,35 +205,23 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
     }
 
     private void waitTxnComplete(TransactionMetadata loadedTxnMetadata, TransactionState expectedState) {
-        for (int retryCnt = 0; retryCnt < 10; retryCnt++) {
-            if (expectedState.equals(loadedTxnMetadata.getState())) {
-                break;
-            }
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException e) {
-                log.error("Failed to wait transaction complete.", e);
-                Assert.fail("Failed to wait transaction complete.");
-            }
-        }
+        Awaitility.await()
+                .pollDelay(Duration.ofMillis(500))
+                .untilAsserted(() -> assertEquals(loadedTxnMetadata.getState(), expectedState));
         Assert.assertEquals(expectedState, loadedTxnMetadata.getState());
         Assert.assertTrue(loadedTxnMetadata.getTxnLastUpdateTimestamp() > 0);
     }
 
-    private void waitTCImmigrationComplete() throws PulsarAdminException, ExecutionException, InterruptedException {
+    private void waitTCImmigrationComplete() throws PulsarAdminException {
         admin.lookups().lookupTopic("public/default/__transaction_state-partition-0");
         TransactionStateManager txnStateManager = getTxnManager();
         // The lookup request will trigger topic on-load operation,
         // the TC partition log will recover when the namespace on-load, it's asynchronously,
         // so wait the TC partition log load complete.
-        for (int i = 0; i < 10; i++) {
-            // the load future may be not added
-            if (txnStateManager.getLoadPartitionFuture(0) == null) {
-                Thread.sleep(500);
-            }
-        }
-        Assert.assertNotNull(txnStateManager.getLoadPartitionFuture(0));
-        txnStateManager.getLoadPartitionFuture(0).get();
+        assertTrue(txnStateManager.isLoading());
+        Awaitility.await()
+                .pollDelay(Duration.ofMillis(500))
+                .untilAsserted(() -> assertFalse(txnStateManager.isLoading()));
     }
 
     private TransactionStateManager getTxnManager() {
