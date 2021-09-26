@@ -111,7 +111,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                 Sets.newHashSet(AuthenticationProviderToken.class.getName()));
         conf.setBrokerClientAuthenticationPlugin(AuthenticationToken.class.getName());
         conf.setBrokerClientAuthenticationParameters("token:" + adminToken);
-        conf.setEnableTransactionCoordinator(false);
         conf.setProperties(properties);
 
         super.internalSetup();
@@ -129,7 +128,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                         this.conf.getBrokerClientAuthenticationParameters()).build());
     }
 
-    @AfterClass
+    @AfterClass(timeOut = 30000)
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
