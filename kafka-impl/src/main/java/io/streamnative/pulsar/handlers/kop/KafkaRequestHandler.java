@@ -244,7 +244,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             return extractTenantFromTenantSpec(tenantSpec);
         }
         // fallback to using system (default) tenant
-        log.debug("using {} as tenant", kafkaConfig.getKafkaMetadataTenant());
+        if (log.isDebugEnabled()) {
+            log.debug("using {} as tenant", kafkaConfig.getKafkaMetadataTenant());
+        }
         return kafkaConfig.getKafkaMetadataTenant();
     }
 
@@ -255,7 +257,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (tenantSpec.contains("/")) {
                 tenant = tenantSpec.substring(0, tenantSpec.indexOf('/'));
             }
-            log.debug("using {} as tenant", tenant);
+            if (log.isDebugEnabled()) {
+                log.debug("using {} as tenant", tenant);
+            }
             return tenant;
         } else {
             return tenantSpec;

@@ -303,7 +303,10 @@ public class KopEventManager {
                     topicsFullNameDeletionsSets.add(kopTopic.getFullName());
                 });
 
-                log.debug("Delete topics listener fired for topics {} to be deleted", topicsDeletions);
+                if (log.isDebugEnabled()) {
+                    log.debug("Delete topics listener fired for topics {} to be deleted", topicsDeletions);
+                }
+
                 Iterable<GroupMetadata> groupMetadataIterable = coordinator.getGroupManager().currentGroups();
                 HashSet<TopicPartition> topicPartitionsToBeDeletions = Sets.newHashSet();
 
