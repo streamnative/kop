@@ -19,10 +19,13 @@ import java.io.Closeable;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.lookup.LookupResult;
@@ -46,10 +49,13 @@ public class LookupClient implements Closeable {
     @Getter
     private final PulsarClientImpl pulsarClient;
 
+    private ConcurrentHashMap<String, PulsarClientImpl> pulsarClientMap;
+
     public LookupClient(final PulsarService pulsarService, final KafkaServiceConfiguration kafkaConfig) {
         namespaceService = pulsarService.getNamespaceService();
         try {
-            pulsarClient = createPulsarClient(pulsarService, kafkaConfig);
+            pulsarClient = createPulsarClient(pulsarService, kafkaConfig, null);
+            pulsarClientMap = createPulsarClientMap(pulsarService, kafkaConfig);
         } catch (PulsarClientException e) {
             log.error("Failed to create PulsarClient", e);
             throw new IllegalStateException(e);
@@ -69,10 +75,14 @@ public class LookupClient implements Closeable {
     }
 
     public CompletableFuture<InetSocketAddress> getBrokerAddress(final TopicName topicName) {
+        return getBrokerAddress(topicName, null);
+    }
+
+    public CompletableFuture<InetSocketAddress> getBrokerAddress(final TopicName topicName, String listenerName) {
         // First try to use NamespaceService to find the broker directly.
         final LookupOptions options = LookupOptions.builder()
                 .authoritative(false)
-                .advertisedListenerName(pulsarClient.getConfiguration().getListenerName())
+                .advertisedListenerName(listenerName)
                 .loadTopicsInBundle(true)
                 .build();
         return namespaceService.getBrokerServiceUrlAsync(topicName, options).thenCompose(optLookupResult -> {
@@ -87,7 +97,8 @@ public class LookupClient implements Closeable {
             final LookupResult lookupResult = optLookupResult.get();
             if (lookupResult.isRedirect()) {
                 // Kafka client can't process redirect field, so here we fallback to PulsarClient
-                return pulsarClient.getLookup().getBroker(topicName).thenApply(Pair::getLeft);
+                return pulsarClientMap.getOrDefault(listenerName == null ? "" : listenerName, pulsarClient).
+                        getLookup().getBroker(topicName).thenApply(Pair::getLeft);
             } else {
                 return getAddressFutureFromBrokerUrl(lookupResult.getLookupData().getBrokerUrl());
             }
@@ -103,9 +114,23 @@ public class LookupClient implements Closeable {
         }
     }
 
-    private static PulsarClientImpl createPulsarClient(final PulsarService pulsarService,
-                                                       final KafkaServiceConfiguration kafkaConfig)
-            throws PulsarClientException {
+    private ConcurrentHashMap<String, PulsarClientImpl> createPulsarClientMap(
+            PulsarService pulsarService, KafkaServiceConfiguration kafkaConfig) throws PulsarClientException {
+        ConcurrentHashMap<String, PulsarClientImpl> pulsarClientMap = new ConcurrentHashMap<>();
+        final Map<String, SecurityProtocol> protocolMap = EndPoint.parseProtocolMap(kafkaConfig.getKafkaProtocolMap());
+        if (protocolMap.isEmpty()) {
+            pulsarClientMap.put("", pulsarClient);
+        } else {
+            for (Map.Entry<String, SecurityProtocol> entry : protocolMap.entrySet()) {
+                pulsarClientMap.put(entry.getKey(), createPulsarClient(pulsarService, kafkaConfig, entry.getKey()));
+            }
+        }
+        return pulsarClientMap;
+    }
+
+    private static PulsarClientImpl createPulsarClient(
+            final PulsarService pulsarService, final KafkaServiceConfiguration kafkaConfig,
+            final String listenerName) throws PulsarClientException {
         // It's migrated from PulsarService#getClient() but it can configure listener name
         final ClientConfigurationData conf = new ClientConfigurationData();
         conf.setServiceUrl(kafkaConfig.isTlsEnabled()
@@ -137,7 +162,7 @@ public class LookupClient implements Closeable {
                     kafkaConfig.getBrokerClientAuthenticationParameters()));
         }
 
-        conf.setListenerName(kafkaConfig.getKafkaListenerName());
+        conf.setListenerName(listenerName);
         return new PulsarClientImpl(conf, pulsarService.getIoEventLoopGroup());
     }
 
