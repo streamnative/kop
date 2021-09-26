@@ -189,17 +189,23 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private String kafkaListeners;
 
     @FieldContext(
-        category = CATEGORY_KOP,
-        doc = "Listeners to publish to ZooKeeper for clients to use.\n"
-                + "The format is the same as `kafkaListeners`.\n"
+            category = CATEGORY_KOP,
+            doc = "Comma-separated map of listener name and protocol.\n"
+                    + "e.g. PRIVATE:PLAINTEXT,PRIVATE_SSL:SSL,PUBLIC:PLAINTEXT,PUBLIC_SSL:SSL.\n"
+    )
+    private String kafkaProtocolMap;
+
+    @Deprecated
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Use kafkaProtocolMap, kafkaListeners and advertisedAddress instead."
     )
     private String kafkaAdvertisedListeners;
 
+    @Deprecated
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "Specify the internal listener name for the broker.\n"
-                    + "The listener name must be contained in the advertisedListeners.\n"
-                    + "This config is used as the listener name in topic lookup."
+            doc = "Use kafkaProtocolMap, kafkaListeners and advertisedAddress instead."
     )
     private String kafkaListenerName;
 

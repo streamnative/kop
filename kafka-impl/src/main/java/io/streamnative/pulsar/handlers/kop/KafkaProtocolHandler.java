@@ -51,7 +51,6 @@ import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
-import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
@@ -312,7 +311,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     public void start(BrokerService service) {
         brokerService = service;
         kopBrokerLookupManager = new KopBrokerLookupManager(
-                brokerService.getPulsar(), false, kafkaConfig.getKafkaAdvertisedListeners());
+                brokerService.getPulsar(), false,
+                kafkaConfig.getKafkaAdvertisedListeners());
 
         log.info("Starting KafkaProtocolHandler, kop version is: '{}'", KopVersion.getVersion());
         log.info("Git Revision {}", KopVersion.getGitSha());
@@ -440,29 +440,24 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         try {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
-                ImmutableMap.<InetSocketAddress, ChannelInitializer<SocketChannel>>builder();
+                    ImmutableMap.<InetSocketAddress, ChannelInitializer<SocketChannel>>builder();
 
-            final Map<SecurityProtocol, EndPoint> advertisedEndpointMap =
-                    EndPoint.parseListeners(kafkaConfig.getKafkaAdvertisedListeners());
-            EndPoint.parseListeners(kafkaConfig.getListeners()).forEach((protocol, endPoint) -> {
-                EndPoint advertisedEndPoint = advertisedEndpointMap.get(protocol);
-                if (advertisedEndPoint == null) {
-                    // Use the bind endpoint as the advertised endpoint.
-                    advertisedEndPoint = endPoint;
-                }
-                switch (protocol) {
+            EndPoint.parseListeners(kafkaConfig.getListeners(), kafkaConfig.getKafkaProtocolMap()).
+                    forEach((listener, endPoint) -> {
+                switch (endPoint.getSecurityProtocol()) {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, this, adminManager, false,
-                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache));
+                                endPoint, scopeStatsLogger, localBrokerDataCache));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, this, adminManager, true,
-                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache));
+                                endPoint, scopeStatsLogger, localBrokerDataCache));
                         break;
+                    default:
                 }
             });
             return builder.build();

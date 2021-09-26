@@ -67,7 +67,7 @@ public class KafkaTopicManager {
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    public static final ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>
+    public static final ConcurrentHashMap<String, ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>>
         LOOKUP_CACHE = new ConcurrentHashMap<>();
 
     public static final ConcurrentHashMap<String, CompletableFuture<Optional<String>>>
@@ -178,7 +178,7 @@ public class KafkaTopicManager {
     // call pulsarclient.lookup.getbroker to get and
     // own a topic.
     //    // when error happens, the returned future will complete with null.
-    public CompletableFuture<InetSocketAddress> getTopicBroker(String topicName) {
+    public CompletableFuture<InetSocketAddress> getTopicBroker(String topicName, String listenerName) {
         if (closed.get()) {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Return null for getTopicBroker({}) since channel closing",
@@ -186,16 +186,28 @@ public class KafkaTopicManager {
             }
             return CompletableFuture.completedFuture(null);
         }
-        return LOOKUP_CACHE.computeIfAbsent(topicName, t -> {
+
+        ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>> topicLookupCache =
+                LOOKUP_CACHE.computeIfAbsent(topicName, t-> {
+                    if (log.isDebugEnabled()) {
+                        log.debug("[{}] topic {} not in Lookup_cache, call lookupBroker",
+                                requestHandler.ctx.channel(), topicName);
+                    }
+                    ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>> cache = new ConcurrentHashMap<>();
+                    cache.put(listenerName == null ? "" : listenerName, lookupBroker(topicName, listenerName));
+                    return cache;
+                });
+
+        return topicLookupCache.computeIfAbsent(listenerName == null ? "" : listenerName, t-> {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] topic {} not in Lookup_cache, call lookupBroker",
-                    requestHandler.ctx.channel(), topicName);
+                        requestHandler.ctx.channel(), topicName);
             }
-            return lookupBroker(topicName);
+            return lookupBroker(topicName, listenerName);
         });
     }
 
-    private CompletableFuture<InetSocketAddress> lookupBroker(final String topic) {
+    private CompletableFuture<InetSocketAddress> lookupBroker(final String topic, String listenerName) {
         if (closed.get()) {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Return null for getTopic({}) since channel closing",
@@ -203,7 +215,7 @@ public class KafkaTopicManager {
             }
             return CompletableFuture.completedFuture(null);
         }
-        return lookupClient.getBrokerAddress(TopicName.get(topic));
+        return lookupClient.getBrokerAddress(TopicName.get(topic), listenerName);
     }
 
     // A wrapper of `BrokerService#getTopic` that is to find the topic's associated `PersistentTopic` instance
