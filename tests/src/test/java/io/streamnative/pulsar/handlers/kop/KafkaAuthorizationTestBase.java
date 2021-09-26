@@ -56,7 +56,6 @@ import org.testng.annotations.Test;
 /**
  * Unit test for KoP enable authorization.
  */
-@Test
 @Slf4j
 public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestBase {
 
@@ -160,8 +159,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         } finally {
             // Cleanup
             admin.topics().deletePartitionedTopic(testTopic);
-            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE, true);
-            admin.tenants().deleteTenant(newTenant, true);
         }
     }
 
@@ -360,8 +357,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         } finally {
             // Cleanup
             admin.topics().deletePartitionedTopic(testTopic);
-            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE, true);
-            admin.tenants().deleteTenant(newTenant, true);
         }
     }
 
@@ -402,8 +397,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         } finally {
             // Cleanup
             admin.topics().deletePartitionedTopic(testTopic);
-            admin.namespaces().deleteNamespace(newTenant + "/" + NAMESPACE, true);
-            admin.tenants().deleteTenant(newTenant, true);
         }
     }
 
