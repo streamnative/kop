@@ -846,13 +846,17 @@ public class TransactionCoordinator {
     /**
      * Startup logic executed at the same time when the server starts up.
      */
-    public void start() {
+    public CompletableFuture<Void> startup() {
         log.info("Starting up transaction coordinator ...");
 
         // TODO abort timeout transactions
         // TODO transaction id expiration
         isActive.set(true);
-        this.producerIdManager.initialize();
+
+        return this.producerIdManager.initialize().thenCompose(ignored -> {
+            log.info("Startup transaction coordinator complete.");
+            return CompletableFuture.completedFuture(null);
+        });
     }
 
     /**
