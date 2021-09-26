@@ -21,8 +21,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
+import org.testng.Assert;
 import org.testng.annotations.Test;
 
 
@@ -86,6 +88,32 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
 
         super.internalCleanup();
     }
+
+    @Test(timeOut = 20000)
+    public void testConnectListenerNotExist() throws Exception {
+        final int externalPort = PortManager.nextFreePort();
+        super.resetConfig();
+        conf.setAdvertisedAddress(null);
+        conf.setKafkaListeners("kafka://0.0.0.0:" + kafkaBrokerPort + ",kafka_external://0.0.0.0:" + externalPort);
+        conf.setKafkaProtocolMap("kafka:PLAINTEXT,kafka_external:PLAINTEXT");
+        conf.setAdvertisedListeners("pulsar:pulsar://localhost:" + brokerPort
+                + ",kafka_external:pulsar://0.0.0.0:" + externalPort);
+        super.internalSetup();
+        final Properties props = newKafkaProducerProperties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + kafkaBrokerPort);
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(props);
+        RecordMetadata recordMetadata = null;
+        try {
+            recordMetadata = producer.send(new ProducerRecord<>("my-topic", "hello")).get();
+            Assert.assertTrue(recordMetadata != null);
+            Assert.assertEquals(1, recordMetadata.offset());
+        } catch (InterruptedException | ExecutionException e) {
+            log.info("Send failed: {}", e.getMessage());
+        }
+        producer.close();
+        super.internalCleanup();
+    }
+
 
     private void kafkaProducerSend(String server) throws ExecutionException, InterruptedException, TimeoutException {
         final Properties props = new Properties();

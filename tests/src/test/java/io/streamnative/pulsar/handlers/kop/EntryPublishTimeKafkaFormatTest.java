@@ -39,6 +39,7 @@ import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.RequestHeader;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.Test;
@@ -131,7 +132,11 @@ public class EntryPublishTimeKafkaFormatTest extends EntryPublishTimeTest {
         short apiVersion = header.apiVersion();
         Struct struct = apiKey.parseRequest(apiVersion, serializedRequest);
         AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
-        return new KafkaCommandDecoder.KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
+        return new KafkaCommandDecoder.KafkaHeaderAndRequest(header,
+                body,
+                byteBuf,
+                serviceAddress,
+                SecurityProtocol.PLAINTEXT.name);
     }
 
 }

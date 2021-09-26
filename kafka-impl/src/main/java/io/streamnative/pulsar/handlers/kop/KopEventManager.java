@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static com.google.common.base.Preconditions.checkState;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -26,11 +27,13 @@ import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.ShutdownableThread;
 import java.nio.charset.StandardCharsets;
-import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -52,6 +55,7 @@ import org.apache.pulsar.metadata.api.Notification;
 
 @Slf4j
 public class KopEventManager {
+    private static final String END_POINT_SEPARATOR = ",";
     private static final String REGEX = "^(.*)://\\[?([0-9a-zA-Z\\-%._:]*)\\]?:(-?[0-9]+)";
     private static final Pattern PATTERN = Pattern.compile(REGEX);
 
@@ -186,7 +190,7 @@ public class KopEventManager {
                             BiConsumer<String, Long> registerEventLatency,
                             String name,
                             long startProcessTime) {
-        final Set<Node> kopBrokers = Sets.newConcurrentHashSet();
+        ConcurrentMap<String, Set<Node>> kopBrokersMap = Maps.newConcurrentMap();
         final AtomicInteger pendingBrokers = new AtomicInteger(pulsarBrokers.size());
 
         pulsarBrokers.forEach(broker -> {
@@ -207,9 +211,14 @@ public class KopEventManager {
                             JsonElement element = protocols.get("kafka");
 
                             if (element != null) {
-                                String kopBrokerStr = element.getAsString();
-                                Node kopNode = getNode(kopBrokerStr);
-                                kopBrokers.add(kopNode);
+                                String kopBrokerStrs = element.getAsString();
+                                Map<String, Set<Node>> kopNodesMap = getNodes(kopBrokerStrs);
+                                kopNodesMap.forEach((listenerName, nodesSet) -> {
+                                    Set<Node> currentNodeSet = kopBrokersMap.computeIfAbsent(listenerName,
+                                            s -> Sets.newConcurrentHashSet());
+                                    currentNodeSet.addAll(nodesSet);
+                                    kopBrokersMap.put(listenerName, currentNodeSet);
+                                });
                             } else {
                                 if (log.isDebugEnabled()) {
                                     log.debug("Get broker {} path currently not a kop broker, skip it.", broker);
@@ -222,13 +231,13 @@ public class KopEventManager {
                         }
 
                         if (pendingBrokers.decrementAndGet() == 0) {
-                            Collection<? extends Node> oldKopBrokers = adminManager.getBrokers();
-                            adminManager.setBrokers(kopBrokers);
+                            Map<String, Set<Node>> oldKopBrokers = adminManager.getAllBrokers();
+                            adminManager.setBrokers(kopBrokersMap);
                             if (registerEventLatency != null) {
                                 registerEventLatency.accept(name, startProcessTime);
                             }
                             log.info("Refresh kop brokers new cache {}, old brokers cache {}",
-                                    adminManager.getBrokers(), oldKopBrokers);
+                                    adminManager.getAllBrokers(), oldKopBrokers);
                         }
                     }
             );
@@ -242,18 +251,26 @@ public class KopEventManager {
     }
 
     @VisibleForTesting
-    public static Node getNode(String kopBrokerStr) {
-        final String errorMessage = "kopBrokerStr " + kopBrokerStr + " is invalid";
-        final Matcher matcher = PATTERN.matcher(kopBrokerStr);
-        checkState(matcher.find(), errorMessage);
-        checkState(matcher.groupCount() == 3, errorMessage);
-        String host = matcher.group(2);
-        String port = matcher.group(3);
+    public static Map<String, Set<Node>> getNodes(String kopBrokerStrs) {
+        HashMap<String, Set<Node>> nodesMap = Maps.newHashMap();
+        String[] kopBrokerArr = kopBrokerStrs.split(END_POINT_SEPARATOR);
+        for (String kopBrokerStr : kopBrokerArr) {
+            final String errorMessage = "kopBrokerStr " + kopBrokerStr + " is invalid";
+            final Matcher matcher = PATTERN.matcher(kopBrokerStr);
+            checkState(matcher.find(), errorMessage);
+            checkState(matcher.groupCount() == 3, errorMessage);
+            String listenerName = matcher.group(1);
+            String host = matcher.group(2);
+            String port = matcher.group(3);
+            Set<Node> nodeSet = nodesMap.computeIfAbsent(listenerName, s -> new HashSet<>());
+            nodeSet.add(new Node(
+                    Murmur3_32Hash.getInstance().makeHash((host + port).getBytes(StandardCharsets.UTF_8)),
+                    host,
+                    Integer.parseInt(port)));
+            nodesMap.put(listenerName, nodeSet);
+        }
 
-        return new Node(
-                Murmur3_32Hash.getInstance().makeHash((host + port).getBytes(StandardCharsets.UTF_8)),
-                host,
-                Integer.parseInt(port));
+        return nodesMap;
     }
 
     @Getter

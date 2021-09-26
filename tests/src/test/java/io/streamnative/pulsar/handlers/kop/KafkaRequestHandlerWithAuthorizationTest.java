@@ -67,6 +67,7 @@ import org.apache.kafka.common.requests.OffsetFetchRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.RequestHeader;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
@@ -215,7 +216,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         handler.handleTopicMetadataRequest(
                 new KafkaCommandDecoder.KafkaHeaderAndRequest(
-                        header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
+                        header,
+                        request,
+                        PulsarByteBufAllocator.DEFAULT.heapBuffer(),
+                        null,
+                        SecurityProtocol.PLAINTEXT.name),
                 responseFuture);
         final MetadataResponse response = (MetadataResponse) responseFuture.get();
         assertEquals(response.topicMetadata().size(), 1);
@@ -236,7 +241,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         spyHandler.handleTopicMetadataRequest(
                 new KafkaCommandDecoder.KafkaHeaderAndRequest(
-                        header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
+                        header,
+                        request,
+                        PulsarByteBufAllocator.DEFAULT.heapBuffer(),
+                        null,
+                        SecurityProtocol.PLAINTEXT.name),
                 responseFuture);
         final MetadataResponse response = (MetadataResponse) responseFuture.get();
         assertEquals(response.topicMetadata().size(), 1);
@@ -261,7 +270,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         spyHandler.handleTopicMetadataRequest(
                 new KafkaCommandDecoder.KafkaHeaderAndRequest(
-                        header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
+                        header,
+                        request,
+                        PulsarByteBufAllocator.DEFAULT.heapBuffer(),
+                        null,
+                        SecurityProtocol.PLAINTEXT.name),
                 responseFuture);
         final MetadataResponse response = (MetadataResponse) responseFuture.get();
         String localName = TopicName.get(topic).getLocalName();
@@ -292,7 +305,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                 header,
                 request,
                 PulsarByteBufAllocator.DEFAULT.heapBuffer(),
-                null), responseFuture);
+                null,
+                SecurityProtocol.PLAINTEXT.name), responseFuture);
         AbstractResponse response = responseFuture.get();
         assertEquals((int) response.errorCounts().get(Errors.TOPIC_AUTHORIZATION_FAILED), 1);
     }
@@ -463,7 +477,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         short apiVersion = header.apiVersion();
         Struct struct = apiKey.parseRequest(apiVersion, serializedRequest);
         AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
-        return new KafkaCommandDecoder.KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
+        return new KafkaCommandDecoder.KafkaHeaderAndRequest(header,
+                body,
+                byteBuf,
+                serviceAddress,
+                SecurityProtocol.PLAINTEXT.name);
     }
 
     private ProduceRequest createProduceRequest(String topic) {

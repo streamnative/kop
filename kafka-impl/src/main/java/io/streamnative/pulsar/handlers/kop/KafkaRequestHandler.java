@@ -282,7 +282,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
                                StatsLogger statsLogger) throws Exception {
-        super(statsLogger, kafkaConfig);
+        super(statsLogger, kafkaConfig, advertisedEndPoint);
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
         this.clusterName = kafkaConfig.getClusterName();
@@ -524,7 +524,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         List<TopicMetadata> allTopicMetadata = Collections.synchronizedList(Lists.newArrayList());
         List<Node> allNodes = Collections.synchronizedList(Lists.newArrayList());
         // Get all kop brokers in local cache
-        allNodes.addAll(adminManager.getBrokers());
+        allNodes.addAll(adminManager.getBrokers(metadataHar.getListenerName()));
 
         List<String> topics = metadataRequest.topics();
         // topics in format : persistent://%s/%s/abc-partition-x, will be grouped by as:
