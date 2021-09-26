@@ -13,8 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
-import static org.junit.Assert.assertFalse;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
@@ -34,7 +35,7 @@ import org.apache.pulsar.common.policies.data.BundlesData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfoImpl;
 import org.awaitility.Awaitility;
-import org.junit.Assert;
+import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -175,20 +176,20 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
             Map<String, TransactionMetadata> txnMetadataMap = beforeTxnMetadataCache.get(i);
             Map<String, TransactionMetadata> loadedTxnMetadataMap = loadedTxnMetadataCache.get(i);
             if (txnMetadataMap == null) {
-                Assert.assertNull(loadedTxnMetadataMap);
+                assertNull(loadedTxnMetadataMap);
                 continue;
             }
-            Assert.assertEquals(txnMetadataMap.size(), loadedTxnMetadataMap.size());
+            assertEquals(txnMetadataMap.size(), loadedTxnMetadataMap.size());
             txnMetadataMap.forEach((txnId, txnMetadata) -> {
                 TransactionMetadata loadedTxnMetadata = loadedTxnMetadataMap.get(txnId);
-                Assert.assertEquals(txnMetadata.getTransactionalId(), loadedTxnMetadata.getTransactionalId());
-                Assert.assertEquals(txnMetadata.getProducerId(), loadedTxnMetadata.getProducerId());
-                Assert.assertEquals(txnMetadata.getLastProducerId(), loadedTxnMetadata.getLastProducerId());
-                Assert.assertEquals(txnMetadata.getProducerEpoch(), loadedTxnMetadata.getProducerEpoch());
-                Assert.assertEquals(txnMetadata.getLastProducerEpoch(), loadedTxnMetadata.getLastProducerEpoch());
-                Assert.assertEquals(txnMetadata.getTxnTimeoutMs(), loadedTxnMetadata.getTxnTimeoutMs());
-                Assert.assertEquals(txnMetadata.getTopicPartitions(), loadedTxnMetadata.getTopicPartitions());
-                Assert.assertEquals(txnMetadata.getTxnStartTimestamp(), loadedTxnMetadata.getTxnStartTimestamp());
+                assertEquals(txnMetadata.getTransactionalId(), loadedTxnMetadata.getTransactionalId());
+                assertEquals(txnMetadata.getProducerId(), loadedTxnMetadata.getProducerId());
+                assertEquals(txnMetadata.getLastProducerId(), loadedTxnMetadata.getLastProducerId());
+                assertEquals(txnMetadata.getProducerEpoch(), loadedTxnMetadata.getProducerEpoch());
+                assertEquals(txnMetadata.getLastProducerEpoch(), loadedTxnMetadata.getLastProducerEpoch());
+                assertEquals(txnMetadata.getTxnTimeoutMs(), loadedTxnMetadata.getTxnTimeoutMs());
+                assertEquals(txnMetadata.getTopicPartitions(), loadedTxnMetadata.getTopicPartitions());
+                assertEquals(txnMetadata.getTxnStartTimestamp(), loadedTxnMetadata.getTxnStartTimestamp());
                 if (txnMetadata.getState().equals(TransactionState.PREPARE_ABORT)) {
                     // to prepare state will complete
                     waitTxnComplete(loadedTxnMetadata, TransactionState.COMPLETE_ABORT);
@@ -196,8 +197,8 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
                     // to prepare state will complete
                     waitTxnComplete(loadedTxnMetadata, TransactionState.COMPLETE_COMMIT);
                 } else {
-                    Assert.assertEquals(txnMetadata.getState(), loadedTxnMetadata.getState());
-                    Assert.assertEquals(txnMetadata.getTxnLastUpdateTimestamp(),
+                    assertEquals(txnMetadata.getState(), loadedTxnMetadata.getState());
+                    assertEquals(txnMetadata.getTxnLastUpdateTimestamp(),
                             loadedTxnMetadata.getTxnLastUpdateTimestamp());
                 }
             });
@@ -208,8 +209,8 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
         Awaitility.await()
                 .pollDelay(Duration.ofMillis(500))
                 .untilAsserted(() -> assertEquals(loadedTxnMetadata.getState(), expectedState));
-        Assert.assertEquals(expectedState, loadedTxnMetadata.getState());
-        Assert.assertTrue(loadedTxnMetadata.getTxnLastUpdateTimestamp() > 0);
+        assertEquals(expectedState, loadedTxnMetadata.getState());
+        assertTrue(loadedTxnMetadata.getTxnLastUpdateTimestamp() > 0);
     }
 
     private void waitTCImmigrationComplete() throws PulsarAdminException {
