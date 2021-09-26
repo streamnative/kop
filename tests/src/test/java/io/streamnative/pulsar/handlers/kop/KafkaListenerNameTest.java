@@ -14,6 +14,9 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import java.util.Properties;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -53,15 +56,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         log.info("Set advertisedListeners to {}", advertisedListeners);
         super.internalSetup();
 
-        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
-        producer.send(new ProducerRecord<>("my-topic", "my-message"), (metadata, exception) -> {
-            if (exception == null) {
-                log.info("Send to {}", metadata);
-            } else {
-                log.error("Send failed: {}", exception.getMessage());
-            }
-        });
-        producer.close();
+        kafkaProducerSend("localhost:" + kafkaBrokerPort);
 
         super.internalCleanup();
     }
@@ -92,7 +87,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    private void kafkaProducerSend(String server) {
+    private void kafkaProducerSend(String server) throws ExecutionException, InterruptedException, TimeoutException {
         final Properties props = new Properties();
         props.setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, server);
         props.setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
@@ -105,7 +100,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
             } else {
                 log.error("Send failed: {}", exception.getMessage());
             }
-        });
+        }).get(30, TimeUnit.SECONDS);
         producer.close();
     }
 }

@@ -49,17 +49,15 @@ public class EndPoint {
     @Getter
     private final boolean multiListener;
 
-    public EndPoint(final String listener, final String kafkaProtocolMap) {
+    public EndPoint(final String listener, final Map<String, SecurityProtocol> protocolMap) {
         this.originalListener = listener;
         final String errorMessage = "listener '" + listener + "' is invalid";
         final Matcher matcher = PATTERN.matcher(listener);
         checkState(matcher.find(), errorMessage);
         checkState(matcher.groupCount() == 3, errorMessage);
 
-        Map<String, SecurityProtocol> protocolMap = parseProtocolMap(kafkaProtocolMap);
-
         this.listenerName = matcher.group(1);
-        if (protocolMap.isEmpty()) {
+        if (protocolMap == null || protocolMap.isEmpty()) {
             multiListener = false;
             this.securityProtocol = SecurityProtocol.forName(matcher.group(1));
         } else {
@@ -96,8 +94,9 @@ public class EndPoint {
 
     public static Map<String, EndPoint> parseListeners(final String listeners, final String kafkaProtocolMap) {
         final Map<String, EndPoint> endPointMap = new HashMap<>();
+        final Map<String, SecurityProtocol> protocolMap = parseProtocolMap(kafkaProtocolMap);
         for (String listener : listeners.split(END_POINT_SEPARATOR)) {
-            final EndPoint endPoint = new EndPoint(listener, kafkaProtocolMap);
+            final EndPoint endPoint = new EndPoint(listener, protocolMap);
             if (endPointMap.containsKey(endPoint.listenerName)) {
                 throw new IllegalStateException(
                         listeners + " has multiple listeners whose listenerName is " + endPoint.listenerName);
