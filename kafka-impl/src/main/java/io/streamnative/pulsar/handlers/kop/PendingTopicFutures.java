@@ -23,6 +23,7 @@ import java.util.function.Consumer;
 import lombok.Getter;
 import lombok.NonNull;
 import org.apache.bookkeeper.common.util.MathUtils;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 
 /**
@@ -55,18 +56,21 @@ public class PendingTopicFutures {
 
     public void addListener(CompletableFuture<Optional<PersistentTopic>> topicFuture,
                             @NonNull Consumer<Optional<PersistentTopic>> persistentTopicConsumer,
-                            @NonNull Consumer<Throwable> exceptionConsumer) {
+                            @NonNull Consumer<Throwable> exceptionConsumer,
+                            @NonNull Consumer<TopicPartition> cleanCompletedPendingTopicFuture) {
         if (count.compareAndSet(0, 1)) {
             // The first pending future comes
             currentTopicFuture = topicFuture.thenApply(persistentTopic -> {
                 registerQueueLatency(true);
                 persistentTopicConsumer.accept(persistentTopic);
                 count.decrementAndGet();
+                cleanCompletedPendingTopicFuture.accept(null);
                 return TopicThrowablePair.withTopic(persistentTopic);
             }).exceptionally(e -> {
                 registerQueueLatency(false);
                 exceptionConsumer.accept(e.getCause());
                 count.decrementAndGet();
+                cleanCompletedPendingTopicFuture.accept(null);
                 return TopicThrowablePair.withThrowable(e.getCause());
             });
         } else {
@@ -80,11 +84,13 @@ public class PendingTopicFutures {
                     exceptionConsumer.accept(topicThrowablePair.getThrowable());
                 }
                 count.decrementAndGet();
+                cleanCompletedPendingTopicFuture.accept(null);
                 return topicThrowablePair;
             }).exceptionally(e -> {
                 registerQueueLatency(false);
                 exceptionConsumer.accept(e.getCause());
                 count.decrementAndGet();
+                cleanCompletedPendingTopicFuture.accept(null);
                 return TopicThrowablePair.withThrowable(e.getCause());
             });
             count.incrementAndGet();
