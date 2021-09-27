@@ -13,9 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
-import com.google.api.client.util.Sets;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.io.IOException;
@@ -673,7 +674,7 @@ public class TransactionStateManager {
         shuttingDown.set(true);
         loadingPartitions.clear();
         transactionMetadataCache.clear();
-//        executor.shutdown();
+        executor.shutdown();
         txnLogProducerMap.forEach((__, producer) -> {
             try {
                 producer.get().close();

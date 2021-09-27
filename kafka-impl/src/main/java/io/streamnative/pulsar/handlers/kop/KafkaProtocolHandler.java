@@ -47,6 +47,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.kafka.common.internals.Topic;
@@ -463,7 +464,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         getGroupCoordinator(kafkaConfig.getKafkaMetadataTenant());
 
         if (kafkaConfig.isEnableTransactionCoordinator()) {
-            getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
+            TransactionCoordinator transactionCoordinator =
+                    getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
+            try {
+                loadTxnLogTopics(kafkaConfig.getKafkaMetadataTenant(), transactionCoordinator);
+            } catch (Exception e) {
+                log.error("Failed to load transaction log", e);
+            }
         }
 
         Configuration conf = new PropertiesConfiguration();
@@ -650,9 +657,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 brokerService.getPulsar().getClient(),
                 brokerService.getPulsar().getZkClient(),
                 kopBrokerLookupManager,
-                brokerService.getTopicOrderedExecutor());
-
-        loadTxnLogTopics(tenant, transactionCoordinator);
+                OrderedExecutor.newBuilder().name("TransactionStateManagerExecutor").build());
 
         transactionCoordinator.startup().get();
 
