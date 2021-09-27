@@ -105,7 +105,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         final KafkaProducer<String, String> producer = new KafkaProducer<>(props);
         RecordMetadata recordMetadata = producer.send(new ProducerRecord<>("my-topic", "hello")).get();
         Assert.assertNotNull(recordMetadata);
-        Assert.assertEquals(1, recordMetadata.offset());
+        Assert.assertEquals(0, recordMetadata.offset());
         producer.close();
         super.internalCleanup();
     }
