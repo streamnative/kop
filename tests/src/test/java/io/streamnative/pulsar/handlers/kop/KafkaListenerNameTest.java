@@ -52,7 +52,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         conf.setInternalListenerName("pulsar");
         final String advertisedListeners =
                 "pulsar:pulsar://" + localAddress + ":" + brokerPort
-                        + ",kafka:pulsar://" + "localhost:" + kafkaBrokerPort;
+                        + ",kafka:pulsar://localhost:" + kafkaBrokerPort;
         conf.setAdvertisedListeners(advertisedListeners);
         conf.setKafkaListenerName("kafka");
         log.info("Set advertisedListeners to {}", advertisedListeners);
@@ -77,8 +77,8 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         conf.setKafkaListeners(kafkaListeners);
         final String advertisedListeners =
                 "pulsar:pulsar://" + localAddress + ":" + brokerPort
-                        + ",kafka:pulsar://" + "localhost:" + kafkaBrokerPort
-                        + ",kafka_external:pulsar://" + "localhost:" + externalPort;
+                        + ",kafka:pulsar://localhost:" + kafkaBrokerPort
+                        + ",kafka_external:pulsar://localhost:" + externalPort;
         conf.setAdvertisedListeners(advertisedListeners);
         log.info("Set advertisedListeners to {}", advertisedListeners);
         super.internalSetup();
@@ -97,7 +97,8 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         conf.setKafkaListeners("kafka://0.0.0.0:" + kafkaBrokerPort + ",kafka_external://0.0.0.0:" + externalPort);
         conf.setKafkaProtocolMap("kafka:PLAINTEXT,kafka_external:PLAINTEXT");
         conf.setAdvertisedListeners("pulsar:pulsar://localhost:" + brokerPort
-                + ",kafka_external:pulsar://0.0.0.0:" + externalPort);
+                + ",kafka:pulsar://localhost:" + kafkaBrokerPort
+                + ",kafka_external:pulsar://localhost:" + externalPort);
         super.internalSetup();
         final Properties props = newKafkaProducerProperties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + kafkaBrokerPort);
