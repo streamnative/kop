@@ -103,9 +103,6 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
         transactionStates.put(4L, TransactionState.PREPARE_ABORT);
         transactionStates.put(5L, TransactionState.COMPLETE_ABORT);
 
-        // Currently, there is lack of TC fence mechanism
-//        waitTCImmigrationComplete();
-
         TransactionStateManager transactionStateManager = getTxnManager();
 
         CountDownLatch countDownLatch = new CountDownLatch(pidMappings.size());
@@ -161,6 +158,7 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
             pulsar.getAdminClient().namespaces()
                     .unloadNamespaceBundle(conf.getKafkaTenant() + "/" + conf.getKafkaNamespace(), bundle);
         }
+
         waitTCImmigrationComplete();
 
         // verify the loaded transaction metadata
