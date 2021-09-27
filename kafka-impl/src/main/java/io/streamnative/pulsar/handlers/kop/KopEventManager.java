@@ -29,8 +29,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -61,7 +63,7 @@ public class KopEventManager {
             new LinkedBlockingQueue<>();
     private final KopEventThread thread =
             new KopEventThread(kopEventThreadName);
-    private final GroupCoordinator coordinator;
+    private final Map<String, GroupCoordinator> groupCoordinatorsByTenant;
     private final AdminManager adminManager;
     private final DeletionTopicsHandler deletionTopicsHandler;
     private final BrokersChangeHandler brokersChangeHandler;
@@ -75,16 +77,16 @@ public class KopEventManager {
                         TimeUnit.NANOSECONDS);
     };
 
-    public KopEventManager(GroupCoordinator coordinator,
-                           AdminManager adminManager,
+    public KopEventManager(AdminManager adminManager,
                            MetadataStore metadataStore,
-                           StatsLogger statsLogger) {
-        this.coordinator = coordinator;
+                           StatsLogger statsLogger,
+                           Map<String, GroupCoordinator> groupCoordinatorsByTenant) {
         this.adminManager = adminManager;
         this.deletionTopicsHandler = new DeletionTopicsHandler(this);
         this.brokersChangeHandler = new BrokersChangeHandler(this);
         this.metadataStore = metadataStore;
         this.eventManagerStats = new KopEventManagerStats(statsLogger);
+        this.groupCoordinatorsByTenant = groupCoordinatorsByTenant;
     }
 
     public void start() {
@@ -288,54 +290,72 @@ public class KopEventManager {
         @Override
         public void process(BiConsumer<String, Long> registerEventLatency,
                             long startProcessTime) {
-            if (!coordinator.isActive()) {
-                return;
-            }
-
             try {
                 List<String> topicsDeletions = metadataStore.getChildren(getDeleteTopicsPath()).get();
-
-                HashSet<String> topicsFullNameDeletionsSets = Sets.newHashSet();
-                HashSet<KopTopic> kopTopicsSet = Sets.newHashSet();
-                topicsDeletions.forEach(topic -> {
-                    KopTopic kopTopic = new KopTopic(topic);
-                    kopTopicsSet.add(kopTopic);
-                    topicsFullNameDeletionsSets.add(kopTopic.getFullName());
-                });
 
                 if (log.isDebugEnabled()) {
                     log.debug("Delete topics listener fired for topics {} to be deleted", topicsDeletions);
                 }
 
-                Iterable<GroupMetadata> groupMetadataIterable = coordinator.getGroupManager().currentGroups();
-                HashSet<TopicPartition> topicPartitionsToBeDeletions = Sets.newHashSet();
+                // Localize groupCoordinatorsByTenant to avoid multi-thread conflicts
+                final Map<String, GroupCoordinator> currentCoordinators = groupCoordinatorsByTenant;
+                final Set<String> deletedTopics = Sets.newConcurrentHashSet();
+                final AtomicInteger pendingCoordinators = new AtomicInteger(currentCoordinators.size());
 
-                groupMetadataIterable.forEach(groupMetadata -> {
-                    topicPartitionsToBeDeletions.addAll(
-                            groupMetadata.collectPartitionsWithTopics(topicsFullNameDeletionsSets));
+                currentCoordinators.forEach((tenant, groupCoordinator) -> {
+
+                    // TODO
+                    // now we have tenant/coordinator/topicsDeletions
+                    // It is possible that different coordinators have the same Kafka topics?
+                    // Because there is no multi-tenancy on the Kafka side
+                    // The question here is, which topic does the kafka admin client delete?
+                    // Is it related to tenants or delete all kafka topics with the same name under all tenants?
+                    // The implementation here only follows the concept that there is no multi-tenancy in Kafka,
+                    // that mean deleted the Kafka topics with the same name under all tenants,
+                    // and leave the rest for everyone to discuss
+
+                    if (groupCoordinator.isActive()) {
+                        HashSet<String> topicsFullNameDeletionsSets = Sets.newHashSet();
+                        HashSet<KopTopic> kopTopicsSet = Sets.newHashSet();
+                        topicsDeletions.forEach(topic -> {
+                            KopTopic kopTopic = new KopTopic(topic);
+                            kopTopicsSet.add(kopTopic);
+                            topicsFullNameDeletionsSets.add(kopTopic.getFullName());
+                        });
+
+                        Iterable<GroupMetadata> groupMetadataIterable = groupCoordinator.getGroupManager().currentGroups();
+                        HashSet<TopicPartition> topicPartitionsToBeDeletions = Sets.newHashSet();
+
+                        groupMetadataIterable.forEach(groupMetadata -> {
+                            topicPartitionsToBeDeletions.addAll(
+                                    groupMetadata.collectPartitionsWithTopics(topicsFullNameDeletionsSets));
+                        });
+
+                        Set<String> curDeletedTopics = Sets.newHashSet();
+                        if (!topicPartitionsToBeDeletions.isEmpty()) {
+                            groupCoordinator.handleDeletedPartitions(topicPartitionsToBeDeletions);
+                            Set<String> collectDeleteTopics = topicPartitionsToBeDeletions
+                                    .stream()
+                                    .map(TopicPartition::topic)
+                                    .collect(Collectors.toSet());
+
+                            curDeletedTopics = kopTopicsSet.stream().filter(
+                                    kopTopic -> collectDeleteTopics.contains(kopTopic.getFullName())
+                            ).map(KopTopic::getOriginalName).collect(Collectors.toSet());
+                        }
+
+                        log.info("Tenant {} GroupMetadata delete topics {}, no matching topics {}",
+                                tenant, curDeletedTopics, Sets.difference(topicsFullNameDeletionsSets, curDeletedTopics));
+
+                        deletedTopics.addAll(curDeletedTopics);
+                    }
+                    if (pendingCoordinators.decrementAndGet() == 0) {
+                        deletedTopics.forEach(deletedTopic -> {
+                            metadataStore.delete(
+                                    getDeleteTopicsPath() + "/" + deletedTopic, Optional.of((long) -1));
+                        });
+                    }
                 });
-
-                Set<String> deletedTopics = Sets.newHashSet();
-                if (!topicPartitionsToBeDeletions.isEmpty()) {
-                    coordinator.handleDeletedPartitions(topicPartitionsToBeDeletions);
-                    Set<String> collectDeleteTopics = topicPartitionsToBeDeletions
-                            .stream()
-                            .map(TopicPartition::topic)
-                            .collect(Collectors.toSet());
-
-                    deletedTopics = kopTopicsSet.stream().filter(
-                            kopTopic -> collectDeleteTopics.contains(kopTopic.getFullName())
-                    ).map(KopTopic::getOriginalName).collect(Collectors.toSet());
-
-                    deletedTopics.forEach(deletedTopic -> {
-                        metadataStore.delete(
-                                getDeleteTopicsPath() + "/" + deletedTopic, Optional.of((long) -1));
-                    });
-                }
-
-                log.info("GroupMetadata delete topics {}, no matching topics {}",
-                        deletedTopics, Sets.difference(topicsFullNameDeletionsSets, deletedTopics));
-
             } catch (ExecutionException | InterruptedException e) {
                 log.error("DeleteTopicsEvent process have an error", e);
             } finally {
