@@ -102,14 +102,9 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         final Properties props = newKafkaProducerProperties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + kafkaBrokerPort);
         final KafkaProducer<String, String> producer = new KafkaProducer<>(props);
-        RecordMetadata recordMetadata = null;
-        try {
-            recordMetadata = producer.send(new ProducerRecord<>("my-topic", "hello")).get();
-            Assert.assertTrue(recordMetadata != null);
-            Assert.assertEquals(1, recordMetadata.offset());
-        } catch (InterruptedException | ExecutionException e) {
-            log.info("Send failed: {}", e.getMessage());
-        }
+        RecordMetadata recordMetadata = producer.send(new ProducerRecord<>("my-topic", "hello")).get();
+        Assert.assertNotNull(recordMetadata);
+        Assert.assertEquals(1, recordMetadata.offset());
         producer.close();
         super.internalCleanup();
     }

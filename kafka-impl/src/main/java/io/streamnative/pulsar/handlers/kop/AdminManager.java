@@ -230,7 +230,11 @@ class AdminManager {
     }
 
     public Collection<? extends Node> getBrokers(String listenerName) {
-        return brokersCache.get(listenerName);
+        if (brokersCache.containsKey(listenerName)) {
+            return brokersCache.get(listenerName);
+        } else {
+            return Collections.emptyList();
+        } 
     }
 
     public Map<String, Set<Node>> getAllBrokers() {
