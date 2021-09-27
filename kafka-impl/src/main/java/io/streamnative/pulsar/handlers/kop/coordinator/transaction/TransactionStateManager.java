@@ -673,7 +673,7 @@ public class TransactionStateManager {
         shuttingDown.set(true);
         loadingPartitions.clear();
         transactionMetadataCache.clear();
-        executor.shutdown();
+//        executor.shutdown();
         txnLogProducerMap.forEach((__, producer) -> {
             try {
                 producer.get().close();
