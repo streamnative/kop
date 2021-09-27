@@ -18,6 +18,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -25,6 +26,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.AllArgsConstructor;
@@ -41,6 +43,7 @@ import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClient;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.Reader;
 import org.apache.pulsar.common.naming.TopicName;
 
@@ -671,6 +674,20 @@ public class TransactionStateManager {
         loadingPartitions.clear();
         transactionMetadataCache.clear();
         executor.shutdown();
+        txnLogProducerMap.forEach((__, producer) -> {
+            try {
+                producer.get().close();
+            } catch (PulsarClientException | InterruptedException | ExecutionException e) {
+                log.error("txnLogProducer close failed : {}", e.getMessage());
+            }
+        });
+        txnLogReaderMap.forEach((__, reader) -> {
+            try {
+                reader.get().close();
+            } catch (IOException | ExecutionException | InterruptedException e) {
+                log.error("txnLogReader close failed : {}", e.getMessage());
+            }
+        });
         log.info("Shutdown transaction state manager complete.");
     }
 
