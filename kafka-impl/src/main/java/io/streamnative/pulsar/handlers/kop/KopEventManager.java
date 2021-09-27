@@ -32,7 +32,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -323,7 +322,8 @@ public class KopEventManager {
                             topicsFullNameDeletionsSets.add(kopTopic.getFullName());
                         });
 
-                        Iterable<GroupMetadata> groupMetadataIterable = groupCoordinator.getGroupManager().currentGroups();
+                        Iterable<GroupMetadata> groupMetadataIterable = groupCoordinator
+                                .getGroupManager().currentGroups();
                         HashSet<TopicPartition> topicPartitionsToBeDeletions = Sets.newHashSet();
 
                         groupMetadataIterable.forEach(groupMetadata -> {
@@ -345,7 +345,8 @@ public class KopEventManager {
                         }
 
                         log.info("Tenant {} GroupMetadata delete topics {}, no matching topics {}",
-                                tenant, curDeletedTopics, Sets.difference(topicsFullNameDeletionsSets, curDeletedTopics));
+                                tenant, curDeletedTopics,
+                                Sets.difference(topicsFullNameDeletionsSets, curDeletedTopics));
 
                         deletedTopics.addAll(curDeletedTopics);
                     }
