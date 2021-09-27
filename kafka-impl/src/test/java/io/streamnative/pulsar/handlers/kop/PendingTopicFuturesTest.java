@@ -95,7 +95,8 @@ public class PendingTopicFuturesTest {
         final List<Integer> changesOfPendingCount = new ArrayList<>();
 
         for (int i = 0; i < 10; i++) {
-            pendingTopicFutures.addListener(topicFuture, topic -> {}, e -> exceptionMessages.add(e.getMessage()), (ignore)->{});
+            pendingTopicFutures.addListener(topicFuture, topic -> {},
+                    e -> exceptionMessages.add(e.getMessage()), (ignore)->{});
             changesOfPendingCount.add(pendingTopicFutures.size());
             sleep(200);
         }

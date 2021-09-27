@@ -1042,11 +1042,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 persistentTopicConsumer.accept(topicFuture.getNow(Optional.empty()));
             } else {
                 // topic is not available now
-                Consumer<TopicPartition> cleanCompletedPendingTopicFuture = (ignore) -> pendingTopicFuturesMap.remove(topicPartition);
+                Consumer<TopicPartition> cleanCompletedPendingTopicFuture = (ignore) -> {
+                    pendingTopicFuturesMap.remove(topicPartition);
+                };
                 pendingTopicFuturesMap
                         .computeIfAbsent(topicPartition, ignored ->
                                 new PendingTopicFutures(requestStats))
-                        .addListener(topicFuture, persistentTopicConsumer, exceptionConsumer, cleanCompletedPendingTopicFuture);
+                        .addListener(topicFuture, persistentTopicConsumer, exceptionConsumer,
+                                cleanCompletedPendingTopicFuture);
             }
         } catch (Exception e) {
             log.error("[{}] Failed to handle produce request for {}",
