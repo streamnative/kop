@@ -19,7 +19,6 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -27,9 +26,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -44,9 +43,9 @@ import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClient;
-import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.Reader;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Transaction state manager.
@@ -674,21 +673,36 @@ public class TransactionStateManager {
         shuttingDown.set(true);
         loadingPartitions.clear();
         transactionMetadataCache.clear();
+        List<CompletableFuture<Void>> txnLogProducerCloses = txnLogProducerMap.values().stream()
+                .map(producerCompletableFuture -> producerCompletableFuture
+                        .thenComposeAsync(Producer::closeAsync, executor))
+                .collect(Collectors.toList());
+        txnLogProducerMap.clear();
+        List<CompletableFuture<Void>> txnLogReaderCloses = txnLogReaderMap.values().stream()
+                .map(readerCompletableFuture -> readerCompletableFuture
+                        .thenComposeAsync(Reader::closeAsync, executor))
+                .collect(Collectors.toList());
+        txnLogProducerMap.clear();
+        FutureUtil.waitForAll(txnLogProducerCloses).whenCompleteAsync((ignore, t) -> {
+            if (t != null) {
+                log.error("Error when close all the {} txnLogProducers in TransactionStateManager",
+                        txnLogProducerCloses.size(), t);
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("Closed all the {} txnLogProducers in TransactionStateManager", txnLogProducerCloses.size());
+            }
+        }, executor);
+
+        FutureUtil.waitForAll(txnLogReaderCloses).whenCompleteAsync((ignore, t) -> {
+            if (t != null) {
+                log.error("Error when close all the {} txnLogReaders in TransactionStateManager",
+                        txnLogReaderCloses.size(), t);
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("Closed all the {} txnLogReaders in TransactionStateManager.", txnLogReaderCloses.size());
+            }
+        }, executor);
         executor.shutdown();
-        txnLogProducerMap.forEach((__, producer) -> {
-            try {
-                producer.get().close();
-            } catch (PulsarClientException | InterruptedException | ExecutionException e) {
-                log.error("txnLogProducer close failed : {}", e.getMessage());
-            }
-        });
-        txnLogReaderMap.forEach((__, reader) -> {
-            try {
-                reader.get().close();
-            } catch (IOException | ExecutionException | InterruptedException e) {
-                log.error("txnLogReader close failed : {}", e.getMessage());
-            }
-        });
         log.info("Shutdown transaction state manager complete.");
     }
 
