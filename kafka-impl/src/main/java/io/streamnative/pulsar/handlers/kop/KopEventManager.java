@@ -304,6 +304,8 @@ public class KopEventManager {
 
                 currentCoordinators.forEach((tenant, groupCoordinator) -> {
 
+                    // After we implement the creation and deletion of topics and other logic
+                    // updates to multi-tenancy. We need to pay attention to the TODO below
                     // TODO
                     // now we have tenant/coordinator/topicsDeletions
                     // It is possible that different coordinators have the same Kafka topics?
