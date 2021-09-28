@@ -27,6 +27,7 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.ShutdownableThread;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -297,7 +298,7 @@ public class KopEventManager {
                 }
 
                 // Localize groupCoordinatorsByTenant to avoid multi-thread conflicts
-                final Map<String, GroupCoordinator> currentCoordinators = groupCoordinatorsByTenant;
+                final Map<String, GroupCoordinator> currentCoordinators = new HashMap<>(groupCoordinatorsByTenant);
                 final Set<String> deletedTopics = Sets.newConcurrentHashSet();
                 final AtomicInteger pendingCoordinators = new AtomicInteger(currentCoordinators.size());
 
