@@ -251,15 +251,14 @@ public class GroupMetadataManager {
 
     public void shutdown() {
         shuttingDown.set(true);
-        scheduler.shutdown();
-        List<CompletableFuture<Void>> producerCloses = offsetsProducers.entrySet().stream()
-            .map(v -> v.getValue()
-                .thenComposeAsync(producer -> producer.closeAsync(), scheduler))
+        List<CompletableFuture<Void>> producerCloses = offsetsProducers.values().stream()
+            .map(producerCompletableFuture -> producerCompletableFuture
+                    .thenComposeAsync(Producer::closeAsync, scheduler))
             .collect(Collectors.toList());
         offsetsProducers.clear();
-        List<CompletableFuture<Void>> readerCloses = offsetsReaders.entrySet().stream()
-            .map(v -> v.getValue()
-                .thenComposeAsync(reader -> reader.closeAsync(), scheduler))
+        List<CompletableFuture<Void>> readerCloses = offsetsReaders.values().stream()
+            .map(readerCompletableFuture -> readerCompletableFuture
+                    .thenComposeAsync(Reader::closeAsync, scheduler))
             .collect(Collectors.toList());
         offsetsReaders.clear();
 
@@ -282,6 +281,7 @@ public class GroupMetadataManager {
                 log.debug("Closed all the {} offsetsReaders in GroupMetadataManager.", readerCloses.size());
             }
         }, scheduler);
+        scheduler.shutdown();
     }
 
     public ConcurrentMap<Integer, CompletableFuture<Producer<ByteBuffer>>> getOffsetsProducers() {
