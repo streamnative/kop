@@ -17,8 +17,11 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -54,7 +57,7 @@ import org.apache.pulsar.common.util.FutureUtil;
 public class TransactionStateManager {
 
     private final TransactionConfig transactionConfig;
-    private final PulsarClient pulsarClient;
+    private final SystemTopicClient txnTopicClient;
     private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
     private final AtomicBoolean loading = new AtomicBoolean(false);
@@ -70,8 +73,8 @@ public class TransactionStateManager {
     @VisibleForTesting
     protected final Set<Integer> leavingPartitions = Sets.newHashSet();
 
-    private final Map<Integer, CompletableFuture<Producer<byte[]>>> txnLogProducerMap = Maps.newHashMap();
-    private final Map<Integer, CompletableFuture<Reader<byte[]>>> txnLogReaderMap = Maps.newHashMap();
+    private final Map<Integer, CompletableFuture<Producer<ByteBuffer>>> txnLogProducerMap = Maps.newHashMap();
+    private final Map<Integer, CompletableFuture<Reader<ByteBuffer>>> txnLogReaderMap = Maps.newHashMap();
 
     // Transaction metadata cache indexed by assigned transaction topic partition ids
     @VisibleForTesting
@@ -86,10 +89,10 @@ public class TransactionStateManager {
 
 
     public TransactionStateManager(TransactionConfig transactionConfig,
-                                   PulsarClient pulsarClient,
+                                   SystemTopicClient txnTopicClient,
                                    OrderedExecutor executor) {
         this.transactionConfig = transactionConfig;
-        this.pulsarClient = pulsarClient;
+        this.txnTopicClient = txnTopicClient;
         this.executor = executor;
         this.transactionTopicPartitionCount = transactionConfig.getTransactionLogNumPartitions();
     }
@@ -460,7 +463,7 @@ public class TransactionStateManager {
         long startTimeMs = SystemTime.SYSTEM.milliseconds();
         return getProducer(topicPartition.partition())
                 .thenCompose(producer ->
-                        producer.newMessage().value(new byte[0]).sendAsync())
+                        producer.newMessage().value(ByteBuffer.wrap(new byte[0])).sendAsync())
                 .thenCompose(lastMsgId -> {
                     if (log.isDebugEnabled()) {
                         log.debug("Successfully write a placeholder record into {} @ {}",
@@ -478,7 +481,7 @@ public class TransactionStateManager {
     }
 
     private CompletableFuture<Void> loadTransactionMetadata(int partition,
-                                                            Reader<byte[]> reader,
+                                                            Reader<ByteBuffer> reader,
                                                             MessageId lastMessageId) {
         if (log.isDebugEnabled()) {
             log.debug("Start load transaction metadata for partition {} till messageId {}", partition, lastMessageId);
@@ -490,7 +493,7 @@ public class TransactionStateManager {
     }
 
     private void loadNextTransaction(int partition,
-                                     Reader<byte[]> reader,
+                                     Reader<ByteBuffer> reader,
                                      MessageId lastMessageId,
                                      CompletableFuture<Void> loadFuture,
                                      Map<String, TransactionMetadata> transactionMetadataMap) {
@@ -514,14 +517,14 @@ public class TransactionStateManager {
             }
 
             // skip place holder
-            if (message.getKeyBytes() == null || message.getValue().length == 0) {
+            if (message.getKeyBytes() == null || message.getValue().limit() == 0) {
                 loadNextTransaction(partition, reader, lastMessageId, loadFuture, transactionMetadataMap);
                 return;
             }
 
             try {
                 TransactionLogKey logKey = TransactionLogKey.decode(
-                        Unpooled.wrappedBuffer(message.getKeyBytes()), TransactionLogKey.HIGHEST_SUPPORTED_VERSION);
+                        ByteBuffer.wrap(message.getKeyBytes()), TransactionLogKey.HIGHEST_SUPPORTED_VERSION);
                 transactionMetadataMap.put(
                         logKey.getTransactionId(),
                         TransactionLogValue.readTxnRecordValue(logKey.getTransactionId(), message.getValue()));
@@ -612,8 +615,8 @@ public class TransactionStateManager {
                     });
 
                     // remove related producers and readers
-                    CompletableFuture<Producer<byte[]>> producer = txnLogProducerMap.remove(partition);
-                    CompletableFuture<Reader<byte[]>> reader = txnLogReaderMap.remove(partition);
+                    CompletableFuture<Producer<ByteBuffer>> producer = txnLogProducerMap.remove(partition);
+                    CompletableFuture<Reader<ByteBuffer>> reader = txnLogReaderMap.remove(partition);
                     if (producer != null) {
                         producer.thenApply(Producer::closeAsync).whenCompleteAsync((ignore, t) -> {
                             if (t != null) {
@@ -643,27 +646,27 @@ public class TransactionStateManager {
                   TransactionMetadata.TxnTransitMetadata txnTransitMetadata);
     }
 
-    private CompletableFuture<Producer<byte[]>> getProducer(Integer partition) {
+    private CompletableFuture<Producer<ByteBuffer>> getProducer(Integer partition) {
         return txnLogProducerMap.computeIfAbsent(partition, key -> {
             String topic = transactionConfig.getTransactionMetadataTopicName()
                     + TopicName.PARTITIONED_TOPIC_SUFFIX + partition;
-            return pulsarClient.newProducer().topic(topic).createAsync();
+            return txnTopicClient.newProducerBuilder().clone().topic(topic).createAsync();
         });
     }
 
     private CompletableFuture<MessageId> storeTxnLog(String transactionalId,
                                                      TransactionMetadata.TxnTransitMetadata txnTransitMetadata) {
         byte[] keyBytes = new TransactionLogKey(transactionalId).toBytes();
-        byte[] valueBytes = new TransactionLogValue(txnTransitMetadata).toBytes();
+        ByteBuffer valueByteBuffer = new TransactionLogValue(txnTransitMetadata).toByteBuffer();
         return getProducer(partitionFor(transactionalId)).thenCompose(producer ->
-                producer.newMessage().keyBytes(keyBytes).value(valueBytes).sendAsync());
+                producer.newMessage().keyBytes(keyBytes).value(valueByteBuffer).sendAsync());
     }
 
-    private CompletableFuture<Reader<byte[]>> getReader(Integer partition) {
+    private CompletableFuture<Reader<ByteBuffer>> getReader(Integer partition) {
         return txnLogReaderMap.computeIfAbsent(partition, key -> {
             String topic = transactionConfig.getTransactionMetadataTopicName()
                     + TopicName.PARTITIONED_TOPIC_SUFFIX + partition;
-            return pulsarClient.newReader().topic(topic)
+            return txnTopicClient.newReaderBuilder().clone().topic(topic)
                     .startMessageId(MessageId.earliest).readCompacted(true).createAsync();
         });
     }

@@ -20,6 +20,7 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.Transa
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
+import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
@@ -79,13 +80,13 @@ public class TransactionCoordinator {
     private final List<AbortedIndexEntry> abortedIndexList = new ArrayList<>();
 
     private TransactionCoordinator(TransactionConfig transactionConfig,
-                                   PulsarClient pulsarClient,
+                                   SystemTopicClient txnTopicClient,
                                    ZooKeeper zkClient,
                                    KopBrokerLookupManager kopBrokerLookupManager,
                                    OrderedExecutor txnStateManagerScheduler,
                                    Timer timer) {
         this.transactionConfig = transactionConfig;
-        this.txnManager = new TransactionStateManager(transactionConfig, pulsarClient, txnStateManagerScheduler);
+        this.txnManager = new TransactionStateManager(transactionConfig, txnTopicClient, txnStateManagerScheduler);
         this.producerIdManager = new ProducerIdManager(transactionConfig.getBrokerId(), zkClient);
         this.transactionMarkerChannelManager =
                 new TransactionMarkerChannelManager(null, txnManager, kopBrokerLookupManager, false);
@@ -93,14 +94,14 @@ public class TransactionCoordinator {
     }
 
     public static TransactionCoordinator of(TransactionConfig transactionConfig,
-                                            PulsarClient pulsarClient,
+                                            SystemTopicClient txnTopicClient,
                                             ZooKeeper zkClient,
                                             KopBrokerLookupManager kopBrokerLookupManager,
                                             OrderedExecutor orderedExecutor) {
 
         return new TransactionCoordinator(
                 transactionConfig,
-                pulsarClient,
+                txnTopicClient,
                 zkClient,
                 kopBrokerLookupManager,
                 orderedExecutor,

@@ -86,6 +86,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private AdminManager adminManager = null;
     private MetadataCache<LocalBrokerData> localBrokerDataCache;
     private SystemTopicClient offsetTopicClient;
+    private SystemTopicClient txnTopicClient;
 
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
@@ -452,6 +453,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         LOOKUP_CLIENT_MAP.put(brokerService.pulsar(), new LookupClient(brokerService.pulsar(), kafkaConfig));
         offsetTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
+        txnTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
 
         brokerService.pulsar()
                 .getNamespaceService()
@@ -588,6 +590,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     public void close() {
         Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
         offsetTopicClient.close();
+        txnTopicClient.close();
         adminManager.shutdown();
         groupCoordinatorsByTenant.forEach((tenant, groupCoordinator) -> {
             KopEventManager kopEventManager = kopEventManagerByTenant.get(tenant);
@@ -653,7 +656,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         TransactionCoordinator transactionCoordinator = TransactionCoordinator.of(
                 transactionConfig,
-                brokerService.getPulsar().getClient(),
+                txnTopicClient,
                 brokerService.getPulsar().getZkClient(),
                 kopBrokerLookupManager,
                 OrderedExecutor.newBuilder().name("TransactionStateManagerExecutor").build());

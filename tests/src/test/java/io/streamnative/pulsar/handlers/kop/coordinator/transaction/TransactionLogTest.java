@@ -16,7 +16,7 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import static org.testng.AssertJUnit.assertEquals;
 
 import com.google.common.collect.Lists;
-import io.netty.buffer.Unpooled;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -69,7 +69,7 @@ public class TransactionLogTest {
         txnMetadata.addPartitions(topicPartitions);
 
         try {
-            new TransactionLogValue(txnMetadata.prepareNoTransit()).toBytes();
+            new TransactionLogValue(txnMetadata.prepareNoTransit()).toByteBuffer();
             Assert.fail("Transaction state is empty, topicPartitions should be empty.");
         } catch (IllegalStateException e) {
             Assert.assertTrue(e.getMessage().contains(
@@ -95,10 +95,11 @@ public class TransactionLogTest {
         transactionStates.put(4L, TransactionState.PREPARE_ABORT);
         transactionStates.put(5L, TransactionState.COMPLETE_ABORT);
 
-        TypedMessageBuilderImpl<byte[]> typedMessageBuilder = new TypedMessageBuilderImpl<>(null, Schema.BYTES);
+        TypedMessageBuilderImpl<ByteBuffer> typedMessageBuilder
+                = new TypedMessageBuilderImpl<>(null, Schema.BYTEBUFFER);
 
         // generate transaction log messages
-        List<Message<byte[]>> txnMessages = new ArrayList<>();
+        List<Message<ByteBuffer>> txnMessages = new ArrayList<>();
         pidMappings.forEach((transactionalId, producerId) -> {
             TransactionMetadata txnMetadata = TransactionMetadata.builder()
                     .transactionalId(transactionalId)
@@ -118,7 +119,7 @@ public class TransactionLogTest {
             }
 
             byte[] keyBytes = new TransactionLogKey(transactionalId).toBytes();
-            byte[] valueBytes = new TransactionLogValue(txnMetadata.prepareNoTransit()).toBytes();
+            ByteBuffer valueBytes = new TransactionLogValue(txnMetadata.prepareNoTransit()).toByteBuffer();
 
             typedMessageBuilder.keyBytes(keyBytes);
             typedMessageBuilder.value(valueBytes);
@@ -126,9 +127,9 @@ public class TransactionLogTest {
         });
 
         int count = 0;
-        for (Message<byte[]> message : txnMessages) {
+        for (Message<ByteBuffer> message : txnMessages) {
             TransactionLogKey logKey = TransactionLogKey.decode(
-                    Unpooled.wrappedBuffer(message.getKeyBytes()), TransactionLogKey.HIGHEST_SUPPORTED_VERSION);
+                    ByteBuffer.wrap(message.getKeyBytes()), TransactionLogKey.HIGHEST_SUPPORTED_VERSION);
             String transactionalId = logKey.getTransactionId();
             TransactionMetadata txnMetadata = TransactionLogValue.readTxnRecordValue(
                     transactionalId, message.getValue());
@@ -159,7 +160,7 @@ public class TransactionLogTest {
 
         TransactionLogKey decodeResult =
                 TransactionLogKey.decode(
-                        Unpooled.wrappedBuffer(bytes),
+                        ByteBuffer.wrap(bytes),
                         TransactionLogKey.HIGHEST_SUPPORTED_VERSION);
         Assert.assertEquals(txnId, decodeResult.getTransactionId());
     }
@@ -187,10 +188,9 @@ public class TransactionLogTest {
                         transactionLastUpdateTimestampMs,
                         transactionStartTimestampMs
                 );
-        byte[] bytes = logValue.toBytes();
 
         TransactionLogValue decodeLogValue = TransactionLogValue.decode(
-                Unpooled.wrappedBuffer(bytes),
+                logValue.toByteBuffer(),
                 TransactionLogValue.HIGHEST_SUPPORTED_VERSION);
 
         Assert.assertEquals(producerId, new Long(decodeLogValue.getProducerId()));
