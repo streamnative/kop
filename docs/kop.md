@@ -133,10 +133,10 @@ After you have installed the KoP protocol handler to Pulsar broker, you can rest
 
 # How to use KoP
 You can configure and manage KoP based on your requirements. Check the following guides for more details.
-- [Configure KoP](https://github.com/streamnative/kop/blob/master/docs/configuration.md)
-- [Secure KoP](https://github.com/streamnative/kop/blob/master/docs/security.md)
-- [Manage KoP with the Envoy proxy](https://github.com/streamnative/kop/blob/master/docs/envoy-proxy.md)
-- [Implementation: How to converse Pulsar and Kafka](https://github.com/streamnative/kop/blob/master/docs/implementation.md)
+- [Configure KoP](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/configuration.md)
+- [Secure KoP](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/security.md)
+- [Manage KoP with the Envoy proxy](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/envoy-proxy.md)
+- [Implementation: How to converse Pulsar and Kafka](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/implementation.md)
 
 The followings are important information when you configure and use KoP.
 
