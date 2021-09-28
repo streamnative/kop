@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
-import io.netty.buffer.ByteBuf;
 import java.nio.ByteBuffer;
 import lombok.AllArgsConstructor;
 import lombok.Data;

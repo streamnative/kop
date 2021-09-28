@@ -55,7 +55,6 @@ import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.InitProducerIdResponse;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.SystemTime;
-import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.zookeeper.ZooKeeper;
 

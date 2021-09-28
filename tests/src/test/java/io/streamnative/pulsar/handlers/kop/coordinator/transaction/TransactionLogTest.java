@@ -95,8 +95,8 @@ public class TransactionLogTest {
         transactionStates.put(4L, TransactionState.PREPARE_ABORT);
         transactionStates.put(5L, TransactionState.COMPLETE_ABORT);
 
-        TypedMessageBuilderImpl<ByteBuffer> typedMessageBuilder
-                = new TypedMessageBuilderImpl<>(null, Schema.BYTEBUFFER);
+        TypedMessageBuilderImpl<ByteBuffer> typedMessageBuilder =
+                new TypedMessageBuilderImpl<>(null, Schema.BYTEBUFFER);
 
         // generate transaction log messages
         List<Message<ByteBuffer>> txnMessages = new ArrayList<>();
