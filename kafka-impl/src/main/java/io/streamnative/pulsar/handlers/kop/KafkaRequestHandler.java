@@ -1852,10 +1852,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(createTopics.getRequest() instanceof CreateTopicsRequest);
         CreateTopicsRequest request = (CreateTopicsRequest) createTopics.getRequest();
 
-        final Map<String, ApiError> result = new HashMap<>();
-        final Map<String, TopicDetails> validTopics = new HashMap<>();
+        final Map<String, ApiError> result = Maps.newConcurrentMap();
+        final Map<String, TopicDetails> validTopics = Maps.newHashMap();
         final Set<String> duplicateTopics = request.duplicateTopics();
-
         request.topics().forEach((topic, details) -> {
             if (!duplicateTopics.contains(topic)) {
                 validTopics.put(topic, details);
@@ -1868,14 +1867,62 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         if (validTopics.isEmpty()) {
             resultFuture.complete(new CreateTopicsResponse(result));
-        } else {
+            return;
+        }
+
+        final AtomicInteger validTopicsCount = new AtomicInteger(validTopics.size());
+        final Map<String, TopicDetails> authorizedTopics = Maps.newConcurrentMap();
+        Runnable createTopicsAsync = () -> {
+            if (authorizedTopics.isEmpty()) {
+                resultFuture.complete(new CreateTopicsResponse(result));
+                return;
+            }
             // TODO: handle request.validateOnly()
-            adminManager.createTopicsAsync(validTopics, request.timeout()).thenApply(validResult -> {
+            adminManager.createTopicsAsync(authorizedTopics, request.timeout()).thenApply(validResult -> {
                 result.putAll(validResult);
                 resultFuture.complete(new CreateTopicsResponse(result));
                 return null;
             });
-        }
+        };
+
+        BiConsumer<String, TopicDetails> completeOneTopic = (topic, topicDetails) -> {
+            authorizedTopics.put(topic, topicDetails);
+            if (validTopicsCount.decrementAndGet() == 0) {
+                createTopicsAsync.run();
+            }
+        };
+        BiConsumer<String, ApiError> completeOneErrorTopic = (topic, error) -> {
+            result.put(topic, error);
+            if (validTopicsCount.decrementAndGet() == 0) {
+                createTopicsAsync.run();
+            }
+        };
+        validTopics.forEach((topic, details) -> {
+            KopTopic kopTopic;
+            try {
+                kopTopic = new KopTopic(topic);
+            } catch (KoPTopicException e) {
+                completeOneErrorTopic.accept(topic, ApiError.fromThrowable(e));
+                return;
+            }
+            String fullTopicName = kopTopic.getFullName();
+            authorize(AclOperation.CREATE, Resource.of(ResourceType.TOPIC, fullTopicName))
+                    .whenComplete((isAuthorized, ex) -> {
+                       if (ex != null) {
+                           completeOneErrorTopic
+                                   .accept(topic, new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, ex.getMessage()));
+                           return;
+                       }
+                       if (!isAuthorized) {
+                           completeOneErrorTopic
+                                   .accept(topic, new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null));
+                           return;
+                       }
+                       completeOneTopic.accept(topic, details);
+                    });
+        });
+
+
     }
 
     @Override
@@ -2098,18 +2145,50 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(deleteTopics.getRequest() instanceof DeleteTopicsRequest);
         DeleteTopicsRequest request = (DeleteTopicsRequest) deleteTopics.getRequest();
         Set<String> topicsToDelete = request.topics();
-        Map<String, Errors> deleteTopicsResponse = adminManager.deleteTopics(topicsToDelete);
-
-        // create topic znode to trigger the coordinator DeleteTopicsEvent event
-        deleteTopicsResponse.forEach((topic, errors) -> {
+        if (topicsToDelete == null || topicsToDelete.isEmpty()) {
+            resultFuture.complete(new DeleteTopicsResponse(Maps.newHashMap()));
+            return;
+        }
+        Map<String, Errors> deleteTopicsResponse = Maps.newConcurrentMap();
+        AtomicInteger topicToDeleteCount = new AtomicInteger(topicsToDelete.size());
+        BiConsumer<String, Errors> completeOne = (topic, errors) -> {
+            deleteTopicsResponse.put(topic, errors);
             if (errors == Errors.NONE) {
+                // create topic ZNode to trigger the coordinator DeleteTopicsEvent event
                 ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(),
                         KopEventManager.getDeleteTopicsPath() + "/" + topic,
                         new byte[0]);
             }
+            if (topicToDeleteCount.decrementAndGet() == 0) {
+                resultFuture.complete(new DeleteTopicsResponse(deleteTopicsResponse));
+            }
+        };
+        topicsToDelete.forEach(topic -> {
+            KopTopic kopTopic;
+            try {
+                kopTopic = new KopTopic(topic);
+            } catch (KoPTopicException e) {
+                completeOne.accept(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+                return;
+            }
+            String fullTopicName = kopTopic.getFullName();
+            authorize(AclOperation.DELETE, Resource.of(ResourceType.TOPIC, fullTopicName))
+                    .whenComplete((isAuthorize, ex) -> {
+                        if (ex != null) {
+                            log.error("Describe topic authorize failed, topic - {}. {}",
+                                    fullTopicName, ex.getMessage());
+                            completeOne.accept(topic, Errors.TOPIC_AUTHORIZATION_FAILED);
+                            return;
+                        }
+                        if (!isAuthorize) {
+                            completeOne.accept(topic, Errors.TOPIC_AUTHORIZATION_FAILED);
+                            return;
+                        }
+                        adminManager.deleteTopic(fullTopicName,
+                                __ -> completeOne.accept(topic, Errors.NONE),
+                                __ -> completeOne.accept(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                    });
         });
-
-        resultFuture.complete(new DeleteTopicsResponse(deleteTopicsResponse));
     }
 
     /**
@@ -2494,13 +2573,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             case DESCRIBE:
                 isAuthorizedFuture = authorizer.canLookupAsync(session.getPrincipal(), resource);
                 break;
+            case CREATE:
+            case DELETE:
+                isAuthorizedFuture = authorizer.canAccessTopicAsync(session.getPrincipal(), resource);
+                break;
             case ANY:
                 if (resource.getResourceType() == ResourceType.TENANT) {
                     isAuthorizedFuture = authorizer.canAccessTenantAsync(session.getPrincipal(), resource);
                 }
                 break;
-            case CREATE:
-            case DELETE:
             case CLUSTER_ACTION:
             case DESCRIBE_CONFIGS:
             case ALTER_CONFIGS:

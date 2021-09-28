@@ -42,6 +42,15 @@ public interface Authorizer {
     CompletableFuture<Boolean> canAccessTenantAsync(KafkaPrincipal principal, Resource resource);
 
     /**
+     * Check whether the specified role can create or delete topic.
+     *
+     * @param principal login info
+     * @param resource resources to be authorized
+     * @return a boolean to determine whether authorized or not
+     */
+    CompletableFuture<Boolean> canAccessTopicAsync(KafkaPrincipal principal, Resource resource);
+
+    /**
      * Check whether the specified role can perform a produce for the specified topic.
      *
      * For that the caller needs to have producer permission.
