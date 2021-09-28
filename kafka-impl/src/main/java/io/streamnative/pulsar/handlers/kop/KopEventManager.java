@@ -303,19 +303,6 @@ public class KopEventManager {
                 final AtomicInteger pendingCoordinators = new AtomicInteger(currentCoordinators.size());
 
                 currentCoordinators.forEach((tenant, groupCoordinator) -> {
-
-                    // After we implement the creation and deletion of topics and other logic
-                    // updates to multi-tenancy. We need to pay attention to the TODO below
-                    // TODO
-                    // now we have tenant/coordinator/topicsDeletions
-                    // It is possible that different coordinators have the same Kafka topics?
-                    // Because there is no multi-tenancy on the Kafka side
-                    // The question here is, which topic does the kafka admin client delete?
-                    // Is it related to tenants or delete all kafka topics with the same name under all tenants?
-                    // The implementation here only follows the concept that there is no multi-tenancy in Kafka,
-                    // that mean deleted the Kafka topics with the same name under all tenants,
-                    // and leave the rest for everyone to discuss
-
                     if (groupCoordinator.isActive()) {
                         HashSet<String> topicsFullNameDeletionsSets = Sets.newHashSet();
                         HashSet<KopTopic> kopTopicsSet = Sets.newHashSet();
