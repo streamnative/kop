@@ -60,8 +60,6 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.Lookup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.api.PulsarClient;
-import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
@@ -86,6 +84,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
     private MetadataCache<LocalBrokerData> localBrokerDataCache;
+    private SystemTopicClient offsetTopicClient;
 
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
@@ -344,9 +343,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             throw new IllegalStateException(e);
         }
 
-        // Create PulsarClient for topic lookup, the listenerName will be set if kafkaListenerName is configured.
-        // After it's created successfully, this method won't throw any exception.
         LOOKUP_CLIENT_MAP.put(brokerService.pulsar(), new LookupClient(brokerService.pulsar(), kafkaConfig));
+        offsetTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
 
         brokerService.pulsar()
                 .getNamespaceService()
@@ -406,7 +404,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     clusterData, kafkaConfig);
 
             // init and start group coordinator
-            groupCoordinator = startGroupCoordinator(tenant, brokerService.getPulsar().getClient());
+            groupCoordinator = startGroupCoordinator(tenant, offsetTopicClient);
 
             // and listener for Offset topics load/unload
             brokerService.pulsar()
@@ -468,6 +466,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public void close() {
         Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
+        offsetTopicClient.close();
         adminManager.shutdown();
         groupCoordinatorsByTenant.values().forEach(GroupCoordinator::shutdown);
         kopEventManager.close();
@@ -479,7 +478,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         statsProvider.stop();
     }
 
-    private GroupCoordinator startGroupCoordinator(String tenant, PulsarClient pulsarClient) {
+    private GroupCoordinator startGroupCoordinator(String tenant, SystemTopicClient client) {
         GroupConfig groupConfig = new GroupConfig(
             kafkaConfig.getGroupMinSessionTimeoutMs(),
             kafkaConfig.getGroupMaxSessionTimeoutMs(),
@@ -498,7 +497,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             .build();
 
         GroupCoordinator groupCoordinator = GroupCoordinator.of(
-            (PulsarClientImpl) pulsarClient,
+            client,
             groupConfig,
             offsetConfig,
             SystemTimer.builder()
@@ -570,5 +569,4 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     public static @NonNull LookupClient getLookupClient(final PulsarService pulsarService) {
         return LOOKUP_CLIENT_MAP.computeIfAbsent(pulsarService, ignored -> new LookupClient(pulsarService));
     }
-
 }
