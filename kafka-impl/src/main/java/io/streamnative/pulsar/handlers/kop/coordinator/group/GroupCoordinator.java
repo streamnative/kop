@@ -25,6 +25,7 @@ import static org.apache.kafka.common.record.RecordBatch.NO_PRODUCER_ID;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
@@ -60,14 +61,8 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
-import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.Reader;
-import org.apache.pulsar.client.api.ReaderBuilder;
-import org.apache.pulsar.client.api.Schema;
-import org.apache.pulsar.client.impl.PulsarClientImpl;
-import org.apache.pulsar.client.impl.ReaderBuilderImpl;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 
@@ -78,7 +73,7 @@ import org.apache.pulsar.common.util.FutureUtil;
 public class GroupCoordinator {
 
     public static GroupCoordinator of(
-        PulsarClientImpl pulsarClient,
+        SystemTopicClient client,
         GroupConfig groupConfig,
         OffsetConfig offsetConfig,
         Timer timer,
@@ -88,17 +83,10 @@ public class GroupCoordinator {
             .name("group-coordinator-executor")
             .build();
 
-        // __offset partitions producers and readers builder.
-        ProducerBuilder<ByteBuffer> producer = pulsarClient
-            .newProducer(Schema.BYTEBUFFER)
-            .maxPendingMessages(100000);
-        ReaderBuilder<ByteBuffer> reader = new ReaderBuilderImpl<>(pulsarClient, Schema.BYTEBUFFER);
-
-        reader.startMessageId(MessageId.earliest);
         GroupMetadataManager metadataManager = new GroupMetadataManager(
             offsetConfig,
-            producer,
-            reader,
+            client.newProducerBuilder(),
+            client.newReaderBuilder(),
             coordinatorExecutor,
             time
         );
