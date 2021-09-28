@@ -64,16 +64,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected final RequestStats requestStats;
     @Getter
     protected final KafkaServiceConfiguration kafkaConfig;
-    @Getter
-    protected final EndPoint advertisedEndPoint;
 
     public KafkaCommandDecoder(StatsLogger statsLogger,
-                               KafkaServiceConfiguration kafkaConfig,
-                               EndPoint advertisedEndPoint) {
+                               KafkaServiceConfiguration kafkaConfig) {
         this.requestStats = new RequestStats(statsLogger);
         this.kafkaConfig = kafkaConfig;
         this.requestQueue = new LinkedBlockingQueue<>(kafkaConfig.getMaxQueuedRequests());
-        this.advertisedEndPoint = advertisedEndPoint;
     }
 
     @Override
@@ -143,21 +139,13 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         RequestHeader header = RequestHeader.parse(nio);
         if (isUnsupportedApiVersionsRequest(header)) {
             ApiVersionsRequest apiVersionsRequest = new ApiVersionsRequest((short) 0, header.apiVersion());
-            return new KafkaHeaderAndRequest(header,
-                    apiVersionsRequest,
-                    msg,
-                    remoteAddress,
-                    advertisedEndPoint.getListenerName());
+            return new KafkaHeaderAndRequest(header, apiVersionsRequest, msg, remoteAddress);
         } else {
             ApiKeys apiKey = header.apiKey();
             short apiVersion = header.apiVersion();
             Struct struct = apiKey.parseRequest(apiVersion, nio);
             AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
-            return new KafkaHeaderAndRequest(header,
-                    body,
-                    msg,
-                    remoteAddress,
-                    advertisedEndPoint.getListenerName());
+            return new KafkaHeaderAndRequest(header, body, msg, remoteAddress);
         }
     }
 
@@ -569,18 +557,15 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         private final AbstractRequest request;
         private final ByteBuf buffer;
         private final SocketAddress remoteAddress;
-        private final String listenerName;
 
         KafkaHeaderAndRequest(RequestHeader header,
                               AbstractRequest request,
                               ByteBuf buffer,
-                              SocketAddress remoteAddress,
-                              String listenerName) {
+                              SocketAddress remoteAddress) {
             this.header = header;
             this.request = request;
             this.buffer = buffer.retain();
             this.remoteAddress = remoteAddress;
-            this.listenerName = listenerName;
         }
 
         public ByteBuf getBuffer() {
@@ -597,10 +582,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
         public SocketAddress getRemoteAddress() {
             return this.remoteAddress;
-        }
-
-        public String getListenerName() {
-            return this.listenerName;
         }
 
         public String getClientHost() {

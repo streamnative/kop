@@ -113,7 +113,8 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
                     .build());
         admin.namespaces().createNamespace(TENANT + "/" + NAMESPACE);
         admin.topics().createPartitionedTopic(TOPIC, 1);
-        admin.namespaces().grantPermissionOnNamespace(TENANT + "/" + NAMESPACE, SIMPLE_USER,
+        admin
+            .namespaces().grantPermissionOnNamespace(TENANT + "/" + NAMESPACE, SIMPLE_USER,
             Sets.newHashSet(AuthAction.consume, AuthAction.produce));
     }
 

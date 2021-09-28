@@ -13,8 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static com.google.common.base.Preconditions.checkState;
-
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -41,7 +39,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
 import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -55,10 +52,6 @@ import org.apache.pulsar.metadata.api.Notification;
 
 @Slf4j
 public class KopEventManager {
-    private static final String END_POINT_SEPARATOR = ",";
-    private static final String REGEX = "^(.*)://\\[?([0-9a-zA-Z\\-%._:]*)\\]?:(-?[0-9]+)";
-    private static final Pattern PATTERN = Pattern.compile(REGEX);
-
     private static final String kopEventThreadName = "kop-event-thread";
     private final ReentrantLock putLock = new ReentrantLock();
     private static final LinkedBlockingQueue<KopEventWrapper> queue =
@@ -253,12 +246,10 @@ public class KopEventManager {
     @VisibleForTesting
     public static Map<String, Set<Node>> getNodes(String kopBrokerStrs) {
         HashMap<String, Set<Node>> nodesMap = Maps.newHashMap();
-        String[] kopBrokerArr = kopBrokerStrs.split(END_POINT_SEPARATOR);
+        String[] kopBrokerArr = kopBrokerStrs.split(EndPoint.getEND_POINT_SEPARATOR());
         for (String kopBrokerStr : kopBrokerArr) {
             final String errorMessage = "kopBrokerStr " + kopBrokerStr + " is invalid";
-            final Matcher matcher = PATTERN.matcher(kopBrokerStr);
-            checkState(matcher.find(), errorMessage);
-            checkState(matcher.groupCount() == 3, errorMessage);
+            final Matcher matcher = EndPoint.matcherListener(kopBrokerStr, errorMessage);
             String listenerName = matcher.group(1);
             String host = matcher.group(2);
             String port = matcher.group(3);

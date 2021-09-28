@@ -84,7 +84,6 @@ import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
-import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Time;
@@ -220,8 +219,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 requestHeader,
                 apiVersionsRequest,
                 Unpooled.buffer(20),
-                null,
-                SecurityProtocol.PLAINTEXT.name);
+                null);
 
         ApiVersionsResponse apiVersionsResponse = ApiVersionsResponse.defaultApiVersionsResponse();
         KafkaHeaderAndResponse kopResponse = KafkaHeaderAndResponse.responseForRequest(
@@ -657,10 +655,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         RequestHeader header = new RequestHeader(ApiKeys.OFFSET_COMMIT, offsetCommitRequest.version(),
                 "", 0);
         KafkaHeaderAndRequest headerAndRequest = new KafkaHeaderAndRequest(header,
-                offsetCommitRequest,
-                PulsarByteBufAllocator.DEFAULT.heapBuffer(),
-                null,
-                SecurityProtocol.PLAINTEXT.name);
+                offsetCommitRequest, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null);
 
         // handle request
         CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
@@ -705,11 +700,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                         .build(ApiKeys.LIST_OFFSETS.latestVersion());
         handler.handleListOffsetRequest(
                 new KafkaHeaderAndRequest(header,
-                        request,
-                        PulsarByteBufAllocator.DEFAULT.heapBuffer(),
-                        null,
-                        SecurityProtocol.PLAINTEXT.name),
-                responseFuture);
+                        request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null), responseFuture);
         final ListOffsetResponse response = (ListOffsetResponse) responseFuture.get();
         assertTrue(response.responseData().containsKey(topicPartition));
         assertEquals(response.responseData().get(topicPartition).error, Errors.UNKNOWN_TOPIC_OR_PARTITION);
@@ -725,10 +716,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         handler.handleTopicMetadataRequest(
                 new KafkaHeaderAndRequest(header,
-                        request,
-                        PulsarByteBufAllocator.DEFAULT.heapBuffer(),
-                        null,
-                        SecurityProtocol.PLAINTEXT.name),
+                        request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
                 responseFuture);
         final MetadataResponse response = (MetadataResponse) responseFuture.get();
         assertEquals(response.topicMetadata().size(), 1);
