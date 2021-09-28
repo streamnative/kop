@@ -46,7 +46,7 @@ public abstract class AbstractPulsarClient implements Closeable {
         try {
             pulsarClient.close();
         } catch (PulsarClientException e) {
-            log.warn("Failed to close PulsarClient of LookupClient", e);
+            log.warn("Failed to close PulsarClient of {}", getClass().getTypeName(), e);
         }
     }
 
