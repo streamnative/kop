@@ -202,13 +202,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private String kafkaAdvertisedListeners;
 
-    @Deprecated
-    @FieldContext(
-            category = CATEGORY_KOP,
-            doc = "Use kafkaProtocolMap, kafkaListeners and advertisedAddress instead."
-    )
-    private String kafkaListenerName;
-
     @FieldContext(
             category = CATEGORY_KOP,
             doc = "limit the queue size for request, \n"
