@@ -30,7 +30,7 @@ import org.apache.kafka.common.security.auth.SecurityProtocol;
  */
 public class EndPoint {
 
-    private static final String END_POINT_SEPARATOR = ",";
+    public static final String END_POINT_SEPARATOR = ",";
     private static final String PROTOCOL_MAP_SEPARATOR = ",";
     private static final String PROTOCOL_SEPARATOR = ":";
     private static final String REGEX = "^(.*)://\\[?([0-9a-zA-Z\\-%._:]*)\\]?:(-?[0-9]+)";
@@ -52,9 +52,7 @@ public class EndPoint {
     public EndPoint(final String listener, final Map<String, SecurityProtocol> protocolMap) {
         this.originalListener = listener;
         final String errorMessage = "listener '" + listener + "' is invalid";
-        final Matcher matcher = PATTERN.matcher(listener);
-        checkState(matcher.find(), errorMessage);
-        checkState(matcher.groupCount() == 3, errorMessage);
+        final Matcher matcher = matcherListener(listener, errorMessage);
 
         this.listenerName = matcher.group(1);
         if (protocolMap == null || protocolMap.isEmpty()) {
@@ -81,8 +79,6 @@ public class EndPoint {
         this.port = Integer.parseInt(matcher.group(3));
         checkState(port >= 0 && port <= 65535, errorMessage + ": port " + port + " is invalid");
     }
-
-
 
     public InetSocketAddress getInetAddress() {
         return new InetSocketAddress(hostname, port);
@@ -148,4 +144,12 @@ public class EndPoint {
         }
         return protocolMap;
     }
+
+    public static Matcher matcherListener(String listener, String errorMessage) {
+        final Matcher matcher = PATTERN.matcher(listener);
+        checkState(matcher.find(), errorMessage);
+        checkState(matcher.groupCount() == 3, errorMessage);
+        return matcher;
+    }
+
 }

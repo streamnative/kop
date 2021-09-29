@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.TopicKey;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
+import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
@@ -23,7 +24,6 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgato
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -57,7 +57,7 @@ class AdminManager {
 
     private final PulsarAdmin admin;
     private final int defaultNumPartitions;
-    private volatile Set<Node> brokersCache = new HashSet<>();
+    private volatile Map<String, Set<Node>> brokersCache = Maps.newHashMap();
     private final ReentrantReadWriteLock brokersCacheLock = new ReentrantReadWriteLock();
 
 
@@ -227,11 +227,20 @@ class AdminManager {
         }
     }
 
-    public Collection<? extends Node> getBrokers() {
+    public Collection<? extends Node> getBrokers(String listenerName) {
+
+        if (brokersCache.containsKey(listenerName)) {
+            return brokersCache.get(listenerName);
+        }
+
+        return Collections.emptyList();
+    }
+
+    public Map<String, Set<Node>> getAllBrokers() {
         return brokersCache;
     }
 
-    public void setBrokers(Set<Node> newBrokers) {
+    public void setBrokers(Map<String, Set<Node>> newBrokers) {
         brokersCacheLock.writeLock().lock();
         try {
             this.brokersCache = newBrokers;
