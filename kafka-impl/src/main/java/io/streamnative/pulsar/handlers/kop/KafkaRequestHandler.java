@@ -1933,6 +1933,27 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(describeConfigs.getRequest() instanceof DescribeConfigsRequest);
         DescribeConfigsRequest request = (DescribeConfigsRequest) describeConfigs.getRequest();
 
+        request.resources().forEach(configResource -> {
+            switch (configResource.type()) {
+                case TOPIC:
+                    KopTopic kopTopic;
+                    try {
+                        kopTopic = new KopTopic(configResource.name());
+                    } catch (KoPTopicException e) {
+                        return;
+                    }
+                    String topicFullName = kopTopic.getFullName();
+                    authorize(AclOperation.DESCRIBE_CONFIGS, Resource.of(ResourceType.TOPIC, topicFullName))
+                            .whenComplete((isAuthorized, ex) -> {
+                                // TODO: support authorization
+                            });
+                    break;
+                case BROKER:
+                case UNKNOWN:
+                default:
+                    break;
+            }
+        });
         adminManager.describeConfigsAsync(new ArrayList<>(request.resources()).stream()
                 .collect(Collectors.toMap(
                         resource -> resource,
