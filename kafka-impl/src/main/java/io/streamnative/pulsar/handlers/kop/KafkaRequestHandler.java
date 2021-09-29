@@ -2577,7 +2577,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 break;
             case CREATE:
             case DELETE:
-                isAuthorizedFuture = authorizer.canAccessTopicAsync(session.getPrincipal(), resource);
+            case DESCRIBE_CONFIGS:
+            case ALTER_CONFIGS:
+                isAuthorizedFuture = authorizer.canManageTenantAsync(session.getPrincipal(), resource);
                 break;
             case ANY:
                 if (resource.getResourceType() == ResourceType.TENANT) {
@@ -2585,8 +2587,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
                 break;
             case CLUSTER_ACTION:
-            case DESCRIBE_CONFIGS:
-            case ALTER_CONFIGS:
             case ALTER:
             case UNKNOWN:
             case ALL:

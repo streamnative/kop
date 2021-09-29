@@ -263,7 +263,7 @@ public class SimpleAclAuthorizer implements Authorizer {
     }
 
     @Override
-    public CompletableFuture<Boolean> canAccessTopicAsync(KafkaPrincipal principal, Resource resource) {
+    public CompletableFuture<Boolean> canManageTenantAsync(KafkaPrincipal principal, Resource resource) {
         checkArgument(resource.getResourceType() == ResourceType.TOPIC,
                 String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
 
