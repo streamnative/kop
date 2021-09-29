@@ -210,16 +210,16 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         ApiVersionsRequest apiVersionsRequest = new ApiVersionsRequest.Builder().build();
         RequestHeader requestHeader = new RequestHeader(
-                ApiKeys.API_VERSIONS,
-                ApiKeys.API_VERSIONS.latestVersion(),
-                clientId,
-                correlationId);
+            ApiKeys.API_VERSIONS,
+            ApiKeys.API_VERSIONS.latestVersion(),
+            clientId,
+            correlationId);
 
         KafkaHeaderAndRequest kopRequest = new KafkaHeaderAndRequest(
-                requestHeader,
-                apiVersionsRequest,
-                Unpooled.buffer(20),
-                null);
+            requestHeader,
+            apiVersionsRequest,
+            Unpooled.buffer(20),
+            null);
 
         ApiVersionsResponse apiVersionsResponse = ApiVersionsResponse.defaultApiVersionsResponse();
         KafkaHeaderAndResponse kopResponse = KafkaHeaderAndResponse.responseForRequest(
