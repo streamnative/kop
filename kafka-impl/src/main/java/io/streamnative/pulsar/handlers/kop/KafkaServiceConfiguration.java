@@ -391,7 +391,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();
-        for (String listener : advertisedListeners.split(EndPoint.getEND_POINT_SEPARATOR())) {
+        for (String listener : advertisedListeners.split(EndPoint.END_POINT_SEPARATOR)) {
             final String errorMessage = "listener '" + listener + "' is invalid";
             final Matcher matcher = EndPoint.matcherListener(listener, errorMessage);
             String hostname = matcher.group(2);
@@ -409,10 +409,10 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             } else {
                 listenersReBuilder.append(listener);
             }
-            listenersReBuilder.append(EndPoint.getEND_POINT_SEPARATOR());
+            listenersReBuilder.append(EndPoint.END_POINT_SEPARATOR);
         }
         return listenersReBuilder.deleteCharAt(
-                listenersReBuilder.lastIndexOf(EndPoint.getEND_POINT_SEPARATOR())).toString();
+                listenersReBuilder.lastIndexOf(EndPoint.END_POINT_SEPARATOR)).toString();
     }
 
     public @NonNull String getKafkaAdvertisedListeners() {

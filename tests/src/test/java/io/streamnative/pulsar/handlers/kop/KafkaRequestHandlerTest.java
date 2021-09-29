@@ -699,8 +699,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                         .setTargetTimes(Collections.singletonMap(topicPartition, ListOffsetRequest.EARLIEST_TIMESTAMP))
                         .build(ApiKeys.LIST_OFFSETS.latestVersion());
         handler.handleListOffsetRequest(
-                new KafkaHeaderAndRequest(header,
-                        request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null), responseFuture);
+                new KafkaHeaderAndRequest(header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
+                responseFuture);
         final ListOffsetResponse response = (ListOffsetResponse) responseFuture.get();
         assertTrue(response.responseData().containsKey(topicPartition));
         assertEquals(response.responseData().get(topicPartition).error, Errors.UNKNOWN_TOPIC_OR_PARTITION);
@@ -715,8 +715,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         final MetadataRequest request = new MetadataRequest(Collections.singletonList(topic), false, version);
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         handler.handleTopicMetadataRequest(
-                new KafkaHeaderAndRequest(header,
-                        request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
+                new KafkaHeaderAndRequest(header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
                 responseFuture);
         final MetadataResponse response = (MetadataResponse) responseFuture.get();
         assertEquals(response.topicMetadata().size(), 1);

@@ -246,7 +246,7 @@ public class KopEventManager {
     @VisibleForTesting
     public static Map<String, Set<Node>> getNodes(String kopBrokerStrs) {
         HashMap<String, Set<Node>> nodesMap = Maps.newHashMap();
-        String[] kopBrokerArr = kopBrokerStrs.split(EndPoint.getEND_POINT_SEPARATOR());
+        String[] kopBrokerArr = kopBrokerStrs.split(EndPoint.END_POINT_SEPARATOR);
         for (String kopBrokerStr : kopBrokerArr) {
             final String errorMessage = "kopBrokerStr " + kopBrokerStr + " is invalid";
             final Matcher matcher = EndPoint.matcherListener(kopBrokerStr, errorMessage);

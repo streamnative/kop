@@ -30,8 +30,7 @@ import org.apache.kafka.common.security.auth.SecurityProtocol;
  */
 public class EndPoint {
 
-    @Getter
-    private static final String END_POINT_SEPARATOR = ",";
+    public static final String END_POINT_SEPARATOR = ",";
     private static final String PROTOCOL_MAP_SEPARATOR = ",";
     private static final String PROTOCOL_SEPARATOR = ":";
     private static final String REGEX = "^(.*)://\\[?([0-9a-zA-Z\\-%._:]*)\\]?:(-?[0-9]+)";
