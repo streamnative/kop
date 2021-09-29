@@ -1493,10 +1493,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     @VisibleForTesting
-    Map<TopicPartition, OffsetAndMetadata> convertOffsetCommitRequestRetentionMs(OffsetCommitRequest request,
-                                                                                 short apiVersion,
-                                                                                 long currentTimeStamp,
-                                                                                 long configOffsetsRetentionMs) {
+    Map<TopicPartition, OffsetAndMetadata> convertOffsetCommitRequestRetentionMs(
+            Map<TopicPartition, OffsetCommitRequest.PartitionData> convertedOffsetData,
+            long retentionTime,
+            short apiVersion,
+            long currentTimeStamp,
+            long configOffsetsRetentionMs) {
 
         // commit from kafka
         // > for version 1 and beyond store offsets in offset manager
@@ -1504,10 +1506,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // commit from kafka
 
         long offsetRetention;
-        if (apiVersion <= 1 || request.retentionTime() == OffsetCommitRequest.DEFAULT_RETENTION_TIME) {
+        if (apiVersion <= 1 || retentionTime == OffsetCommitRequest.DEFAULT_RETENTION_TIME) {
             offsetRetention = configOffsetsRetentionMs;
         } else {
-            offsetRetention = request.retentionTime();
+            offsetRetention = retentionTime;
         }
 
         // commit from kafka
@@ -1525,7 +1527,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
 
         long finalOffsetRetention = offsetRetention;
-        return CoreUtils.mapValue(request.offsetData(), (partitionData) -> {
+        return CoreUtils.mapValue(convertedOffsetData, (partitionData) -> {
 
             String metadata;
             if (partitionData.metadata == null) {
@@ -1596,7 +1598,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 } else {
                     Map<TopicPartition, OffsetAndMetadata> convertedPartitionData =
                             convertOffsetCommitRequestRetentionMs(
-                                    request,
+                                    convertedOffsetData,
+                                    request.retentionTime(),
                                     offsetCommit.getHeader().apiVersion(),
                                     Time.SYSTEM.milliseconds(),
                                     getGroupCoordinator().offsetConfig().offsetsRetentionMs()
