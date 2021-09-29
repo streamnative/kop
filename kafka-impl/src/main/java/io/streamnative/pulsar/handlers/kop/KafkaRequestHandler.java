@@ -1632,7 +1632,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 return;
             }
             String fullTopicName = kopTopic.getFullName();
-            authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullTopicName))
+            authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
                     .whenComplete((isAuthorized, ex) -> {
                         if (ex != null) {
                             log.error("OffsetCommit authorize failed, topic - {}. {}",
