@@ -1909,6 +1909,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             authorize(AclOperation.CREATE, Resource.of(ResourceType.TOPIC, fullTopicName))
                     .whenComplete((isAuthorized, ex) -> {
                        if (ex != null) {
+                           log.error("CreateTopics authorize failed, topic - {}. {}",
+                                   fullTopicName, ex.getMessage());
                            completeOneErrorTopic
                                    .accept(topic, new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, ex.getMessage()));
                            return;
@@ -2175,7 +2177,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             authorize(AclOperation.DELETE, Resource.of(ResourceType.TOPIC, fullTopicName))
                     .whenComplete((isAuthorize, ex) -> {
                         if (ex != null) {
-                            log.error("Describe topic authorize failed, topic - {}. {}",
+                            log.error("DeleteTopics authorize failed, topic - {}. {}",
                                     fullTopicName, ex.getMessage());
                             completeOne.accept(topic, Errors.TOPIC_AUTHORIZATION_FAILED);
                             return;
