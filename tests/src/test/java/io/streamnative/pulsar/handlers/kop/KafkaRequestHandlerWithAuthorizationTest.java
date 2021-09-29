@@ -18,6 +18,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
@@ -63,6 +64,8 @@ import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
+import org.apache.kafka.common.requests.OffsetCommitRequest;
+import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetFetchRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
@@ -441,6 +444,37 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         offsetFetchResponse.responseData().forEach((topicPartition, partitionData) -> {
             assertEquals(partitionData.error, Errors.TOPIC_AUTHORIZATION_FAILED);
         });
+    }
+
+    @Test(timeOut = 20000)
+    public void testOffsetCommitRequestAuthorizationFailed() throws Exception {
+        String group = "test-failed-groupId";
+        String memberId = "test_failed_member_id";
+        int generationId = -1; // use for avoid mock group state and member
+        TopicPartition topicPartition = new TopicPartition("test", 1);
+
+        // build input params
+        Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
+        offsetData.put(topicPartition,
+                new OffsetCommitRequest.PartitionData(1L, ""));
+        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(group, offsetData)
+                .setGenerationId(generationId)
+                .setMemberId(memberId)
+                .setRetentionTime(OffsetCommitRequest.DEFAULT_RETENTION_TIME);
+        KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
+
+        // handle request
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        handler.handleOffsetCommitRequest(headerAndRequest, responseFuture);
+        AbstractResponse response = responseFuture.get();
+        assertTrue(response instanceof OffsetCommitResponse);
+        OffsetCommitResponse offsetCommitResponse = (OffsetCommitResponse) response;
+        assertEquals(offsetCommitResponse.responseData().size(), 1);
+        assertFalse(offsetCommitResponse.errorCounts().isEmpty());
+        offsetCommitResponse.responseData().forEach((__, error) -> {
+            assertEquals(error, Errors.TOPIC_AUTHORIZATION_FAILED);
+        });
+
     }
 
     KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {

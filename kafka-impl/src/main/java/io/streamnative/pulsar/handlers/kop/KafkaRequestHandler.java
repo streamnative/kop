@@ -1581,12 +1581,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
                     log.trace("OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo);
                 }
-
-                // update the request data
-                request.offsetData().putAll(convertedOffsetData);
-
-                Map<TopicPartition, OffsetCommitRequest.PartitionData> authorizedTopic = request.offsetData();
-                if (authorizedTopic.isEmpty()) {
+                if (convertedOffsetData.isEmpty()) {
                     Map<TopicPartition, Errors> offsetCommitResult = new HashMap<>();
                     if (!nonExistingTopic.isEmpty()) {
                         offsetCommitResult.putAll(nonExistingTopic);
@@ -1627,15 +1622,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
             }
         };
-        request.offsetData().entrySet().removeIf(entry -> {
-            TopicPartition tp = entry.getKey();
+        request.offsetData().forEach((tp, partitionData) -> {
             KopTopic kopTopic;
             try {
                 kopTopic = new KopTopic(tp.topic());
             } catch (KoPTopicException e) {
                 log.warn("Invalid topic name: {}", tp.topic(), e);
                 completeOne.accept(() -> nonExistingTopic.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
-                return true;
+                return;
             }
             String fullTopicName = kopTopic.getFullName();
             authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullTopicName))
@@ -1643,21 +1637,23 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         if (ex != null) {
                             log.error("OffsetCommit authorize failed, topic - {}. {}",
                                     fullTopicName, ex.getMessage());
-                            completeOne.accept(() -> nonExistingTopic.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                            completeOne.accept(
+                                    () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
                             return;
                         }
-                        if (isAuthorized) {
+                        if (!isAuthorized) {
+                            completeOne.accept(
+                                    () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                            return;
+                        }
+                        completeOne.accept(() -> {
                             TopicPartition newTopicPartition = new TopicPartition(
                                     new KopTopic(tp.topic()).getFullName(), tp.partition());
 
-                            convertedOffsetData.put(newTopicPartition, entry.getValue());
+                            convertedOffsetData.put(newTopicPartition, partitionData);
                             replacingIndex.put(newTopicPartition, tp);
-                            return;
-                        }
-                        completeOne.accept(
-                                () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                        });
                     });
-            return true;
         });
     }
 
