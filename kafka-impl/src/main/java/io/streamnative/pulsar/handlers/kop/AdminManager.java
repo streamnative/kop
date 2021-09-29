@@ -32,6 +32,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.Node;
@@ -213,20 +214,17 @@ class AdminManager {
         return resultFuture;
     }
 
-    public Map<String, Errors> deleteTopics(Set<String> topicsToDelete) {
-        Map<String, Errors> result = new ConcurrentHashMap<>();
-        topicsToDelete.forEach(topic -> {
-            try {
-                String topicFullName = new KopTopic(topic).getFullName();
-                admin.topics().deletePartitionedTopic(topicFullName);
-                result.put(topic, Errors.NONE);
-                log.info("delete topic {} successfully.", topicFullName);
-            } catch (PulsarAdminException e) {
-                log.error("delete topic {} failed, exception: ", topic, e);
-                result.put(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION);
-            }
-        });
-        return result;
+    public void deleteTopic(String topicToDelete,
+                            Consumer<String> successConsumer,
+                            Consumer<String> errorConsumer) {
+        try {
+            admin.topics().deletePartitionedTopic(topicToDelete);
+            successConsumer.accept(topicToDelete);
+            log.info("delete topic {} successfully.", topicToDelete);
+        } catch (PulsarAdminException e) {
+            log.error("delete topic {} failed, exception: ", topicToDelete, e);
+            errorConsumer.accept(topicToDelete);
+        }
     }
 
     public Collection<? extends Node> getBrokers(String listenerName) {
