@@ -33,7 +33,7 @@ import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
-import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
+import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
@@ -426,19 +426,6 @@ public final class MessageFetchContext {
             magic = RecordBatch.MAGIC_VALUE_V1;
         }
 
-        // get group and consumer
-        final String groupName = requestHandler
-                .getCurrentConnectedGroup().computeIfAbsent(clientHost, ignored -> {
-                    String zkSubPath = ZooKeeperUtils.groupIdPathFormat(clientHost,
-                            header.clientId());
-                    String groupId = ZooKeeperUtils.getData(
-                            requestHandler.getPulsarService().getZkClient(),
-                            requestHandler.getGroupIdStoredPath(),
-                            zkSubPath);
-                    log.info("get group name from zk for current connection:{} groupId:{}",
-                            clientHost, groupId);
-                    return groupId;
-                });
         final long startDecodingEntriesNanos = MathUtils.nowInNano();
         final DecodeResult decodeResult = requestHandler
                 .getEntryFormatter().decode(entries, magic);
@@ -447,11 +434,39 @@ public final class MessageFetchContext {
         decodeResults.add(decodeResult);
 
         MemoryRecords kafkaRecords = decodeResult.getRecords();
-        // collect consumer metrics
-        updateConsumerStats(topicPartition,
-                kafkaRecords,
-                entries.size(),
-                groupName);
+
+        String groupName = requestHandler
+                .getCurrentConnectedGroup()
+                .get(clientHost);
+        if (groupName != null) {
+            // collect consumer metrics
+            updateConsumerStats(topicPartition,
+                    kafkaRecords,
+                    entries.size(),
+                    groupName);
+        } else {
+            String groupIdPath = GroupIdUtils.groupIdPathFormat(clientHost,
+                    header.clientId());
+            requestHandler.getGroupIdMetadataCache()
+                    .get(groupIdPath)
+                    .whenComplete((groupIdOpt, ex) -> {
+                        if (ex != null) {
+                            if (log.isDebugEnabled()) {
+                                log.debug("Get groupId failed.", ex);
+                            }
+                        }
+                        String groupId = groupIdOpt.orElse("");
+                        log.info("get group name from zk for current connection:{} groupId:{}",
+                                clientHost, groupId);
+                        requestHandler
+                                .getCurrentConnectedGroup().put(clientHost, groupId);
+                        // collect consumer metrics
+                        updateConsumerStats(topicPartition,
+                                kafkaRecords,
+                                entries.size(),
+                                groupId);
+                    });
+        }
 
         final List<FetchResponse.AbortedTransaction> abortedTransactions =
                 (readCommitted ? tc.getAbortedIndexList(partitionData.fetchOffset) : null);

@@ -83,24 +83,25 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
 
         adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         kafkaRequestHandler = new KafkaRequestHandler(
-            pulsar,
-            (KafkaServiceConfiguration) conf,
-                new TenantContextManager() {
-                    @Override
-                    public GroupCoordinator getGroupCoordinator(String tenant) {
-                        return groupCoordinator;
-                    }
+                pulsar,
+                (KafkaServiceConfiguration) conf,
+                    new TenantContextManager() {
+                        @Override
+                        public GroupCoordinator getGroupCoordinator(String tenant) {
+                            return groupCoordinator;
+                        }
 
-                    @Override
-                    public TransactionCoordinator getTransactionCoordinator(String tenant) {
-                        return transactionCoordinator;
-                    }
-                },
-            adminManager,
-            pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
-            false,
-            getPlainEndPoint(),
-            NullStatsLogger.INSTANCE);
+                        @Override
+                        public TransactionCoordinator getTransactionCoordinator(String tenant) {
+                            return transactionCoordinator;
+                        }
+                    },
+                adminManager,
+                pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
+                pulsar.getLocalMetadataStore().getMetadataCache(String.class),
+                false,
+                getPlainEndPoint(),
+                NullStatsLogger.INSTANCE);
 
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);

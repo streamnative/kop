@@ -54,6 +54,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     @Getter
     private final StatsLogger statsLogger;
     private final MetadataCache<LocalBrokerData> localBrokerDataCache;
+    private final MetadataCache<String> groupIdMetadataCache;
 
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
@@ -62,7 +63,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    boolean enableTLS,
                                    EndPoint advertisedEndPoint,
                                    StatsLogger statsLogger,
-                                   MetadataCache<LocalBrokerData> localBrokerDataCache) {
+                                   MetadataCache<LocalBrokerData> localBrokerDataCache,
+                                   MetadataCache<String> groupIdMetadataCache) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -72,6 +74,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.advertisedEndPoint = advertisedEndPoint;
         this.statsLogger = statsLogger;
         this.localBrokerDataCache = localBrokerDataCache;
+        this.groupIdMetadataCache = groupIdMetadataCache;
         if (enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
         } else {
@@ -95,7 +98,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
                 new KafkaRequestHandler(pulsarService, kafkaConfig,
-                        tenantContextManager, adminManager, localBrokerDataCache,
+                        tenantContextManager, adminManager, localBrokerDataCache, groupIdMetadataCache,
                         enableTls, advertisedEndPoint, statsLogger));
     }
 

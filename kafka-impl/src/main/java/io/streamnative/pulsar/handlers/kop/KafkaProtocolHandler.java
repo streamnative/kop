@@ -31,7 +31,6 @@ import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
-import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -66,6 +65,9 @@ import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.metadata.api.MetadataCache;
+import org.apache.pulsar.metadata.api.MetadataStoreException;
+import org.apache.pulsar.metadata.api.Stat;
+import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 
 /**
@@ -84,6 +86,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
     private MetadataCache<LocalBrokerData> localBrokerDataCache;
+    private MetadataCache<String> groupIdMetadataCache;
+    private MetadataStoreExtended metadataStore;
     private SystemTopicClient offsetTopicClient;
 
     @Getter
@@ -308,11 +312,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Override
     public void start(BrokerService service) {
-        brokerService = service;
-        kopBrokerLookupManager = new KopBrokerLookupManager(
-                brokerService.getPulsar(), false,
-                kafkaConfig.getKafkaAdvertisedListeners());
-
         log.info("Starting KafkaProtocolHandler, kop version is: '{}'", KopVersion.getVersion());
         log.info("Git Revision {}", KopVersion.getGitSha());
         log.info("Built by {} on {} at {}",
@@ -320,18 +319,18 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             KopVersion.getBuildHost(),
             KopVersion.getBuildTime());
 
+        brokerService = service;
+        kopBrokerLookupManager = new KopBrokerLookupManager(
+                brokerService.getPulsar(), false,
+                kafkaConfig.getKafkaAdvertisedListeners());
+        metadataStore = brokerService.pulsar().getLocalMetadataStore();
+        groupIdMetadataCache = metadataStore.getMetadataCache(String.class);
         // Currently each time getMetadataCache() is called, a new MetadataCache<T> instance will be created, even for
         // the same type. So we must reuse the same MetadataCache<LocalBrokerData> to avoid creating a lot of instances.
-        localBrokerDataCache = brokerService.pulsar().getLocalMetadataStore().getMetadataCache(LocalBrokerData.class);
+        localBrokerDataCache = metadataStore.getMetadataCache(LocalBrokerData.class);
 
-        ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
-                kafkaConfig.getGroupIdZooKeeperPath(), new byte[0]);
-
-        ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
-                KopEventManager.getKopPath(), new byte[0]);
-
-        ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
-                KopEventManager.getDeleteTopicsPath(), new byte[0]);
+        // Init base metadata root path.
+        initMetadataRootPath();
 
         PulsarAdmin pulsarAdmin;
         try {
@@ -362,6 +361,25 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             kafkaConfig.getKopPrometheusStatsLatencyRolloverSeconds());
         statsProvider.start(conf);
         brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
+    }
+
+    private void initMetadataRootPath() {
+        List<CompletableFuture<Stat>> allFuture = new ArrayList<>();
+        allFuture.add(metadataStore.put(kafkaConfig.getGroupIdZooKeeperPath(), new byte[0], Optional.empty()));
+        allFuture.add(metadataStore.put(KopEventManager.getKopPath(), new byte[0], Optional.empty()));
+        allFuture.add(metadataStore.put(KopEventManager.getDeleteTopicsPath(), new byte[0], Optional.empty()));
+        FutureUtil.waitForAll(allFuture).whenComplete((__, ex) -> {
+            if (ex != null) {
+                if (ex instanceof MetadataStoreException.BadVersionException
+                        || ex instanceof MetadataStoreException.AlreadyExistsException) {
+                    // ignore
+                    return;
+                }
+                log.error("Init metadata failed.", ex);
+            } else {
+                log.info("Init metadata success.");
+            }
+        }).join();
     }
 
     private TransactionCoordinator createAndBootTransactionCoordinator(String tenant) {
@@ -447,13 +465,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, this, adminManager, false,
-                                endPoint, scopeStatsLogger, localBrokerDataCache));
+                                endPoint, scopeStatsLogger, localBrokerDataCache, groupIdMetadataCache));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, this, adminManager, true,
-                                endPoint, scopeStatsLogger, localBrokerDataCache));
+                                endPoint, scopeStatsLogger, localBrokerDataCache, groupIdMetadataCache));
                         break;
                     default:
                 }

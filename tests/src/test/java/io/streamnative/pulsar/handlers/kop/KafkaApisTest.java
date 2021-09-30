@@ -147,6 +147,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                 },
                 adminManager,
                 pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
+                pulsar.getLocalMetadataStore().getMetadataCache(String.class),
                 false,
                 getPlainEndPoint(),
                 NullStatsLogger.INSTANCE);

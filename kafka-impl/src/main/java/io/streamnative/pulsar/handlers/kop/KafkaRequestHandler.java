@@ -49,17 +49,16 @@ import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
-import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -176,6 +175,8 @@ import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.metadata.api.MetadataCache;
+import org.apache.pulsar.metadata.api.MetadataStoreException;
+import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 
@@ -194,10 +195,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final String clusterName;
     private final ScheduledExecutorService executor;
     private final PulsarAdmin admin;
+    private final MetadataStoreExtended metadataStore;
     private final SaslAuthenticator authenticator;
     private final Authorizer authorizer;
     private final AdminManager adminManager;
     private final MetadataCache<LocalBrokerData> localBrokerDataCache;
+    private final MetadataCache<String> groupIdMetadataCache;
 
     private final Boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
@@ -208,7 +211,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final Set<String> allowedNamespaces;
     // store the group name for current connected client.
     private final ConcurrentHashMap<String, String> currentConnectedGroup;
-    private final String groupIdStoredPath;
+
     @Getter
     private final EntryFormatter entryFormatter;
 
@@ -279,6 +282,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                TenantContextManager tenantContextManager,
                                AdminManager adminManager,
                                MetadataCache<LocalBrokerData> localBrokerDataCache,
+                               MetadataCache<String> groupIdMetadataCache,
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
                                StatsLogger statsLogger) throws Exception {
@@ -288,6 +292,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
+        this.metadataStore = pulsarService.getLocalMetadataStore();
         final boolean authenticationEnabled = pulsarService.getBrokerService().isAuthenticationEnabled()
                 && !kafkaConfig.getSaslAllowedMechanisms().isEmpty();
         this.authenticator = authenticationEnabled
@@ -299,6 +304,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 : null;
         this.adminManager = adminManager;
         this.localBrokerDataCache = localBrokerDataCache;
+        this.groupIdMetadataCache = groupIdMetadataCache;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
         this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
@@ -308,7 +314,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.allowedNamespaces = kafkaConfig.getKopAllowedNamespaces();
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
         this.currentConnectedGroup = new ConcurrentHashMap<>();
-        this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
         this.failedAuthenticationDelayMs = kafkaConfig.getFailedAuthenticationDelayMs();
@@ -1074,36 +1079,43 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             throw new NotImplementedException("FindCoordinatorRequest not support TRANSACTION type "
                 + request.coordinatorType());
         }
-        // store group name to zk for current client
-        String groupId = request.coordinatorKey();
-        String zkSubPath = ZooKeeperUtils.groupIdPathFormat(findCoordinator.getClientHost(),
-                findCoordinator.getHeader().clientId());
-        byte[] groupIdBytes = groupId.getBytes(Charset.forName("UTF-8"));
-        ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(), groupIdStoredPath + zkSubPath, groupIdBytes);
 
-        findBroker(TopicName.get(pulsarTopicName))
-                .whenComplete((node, t) -> {
-                    if (t != null || node == null){
-                        log.error("[{}] Request {}: Error while find coordinator, .",
-                                ctx.channel(), findCoordinator.getHeader(), t);
+        String groupId = request.coordinatorKey();
+        String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
+                findCoordinator.getHeader().clientId());
+
+        // Store group name to zk for current client.
+        groupIdMetadataCache.create(groupIdPath, groupId).whenComplete((__, ex) -> {
+            if (ex != null) {
+                if (!(ex instanceof MetadataStoreException.AlreadyExistsException)) {
+                    resultFuture.completeExceptionally(ex);
+                    return;
+                }
+            }
+            findBroker(TopicName.get(pulsarTopicName))
+                    .whenComplete((node, t) -> {
+                        if (t != null || node == null){
+                            log.error("[{}] Request {}: Error while find coordinator, .",
+                                    ctx.channel(), findCoordinator.getHeader(), t);
+
+                            AbstractResponse response = new FindCoordinatorResponse(
+                                    Errors.LEADER_NOT_AVAILABLE,
+                                    Node.noNode());
+                            resultFuture.complete(response);
+                            return;
+                        }
+
+                        if (log.isDebugEnabled()) {
+                            log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
+                                    ctx.channel(), node.leader(), request.coordinatorKey(), partition);
+                        }
 
                         AbstractResponse response = new FindCoordinatorResponse(
-                                Errors.LEADER_NOT_AVAILABLE,
-                                Node.noNode());
+                                Errors.NONE,
+                                node.leader());
                         resultFuture.complete(response);
-                        return;
-                    }
-
-                    if (log.isDebugEnabled()) {
-                        log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
-                                ctx.channel(), node.leader(), request.coordinatorKey(), partition);
-                    }
-
-                    AbstractResponse response = new FindCoordinatorResponse(
-                            Errors.NONE,
-                            node.leader());
-                    resultFuture.complete(response);
-                });
+                    });
+        });
     }
 
     private <T> void replaceTopicPartition(Map<TopicPartition, T> replacedMap,
@@ -2157,9 +2169,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             deleteTopicsResponse.put(topic, errors);
             if (errors == Errors.NONE) {
                 // create topic ZNode to trigger the coordinator DeleteTopicsEvent event
-                ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(),
+                metadataStore.put(
                         KopEventManager.getDeleteTopicsPath() + "/" + topic,
-                        new byte[0]);
+                        new byte[0],
+                        Optional.empty());
             }
             if (topicToDeleteCount.decrementAndGet() == 0) {
                 resultFuture.complete(new DeleteTopicsResponse(deleteTopicsResponse));
