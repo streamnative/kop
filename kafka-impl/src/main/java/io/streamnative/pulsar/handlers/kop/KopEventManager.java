@@ -24,6 +24,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.ShutdownableThread;
+import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -313,7 +314,7 @@ public class KopEventManager {
                         HashSet<String> topicsFullNameDeletionsSets = Sets.newHashSet();
                         HashSet<KopTopic> kopTopicsSet = Sets.newHashSet();
                         topicsDeletions.forEach(topic -> {
-                            KopTopic kopTopic = new KopTopic(topic);
+                            KopTopic kopTopic = new KopTopic(TopicNameUtils.getTopicWithUrlDecoded(topic));
                             kopTopicsSet.add(kopTopic);
                             topicsFullNameDeletionsSets.add(kopTopic.getFullName());
                         });

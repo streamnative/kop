@@ -52,6 +52,7 @@ import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
+import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
@@ -2158,7 +2159,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (errors == Errors.NONE) {
                 // create topic ZNode to trigger the coordinator DeleteTopicsEvent event
                 ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(),
-                        KopEventManager.getDeleteTopicsPath() + "/" + topic,
+                        KopEventManager.getDeleteTopicsPath() + "/"
+                                + TopicNameUtils.getTopicWithUrlEncoded(topic),
                         new byte[0]);
             }
             if (topicToDeleteCount.decrementAndGet() == 0) {
