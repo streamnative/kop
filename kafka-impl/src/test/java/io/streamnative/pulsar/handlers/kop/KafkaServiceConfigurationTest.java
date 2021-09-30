@@ -135,7 +135,6 @@ public class KafkaServiceConfigurationTest {
         assertEquals(kafkaServiceConfig.getManagedLedgerDigestType(), DigestType.CRC32C);
         assertEquals(
                 kafkaServiceConfig.getKopAllowedNamespaces(), Sets.newHashSet("public/default", "public/__kafka"));
-        assertEquals(kafkaServiceConfig.getKafkaListenerName(), "external");
     }
 
     @Test
