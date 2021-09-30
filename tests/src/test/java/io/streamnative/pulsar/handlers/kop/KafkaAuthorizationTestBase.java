@@ -35,14 +35,17 @@ import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
 import org.apache.kafka.clients.admin.DeleteTopicsResult;
+import org.apache.kafka.clients.admin.DescribeConfigsResult;
 import org.apache.kafka.clients.admin.ListTopicsResult;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.TopicAuthorizationException;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
@@ -479,6 +482,46 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         admin.topics().deletePartitionedTopic(fullNewTopicName);
         adminClient.close();
     }
+
+    @Test(timeOut = 20000)
+    public void testDescribeConfigSuccess() throws PulsarAdminException, ExecutionException, InterruptedException {
+        String newTopic = "testDescribeConfigSuccess";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
+
+        admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, adminToken);
+        ConfigResource configResource = new ConfigResource(ConfigResource.Type.TOPIC, fullNewTopicName);
+
+        DescribeConfigsResult describeConfigsResult =
+                adminClient.describeConfigs(Collections.singleton(configResource));
+        Map<ConfigResource, Config> configResourceConfigMap = describeConfigsResult.all().get();
+        assertEquals(configResourceConfigMap.size(), 1);
+        Config config = configResourceConfigMap.get(configResource);
+        assertFalse(config.entries().isEmpty());
+
+        admin.topics().deletePartitionedTopic(fullNewTopicName);
+    }
+
+    @Test(timeOut = 20000)
+    public void testDescribeConfigFailed() throws PulsarAdminException {
+        String newTopic = "testDescribeConfigFailed";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
+
+        admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, userToken);
+        ConfigResource configResource = new ConfigResource(ConfigResource.Type.TOPIC, fullNewTopicName);
+
+        DescribeConfigsResult describeConfigsResult =
+                adminClient.describeConfigs(Collections.singleton(configResource));
+        try {
+            describeConfigsResult.all().get();
+        } catch (Exception ex) {
+            assertTrue(ex.getMessage().contains("TopicAuthorizationException"));
+        }
+
+        admin.topics().deletePartitionedTopic(fullNewTopicName);
+    }
+
 
     private AdminClient createAdminClient(String username, String token) {
         Properties props = new Properties();

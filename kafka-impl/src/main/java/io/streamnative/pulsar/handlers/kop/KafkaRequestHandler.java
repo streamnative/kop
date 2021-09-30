@@ -61,6 +61,7 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -71,6 +72,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -92,6 +94,7 @@ import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
+import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
@@ -1933,6 +1936,38 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(describeConfigs.getRequest() instanceof DescribeConfigsRequest);
         DescribeConfigsRequest request = (DescribeConfigsRequest) describeConfigs.getRequest();
 
+        if (request.resources().isEmpty()) {
+            resultFuture.complete(new DescribeConfigsResponse(0, Maps.newHashMap()));
+            return;
+        }
+
+        Collection<ConfigResource> authorizedResources = Collections.synchronizedList(new ArrayList<>());
+        Map<ConfigResource, DescribeConfigsResponse.Config> failedConfigResourceMap =
+                Maps.newConcurrentMap();
+        AtomicInteger configResourceCount = new AtomicInteger(request.resources().size());
+
+
+        Consumer<Runnable> completeOne = (operations) -> {
+            try {
+                // When complete one authorization or failed, will run the operations first.
+                operations.run();
+            } finally {
+                if (configResourceCount.decrementAndGet() == 0) {
+                    adminManager.describeConfigsAsync(authorizedResources.stream()
+                            .collect(Collectors.toMap(
+                                    resource -> resource,
+                                    resource -> Optional.ofNullable(request.configNames(resource)).map(HashSet::new)
+                            ))
+                    ).thenApply(configResourceConfigMap -> {
+                        configResourceConfigMap.putAll(failedConfigResourceMap);
+                        resultFuture.complete(new DescribeConfigsResponse(0, configResourceConfigMap));
+                        return null;
+                    });
+                }
+            }
+        };
+
+        // Do authorization for each of resource
         request.resources().forEach(configResource -> {
             switch (configResource.type()) {
                 case TOPIC:
@@ -1940,29 +1975,46 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     try {
                         kopTopic = new KopTopic(configResource.name());
                     } catch (KoPTopicException e) {
+                        completeOne.accept(() -> {
+                            final ApiError error = new ApiError(
+                                    Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                                    "Topic " + configResource.name() + " doesn't exist");
+                            failedConfigResourceMap.put(configResource, new DescribeConfigsResponse.Config(
+                                    error, Collections.emptyList()));
+                        });
                         return;
                     }
-                    String topicFullName = kopTopic.getFullName();
-                    authorize(AclOperation.DESCRIBE_CONFIGS, Resource.of(ResourceType.TOPIC, topicFullName))
+                    String fullTopicName = kopTopic.getFullName();
+                    authorize(AclOperation.DESCRIBE_CONFIGS, Resource.of(ResourceType.TOPIC, fullTopicName))
                             .whenComplete((isAuthorized, ex) -> {
-                                // TODO: support authorization
+                                if (ex != null) {
+                                    log.error("DescribeConfigs in topic authorize failed, topic - {}. {}",
+                                            fullTopicName, ex.getMessage());
+                                    completeOne.accept(() -> failedConfigResourceMap.put(configResource,
+                                            new DescribeConfigsResponse.Config(
+                                                    new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null),
+                                                    Collections.emptyList())));
+                                    return;
+                                }
+                                if (isAuthorized) {
+                                    completeOne.accept(() -> authorizedResources.add(configResource));
+                                    return;
+                                }
+                                completeOne.accept(() -> failedConfigResourceMap.put(configResource,
+                                        new DescribeConfigsResponse.Config(
+                                                new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null),
+                                                Collections.emptyList())));
                             });
                     break;
                 case BROKER:
+                    // Current KoP don't support Broker Resource.
                 case UNKNOWN:
                 default:
+                    completeOne.accept(()->{});
                     break;
             }
         });
-        adminManager.describeConfigsAsync(new ArrayList<>(request.resources()).stream()
-                .collect(Collectors.toMap(
-                        resource -> resource,
-                        resource -> Optional.ofNullable(request.configNames(resource)).map(HashSet::new)
-                ))
-        ).thenApply(configResourceConfigMap -> {
-            resultFuture.complete(new DescribeConfigsResponse(0, configResourceConfigMap));
-            return null;
-        });
+
     }
 
     @Override
