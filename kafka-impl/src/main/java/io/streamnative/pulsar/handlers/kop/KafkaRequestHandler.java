@@ -1086,11 +1086,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         // Store group name to zk for current client.
         groupIdMetadataCache.create(groupIdPath, groupId).whenComplete((__, ex) -> {
-            if (ex != null) {
-                if (!(ex instanceof MetadataStoreException.AlreadyExistsException)) {
-                    resultFuture.completeExceptionally(ex);
-                    return;
-                }
+            if (ex != null && !(ex instanceof MetadataStoreException.AlreadyExistsException)) {
+                resultFuture.completeExceptionally(ex);
+                return;
             }
             findBroker(TopicName.get(pulsarTopicName))
                     .whenComplete((node, t) -> {

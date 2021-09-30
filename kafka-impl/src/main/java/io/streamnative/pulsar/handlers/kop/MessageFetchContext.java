@@ -450,10 +450,8 @@ public final class MessageFetchContext {
             requestHandler.getGroupIdMetadataCache()
                     .get(groupIdPath)
                     .whenComplete((groupIdOpt, ex) -> {
-                        if (ex != null) {
-                            if (log.isDebugEnabled()) {
-                                log.debug("Get groupId failed.", ex);
-                            }
+                        if (ex != null && log.isDebugEnabled()) {
+                            log.debug("Get groupId failed.", ex);
                         }
                         String groupId = groupIdOpt.orElse("");
                         log.info("get group name from zk for current connection:{} groupId:{}",
