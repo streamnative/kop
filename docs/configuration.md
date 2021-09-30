@@ -15,7 +15,7 @@
 
 To support multiple listeners, you need to specify different listener names in [`advertisedListeners`](https://pulsar.apache.org/docs/en/concepts-multiple-advertised-listeners/#use-multiple-advertised-listeners). Then map the listener name to the proper protocol in `kafkaProtocolMap`.
 
-For example, assuming you're going to listen on port 9092 and 19092 with the `PLAINTEXT` protocol, the associated names are `kafka_internal` and `kafka_external`. Then you need to add the following configurations:
+For example, assuming you need to listen on port 9092 and 19092 with the `PLAINTEXT` protocol, the associated names are `kafka_internal` and `kafka_external`. Then you need to add the following configurations:
 
 ```properties
 kafkaListeners=kafka_internal://localhost:9092,kafka_external://localhost:19092
@@ -23,10 +23,10 @@ kafkaProtocolMap=kafka_internal:PLAINTEXT,kafka_external:PLAINTEXT
 advertisedListeners=pulsar:pulsar://localhost:6650,kafka_internal:pulsar://localhost:9092,kafka_external:pulsar://localhost:19092
 ```
 
-In above example,
-- `kafkaListener` is split into multiple tokens by `,`, each token's format is `<listener-name>://<host>:<port>`.
-- `kafkaProtocolMap` is split into multiple tokens by `,`, each token's format is `<listener-name>:<protocol>`.
-- `advertisedListeners` is split into multiple tokens by `,`, each token's format is `<listener-name>:<scheme>://<host>:<port>`.
+In the above example,
+- `kafkaListener` is split into multiple tokens by a comma (`,`), the format of each token format is `<listener-name>://<host>:<port>`.
+- `kafkaProtocolMap` is split into multiple tokens by a comma (`,`), the format of each token format is `<listener-name>:<protocol>`.
+- `advertisedListeners` is split into multiple tokens by a comma(`,`), the format of each token format is `<listener-name>:<scheme>://<host>:<port>`.
 
 > **NOTE**
 >
