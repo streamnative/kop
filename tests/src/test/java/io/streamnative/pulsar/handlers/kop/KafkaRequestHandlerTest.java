@@ -36,6 +36,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManage
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
+import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -747,8 +748,12 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 .getPulsar()
                 .getLocalMetadataStore()
                 .getChildren(KopEventManager.getDeleteTopicsPath())
-                .join();
+                .join()
+                .stream()
+                .map((TopicNameUtils::getTopicNameWithUrlDecoded))
+                .collect(Collectors.toList());
 
+        assertEquals(topicToNumPartitions.keySet().size(), deletedTopics.size());
         assertTrue(topicToNumPartitions.keySet().containsAll(deletedTopics));
     }
 }
