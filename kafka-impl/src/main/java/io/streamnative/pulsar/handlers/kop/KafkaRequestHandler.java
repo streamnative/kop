@@ -2160,7 +2160,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 // create topic ZNode to trigger the coordinator DeleteTopicsEvent event
                 ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(),
                         KopEventManager.getDeleteTopicsPath() + "/"
-                                + TopicNameUtils.getTopicWithUrlEncoded(topic),
+                                + TopicNameUtils.getTopicNameWithUrlEncoded(topic),
                         new byte[0]);
             }
             if (topicToDeleteCount.decrementAndGet() == 0) {

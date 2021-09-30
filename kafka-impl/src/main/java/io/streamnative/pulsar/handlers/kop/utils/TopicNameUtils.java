@@ -83,7 +83,7 @@ public class TopicNameUtils {
     /**
      * Get an url encoded topic name.
      */
-    public static @NonNull String getTopicWithUrlEncoded(String topicName) {
+    public static @NonNull String getTopicNameWithUrlEncoded(String topicName) {
         String encodedTopicName = "";
         try {
             encodedTopicName = URLEncoder.encode(topicName, StandardCharsets.UTF_8.name());
@@ -96,7 +96,7 @@ public class TopicNameUtils {
     /**
      * Get an url decoded topic name.
      */
-    public static @NonNull String getTopicWithUrlDecoded(String encodedTopicName) {
+    public static @NonNull String getTopicNameWithUrlDecoded(String encodedTopicName) {
         String topicName = "";
         try {
             topicName = URLDecoder.decode(encodedTopicName, StandardCharsets.UTF_8.name());
