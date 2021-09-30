@@ -111,7 +111,6 @@ public class PulsarEntryFormatter implements EntryFormatter {
                 // each entry is a batched message
                 ByteBuf metadataAndPayload = entry.getDataBuffer();
 
-                Commands.skipBrokerEntryMetadataIfExist(metadataAndPayload);
                 MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
 
                 decodeResults.add(ByteBufUtils.decodePulsarEntryToKafkaRecords(
