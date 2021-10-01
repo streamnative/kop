@@ -1946,10 +1946,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         AtomicInteger configResourceCount = new AtomicInteger(request.resources().size());
 
 
-        Consumer<Runnable> completeOne = (operations) -> {
+        Consumer<Runnable> completeOne = (action) -> {
             try {
-                // When complete one authorization or failed, will run the operations first.
-                operations.run();
+                // When complete one authorization or failed, will do the action first.
+                action.run();
             } finally {
                 if (configResourceCount.decrementAndGet() == 0) {
                     adminManager.describeConfigsAsync(authorizedResources.stream()
