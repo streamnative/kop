@@ -1943,7 +1943,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         Collection<ConfigResource> authorizedResources = Collections.synchronizedList(new ArrayList<>());
         Map<ConfigResource, DescribeConfigsResponse.Config> failedConfigResourceMap =
                 Maps.newConcurrentMap();
-        AtomicInteger configResourceCount = new AtomicInteger(request.resources().size());
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(request.resources().size());
 
 
         Consumer<Runnable> completeOne = (action) -> {
@@ -1951,7 +1951,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 // When complete one authorization or failed, will do the action first.
                 action.run();
             } finally {
-                if (configResourceCount.decrementAndGet() == 0) {
+                if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
                     adminManager.describeConfigsAsync(authorizedResources.stream()
                             .collect(Collectors.toMap(
                                     resource -> resource,
