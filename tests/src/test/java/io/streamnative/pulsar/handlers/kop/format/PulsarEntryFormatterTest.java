@@ -11,19 +11,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop;
+package io.streamnative.pulsar.handlers.kop.format;
 
 import org.testng.annotations.Test;
 
-public class KafkaEntryFormatterTestBase extends EntryFormatterTestBase {
+public class PulsarEntryFormatterTest extends EntryFormatterTestBase {
 
-    public KafkaEntryFormatterTestBase() {
-        super("kafka");
+    public PulsarEntryFormatterTest() {
+        super("Pulsar");
     }
 
     @Test(timeOut = 20000)
-    public void testChangeKafkaEntryFormat() throws Exception {
-        super.testChangeKafkaEntryFormat();
+    public void testChangePulsarEntryFormat() throws Exception {
+        super.testChangePulsarEntryFormat();
     }
-
 }

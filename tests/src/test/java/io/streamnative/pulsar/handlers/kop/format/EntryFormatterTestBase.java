@@ -11,8 +11,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop;
+package io.streamnative.pulsar.handlers.kop.format;
 
+import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Properties;
@@ -26,7 +27,7 @@ import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 
-public class EntryFormatterTestBase extends KopProtocolHandlerTestBase{
+public class EntryFormatterTestBase extends KopProtocolHandlerTestBase {
 
     private static final String group1 = "test-format-group1";
     private static final String group2 = "test-format-group2";
