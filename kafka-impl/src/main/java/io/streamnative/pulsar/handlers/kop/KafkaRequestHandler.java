@@ -31,6 +31,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -112,6 +113,7 @@ import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
 import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
+import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
@@ -2042,9 +2044,57 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleAddPartitionsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                             CompletableFuture<AbstractResponse> response) {
         AddPartitionsToTxnRequest request = (AddPartitionsToTxnRequest) kafkaHeaderAndRequest.getRequest();
-        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
-        transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
-                request.producerId(), request.producerEpoch(), request.partitions(), response);
+        List<TopicPartition> partitionsToAdd = request.partitions();
+        Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
+        Map<TopicPartition, Errors> nonExistingTopicErrors = Maps.newConcurrentMap();
+        Set<TopicPartition> authorizedPartitions = Sets.newConcurrentHashSet();
+
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(partitionsToAdd.size());
+        Consumer<Runnable> completeOne = (action) -> {
+            try {
+                action.run();
+            } finally {
+                if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                    if (unauthorizedTopicErrors.isEmpty() || nonExistingTopicErrors.isEmpty()) {
+                        Map<TopicPartition, Errors> partitionErrors = Maps.newHashMap();
+                        partitionErrors.putAll(unauthorizedTopicErrors);
+                        partitionErrors.putAll(nonExistingTopicErrors);
+                        for (TopicPartition topicPartition : authorizedPartitions) {
+                            partitionErrors.put(topicPartition, Errors.OPERATION_NOT_ATTEMPTED);
+                        }
+                        response.complete(new AddPartitionsToTxnResponse(0, partitionErrors));
+                    } else {
+                        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
+                        transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
+                                request.producerId(), request.producerEpoch(), partitionsToAdd, response);
+                    }
+                }
+            }
+        };
+        partitionsToAdd.forEach(tp -> {
+            String fullPartitionName;
+            try {
+                fullPartitionName = KopTopic.toString(tp);
+            } catch (KoPTopicException e) {
+                log.warn("Invalid topic name: {}", tp.topic(), e);
+                completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                return;
+            }
+            authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
+                    .whenComplete((isAuthorized, ex) -> {
+                if (ex != null) {
+                    log.error("AddPartitionsToTxn topic authorize failed, topic - {}. {}",
+                            fullPartitionName, ex.getMessage());
+                    completeOne.accept(() -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                    return;
+                }
+                if (!isAuthorized) {
+                    completeOne.accept(() -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                    return;
+                }
+                completeOne.accept(() -> authorizedPartitions.add(tp));
+            });
+        });
     }
 
     @Override
