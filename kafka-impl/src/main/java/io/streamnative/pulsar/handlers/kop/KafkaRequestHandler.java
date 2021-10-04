@@ -2063,11 +2063,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             partitionErrors.put(topicPartition, Errors.OPERATION_NOT_ATTEMPTED);
                         }
                         response.complete(new AddPartitionsToTxnResponse(0, partitionErrors));
-                        return;
+                    } else {
+                        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
+                        transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
+                                request.producerId(), request.producerEpoch(), partitionsToAdd, response);
                     }
-                    TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
-                    transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
-                            request.producerId(), request.producerEpoch(), partitionsToAdd, response);
                 }
             }
         };
