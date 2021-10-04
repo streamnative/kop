@@ -2055,7 +2055,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 action.run();
             } finally {
                 if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
-                    if (unauthorizedTopicErrors.isEmpty() || nonExistingTopicErrors.isEmpty()) {
+                    if (!unauthorizedTopicErrors.isEmpty() || !nonExistingTopicErrors.isEmpty()) {
                         Map<TopicPartition, Errors> partitionErrors = Maps.newHashMap();
                         partitionErrors.putAll(unauthorizedTopicErrors);
                         partitionErrors.putAll(nonExistingTopicErrors);
@@ -2063,11 +2063,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             partitionErrors.put(topicPartition, Errors.OPERATION_NOT_ATTEMPTED);
                         }
                         response.complete(new AddPartitionsToTxnResponse(0, partitionErrors));
-                    } else {
-                        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
-                        transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
-                                request.producerId(), request.producerEpoch(), partitionsToAdd, response);
+                        return;
                     }
+                    TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
+                    transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
+                            request.producerId(), request.producerEpoch(), partitionsToAdd, response);
                 }
             }
         };
