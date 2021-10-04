@@ -137,7 +137,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     @Test(timeOut = 20000)
-    void testAuthorizationFailed() throws PulsarAdminException {
+    public void testAuthorizationFailed() throws PulsarAdminException {
         String newTenant = "newTenantAuthorizationFailed";
         String testTopic = "persistent://" + newTenant + "/" + NAMESPACE + "/topic1";
         try {
@@ -166,7 +166,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     @Test(timeOut = 20000)
-    void testAuthorizationSuccess() throws PulsarAdminException {
+    public void testAuthorizationSuccess() throws PulsarAdminException {
         String topic = "testAuthorizationSuccessTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
         KProducer kProducer = new KProducer(topic, false, "localhost", getKafkaBrokerPort(),
@@ -210,7 +210,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     @Test(timeOut = 20000)
-    void testAuthorizationSuccessByAdmin() throws PulsarAdminException {
+    public void testAuthorizationSuccessByAdmin() throws PulsarAdminException {
         String topic = "testAuthorizationSuccessByAdminTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
         KProducer kProducer = new KProducer(topic, false, "localhost", getKafkaBrokerPort(),
@@ -254,7 +254,64 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     @Test(timeOut = 20000)
-    void testListTopic() throws Exception {
+    public void testProduceWithTopicLevelPermissions()
+            throws PulsarAdminException, ExecutionException, InterruptedException {
+        String topic = "testTopicLevelPermissions";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
+
+        // Grant produce permission with topic level permission to ANOTHER_USER
+        admin.topics().grantPermission(fullNewTopicName,
+                ANOTHER_USER,
+                Sets.newHashSet(AuthAction.produce));
+
+        @Cleanup
+        KProducer producer = new KProducer(fullNewTopicName, false, "localhost", getKafkaBrokerPort(),
+                TENANT + "/" + NAMESPACE, "token:" + anotherToken);
+        int totalMsgs = 10;
+        String messageStrPrefix = fullNewTopicName + "_message_";
+
+        for (int i = 0; i < totalMsgs; i++) {
+            String messageStr = messageStrPrefix + i;
+            producer.getProducer().send(new ProducerRecord<>(fullNewTopicName, i, messageStr)).get();
+        }
+
+        // Ensure admin can consume message.
+        @Cleanup
+        KConsumer adminConsumer = new KConsumer(fullNewTopicName, "localhost", getKafkaBrokerPort(), false,
+                TENANT + "/" + NAMESPACE, "token:" + adminToken, "DemoAdminKafkaOnPulsarConsumer");
+        adminConsumer.getConsumer().subscribe(Collections.singleton(fullNewTopicName));
+
+        int i = 0;
+        while (i < totalMsgs) {
+            ConsumerRecords<Integer, String> records = adminConsumer.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<Integer, String> record : records) {
+                Integer key = record.key();
+                assertEquals(messageStrPrefix + key.toString(), record.value());
+                i++;
+            }
+        }
+        assertEquals(i, totalMsgs);
+
+        // no more records
+        ConsumerRecords<Integer, String> records = adminConsumer.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+
+
+        // Consume should be failed.
+        @Cleanup
+        KConsumer anotherConsumer = new KConsumer(fullNewTopicName, "localhost", getKafkaBrokerPort(), false,
+                TENANT + "/" + NAMESPACE, "token:" + anotherToken, "DemoAnotherKafkaOnPulsarConsumer");
+        anotherConsumer.getConsumer().subscribe(Collections.singleton(fullNewTopicName));
+        try {
+            anotherConsumer.getConsumer().poll(Duration.ofSeconds(2));
+            fail("expected TopicAuthorizationException");
+        } catch (TopicAuthorizationException ignore) {
+            log.info("Has TopicAuthorizationException.");
+        }
+    }
+
+    @Test(timeOut = 20000)
+    public void testListTopic() throws Exception {
         String newTopic = "newTestListTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
 
