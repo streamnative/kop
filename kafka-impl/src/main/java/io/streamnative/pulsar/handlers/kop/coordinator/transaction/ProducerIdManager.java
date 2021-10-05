@@ -21,42 +21,212 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.zookeeper.AsyncCallback;
-import org.apache.zookeeper.CreateMode;
-import org.apache.zookeeper.KeeperException;
-import org.apache.zookeeper.ZooDefs;
-import org.apache.zookeeper.ZooKeeper;
-import org.apache.zookeeper.data.Stat;
+import org.apache.kafka.common.KafkaException;
+import org.apache.pulsar.metadata.api.GetResult;
+import org.apache.pulsar.metadata.api.MetadataStoreException;
+import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 
 /**
- * This class used to manage producer id.
+ * ProducerIdManager is the part of the transaction coordinator that provides ProducerIds in a unique way
+ * such that the same producerId will not be assigned twice across multiple transaction coordinators.
+ *
+ * ProducerIds are managed via ZooKeeper, where the latest producerId block is written on the corresponding ZK
+ * path by the manager who claims the block, where the written block_start and block_end are both inclusive.
  */
 @Slf4j
 public class ProducerIdManager {
-
     private static final Long currentVersion = 1L;
     public static final Long PID_BLOCK_SIZE = 1000L;
     public static final String KOP_PID_BLOCK_ZNODE = "/kop_latest_producer_id_block";
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    private final Integer brokerId;
-    private final ZooKeeper zkClient;
+    private final int brokerId;
+    private final MetadataStoreExtended metadataStore;
 
-    private ProducerIdBlock currentProducerIdBlock;
+    private ProducerIdBlock currentProducerIdBlock = null;
     private Long nextProducerId = -1L;
 
-    public ProducerIdManager(Integer brokerId, ZooKeeper zkClient) {
+    public ProducerIdManager(int brokerId, MetadataStoreExtended metadataStore) {
         this.brokerId = brokerId;
-        this.zkClient = zkClient;
+        this.metadataStore = metadataStore;
     }
 
-    public static byte[] generateProducerIdBlockJson(ProducerIdBlock producerIdBlock) throws JsonProcessingException {
+    public CompletableFuture<Void> initialize() {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        getNewProducerIdBlock()
+                .thenAccept(__ -> {
+                    nextProducerId = currentProducerIdBlock.blockStartId;
+                    future.complete(null);
+                }).exceptionally(throwable -> {
+                    future.completeExceptionally(throwable);
+                    return null;
+                });
+        return future;
+    }
+
+    public CompletableFuture<Void> getNewProducerIdBlock() {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        getCurrentDataAndVersion().thenAccept(currentDataAndVersionOpt -> {
+            if (currentDataAndVersionOpt.isPresent()) {
+                DataAndVersion dataAndVersion = currentDataAndVersionOpt.get();
+                try {
+                    ProducerIdBlock currProducerIdBlock =
+                            ProducerIdManager.parseProducerIdBlockData(dataAndVersion.data);
+                    if (currProducerIdBlock.blockEndId > Long.MAX_VALUE - ProducerIdManager.PID_BLOCK_SIZE) {
+                        // We have exhausted all producerIds (wow!), treat it as a fatal error
+                        log.error("Exhausted all producerIds as the next block's end producerId is will "
+                                + "has exceeded long type limit (current block end producerId is {})",
+                                currProducerIdBlock.blockEndId);
+                        future.completeExceptionally(new KafkaException("Have exhausted all producerIds."));
+                        return;
+                    }
+                    currentProducerIdBlock = ProducerIdBlock
+                            .builder()
+                            .brokerId(brokerId)
+                            .blockStartId(0L)
+                            .blockEndId(ProducerIdManager.PID_BLOCK_SIZE - 1)
+                            .build();
+                } catch (IOException e) {
+                    future.completeExceptionally(new KafkaException("Get producerId failed.", e));
+                    return;
+                }
+            } else {
+                log.debug("There is no producerId block yet, creating the first block");
+                currentProducerIdBlock = ProducerIdBlock
+                        .builder()
+                        .brokerId(brokerId)
+                        .blockStartId(0L)
+                        .blockEndId(ProducerIdManager.PID_BLOCK_SIZE - 1)
+                        .build();
+            }
+            try {
+                byte[] newProducerIdBlockData = ProducerIdManager
+                        .generateProducerIdBlockJson(currentProducerIdBlock);
+                conditionalUpdateData(newProducerIdBlockData,
+                        currentDataAndVersionOpt.orElse(DataAndVersion.NEW_VERSION).getVersion())
+                        .thenAccept(version -> {
+                            future.complete(null);
+                        }).exceptionally(ex -> {
+                            future.completeExceptionally(ex);
+                            return null;
+                        });
+            } catch (JsonProcessingException e) {
+                future.completeExceptionally(e);
+            }
+        });
+        return future;
+    }
+
+    public synchronized CompletableFuture<Long> generateProducerId() {
+        CompletableFuture<Long> nextProducerIdFuture = new CompletableFuture<>();
+        // grab a new block of producerIds if this block has been exhausted
+        if (nextProducerId > currentProducerIdBlock.blockEndId) {
+            getNewProducerIdBlock().thenAccept(__ -> {
+                nextProducerId = currentProducerIdBlock.blockStartId + 1;
+                nextProducerIdFuture.complete(nextProducerId - 1);
+            }).exceptionally(ex -> {
+                nextProducerIdFuture.completeExceptionally(ex);
+                return null;
+            });
+        } else {
+            nextProducerId += 1;
+            nextProducerIdFuture.complete(nextProducerId - 1);
+        }
+
+        return nextProducerIdFuture;
+    }
+
+    private CompletableFuture<Long> conditionalUpdateData(byte[] data, long expectVersion) {
+        CompletableFuture<Long> updateFuture = new CompletableFuture<>();
+        metadataStore.put(KOP_PID_BLOCK_ZNODE, data, Optional.of(expectVersion))
+                .thenAccept(stat -> {
+                    updateFuture.complete(stat.getVersion());
+                }).exceptionally(ex -> {
+                    if (ex instanceof MetadataStoreException.BadVersionException) {
+                        checkProducerIdBlockMetadata(KOP_PID_BLOCK_ZNODE, data)
+                                .thenAccept(updateFuture::complete).exceptionally(e -> {
+                                    updateFuture.completeExceptionally(e);
+                                    return null;
+                                });
+                    } else if (ex instanceof MetadataStoreException.NotFoundException) {
+                        log.error("Update of path {} with data {} and expected version {} failed due to {}",
+                                KOP_PID_BLOCK_ZNODE, getProducerIdBlockStr(data), expectVersion,
+                                "NoNode for path " + KOP_PID_BLOCK_ZNODE);
+                        updateFuture.completeExceptionally(new Exception("NoNode for path " + KOP_PID_BLOCK_ZNODE));
+                    } else {
+                        log.error("Update of path {} with data {} and expected version {} exception: {}",
+                                KOP_PID_BLOCK_ZNODE, getProducerIdBlockStr(data), expectVersion, ex);
+                        updateFuture.completeExceptionally(new Exception("Error to update data.", ex));
+                    }
+                    return null;
+                });
+        return updateFuture;
+    }
+
+    private CompletableFuture<Long> checkProducerIdBlockMetadata(String path, byte[] expectedData) {
+        CompletableFuture<Long> future = new CompletableFuture<>();
+        try {
+            ProducerIdBlock expectedPidBlock = ProducerIdManager.parseProducerIdBlockData(expectedData);
+            getCurrentDataAndVersion().thenAccept(dataAndVersionOpt -> {
+                if (dataAndVersionOpt.isPresent()) {
+                    DataAndVersion dataAndVersion = dataAndVersionOpt.get();
+                    byte[] data = dataAndVersion.getData();
+                    try {
+                        ProducerIdBlock producerIdBlock =
+                                ProducerIdManager.parseProducerIdBlockData(data);
+                        if (expectedPidBlock.equals(producerIdBlock)) {
+                            long version = dataAndVersion.getVersion();
+                            future.complete(version);
+                            return;
+                        }
+                    } catch (IOException e) {
+                        future.completeExceptionally(e);
+                        return;
+                    }
+                    future.complete(dataAndVersionOpt.get().getVersion());
+                } else {
+                    future.completeExceptionally(new Exception("Data not find!"));
+                }
+            }).exceptionally(ex -> {
+                future.completeExceptionally(ex);
+                return null;
+            });
+        } catch (IOException e) {
+            log.warn("Error while checking for producerId block Zk data on path {}: expected data {}",
+                    path, getProducerIdBlockStr(expectedData), e);
+            future.completeExceptionally(e);
+        }
+        return future;
+    }
+
+
+    private CompletableFuture<Optional<DataAndVersion>> getCurrentDataAndVersion() {
+        CompletableFuture<Optional<DataAndVersion>> future = new CompletableFuture<>();
+        metadataStore.get(KOP_PID_BLOCK_ZNODE)
+                .thenAccept(resultOpt -> {
+                    if (resultOpt.isPresent()) {
+                        GetResult getResult = resultOpt.get();
+                        future.complete(Optional.of(
+                                new DataAndVersion(getResult.getValue(), getResult.getStat().getVersion())));
+                    } else {
+                        future.complete(Optional.empty());
+                    }
+                }).exceptionally(ex -> {
+                    future.completeExceptionally(ex);
+                    return null;
+                });
+        return future;
+    }
+
+    public static byte[] generateProducerIdBlockJson(ProducerIdBlock producerIdBlock) throws
+            JsonProcessingException {
         Map<String, Object> dataMap = new HashMap<>();
         dataMap.put("version", currentVersion);
         dataMap.put("broker", producerIdBlock.brokerId);
@@ -74,197 +244,13 @@ public class ProducerIdManager {
                 .build();
     }
 
-    private CompletableFuture<Void> getNewProducerIdBlock() {
-        final CompletableFuture<Void> setDataFuture = new CompletableFuture<>();
-
-        // refresh current producerId block from zookeeper again
-        getDataAndVersion().whenComplete((dataAndVersion, getDataThrowable) -> {
-            if (getDataThrowable != null) {
-                setDataFuture.completeExceptionally(getDataThrowable);
-                return;
-            }
-            if (dataAndVersion == null) {
-                currentProducerIdBlock = new ProducerIdBlock(brokerId, 0L, PID_BLOCK_SIZE - 1);
-            } else {
-                ProducerIdBlock currProducerIdBlock;
-                try {
-                    currProducerIdBlock = ProducerIdManager.parseProducerIdBlockData(dataAndVersion.data);
-                } catch (Exception e) {
-                    log.error("Failed to parse producerIdBlock data.", e);
-                    setDataFuture.completeExceptionally(e);
-                    return;
-                }
-                if (currProducerIdBlock.blockEndId > Long.MAX_VALUE - PID_BLOCK_SIZE) {
-                    log.error("Exhausted all producerIds as the next block's end producerId "
-                            + "is will has exceeded long type limit (current block end producerId is {})",
-                            currProducerIdBlock.blockEndId);
-                    setDataFuture.completeExceptionally(new Exception("Have exhausted all producerIds."));
-                    return;
-                }
-                currentProducerIdBlock = new ProducerIdBlock(brokerId,
-                        currProducerIdBlock.blockEndId + 1,
-                        currProducerIdBlock.blockEndId + PID_BLOCK_SIZE);
-            }
-
-            try {
-                byte[] newProducerIdBlockData = ProducerIdManager.generateProducerIdBlockJson(currentProducerIdBlock);
-                conditionalSetData(newProducerIdBlockData, dataAndVersion == null ? -1 : dataAndVersion.zkVersion)
-                        .whenComplete(((setDataResult, setDataThrowable) -> {
-                            if (setDataThrowable != null) {
-                                log.error("Failed to set new producerId block.", setDataThrowable);
-                                setDataFuture.completeExceptionally(setDataThrowable);
-                                return;
-                            }
-                            log.info("Acquire new producerId block {} by writing to Zk with path version {}",
-                                    currentProducerIdBlock, setDataResult.zkVersion);
-                            setDataFuture.complete(null);
-                        }));
-            } catch (JsonProcessingException e) {
-                log.error("Failed to generate producerIdBlock json bytes data. pidBlock: {}",
-                        currentProducerIdBlock, e);
-            }
-        });
-        return setDataFuture;
-    }
-
-    public CompletableFuture<DataAndVersion> getDataAndVersion() {
-        CompletableFuture<DataAndVersion> currentPidData = new CompletableFuture<>();
-        try {
-            zkClient.getData(KOP_PID_BLOCK_ZNODE, null, new AsyncCallback.DataCallback() {
-                @Override
-                public void processResult(int rc, String path, Object ctx, byte[] data, Stat stat) {
-                    if (rc == KeeperException.Code.OK.intValue() && data != null) {
-                        currentPidData.complete(new DataAndVersion(data, stat.getVersion()));
-                    } else {
-                        currentPidData.complete(null);
-                    }
-                }
-            }, null);
-        } catch (Exception e) {
-            log.error("Failed to get producerId block data.", e);
-            currentPidData.completeExceptionally(e);
-        }
-        return currentPidData;
-    }
-
-    private CompletableFuture<SetDataResult> conditionalSetData(byte[] data, int version) {
-        CompletableFuture<SetDataResult> updateFuture = new CompletableFuture<>();
-        zkClient.setData(KOP_PID_BLOCK_ZNODE, data, version, new AsyncCallback.StatCallback() {
-            @Override
-            public void processResult(int rc, String path, Object ctx, Stat stat) {
-                if (rc == KeeperException.Code.OK.intValue()) {
-                    updateFuture.complete(new SetDataResult(stat.getVersion()));
-                } else if (rc == KeeperException.Code.BADVERSION.intValue()) {
-                    checkProducerIdBlockZkData(zkClient, data)
-                            .whenComplete((setDataResult, t)-> {
-                                if (t != null) {
-                                    updateFuture.completeExceptionally(t);
-                                } else {
-                                    updateFuture.complete(setDataResult);
-                                }
-                            });
-                } else if (rc == KeeperException.Code.NONODE.intValue()){
-                    log.error("Update of path {} with data {} and expected version {} failed due to {}",
-                            KOP_PID_BLOCK_ZNODE, getProducerIdBlockStr(data), stat.getVersion(),
-                            "NoNode for path " + KOP_PID_BLOCK_ZNODE);
-                    updateFuture.completeExceptionally(new Exception("NoNode for path " + KOP_PID_BLOCK_ZNODE));
-                } else {
-                    log.error("Update of path {} with data {} and expected version {} keeperException code {}",
-                            KOP_PID_BLOCK_ZNODE, getProducerIdBlockStr(data), stat.getVersion(), rc);
-                    updateFuture.completeExceptionally(new Exception("KeeperException code " + rc));
-                }
-            }
-        }, null);
-        return updateFuture;
-    }
-
-    private CompletableFuture<SetDataResult> checkProducerIdBlockZkData(ZooKeeper zkClient, byte[] expectedData) {
-        CompletableFuture<SetDataResult> resultFuture = new CompletableFuture<>();
-        try {
-            ProducerIdBlock expectedPidBlock = ProducerIdManager.parseProducerIdBlockData(expectedData);
-            zkClient.getData(KOP_PID_BLOCK_ZNODE, null, new AsyncCallback.DataCallback() {
-                @Override
-                public void processResult(int rc, String path, Object o, byte[] bytes, Stat stat) {
-                    try {
-                        ProducerIdBlock currentPidBlock = ProducerIdManager.parseProducerIdBlockData(bytes);
-                        if (expectedPidBlock.equals(currentPidBlock)) {
-                            resultFuture.complete(new SetDataResult(stat.getVersion()));
-                        } else {
-                            resultFuture.completeExceptionally(new Exception(""));
-                        }
-                    } catch (IOException e) {
-                        log.error("Failed to parse producerIdBlock data {}.", getProducerIdBlockStr(bytes), e);
-                        resultFuture.completeExceptionally(e);
-                    }
-                }
-            }, null);
-        } catch (Exception e) {
-            log.error("Error while checking for producerId block Zk data on path {}: expected data {}",
-                    KOP_PID_BLOCK_ZNODE, getProducerIdBlockStr(expectedData), e);
-            resultFuture.completeExceptionally(e);
-        }
-        return resultFuture;
-    }
-
-    @AllArgsConstructor
-    private static class SetDataResult {
-        private int zkVersion;
-    }
-
+    @Data
     @AllArgsConstructor
     private static class DataAndVersion {
         private byte[] data;
-        private int zkVersion;
-    }
+        private long version;
 
-    private CompletableFuture<Void> makeSurePathExists() {
-        CompletableFuture<Void> completableFuture = new CompletableFuture<>();
-        zkClient.create(KOP_PID_BLOCK_ZNODE, null, ZooDefs.Ids.OPEN_ACL_UNSAFE,
-                CreateMode.PERSISTENT, (rc, path, ctx, name) -> {
-                    if (rc != KeeperException.Code.OK.intValue() && rc != KeeperException.Code.NODEEXISTS.intValue()) {
-                        completableFuture.completeExceptionally(
-                                new Exception("Failed to create path " + KOP_PID_BLOCK_ZNODE
-                                        + " keeperException code " + rc));
-                        return;
-                    }
-                    completableFuture.complete(null);
-                }, null);
-        return completableFuture;
-    }
-
-    public CompletableFuture<Void> initialize() {
-        CompletableFuture<Void> future = new CompletableFuture<>();
-        makeSurePathExists()
-                .thenCompose(ignored -> getNewProducerIdBlock())
-                .thenAccept(ignored -> {
-                    nextProducerId = currentProducerIdBlock.blockStartId;
-                    future.complete(null);
-                })
-                .exceptionally(throwable -> {
-                    future.completeExceptionally(throwable);
-                    return null;
-                });
-        return future;
-    }
-
-    public synchronized CompletableFuture<Long> generateProducerId() {
-        CompletableFuture<Long> nextProducerIdFuture = new CompletableFuture<>();
-        // grab a new block of producerIds if this block has been exhausted
-        if (nextProducerId > currentProducerIdBlock.blockEndId) {
-            getNewProducerIdBlock().whenComplete((ignored, throwable) -> {
-                if (throwable != null) {
-                    nextProducerIdFuture.completeExceptionally(throwable);
-                    return;
-                }
-                nextProducerId = currentProducerIdBlock.blockStartId + 1;
-                nextProducerIdFuture.complete(nextProducerId - 1);
-            });
-        } else {
-            nextProducerId += 1;
-            nextProducerIdFuture.complete(nextProducerId - 1);
-        }
-
-        return nextProducerIdFuture;
+        public static DataAndVersion NEW_VERSION = new DataAndVersion(null, -1);
     }
 
     /**
@@ -302,5 +288,4 @@ public class ProducerIdManager {
     private String getProducerIdBlockStr(byte[] bytes) {
         return new String(bytes, StandardCharsets.UTF_8);
     }
-
 }
