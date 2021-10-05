@@ -74,11 +74,11 @@ public class ProducerIdManager {
     public CompletableFuture<Void> getNewProducerIdBlock() {
         CompletableFuture<Void> future = new CompletableFuture<>();
         getCurrentDataAndVersion().thenAccept(currentDataAndVersionOpt -> {
-            if (currentDataAndVersionOpt.isPresent()) {
+            if (currentDataAndVersionOpt.isPresent() && currentDataAndVersionOpt.get().getData() != null) {
                 DataAndVersion dataAndVersion = currentDataAndVersionOpt.get();
                 try {
                     ProducerIdBlock currProducerIdBlock =
-                            ProducerIdManager.parseProducerIdBlockData(dataAndVersion.data);
+                            ProducerIdManager.parseProducerIdBlockData(dataAndVersion.getData());
                     if (currProducerIdBlock.blockEndId > Long.MAX_VALUE - ProducerIdManager.PID_BLOCK_SIZE) {
                         // We have exhausted all producerIds (wow!), treat it as a fatal error
                         log.error("Exhausted all producerIds as the next block's end producerId is will "
@@ -90,8 +90,8 @@ public class ProducerIdManager {
                     currentProducerIdBlock = ProducerIdBlock
                             .builder()
                             .brokerId(brokerId)
-                            .blockStartId(0L)
-                            .blockEndId(ProducerIdManager.PID_BLOCK_SIZE - 1)
+                            .blockStartId(currProducerIdBlock.blockEndId + 1L)
+                            .blockEndId(currProducerIdBlock.blockEndId + ProducerIdManager.PID_BLOCK_SIZE)
                             .build();
                 } catch (IOException e) {
                     future.completeExceptionally(new KafkaException("Get producerId failed.", e));
@@ -147,10 +147,14 @@ public class ProducerIdManager {
         CompletableFuture<Long> updateFuture = new CompletableFuture<>();
         metadataStore.put(KOP_PID_BLOCK_ZNODE, data, Optional.of(expectVersion))
                 .thenAccept(stat -> {
+                    if (log.isDebugEnabled()) {
+                        log.debug("ConditionalUpdateData Expect version: {}, stat version: {}",
+                                expectVersion, stat.getVersion());
+                    }
                     updateFuture.complete(stat.getVersion());
                 }).exceptionally(ex -> {
                     if (ex instanceof MetadataStoreException.BadVersionException) {
-                        checkProducerIdBlockMetadata(KOP_PID_BLOCK_ZNODE, data)
+                        checkProducerIdBlockMetadata(data)
                                 .thenAccept(updateFuture::complete).exceptionally(e -> {
                                     updateFuture.completeExceptionally(e);
                                     return null;
@@ -170,7 +174,7 @@ public class ProducerIdManager {
         return updateFuture;
     }
 
-    private CompletableFuture<Long> checkProducerIdBlockMetadata(String path, byte[] expectedData) {
+    private CompletableFuture<Long> checkProducerIdBlockMetadata(byte[] expectedData) {
         CompletableFuture<Long> future = new CompletableFuture<>();
         try {
             ProducerIdBlock expectedPidBlock = ProducerIdManager.parseProducerIdBlockData(expectedData);
@@ -200,7 +204,7 @@ public class ProducerIdManager {
             });
         } catch (IOException e) {
             log.warn("Error while checking for producerId block Zk data on path {}: expected data {}",
-                    path, getProducerIdBlockStr(expectedData), e);
+                    ProducerIdManager.KOP_PID_BLOCK_ZNODE, getProducerIdBlockStr(expectedData), e);
             future.completeExceptionally(e);
         }
         return future;
