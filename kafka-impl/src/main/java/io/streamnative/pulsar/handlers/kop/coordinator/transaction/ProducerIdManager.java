@@ -16,9 +16,9 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.collect.Maps;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -42,6 +42,7 @@ import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
  */
 @Slf4j
 public class ProducerIdManager {
+
     private static final Long currentVersion = 1L;
     public static final Long PID_BLOCK_SIZE = 1000L;
     public static final String KOP_PID_BLOCK_ZNODE = "/kop_latest_producer_id_block";
@@ -196,7 +197,7 @@ public class ProducerIdManager {
                     }
                     future.complete(dataAndVersionOpt.get().getVersion());
                 } else {
-                    future.completeExceptionally(new Exception("Data not find!"));
+                    future.completeExceptionally(new Exception("ProducerId is not present !"));
                 }
             }).exceptionally(ex -> {
                 future.completeExceptionally(ex);
@@ -209,7 +210,6 @@ public class ProducerIdManager {
         }
         return future;
     }
-
 
     private CompletableFuture<Optional<DataAndVersion>> getCurrentDataAndVersion() {
         CompletableFuture<Optional<DataAndVersion>> future = new CompletableFuture<>();
@@ -229,9 +229,13 @@ public class ProducerIdManager {
         return future;
     }
 
+    private String getProducerIdBlockStr(byte[] bytes) {
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
     public static byte[] generateProducerIdBlockJson(ProducerIdBlock producerIdBlock) throws
             JsonProcessingException {
-        Map<String, Object> dataMap = new HashMap<>();
+        Map<String, Object> dataMap = Maps.newHashMap();
         dataMap.put("version", currentVersion);
         dataMap.put("broker", producerIdBlock.brokerId);
         dataMap.put("block_start", producerIdBlock.blockStartId);
@@ -287,9 +291,5 @@ public class ProducerIdManager {
         public int hashCode() {
             return Objects.hash(brokerId, blockStartId, blockEndId);
         }
-    }
-
-    private String getProducerIdBlockStr(byte[] bytes) {
-        return new String(bytes, StandardCharsets.UTF_8);
     }
 }
