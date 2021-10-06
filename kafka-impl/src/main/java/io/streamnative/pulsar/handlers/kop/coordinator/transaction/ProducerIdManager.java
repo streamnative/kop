@@ -110,7 +110,7 @@ public class ProducerIdManager {
                 byte[] newProducerIdBlockData = ProducerIdManager
                         .generateProducerIdBlockJson(currentProducerIdBlock);
                 conditionalUpdateData(newProducerIdBlockData,
-                        currentDataAndVersionOpt.orElse(DataAndVersion.NEW_VERSION).getVersion())
+                        currentDataAndVersionOpt.orElse(DataAndVersion.DEFAULT_VERSION).getVersion())
                         .thenAccept(version -> {
                             future.complete(null);
                         }).exceptionally(ex -> {
@@ -254,7 +254,7 @@ public class ProducerIdManager {
         private byte[] data;
         private long version;
 
-        public static DataAndVersion NEW_VERSION = new DataAndVersion(null, -1);
+        public static final DataAndVersion DEFAULT_VERSION = new DataAndVersion(null, -1);
     }
 
     /**

@@ -18,9 +18,6 @@ import static org.testng.AssertJUnit.fail;
 
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.zookeeper.CreateMode;
-import org.apache.zookeeper.KeeperException;
-import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.data.Stat;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
