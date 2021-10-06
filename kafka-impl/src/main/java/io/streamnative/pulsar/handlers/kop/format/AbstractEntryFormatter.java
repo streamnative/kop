@@ -39,16 +39,11 @@ import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 
 @Slf4j
-public class BaseEntryFormatter implements EntryFormatter{
+public abstract class AbstractEntryFormatter implements EntryFormatter {
 
     // These key-value identifies the entry's format as kafka
     public static final String IDENTITY_KEY = "entry.format";
     public static final String IDENTITY_VALUE = EntryFormatterFactory.EntryFormat.KAFKA.name().toLowerCase();
-
-    @Override
-    public ByteBuf encode(MemoryRecords records, int numMessages) {
-        return null;
-    }
 
     @Override
     public DecodeResult decode(List<Entry> entries, byte magic) {

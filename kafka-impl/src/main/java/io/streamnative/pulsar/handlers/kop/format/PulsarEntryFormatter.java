@@ -37,7 +37,7 @@ import org.apache.pulsar.common.protocol.Commands.ChecksumType;
  * The entry formatter that uses Pulsar's format.
  */
 @Slf4j
-public class PulsarEntryFormatter extends BaseEntryFormatter {
+public class PulsarEntryFormatter extends AbstractEntryFormatter {
     //// for Batch messages
     private static final int INITIAL_BATCH_BUFFER_SIZE = 1024;
     private static final int MAX_MESSAGE_BATCH_SIZE_BYTES = 128 * 1024;

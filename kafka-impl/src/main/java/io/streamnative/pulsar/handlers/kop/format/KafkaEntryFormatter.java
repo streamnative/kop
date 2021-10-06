@@ -26,7 +26,7 @@ import org.apache.pulsar.common.protocol.Commands;
  * The entry formatter that uses Kafka's format.
  */
 @Slf4j
-public class KafkaEntryFormatter extends BaseEntryFormatter {
+public class KafkaEntryFormatter extends AbstractEntryFormatter {
 
     @Override
     public ByteBuf encode(MemoryRecords records, int numMessages) {
