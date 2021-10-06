@@ -44,7 +44,7 @@ Since Pulsar 2.6.2, KoP version changes with Pulsar version accordingly. The ver
 | [0.2.0](https://github.com/streamnative/kop/releases/tag/v0.2.0) |Pulsar 2.5.0|
 | [0.1.0](https://github.com/streamnative/kop/releases/tag/v0.1.0) |Pulsar 2.5.0|
 
-##Known Compatibility Issues
+## Known Compatibility Issues
 KoP-2.8.0.13, 2.8.0.14, 2.8.0.15 and 2.8.0.16 minor versions with Pulsar-2.8.0 have a known compatibility issue [KoP-768](https://github.com/streamnative/kop/issues/768).
 
 # How to use KoP
