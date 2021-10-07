@@ -1577,57 +1577,53 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         Consumer<Runnable> completeOne = (action) -> {
             // When complete one authorization or failed, will do the action first.
-            // offsetDataCount.decrementAndGet() always run.
-            try {
-                action.run();
-            } finally {
-                if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
-                    if (log.isTraceEnabled()) {
-                        StringBuffer traceInfo = new StringBuffer();
-                        replacingIndex.forEach((inner, outer) ->
-                                traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
-                        log.trace("OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo);
+            action.run();
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                if (log.isTraceEnabled()) {
+                    StringBuffer traceInfo = new StringBuffer();
+                    replacingIndex.forEach((inner, outer) ->
+                            traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
+                    log.trace("OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo);
+                }
+                if (convertedOffsetData.isEmpty()) {
+                    Map<TopicPartition, Errors> offsetCommitResult = new HashMap<>();
+                    if (!nonExistingTopic.isEmpty()) {
+                        offsetCommitResult.putAll(nonExistingTopic);
                     }
-                    if (convertedOffsetData.isEmpty()) {
-                        Map<TopicPartition, Errors> offsetCommitResult = new HashMap<>();
+                    if (!unauthorizedTopicErrors.isEmpty()) {
+                        offsetCommitResult.putAll(unauthorizedTopicErrors);
+                    }
+
+                    OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
+                    resultFuture.complete(response);
+
+                } else {
+                    Map<TopicPartition, OffsetAndMetadata> convertedPartitionData =
+                            convertOffsetCommitRequestRetentionMs(
+                                    convertedOffsetData,
+                                    request.retentionTime(),
+                                    offsetCommit.getHeader().apiVersion(),
+                                    Time.SYSTEM.milliseconds(),
+                                    getGroupCoordinator().offsetConfig().offsetsRetentionMs()
+                            );
+
+                    getGroupCoordinator().handleCommitOffsets(
+                            request.groupId(),
+                            request.memberId(),
+                            request.generationId(),
+                            convertedPartitionData
+                    ).thenAccept(offsetCommitResult -> {
+
+                        // recover to original topic name
+                        replaceTopicPartition(offsetCommitResult, replacingIndex);
+
                         if (!nonExistingTopic.isEmpty()) {
                             offsetCommitResult.putAll(nonExistingTopic);
                         }
-                        if (!unauthorizedTopicErrors.isEmpty()) {
-                            offsetCommitResult.putAll(unauthorizedTopicErrors);
-                        }
-
                         OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
                         resultFuture.complete(response);
+                    });
 
-                    } else {
-                        Map<TopicPartition, OffsetAndMetadata> convertedPartitionData =
-                                convertOffsetCommitRequestRetentionMs(
-                                        convertedOffsetData,
-                                        request.retentionTime(),
-                                        offsetCommit.getHeader().apiVersion(),
-                                        Time.SYSTEM.milliseconds(),
-                                        getGroupCoordinator().offsetConfig().offsetsRetentionMs()
-                                );
-
-                        getGroupCoordinator().handleCommitOffsets(
-                                request.groupId(),
-                                request.memberId(),
-                                request.generationId(),
-                                convertedPartitionData
-                        ).thenAccept(offsetCommitResult -> {
-
-                            // recover to original topic name
-                            replaceTopicPartition(offsetCommitResult, replacingIndex);
-
-                            if (!nonExistingTopic.isEmpty()) {
-                                offsetCommitResult.putAll(nonExistingTopic);
-                            }
-                            OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
-                            resultFuture.complete(response);
-                        });
-
-                    }
                 }
             }
         };
