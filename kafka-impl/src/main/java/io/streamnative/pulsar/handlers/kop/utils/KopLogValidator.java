@@ -16,8 +16,6 @@ package io.streamnative.pulsar.handlers.kop.utils;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Iterator;
-import kafka.common.LongRef;
-import kafka.message.CompressionCodec;
 import org.apache.kafka.common.errors.InvalidTimestampException;
 import org.apache.kafka.common.errors.UnsupportedForMessageFormatException;
 import org.apache.kafka.common.record.AbstractRecords;
@@ -67,7 +65,6 @@ public class KopLogValidator {
                 return convertAndAssignOffsetsNonCompressed(records,
                         offsetCounter,
                         compactedTopic,
-                        time,
                         now,
                         timestampType,
                         timestampDiffMaxMs,
@@ -89,7 +86,6 @@ public class KopLogValidator {
         } else {
             return validateMessagesAndAssignOffsetsCompressed(records,
                     offsetCounter,
-                    time,
                     now,
                     sourceCodec,
                     targetCodec,
@@ -105,7 +101,6 @@ public class KopLogValidator {
     private static MemoryRecords convertAndAssignOffsetsNonCompressed(MemoryRecords records,
                                                                       LongRef offsetCounter,
                                                                       boolean compactedTopic,
-                                                                      Time time,
                                                                       long now,
                                                                       TimestampType timestampType,
                                                                       long timestampDiffMaxMs,
@@ -202,7 +197,6 @@ public class KopLogValidator {
      */
     private static MemoryRecords validateMessagesAndAssignOffsetsCompressed(MemoryRecords records,
                                                                             LongRef offsetCounter,
-                                                                            Time time,
                                                                             long now,
                                                                             CompressionCodec sourceCodec,
                                                                             CompressionCodec targetCodec,
@@ -220,26 +214,22 @@ public class KopLogValidator {
         ArrayList<Record> validatedRecords = new ArrayList<>();
 
 
-        int uncompressedSizeInBytes = 0;
-
         for (MutableRecordBatch batch : records.batches()) {
             validateBatch(batch, isFromClient, toMagic);
-            uncompressedSizeInBytes += AbstractRecords.recordBatchHeaderSizeInBytes(toMagic, batch.compressionType());
 
             // Do not compress control records unless they are written compressed
-            if (sourceCodec.equals("none") && batch.isControlBatch()) {
+            if (sourceCodec.name().equals("none") && batch.isControlBatch()) {
                 inPlaceAssignment = true;
             }
 
             for (Record record : batch) {
                 validateRecord(batch, record, now, timestampType, timestampDiffMaxMs, compactedTopic);
-                if (!sourceCodec.equals("none") && record.isCompressed()) {
+                if (!sourceCodec.name().equals("none") && record.isCompressed()) {
                     throw new InvalidRecordException(String.format(
                             "Compressed outer record should not have an inner record with a "
                             + "compression attribute set: %s", record));
                 }
 
-                uncompressedSizeInBytes += record.sizeInBytes();
                 if (batch.magic() > RecordBatch.MAGIC_VALUE_V0 && toMagic > RecordBatch.MAGIC_VALUE_V0) {
                     // Check if we need to overwrite offset
                     // No in place assignment situation 3
@@ -261,57 +251,89 @@ public class KopLogValidator {
         }
 
         if (!inPlaceAssignment) {
-            // note that we only reassign offsets for requests coming straight from a producer.
-            // For records with magic V2, there should be exactly one RecordBatch per request,
-            // so the following is all we need to do. For Records
-            // with older magic versions, there will never be a producer id, etc.
-            MutableRecordBatch first = records.batches().iterator().next();
-            long producerId = first.producerId();
-            short producerEpoch = first.producerEpoch();
-            int sequence = first.baseSequence();
-            boolean isTransactional = first.isTransactional();
-
-            return buildRecordsAndAssignOffsets(toMagic,
-                    offsetCounter,
-                    time,
-                    timestampType,
-                    CompressionType.forId(targetCodec.codec()),
-                    now,
+            return buildNoInPlaceAssignment(records,
                     validatedRecords,
-                    producerId,
-                    producerEpoch,
-                    sequence,
-                    isTransactional,
-                    partitionLeaderEpoch,
-                    isFromClient,
-                    uncompressedSizeInBytes);
+                    offsetCounter,
+                    now,
+                    targetCodec,
+                    toMagic,
+                    timestampType,
+                    partitionLeaderEpoch);
         } else {
-            // we can update the batch only and write the compressed payload as is
-            MutableRecordBatch batch = records.batches().iterator().next();
-            long lastOffset = offsetCounter.addAndGet(validatedRecords.size()) - 1;
-
-            batch.setLastOffset(lastOffset);
-
-            if (timestampType == TimestampType.LOG_APPEND_TIME) {
-                maxTimestamp = now;
-            }
-
-            if (toMagic >= RecordBatch.MAGIC_VALUE_V1) {
-                batch.setMaxTimestamp(timestampType, maxTimestamp);
-            }
-
-            if (toMagic >= RecordBatch.MAGIC_VALUE_V2) {
-                batch.setPartitionLeaderEpoch(partitionLeaderEpoch);
-            }
-
-            return records;
+            return buildInPlaceAssignment(records,
+                    validatedRecords,
+                    offsetCounter,
+                    now,
+                    toMagic,
+                    timestampType,
+                    partitionLeaderEpoch,
+                    maxTimestamp);
         }
 
     }
 
+    private static MemoryRecords buildNoInPlaceAssignment(MemoryRecords records,
+                                                          ArrayList<Record> validatedRecords,
+                                                          LongRef offsetCounter,
+                                                          long now,
+                                                          CompressionCodec targetCodec,
+                                                          byte toMagic,
+                                                          TimestampType timestampType,
+                                                          int partitionLeaderEpoch) {
+        // note that we only reassign offsets for requests coming straight from a producer.
+        // For records with magic V2, there should be exactly one RecordBatch per request,
+        // so the following is all we need to do. For Records
+        // with older magic versions, there will never be a producer id, etc.
+        MutableRecordBatch first = records.batches().iterator().next();
+        long producerId = first.producerId();
+        short producerEpoch = first.producerEpoch();
+        int sequence = first.baseSequence();
+        boolean isTransactional = first.isTransactional();
+
+        return buildRecordsAndAssignOffsets(toMagic,
+                offsetCounter,
+                timestampType,
+                CompressionType.forId(targetCodec.codec()),
+                now,
+                validatedRecords,
+                producerId,
+                producerEpoch,
+                sequence,
+                isTransactional,
+                partitionLeaderEpoch);
+    }
+
+    private static MemoryRecords buildInPlaceAssignment(MemoryRecords records,
+                                                        ArrayList<Record> validatedRecords,
+                                                        LongRef offsetCounter,
+                                                        long now,
+                                                        byte toMagic,
+                                                        TimestampType timestampType,
+                                                        int partitionLeaderEpoch,
+                                                        long maxTimestamp) {
+        // we can update the batch only and write the compressed payload as is
+        MutableRecordBatch batch = records.batches().iterator().next();
+        long lastOffset = offsetCounter.addAndGet(validatedRecords.size()) - 1;
+
+        batch.setLastOffset(lastOffset);
+
+        if (timestampType == TimestampType.LOG_APPEND_TIME) {
+            maxTimestamp = now;
+        }
+
+        if (toMagic >= RecordBatch.MAGIC_VALUE_V1) {
+            batch.setMaxTimestamp(timestampType, maxTimestamp);
+        }
+
+        if (toMagic >= RecordBatch.MAGIC_VALUE_V2) {
+            batch.setPartitionLeaderEpoch(partitionLeaderEpoch);
+        }
+
+        return records;
+    }
+
     private static MemoryRecords buildRecordsAndAssignOffsets(byte magic,
                                                               LongRef offsetCounter,
-                                                              Time time,
                                                               TimestampType timestampType,
                                                               CompressionType compressionType,
                                                               long logAppendTime,
@@ -320,9 +342,7 @@ public class KopLogValidator {
                                                               short producerEpoch,
                                                               int baseSequence,
                                                               boolean isTransactional,
-                                                              int partitionLeaderEpoch,
-                                                              boolean isFromClient,
-                                                              int uncompresssedSizeInBytes) {
+                                                              int partitionLeaderEpoch) {
         int estimatedSize = AbstractRecords.estimateSizeInBytes(magic, offsetCounter.value(), compressionType,
                 validatedRecords);
         ByteBuffer buffer = ByteBuffer.allocate(estimatedSize);
@@ -440,5 +460,22 @@ public class KopLogValidator {
         }
     }
 
+    public static class CompressionCodec {
+        private String name;
+        private int codec;
+
+        public CompressionCodec(String name, int codec) {
+            this.name = name;
+            this.codec = codec;
+        }
+
+        public String name() {
+            return name;
+        }
+
+        public int codec() {
+            return codec;
+        }
+    }
 
 }

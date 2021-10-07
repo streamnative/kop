@@ -52,6 +52,7 @@ import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import io.streamnative.pulsar.handlers.kop.utils.LongRef;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
@@ -83,8 +84,6 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import kafka.common.LongRef;
-import kafka.message.CompressionCodec;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
@@ -103,6 +102,7 @@ import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.InvalidRecordException;
@@ -1039,8 +1039,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                 final MemoryRecords finalValidRecords;
                 if (entryFormatter instanceof KafkaEntryFormatter) {
-                    final CompressionCodec sourceCodec = getSourceCodec(validRecords);
-                    final CompressionCodec targetCodec = getTargetCodec(sourceCodec);
+                    final KopLogValidator.CompressionCodec sourceCodec = getSourceCodec(validRecords);
+                    final KopLogValidator.CompressionCodec targetCodec = getTargetCodec(sourceCodec);
 
                     ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
                     long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
@@ -2574,11 +2574,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return validRecords;
     }
 
-    private CompressionCodec getSourceCodec(MemoryRecords records) {
-        AtomicReference<CompressionCodec> sourceCodec =
-                new AtomicReference<>(CompressionCodec.getCompressionCodec("none"));
+    private KopLogValidator.CompressionCodec getSourceCodec(MemoryRecords records) {
+        AtomicReference<KopLogValidator.CompressionCodec> sourceCodec =
+                new AtomicReference<>(new KopLogValidator.CompressionCodec(
+                        CompressionType.NONE.name, CompressionType.NONE.id));
         records.batches().forEach(batch -> {
-            CompressionCodec messageCodec = CompressionCodec.getCompressionCodec(batch.compressionType().id);
+            CompressionType compressionType = CompressionType.forId(batch.compressionType().id);
+            KopLogValidator.CompressionCodec messageCodec = new KopLogValidator.CompressionCodec(
+                    compressionType.name, compressionType.id);
             if (!messageCodec.name().equals("none")) {
                 sourceCodec.set(messageCodec);
             }
@@ -2587,11 +2590,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return sourceCodec.get();
     }
 
-    private CompressionCodec getTargetCodec(CompressionCodec sourceCodec) {
+    private KopLogValidator.CompressionCodec getTargetCodec(KopLogValidator.CompressionCodec sourceCodec) {
         if (brokerCompressionType.equals("producer")) {
             return sourceCodec;
         } else {
-            return CompressionCodec.getCompressionCodec(brokerCompressionType);
+            CompressionType compressionType = CompressionType.forName(brokerCompressionType);
+            return new KopLogValidator.CompressionCodec(compressionType.name, compressionType.id);
         }
     }
 
