@@ -1947,22 +1947,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
 
         Consumer<Runnable> completeOne = (action) -> {
-            try {
-                // When complete one authorization or failed, will do the action first.
-                action.run();
-            } finally {
-                if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
-                    adminManager.describeConfigsAsync(authorizedResources.stream()
-                            .collect(Collectors.toMap(
-                                    resource -> resource,
-                                    resource -> Optional.ofNullable(request.configNames(resource)).map(HashSet::new)
-                            ))
-                    ).thenApply(configResourceConfigMap -> {
-                        configResourceConfigMap.putAll(failedConfigResourceMap);
-                        resultFuture.complete(new DescribeConfigsResponse(0, configResourceConfigMap));
-                        return null;
-                    });
-                }
+            // When complete one authorization or failed, will do the action first.
+            action.run();
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                adminManager.describeConfigsAsync(authorizedResources.stream()
+                        .collect(Collectors.toMap(
+                                resource -> resource,
+                                resource -> Optional.ofNullable(request.configNames(resource)).map(HashSet::new)
+                        ))
+                ).thenApply(configResourceConfigMap -> {
+                    configResourceConfigMap.putAll(failedConfigResourceMap);
+                    resultFuture.complete(new DescribeConfigsResponse(0, configResourceConfigMap));
+                    return null;
+                });
             }
         };
 
