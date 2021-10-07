@@ -50,6 +50,7 @@ import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
@@ -83,7 +84,6 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import kafka.common.LongRef;
-import kafka.log.LogValidator;
 import kafka.message.CompressionCodec;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -1046,8 +1046,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
                     LongRef offset = new LongRef(logEndOffset);
 
-                    LogValidator.ValidationAndOffsetAssignResult validationAndOffsetAssignResult =
-                            LogValidator.validateMessagesAndAssignOffsets(validRecords,
+                    finalValidRecords = KopLogValidator.validateMessagesAndAssignOffsets(validRecords,
                                     offset,
                                     Time.SYSTEM,
                                     System.currentTimeMillis(),
@@ -1059,7 +1058,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     Long.MAX_VALUE,
                                     RecordBatch.NO_PARTITION_LEADER_EPOCH,
                                     true);
-                    finalValidRecords = validationAndOffsetAssignResult.validatedRecords();
                 } else {
                     finalValidRecords = validRecords;
                 }
