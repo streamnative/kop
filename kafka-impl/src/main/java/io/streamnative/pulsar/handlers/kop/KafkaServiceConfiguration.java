@@ -384,7 +384,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "KOP server compression type. If it's not set to producer. "
+            doc = "KOP server compression type. Only used for entryFormat=kafka. If it's not set to producer. "
                     + "The client messages will be used compression type which configured in here."
     )
     private String kafkaCompressionType = "producer";
