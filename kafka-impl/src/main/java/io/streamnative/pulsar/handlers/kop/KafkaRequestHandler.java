@@ -2051,23 +2051,20 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(partitionsToAdd.size());
         Consumer<Runnable> completeOne = (action) -> {
-            try {
-                action.run();
-            } finally {
-                if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
-                    if (!unauthorizedTopicErrors.isEmpty() || !nonExistingTopicErrors.isEmpty()) {
-                        Map<TopicPartition, Errors> partitionErrors = Maps.newHashMap();
-                        partitionErrors.putAll(unauthorizedTopicErrors);
-                        partitionErrors.putAll(nonExistingTopicErrors);
-                        for (TopicPartition topicPartition : authorizedPartitions) {
-                            partitionErrors.put(topicPartition, Errors.OPERATION_NOT_ATTEMPTED);
-                        }
-                        response.complete(new AddPartitionsToTxnResponse(0, partitionErrors));
-                    } else {
-                        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
-                        transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
-                                request.producerId(), request.producerEpoch(), partitionsToAdd, response);
+            action.run();
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                if (!unauthorizedTopicErrors.isEmpty() || !nonExistingTopicErrors.isEmpty()) {
+                    Map<TopicPartition, Errors> partitionErrors = Maps.newHashMap();
+                    partitionErrors.putAll(unauthorizedTopicErrors);
+                    partitionErrors.putAll(nonExistingTopicErrors);
+                    for (TopicPartition topicPartition : authorizedPartitions) {
+                        partitionErrors.put(topicPartition, Errors.OPERATION_NOT_ATTEMPTED);
                     }
+                    response.complete(new AddPartitionsToTxnResponse(0, partitionErrors));
+                } else {
+                    TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
+                    transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
+                            request.producerId(), request.producerEpoch(), partitionsToAdd, response);
                 }
             }
         };
