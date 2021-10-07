@@ -1047,17 +1047,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     LongRef offset = new LongRef(logEndOffset);
 
                     finalValidRecords = KopLogValidator.validateMessagesAndAssignOffsets(validRecords,
-                                    offset,
-                                    Time.SYSTEM,
-                                    System.currentTimeMillis(),
-                                    sourceCodec,
-                                    targetCodec,
-                                    false,
-                                    RecordBatch.MAGIC_VALUE_V2,
-                                    TimestampType.CREATE_TIME,
-                                    Long.MAX_VALUE,
-                                    RecordBatch.NO_PARTITION_LEADER_EPOCH,
-                                    true);
+                            offset,
+                            System.currentTimeMillis(),
+                            sourceCodec,
+                            targetCodec,
+                            false,
+                            RecordBatch.MAGIC_VALUE_V2,
+                            TimestampType.CREATE_TIME,
+                            Long.MAX_VALUE);
                 } else {
                     finalValidRecords = validRecords;
                 }
