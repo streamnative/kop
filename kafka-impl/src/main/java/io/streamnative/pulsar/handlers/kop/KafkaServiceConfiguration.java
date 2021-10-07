@@ -382,6 +382,13 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private Set<String> kopAllowedNamespaces;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "KOP server compression type. If it's not set to producer. "
+                    + "The client messages will be used compression type which configured in here."
+    )
+    private String kafkaCompressionType = "producer";
+
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();
         for (String listener : advertisedListeners.split(EndPoint.END_POINT_SEPARATOR)) {

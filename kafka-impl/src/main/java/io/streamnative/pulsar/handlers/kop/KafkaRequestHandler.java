@@ -76,14 +76,19 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import kafka.common.LongRef;
+import kafka.log.LogValidator;
+import kafka.message.CompressionCodec;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
+import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
@@ -103,6 +108,7 @@ import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
@@ -233,6 +239,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final long resumeThresholdPendingBytes;
     private final AtomicLong pendingBytes = new AtomicLong(0);
     private volatile boolean autoReadDisabledPublishBufferLimiting = false;
+    private final String brokerCompressionType;
 
     private String getCurrentTenant() {
         if (kafkaConfig.isKafkaEnableMultiTenantMetadata()
@@ -312,6 +319,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
         this.failedAuthenticationDelayMs = kafkaConfig.getFailedAuthenticationDelayMs();
+        this.brokerCompressionType = kafkaConfig.getKafkaCompressionType();
 
         // update alive channel count stats
         RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
@@ -1007,17 +1015,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             final long beforeRecordsProcess = MathUtils.nowInNano();
             final MemoryRecords validRecords =
                     validateRecords(produceHar.getHeader().apiVersion(), topicPartition, records);
-            final int numMessages = EntryFormatter.parseNumMessages(validRecords);
-            final ByteBuf byteBuf = entryFormatter.encode(validRecords, numMessages);
-            requestStats.getProduceEncodeStats().registerSuccessfulEvent(
-                    MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
-            startSendOperationForThrottling(byteBuf.readableBytes());
-
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Request {}: Produce messages for topic {} partition {}, "
-                                + "request size: {} ", ctx.channel(), produceHar.getHeader(),
-                        topicPartition.topic(), topicPartition.partition(), numPartitions);
-            }
+            final CompressionCodec sourceCodec = getSourceCodec(validRecords);
+            final CompressionCodec targetCodec = getTargetCodec(sourceCodec);
 
             final CompletableFuture<Optional<PersistentTopic>> topicFuture =
                     topicManager.getTopic(fullPartitionName);
@@ -1034,7 +1033,41 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
 
             final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
-                publishMessages(persistentTopicOpt, byteBuf, numMessages, validRecords, topicPartition,
+                if (!persistentTopicOpt.isPresent()) {
+                    errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
+                    return;
+                }
+                ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
+                long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
+                LongRef offset = new LongRef(logEndOffset);
+
+                LogValidator.ValidationAndOffsetAssignResult validationAndOffsetAssignResult =
+                        LogValidator.validateMessagesAndAssignOffsets(validRecords,
+                                offset,
+                                Time.SYSTEM,
+                                System.currentTimeMillis(),
+                                sourceCodec,
+                                targetCodec,
+                                false,
+                                RecordBatch.MAGIC_VALUE_V2,
+                                TimestampType.CREATE_TIME,
+                                Long.MAX_VALUE,
+                                RecordBatch.NO_PARTITION_LEADER_EPOCH,
+                                true);
+                final MemoryRecords finalValidRecords = validationAndOffsetAssignResult.validatedRecords();
+                final int numMessages = EntryFormatter.parseNumMessages(finalValidRecords);
+                final ByteBuf byteBuf = entryFormatter.encode(finalValidRecords, numMessages);
+                requestStats.getProduceEncodeStats().registerSuccessfulEvent(
+                        MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
+                startSendOperationForThrottling(byteBuf.readableBytes());
+
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Request {}: Produce messages for topic {} partition {}, "
+                                    + "request size: {} ", ctx.channel(), produceHar.getHeader(),
+                            topicPartition.topic(), topicPartition.partition(), numPartitions);
+                }
+
+                publishMessages(persistentTopicOpt, byteBuf, numMessages, finalValidRecords, topicPartition,
                         offsetConsumer, errorsConsumer);
             };
 
@@ -2532,6 +2565,27 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
 
         return validRecords;
+    }
+
+    private CompressionCodec getSourceCodec(MemoryRecords records) {
+        AtomicReference<CompressionCodec> sourceCodec =
+                new AtomicReference<>(CompressionCodec.getCompressionCodec("none"));
+        records.batches().forEach(batch -> {
+            CompressionCodec messageCodec = CompressionCodec.getCompressionCodec(batch.compressionType().id);
+            if (!messageCodec.name().equals("none")) {
+                sourceCodec.set(messageCodec);
+            }
+        });
+
+        return sourceCodec.get();
+    }
+
+    private CompressionCodec getTargetCodec(CompressionCodec sourceCodec) {
+        if (brokerCompressionType.equals("producer")) {
+            return sourceCodec;
+        } else {
+            return CompressionCodec.getCompressionCodec(brokerCompressionType);
+        }
     }
 
     private void updateProducerStats(final TopicPartition topicPartition, final int numMessages, final int numBytes) {
