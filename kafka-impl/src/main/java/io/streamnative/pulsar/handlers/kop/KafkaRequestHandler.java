@@ -39,6 +39,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.format.KafkaEntryFormatter;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -1015,8 +1016,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             final long beforeRecordsProcess = MathUtils.nowInNano();
             final MemoryRecords validRecords =
                     validateRecords(produceHar.getHeader().apiVersion(), topicPartition, records);
-            final CompressionCodec sourceCodec = getSourceCodec(validRecords);
-            final CompressionCodec targetCodec = getTargetCodec(sourceCodec);
 
             final CompletableFuture<Optional<PersistentTopic>> topicFuture =
                     topicManager.getTopic(fullPartitionName);
@@ -1037,24 +1036,34 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
                     return;
                 }
-                ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
-                long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
-                LongRef offset = new LongRef(logEndOffset);
 
-                LogValidator.ValidationAndOffsetAssignResult validationAndOffsetAssignResult =
-                        LogValidator.validateMessagesAndAssignOffsets(validRecords,
-                                offset,
-                                Time.SYSTEM,
-                                System.currentTimeMillis(),
-                                sourceCodec,
-                                targetCodec,
-                                false,
-                                RecordBatch.MAGIC_VALUE_V2,
-                                TimestampType.CREATE_TIME,
-                                Long.MAX_VALUE,
-                                RecordBatch.NO_PARTITION_LEADER_EPOCH,
-                                true);
-                final MemoryRecords finalValidRecords = validationAndOffsetAssignResult.validatedRecords();
+                final MemoryRecords finalValidRecords;
+                if (entryFormatter instanceof KafkaEntryFormatter) {
+                    final CompressionCodec sourceCodec = getSourceCodec(validRecords);
+                    final CompressionCodec targetCodec = getTargetCodec(sourceCodec);
+
+                    ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
+                    long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
+                    LongRef offset = new LongRef(logEndOffset);
+
+                    LogValidator.ValidationAndOffsetAssignResult validationAndOffsetAssignResult =
+                            LogValidator.validateMessagesAndAssignOffsets(validRecords,
+                                    offset,
+                                    Time.SYSTEM,
+                                    System.currentTimeMillis(),
+                                    sourceCodec,
+                                    targetCodec,
+                                    false,
+                                    RecordBatch.MAGIC_VALUE_V2,
+                                    TimestampType.CREATE_TIME,
+                                    Long.MAX_VALUE,
+                                    RecordBatch.NO_PARTITION_LEADER_EPOCH,
+                                    true);
+                    finalValidRecords = validationAndOffsetAssignResult.validatedRecords();
+                } else {
+                    finalValidRecords = validRecords;
+                }
+
                 final int numMessages = EntryFormatter.parseNumMessages(finalValidRecords);
                 final ByteBuf byteBuf = entryFormatter.encode(finalValidRecords, numMessages);
                 requestStats.getProduceEncodeStats().registerSuccessfulEvent(
