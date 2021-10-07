@@ -41,8 +41,8 @@ import org.apache.pulsar.common.configuration.FieldContext;
 @Setter
 public class KafkaServiceConfiguration extends ServiceConfiguration {
 
-    public static String TENANT_PLACEHOLDER = "${tenant}";
-    public static String TENANT_ALLNAMESPACES_PLACEHOLDER = "*";
+    public static final String TENANT_PLACEHOLDER = "${tenant}";
+    public static final String TENANT_ALLNAMESPACES_PLACEHOLDER = "*";
 
 
     // Group coordinator configuration

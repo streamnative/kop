@@ -293,7 +293,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 throw new IllegalArgumentException(
                         "Invalid namespace '" + fullNamespace + "' in kopAllowedNamespaces config");
             }
-            NamespaceName.validateNamespaceName(tokens[0].replace(KafkaServiceConfiguration.TENANT_PLACEHOLDER, kafkaConfig.getKafkaTenant()),
+            NamespaceName.validateNamespaceName(
+                    tokens[0].replace(KafkaServiceConfiguration.TENANT_PLACEHOLDER, kafkaConfig.getKafkaTenant()),
                     tokens[1].replace("*", kafkaConfig.getKafkaNamespace()));
         }
 

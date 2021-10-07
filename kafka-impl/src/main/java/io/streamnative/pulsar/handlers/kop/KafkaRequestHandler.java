@@ -190,6 +190,7 @@ import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 @Getter
 public class KafkaRequestHandler extends KafkaCommandDecoder {
     public static final long DEFAULT_TIMESTAMP = 0L;
+    private static final String POLICY_ROOT = "/admin/policies/";
 
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
@@ -477,8 +478,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 || partitionedTopicName.endsWith("/" + TRANSACTION_STATE_TOPIC_NAME);
     }
 
-    private static final String POLICY_ROOT = "/admin/policies/";
-
     private static String path(String... parts) {
         StringBuilder sb = new StringBuilder();
         sb.append(POLICY_ROOT);
@@ -488,7 +487,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces) {
         String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
-        return expandAllowedNamespaces(allowedNamespaces,currentTenant, pulsarService);
+        return expandAllowedNamespaces(allowedNamespaces, currentTenant, pulsarService);
     }
 
     @VisibleForTesting
@@ -529,7 +528,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private CompletableFuture<Map<String, List<TopicName>>> getAllTopicsAsync() {
         CompletableFuture<Map<String, List<TopicName>>> topicMapFuture = new CompletableFuture<>();
         final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
-        final CompletableFuture<Set<String>> allowedNamespacesFuture = expandAllowedNamespaces(kafkaConfig.getKopAllowedNamespaces());
+        final CompletableFuture<Set<String>> allowedNamespacesFuture =
+                expandAllowedNamespaces(kafkaConfig.getKopAllowedNamespaces());
 
         allowedNamespacesFuture.thenAccept(allowedNamespaces -> {
             final AtomicInteger pendingNamespacesCount = new AtomicInteger(allowedNamespaces.size());
