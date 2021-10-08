@@ -26,6 +26,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
@@ -36,6 +37,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
@@ -48,6 +50,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
@@ -433,5 +436,61 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         for (int i = 0; i < numConsumers; i++) {
             assertEquals(tcmList.get(i).getNumCreatedCursors(), 0);
         }
+    }
+
+    // KafkaTopicManager#close should only remove TCM cache for the specific address
+    @Test(timeOut = 20000)
+    public void testTopicManagerClose() throws Exception {
+        final String topic = "test-topic-manager-close";
+        final int numPartitions = 2;
+        admin.topics().createPartitionedTopic(topic, numPartitions);
+
+        final List<KafkaConsumer<String, String>> consumers = new ArrayList<>();
+        for (int i = 0; i < numPartitions; i++) {
+            consumers.add(new KafkaConsumer<>(newKafkaConsumerProperties()));
+            consumers.get(i).assign(Collections.singleton(new TopicPartition(topic, i)));
+        }
+
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+        for (int i = 0; i < numPartitions; i++) {
+            producer.send(new ProducerRecord<>(topic, i, null, "msg-" + i)).get();
+            final ConsumerRecords<String, String> records = consumers.get(i).poll(Duration.ofSeconds(1));
+            Assert.assertEquals(records.count(), 1);
+            Assert.assertEquals(records.iterator().next().value(), "msg-" + i);
+        }
+
+        final Function<Integer, KafkaTopicConsumerManager> getTcmForPartition = partition -> {
+            final String fullTopicName = new KopTopic(topic).getPartitionName(partition);
+            final List<KafkaTopicConsumerManager> tcmList =
+                    KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(fullTopicName);
+            return tcmList.isEmpty() ? null : tcmList.get(0);
+        };
+
+        final List<KafkaTopicConsumerManager> originalTcmList = new ArrayList<>();
+        for (int i = 0; i < numPartitions; i++) {
+            final KafkaTopicConsumerManager tcm = getTcmForPartition.apply(i);
+            Assert.assertNotNull(tcm);
+            Assert.assertFalse(tcm.isClosed());
+            originalTcmList.add(tcm);
+        }
+
+        producer.close(); // trigger KafkaTopicManager#close but the TCM cache was not affected
+        Assert.assertSame(getTcmForPartition.apply(0), originalTcmList.get(0));
+        Assert.assertFalse(originalTcmList.get(0).isClosed());
+        Assert.assertSame(getTcmForPartition.apply(1), originalTcmList.get(1));
+        Assert.assertFalse(originalTcmList.get(1).isClosed());
+
+        consumers.get(1).close(); // trigger KafkaTopicManager#close, only the partition 1 related cache was removed
+        Assert.assertSame(getTcmForPartition.apply(0), originalTcmList.get(0));
+        Assert.assertFalse(originalTcmList.get(0).isClosed());
+        // The tcm of partition 1 was closed and it was removed from cache
+        Assert.assertNull(getTcmForPartition.apply(1));
+        Assert.assertTrue(originalTcmList.get(1).isClosed());
+
+        consumers.get(0).close(); // Now all TCM cache was cleared
+        Assert.assertNull(getTcmForPartition.apply(0));
+        Assert.assertNull(getTcmForPartition.apply(1));
+        Assert.assertTrue(originalTcmList.get(0).isClosed());
+        Assert.assertTrue(originalTcmList.get(1).isClosed());
     }
 }
