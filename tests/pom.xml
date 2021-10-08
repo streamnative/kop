@@ -52,11 +52,19 @@
       <version>${kafka.version}</version>
     </dependency>
     <!-- test dependencies -->
+
+    <dependency>
+      <groupId>org.codehaus.jackson</groupId>
+      <artifactId>jackson-mapper-asl</artifactId>
+      <version>1.9.13</version>
+      <scope>test</scope>
+    </dependency>
+
     <dependency>
       <groupId>io.streamnative.pulsar.handlers</groupId>
       <artifactId>pulsar-protocol-handler-kafka</artifactId>
       <version>${project.version}</version>
-      <scope>test</scope>
+
     </dependency>
 
     <dependency>

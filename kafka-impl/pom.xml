@@ -32,7 +32,11 @@
 
   <!-- include the dependencies -->
   <dependencies>
-    <!-- runtime dependencies -->
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <version>${project.version}</version>
+      <artifactId>pulsar-kafka-schema-registry</artifactId>
+    </dependency>
   </dependencies>
 
   <build>

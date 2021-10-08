@@ -48,6 +48,11 @@ public class MetadataUtils {
                 + "/" + Topic.TRANSACTION_STATE_TOPIC_NAME;
     }
 
+    public static String constructSchemaRegistryTopicName(String tenant, KafkaServiceConfiguration conf) {
+        return tenant + "/" + conf.getKafkaMetadataNamespace()
+                + "/" + conf.getKopSchemaRegistryTopicName();
+    }
+
     public static void createOffsetMetadataIfMissing(String tenant, PulsarAdmin pulsarAdmin,
                                                      ClusterData clusterData,
                                                      KafkaServiceConfiguration conf)
@@ -63,6 +68,16 @@ public class MetadataUtils {
                                                   KafkaServiceConfiguration conf)
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructTxnLogTopicBaseName(tenant, conf));
+        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
+                conf.getTxnLogTopicNumPartitions());
+    }
+
+    public static void createSchemaRegistryMetadataIfMissing(String tenant,
+                                                  PulsarAdmin pulsarAdmin,
+                                                  ClusterData clusterData,
+                                                  KafkaServiceConfiguration conf)
+            throws PulsarAdminException {
+        KopTopic kopTopic = new KopTopic(constructSchemaRegistryTopicName(tenant, conf));
         createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
                 conf.getTxnLogTopicNumPartitions());
     }

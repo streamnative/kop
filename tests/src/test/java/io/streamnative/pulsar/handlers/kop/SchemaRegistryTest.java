@@ -37,8 +37,6 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.Factory;
-import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 /**
@@ -49,16 +47,8 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
 
     private String bootstrapServers;
 
-    public SchemaRegistryTest(final String entryFormat) {
-        super(entryFormat);
-    }
-
-    @Factory
-    public static Object[] instances() {
-        return new Object[] {
-                new SchemaRegistryTest("pulsar"),
-                new SchemaRegistryTest("kafka")
-        };
+    public SchemaRegistryTest() {
+        super("pulsar");
     }
 
     @BeforeMethod
@@ -69,7 +59,7 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
         bootstrapServers = "localhost:" + getKafkaBrokerPort();
     }
 
-    @BeforeMethod
+    @BeforeMethod(alwaysRun = true)
     @Override
     protected void cleanup() throws Exception {
         this.internalCleanup();
@@ -105,7 +95,6 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
         return new KafkaConsumer<>(props);
     }
 
-    @Ignore
     @Test(timeOut = 40000)
     public void testAvroProduceAndConsume() throws Exception {
         String topic = "SchemaRegistryTest-testAvroProduceAndConsume";
@@ -122,8 +111,9 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
                 }
                 log.info("Success send {} to {}-partition-{}@{}",
                         object, metadata.topic(), metadata.partition(), metadata.offset());
-            });
+            }).get();
         }
+        producer.close();
 
         @Cleanup
         KafkaConsumer<Integer, Object> consumer = createAvroConsumer();
@@ -136,5 +126,6 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
                 i++;
             }
         }
+        consumer.close();
     }
 }

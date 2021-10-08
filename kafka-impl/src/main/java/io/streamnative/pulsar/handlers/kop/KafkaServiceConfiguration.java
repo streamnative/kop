@@ -388,6 +388,24 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private Set<String> kopAllowedNamespaces;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Start the Schema Registry service."
+    )
+    private boolean kopSchemaRegistryEnable = false;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "The name of the topic used by the Schema Registry service."
+    )
+    private String kopSchemaRegistryTopicName = "__schema-registry";
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Schema Registry port."
+    )
+    private int kopSchemaRegistryPort = 8001;
+
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();
         for (String listener : advertisedListeners.split(EndPoint.END_POINT_SEPARATOR)) {

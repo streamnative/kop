@@ -82,6 +82,7 @@
     <module>kafka-3-0</module>
     <module>kafka-client-api</module>
     <module>kafka-client-factory</module>
+    <module>schema-registry</module>
     <module>kafka-impl</module>
     <module>oauth-client</module>
     <module>tests</module>
