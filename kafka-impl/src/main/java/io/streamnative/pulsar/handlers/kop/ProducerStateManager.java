@@ -31,8 +31,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.SystemTopicProducerStateClient.SystemTopicProducerStateReader;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.SystemTopicProducerStateClient.SystemTopicProducerStateWriter;
+import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+import io.streamnative.pulsar.handlers.kop.utils.OffsetSearchPredicate;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -83,10 +85,10 @@ public class ProducerStateManager {
     private State state;
 
     /** snapshot and recover **/
-    private CompletableFuture<SystemTopicProducerStateWriter> snapshotWriter;
-    private CompletableFuture<SystemTopicProducerStateReader> snapshotReader;
+    private final CompletableFuture<SystemTopicProducerStateWriter> snapshotWriter;
+    private final CompletableFuture<SystemTopicProducerStateReader> snapshotReader;
     private CompletableFuture<Optional<Topic>> topicFuture;
-    private EntryFormatter entryFormatter;
+    private final EntryFormatter entryFormatter;
 
     private final short ProducerSnapshotVersion = 1;
 
@@ -114,16 +116,20 @@ public class ProducerStateManager {
             new Field(ProducerEpochField, Type.INT16, "Current epoch of the producer"),
             new Field(LastSequenceField, Type.INT32, "Last written sequence of the producer"),
             new Field(LastOffsetField, Type.INT64, "Last written offset of the producer"),
-            new Field(OffsetDeltaField, Type.INT32, "The difference of the last sequence and first sequence in the last written batch"),
+            new Field(OffsetDeltaField, Type.INT32,
+                    "The difference of the last sequence and first sequence in the last written batch"),
             new Field(TimestampField, Type.INT64, "Max timestamp from the last written entry"),
-            new Field(CoordinatorEpochField, Type.INT32, "The epoch of the last transaction coordinator to send an end transaction marker"),
-            new Field(CurrentTxnFirstOffsetField, Type.INT64, "The first offset of the on-going transaction (-1 if there is none)"));
+            new Field(CoordinatorEpochField, Type.INT32,
+                    "The epoch of the last transaction coordinator to send an end transaction marker"),
+            new Field(CurrentTxnFirstOffsetField, Type.INT64,
+                    "The first offset of the on-going transaction (-1 if there is none)"));
 
     private final Schema PidSnapshotMapSchema = new Schema(
             new Field(VersionField, Type.INT16, "Version of the snapshot file"),
             new Field(CrcField, Type.UNSIGNED_INT32, "CRC of the snapshot data"),
             new Field(SnapshotOffset, Type.INT64, "The snapshot offset"),
-            new Field(ProducerEntriesField, new ArrayOf(ProducerSnapshotEntrySchema), "The entries in the producer table"));
+            new Field(ProducerEntriesField, new ArrayOf(ProducerSnapshotEntrySchema),
+                    "The entries in the producer table"));
 
     /**
      * ProducerStateManage state.
@@ -419,8 +425,10 @@ public class ProducerStateManager {
         }
 
         private void checkSequence(Short producerEpoch, Integer appendFirstSeq) {
-            log.info("append data batch checkSequence producerEpoch: {}, appendFirstSeq: {}",
-                    producerEpoch, appendFirstSeq);
+            if (log.isDebugEnabled()) {
+                log.debug("append data batch checkSequence producerEpoch: {}, appendFirstSeq: {}",
+                        producerEpoch, appendFirstSeq);
+            }
             if (!producerEpoch.equals(updatedEntry.producerEpoch)) {
                 if (appendFirstSeq != 0 && updatedEntry.producerEpoch != RecordBatch.NO_PRODUCER_EPOCH) {
                     String msg = String.format("Invalid sequence number for new epoch in partition %s: %s "
@@ -451,7 +459,9 @@ public class ProducerStateManager {
         }
 
         private Boolean inSequence(Integer lastSeq, Integer nextSeq) {
-            log.info("append data batch lastSeq: {}, nextSeq: {}", lastSeq, nextSeq);
+            if (log.isDebugEnabled()) {
+                log.debug("check sequence lastSeq: {}, nextSeq: {}.", lastSeq, nextSeq);
+            }
             return nextSeq == lastSeq + 1L || (nextSeq == 0 && lastSeq == Integer.MAX_VALUE);
         }
 
@@ -477,8 +487,10 @@ public class ProducerStateManager {
 
         public void appendDataBatch(Short epoch, Integer firstSeq, Integer lastSeq, Long lastTimestamp,
                             Long firstOffset, Long lastOffset, Boolean isTransactional) {
-            log.info("append data batch epoch: {}, firstSeq: {}, lastSeq: {}, firstOffset: {}, lastOffset: {}",
-                    epoch, firstSeq, lastSeq, firstOffset, lastOffset);
+            if (log.isDebugEnabled()) {
+                log.debug("append data batch epoch: {}, firstSeq: {}, lastSeq: {}, firstOffset: {}, lastOffset: {}",
+                        epoch, firstSeq, lastSeq, firstOffset, lastOffset);
+            }
             maybeValidateDataBatch(epoch, firstSeq);
             updatedEntry.addBatch(epoch, lastSeq, lastOffset, (int) (lastOffset - firstOffset), lastTimestamp);
 
@@ -537,7 +549,9 @@ public class ProducerStateManager {
         }
 
         public void resetOffset(long baseOffset, boolean isTransactional) {
-            log.info("append data batch reset offset: {}", baseOffset);
+            if (log.isDebugEnabled()) {
+                log.debug("append data batch reset offset: {}", baseOffset);
+            }
             short producerEpoch = updatedEntry.producerEpoch;
             BatchMetadata batchMetadata = updatedEntry.batchMetadata.pollFirst();
             if (batchMetadata == null) {
@@ -573,6 +587,10 @@ public class ProducerStateManager {
         private Map<Long, ProducerAppendInfo> appendInfoMap;
         private List<CompletedTxn> completedTxnList;
         private Optional<BatchMetadata> batchMetadata;
+
+        public Optional<ProducerAppendInfo> getFirstAppendInfo() {
+            return appendInfoMap.values().stream().findFirst();
+        }
     }
 
     public ProducerStateManager(String topicPartition,
@@ -683,12 +701,14 @@ public class ProducerStateManager {
      * Update the mapping with the given append information.
      */
     public void update(ProducerAppendInfo appendInfo) {
+        if (log.isDebugEnabled()) {
+            log.debug("Updated producer {} state to {}", appendInfo.producerId, appendInfo);
+        }
         if (appendInfo.producerId == RecordBatch.NO_PRODUCER_ID) {
             throw new IllegalArgumentException("Invalid producer id ${appendInfo.producerId} passed to update for "
                     + "partition " + topicPartition);
         }
 
-        log.info("Updated producer {} state to {}", appendInfo.producerId, appendInfo);
         ProducerStateEntry updatedEntry = appendInfo.toEntry();
 
         producers.compute(appendInfo.producerId, (pid, stateEntry) -> {
@@ -840,7 +860,7 @@ public class ProducerStateManager {
                 throw new Exception("Snapshot contained an unknown file version " + version);
             }
 
-            long snapshotOffset = struct.getLong(SnapshotOffset);
+            this.lastMapOffset = struct.getLong(SnapshotOffset);
             long crc = struct.getUnsignedInt(CrcField);
             long computedCrc =  Crc32C.compute(bytes, ProducerEntriesOffset, bytes.length - ProducerEntriesOffset);
             if (crc != computedCrc) {
@@ -892,19 +912,26 @@ public class ProducerStateManager {
         }
         CompletableFuture<Void> completableFuture = new CompletableFuture<>();
         loadFromSnapshot().thenAccept(ignored -> {
-            PositionImpl startPos = MessageIdUtils.getPositionForOffset(managedLedger, this.lastMapOffset);
-            try {
-                ManagedCursor cursor = managedLedger.newNonDurableCursor(startPos, "producer-state-recover");
-                ProducerStateLogRecovery recovery = new ProducerStateLogRecovery(cursor, 100);
-                recovery.recover();
-                state = State.READY;
-                completableFuture.complete(null);
-                log.info("Finish recover fo topic {}", topicPartition);
-            } catch (ManagedLedgerException e) {
-                state = State.RECOVER_ERROR;
-                log.error("Failed to open non durable cursor for topic {}.", topicPartition, e);
-                completableFuture.completeExceptionally(e);
-            }
+            managedLedger.asyncFindPosition(new OffsetSearchPredicate(this.lastMapOffset)).thenAccept(pos -> {
+                try {
+                    ManagedCursor cursor = managedLedger.newNonDurableCursor(pos, "producer-state-recover");
+                    ProducerStateLogRecovery recovery = new ProducerStateLogRecovery(cursor, 100);
+                    recovery.recover();
+                    state = State.READY;
+                    completableFuture.complete(null);
+                    log.info("Finish recover fo topic {}", topicPartition);
+                } catch (ManagedLedgerException e) {
+                    state = State.RECOVER_ERROR;
+                    log.error("Failed to open non durable cursor for topic {}.", topicPartition, e);
+                    completableFuture.completeExceptionally(e);
+                }
+            }).exceptionally(findSnapshotPosThrowable -> {
+                completableFuture.completeExceptionally(findSnapshotPosThrowable);
+                return null;
+            });
+        }).exceptionally(loadSnapshotThrowable -> {
+            completableFuture.completeExceptionally(loadSnapshotThrowable);
+            return null;
         });
         return completableFuture;
     }
@@ -965,10 +992,10 @@ public class ProducerStateManager {
                     List<Entry> entryList = new ArrayList<>(readEntryList);
                     readEntryList.clear();
                     fillCacheQueue();
-                    MemoryRecords records = entryFormatter.decode(entryList, RecordBatch.CURRENT_MAGIC_VALUE);
+                    DecodeResult decodeResult = entryFormatter.decode(entryList, RecordBatch.CURRENT_MAGIC_VALUE);
                     Map<Long, ProducerAppendInfo> appendInfoMap = new HashMap<>();
                     List<CompletedTxn> completedTxns = new ArrayList<>();
-                    records.batches().forEach(batch -> {
+                    decodeResult.getRecords().batches().forEach(batch -> {
                         Optional<CompletedTxn> completedTxn =
                                 updateProducers(batch, appendInfoMap, Optional.empty(), AppendOrigin.Log);
                         completedTxn.ifPresent(completedTxns::add);

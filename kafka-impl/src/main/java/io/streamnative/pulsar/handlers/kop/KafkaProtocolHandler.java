@@ -97,9 +97,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
     private final Map<String, KopEventManager> kopEventManagerByTenant = new ConcurrentHashMap<>();
-
-    @Getter
-    private BrokerProducerStateManager brokerProducerStateManager;
+    private final Map<String, ProducerStateManagerCache> producerStateManagerByTenant = new ConcurrentHashMap<>();
 
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -109,6 +107,20 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public TransactionCoordinator getTransactionCoordinator(String tenant) {
         return transactionCoordinatorByTenant.computeIfAbsent(tenant, this::createAndBootTransactionCoordinator);
+    }
+
+    public ProducerStateManagerCache getProducerStateManagerCache(String tenant) {
+        return producerStateManagerByTenant.computeIfAbsent(tenant, s -> {
+            try {
+                SystemTopicClientFactory systemTopicClientFactory =
+                        new SystemTopicClientFactory(brokerService.getPulsar().getClient());
+                return new ProducerStateManagerCache(
+                        kafkaConfig.getMaxProducerIdExpirationMs(), systemTopicClientFactory, kafkaConfig.getEntryFormat());
+            } catch (Exception e) {
+                log.error("Failed to init BrokerProducerStateManager for tenant {}", tenant, e);
+                throw new IllegalStateException(e);
+            }
+        });
     }
 
     /**
@@ -317,15 +329,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         brokerService = service;
         kopBrokerLookupManager = new KopBrokerLookupManager(
                 brokerService.getPulsar(), false, kafkaConfig.getKafkaAdvertisedListeners());
-        try {
-            SystemTopicClientFactory systemTopicClientFactory =
-                    new SystemTopicClientFactory(service.getPulsar().getClient());
-            brokerProducerStateManager = new BrokerProducerStateManager(
-                    kafkaConfig.getMaxProducerIdExpirationMs(), systemTopicClientFactory, kafkaConfig.getEntryFormat());
-        } catch (PulsarServerException e) {
-            log.error("Failed to create pulsar client.", e);
-            throw new IllegalStateException(e);
-        }
 
         log.info("Starting KafkaProtocolHandler, kop version is: '{}'", KopVersion.getVersion());
         log.info("Git Revision {}", KopVersion.getGitSha());
@@ -468,13 +471,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, this, adminManager, false,
-                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache, brokerProducerStateManager));
+                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, this, adminManager, true,
-                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache, brokerProducerStateManager));
+                                advertisedEndPoint, scopeStatsLogger, localBrokerDataCache));
                         break;
                 }
             });

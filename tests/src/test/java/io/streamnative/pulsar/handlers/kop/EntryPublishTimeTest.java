@@ -54,6 +54,8 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
                 .getGroupCoordinator(conf.getKafkaMetadataTenant());
         TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler)
                 .getTransactionCoordinator(conf.getKafkaMetadataTenant());
+        ProducerStateManagerCache producerStateManagerCache =
+                ((KafkaProtocolHandler) handler).getProducerStateManagerCache(conf.getKafkaTenant());
 
         adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         kafkaRequestHandler = new KafkaRequestHandler(
@@ -68,6 +70,11 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
                     @Override
                     public TransactionCoordinator getTransactionCoordinator(String tenant) {
                         return transactionCoordinator;
+                    }
+
+                    @Override
+                    public ProducerStateManagerCache getProducerStateManagerCache(String tenant) {
+                        return producerStateManagerCache;
                     }
                 },
                 adminManager,

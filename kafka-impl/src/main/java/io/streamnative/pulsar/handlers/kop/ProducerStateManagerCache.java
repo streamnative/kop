@@ -26,14 +26,14 @@ import org.apache.pulsar.broker.systopic.SystemTopicClient;
 /**
  * Broker producer state manager.
  */
-public class BrokerProducerStateManager {
+public class ProducerStateManagerCache {
 
     private final Map<String, ProducerStateManager> producerStateManagerMap;
     private final int maxProducerIdExpirationMs;
     private final SystemTopicClientFactory systemTopicClientFactory;
     private final String format;
 
-    public BrokerProducerStateManager(int maxProducerIdExpirationMs, SystemTopicClientFactory systemTopicClientFactory, String format) {
+    public ProducerStateManagerCache(int maxProducerIdExpirationMs, SystemTopicClientFactory systemTopicClientFactory, String format) {
         producerStateManagerMap = Maps.newConcurrentMap();
         this.maxProducerIdExpirationMs = maxProducerIdExpirationMs;
         this.systemTopicClientFactory = systemTopicClientFactory;

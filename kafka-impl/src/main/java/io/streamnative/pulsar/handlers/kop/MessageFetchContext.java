@@ -459,7 +459,7 @@ public final class MessageFetchContext {
                 && tc != null) {
 
             ProducerStateManager producerStateManager =
-                    requestHandler.getBrokerProducerStateManager()
+                    requestHandler.getProducerStateManagerCache()
                             .getProducerStateManager(topicPartition);
             abortedTransactions = producerStateManager.getAbortedIndexList(
                     partitionData.fetchOffset);

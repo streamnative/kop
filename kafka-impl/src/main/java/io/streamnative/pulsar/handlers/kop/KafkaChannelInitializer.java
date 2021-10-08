@@ -54,8 +54,6 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     @Getter
     private final StatsLogger statsLogger;
     private final MetadataCache<LocalBrokerData> localBrokerDataCache;
-    @Getter
-    private final BrokerProducerStateManager brokerProducerStateManager;
 
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
@@ -64,8 +62,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    boolean enableTLS,
                                    EndPoint advertisedEndPoint,
                                    StatsLogger statsLogger,
-                                   MetadataCache<LocalBrokerData> localBrokerDataCache,
-                                   BrokerProducerStateManager brokerProducerStateManager) {
+                                   MetadataCache<LocalBrokerData> localBrokerDataCache) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -75,7 +72,6 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.advertisedEndPoint = advertisedEndPoint;
         this.statsLogger = statsLogger;
         this.localBrokerDataCache = localBrokerDataCache;
-        this.brokerProducerStateManager = brokerProducerStateManager;
 
         if (enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
@@ -101,7 +97,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         ch.pipeline().addLast("handler",
                 new KafkaRequestHandler(pulsarService, kafkaConfig,
                         tenantContextManager, adminManager, localBrokerDataCache,
-                        enableTls, advertisedEndPoint, statsLogger, brokerProducerStateManager));
+                        enableTls, advertisedEndPoint, statsLogger));
     }
 
 }

@@ -79,6 +79,9 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
@@ -191,7 +194,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
     private final TenantContextManager tenantContextManager;
-    private final BrokerProducerStateManager brokerProducerStateManager;
 
     private final String clusterName;
     private final ScheduledExecutorService executor;
@@ -236,6 +238,21 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final AtomicLong pendingBytes = new AtomicLong(0);
     private volatile boolean autoReadDisabledPublishBufferLimiting = false;
 
+    @AllArgsConstructor
+    @Data
+    private static class AppendInfoContext {
+
+        private ProducerStateManager producerStateManager;
+        private ProducerStateManager.ProducerAppendInfo appendInfo;
+        private Long producerId;
+        private boolean isTransaction;
+
+        public void resetAppendInfoOffset(long offset) {
+            appendInfo.resetOffset(offset, isTransaction);
+            producerStateManager.update(appendInfo);
+        }
+    }
+
     private String getCurrentTenant() {
         if (kafkaConfig.isKafkaEnableMultiTenantMetadata()
                 && authenticator != null
@@ -272,6 +289,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return tenantContextManager.getTransactionCoordinator(getCurrentTenant());
     }
 
+    public ProducerStateManagerCache getProducerStateManagerCache() {
+        return tenantContextManager.getProducerStateManagerCache(getCurrentTenant());
+    }
+
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
                                TenantContextManager tenantContextManager,
@@ -279,8 +300,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                MetadataCache<LocalBrokerData> localBrokerDataCache,
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
-                               StatsLogger statsLogger,
-                               BrokerProducerStateManager brokerProducerStateManager) throws Exception {
+                               StatsLogger statsLogger) throws Exception {
         super(statsLogger, kafkaConfig);
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
@@ -301,7 +321,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
         this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
-        this.topicManager = new KafkaTopicManager(this, brokerProducerStateManager);
+        this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
         this.allowedNamespaces = kafkaConfig.getKopAllowedNamespaces();
@@ -311,7 +331,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
         this.failedAuthenticationDelayMs = kafkaConfig.getFailedAuthenticationDelayMs();
-        this.brokerProducerStateManager = brokerProducerStateManager;
 
         // update alive channel count stats
         RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
@@ -850,6 +869,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                  final int numMessages,
                                  final MemoryRecords records,
                                  final TopicPartition topicPartition,
+                                 final AppendInfoContext appendInfoContext,
                                  final Consumer<Long> offsetConsumer,
                                  final Consumer<Errors> errorsConsumer) {
         if (!persistentTopicOpt.isPresent()) {
@@ -888,6 +908,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
                 requestStats.getMessagePublishStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(beforePublish), TimeUnit.NANOSECONDS);
+                appendInfoContext.resetAppendInfoOffset(offset);
                 offsetConsumer.accept(offset);
             } else {
                 log.error("publishMessages for topic partition: {} failed when write.", partitionName, e);
@@ -1002,6 +1023,27 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             final long beforeRecordsProcess = MathUtils.nowInNano();
             final MemoryRecords validRecords =
                     validateRecords(produceHar.getHeader().apiVersion(), topicPartition, records);
+
+            // check duplicate sequence number
+            ProducerStateManager producerStateManager =
+                    getProducerStateManagerCache().getProducerStateManager(topicPartition);
+            ProducerStateManager.AnalyzeResult analyzeResult = producerStateManager.analyzeAndValidateProducerState(
+                    validRecords, Optional.empty(), ProducerStateManager.AppendOrigin.Client);
+            if (analyzeResult.getBatchMetadata().isPresent()) {
+                log.error("[{}] Request {}: duplicate sequence number. topic: {}",
+                        ctx.channel(), produceHar.getHeader(), topicPartition);
+                errorsConsumer.accept(Errors.DUPLICATE_SEQUENCE_NUMBER);
+                return;
+            }
+            // assume that there is only one producerId in records
+            MutableRecordBatch firstBath = records.batches().iterator().next();
+            AppendInfoContext appendInfoContext = new AppendInfoContext(
+                    producerStateManager,
+                    analyzeResult.getAppendInfoMap().get(firstBath.producerId()),
+                    firstBath.producerId(),
+                    firstBath.isTransactional()
+            );
+
             final int numMessages = EntryFormatter.parseNumMessages(validRecords);
             final ByteBuf byteBuf = entryFormatter.encode(validRecords, numMessages);
             requestStats.getProduceEncodeStats().registerSuccessfulEvent(
@@ -1030,7 +1072,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
                 publishMessages(persistentTopicOpt, byteBuf, numMessages, validRecords, topicPartition,
-                        offsetConsumer, errorsConsumer);
+                        appendInfoContext, offsetConsumer, errorsConsumer);
             };
 
             if (topicFuture.isDone()) {
@@ -2004,7 +2046,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         WriteTxnMarkersRequest request = (WriteTxnMarkersRequest) kafkaHeaderAndRequest.getRequest();
         Map<Long, Map<TopicPartition, Errors>> resultMap = new HashMap<>();
         List<CompletableFuture<Void>> resultFutureList = new ArrayList<>();
-        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         for (WriteTxnMarkersRequest.TxnMarkerEntry txnMarkerEntry : request.markers()) {
             Map<TopicPartition, Errors> partitionErrorsMap =
                     resultMap.computeIfAbsent(txnMarkerEntry.producerId(), pid -> new HashMap<>());
@@ -2012,7 +2053,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             for (TopicPartition topicPartition : txnMarkerEntry.partitions()) {
                 String fullPartitionName = KopTopic.toString(topicPartition);
                 ProducerStateManager producerStateManager =
-                        brokerProducerStateManager.getProducerStateManager(fullPartitionName);
+                        getProducerStateManagerCache().getProducerStateManager(fullPartitionName);
                 ProducerStateManager.AnalyzeResult analyzeResult;
                 try {
                     analyzeResult = validateTxnMarker(txnMarkerEntry, producerStateManager);

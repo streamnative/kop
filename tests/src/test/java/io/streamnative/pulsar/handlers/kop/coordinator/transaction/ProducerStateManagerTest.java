@@ -18,8 +18,7 @@ import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
-import com.google.common.collect.Sets;
-import io.streamnative.pulsar.handlers.kop.BrokerProducerStateManager;
+import io.streamnative.pulsar.handlers.kop.ProducerStateManagerCache;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.ProducerStateManager;
@@ -31,7 +30,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTxnStateException;
@@ -41,16 +39,12 @@ import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.utils.SystemTime;
-import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.Reader;
-import org.apache.pulsar.common.policies.data.ClusterData;
-import org.apache.pulsar.common.policies.data.RetentionPolicies;
-import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.mockito.Mockito;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -64,7 +58,7 @@ import org.testng.collections.Lists;
 @Slf4j
 public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
-    private BrokerProducerStateManager brokerProducerStateManager;
+    private ProducerStateManagerCache producerStateManagerCache;
 
     private ProducerStateManager stateManager;
     private TopicPartition partition = new TopicPartition("test", 0);
@@ -80,7 +74,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         admin.topics().createPartitionedTopic("public/default/sys-topic-producer-state", 1);
 
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
-        brokerProducerStateManager = ((KafkaProtocolHandler) handler).getBrokerProducerStateManager();
+        producerStateManagerCache = ((KafkaProtocolHandler) handler).getProducerStateManagerCache("public");
         log.info("success internal setup");
     }
 
@@ -624,7 +618,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     public void testTruncateAndReloadRemovesOutOfRangeSnapshots() throws InterruptedException {
         short epoch = 0;
         ProducerStateManager stateManager =
-                brokerProducerStateManager.getProducerStateManager("public/default/test-topic");
+                producerStateManagerCache.getProducerStateManager("public/default/test-topic");
         append(stateManager, producerId, epoch, 0, 0L);
         takeSnapshotAndWait(stateManager);
         append(stateManager, producerId, epoch, 1, 1L);

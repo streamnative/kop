@@ -34,4 +34,13 @@ public interface TenantContextManager {
      * @return the TransactionCoordinator
      */
     TransactionCoordinator getTransactionCoordinator(String tenant);
+
+    /**
+     * Access the ProducerStateManager for the current Tenant
+     * This method bootstraps a new ProducerStateManager if it is not exists.
+     *
+     * @param tenant
+     * @return the ProducerStateManager
+     */
+    ProducerStateManagerCache getProducerStateManagerCache(String tenant);
 }

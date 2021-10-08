@@ -129,6 +129,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                 .getGroupCoordinator(conf.getKafkaMetadataTenant());
         TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler)
                 .getTransactionCoordinator(conf.getKafkaMetadataTenant());
+        ProducerStateManagerCache producerStateManagerCache = ((KafkaProtocolHandler) handler)
+                .getProducerStateManagerCache(conf.getKafkaMetadataTenant());
 
         adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         kafkaRequestHandler = new KafkaRequestHandler(
@@ -143,6 +145,11 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                     @Override
                     public TransactionCoordinator getTransactionCoordinator(String tenant) {
                         return transactionCoordinator;
+                    }
+
+                    @Override
+                    public ProducerStateManagerCache getProducerStateManagerCache(String tenant) {
+                        return producerStateManagerCache;
                     }
                 },
                 adminManager,
