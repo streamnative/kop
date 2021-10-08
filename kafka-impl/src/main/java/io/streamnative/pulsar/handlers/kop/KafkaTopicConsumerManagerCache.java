@@ -21,6 +21,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -64,19 +67,22 @@ public class KafkaTopicConsumerManagerCache {
         });
     }
 
+    private static void closeTcmFuture(final CompletableFuture<KafkaTopicConsumerManager> tcmFuture) {
+        // Use thenAccept to avoid blocking
+        tcmFuture.thenAccept(tcm -> {
+            if (tcm != null) {
+                tcm.close();
+            }
+        });
+    }
+
     public void removeAndCloseByTopic(final String fullTopicName) {
-        // The TCM future could be completed with null, so we should process this case
         Optional.ofNullable(cache.remove(fullTopicName)).ifPresent(map ->
                 map.forEach((remoteAddress, future) -> {
                     if (log.isDebugEnabled()) {
                         log.debug("[{}][{}] Remove and close TCM", fullTopicName, remoteAddress);
                     }
-                    // Use thenAccept to avoid blocking
-                    future.thenAccept(tcm -> {
-                        if (tcm != null) {
-                            tcm.close();
-                        }
-                    });
+                    closeTcmFuture(future);
                 }));
     }
 
@@ -86,12 +92,20 @@ public class KafkaTopicConsumerManagerCache {
                 if (log.isDebugEnabled()) {
                     log.debug("[{}][{}] Remove and close TCM", fullTopicName, remoteAddress);
                 }
-                // Use thenAccept to avoid blocking
-                future.thenAccept(tcm -> {
-                    if (tcm != null) {
-                        tcm.close();;
-                    }
-                });
+                closeTcmFuture(future);
+            });
+        });
+    }
+
+    public void close() {
+        cache.forEach((fullTopicName, internalMap) -> {
+            internalMap.forEach((remoteAddress, future) -> {
+                try {
+                    Optional.ofNullable(future.get(100, TimeUnit.MILLISECONDS))
+                            .ifPresent(KafkaTopicConsumerManager::close);
+                } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                    log.warn("[{}][{}] Failed to get TCM future when trying to close it", fullTopicName, remoteAddress);
+                }
             });
         });
     }

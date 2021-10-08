@@ -473,6 +473,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         KafkaTopicManager.LOOKUP_CACHE.clear();
         KopBrokerLookupManager.clear();
         KafkaTopicManager.cancelCursorExpireTask();
+        KafkaTopicConsumerManagerCache.getInstance().close();
         KafkaTopicManager.getReferences().clear();
         KafkaTopicManager.getTopics().clear();
         statsProvider.stop();
