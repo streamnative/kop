@@ -18,6 +18,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
@@ -102,7 +103,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         return groupCoordinatorsByTenant.computeIfAbsent(tenant, this::createAndBootGroupCoordinator);
     }
 
-    public  Map<String, GroupCoordinator> getGroupCoordinator() {
+    @VisibleForTesting
+    public Map<String, GroupCoordinator> getGroupCoordinator() {
         return groupCoordinatorsByTenant;
     }
 
