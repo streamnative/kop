@@ -45,6 +45,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManage
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -284,6 +285,25 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         builder.appendEndTxnMarker(Time.SYSTEM.milliseconds(), new EndTransactionMarker(controlRecordType, 0));
         builder.build();
         return 1;
+    }
+
+    @Test
+    public void testOffsetTopicNumPartitionsModify() throws Exception {
+        int consumerGroupPartitionId =
+                GroupMetadataManager.getPartitionId(groupId, conf.getOffsetsTopicNumPartitions());
+        Field partitionField = conf.getClass().getDeclaredField("offsetsTopicNumPartitions");
+        partitionField.setAccessible(true);
+        partitionField.set(conf, 100);
+
+        KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
+        // remove here to trigger a new creating for GroupCoordinator
+        handler.getGroupCoordinator().remove(conf.getKafkaMetadataTenant());
+        GroupMetadataManager newMetaManager =
+                handler.getGroupCoordinator(conf.getKafkaMetadataTenant()).getGroupManager();
+
+        int newPartitionsId =
+                GroupMetadataManager.getPartitionId(groupId, newMetaManager.offsetConfig().offsetsTopicNumPartitions());
+        assertEquals(consumerGroupPartitionId, newPartitionsId);
     }
 
     @Test

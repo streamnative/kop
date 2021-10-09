@@ -60,6 +60,7 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.Lookup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
@@ -99,6 +100,10 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
         return groupCoordinatorsByTenant.computeIfAbsent(tenant, this::createAndBootGroupCoordinator);
+    }
+
+    public  Map<String, GroupCoordinator> getGroupCoordinator() {
+        return groupCoordinatorsByTenant;
     }
 
     @Override
@@ -485,11 +490,32 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             kafkaConfig.getGroupInitialRebalanceDelayMs()
         );
 
+        String topicName = tenant + "/" + kafkaConfig.getKafkaMetadataNamespace()
+                + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
+
+        PulsarAdmin pulsarAdmin;
+        int existedOffsetTopicNumPartitions  = 0;
+        try {
+            pulsarAdmin = brokerService.getPulsar().getAdminClient();
+            existedOffsetTopicNumPartitions  = pulsarAdmin.topics().getPartitionedTopicMetadata(topicName).partitions;
+        }  catch (PulsarServerException | PulsarAdminException e) {
+            log.error("Failed to get offset topic partition metadata .", e);
+            throw new IllegalStateException(e);
+        }
+
+        int offsetTopicNumPartitions;
+        if (existedOffsetTopicNumPartitions == 0) {
+            log.info("Not existed offset topic number partitions found, use the default {}",
+                    kafkaConfig.getOffsetsTopicNumPartitions());
+            offsetTopicNumPartitions = kafkaConfig.getOffsetsTopicNumPartitions();
+        } else {
+            log.info("Existed offset topic number partitions found {}", existedOffsetTopicNumPartitions);
+            offsetTopicNumPartitions = existedOffsetTopicNumPartitions;
+        }
+
         OffsetConfig offsetConfig = OffsetConfig.builder()
-            .offsetsTopicName(tenant + "/"
-                + kafkaConfig.getKafkaMetadataNamespace()
-                + "/" + Topic.GROUP_METADATA_TOPIC_NAME)
-            .offsetsTopicNumPartitions(kafkaConfig.getOffsetsTopicNumPartitions())
+            .offsetsTopicName(topicName)
+            .offsetsTopicNumPartitions(offsetTopicNumPartitions)
             .offsetsTopicCompressionType(CompressionType.valueOf(kafkaConfig.getOffsetsTopicCompressionCodec()))
             .maxMetadataSize(kafkaConfig.getOffsetMetadataMaxSize())
             .offsetsRetentionCheckIntervalMs(kafkaConfig.getOffsetsRetentionCheckIntervalMs())
