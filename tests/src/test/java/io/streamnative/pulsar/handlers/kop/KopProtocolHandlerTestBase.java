@@ -118,17 +118,20 @@ public abstract class KopProtocolHandlerTestBase {
     protected Server restServer;
     protected String restConnect;
 
-    private final String entryFormat;
+    private String entryFormat;
 
     protected static final String PLAINTEXT_PREFIX = SecurityProtocol.PLAINTEXT.name() + "://";
     protected static final String SSL_PREFIX = SecurityProtocol.SSL.name() + "://";
 
     public KopProtocolHandlerTestBase() {
-        this.entryFormat = "pulsar";
-        resetConfig();
+        changeEntryFormat("pulsar");
     }
 
     public KopProtocolHandlerTestBase(final String entryFormat) {
+        changeEntryFormat(entryFormat);
+    }
+
+    protected void changeEntryFormat(final String entryFormat) {
         this.entryFormat = entryFormat;
         resetConfig();
     }

@@ -37,6 +37,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManage
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
+import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
@@ -589,10 +590,11 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // convert
         Map<TopicPartition, OffsetAndMetadata> converted =
-                handler.convertOffsetCommitRequestRetentionMs(offsetCommitRequest,
-                builder.latestAllowedVersion(),
-                currentTime,
-                configRetentionMs);
+                handler.convertOffsetCommitRequestRetentionMs(offsetData,
+                        offsetCommitRequest.retentionTime(),
+                        builder.latestAllowedVersion(),
+                        currentTime,
+                        configRetentionMs);
 
         OffsetAndMetadata convertedOffsetAndMetadata = converted.get(topicPartition);
 
@@ -625,10 +627,12 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // convert
         Map<TopicPartition, OffsetAndMetadata> converted =
-                handler.convertOffsetCommitRequestRetentionMs(offsetCommitRequest,
-                builder.latestAllowedVersion(),
-                currentTime,
-                offsetsConfigRetentionMs);
+                handler.convertOffsetCommitRequestRetentionMs(
+                        offsetData,
+                        offsetCommitRequest.retentionTime(),
+                        builder.latestAllowedVersion(),
+                        currentTime,
+                        offsetsConfigRetentionMs);
 
         OffsetAndMetadata convertedOffsetAndMetadata = converted.get(topicPartition);
 
@@ -747,14 +751,17 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         deleteTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions.keySet());
         verifyTopicsDeletedByPulsarAdmin(topicToNumPartitions);
         // check deleted topics path
-        List<String> deletedTopics = handler.getPulsarService()
+        Set<String> deletedTopics = handler.getPulsarService()
                 .getBrokerService()
                 .getPulsar()
                 .getLocalMetadataStore()
                 .getChildren(KopEventManager.getDeleteTopicsPath())
-                .join();
+                .join()
+                .stream()
+                .map((TopicNameUtils::getTopicNameWithUrlDecoded))
+                .collect(Collectors.toSet());
 
-        assertTrue(topicToNumPartitions.keySet().containsAll(deletedTopics));
+        assertEquals(topicToNumPartitions.keySet(), deletedTopics);
     }
 
     @Test

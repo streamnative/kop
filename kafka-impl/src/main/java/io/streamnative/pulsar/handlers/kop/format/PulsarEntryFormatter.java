@@ -17,12 +17,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
-import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
-import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
-import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
+import io.streamnative.pulsar.handlers.kop.utils.PulsarMessageBuilder;
 import java.util.List;
 import java.util.stream.StreamSupport;
 import lombok.extern.slf4j.Slf4j;
@@ -30,9 +25,7 @@ import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.Record;
-import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.impl.MessageImpl;
-import org.apache.pulsar.client.impl.TypedMessageBuilderImpl;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
@@ -43,13 +36,10 @@ import org.apache.pulsar.common.protocol.Commands.ChecksumType;
  * The entry formatter that uses Pulsar's format.
  */
 @Slf4j
-public class PulsarEntryFormatter implements EntryFormatter {
+public class PulsarEntryFormatter extends AbstractEntryFormatter {
     //// for Batch messages
     private static final int INITIAL_BATCH_BUFFER_SIZE = 1024;
     private static final int MAX_MESSAGE_BATCH_SIZE_BYTES = 128 * 1024;
-
-    private static final DecodeResult EMPTY_DECODE_RESULT = new DecodeResult(
-            MemoryRecords.readableRecords(ByteBuffer.allocate(0)));
 
     @Override
     public ByteBuf encode(final MemoryRecords records, final int numMessages) {
@@ -103,46 +93,15 @@ public class PulsarEntryFormatter implements EntryFormatter {
 
     @Override
     public DecodeResult decode(final List<Entry> entries, final byte magic) {
-        final List<DecodeResult> decodeResults = new ArrayList<>();
-
-        entries.parallelStream().forEachOrdered(entry -> {
-            try {
-                long baseOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
-                // each entry is a batched message
-                ByteBuf metadataAndPayload = entry.getDataBuffer();
-
-                MessageMetadata msgMetadata = Commands.parseMessageMetadata(metadataAndPayload);
-
-                decodeResults.add(ByteBufUtils.decodePulsarEntryToKafkaRecords(
-                        msgMetadata, metadataAndPayload, baseOffset, magic));
-            } catch (KoPMessageMetadataNotFoundException | IOException e) { // skip failed decode entry
-                log.error("[{}:{}] Failed to decode entry", entry.getLedgerId(), entry.getEntryId());
-            } finally {
-                entry.release();
-            }
-        });
-
-        if (decodeResults.isEmpty()) {
-            return EMPTY_DECODE_RESULT;
-        } else if (decodeResults.size() == 1) {
-            return decodeResults.get(0);
-        } else {
-            final int totalSize = decodeResults.stream()
-                    .mapToInt(decodeResult -> decodeResult.getRecords().sizeInBytes())
-                    .sum();
-            final ByteBuf mergedBuffer = PulsarByteBufAllocator.DEFAULT.directBuffer(totalSize);
-            decodeResults.forEach(decodeResult -> mergedBuffer.writeBytes(decodeResult.getRecords().buffer()));
-            decodeResults.forEach(DecodeResult::release);
-            return new DecodeResult(MemoryRecords.readableRecords(mergedBuffer.nioBuffer()), mergedBuffer);
-        }
+        return super.decode(entries, magic);
     }
 
     // convert kafka Record to Pulsar Message.
     // convert kafka Record to Pulsar Message.
     // called when publish received Kafka Record into Pulsar.
     private static MessageImpl<byte[]> recordToEntry(Record record) {
-        @SuppressWarnings("unchecked")
-        TypedMessageBuilderImpl<byte[]> builder = new TypedMessageBuilderImpl(null, Schema.BYTES);
+
+        PulsarMessageBuilder builder = PulsarMessageBuilder.newBuilder();
 
         // key
         if (record.hasKey()) {
