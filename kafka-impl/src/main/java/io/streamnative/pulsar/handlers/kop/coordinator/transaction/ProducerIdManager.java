@@ -51,7 +51,7 @@ public class ProducerIdManager {
     private final int brokerId;
     private final MetadataStoreExtended metadataStore;
 
-    private ProducerIdBlock currentProducerIdBlock = null;
+    private ProducerIdBlock currentProducerIdBlock;
     private Long nextProducerId = -1L;
 
     public ProducerIdManager(int brokerId, MetadataStoreExtended metadataStore) {
