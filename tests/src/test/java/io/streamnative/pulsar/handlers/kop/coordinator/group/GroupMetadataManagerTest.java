@@ -1052,17 +1052,17 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         ByteBuffer buffer = newMemoryRecordsBuffer(newOffsetCommitRecords);
 
         byte[] key = groupMetadataKey(groupId);
-
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
+        int consumerGroupPartitionId =
+                GroupMetadataManager.getPartitionId(groupId, conf.getOffsetsTopicNumPartitions());
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(consumerGroupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
             .eventTime(Time.SYSTEM.milliseconds())
             .send();
-
+        groupMetadataManager.removeLoadingPartition(consumerGroupPartitionId);
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
-        groupMetadataManager.scheduleLoadGroupAndOffsets(
-            groupPartitionId,
+        groupMetadataManager.scheduleLoadGroupAndOffsets(consumerGroupPartitionId,
             groupMetadata -> onLoadedFuture.complete(groupMetadata)
         ).get();
         GroupMetadata group = onLoadedFuture.get();
