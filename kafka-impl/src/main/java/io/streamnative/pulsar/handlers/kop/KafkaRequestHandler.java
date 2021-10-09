@@ -1106,12 +1106,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 });
     }
 
-    private <T> void replaceTopicPartition(Map<TopicPartition, T> replacedMap,
-                                           Map<TopicPartition, TopicPartition> replacingIndex) {
+    @VisibleForTesting
+    public <T> void replaceTopicPartition(Map<TopicPartition, T> replacedMap,
+                                          Map<TopicPartition, TopicPartition> replacingIndex) {
         Map<TopicPartition, T> newMap = new HashMap<>();
         replacedMap.entrySet().removeIf(entry -> {
             if (replacingIndex.containsKey(entry.getKey())) {
                 newMap.put(replacingIndex.get(entry.getKey()), entry.getValue());
+                return true;
+            } else if (KopTopic.isFullTopicName(entry.getKey().topic())) {
+                newMap.put(new TopicPartition(
+                                KopTopic.removeDefaultNamespacePrefix(entry.getKey().topic()),
+                                entry.getKey().partition()),
+                        entry.getValue());
                 return true;
             }
             return false;

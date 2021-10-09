@@ -23,6 +23,7 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
+import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -38,6 +39,7 @@ import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -52,11 +54,17 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
+
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.ConsumerGroupDescription;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -84,7 +92,9 @@ import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
+import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
@@ -94,6 +104,7 @@ import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
+import org.checkerframework.checker.units.qual.C;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -751,4 +762,123 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         assertTrue(topicToNumPartitions.keySet().containsAll(deletedTopics));
     }
+
+    @Test
+    public void testEmptyReplacingIndex() {
+        final String namespace = "public/default";
+        final String topic = "test-topic";
+
+        // 1. original tp
+        final TopicPartition tp0 = new TopicPartition(topic, 0);
+
+        // 2. full topic and tp
+        final String fullNameTopic = "persistent://" + namespace + "/" + topic;
+        final TopicPartition fullTp0 = new TopicPartition(fullNameTopic, 0);
+
+        final HashMap<TopicPartition, String> replacedMap = Maps.newHashMap();
+        // 3. before replace, replacedMap has a fullName tp
+        replacedMap.put(fullTp0, "");
+
+        // 4. replacingIndex is an empty map
+        final Map<TopicPartition, TopicPartition> emptyReplacingIndex = Collections.emptyMap();
+
+        handler.replaceTopicPartition(replacedMap, emptyReplacingIndex);
+
+        Assert.assertEquals(1, replacedMap.size());
+
+        // 5. after replace, replacedMap has a short topic name
+        replacedMap.forEach(((topicPartition, s) -> {
+            Assert.assertEquals(tp0, topicPartition);
+        }));
+    }
+
+    @Test
+    public void testNonEmptyReplacingIndex() {
+        final String namespace = "public/default";
+        final String topic = "test-topic";
+
+        // 1. original tp
+        final TopicPartition tp0 = new TopicPartition(topic, 0);
+
+        // 2. full topic and tp
+        final String fullNameTopic = "persistent://" + namespace + "/" + topic;
+        final TopicPartition fullTp0 = new TopicPartition(fullNameTopic, 0);
+
+        final HashMap<TopicPartition, String> replacedMap = Maps.newHashMap();
+        // 3. before replace, replacedMap has a fullName tp
+        replacedMap.put(fullTp0, "");
+
+        // 4. replacingIndex is not an empty map
+        final Map<TopicPartition, TopicPartition> nonEmptyReplacingIndex = Maps.newHashMap();
+        nonEmptyReplacingIndex.put(fullTp0, tp0);
+
+        handler.replaceTopicPartition(replacedMap, nonEmptyReplacingIndex);
+
+        Assert.assertEquals(1, replacedMap.size());
+
+        // 5. after replace, replacedMap has a short topic name
+        replacedMap.forEach(((topicPartition, s) -> {
+            Assert.assertEquals(tp0, topicPartition);
+        }));
+    }
+
+    @Test(timeOut = 20000)
+    public void testDesGroup2FetchOffset() throws Exception {
+        final String topic = "test-describe-group-offset";
+        final int numMessages = 10;
+        final String messagePrefix = "msg-";
+        final String group = "test-group";
+
+        admin.topics().createPartitionedTopic(topic, 1);
+
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+
+        for (int i = 0; i < numMessages; i++) {
+            producer.send(new ProducerRecord<>(topic, i + "", messagePrefix + i));
+        }
+        producer.close();
+
+        KafkaConsumer<Integer, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties(group));
+        consumer.subscribe(Collections.singleton(topic));
+
+        int fetchMessages = 0;
+        while (fetchMessages < numMessages) {
+            ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofMillis(1000));
+            fetchMessages += records.count();
+        }
+        Assert.assertEquals(fetchMessages, numMessages);
+
+        consumer.commitSync();
+
+        final Properties adminProps = new Properties();
+        adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+
+        AdminClient kafkaAdmin = AdminClient.create(adminProps);
+
+        ConsumerGroupDescription groupDescription =
+                kafkaAdmin.describeConsumerGroups(Collections.singletonList(group))
+                .all().get().get(group);
+        Assert.assertEquals(1, groupDescription.members().size());
+
+        // member assignment topic name must be short topic name
+        groupDescription.members().forEach(memberDescription -> {
+            memberDescription.assignment().topicPartitions().forEach(topicPartition -> {
+                Assert.assertEquals(topic, topicPartition.topic());
+            });
+        });
+
+        Map<TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata> offsetAndMetadataMap =
+                kafkaAdmin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get();
+        Assert.assertEquals(1, offsetAndMetadataMap.size());
+
+        //  topic name from offset fetch response must be short topic name
+        offsetAndMetadataMap.keySet().forEach(topicPartition -> {
+            Assert.assertEquals(topic, topicPartition.topic());
+        });
+
+        consumer.close();
+        kafkaAdmin.close();
+
+    }
+
 }

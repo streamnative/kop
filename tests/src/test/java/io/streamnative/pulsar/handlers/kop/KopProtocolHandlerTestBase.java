@@ -702,4 +702,11 @@ public abstract class KopProtocolHandlerTestBase {
         props.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         return props;
     }
+
+    protected Properties newKafkaConsumerProperties(final String group) {
+        final Properties props = newKafkaConsumerProperties();
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, group);
+        return props;
+    }
+
 }
