@@ -531,7 +531,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         AddPartitionsToTxnRequest.Builder builder =
                 new AddPartitionsToTxnRequest.Builder(
-                        "1",1, (short) 1, topicPartitions);
+                        "1", 1, (short) 1, topicPartitions);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
         // Topic: `test` authorize success.
@@ -563,7 +563,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         TopicPartition topicPartition = new TopicPartition("test", 1);
         AddPartitionsToTxnRequest.Builder builder =
                 new AddPartitionsToTxnRequest.Builder(
-                        "1",1, (short) 1, Collections.singletonList(topicPartition));
+                        "1", 1, (short) 1, Collections.singletonList(topicPartition));
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
         // Handle request
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
