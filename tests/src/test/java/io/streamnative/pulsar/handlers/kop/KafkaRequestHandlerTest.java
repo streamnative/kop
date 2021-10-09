@@ -778,11 +778,11 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         handler.replaceTopicPartition(replacedMap, emptyReplacingIndex);
 
-        Assert.assertEquals(1, replacedMap.size());
+        assertEquals(1, replacedMap.size());
 
         // 5. after replace, replacedMap has a short topic name
         replacedMap.forEach(((topicPartition, s) -> {
-            Assert.assertEquals(tp0, topicPartition);
+            assertEquals(tp0, topicPartition);
         }));
     }
 
@@ -840,7 +840,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofMillis(1000));
             fetchMessages += records.count();
         }
-        Assert.assertEquals(fetchMessages, numMessages);
+        assertEquals(fetchMessages, numMessages);
 
         consumer.commitSync();
 
@@ -852,22 +852,22 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         ConsumerGroupDescription groupDescription =
                 kafkaAdmin.describeConsumerGroups(Collections.singletonList(group))
                 .all().get().get(group);
-        Assert.assertEquals(1, groupDescription.members().size());
+        assertEquals(1, groupDescription.members().size());
 
         // member assignment topic name must be short topic name
         groupDescription.members().forEach(memberDescription -> {
             memberDescription.assignment().topicPartitions().forEach(topicPartition -> {
-                Assert.assertEquals(topic, topicPartition.topic());
+                assertEquals(topic, topicPartition.topic());
             });
         });
 
         Map<TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata> offsetAndMetadataMap =
                 kafkaAdmin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get();
-        Assert.assertEquals(1, offsetAndMetadataMap.size());
+        assertEquals(1, offsetAndMetadataMap.size());
 
         //  topic name from offset fetch response must be short topic name
         offsetAndMetadataMap.keySet().forEach(topicPartition -> {
-            Assert.assertEquals(topic, topicPartition.topic());
+            assertEquals(topic, topicPartition.topic());
         });
 
         consumer.close();
