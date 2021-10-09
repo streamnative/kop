@@ -1562,7 +1562,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         OffsetCommitRequest request = (OffsetCommitRequest) offsetCommit.getRequest();
 
         // TODO not process nonExistingTopic at this time.
-        Map<TopicPartition, Errors> nonExistingTopic = nonExistingTopicErrors(request);
+        Map<TopicPartition, Errors> nonExistingTopicErrors = nonExistingTopicErrors(request);
         Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
 
         if (request.offsetData().isEmpty()) {
@@ -1586,9 +1586,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     log.trace("OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo);
                 }
                 if (convertedOffsetData.isEmpty()) {
-                    Map<TopicPartition, Errors> offsetCommitResult = new HashMap<>();
-                    if (!nonExistingTopic.isEmpty()) {
-                        offsetCommitResult.putAll(nonExistingTopic);
+                    Map<TopicPartition, Errors> offsetCommitResult = Maps.newHashMap();
+
+                    if (!nonExistingTopicErrors.isEmpty()) {
+                        offsetCommitResult.putAll(nonExistingTopicErrors);
                     }
                     if (!unauthorizedTopicErrors.isEmpty()) {
                         offsetCommitResult.putAll(unauthorizedTopicErrors);
@@ -1613,13 +1614,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             request.generationId(),
                             convertedPartitionData
                     ).thenAccept(offsetCommitResult -> {
-
                         // recover to original topic name
                         replaceTopicPartition(offsetCommitResult, replacingIndex);
 
-                        if (!nonExistingTopic.isEmpty()) {
-                            offsetCommitResult.putAll(nonExistingTopic);
+                        if (!nonExistingTopicErrors.isEmpty()) {
+                            offsetCommitResult.putAll(nonExistingTopicErrors);
                         }
+                        if (!unauthorizedTopicErrors.isEmpty()) {
+                            offsetCommitResult.putAll(unauthorizedTopicErrors);
+                        }
+
                         OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
                         resultFuture.complete(response);
                     });
@@ -1633,7 +1637,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 kopTopic = new KopTopic(tp.topic());
             } catch (KoPTopicException e) {
                 log.warn("Invalid topic name: {}", tp.topic(), e);
-                completeOne.accept(() -> nonExistingTopic.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
                 return;
             }
             String fullTopicName = kopTopic.getFullName();
