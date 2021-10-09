@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
+import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
 import lombok.extern.slf4j.Slf4j;
@@ -50,5 +51,23 @@ public class TopicNameUtilsTest {
         String expectedPulsarName3 = "persistent://" + tenantName + "/" + nsName + "/"
             + topicName;
         assertTrue(topicName3.toString().equals(expectedPulsarName3));
+    }
+
+    @Test(timeOut = 20000)
+    public void testTopicNameUrlEncodeAndDecode() {
+        String[] testTopicNames = new String[]{
+                "topicName",
+                "tenant/ns/topicName",
+                "persistent://tenant/ns/topicName",
+                "persistent://tenant/ns/topicName-1",
+                "persistent://tenant/ns/topicName" + PARTITIONED_TOPIC_SUFFIX + "0"
+        };
+
+        for (String topicName : testTopicNames) {
+            String encodedTopicName = TopicNameUtils.getTopicNameWithUrlEncoded(topicName);
+            String decodedTopicName = TopicNameUtils.getTopicNameWithUrlDecoded(encodedTopicName);
+            assertEquals(decodedTopicName, topicName);
+        }
+
     }
 }
