@@ -496,24 +496,19 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
 
         PulsarAdmin pulsarAdmin;
-        int existedOffsetTopicNumPartitions  = 0;
+        int offsetTopicNumPartitions;
         try {
             pulsarAdmin = brokerService.getPulsar().getAdminClient();
-            existedOffsetTopicNumPartitions = pulsarAdmin.topics().getPartitionedTopicMetadata(topicName).partitions;
+            offsetTopicNumPartitions = pulsarAdmin.topics().getPartitionedTopicMetadata(topicName).partitions;
+            if (offsetTopicNumPartitions == 0) {
+                log.error("Offset topic should not be a non-partitioned topic.");
+                throw new IllegalStateException("Offset topic should not be a non-partitioned topic.");
+            }
         }  catch (PulsarServerException | PulsarAdminException e) {
             log.error("Failed to get offset topic partition metadata .", e);
             throw new IllegalStateException(e);
         }
 
-        int offsetTopicNumPartitions;
-        if (existedOffsetTopicNumPartitions == 0) {
-            log.info("Not existed offset topic number partitions found, use the default {}",
-                    kafkaConfig.getOffsetsTopicNumPartitions());
-            offsetTopicNumPartitions = kafkaConfig.getOffsetsTopicNumPartitions();
-        } else {
-            log.info("Existed offset topic number partitions found {}", existedOffsetTopicNumPartitions);
-            offsetTopicNumPartitions = existedOffsetTopicNumPartitions;
-        }
 
         OffsetConfig offsetConfig = OffsetConfig.builder()
             .offsetsTopicName(topicName)
