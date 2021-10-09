@@ -824,7 +824,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 20000)
-    public void testDesGroup2FetchOffset() throws Exception {
+    public void testDescribeConsumerGroups() throws Exception {
         final String topic = "test-describe-group-offset";
         final int numMessages = 10;
         final String messagePrefix = "msg-";
