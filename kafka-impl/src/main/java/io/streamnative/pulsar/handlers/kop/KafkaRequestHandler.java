@@ -1493,10 +1493,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     @VisibleForTesting
-    Map<TopicPartition, OffsetAndMetadata> convertOffsetCommitRequestRetentionMs(OffsetCommitRequest request,
-                                                                                 short apiVersion,
-                                                                                 long currentTimeStamp,
-                                                                                 long configOffsetsRetentionMs) {
+    Map<TopicPartition, OffsetAndMetadata> convertOffsetCommitRequestRetentionMs(
+            Map<TopicPartition, OffsetCommitRequest.PartitionData> convertedOffsetData,
+            long retentionTime,
+            short apiVersion,
+            long currentTimeStamp,
+            long configOffsetsRetentionMs) {
 
         // commit from kafka
         // > for version 1 and beyond store offsets in offset manager
@@ -1504,10 +1506,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // commit from kafka
 
         long offsetRetention;
-        if (apiVersion <= 1 || request.retentionTime() == OffsetCommitRequest.DEFAULT_RETENTION_TIME) {
+        if (apiVersion <= 1 || retentionTime == OffsetCommitRequest.DEFAULT_RETENTION_TIME) {
             offsetRetention = configOffsetsRetentionMs;
         } else {
-            offsetRetention = request.retentionTime();
+            offsetRetention = retentionTime;
         }
 
         // commit from kafka
@@ -1525,7 +1527,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
 
         long finalOffsetRetention = offsetRetention;
-        return CoreUtils.mapValue(request.offsetData(), (partitionData) -> {
+        return CoreUtils.mapValue(convertedOffsetData, (partitionData) -> {
 
             String metadata;
             if (partitionData.metadata == null) {
@@ -1560,74 +1562,100 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         OffsetCommitRequest request = (OffsetCommitRequest) offsetCommit.getRequest();
 
         // TODO not process nonExistingTopic at this time.
-        Map<TopicPartition, Errors> nonExistingTopic = nonExistingTopicErrors(request);
+        Map<TopicPartition, Errors> nonExistingTopicErrors = nonExistingTopicErrors(request);
+        Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
 
+        if (request.offsetData().isEmpty()) {
+            resultFuture.complete(new OffsetCommitResponse(Maps.newHashMap()));
+            return;
+        }
         // convert raw topic name to KoP full name
         // we need to ensure that topic name in __consumer_offsets is globally unique
-        Map<TopicPartition, OffsetCommitRequest.PartitionData> convertedOffsetData = new HashMap<>();
-        Map<TopicPartition, TopicPartition> replacingIndex = new HashMap<>();
-        request.offsetData().entrySet().removeIf(entry -> {
-            TopicPartition tp = entry.getKey();
-            try {
-                TopicPartition newTopicPartition = new TopicPartition(
-                        new KopTopic(tp.topic()).getFullName(), tp.partition());
+        Map<TopicPartition, OffsetCommitRequest.PartitionData> convertedOffsetData = Maps.newConcurrentMap();
+        Map<TopicPartition, TopicPartition> replacingIndex = Maps.newConcurrentMap();
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(request.offsetData().size());
 
-                convertedOffsetData.put(newTopicPartition, entry.getValue());
-                replacingIndex.put(newTopicPartition, tp);
+        Consumer<Runnable> completeOne = (action) -> {
+            // When complete one authorization or failed, will do the action first.
+            action.run();
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                if (log.isTraceEnabled()) {
+                    StringBuffer traceInfo = new StringBuffer();
+                    replacingIndex.forEach((inner, outer) ->
+                            traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
+                    log.trace("OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo);
+                }
+                if (convertedOffsetData.isEmpty()) {
+                    Map<TopicPartition, Errors> offsetCommitResult = Maps.newHashMap();
+
+                    offsetCommitResult.putAll(nonExistingTopicErrors);
+                    offsetCommitResult.putAll(unauthorizedTopicErrors);
+
+                    OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
+                    resultFuture.complete(response);
+
+                } else {
+                    Map<TopicPartition, OffsetAndMetadata> convertedPartitionData =
+                            convertOffsetCommitRequestRetentionMs(
+                                    convertedOffsetData,
+                                    request.retentionTime(),
+                                    offsetCommit.getHeader().apiVersion(),
+                                    Time.SYSTEM.milliseconds(),
+                                    getGroupCoordinator().offsetConfig().offsetsRetentionMs()
+                            );
+
+                    getGroupCoordinator().handleCommitOffsets(
+                            request.groupId(),
+                            request.memberId(),
+                            request.generationId(),
+                            convertedPartitionData
+                    ).thenAccept(offsetCommitResult -> {
+                        // recover to original topic name
+                        replaceTopicPartition(offsetCommitResult, replacingIndex);
+
+                        offsetCommitResult.putAll(nonExistingTopicErrors);
+                        offsetCommitResult.putAll(unauthorizedTopicErrors);
+
+                        OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
+                        resultFuture.complete(response);
+                    });
+
+                }
+            }
+        };
+        request.offsetData().forEach((tp, partitionData) -> {
+            KopTopic kopTopic;
+            try {
+                kopTopic = new KopTopic(tp.topic());
             } catch (KoPTopicException e) {
                 log.warn("Invalid topic name: {}", tp.topic(), e);
-                nonExistingTopic.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+                completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                return;
             }
-            return true;
+            String fullTopicName = kopTopic.getFullName();
+            authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
+                    .whenComplete((isAuthorized, ex) -> {
+                        if (ex != null) {
+                            log.error("OffsetCommit authorize failed, topic - {}. {}",
+                                    fullTopicName, ex.getMessage());
+                            completeOne.accept(
+                                    () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                            return;
+                        }
+                        if (!isAuthorized) {
+                            completeOne.accept(
+                                    () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                            return;
+                        }
+                        completeOne.accept(() -> {
+                            TopicPartition newTopicPartition = new TopicPartition(
+                                    new KopTopic(tp.topic()).getFullName(), tp.partition());
+
+                            convertedOffsetData.put(newTopicPartition, partitionData);
+                            replacingIndex.put(newTopicPartition, tp);
+                        });
+                    });
         });
-
-        if (log.isTraceEnabled()) {
-            StringBuffer traceInfo = new StringBuffer();
-            replacingIndex.forEach((inner, outer) ->
-                    traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
-            log.trace("OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo.toString());
-        }
-
-        // update the request data
-        request.offsetData().putAll(convertedOffsetData);
-
-        Map<TopicPartition, OffsetCommitRequest.PartitionData> authorizedTopic = request.offsetData();
-        if (authorizedTopic.isEmpty()) {
-            Map<TopicPartition, Errors> offsetCommitResult = new HashMap<>();
-            if (!nonExistingTopic.isEmpty()) {
-                offsetCommitResult.putAll(nonExistingTopic);
-            }
-
-            OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
-            resultFuture.complete(response);
-
-        } else {
-            Map<TopicPartition, OffsetAndMetadata> convertedPartitionData =
-                    convertOffsetCommitRequestRetentionMs(
-                            request,
-                            offsetCommit.getHeader().apiVersion(),
-                            Time.SYSTEM.milliseconds(),
-                            getGroupCoordinator().offsetConfig().offsetsRetentionMs()
-                    );
-
-            getGroupCoordinator().handleCommitOffsets(
-                    request.groupId(),
-                    request.memberId(),
-                    request.generationId(),
-                    convertedPartitionData
-            ).thenAccept(offsetCommitResult -> {
-
-                // recover to original topic name
-                replaceTopicPartition(offsetCommitResult, replacingIndex);
-
-                if (!nonExistingTopic.isEmpty()) {
-                    offsetCommitResult.putAll(nonExistingTopic);
-                }
-                OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
-                resultFuture.complete(response);
-            });
-
-        }
     }
 
     @Override

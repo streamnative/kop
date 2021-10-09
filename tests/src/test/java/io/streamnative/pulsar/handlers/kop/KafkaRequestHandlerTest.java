@@ -584,10 +584,11 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // convert
         Map<TopicPartition, OffsetAndMetadata> converted =
-                handler.convertOffsetCommitRequestRetentionMs(offsetCommitRequest,
-                builder.latestAllowedVersion(),
-                currentTime,
-                configRetentionMs);
+                handler.convertOffsetCommitRequestRetentionMs(offsetData,
+                        offsetCommitRequest.retentionTime(),
+                        builder.latestAllowedVersion(),
+                        currentTime,
+                        configRetentionMs);
 
         OffsetAndMetadata convertedOffsetAndMetadata = converted.get(topicPartition);
 
@@ -620,10 +621,12 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // convert
         Map<TopicPartition, OffsetAndMetadata> converted =
-                handler.convertOffsetCommitRequestRetentionMs(offsetCommitRequest,
-                builder.latestAllowedVersion(),
-                currentTime,
-                offsetsConfigRetentionMs);
+                handler.convertOffsetCommitRequestRetentionMs(
+                        offsetData,
+                        offsetCommitRequest.retentionTime(),
+                        builder.latestAllowedVersion(),
+                        currentTime,
+                        offsetsConfigRetentionMs);
 
         OffsetAndMetadata convertedOffsetAndMetadata = converted.get(topicPartition);
 
