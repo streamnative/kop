@@ -59,17 +59,23 @@ public class ProducerIdManager {
         this.metadataStore = metadataStore;
     }
 
-    public CompletableFuture<Void> initialize() {
-        CompletableFuture<Void> future = new CompletableFuture<>();
-        getNewProducerIdBlock()
-                .thenAccept(__ -> {
-                    nextProducerId = currentProducerIdBlock.blockStartId;
-                    future.complete(null);
-                }).exceptionally(throwable -> {
-                    future.completeExceptionally(throwable);
-                    return null;
-                });
-        return future;
+    public static byte[] generateProducerIdBlockJson(ProducerIdBlock producerIdBlock) throws
+            JsonProcessingException {
+        Map<String, Object> dataMap = Maps.newHashMap();
+        dataMap.put("version", currentVersion);
+        dataMap.put("broker", producerIdBlock.brokerId);
+        dataMap.put("block_start", producerIdBlock.blockStartId);
+        dataMap.put("block_end", producerIdBlock.blockEndId);
+        return objectMapper.writeValueAsBytes(dataMap);
+    }
+
+    public static ProducerIdBlock parseProducerIdBlockData(byte[] bytes) throws IOException {
+        JsonNode jsonNode = objectMapper.readTree(bytes);
+        return ProducerIdBlock.builder()
+                .brokerId(jsonNode.get("broker").asInt())
+                .blockStartId(jsonNode.get("block_start").asLong())
+                .blockEndId(jsonNode.get("block_end").asLong())
+                .build();
     }
 
     public CompletableFuture<Void> getNewProducerIdBlock() {
@@ -122,6 +128,19 @@ public class ProducerIdManager {
                 future.completeExceptionally(e);
             }
         });
+        return future;
+    }
+
+    public CompletableFuture<Void> initialize() {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        getNewProducerIdBlock()
+                .thenAccept(__ -> {
+                    nextProducerId = currentProducerIdBlock.blockStartId;
+                    future.complete(null);
+                }).exceptionally(throwable -> {
+                    future.completeExceptionally(throwable);
+                    return null;
+                });
         return future;
     }
 
@@ -229,29 +248,6 @@ public class ProducerIdManager {
         return future;
     }
 
-    private String getProducerIdBlockStr(byte[] bytes) {
-        return new String(bytes, StandardCharsets.UTF_8);
-    }
-
-    public static byte[] generateProducerIdBlockJson(ProducerIdBlock producerIdBlock) throws
-            JsonProcessingException {
-        Map<String, Object> dataMap = Maps.newHashMap();
-        dataMap.put("version", currentVersion);
-        dataMap.put("broker", producerIdBlock.brokerId);
-        dataMap.put("block_start", producerIdBlock.blockStartId);
-        dataMap.put("block_end", producerIdBlock.blockEndId);
-        return objectMapper.writeValueAsBytes(dataMap);
-    }
-
-    public static ProducerIdBlock parseProducerIdBlockData(byte[] bytes) throws IOException {
-        JsonNode jsonNode = objectMapper.readTree(bytes);
-        return ProducerIdBlock.builder()
-                .brokerId(jsonNode.get("broker").asInt())
-                .blockStartId(jsonNode.get("block_start").asLong())
-                .blockEndId(jsonNode.get("block_end").asLong())
-                .build();
-    }
-
     @Data
     @AllArgsConstructor
     private static class DataAndVersion {
@@ -291,5 +287,9 @@ public class ProducerIdManager {
         public int hashCode() {
             return Objects.hash(brokerId, blockStartId, blockEndId);
         }
+    }
+
+    private String getProducerIdBlockStr(byte[] bytes) {
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 }
