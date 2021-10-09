@@ -15,6 +15,8 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_ALLNAMESPACES_PLACEHOLDER;
+import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_IN;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_IN;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
@@ -26,6 +28,7 @@ import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
@@ -72,6 +75,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -187,6 +191,7 @@ import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 @Getter
 public class KafkaRequestHandler extends KafkaCommandDecoder {
     public static final long DEFAULT_TIMESTAMP = 0L;
+    private static final String POLICY_ROOT = "/admin/policies/";
 
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
@@ -206,7 +211,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
     private final int failedAuthenticationDelayMs;
-    private final Set<String> allowedNamespaces;
     // store the group name for current connected client.
     private final ConcurrentHashMap<String, String> currentConnectedGroup;
     private final String groupIdStoredPath;
@@ -236,6 +240,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private volatile boolean autoReadDisabledPublishBufferLimiting = false;
 
     private String getCurrentTenant() {
+        return getCurrentTenant(kafkaConfig.getKafkaMetadataTenant());
+    }
+
+    private String getCurrentTenant(String defaultTenant) {
         if (kafkaConfig.isKafkaEnableMultiTenantMetadata()
                 && authenticator != null
                 && authenticator.session() != null
@@ -246,9 +254,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         // fallback to using system (default) tenant
         if (log.isDebugEnabled()) {
-            log.debug("using {} as tenant", kafkaConfig.getKafkaMetadataTenant());
+            log.debug("using {} as tenant", defaultTenant);
         }
-        return kafkaConfig.getKafkaMetadataTenant();
+        return defaultTenant;
     }
 
     private static String extractTenantFromTenantSpec(String tenantSpec) {
@@ -306,7 +314,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
-        this.allowedNamespaces = kafkaConfig.getKopAllowedNamespaces();
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
         this.currentConnectedGroup = new ConcurrentHashMap<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
@@ -472,6 +479,47 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 || partitionedTopicName.endsWith("/" + TRANSACTION_STATE_TOPIC_NAME);
     }
 
+    private static String path(String... parts) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(POLICY_ROOT);
+        Joiner.on('/').appendTo(sb, parts);
+        return sb.toString();
+    }
+
+    private CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces) {
+        String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
+        return expandAllowedNamespaces(allowedNamespaces, currentTenant, pulsarService);
+    }
+
+    @VisibleForTesting
+    static CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces,
+                                                                  String currentTenant,
+                                                                  PulsarService pulsarService) {
+        Set<String> result = new CopyOnWriteArraySet<>();
+        List<CompletableFuture<?>> results = new ArrayList<>();
+        for (String namespaceTemplate : allowedNamespaces) {
+            String namespace = namespaceTemplate.replace(TENANT_PLACEHOLDER, currentTenant);
+            if (!namespace.endsWith("/" + TENANT_ALLNAMESPACES_PLACEHOLDER)) {
+                result.add(namespace);
+                results.add(CompletableFuture.completedFuture(namespace));
+            } else {
+                int slash = namespace.lastIndexOf('/');
+                String tenant = namespace.substring(0, slash);
+                results.add(pulsarService.getPulsarResources()
+                        .getNamespaceResources()
+                        .getChildrenAsync(path(tenant))
+                        .thenAccept(children -> {
+                            children.forEach(ns -> {
+                                result.add(tenant + "/" + ns);
+                            });
+                        }));
+            }
+        }
+        return CompletableFuture
+                .allOf(results.toArray(new CompletableFuture<?>[0]))
+                .thenApply(f -> result);
+    }
+
     // Get all topics in the configured allowed namespaces.
     //   key: the full topic name without partition suffix, e.g. persistent://public/default/my-topic
     //   value: the partitions associated with the key, e.g. for a topic with 3 partitions,
@@ -481,32 +529,40 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private CompletableFuture<Map<String, List<TopicName>>> getAllTopicsAsync() {
         CompletableFuture<Map<String, List<TopicName>>> topicMapFuture = new CompletableFuture<>();
         final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
-        final AtomicInteger pendingNamespacesCount = new AtomicInteger(allowedNamespaces.size());
+        final CompletableFuture<Set<String>> allowedNamespacesFuture =
+                expandAllowedNamespaces(kafkaConfig.getKopAllowedNamespaces());
 
-        for (String namespace : allowedNamespaces) {
-            pulsarService.getNamespaceService().getListOfPersistentTopics(NamespaceName.get(namespace))
-                    .whenComplete((topics, e) -> {
-                        if (e != null) {
-                            log.error("Failed to getListOfPersistentTopic of {}", namespace, e);
-                            topicMapFuture.completeExceptionally(e);
-                            return;
-                        }
-                        if (topicMapFuture.isCompletedExceptionally()) {
-                            return;
-                        }
-                        for (String topic : topics) {
-                            final TopicName topicName = TopicName.get(topic);
-                            final String key = topicName.getPartitionedTopicName();
-                            topicMap.computeIfAbsent(
-                                    KopTopic.removeDefaultNamespacePrefix(key),
-                                    ignored -> Collections.synchronizedList(new ArrayList<>())
-                            ).add(topicName);
-                        }
-                        if (pendingNamespacesCount.decrementAndGet() == 0) {
-                            topicMapFuture.complete(topicMap);
-                        }
-                    });
-        }
+        allowedNamespacesFuture.thenAccept(allowedNamespaces -> {
+            final AtomicInteger pendingNamespacesCount = new AtomicInteger(allowedNamespaces.size());
+
+            for (String namespace : allowedNamespaces) {
+                pulsarService.getNamespaceService().getListOfPersistentTopics(NamespaceName.get(namespace))
+                        .whenComplete((topics, e) -> {
+                            if (e != null) {
+                                log.error("Failed to getListOfPersistentTopic of {}", namespace, e);
+                                topicMapFuture.completeExceptionally(e);
+                                return;
+                            }
+                            if (topicMapFuture.isCompletedExceptionally()) {
+                                return;
+                            }
+                            for (String topic : topics) {
+                                final TopicName topicName = TopicName.get(topic);
+                                final String key = topicName.getPartitionedTopicName();
+                                topicMap.computeIfAbsent(
+                                        KopTopic.removeDefaultNamespacePrefix(key),
+                                        ignored -> Collections.synchronizedList(new ArrayList<>())
+                                ).add(topicName);
+                            }
+                            if (pendingNamespacesCount.decrementAndGet() == 0) {
+                                topicMapFuture.complete(topicMap);
+                            }
+                        });
+            }
+        }).exceptionally(error -> {
+            topicMapFuture.completeExceptionally(error);
+            return null;
+        });
         return topicMapFuture;
     }
 
