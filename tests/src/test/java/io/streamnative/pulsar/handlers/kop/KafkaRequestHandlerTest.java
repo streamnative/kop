@@ -743,7 +743,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         deleteTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions.keySet());
         verifyTopicsDeletedByPulsarAdmin(topicToNumPartitions);
         // check deleted topics path
-        List<String> deletedTopics = handler.getPulsarService()
+        Set<String> deletedTopics = handler.getPulsarService()
                 .getBrokerService()
                 .getPulsar()
                 .getLocalMetadataStore()
@@ -751,9 +751,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 .join()
                 .stream()
                 .map((TopicNameUtils::getTopicNameWithUrlDecoded))
-                .collect(Collectors.toList());
+                .collect(Collectors.toSet());
 
-        assertEquals(topicToNumPartitions.keySet().size(), deletedTopics.size());
-        assertTrue(topicToNumPartitions.keySet().containsAll(deletedTopics));
+        assertEquals(topicToNumPartitions.keySet(), deletedTopics);
     }
 }
