@@ -450,7 +450,6 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     public void testOffsetCommitRequestAuthorizationFailed() throws Exception {
         String group = "test-failed-groupId";
         String memberId = "test_failed_member_id";
-        int generationId = -1; // use for avoid mock group state and member
         TopicPartition topicPartition = new TopicPartition("test", 1);
 
         // Build input params
@@ -458,7 +457,6 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         offsetData.put(topicPartition,
                 new OffsetCommitRequest.PartitionData(1L, ""));
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(group, offsetData)
-                .setGenerationId(generationId)
                 .setMemberId(memberId)
                 .setRetentionTime(OffsetCommitRequest.DEFAULT_RETENTION_TIME);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
@@ -480,7 +478,6 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     public void testOffsetCommitRequestPartAuthorizationFailed() throws Exception {
         String group = "test-failed-groupId";
         String memberId = "test_failed_member_id";
-        int generationId = -1; // use for avoid mock group state and member
         TopicPartition topicPartition1 = new TopicPartition("test", 1);
         TopicPartition topicPartition2 = new TopicPartition("test1", 2);
         TopicPartition topicPartition3 = new TopicPartition("test2", 3);
@@ -495,7 +492,6 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                 new OffsetCommitRequest.PartitionData(3L, ""));
 
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(group, offsetData)
-                .setGenerationId(generationId)
                 .setMemberId(memberId)
                 .setRetentionTime(OffsetCommitRequest.DEFAULT_RETENTION_TIME);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
