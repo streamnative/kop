@@ -808,11 +808,11 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         handler.replaceTopicPartition(replacedMap, nonEmptyReplacingIndex);
 
-        Assert.assertEquals(1, replacedMap.size());
+        assertEquals(1, replacedMap.size());
 
         // 5. after replace, replacedMap has a short topic name
         replacedMap.forEach(((topicPartition, s) -> {
-            Assert.assertEquals(tp0, topicPartition);
+            assertEquals(tp0, topicPartition);
         }));
     }
 
