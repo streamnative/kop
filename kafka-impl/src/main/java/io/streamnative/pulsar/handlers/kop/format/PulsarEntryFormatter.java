@@ -17,6 +17,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
+import io.streamnative.pulsar.handlers.kop.utils.PulsarMessageBuilder;
 import java.util.List;
 import java.util.stream.StreamSupport;
 import lombok.extern.slf4j.Slf4j;
@@ -24,9 +25,7 @@ import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.Record;
-import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.impl.MessageImpl;
-import org.apache.pulsar.client.impl.TypedMessageBuilderImpl;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
@@ -101,8 +100,8 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
     // convert kafka Record to Pulsar Message.
     // called when publish received Kafka Record into Pulsar.
     private static MessageImpl<byte[]> recordToEntry(Record record) {
-        @SuppressWarnings("unchecked")
-        TypedMessageBuilderImpl<byte[]> builder = new TypedMessageBuilderImpl(null, Schema.BYTES);
+
+        PulsarMessageBuilder builder = PulsarMessageBuilder.newBuilder();
 
         // key
         if (record.hasKey()) {
