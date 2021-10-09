@@ -38,8 +38,10 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
@@ -59,6 +61,8 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
+import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
@@ -516,6 +520,62 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         assertEquals(offsetCommitResponse.responseData().get(topicPartition2), Errors.TOPIC_AUTHORIZATION_FAILED);
         assertEquals(offsetCommitResponse.responseData().get(topicPartition3), Errors.TOPIC_AUTHORIZATION_FAILED);
 
+    }
+
+    @Test(timeOut = 20000)
+    public void testAddPartitionsToTxnAuthorizationFailed() throws ExecutionException, InterruptedException {
+        TopicPartition topicPartition1 = new TopicPartition("test", 1);
+        TopicPartition topicPartition2 = new TopicPartition("test1", 2);
+        TopicPartition topicPartition3 = new TopicPartition("test2", 3);
+        List<TopicPartition> topicPartitions = Arrays.asList(topicPartition1, topicPartition2, topicPartition3);
+
+        AddPartitionsToTxnRequest.Builder builder =
+                new AddPartitionsToTxnRequest.Builder(
+                        "1",1, (short) 1, topicPartitions);
+        KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
+
+        // Topic: `test` authorize success.
+        KafkaRequestHandler spyHandler = spy(handler);
+        doReturn(CompletableFuture.completedFuture(true))
+                .when(spyHandler)
+                .authorize(eq(AclOperation.WRITE),
+                        eq(Resource.of(ResourceType.TOPIC, KopTopic.toString(topicPartition1)))
+                );
+        // Handle request
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        spyHandler.handleAddPartitionsToTxn(headerAndRequest, responseFuture);
+        AbstractResponse response = responseFuture.get();
+        assertTrue(response instanceof AddPartitionsToTxnResponse);
+        AddPartitionsToTxnResponse addPartitionsToTxnResponse = (AddPartitionsToTxnResponse) response;
+
+        assertEquals(addPartitionsToTxnResponse.errorCounts().size(), 2);
+
+        // OPERATION_NOT_ATTEMPTED Or TOPIC_AUTHORIZATION_FAILED
+        assertEquals(addPartitionsToTxnResponse.errors().size(), 3);
+
+        assertEquals(addPartitionsToTxnResponse.errors().get(topicPartition1), Errors.OPERATION_NOT_ATTEMPTED);
+        assertEquals(addPartitionsToTxnResponse.errors().get(topicPartition2), Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(addPartitionsToTxnResponse.errors().get(topicPartition3), Errors.TOPIC_AUTHORIZATION_FAILED);
+    }
+
+    @Test(timeOut = 20000)
+    public void testAddPartitionsToTxnPartAuthorizationFailed() throws ExecutionException, InterruptedException {
+        TopicPartition topicPartition = new TopicPartition("test", 1);
+        AddPartitionsToTxnRequest.Builder builder =
+                new AddPartitionsToTxnRequest.Builder(
+                        "1",1, (short) 1, Collections.singletonList(topicPartition));
+        KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
+        // Handle request
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        handler.handleAddPartitionsToTxn(headerAndRequest, responseFuture);
+        AbstractResponse response = responseFuture.get();
+        assertTrue(response instanceof AddPartitionsToTxnResponse);
+        AddPartitionsToTxnResponse addPartitionsToTxnResponse = (AddPartitionsToTxnResponse) response;
+
+        assertEquals(addPartitionsToTxnResponse.errorCounts().size(), 1);
+        addPartitionsToTxnResponse.errors().values().forEach(errors -> {
+            assertEquals(errors, Errors.TOPIC_AUTHORIZATION_FAILED);
+        });
     }
 
     KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
