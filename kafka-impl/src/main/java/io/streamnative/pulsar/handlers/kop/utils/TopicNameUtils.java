@@ -15,6 +15,11 @@ package io.streamnative.pulsar.handlers.kop.utils;
 
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import lombok.NonNull;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicDomain;
@@ -73,6 +78,32 @@ public class TopicNameUtils {
         String localName = topicName.getPartitionedTopicName();
         // remove persistent://tenant/ns
         return TopicName.get(localName).getLocalName();
+    }
+
+    /**
+     * Get an url encoded topic name.
+     */
+    public static @NonNull String getTopicNameWithUrlEncoded(String topicName) {
+        String encodedTopicName = "";
+        try {
+            encodedTopicName = URLEncoder.encode(topicName, StandardCharsets.UTF_8.name());
+        } catch (UnsupportedEncodingException ignore) {
+            // The exception will never happen, because the charset always exists.
+        }
+        return encodedTopicName;
+    }
+
+    /**
+     * Get an url decoded topic name.
+     */
+    public static @NonNull String getTopicNameWithUrlDecoded(String encodedTopicName) {
+        String topicName = "";
+        try {
+            topicName = URLDecoder.decode(encodedTopicName, StandardCharsets.UTF_8.name());
+        } catch (UnsupportedEncodingException ignore) {
+            // The exception will never happen, because the charset always exists.
+        }
+        return topicName;
     }
 
 }
