@@ -78,6 +78,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Getter;
@@ -1588,12 +1589,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 if (convertedOffsetData.isEmpty()) {
                     Map<TopicPartition, Errors> offsetCommitResult = Maps.newHashMap();
 
-                    if (!nonExistingTopicErrors.isEmpty()) {
-                        offsetCommitResult.putAll(nonExistingTopicErrors);
-                    }
-                    if (!unauthorizedTopicErrors.isEmpty()) {
-                        offsetCommitResult.putAll(unauthorizedTopicErrors);
-                    }
+                    offsetCommitResult.putAll(nonExistingTopicErrors);
+                    offsetCommitResult.putAll(unauthorizedTopicErrors);
 
                     OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
                     resultFuture.complete(response);
@@ -1617,12 +1614,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         // recover to original topic name
                         replaceTopicPartition(offsetCommitResult, replacingIndex);
 
-                        if (!nonExistingTopicErrors.isEmpty()) {
-                            offsetCommitResult.putAll(nonExistingTopicErrors);
-                        }
-                        if (!unauthorizedTopicErrors.isEmpty()) {
-                            offsetCommitResult.putAll(unauthorizedTopicErrors);
-                        }
+                        offsetCommitResult.putAll(nonExistingTopicErrors);
+                        offsetCommitResult.putAll(unauthorizedTopicErrors);
 
                         OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
                         resultFuture.complete(response);
