@@ -499,7 +499,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         int existedOffsetTopicNumPartitions  = 0;
         try {
             pulsarAdmin = brokerService.getPulsar().getAdminClient();
-            existedOffsetTopicNumPartitions  = pulsarAdmin.topics().getPartitionedTopicMetadata(topicName).partitions;
+            existedOffsetTopicNumPartitions = pulsarAdmin.topics().getPartitionedTopicMetadata(topicName).partitions;
         }  catch (PulsarServerException | PulsarAdminException e) {
             log.error("Failed to get offset topic partition metadata .", e);
             throw new IllegalStateException(e);
