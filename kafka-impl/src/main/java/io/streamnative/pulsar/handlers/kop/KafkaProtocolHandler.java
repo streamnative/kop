@@ -104,7 +104,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     }
 
     @VisibleForTesting
-    public Map<String, GroupCoordinator> getGroupCoordinator() {
+    public Map<String, GroupCoordinator> getGroupCoordinators() {
         return groupCoordinatorsByTenant;
     }
 

@@ -297,7 +297,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
         // remove here to trigger a new creating for GroupCoordinator
-        handler.getGroupCoordinator().remove(conf.getKafkaMetadataTenant());
+        handler.getGroupCoordinators().remove(conf.getKafkaMetadataTenant());
         GroupMetadataManager newMetaManager =
                 handler.getGroupCoordinator(conf.getKafkaMetadataTenant()).getGroupManager();
 
