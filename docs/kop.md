@@ -75,7 +75,7 @@ After you copy the `.nar` file to your Pulsar `/protocols` directory, you need t
     | `protocolHandlerDirectory`|./protocols  | Location of KoP NAR file |
     | `allowAutoTopicCreationType`| non-partitioned | partitioned |
 
-    By default, `allowAutoTopicCreationType` is set to `non-partitioned`. You need to set `allowAutoTopicCreationType` to `partitioned` because KoP only supports partitioned topics. If not, topics automatically created by KoP are still partitioned topics, yet topics created automatically by the Pulsar broker are non-partitioned topics.
+    By default, `allowAutoTopicCreationType` is set to `non-partitioned`. Since topics are partitioned by default in Kafka, it's better to avoid creating non-partitioned topics for Kafka clients unless Kafka clients need to interact with existing non-partitioned topics.
 
 2. Set Kafka listeners.
 

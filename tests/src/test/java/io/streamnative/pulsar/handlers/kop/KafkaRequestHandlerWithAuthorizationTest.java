@@ -18,6 +18,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
@@ -63,6 +64,8 @@ import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
+import org.apache.kafka.common.requests.OffsetCommitRequest;
+import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetFetchRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
@@ -442,6 +445,78 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         offsetFetchResponse.responseData().forEach((topicPartition, partitionData) -> {
             assertEquals(partitionData.error, Errors.TOPIC_AUTHORIZATION_FAILED);
         });
+    }
+
+    @Test(timeOut = 20000)
+    public void testOffsetCommitRequestAuthorizationFailed() throws Exception {
+        String group = "test-failed-groupId";
+        String memberId = "test_failed_member_id";
+        TopicPartition topicPartition = new TopicPartition("test", 1);
+
+        // Build input params
+        Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = Maps.newHashMap();
+        offsetData.put(topicPartition,
+                new OffsetCommitRequest.PartitionData(1L, ""));
+        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(group, offsetData)
+                .setMemberId(memberId)
+                .setRetentionTime(OffsetCommitRequest.DEFAULT_RETENTION_TIME);
+        KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
+
+        // Handle request
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        handler.handleOffsetCommitRequest(headerAndRequest, responseFuture);
+        AbstractResponse response = responseFuture.get();
+        assertTrue(response instanceof OffsetCommitResponse);
+        OffsetCommitResponse offsetCommitResponse = (OffsetCommitResponse) response;
+        assertEquals(offsetCommitResponse.responseData().size(), 1);
+        assertFalse(offsetCommitResponse.errorCounts().isEmpty());
+        offsetCommitResponse.responseData().forEach((__, error) -> {
+            assertEquals(error, Errors.TOPIC_AUTHORIZATION_FAILED);
+        });
+    }
+
+    @Test(timeOut = 20000)
+    public void testOffsetCommitRequestPartAuthorizationFailed() throws Exception {
+        String group = "test-failed-groupId";
+        String memberId = "test_failed_member_id";
+        TopicPartition topicPartition1 = new TopicPartition("test", 1);
+        TopicPartition topicPartition2 = new TopicPartition("test1", 2);
+        TopicPartition topicPartition3 = new TopicPartition("test2", 3);
+
+        // Build input params
+        Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = Maps.newHashMap();
+        offsetData.put(topicPartition1,
+                new OffsetCommitRequest.PartitionData(1L, ""));
+        offsetData.put(topicPartition2,
+                new OffsetCommitRequest.PartitionData(2L, ""));
+        offsetData.put(topicPartition3,
+                new OffsetCommitRequest.PartitionData(3L, ""));
+
+        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(group, offsetData)
+                .setMemberId(memberId)
+                .setRetentionTime(OffsetCommitRequest.DEFAULT_RETENTION_TIME);
+        KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
+
+        // Topic: `test` authorize success.
+        KafkaRequestHandler spyHandler = spy(handler);
+        doReturn(CompletableFuture.completedFuture(true))
+                .when(spyHandler)
+                .authorize(eq(AclOperation.READ),
+                        eq(Resource.of(ResourceType.TOPIC, new KopTopic(topicPartition1.topic()).getFullName()))
+                );
+
+        // Handle request
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        spyHandler.handleOffsetCommitRequest(headerAndRequest, responseFuture);
+
+        AbstractResponse response = responseFuture.get();
+        assertTrue(response instanceof OffsetCommitResponse);
+        OffsetCommitResponse offsetCommitResponse = (OffsetCommitResponse) response;
+        assertEquals(offsetCommitResponse.responseData().size(), 3);
+        assertEquals(offsetCommitResponse.errorCounts().size(), 2);
+        assertEquals(offsetCommitResponse.responseData().get(topicPartition2), Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(offsetCommitResponse.responseData().get(topicPartition3), Errors.TOPIC_AUTHORIZATION_FAILED);
+
     }
 
     KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {

@@ -94,10 +94,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KafkaServiceConfiguration kafkaConfig;
     @Getter
     private BrokerService brokerService;
+    @Getter
+    private KopEventManager kopEventManager;
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
-    private final Map<String, KopEventManager> kopEventManagerByTenant = new ConcurrentHashMap<>();
 
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -352,6 +353,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         // initialize default Group Coordinator
         getGroupCoordinator(kafkaConfig.getKafkaMetadataTenant());
 
+        // init KopEventManager
+        kopEventManager = new KopEventManager(adminManager,
+                brokerService.getPulsar().getLocalMetadataStore(),
+                scopeStatsLogger,
+                groupCoordinatorsByTenant);
+        kopEventManager.start();
+
         if (kafkaConfig.isEnableTransactionCoordinator()) {
             getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
         }
@@ -416,14 +424,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             // init and start group coordinator
             groupCoordinator = startGroupCoordinator(tenant, offsetTopicClient);
 
-            // init KopEventManager
-            KopEventManager kopEventManager = new KopEventManager(groupCoordinator,
-                    adminManager,
-                    brokerService.getPulsar().getLocalMetadataStore(),
-                    scopeStatsLogger);
-            kopEventManager.start();
-            kopEventManagerByTenant.put(tenant, kopEventManager);
-
             // and listener for Offset topics load/unload
             brokerService.pulsar()
                     .getNamespaceService()
@@ -433,8 +433,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             log.error("Failed to create offset metadata", e);
             throw new IllegalStateException(e);
         }
-
-
 
         // init kafka namespaces
         try {
@@ -488,15 +486,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
         offsetTopicClient.close();
         adminManager.shutdown();
-        for (Map.Entry<String, GroupCoordinator> groupCoordinator : groupCoordinatorsByTenant.entrySet()) {
-            String tenant = groupCoordinator.getKey();
-            groupCoordinator.getValue().shutdown();
-            KopEventManager kopEventManager = kopEventManagerByTenant.get(tenant);
-            if (kopEventManager != null) {
-                kopEventManager.close();
-            }
-        }
-
+        groupCoordinatorsByTenant.values().forEach(GroupCoordinator::shutdown);
+        kopEventManager.close();
         KafkaTopicManager.LOOKUP_CACHE.clear();
         KopBrokerLookupManager.clear();
         KafkaTopicManager.closeKafkaTopicConsumerManagers();
