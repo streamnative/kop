@@ -16,12 +16,9 @@ package io.streamnative.pulsar.handlers.kop.format;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import java.time.Duration;
 import java.util.Collections;
-import java.util.Properties;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
@@ -32,7 +29,6 @@ public class EntryFormatterTestBase extends KopProtocolHandlerTestBase {
     private static final String group1 = "test-format-group1";
     private static final String group2 = "test-format-group2";
     private static final String topic = "test-format-topic";
-    private static final String offsetReset = "earliest";
 
     public EntryFormatterTestBase(final String entryFormat) {
         super(entryFormat);
@@ -56,7 +52,7 @@ public class EntryFormatterTestBase extends KopProtocolHandlerTestBase {
         admin.topics().createPartitionedTopic(topic, numPartitions);
 
         // 2. create producer
-        final KafkaProducer<String, String> producer = createKafkaProducer();
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
         // 3. send messages
         int total = 5;
         for (int i = 0; i < total; i++) {
@@ -67,7 +63,8 @@ public class EntryFormatterTestBase extends KopProtocolHandlerTestBase {
         producer.close();
 
         // 4. consume messages use group1 from earliest
-        KafkaConsumer<String, String> consumer1 = createKafkaConsumer(group1);
+        final KafkaConsumer<String, String> consumer1 = new KafkaConsumer<>(newKafkaConsumerProperties(group1));
+
         consumer1.subscribe(Collections.singleton(topic));
         int consumedMessages = 0;
         while (consumedMessages < total) {
@@ -81,7 +78,7 @@ public class EntryFormatterTestBase extends KopProtocolHandlerTestBase {
         changeEntryFormatAndRestart(format);
 
         // 6. consume messages use group2 from earliest
-        KafkaConsumer<String, String> consumer2 = createKafkaConsumer(group2);
+        KafkaConsumer<String, String> consumer2 = new KafkaConsumer<>(newKafkaConsumerProperties(group2));
         consumer2.subscribe(Collections.singleton(topic));
         consumedMessages = 0;
         while (consumedMessages < total) {
@@ -103,28 +100,6 @@ public class EntryFormatterTestBase extends KopProtocolHandlerTestBase {
     protected void changeEntryFormatAndRestart(final String entryFormat) throws Exception {
         super.changeEntryFormat(entryFormat);
         super.restartBroker();
-    }
-
-    protected KafkaProducer<String, String> createKafkaProducer() {
-        final Properties properties = new Properties();
-        properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
-        properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
-                "org.apache.kafka.common.serialization.StringSerializer");
-        properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
-                "org.apache.kafka.common.serialization.StringSerializer");
-        return new KafkaProducer<>(properties);
-    }
-
-    protected KafkaConsumer<String, String> createKafkaConsumer(final String group) {
-        final Properties properties = new Properties();
-        properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
-        properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
-                "org.apache.kafka.common.serialization.StringDeserializer");
-        properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
-                "org.apache.kafka.common.serialization.StringDeserializer");
-        properties.put(ConsumerConfig.GROUP_ID_CONFIG, group);
-        properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, offsetReset);
-        return new KafkaConsumer<>(properties);
     }
 
 }
