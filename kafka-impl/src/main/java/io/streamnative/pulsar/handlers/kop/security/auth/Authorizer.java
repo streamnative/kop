@@ -42,6 +42,16 @@ public interface Authorizer {
     CompletableFuture<Boolean> canAccessTenantAsync(KafkaPrincipal principal, Resource resource);
 
     /**
+     * Check whether the specified role can manage Pulsar tenant.
+     * This permission mapping to pulsar is Tenant Admin or Super Admin.
+     *
+     * @param principal login info
+     * @param resource resources to be authorized
+     * @return a boolean to determine whether authorized or not
+     */
+    CompletableFuture<Boolean> canManageTenantAsync(KafkaPrincipal principal, Resource resource);
+
+    /**
      * Check whether the specified role can perform a produce for the specified topic.
      *
      * For that the caller needs to have producer permission.

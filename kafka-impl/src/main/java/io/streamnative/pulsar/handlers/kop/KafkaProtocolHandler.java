@@ -92,10 +92,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KafkaServiceConfiguration kafkaConfig;
     @Getter
     private BrokerService brokerService;
+    @Getter
+    private KopEventManager kopEventManager;
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
-    private final Map<String, KopEventManager> kopEventManagerByTenant = new ConcurrentHashMap<>();
 
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -401,7 +402,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 throw new IllegalArgumentException(
                         "Invalid namespace '" + fullNamespace + "' in kopAllowedNamespaces config");
             }
-            NamespaceName.validateNamespaceName(tokens[0], tokens[1]);
+            NamespaceName.validateNamespaceName(
+                    tokens[0].replace(KafkaServiceConfiguration.TENANT_PLACEHOLDER, kafkaConfig.getKafkaTenant()),
+                    tokens[1].replace("*", kafkaConfig.getKafkaNamespace()));
         }
 
         statsProvider = new PrometheusMetricsProvider();
@@ -463,6 +466,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         // initialize default Group Coordinator
         getGroupCoordinator(kafkaConfig.getKafkaMetadataTenant());
 
+        // init KopEventManager
+        kopEventManager = new KopEventManager(adminManager,
+                brokerService.getPulsar().getLocalMetadataStore(),
+                scopeStatsLogger,
+                groupCoordinatorsByTenant);
+        kopEventManager.start();
+
         if (kafkaConfig.isEnableTransactionCoordinator()) {
             TransactionCoordinator transactionCoordinator =
                     getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
@@ -522,14 +532,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             // init and start group coordinator
             groupCoordinator = startGroupCoordinator(tenant, offsetTopicClient);
 
-            // init KopEventManager
-            KopEventManager kopEventManager = new KopEventManager(groupCoordinator,
-                    adminManager,
-                    brokerService.getPulsar().getLocalMetadataStore(),
-                    scopeStatsLogger);
-            kopEventManager.start();
-            kopEventManagerByTenant.put(tenant, kopEventManager);
-
             // and listener for Offset topics load/unload
             brokerService.pulsar()
                     .getNamespaceService()
@@ -539,6 +541,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             log.error("Failed to create offset metadata", e);
             throw new IllegalStateException(e);
         }
+
         // init kafka namespaces
         try {
             MetadataUtils.createKafkaNamespaceIfMissing(brokerService.getPulsar().getAdminClient(),
@@ -592,17 +595,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         offsetTopicClient.close();
         txnTopicClient.close();
         adminManager.shutdown();
-        groupCoordinatorsByTenant.forEach((tenant, groupCoordinator) -> {
-            KopEventManager kopEventManager = kopEventManagerByTenant.get(tenant);
-            if (kopEventManager != null) {
-                kopEventManager.close();
-            }
-            groupCoordinator.shutdown();
-        });
+        groupCoordinatorsByTenant.values().forEach(GroupCoordinator::shutdown);
+        kopEventManager.close();
         transactionCoordinatorByTenant.forEach((__, txnCoordinator) -> {
             txnCoordinator.shutdown();
         });
-
         KafkaTopicManager.LOOKUP_CACHE.clear();
         KopBrokerLookupManager.clear();
         KafkaTopicManager.closeKafkaTopicConsumerManagers();

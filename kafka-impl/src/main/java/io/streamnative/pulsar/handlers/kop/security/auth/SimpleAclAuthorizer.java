@@ -118,6 +118,16 @@ public class SimpleAclAuthorizer implements Authorizer {
                                                      CompletableFuture<Boolean> permissionFuture,
                                                      TopicName topicName, Policies policies) {
         String role = principal.getName();
+
+        // Check Namespace level policies
+        Map<String, Set<AuthAction>> namespaceRoles = policies.auth_policies
+                .getNamespaceAuthentication();
+        Set<AuthAction> namespaceActions = namespaceRoles.get(role);
+        if (namespaceActions != null && namespaceActions.contains(action)) {
+            permissionFuture.complete(true);
+            return;
+        }
+
         // Check Topic level policies
         Map<String, Set<AuthAction>> topicRoles = policies
                 .auth_policies
@@ -132,21 +142,30 @@ public class SimpleAclAuthorizer implements Authorizer {
             }
         }
 
-        // Check Namespace level policies
-        Map<String, Set<AuthAction>> namespaceRoles = policies.auth_policies
-                .getNamespaceAuthentication();
-        Set<AuthAction> namespaceActions = namespaceRoles.get(role);
-        if (namespaceActions != null && namespaceActions.contains(action)) {
-            permissionFuture.complete(true);
-            return;
-        }
-
         // Check wildcard policies
         if (conf.isAuthorizationAllowWildcardsMatching()
                 && checkWildcardPermission(role, action, namespaceRoles)) {
             // The role has namespace level permission by wildcard match
             permissionFuture.complete(true);
             return;
+        }
+
+        // If the partition number of the partitioned topic having topic level policy is updated,
+        // the new sub partitions may not inherit the policy of the partition topic.
+        // We can also check the permission of partitioned topic.
+        // For https://github.com/apache/pulsar/issues/10300
+        if (topicName.isPartitioned()) {
+            topicRoles = policies.auth_policies
+                    .getTopicAuthentication().get(topicName.getPartitionedTopicName());
+            if (topicRoles != null) {
+                // Topic has custom policy
+                Set<AuthAction> topicActions = topicRoles.get(role);
+                if (topicActions != null && topicActions.contains(action)) {
+                    // The role has topic level permission
+                    permissionFuture.complete(true);
+                    return;
+                }
+            }
         }
         permissionFuture.complete(false);
     }
@@ -260,6 +279,16 @@ public class SimpleAclAuthorizer implements Authorizer {
             canAccessFuture.complete(hasPermission);
         });
         return canAccessFuture;
+    }
+
+    @Override
+    public CompletableFuture<Boolean> canManageTenantAsync(KafkaPrincipal principal, Resource resource) {
+        checkArgument(resource.getResourceType() == ResourceType.TOPIC,
+                String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
+
+        TopicName topicName = TopicName.get(resource.getName());
+        NamespaceName namespace = topicName.getNamespaceObject();
+        return isSuperUserOrTenantAdmin(namespace.getTenant(), principal.getName());
     }
 
     @Override

@@ -35,7 +35,10 @@ import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.CreateTopicsResult;
+import org.apache.kafka.clients.admin.DeleteTopicsResult;
 import org.apache.kafka.clients.admin.ListTopicsResult;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -134,7 +137,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     @Test(timeOut = 20000)
-    void testAuthorizationFailed() throws PulsarAdminException {
+    public void testAuthorizationFailed() throws PulsarAdminException {
         String newTenant = "newTenantAuthorizationFailed";
         String testTopic = "persistent://" + newTenant + "/" + NAMESPACE + "/topic1";
         try {
@@ -163,7 +166,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     @Test(timeOut = 20000)
-    void testAuthorizationSuccess() throws PulsarAdminException {
+    public void testAuthorizationSuccess() throws PulsarAdminException {
         String topic = "testAuthorizationSuccessTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
         KProducer kProducer = new KProducer(topic, false, "localhost", getKafkaBrokerPort(),
@@ -207,7 +210,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     @Test(timeOut = 20000)
-    void testAuthorizationSuccessByAdmin() throws PulsarAdminException {
+    public void testAuthorizationSuccessByAdmin() throws PulsarAdminException {
         String topic = "testAuthorizationSuccessByAdminTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
         KProducer kProducer = new KProducer(topic, false, "localhost", getKafkaBrokerPort(),
@@ -251,7 +254,64 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     @Test(timeOut = 20000)
-    void testListTopic() throws Exception {
+    public void testProduceWithTopicLevelPermissions()
+            throws PulsarAdminException, ExecutionException, InterruptedException {
+        String topic = "testTopicLevelPermissions";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
+
+        // Grant produce permission with topic level permission to ANOTHER_USER
+        admin.topics().grantPermission(fullNewTopicName,
+                ANOTHER_USER,
+                Sets.newHashSet(AuthAction.produce));
+
+        @Cleanup
+        KProducer producer = new KProducer(fullNewTopicName, false, "localhost", getKafkaBrokerPort(),
+                TENANT + "/" + NAMESPACE, "token:" + anotherToken);
+        int totalMsgs = 10;
+        String messageStrPrefix = fullNewTopicName + "_message_";
+
+        for (int i = 0; i < totalMsgs; i++) {
+            String messageStr = messageStrPrefix + i;
+            producer.getProducer().send(new ProducerRecord<>(fullNewTopicName, i, messageStr)).get();
+        }
+
+        // Ensure admin can consume message.
+        @Cleanup
+        KConsumer adminConsumer = new KConsumer(fullNewTopicName, "localhost", getKafkaBrokerPort(), false,
+                TENANT + "/" + NAMESPACE, "token:" + adminToken, "DemoAdminKafkaOnPulsarConsumer");
+        adminConsumer.getConsumer().subscribe(Collections.singleton(fullNewTopicName));
+
+        int i = 0;
+        while (i < totalMsgs) {
+            ConsumerRecords<Integer, String> records = adminConsumer.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<Integer, String> record : records) {
+                Integer key = record.key();
+                assertEquals(messageStrPrefix + key.toString(), record.value());
+                i++;
+            }
+        }
+        assertEquals(i, totalMsgs);
+
+        // no more records
+        ConsumerRecords<Integer, String> records = adminConsumer.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+
+
+        // Consume should be failed.
+        @Cleanup
+        KConsumer anotherConsumer = new KConsumer(fullNewTopicName, "localhost", getKafkaBrokerPort(), false,
+                TENANT + "/" + NAMESPACE, "token:" + anotherToken, "DemoAnotherKafkaOnPulsarConsumer");
+        anotherConsumer.getConsumer().subscribe(Collections.singleton(fullNewTopicName));
+        try {
+            anotherConsumer.getConsumer().poll(Duration.ofSeconds(2));
+            fail("expected TopicAuthorizationException");
+        } catch (TopicAuthorizationException ignore) {
+            log.info("Has TopicAuthorizationException.");
+        }
+    }
+
+    @Test(timeOut = 20000)
+    public void testListTopic() throws Exception {
         String newTopic = "newTestListTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
 
@@ -275,15 +335,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         assertTrue(result.containsKey(newTopic));
 
         // Check AdminClient use specific user to list topic
-        Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
-        String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule "
-                + "required username=\"%s\" password=\"%s\";";
-        String jaasCfg = String.format(jaasTemplate, TENANT + "/" + NAMESPACE, "token:" + anotherToken);
-        props.put("sasl.jaas.config", jaasCfg);
-        props.put("security.protocol", "SASL_PLAINTEXT");
-        props.put("sasl.mechanism", "PLAIN");
-        AdminClient adminClient = AdminClient.create(props);
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, anotherToken);
         ListTopicsResult listTopicsResult = adminClient.listTopics();
         Set<String> topics = listTopicsResult.names().get();
 
@@ -398,6 +450,103 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             // Cleanup
             admin.topics().deletePartitionedTopic(testTopic);
         }
+    }
+
+    @Test(timeOut = 20000)
+    public void testCreateTopicSuccess() throws ExecutionException, InterruptedException, PulsarAdminException {
+        String newTopic = "testCreateTopicSuccess";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
+
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, adminToken);
+        CreateTopicsResult result =
+                adminClient.createTopics(Collections.singleton(new NewTopic(fullNewTopicName, 1, (short) 1)));
+        result.all().get();
+
+        try {
+            admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+        } catch (PulsarAdminException exception) {
+            assertTrue(exception.getMessage().contains("This topic already exists"));
+        }
+        admin.topics().deletePartitionedTopic(fullNewTopicName);
+        adminClient.close();
+    }
+
+    @Test(timeOut = 20000)
+    public void testCreateTopicFailed() throws PulsarAdminException {
+        String newTopic = "testCreateTopicFailed";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
+
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, userToken);
+        CreateTopicsResult result =
+                adminClient.createTopics(Collections.singleton(new NewTopic(fullNewTopicName, 1, (short) 1)));
+        try {
+            result.all().get();
+        } catch (ExecutionException | InterruptedException ex) {
+            assertTrue(ex.getMessage().contains("TopicAuthorizationException"));
+        }
+        admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+        admin.topics().deletePartitionedTopic(fullNewTopicName);
+        adminClient.close();
+    }
+
+    @Test(timeOut = 20000)
+    public void testDeleteTopicSuccess() throws PulsarAdminException, InterruptedException {
+        String newTopic = "testDeleteTopicSuccess";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
+
+        admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, adminToken);
+        DeleteTopicsResult deleteTopicsResult = adminClient.deleteTopics(Collections.singletonList(newTopic));
+        try {
+            deleteTopicsResult.all().get();
+        } catch (ExecutionException ex) {
+            fail("Should success but have : " + ex.getMessage());
+        }
+        List<String> topicList = admin.topics().getList(TENANT + "/" + NAMESPACE);
+        topicList.forEach(topic -> {
+            if (topic.startsWith(fullNewTopicName)) {
+                fail("Delete topic failed!");
+            }
+        });
+
+        adminClient.close();
+    }
+
+    @Test(timeOut = 20000)
+    public void testDeleteTopicFailed() throws PulsarAdminException, InterruptedException {
+        String newTopic = "testDeleteTopicFailed";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
+
+        admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, userToken);
+        DeleteTopicsResult deleteTopicsResult = adminClient.deleteTopics(Collections.singletonList(newTopic));
+        try {
+            deleteTopicsResult.all().get();
+            fail("Should delete failed!");
+        } catch (ExecutionException ex) {
+            assertTrue(ex.getMessage().contains("TopicAuthorizationException"));
+        }
+        try {
+            admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+        } catch (PulsarAdminException exception) {
+            assertTrue(exception.getMessage().contains("This topic already exists"));
+        }
+        admin.topics().deletePartitionedTopic(fullNewTopicName);
+        adminClient.close();
+    }
+
+    private AdminClient createAdminClient(String username, String token) {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule "
+                + "required username=\"%s\" password=\"%s\";";
+        String jaasCfg = String.format(jaasTemplate, username, "token:" + token);
+        props.put("sasl.jaas.config", jaasCfg);
+        props.put("security.protocol", "SASL_PLAINTEXT");
+        props.put("sasl.mechanism", "PLAIN");
+        return AdminClient.create(props);
     }
 
 }

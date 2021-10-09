@@ -48,7 +48,6 @@ public class MessageIdUtils {
 
     public static long getPublishTime(final ByteBuf byteBuf) {
         final int readerIndex = byteBuf.readerIndex();
-        Commands.skipBrokerEntryMetadataIfExist(byteBuf);
         final MessageMetadata metadata = Commands.parseMessageMetadata(byteBuf);
         byteBuf.readerIndex(readerIndex);
         return metadata.getPublishTime();

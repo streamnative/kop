@@ -13,8 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static com.google.common.base.Preconditions.checkState;
-
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import java.io.FileInputStream;
@@ -28,7 +26,6 @@ import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
@@ -43,6 +40,10 @@ import org.apache.pulsar.common.configuration.FieldContext;
 @Getter
 @Setter
 public class KafkaServiceConfiguration extends ServiceConfiguration {
+
+    public static final String TENANT_PLACEHOLDER = "${tenant}";
+    public static final String TENANT_ALLNAMESPACES_PLACEHOLDER = "*";
+
 
     // Group coordinator configuration
     private static final int GroupMinSessionTimeoutMs = 6000;
@@ -66,9 +67,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     @Category
     private static final String CATEGORY_KOP_TRANSACTION = "Kafka on Pulsar transaction";
 
-    private static final String END_POINT_SEPARATOR = ",";
-    private static final String REGEX = "^(.*)://\\[?([0-9a-zA-Z\\-%._:]*)\\]?:(-?[0-9]+)";
-    private static final Pattern PATTERN = Pattern.compile(REGEX);
     //
     // --- Kafka on Pulsar Broker configuration ---
     //
@@ -203,13 +201,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             doc = "Use kafkaProtocolMap, kafkaListeners and advertisedAddress instead."
     )
     private String kafkaAdvertisedListeners;
-
-    @Deprecated
-    @FieldContext(
-            category = CATEGORY_KOP,
-            doc = "Use kafkaProtocolMap, kafkaListeners and advertisedAddress instead."
-    )
-    private String kafkaListenerName;
 
     @FieldContext(
             category = CATEGORY_KOP,
@@ -399,11 +390,9 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();
-        for (String listener : advertisedListeners.split(END_POINT_SEPARATOR)) {
+        for (String listener : advertisedListeners.split(EndPoint.END_POINT_SEPARATOR)) {
             final String errorMessage = "listener '" + listener + "' is invalid";
-            final Matcher matcher = PATTERN.matcher(listener);
-            checkState(matcher.find(), errorMessage);
-            checkState(matcher.groupCount() == 3, errorMessage);
+            final Matcher matcher = EndPoint.matcherListener(listener, errorMessage);
             String hostname = matcher.group(2);
             if (hostname.isEmpty()) {
                 try {
@@ -419,9 +408,10 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             } else {
                 listenersReBuilder.append(listener);
             }
-            listenersReBuilder.append(END_POINT_SEPARATOR);
+            listenersReBuilder.append(EndPoint.END_POINT_SEPARATOR);
         }
-        return listenersReBuilder.deleteCharAt(listenersReBuilder.lastIndexOf(END_POINT_SEPARATOR)).toString();
+        return listenersReBuilder.deleteCharAt(
+                listenersReBuilder.lastIndexOf(EndPoint.END_POINT_SEPARATOR)).toString();
     }
 
     public @NonNull String getKafkaAdvertisedListeners() {
@@ -459,8 +449,9 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     public @NonNull Set<String> getKopAllowedNamespaces() {
         if (kopAllowedNamespaces == null || kopAllowedNamespaces.isEmpty()) {
-            return Collections.singleton(getKafkaTenant() + "/" + getKafkaNamespace());
+            return Collections.singleton(TENANT_PLACEHOLDER + "/" + getKafkaNamespace());
         }
         return kopAllowedNamespaces;
     }
+
 }

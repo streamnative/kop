@@ -13,6 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
@@ -31,9 +34,13 @@ import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.api.DigestType;
+import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.resources.NamespaceResources;
+import org.apache.pulsar.broker.resources.PulsarResources;
 import org.testng.annotations.Test;
 
 /**
@@ -135,7 +142,6 @@ public class KafkaServiceConfigurationTest {
         assertEquals(kafkaServiceConfig.getManagedLedgerDigestType(), DigestType.CRC32C);
         assertEquals(
                 kafkaServiceConfig.getKopAllowedNamespaces(), Sets.newHashSet("public/default", "public/__kafka"));
-        assertEquals(kafkaServiceConfig.getKafkaListenerName(), "external");
     }
 
     @Test
@@ -188,18 +194,46 @@ public class KafkaServiceConfigurationTest {
     }
 
     @Test
-    public void testAllowedNamespaces() {
+    public void testAllowedNamespaces() throws Exception {
         final KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
-        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("public/default"));
-        conf.setKafkaTenant("my-tenant");
-        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("my-tenant/default"));
+        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("${tenant}/default"));
+
+        assertEquals(KafkaRequestHandler.expandAllowedNamespaces(conf.getKopAllowedNamespaces(),
+                        "my-tenant", null).get(),
+                Collections.singletonList("my-tenant/default"));
         conf.setKafkaNamespace("my-ns");
-        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("my-tenant/my-ns"));
+
+        assertEquals(KafkaRequestHandler.expandAllowedNamespaces(conf.getKopAllowedNamespaces(),
+                        "my-tenant", null).get(),
+                Collections.singletonList("my-tenant/my-ns"));
+
         conf.setKopAllowedNamespaces(Collections.singleton("my-tenant-2/my-ns-2"));
-        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("my-tenant-2/my-ns-2"));
+        assertEquals(KafkaRequestHandler.expandAllowedNamespaces(conf.getKopAllowedNamespaces(),
+                        "my-tenant", null).get(),
+                Collections.singletonList("my-tenant-2/my-ns-2"));
+
         conf.setKopAllowedNamespaces(null);
-        assertEquals(conf.getKopAllowedNamespaces(), Collections.singletonList("my-tenant/my-ns"));
+        assertEquals(KafkaRequestHandler.expandAllowedNamespaces(conf.getKopAllowedNamespaces(),
+                        "my-tenant", null).get(),
+                Collections.singletonList("my-tenant/my-ns"));
+
         conf.setKopAllowedNamespaces(Sets.newHashSet("my-tenant/my-ns-0", "my-tenant/my-ns-1"));
-        assertEquals(conf.getKopAllowedNamespaces(), Arrays.asList("my-tenant/my-ns-0", "my-tenant/my-ns-1"));
+        assertEquals(KafkaRequestHandler.expandAllowedNamespaces(conf.getKopAllowedNamespaces(),
+                        "my-tenant", null).get(),
+                Arrays.asList("my-tenant/my-ns-0", "my-tenant/my-ns-1"));
+
+        conf.setKopAllowedNamespaces(Collections.singleton("${tenant}/*"));
+
+        PulsarService pulsarService = mock(PulsarService.class);
+        PulsarResources pulsarResources = mock(PulsarResources.class);
+        NamespaceResources namespaceResources = mock(NamespaceResources.class);
+        when(pulsarService.getPulsarResources()).thenReturn(pulsarResources);
+        when(pulsarResources.getNamespaceResources()).thenReturn(namespaceResources);
+        when(namespaceResources.getChildrenAsync(any(String.class)))
+                .thenReturn(CompletableFuture.completedFuture(Arrays.asList("one", "two")));
+        assertEquals(KafkaRequestHandler.expandAllowedNamespaces(conf.getKopAllowedNamespaces(),
+                        "logged", pulsarService).get(),
+                Arrays.asList("logged/one", "logged/two"));
+
     }
 }

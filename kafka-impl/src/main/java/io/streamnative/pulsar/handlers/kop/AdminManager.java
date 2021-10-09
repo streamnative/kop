@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.TopicKey;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
+import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
@@ -23,7 +24,6 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgato
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -32,6 +32,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.Node;
@@ -56,7 +57,7 @@ class AdminManager {
 
     private final PulsarAdmin admin;
     private final int defaultNumPartitions;
-    private volatile Set<Node> brokersCache = new HashSet<>();
+    private volatile Map<String, Set<Node>> brokersCache = Maps.newHashMap();
     private final ReentrantReadWriteLock brokersCacheLock = new ReentrantReadWriteLock();
 
 
@@ -213,27 +214,33 @@ class AdminManager {
         return resultFuture;
     }
 
-    public Map<String, Errors> deleteTopics(Set<String> topicsToDelete) {
-        Map<String, Errors> result = new ConcurrentHashMap<>();
-        topicsToDelete.forEach(topic -> {
-            try {
-                String topicFullName = new KopTopic(topic).getFullName();
-                admin.topics().deletePartitionedTopic(topicFullName);
-                result.put(topic, Errors.NONE);
-                log.info("delete topic {} successfully.", topicFullName);
-            } catch (PulsarAdminException e) {
-                log.error("delete topic {} failed, exception: ", topic, e);
-                result.put(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION);
-            }
-        });
-        return result;
+    public void deleteTopic(String topicToDelete,
+                            Consumer<String> successConsumer,
+                            Consumer<String> errorConsumer) {
+        try {
+            admin.topics().deletePartitionedTopic(topicToDelete);
+            successConsumer.accept(topicToDelete);
+            log.info("delete topic {} successfully.", topicToDelete);
+        } catch (PulsarAdminException e) {
+            log.error("delete topic {} failed, exception: ", topicToDelete, e);
+            errorConsumer.accept(topicToDelete);
+        }
     }
 
-    public Collection<? extends Node> getBrokers() {
+    public Collection<? extends Node> getBrokers(String listenerName) {
+
+        if (brokersCache.containsKey(listenerName)) {
+            return brokersCache.get(listenerName);
+        }
+
+        return Collections.emptyList();
+    }
+
+    public Map<String, Set<Node>> getAllBrokers() {
         return brokersCache;
     }
 
-    public void setBrokers(Set<Node> newBrokers) {
+    public void setBrokers(Map<String, Set<Node>> newBrokers) {
         brokersCacheLock.writeLock().lock();
         try {
             this.brokersCache = newBrokers;

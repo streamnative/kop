@@ -65,7 +65,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     @Getter
     protected final KafkaServiceConfiguration kafkaConfig;
 
-    public KafkaCommandDecoder(StatsLogger statsLogger, KafkaServiceConfiguration kafkaConfig) {
+    public KafkaCommandDecoder(StatsLogger statsLogger,
+                               KafkaServiceConfiguration kafkaConfig) {
         this.requestStats = new RequestStats(statsLogger);
         this.kafkaConfig = kafkaConfig;
         this.requestQueue = new LinkedBlockingQueue<>(kafkaConfig.getMaxQueuedRequests());
