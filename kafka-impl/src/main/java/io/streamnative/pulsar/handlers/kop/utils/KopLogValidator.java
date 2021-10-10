@@ -457,8 +457,8 @@ public class KopLogValidator {
     }
 
     public static class CompressionCodec {
-        private String name;
-        private int codec;
+        private final String name;
+        private final int codec;
 
         public CompressionCodec(String name, int codec) {
             this.name = name;

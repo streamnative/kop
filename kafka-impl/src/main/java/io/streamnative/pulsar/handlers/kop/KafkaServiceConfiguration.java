@@ -390,7 +390,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             category = CATEGORY_KOP,
             doc = "KOP server compression type. Only used for entryFormat=kafka. If it's not set to producer, "
                     + "the client messages will be used compression type which configured in here.\n"
-                    + "The supported compression types are: [\"NONE\", \"GZIP\", \"SNAPPY\", \"LZ4\"]"
+                    + "The supported compression types are: [\"producer\", \"gzip\", \"snappy\", \"lz4\"]"
     )
     private String kafkaCompressionType = "producer";
 

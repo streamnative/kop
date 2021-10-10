@@ -13,11 +13,13 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
 import io.streamnative.pulsar.handlers.kop.utils.LongRef;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
@@ -87,7 +89,8 @@ public class KafkaEntryFormatter extends AbstractEntryFormatter {
         return metadata;
     }
 
-    private KopLogValidator.CompressionCodec getSourceCodec(MemoryRecords records) {
+    @VisibleForTesting
+    public KopLogValidator.CompressionCodec getSourceCodec(MemoryRecords records) {
         AtomicReference<KopLogValidator.CompressionCodec> sourceCodec =
                 new AtomicReference<>(new KopLogValidator.CompressionCodec(
                         CompressionType.NONE.name, CompressionType.NONE.id));
@@ -103,11 +106,13 @@ public class KafkaEntryFormatter extends AbstractEntryFormatter {
         return sourceCodec.get();
     }
 
-    private KopLogValidator.CompressionCodec getTargetCodec(KopLogValidator.CompressionCodec sourceCodec) {
-        if (brokerCompressionType.equals("producer")) {
+    @VisibleForTesting
+    public KopLogValidator.CompressionCodec getTargetCodec(KopLogValidator.CompressionCodec sourceCodec) {
+        String lowerCaseBrokerCompressionType = brokerCompressionType.toLowerCase(Locale.ROOT);
+        if (lowerCaseBrokerCompressionType.equals("producer")) {
             return sourceCodec;
         } else {
-            CompressionType compressionType = CompressionType.forName(brokerCompressionType);
+            CompressionType compressionType = CompressionType.forName(lowerCaseBrokerCompressionType);
             return new KopLogValidator.CompressionCodec(compressionType.name, compressionType.id);
         }
     }
