@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
-import io.netty.buffer.ByteBuf;
 import java.util.List;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -27,11 +26,10 @@ public interface EntryFormatter {
     /**
      * Encode Kafka records to a ByteBuf.
      *
-     * @param records messages with Kafka's format
-     * @param numMessages the number of messages
-     * @return the ByteBuf of an entry that is to be written to Bookie
+     * @param encodeRequest contains messages with Kafka's format
+     * @return the EncodeResult contains the ByteBuf of an entry that is to be written to Bookie
      */
-    ByteBuf encode(MemoryRecords records, int numMessages);
+    EncodeResult encode(EncodeRequest encodeRequest);
 
     /**
      * Decode a stream of entries to Kafka records.
@@ -39,7 +37,7 @@ public interface EntryFormatter {
      *
      * @param entries the list of entries
      * @param magic the Kafka record batch's magic value
-     * @return the Kafka records
+     * @return the DecodeResult contains the Kafka records
      */
     DecodeResult decode(List<Entry> entries, byte magic);
 
@@ -47,7 +45,7 @@ public interface EntryFormatter {
      * Get the number of messages from MemoryRecords.
      * Since MemoryRecords doesn't provide a way to get the number of messages. We need to iterate over the whole
      * MemoryRecords object. So we use a helper method to get the number of messages that can be passed to
-     * {@link EntryFormatter#encode(MemoryRecords, int)} and metrics related methods as well.
+     * {@link EntryFormatter#encode(EncodeRequest)} and metrics related methods as well.
      *
      * @param records messages with Kafka's format
      * @return the number of messages

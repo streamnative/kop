@@ -40,9 +40,10 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.Group
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.AbortedIndexEntry;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
+import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
+import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
-import io.streamnative.pulsar.handlers.kop.format.KafkaEntryFormatter;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -53,9 +54,7 @@ import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
-import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
-import io.streamnative.pulsar.handlers.kop.utils.LongRef;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
@@ -85,7 +84,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -109,14 +107,12 @@ import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
@@ -247,7 +243,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final long resumeThresholdPendingBytes;
     private final AtomicLong pendingBytes = new AtomicLong(0);
     private volatile boolean autoReadDisabledPublishBufferLimiting = false;
-    private final String brokerCompressionType;
 
     private String getCurrentTenant() {
         return getCurrentTenant(kafkaConfig.getKafkaMetadataTenant());
@@ -324,13 +319,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
-        this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
+        this.entryFormatter = EntryFormatterFactory.create(kafkaConfig);
         this.currentConnectedGroup = new ConcurrentHashMap<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
         this.failedAuthenticationDelayMs = kafkaConfig.getFailedAuthenticationDelayMs();
-        this.brokerCompressionType = kafkaConfig.getKafkaCompressionType();
 
         // update alive channel count stats
         RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
@@ -918,12 +912,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private void publishMessages(final Optional<PersistentTopic> persistentTopicOpt,
-                                 final ByteBuf byteBuf,
-                                 final int numMessages,
-                                 final MemoryRecords records,
+                                 final EncodeResult encodeResult,
                                  final TopicPartition topicPartition,
                                  final Consumer<Long> offsetConsumer,
                                  final Consumer<Errors> errorsConsumer) {
+        final MemoryRecords records = encodeResult.getRecords();
+        final int numMessages = encodeResult.getNumMessages();
+        final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
         if (!persistentTopicOpt.isPresent()) {
             // It will trigger a retry send of Kafka client
             errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
@@ -1096,33 +1091,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     return;
                 }
 
-                final MemoryRecords finalValidRecords;
-                if (entryFormatter instanceof KafkaEntryFormatter) {
-                    final KopLogValidator.CompressionCodec sourceCodec = getSourceCodec(validRecords);
-                    final KopLogValidator.CompressionCodec targetCodec = getTargetCodec(sourceCodec);
+                final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
+                final long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
+                final EncodeRequest encodeRequest = new EncodeRequest(validRecords, logEndOffset);
 
-                    ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
-                    long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
-                    LongRef offset = new LongRef(logEndOffset);
-
-                    finalValidRecords = KopLogValidator.validateMessagesAndAssignOffsets(validRecords,
-                            offset,
-                            System.currentTimeMillis(),
-                            sourceCodec,
-                            targetCodec,
-                            false,
-                            RecordBatch.MAGIC_VALUE_V2,
-                            TimestampType.CREATE_TIME,
-                            Long.MAX_VALUE);
-                } else {
-                    finalValidRecords = validRecords;
-                }
-
-                final int numMessages = EntryFormatter.parseNumMessages(finalValidRecords);
-                final ByteBuf byteBuf = entryFormatter.encode(finalValidRecords, numMessages);
+                final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
                 requestStats.getProduceEncodeStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
-                startSendOperationForThrottling(byteBuf.readableBytes());
+                startSendOperationForThrottling(encodeResult.getEncodedByteBuf().readableBytes());
 
                 if (log.isDebugEnabled()) {
                     log.debug("[{}] Request {}: Produce messages for topic {} partition {}, "
@@ -1130,8 +1106,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             topicPartition.topic(), topicPartition.partition(), numPartitions);
                 }
 
-                publishMessages(persistentTopicOpt, byteBuf, numMessages, finalValidRecords, topicPartition,
-                        offsetConsumer, errorsConsumer);
+                publishMessages(persistentTopicOpt, encodeResult, topicPartition, offsetConsumer, errorsConsumer);
             };
 
             if (topicFuture.isDone()) {
@@ -2731,31 +2706,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
 
         return validRecords;
-    }
-
-    private KopLogValidator.CompressionCodec getSourceCodec(MemoryRecords records) {
-        AtomicReference<KopLogValidator.CompressionCodec> sourceCodec =
-                new AtomicReference<>(new KopLogValidator.CompressionCodec(
-                        CompressionType.NONE.name, CompressionType.NONE.id));
-        records.batches().forEach(batch -> {
-            CompressionType compressionType = CompressionType.forId(batch.compressionType().id);
-            KopLogValidator.CompressionCodec messageCodec = new KopLogValidator.CompressionCodec(
-                    compressionType.name, compressionType.id);
-            if (!messageCodec.name().equals("none")) {
-                sourceCodec.set(messageCodec);
-            }
-        });
-
-        return sourceCodec.get();
-    }
-
-    private KopLogValidator.CompressionCodec getTargetCodec(KopLogValidator.CompressionCodec sourceCodec) {
-        if (brokerCompressionType.equals("producer")) {
-            return sourceCodec;
-        } else {
-            CompressionType compressionType = CompressionType.forName(brokerCompressionType);
-            return new KopLogValidator.CompressionCodec(compressionType.name, compressionType.id);
-        }
     }
 
     private void updateProducerStats(final TopicPartition topicPartition, final int numMessages, final int numBytes) {
