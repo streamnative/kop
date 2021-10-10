@@ -41,6 +41,10 @@ import org.apache.pulsar.common.configuration.FieldContext;
 @Setter
 public class KafkaServiceConfiguration extends ServiceConfiguration {
 
+    public static final String TENANT_PLACEHOLDER = "${tenant}";
+    public static final String TENANT_ALLNAMESPACES_PLACEHOLDER = "*";
+
+
     // Group coordinator configuration
     private static final int GroupMinSessionTimeoutMs = 6000;
     private static final int GroupMaxSessionTimeoutMs = 300000;
@@ -451,8 +455,9 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     public @NonNull Set<String> getKopAllowedNamespaces() {
         if (kopAllowedNamespaces == null || kopAllowedNamespaces.isEmpty()) {
-            return Collections.singleton(getKafkaTenant() + "/" + getKafkaNamespace());
+            return Collections.singleton(TENANT_PLACEHOLDER + "/" + getKafkaNamespace());
         }
         return kopAllowedNamespaces;
     }
+
 }

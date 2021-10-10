@@ -67,20 +67,34 @@ public class KafkaTopicConsumerManagerCache {
         });
     }
 
-    public void removeAndClose(final String fullTopicName) {
-        // The TCM future could be completed with null, so we should process this case
+    private static void closeTcmFuture(final CompletableFuture<KafkaTopicConsumerManager> tcmFuture) {
+        // Use thenAccept to avoid blocking
+        tcmFuture.thenAccept(tcm -> {
+            if (tcm != null) {
+                tcm.close();
+            }
+        });
+    }
+
+    public void removeAndCloseByTopic(final String fullTopicName) {
         Optional.ofNullable(cache.remove(fullTopicName)).ifPresent(map ->
                 map.forEach((remoteAddress, future) -> {
                     if (log.isDebugEnabled()) {
                         log.debug("[{}][{}] Remove and close TCM", fullTopicName, remoteAddress);
                     }
-                    // Use thenAccept to avoid blocking
-                    future.thenAccept(tcm -> {
-                        if (tcm != null) {
-                            tcm.close();
-                        }
-                    });
+                    closeTcmFuture(future);
                 }));
+    }
+
+    public void removeAndCloseByAddress(final SocketAddress remoteAddress) {
+        cache.forEach((fullTopicName, internalMap) -> {
+            Optional.ofNullable(internalMap.remove(remoteAddress)).ifPresent(future -> {
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}][{}] Remove and close TCM", fullTopicName, remoteAddress);
+                }
+                closeTcmFuture(future);
+            });
+        });
     }
 
     public void close() {
