@@ -2098,7 +2098,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     // Current KoP don't support Broker Resource.
                 case UNKNOWN:
                 default:
-                    completeOne.accept(()->{});
+                    completeOne.accept(() -> log.error("KoP doesn't support resource type: " + configResource.type()));
                     break;
             }
         });
