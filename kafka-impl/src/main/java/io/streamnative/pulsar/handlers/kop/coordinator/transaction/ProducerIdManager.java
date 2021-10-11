@@ -105,7 +105,9 @@ public class ProducerIdManager {
                     return;
                 }
             } else {
-                log.debug("There is no producerId block yet, creating the first block");
+                if (log.isDebugEnabled()) {
+                    log.debug("There is no producerId block yet, creating the first block");
+                }
                 currentProducerIdBlock = ProducerIdBlock
                         .builder()
                         .brokerId(brokerId)
