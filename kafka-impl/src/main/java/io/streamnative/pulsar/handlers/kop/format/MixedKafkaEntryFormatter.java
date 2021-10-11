@@ -13,6 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import static org.apache.kafka.common.record.Records.MAGIC_OFFSET;
+import static org.apache.kafka.common.record.Records.OFFSET_OFFSET;
+
 import com.google.common.annotations.VisibleForTesting;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -21,15 +24,13 @@ import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFound
 import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
 import io.streamnative.pulsar.handlers.kop.utils.LongRef;
-
+import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.List;
 import java.util.Locale;
-
-import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.KafkaException;
@@ -42,9 +43,6 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
-
-import static org.apache.kafka.common.record.Records.MAGIC_OFFSET;
-import static org.apache.kafka.common.record.Records.OFFSET_OFFSET;
 
 /**
  * The entry formatter that uses Kafka's mixed versions format.
