@@ -127,6 +127,9 @@ public class ProducerIdManager {
             } catch (JsonProcessingException e) {
                 future.completeExceptionally(e);
             }
+        }).exceptionally(ex -> {
+            future.completeExceptionally(ex);
+            return null;
         });
         return future;
     }
