@@ -35,10 +35,13 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.errors.InvalidPartitionsException;
 import org.apache.kafka.common.errors.InvalidRequestException;
 import org.apache.kafka.common.errors.TopicExistsException;
+import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
@@ -225,6 +228,109 @@ class AdminManager {
             log.error("delete topic {} failed, exception: ", topicToDelete, e);
             errorConsumer.accept(topicToDelete);
         }
+    }
+
+    CompletableFuture<Map<String, ApiError>> createPartitionsAsync(Map<String, NewPartitions> createInfo, int timeoutMs) {
+        final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();
+        final AtomicInteger numTopics = new AtomicInteger(createInfo.size());
+        final CompletableFuture<Map<String, ApiError>> resultFuture = new CompletableFuture<>();
+
+        Runnable complete = () -> {
+            // prevent `futureMap` from being modified by updatePartitionedTopicAsync()'s callback
+            numTopics.set(0);
+            // complete the pending futures with timeout error
+            futureMap.values().forEach(future -> {
+                if (!future.isDone()) {
+                    future.complete(new ApiError(Errors.REQUEST_TIMED_OUT, null));
+                }
+            });
+            resultFuture.complete(futureMap.entrySet().stream().collect(Collectors.toMap(
+                    Map.Entry::getKey,
+                    entry -> entry.getValue().getNow(ApiError.NONE)
+            )));
+        };
+
+        createInfo.forEach((topic, newPartitions) -> {
+            final CompletableFuture<ApiError> errorFuture = new CompletableFuture<>();
+            futureMap.put(topic, errorFuture);
+
+            KopTopic kopTopic;
+            try {
+                kopTopic = new KopTopic(topic);
+            } catch (KoPTopicException e) {
+                errorFuture.complete(ApiError.fromThrowable(e));
+                if (numTopics.decrementAndGet() == 0) {
+                    complete.run();
+                }
+                return;
+            }
+            int numPartitions = newPartitions.totalCount();
+            if (numPartitions < 0) {
+                errorFuture.complete(ApiError.fromThrowable(
+                        new InvalidRequestException("The partition '" + numPartitions + "' is negative")));
+                if (numTopics.decrementAndGet() == 0) {
+                    complete.run();
+                }
+                return;
+            }
+
+            admin.topics().getPartitionedTopicMetadataAsync(kopTopic.getFullName())
+                    .whenComplete((metadata, t) -> {
+                        if (t == null) {
+                            int oldPartitions = metadata.partitions;
+                            if (oldPartitions > numPartitions) {
+                                errorFuture.complete(ApiError.fromThrowable(
+                                        new InvalidPartitionsException("Topic currently has '" + oldPartitions + "' partitions, "
+                                                + "which is higher than the requested '" + numPartitions + "'.")
+                                ));
+                                if (numTopics.decrementAndGet() == 0) {
+                                    complete.run();
+                                }
+                                return;
+                            }
+
+                            admin.topics().updatePartitionedTopicAsync(kopTopic.getFullName(), numPartitions)
+                                    .whenComplete((ignored, e) -> {
+                                        if (e == null) {
+                                            if (log.isDebugEnabled()) {
+                                                log.debug("Successfully create topic '{}' new partitions '{}'", topic, numPartitions);
+                                            }
+                                        } else {
+                                            log.error("Failed to create topic '{}' new partitions '{}': {}", topic, numPartitions, e);
+                                        }
+                                        if (e == null) {
+                                            errorFuture.complete(ApiError.NONE);
+                                        } else {
+                                            errorFuture.complete(ApiError.fromThrowable(e));
+                                        }
+                                        if (numTopics.decrementAndGet() == 0) {
+                                            complete.run();
+                                        }
+                                    });
+                        } else {
+                            if (t instanceof PulsarAdminException.NotFoundException) {
+                                errorFuture.complete(ApiError.fromThrowable(
+                                        new UnknownTopicOrPartitionException("Topic '" + topic + "' doesn't exist.")));
+                            } else {
+                                errorFuture.complete(ApiError.fromThrowable(t));
+                            }
+                            if (numTopics.decrementAndGet() == 0) {
+                                complete.run();
+                            }
+                        }
+                    });
+        });
+
+        if (timeoutMs <= 0) {
+            complete.run();
+        } else {
+            List<Object> delayedCreateKeys =
+                    createInfo.keySet().stream().map(TopicKey::new).collect(Collectors.toList());
+            DelayedCreatePartitions delayedCreate = new DelayedCreatePartitions(timeoutMs, numTopics, complete);
+            topicPurgatory.tryCompleteElseWatch(delayedCreate, delayedCreateKeys);
+        }
+
+        return resultFuture;
     }
 
     public Collection<? extends Node> getBrokers(String listenerName) {
