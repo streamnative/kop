@@ -291,9 +291,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     public void testOffsetTopicNumPartitionsModify() throws Exception {
         int consumerGroupPartitionId =
                 GroupMetadataManager.getPartitionId(groupId, conf.getOffsetsTopicNumPartitions());
-        Field partitionField = conf.getClass().getDeclaredField("offsetsTopicNumPartitions");
-        partitionField.setAccessible(true);
-        partitionField.set(conf, 100);
+        conf.setOffsetsTopicNumPartitions(100);
 
         KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
         // remove here to trigger a new creating for GroupCoordinator
