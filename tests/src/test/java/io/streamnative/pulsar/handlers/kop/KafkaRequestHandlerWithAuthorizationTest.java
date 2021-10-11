@@ -70,6 +70,8 @@ import org.apache.kafka.common.requests.OffsetFetchRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.RequestHeader;
+import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
+import org.apache.kafka.common.requests.TxnOffsetCommitResponse;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
@@ -516,6 +518,72 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         assertEquals(offsetCommitResponse.responseData().get(topicPartition2), Errors.TOPIC_AUTHORIZATION_FAILED);
         assertEquals(offsetCommitResponse.responseData().get(topicPartition3), Errors.TOPIC_AUTHORIZATION_FAILED);
 
+    }
+
+    @Test(timeOut = 20000)
+    public void testHandleTxnOffsetCommitAuthorizationFailed() throws ExecutionException, InterruptedException {
+        String group = "test-failed-groupId";
+        TopicPartition topicPartition = new TopicPartition("test", 1);
+        Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> offsetData = Maps.newHashMap();
+        offsetData.put(topicPartition,
+                new TxnOffsetCommitRequest.CommittedOffset(1L, ""));
+        TxnOffsetCommitRequest.Builder builder =
+                new TxnOffsetCommitRequest.Builder(
+                        "1", group, 1, (short) 1, offsetData);
+        KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
+
+        // Handle request
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        handler.handleTxnOffsetCommit(headerAndRequest, responseFuture);
+        AbstractResponse response = responseFuture.get();
+        assertTrue(response instanceof TxnOffsetCommitResponse);
+        TxnOffsetCommitResponse txnOffsetCommitResponse = (TxnOffsetCommitResponse) response;
+
+        assertEquals(txnOffsetCommitResponse.errorCounts().size(), 1);
+        txnOffsetCommitResponse.errors().values().forEach(errors -> {
+            assertEquals(errors, Errors.TOPIC_AUTHORIZATION_FAILED);
+        });
+    }
+
+    @Test(timeOut = 20000)
+    public void testHandleTxnOffsetCommitPartAuthorizationFailed() throws ExecutionException, InterruptedException {
+        String group = "test-failed-groupId";
+        TopicPartition topicPartition1 = new TopicPartition("test1", 1);
+        TopicPartition topicPartition2 = new TopicPartition("test2", 1);
+        TopicPartition topicPartition3 = new TopicPartition("test3", 1);
+
+        Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> offsetData = Maps.newHashMap();
+        offsetData.put(topicPartition1,
+                new TxnOffsetCommitRequest.CommittedOffset(1L, ""));
+        offsetData.put(topicPartition2,
+                new TxnOffsetCommitRequest.CommittedOffset(1L, ""));
+        offsetData.put(topicPartition3,
+                new TxnOffsetCommitRequest.CommittedOffset(1L, ""));
+
+        TxnOffsetCommitRequest.Builder builder =
+                new TxnOffsetCommitRequest.Builder(
+                        "1", group, 1, (short) 1, offsetData);
+        KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
+
+        // Topic: `test1` authorize success.
+        KafkaRequestHandler spyHandler = spy(handler);
+        doReturn(CompletableFuture.completedFuture(true))
+                .when(spyHandler)
+                .authorize(eq(AclOperation.READ),
+                        eq(Resource.of(ResourceType.TOPIC, new KopTopic(topicPartition1.topic()).getFullName()))
+                );
+
+        // Handle request
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        spyHandler.handleTxnOffsetCommit(headerAndRequest, responseFuture);
+        AbstractResponse response = responseFuture.get();
+        assertTrue(response instanceof TxnOffsetCommitResponse);
+        TxnOffsetCommitResponse txnOffsetCommitResponse = (TxnOffsetCommitResponse) response;
+
+        assertEquals(txnOffsetCommitResponse.errorCounts().size(), 2);
+        assertEquals(txnOffsetCommitResponse.errors().get(topicPartition1), Errors.NONE);
+        assertEquals(txnOffsetCommitResponse.errors().get(topicPartition2), Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(txnOffsetCommitResponse.errors().get(topicPartition3), Errors.TOPIC_AUTHORIZATION_FAILED);
     }
 
     KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {

@@ -2142,51 +2142,75 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                          CompletableFuture<AbstractResponse> response) {
         TxnOffsetCommitRequest request = (TxnOffsetCommitRequest) kafkaHeaderAndRequest.getRequest();
 
+        if (request.offsets().isEmpty()) {
+            response.complete(new TxnOffsetCommitResponse(0, Maps.newHashMap()));
+            return;
+        }
         // TODO not process nonExistingTopic at this time.
-        Map<TopicPartition, Errors> nonExistingTopic = nonExistingTopicErrors();
+        Map<TopicPartition, Errors> nonExistingTopicErrors = nonExistingTopicErrors();
+        Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
 
         // convert raw topic name to KoP full name
         // we need to ensure that topic name in __consumer_offsets is globally unique
-        Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> convertedOffsetData = new HashMap<>();
-        Map<TopicPartition, TopicPartition> replacingIndex = new HashMap<>();
-        request.offsets().entrySet().removeIf(entry -> {
-            TopicPartition tp = entry.getKey();
-            try {
-                TopicPartition newTopicPartition = new TopicPartition(
-                        new KopTopic(tp.topic()).getFullName(), tp.partition());
+        Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> convertedOffsetData = Maps.newConcurrentMap();
+        Map<TopicPartition, TopicPartition> replacingIndex = Maps.newHashMap();
 
-                convertedOffsetData.put(newTopicPartition, entry.getValue());
-                replacingIndex.put(newTopicPartition, tp);
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(request.offsets().size());
+
+        Consumer<Runnable> completeOne = (action) -> {
+            action.run();
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                if (log.isTraceEnabled()) {
+                    StringBuffer traceInfo = new StringBuffer();
+                    replacingIndex.forEach((inner, outer) ->
+                            traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
+                    log.trace("TXN_OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo.toString());
+                }
+
+                getGroupCoordinator().handleTxnCommitOffsets(
+                        request.consumerGroupId(),
+                        request.producerId(),
+                        request.producerEpoch(),
+                        convertTxnOffsets(convertedOffsetData)).whenComplete((resultMap, throwable) -> {
+
+                    // recover to original topic name
+                    replaceTopicPartition(resultMap, replacingIndex);
+
+                    resultMap.putAll(nonExistingTopicErrors);
+                    resultMap.putAll(unauthorizedTopicErrors);
+                    response.complete(new TxnOffsetCommitResponse(0, resultMap));
+                });
+            }
+        };
+        request.offsets().forEach((tp, commitOffset) -> {
+            KopTopic kopTopic;
+            try {
+                kopTopic = new KopTopic(tp.topic());
             } catch (KoPTopicException e) {
                 log.warn("Invalid topic name: {}", tp.topic(), e);
-                nonExistingTopic.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+                completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                return;
             }
-            return true;
-        });
+            String fullTopicName = kopTopic.getFullName();
 
-        if (log.isTraceEnabled()) {
-            StringBuffer traceInfo = new StringBuffer();
-            replacingIndex.forEach((inner, outer) ->
-                    traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
-            log.trace("TXN_OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo.toString());
-        }
-
-        // update the request data
-        request.offsets().putAll(convertedOffsetData);
-
-        getGroupCoordinator().handleTxnCommitOffsets(
-                request.consumerGroupId(),
-                request.producerId(),
-                request.producerEpoch(),
-                convertTxnOffsets(request.offsets())).whenComplete((resultMap, throwable) -> {
-
-            // recover to original topic name
-            replaceTopicPartition(resultMap, replacingIndex);
-
-            if (!nonExistingTopic.isEmpty()) {
-                resultMap.putAll(nonExistingTopic);
-            }
-            response.complete(new TxnOffsetCommitResponse(0, resultMap));
+            authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
+                    .thenAccept(isAuthorized -> {
+                        if (!isAuthorized) {
+                            completeOne.accept(()-> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                            return;
+                        }
+                        completeOne.accept(()->{
+                            TopicPartition newTopicPartition = new TopicPartition(fullTopicName, tp.partition());
+                            convertedOffsetData.put(newTopicPartition, commitOffset);
+                            replacingIndex.put(newTopicPartition, tp);
+                        });
+                    }).exceptionally(ex -> {
+                        log.error("TxnOffsetCommit authorize failed, topic - {}. {}",
+                                fullTopicName, ex.getMessage());
+                        completeOne.accept(
+                                () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                        return null;
+                    });
         });
     }
 
