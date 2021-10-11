@@ -230,7 +230,8 @@ class AdminManager {
         }
     }
 
-    CompletableFuture<Map<String, ApiError>> createPartitionsAsync(Map<String, NewPartitions> createInfo, int timeoutMs) {
+    CompletableFuture<Map<String, ApiError>> createPartitionsAsync(Map<String, NewPartitions> createInfo,
+                                                                   int timeoutMs) {
         final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();
         final AtomicInteger numTopics = new AtomicInteger(createInfo.size());
         final CompletableFuture<Map<String, ApiError>> resultFuture = new CompletableFuture<>();
@@ -280,7 +281,8 @@ class AdminManager {
                             int oldPartitions = metadata.partitions;
                             if (oldPartitions > numPartitions) {
                                 errorFuture.complete(ApiError.fromThrowable(
-                                        new InvalidPartitionsException("Topic currently has '" + oldPartitions + "' partitions, "
+                                        new InvalidPartitionsException(
+                                                "Topic currently has '" + oldPartitions + "' partitions, "
                                                 + "which is higher than the requested '" + numPartitions + "'.")
                                 ));
                                 if (numTopics.decrementAndGet() == 0) {
@@ -293,10 +295,12 @@ class AdminManager {
                                     .whenComplete((ignored, e) -> {
                                         if (e == null) {
                                             if (log.isDebugEnabled()) {
-                                                log.debug("Successfully create topic '{}' new partitions '{}'", topic, numPartitions);
+                                                log.debug("Successfully create topic '{}' new partitions '{}'",
+                                                        topic, numPartitions);
                                             }
                                         } else {
-                                            log.error("Failed to create topic '{}' new partitions '{}': {}", topic, numPartitions, e);
+                                            log.error("Failed to create topic '{}' new partitions '{}': {}",
+                                                    topic, numPartitions, e);
                                         }
                                         if (e == null) {
                                             errorFuture.complete(ApiError.NONE);
