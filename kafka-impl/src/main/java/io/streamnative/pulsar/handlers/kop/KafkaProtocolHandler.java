@@ -549,7 +549,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         TransactionCoordinator transactionCoordinator = TransactionCoordinator.of(
                 transactionConfig,
                 kafkaConfig.getBrokerId(),
-                brokerService.getPulsar().getZkClient(),
+                brokerService.getPulsar().getLocalMetadataStore(),
                 kopBrokerLookupManager);
 
         loadTxnLogTopics(tenant, transactionCoordinator);

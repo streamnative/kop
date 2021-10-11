@@ -52,7 +52,7 @@ import org.apache.kafka.common.requests.InitProducerIdResponse;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.zookeeper.ZooKeeper;
+import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 
 
 /**
@@ -73,20 +73,20 @@ public class TransactionCoordinator {
 
     private TransactionCoordinator(TransactionConfig transactionConfig,
                                    Integer brokerId,
-                                   ZooKeeper zkClient,
+                                   MetadataStoreExtended metadataStore,
                                    KopBrokerLookupManager kopBrokerLookupManager) {
         this.transactionConfig = transactionConfig;
         this.txnManager = new TransactionStateManager(transactionConfig);
-        this.producerIdManager = new ProducerIdManager(brokerId, zkClient);
+        this.producerIdManager = new ProducerIdManager(brokerId, metadataStore);
         this.transactionMarkerChannelManager =
                 new TransactionMarkerChannelManager(null, txnManager, kopBrokerLookupManager, false);
     }
 
     public static TransactionCoordinator of(TransactionConfig transactionConfig,
                                             Integer brokerId,
-                                            ZooKeeper zkClient,
+                                            MetadataStoreExtended metadataStore,
                                             KopBrokerLookupManager kopBrokerLookupManager) {
-        return new TransactionCoordinator(transactionConfig, brokerId, zkClient, kopBrokerLookupManager);
+        return new TransactionCoordinator(transactionConfig, brokerId, metadataStore, kopBrokerLookupManager);
     }
 
     interface EndTxnCallback {
