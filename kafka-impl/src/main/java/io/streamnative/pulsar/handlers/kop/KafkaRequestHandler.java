@@ -175,6 +175,7 @@ import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
+import org.apache.pulsar.metadata.api.GetResult;
 import org.apache.pulsar.metadata.api.MetadataCache;
 import org.apache.pulsar.metadata.api.MetadataStoreException;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
@@ -201,7 +202,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final Authorizer authorizer;
     private final AdminManager adminManager;
     private final MetadataCache<LocalBrokerData> localBrokerDataCache;
-    private final MetadataCache<String> groupIdMetadataCache;
 
     private final Boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
@@ -212,6 +212,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final Set<String> allowedNamespaces;
     // store the group name for current connected client.
     private final ConcurrentHashMap<String, String> currentConnectedGroup;
+    private final String groupIdStoredPath;
 
     @Getter
     private final EntryFormatter entryFormatter;
@@ -283,7 +284,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                TenantContextManager tenantContextManager,
                                AdminManager adminManager,
                                MetadataCache<LocalBrokerData> localBrokerDataCache,
-                               MetadataCache<String> groupIdMetadataCache,
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
                                StatsLogger statsLogger) throws Exception {
@@ -305,7 +305,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 : null;
         this.adminManager = adminManager;
         this.localBrokerDataCache = localBrokerDataCache;
-        this.groupIdMetadataCache = groupIdMetadataCache;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
         this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
@@ -315,6 +314,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.allowedNamespaces = kafkaConfig.getKopAllowedNamespaces();
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
         this.currentConnectedGroup = new ConcurrentHashMap<>();
+        this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
         this.failedAuthenticationDelayMs = kafkaConfig.getFailedAuthenticationDelayMs();
@@ -1085,36 +1085,66 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
                 findCoordinator.getHeader().clientId());
 
-        // Store group name to zk for current client.
-        groupIdMetadataCache.create(groupIdPath, groupId).whenComplete((__, ex) -> {
-            if (ex != null && !(ex instanceof MetadataStoreException.AlreadyExistsException)) {
-                resultFuture.completeExceptionally(ex);
-                return;
-            }
-            findBroker(TopicName.get(pulsarTopicName))
-                    .whenComplete((node, t) -> {
-                        if (t != null || node == null){
-                            log.error("[{}] Request {}: Error while find coordinator, .",
-                                    ctx.channel(), findCoordinator.getHeader(), t);
+        // Store group name to metadata store for current client.
+        storeGroupId(groupId, groupIdPath, -1L)
+                .thenAccept(__ -> findBroker(TopicName.get(pulsarTopicName))
+                        .whenComplete((node, t) -> {
+                            if (t != null || node == null){
+                                log.error("[{}] Request {}: Error while find coordinator, .",
+                                        ctx.channel(), findCoordinator.getHeader(), t);
+
+                                AbstractResponse response = new FindCoordinatorResponse(
+                                        Errors.LEADER_NOT_AVAILABLE,
+                                        Node.noNode());
+                                resultFuture.complete(response);
+                                return;
+                            }
+
+                            if (log.isDebugEnabled()) {
+                                log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
+                                        ctx.channel(), node.leader(), request.coordinatorKey(), partition);
+                            }
 
                             AbstractResponse response = new FindCoordinatorResponse(
-                                    Errors.LEADER_NOT_AVAILABLE,
-                                    Node.noNode());
+                                    Errors.NONE,
+                                    node.leader());
                             resultFuture.complete(response);
-                            return;
-                        }
+                        }))
+                .exceptionally(ex -> {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Store groupId failed.", ex);
+                    }
+                    return null;
+                });
+    }
 
-                        if (log.isDebugEnabled()) {
-                            log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
-                                    ctx.channel(), node.leader(), request.coordinatorKey(), partition);
-                        }
-
-                        AbstractResponse response = new FindCoordinatorResponse(
-                                Errors.NONE,
-                                node.leader());
-                        resultFuture.complete(response);
-                    });
-        });
+    private CompletableFuture<Void> storeGroupId(String groupId, String groupIdPath, Long expectedVersion) {
+        String path = groupIdStoredPath + groupIdPath;
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        metadataStore.put(path, groupId.getBytes(UTF_8), Optional.of(expectedVersion))
+                .thenAccept(__ -> future.complete(null)).exceptionally(ex -> {
+                    // Update data
+                    if (ex.getCause() instanceof MetadataStoreException.BadVersionException) {
+                        metadataStore.get(path)
+                                .thenAccept(getResultOpt -> {
+                                    if (getResultOpt.isPresent()) {
+                                        GetResult getResult = getResultOpt.get();
+                                        storeGroupId(groupId, groupIdPath, getResult.getStat().getVersion())
+                                                .thenAccept(future::complete).exceptionally(e -> {
+                                                    future.completeExceptionally(e.getCause());
+                                                    return null;
+                                                });
+                                    }
+                                }).exceptionally(throwable -> {
+                                    future.completeExceptionally(throwable);
+                                    return null;
+                                });
+                    } else {
+                        future.completeExceptionally(ex);
+                    }
+                    return null;
+                });
+        return future;
     }
 
     private <T> void replaceTopicPartition(Map<TopicPartition, T> replacedMap,

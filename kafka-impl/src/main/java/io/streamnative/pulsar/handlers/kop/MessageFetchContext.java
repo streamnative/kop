@@ -37,10 +37,12 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -74,6 +76,7 @@ import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.metadata.api.GetResult;
 
 /**
  * MessageFetchContext handling FetchRequest.
@@ -447,13 +450,18 @@ public final class MessageFetchContext {
         } else {
             String groupIdPath = GroupIdUtils.groupIdPathFormat(clientHost,
                     header.clientId());
-            requestHandler.getGroupIdMetadataCache()
-                    .get(groupIdPath)
-                    .whenComplete((groupIdOpt, ex) -> {
+            requestHandler.getMetadataStore()
+                    .get(requestHandler.getGroupIdStoredPath() + groupIdPath)
+                    .whenComplete((getResultOpt, ex) -> {
                         if (ex != null && log.isDebugEnabled()) {
                             log.debug("Get groupId failed.", ex);
                         }
-                        String groupId = groupIdOpt.orElse("");
+                        String groupId = "";
+                        if (getResultOpt.isPresent()) {
+                            GetResult getResult = getResultOpt.get();
+                            groupId = new String(getResult.getValue() == null ? new byte[0] : getResult.getValue(),
+                                    StandardCharsets.UTF_8);
+                        }
                         log.info("get group name from zk for current connection:{} groupId:{}",
                                 clientHost, groupId);
                         requestHandler

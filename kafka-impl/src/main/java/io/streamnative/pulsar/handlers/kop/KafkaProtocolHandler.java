@@ -86,7 +86,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
     private MetadataCache<LocalBrokerData> localBrokerDataCache;
-    private MetadataCache<String> groupIdMetadataCache;
     private MetadataStoreExtended metadataStore;
     private SystemTopicClient offsetTopicClient;
 
@@ -325,7 +324,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 brokerService.getPulsar(), false,
                 kafkaConfig.getKafkaAdvertisedListeners());
         metadataStore = brokerService.pulsar().getLocalMetadataStore();
-        groupIdMetadataCache = metadataStore.getMetadataCache(String.class);
         // Currently each time getMetadataCache() is called, a new MetadataCache<T> instance will be created, even for
         // the same type. So we must reuse the same MetadataCache<LocalBrokerData> to avoid creating a lot of instances.
         localBrokerDataCache = metadataStore.getMetadataCache(LocalBrokerData.class);
@@ -463,13 +461,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, this, adminManager, false,
-                                endPoint, scopeStatsLogger, localBrokerDataCache, groupIdMetadataCache));
+                                endPoint, scopeStatsLogger, localBrokerDataCache));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
                                 kafkaConfig, this, adminManager, true,
-                                endPoint, scopeStatsLogger, localBrokerDataCache, groupIdMetadataCache));
+                                endPoint, scopeStatsLogger, localBrokerDataCache));
                         break;
                     default:
                 }
