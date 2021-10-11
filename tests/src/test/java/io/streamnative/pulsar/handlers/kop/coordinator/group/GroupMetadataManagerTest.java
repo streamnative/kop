@@ -37,6 +37,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.CommitRecordMetadataAndOffset;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.BaseKey;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.GroupMetadataKey;
@@ -118,9 +119,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
             .numThreads(1)
             .build();
 
-        ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
-        groupMetadataManager = ((KafkaProtocolHandler) handler)
-                .getGroupCoordinator(conf.getKafkaMetadataTenant()).getGroupManager();
+        GroupCoordinator groupCoordinator = createNewGroupCoordinator("public");
+        groupMetadataManager = groupCoordinator.getGroupManager();
     }
 
     @AfterMethod
@@ -344,6 +344,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         committedOffsets.forEach((tp, offset) ->
             assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset)));
 
+    SystemTopicClient offsetTopicClient = null;
 
     }
 
@@ -1011,7 +1012,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     }
 
-    @Test
+    @Test(invocationCount = 100)
     public void testOffsetWriteAfterGroupRemoved() throws Exception {
         // this test case checks the following scenario:
         // 1. the group exists at some point in time, but is later removed (because all members left)
