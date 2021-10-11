@@ -328,9 +328,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         // the same type. So we must reuse the same MetadataCache<LocalBrokerData> to avoid creating a lot of instances.
         localBrokerDataCache = metadataStore.getMetadataCache(LocalBrokerData.class);
 
-        // Init base metadata root path.
-        initMetadataRootPath();
-
         PulsarAdmin pulsarAdmin;
         try {
             pulsarAdmin = brokerService.getPulsar().getAdminClient();
@@ -367,25 +364,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             kafkaConfig.getKopPrometheusStatsLatencyRolloverSeconds());
         statsProvider.start(conf);
         brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
-    }
-
-    private void initMetadataRootPath() {
-        List<CompletableFuture<Stat>> allFuture = new ArrayList<>();
-        allFuture.add(metadataStore.put(kafkaConfig.getGroupIdZooKeeperPath(), new byte[0], Optional.empty()));
-        allFuture.add(metadataStore.put(KopEventManager.getKopPath(), new byte[0], Optional.empty()));
-        allFuture.add(metadataStore.put(KopEventManager.getDeleteTopicsPath(), new byte[0], Optional.empty()));
-        FutureUtil.waitForAll(allFuture).whenComplete((__, ex) -> {
-            if (ex != null) {
-                if (ex instanceof MetadataStoreException.BadVersionException
-                        || ex instanceof MetadataStoreException.AlreadyExistsException) {
-                    // ignore
-                    return;
-                }
-                log.error("Init metadata failed.", ex);
-            } else {
-                log.info("Init metadata success.");
-            }
-        }).join();
     }
 
     private TransactionCoordinator createAndBootTransactionCoordinator(String tenant) {
