@@ -287,7 +287,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test
-    public void testOffsetTopicNumPartitionsModify() throws Exception {
+    public void testOffsetTopicNumPartitionsModify() {
         int consumerGroupPartitionId =
                 GroupMetadataManager.getPartitionId(groupId, conf.getOffsetsTopicNumPartitions());
         conf.setOffsetsTopicNumPartitions(100);
