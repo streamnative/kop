@@ -44,7 +44,6 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
     // These key-value identifies the entry's format as kafka
     public static final String IDENTITY_KEY = "entry.format";
     public static final String IDENTITY_VALUE = EntryFormatterFactory.EntryFormat.KAFKA.name().toLowerCase();
-    private final Time time = Time.SYSTEM;
 
     @Override
     public DecodeResult decode(List<Entry> entries, byte magic) {
@@ -59,34 +58,8 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                 final ByteBuf byteBuf = entry.getDataBuffer();
                 final MessageMetadata metadata = Commands.parseMessageMetadata(byteBuf);
                 if (isKafkaEntryFormat(metadata)) {
-                    byte batchMagic = byteBuf.getByte(byteBuf.readerIndex() + MAGIC_OFFSET);
                     byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
-
-                    // batch magic greater than the magic corresponding to the version requested by the client
-                    // need down converted
-                    if (batchMagic > magic || batchMagic != RecordBatch.MAGIC_VALUE_V2) {
-                        MemoryRecords memoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
-                        //down converted, batch magic will be set to client magic
-                        ConvertedRecords<MemoryRecords> convertedRecords =
-                                memoryRecords.downConvert(magic, startOffset, time);
-
-                        final ByteBuf kafkaBuffer = Unpooled.wrappedBuffer(convertedRecords.records().buffer());
-                        orderedByteBuf.add(kafkaBuffer);
-                        if (!optionalByteBufs.isPresent()) {
-                            optionalByteBufs = Optional.of(new ArrayList<>());
-                        }
-                        optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(kafkaBuffer));
-
-                        if (log.isTraceEnabled()) {
-                            log.trace("[{}:{}] MemoryRecords down converted, start offset {},"
-                                            + " entry magic: {}, client magic: {}",
-                                    entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
-                        }
-
-                    } else {
-                        //not need down converted, batch magic retains the magic value written in production
-                        orderedByteBuf.add(byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes()));
-                    }
+                    orderedByteBuf.add(byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes()));
                 } else {
                     final DecodeResult decodeResult =
                             ByteBufUtils.decodePulsarEntryToKafkaRecords(metadata, byteBuf, startOffset, magic);
@@ -98,8 +71,8 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                     optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(kafkaBuffer));
                 }
                 // Almost all exceptions in Kafka inherit from KafkaException and will be captured
-                // and processed in KafkaApis. Here, whether it is down-conversion or the IOException
-                // in builder.appendWithOffset in decodePulsarEntryToKafkaRecords will be caught by Kafka
+                // and processed in KafkaApis. Here, the IOException in builder.appendWithOffset
+                // in decodePulsarEntryToKafkaRecords will be caught by Kafka
                 // and the KafkaException will be thrown. So we need to catch KafkaException here.
             } catch (KoPMessageMetadataNotFoundException | IOException | KafkaException e) { // skip failed decode entry
                 log.error("[{}:{}] Failed to decode entry. ", entry.getLedgerId(), entry.getEntryId(), e);
@@ -122,7 +95,7 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                 MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(batchedByteBuf)), batchedByteBuf);
     }
 
-    private static boolean isKafkaEntryFormat(final MessageMetadata messageMetadata) {
+    protected static boolean isKafkaEntryFormat(final MessageMetadata messageMetadata) {
         final List<KeyValue> keyValues = messageMetadata.getPropertiesList();
         for (KeyValue keyValue : keyValues) {
             if (keyValue.hasKey()

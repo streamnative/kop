@@ -24,7 +24,8 @@ public class EntryFormatterFactory {
 
     enum EntryFormat {
         PULSAR,
-        KAFKA
+        KAFKA,
+        MIXED_KAFKA
     }
 
     public static EntryFormatter create(final KafkaServiceConfiguration kafkaConfig) {
@@ -35,7 +36,9 @@ public class EntryFormatterFactory {
                 case PULSAR:
                     return new PulsarEntryFormatter();
                 case KAFKA:
-                    return new KafkaEntryFormatter(kafkaConfig.getKafkaCompressionType());
+                    return new LazyKafkaEntryFormatter();
+                case MIXED_KAFKA:
+                    return new MixedKafkaEntryFormatter(kafkaConfig.getKafkaCompressionType());
                 default:
                     throw new Exception("No EntryFormatter for " + entryFormat);
             }

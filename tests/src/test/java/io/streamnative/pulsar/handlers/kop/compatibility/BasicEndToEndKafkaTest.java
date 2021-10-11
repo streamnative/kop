@@ -16,12 +16,12 @@ package io.streamnative.pulsar.handlers.kop.compatibility;
 import org.testng.annotations.Test;
 
 /**
- * Basic end-to-end test for different versions of Kafka clients with `entryFormat=kafka`.
+ * Basic end-to-end test for different versions of Kafka clients with `entryFormat=mixed_kafka`.
  */
 public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
     public BasicEndToEndKafkaTest() {
-        super("kafka");
+        super("mixed_kafka");
     }
 
     @Test(timeOut = 30000)

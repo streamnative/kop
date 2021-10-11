@@ -26,9 +26,9 @@ import org.testng.Assert;
 import org.testng.annotations.Test;
 
 /**
- * Test for KafkaEntryFormatter.
+ * Test for MixedKafkaEntryFormatter.
  */
-public class KafkaEntryFormatTest {
+public class MixedKafkaEntryFormatTest {
 
     @Test
     public void testCompressionType() {
@@ -38,8 +38,8 @@ public class KafkaEntryFormatTest {
         final MemoryRecords recordsLz4 = newMemoryRecordsBuilder(CompressionType.LZ4);
 
         // test brokerCompressionType=producer
-        final KafkaEntryFormatter producerEntryFormatter =
-                new KafkaEntryFormatter("producer");
+        final MixedKafkaEntryFormatter producerEntryFormatter =
+                new MixedKafkaEntryFormatter("producer");
         Assert.assertEquals(CompressionType.NONE.name,
                 checkRecordsCodec(producerEntryFormatter, recordsNone).name());
         Assert.assertEquals(CompressionType.GZIP.name,
@@ -50,8 +50,8 @@ public class KafkaEntryFormatTest {
                 checkRecordsCodec(producerEntryFormatter, recordsLz4).name());
 
         // test brokerCompressionType=gzip
-        final KafkaEntryFormatter gzipEntryFormatter =
-                new KafkaEntryFormatter("gzip");
+        final MixedKafkaEntryFormatter gzipEntryFormatter =
+                new MixedKafkaEntryFormatter("gzip");
         Assert.assertEquals(CompressionType.GZIP.name,
                 checkRecordsCodec(gzipEntryFormatter, recordsNone).name());
         Assert.assertEquals(CompressionType.GZIP.name,
@@ -62,8 +62,8 @@ public class KafkaEntryFormatTest {
                 checkRecordsCodec(gzipEntryFormatter, recordsLz4).name());
 
         // test brokerCompressionType=snappy
-        final KafkaEntryFormatter snappyEntryFormatter =
-                new KafkaEntryFormatter("snappy");
+        final MixedKafkaEntryFormatter snappyEntryFormatter =
+                new MixedKafkaEntryFormatter("snappy");
         Assert.assertEquals(CompressionType.SNAPPY.name,
                 checkRecordsCodec(snappyEntryFormatter, recordsNone).name());
         Assert.assertEquals(CompressionType.SNAPPY.name,
@@ -74,8 +74,8 @@ public class KafkaEntryFormatTest {
                 checkRecordsCodec(snappyEntryFormatter, recordsLz4).name());
 
         // test brokerCompressionType=lz4
-        final KafkaEntryFormatter lz4EntryFormatter =
-                new KafkaEntryFormatter("lz4");
+        final MixedKafkaEntryFormatter lz4EntryFormatter =
+                new MixedKafkaEntryFormatter("lz4");
         Assert.assertEquals(CompressionType.LZ4.name,
                 checkRecordsCodec(lz4EntryFormatter, recordsNone).name());
         Assert.assertEquals(CompressionType.LZ4.name,
@@ -86,7 +86,7 @@ public class KafkaEntryFormatTest {
                 checkRecordsCodec(lz4EntryFormatter, recordsLz4).name());
     }
 
-    private static KopLogValidator.CompressionCodec checkRecordsCodec(final KafkaEntryFormatter entryFormatter,
+    private static KopLogValidator.CompressionCodec checkRecordsCodec(final MixedKafkaEntryFormatter entryFormatter,
                                           final MemoryRecords records) {
         final KopLogValidator.CompressionCodec sourceCodec = entryFormatter.getSourceCodec(records);
         return entryFormatter.getTargetCodec(sourceCodec);

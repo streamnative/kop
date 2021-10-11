@@ -44,6 +44,7 @@ import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
 import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.format.MixedKafkaEntryFormatter;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -1091,9 +1092,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     return;
                 }
 
-                final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
-                final long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
-                final EncodeRequest encodeRequest = new EncodeRequest(validRecords, logEndOffset);
+                final EncodeRequest encodeRequest = new EncodeRequest(validRecords, 0L);
+                if (entryFormatter instanceof MixedKafkaEntryFormatter) {
+                    final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
+                    final long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
+                    encodeRequest.setBaseOffset(logEndOffset);
+                }
 
                 final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
                 requestStats.getProduceEncodeStats().registerSuccessfulEvent(

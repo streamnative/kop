@@ -15,9 +15,9 @@ package io.streamnative.pulsar.handlers.kop.format;
 
 import org.testng.annotations.Test;
 
-public class KafkaEntryFormatterTest extends EntryFormatterTestBase {
+public class LazyKafkaEntryFormatterTest extends EntryFormatterTestBase {
 
-    public KafkaEntryFormatterTest() {
+    public LazyKafkaEntryFormatterTest() {
         super("kafka");
     }
 
