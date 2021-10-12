@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.format;
 
 import io.netty.buffer.ByteBuf;
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NonNull;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -22,19 +23,12 @@ import org.apache.kafka.common.record.MemoryRecords;
  * Result of encode in entry formatter.
  */
 @Data
+@AllArgsConstructor
 public class EncodeResult {
 
     private @NonNull MemoryRecords records;
     private ByteBuf encodedByteBuf;
     private int numMessages;
-
-    public EncodeResult(MemoryRecords records,
-                        ByteBuf encodedByteBuf,
-                        int numMessages) {
-        this.records = records;
-        this.encodedByteBuf = encodedByteBuf;
-        this.numMessages = numMessages;
-    }
 
     public void release() {
         if (encodedByteBuf != null) {

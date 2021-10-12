@@ -19,17 +19,14 @@ import static org.apache.kafka.common.record.Records.OFFSET_OFFSET;
 import com.google.common.annotations.VisibleForTesting;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.util.ReferenceCounted;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
 import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
 import io.streamnative.pulsar.handlers.kop.utils.LongRef;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
@@ -91,11 +88,9 @@ public class MixedKafkaEntryFormatter extends AbstractEntryFormatter {
 
     @Override
     public DecodeResult decode(List<Entry> entries, byte magic) {
-        Optional<List<ByteBuf>> optionalByteBufs = Optional.empty();
-
-        // reset header information
-        final List<ByteBuf> orderedByteBuf = new ArrayList<>();
-
+        int totalSize = 0;
+        // batched ByteBuf should be released after sending to client
+        ByteBuf batchedByteBuf = PulsarByteBufAllocator.DEFAULT.directBuffer(totalSize);
         for (Entry entry : entries) {
             try {
                 long startOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
@@ -114,12 +109,9 @@ public class MixedKafkaEntryFormatter extends AbstractEntryFormatter {
                                 memoryRecords.downConvert(magic, startOffset, time);
 
                         final ByteBuf kafkaBuffer = Unpooled.wrappedBuffer(convertedRecords.records().buffer());
-                        orderedByteBuf.add(kafkaBuffer);
-                        if (!optionalByteBufs.isPresent()) {
-                            optionalByteBufs = Optional.of(new ArrayList<>());
-                        }
-                        optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(kafkaBuffer));
-
+                        totalSize += kafkaBuffer.readableBytes();
+                        batchedByteBuf.writeBytes(kafkaBuffer);
+                        kafkaBuffer.release();
                         if (log.isTraceEnabled()) {
                             log.trace("[{}:{}] MemoryRecords down converted, start offset {},"
                                             + " entry magic: {}, client magic: {}",
@@ -128,39 +120,30 @@ public class MixedKafkaEntryFormatter extends AbstractEntryFormatter {
 
                     } else {
                         // not need down converted, batch magic retains the magic value written in production
-                        orderedByteBuf.add(byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes()));
+                        ByteBuf buf = byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes());
+                        totalSize += buf.readableBytes();
+                        batchedByteBuf.writeBytes(buf);
                     }
                 } else {
                     final DecodeResult decodeResult =
                             ByteBufUtils.decodePulsarEntryToKafkaRecords(metadata, byteBuf, startOffset, magic);
                     final ByteBuf kafkaBuffer = decodeResult.getOrCreateByteBuf();
-                    orderedByteBuf.add(kafkaBuffer);
-                    if (!optionalByteBufs.isPresent()) {
-                        optionalByteBufs = Optional.of(new ArrayList<>());
-                    }
-                    optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(kafkaBuffer));
+                    totalSize += kafkaBuffer.readableBytes();
+                    batchedByteBuf.writeBytes(kafkaBuffer);
+                    kafkaBuffer.release();
                 }
+
                 // Almost all exceptions in Kafka inherit from KafkaException and will be captured
                 // and processed in KafkaApis. Here, whether it is down-conversion or the IOException
                 // in builder.appendWithOffset in decodePulsarEntryToKafkaRecords will be caught by Kafka
                 // and the KafkaException will be thrown. So we need to catch KafkaException here.
             } catch (KoPMessageMetadataNotFoundException | IOException | KafkaException e) { // skip failed decode entry
                 log.error("[{}:{}] Failed to decode entry. ", entry.getLedgerId(), entry.getEntryId(), e);
+            } finally {
                 entry.release();
             }
         }
 
-        // batched ByteBuf should be released after sending to client
-        int totalSize = orderedByteBuf.stream().mapToInt(ByteBuf::readableBytes).sum();
-        ByteBuf batchedByteBuf = PulsarByteBufAllocator.DEFAULT.directBuffer(totalSize);
-
-        for (ByteBuf byteBuf : orderedByteBuf) {
-            batchedByteBuf.writeBytes(byteBuf);
-        }
-        optionalByteBufs.ifPresent(byteBufs -> byteBufs.forEach(ReferenceCounted::release));
-
-        // release entries
-        entries.forEach(Entry::release);
         return new DecodeResult(
                 MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(batchedByteBuf)), batchedByteBuf);
     }
@@ -186,7 +169,7 @@ public class MixedKafkaEntryFormatter extends AbstractEntryFormatter {
             CompressionType compressionType = CompressionType.forId(batch.compressionType().id);
             KopLogValidator.CompressionCodec messageCodec = new KopLogValidator.CompressionCodec(
                     compressionType.name, compressionType.id);
-            if (!messageCodec.name().equals("none")) {
+            if (!messageCodec.name().equals(CompressionType.NONE.name)) {
                 sourceCodec.set(messageCodec);
             }
         });
@@ -197,7 +180,7 @@ public class MixedKafkaEntryFormatter extends AbstractEntryFormatter {
     @VisibleForTesting
     public KopLogValidator.CompressionCodec getTargetCodec(KopLogValidator.CompressionCodec sourceCodec) {
         String lowerCaseBrokerCompressionType = brokerCompressionType.toLowerCase(Locale.ROOT);
-        if (lowerCaseBrokerCompressionType.equals("producer")) {
+        if (lowerCaseBrokerCompressionType.equals(CompressionType.NONE.name)) {
             return sourceCodec;
         } else {
             CompressionType compressionType = CompressionType.forName(lowerCaseBrokerCompressionType);

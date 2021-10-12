@@ -202,13 +202,13 @@ public class KopLogValidator {
             validateBatch(batch, toMagic);
 
             // Do not compress control records unless they are written compressed
-            if (sourceCodec.name().equals("none") && batch.isControlBatch()) {
+            if (sourceCodec.name().equals(CompressionType.NONE.name) && batch.isControlBatch()) {
                 inPlaceAssignment = true;
             }
 
             for (Record record : batch) {
                 validateRecord(batch, record, now, timestampType, timestampDiffMaxMs, compactedTopic);
-                if (!sourceCodec.name().equals("none") && record.isCompressed()) {
+                if (!sourceCodec.name().equals(CompressionType.NONE.name) && record.isCompressed()) {
                     throw new InvalidRecordException(String.format(
                             "Compressed outer record should not have an inner record with a "
                             + "compression attribute set: %s", record));

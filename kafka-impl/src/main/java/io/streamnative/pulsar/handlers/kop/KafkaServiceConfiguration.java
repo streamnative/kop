@@ -388,11 +388,11 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "KOP server compression type. Only used for entryFormat=mixed_kafka. If it's not set to producer, "
+            doc = "KOP server compression type. Only used for entryFormat=mixed_kafka. If it's not set to none, "
                     + "the client messages will be used compression type which configured in here.\n"
-                    + "The supported compression types are: [\"producer\", \"gzip\", \"snappy\", \"lz4\"]"
+                    + "The supported compression types are: [\"none\", \"gzip\", \"snappy\", \"lz4\"]"
     )
-    private String kafkaCompressionType = "producer";
+    private String kafkaCompressionType = "none";
 
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();

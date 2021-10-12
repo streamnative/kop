@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NonNull;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -21,14 +22,10 @@ import org.apache.kafka.common.record.MemoryRecords;
  * Request of encode in entry formatter.
  */
 @Data
+@AllArgsConstructor
 public class EncodeRequest {
 
-    private MemoryRecords records;
+    private @NonNull MemoryRecords records;
     private long baseOffset;
 
-    public EncodeRequest(@NonNull MemoryRecords records,
-                         long baseOffset) {
-        this.records = records;
-        this.baseOffset = baseOffset;
-    }
 }

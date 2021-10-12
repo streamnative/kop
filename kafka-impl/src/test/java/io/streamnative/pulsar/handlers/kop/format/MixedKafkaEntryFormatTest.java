@@ -39,7 +39,7 @@ public class MixedKafkaEntryFormatTest {
 
         // test brokerCompressionType=producer
         final MixedKafkaEntryFormatter producerEntryFormatter =
-                new MixedKafkaEntryFormatter("producer");
+                new MixedKafkaEntryFormatter("none");
         Assert.assertEquals(CompressionType.NONE.name,
                 checkRecordsCodec(producerEntryFormatter, recordsNone).name());
         Assert.assertEquals(CompressionType.GZIP.name,

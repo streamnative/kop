@@ -16,14 +16,11 @@ package io.streamnative.pulsar.handlers.kop.format;
 import static org.apache.kafka.common.record.Records.OFFSET_OFFSET;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.util.ReferenceCounted;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
 import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.KafkaException;
@@ -42,11 +39,9 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
 
     @Override
     public DecodeResult decode(List<Entry> entries, byte magic) {
-        Optional<List<ByteBuf>> optionalByteBufs = Optional.empty();
-
-        // reset header information
-        final List<ByteBuf> orderedByteBuf = new ArrayList<>();
-
+        int totalSize = 0;
+        // batched ByteBuf should be released after sending to client
+        ByteBuf batchedByteBuf = PulsarByteBufAllocator.DEFAULT.directBuffer(totalSize);
         for (Entry entry : entries) {
             try {
                 long startOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
@@ -54,38 +49,29 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                 final MessageMetadata metadata = Commands.parseMessageMetadata(byteBuf);
                 if (isKafkaEntryFormat(metadata)) {
                     byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
-                    orderedByteBuf.add(byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes()));
+                    ByteBuf buf = byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes());
+                    totalSize += buf.readableBytes();
+                    batchedByteBuf.writeBytes(buf);
                 } else {
                     final DecodeResult decodeResult =
                             ByteBufUtils.decodePulsarEntryToKafkaRecords(metadata, byteBuf, startOffset, magic);
                     final ByteBuf kafkaBuffer = decodeResult.getOrCreateByteBuf();
-                    orderedByteBuf.add(kafkaBuffer);
-                    if (!optionalByteBufs.isPresent()) {
-                        optionalByteBufs = Optional.of(new ArrayList<>());
-                    }
-                    optionalByteBufs.ifPresent(byteBufs -> byteBufs.add(kafkaBuffer));
+                    totalSize += kafkaBuffer.readableBytes();
+                    batchedByteBuf.writeBytes(kafkaBuffer);
+                    kafkaBuffer.release();
                 }
+
                 // Almost all exceptions in Kafka inherit from KafkaException and will be captured
-                // and processed in KafkaApis. Here, the IOException in builder.appendWithOffset
-                // in decodePulsarEntryToKafkaRecords will be caught by Kafka
+                // and processed in KafkaApis. Here, whether it is down-conversion or the IOException
+                // in builder.appendWithOffset in decodePulsarEntryToKafkaRecords will be caught by Kafka
                 // and the KafkaException will be thrown. So we need to catch KafkaException here.
             } catch (KoPMessageMetadataNotFoundException | IOException | KafkaException e) { // skip failed decode entry
                 log.error("[{}:{}] Failed to decode entry. ", entry.getLedgerId(), entry.getEntryId(), e);
+            } finally {
                 entry.release();
             }
         }
 
-        // batched ByteBuf should be released after sending to client
-        int totalSize = orderedByteBuf.stream().mapToInt(ByteBuf::readableBytes).sum();
-        ByteBuf batchedByteBuf = PulsarByteBufAllocator.DEFAULT.directBuffer(totalSize);
-
-        for (ByteBuf byteBuf : orderedByteBuf) {
-            batchedByteBuf.writeBytes(byteBuf);
-        }
-        optionalByteBufs.ifPresent(byteBufs -> byteBufs.forEach(ReferenceCounted::release));
-
-        // release entries
-        entries.forEach(Entry::release);
         return new DecodeResult(
                 MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(batchedByteBuf)), batchedByteBuf);
     }
