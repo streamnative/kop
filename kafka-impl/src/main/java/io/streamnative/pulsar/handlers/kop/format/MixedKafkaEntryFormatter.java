@@ -109,7 +109,7 @@ public class MixedKafkaEntryFormatter extends AbstractEntryFormatter {
                     // need down converted
                     if (batchMagic > magic) {
                         MemoryRecords memoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
-                        //down converted, batch magic will be set to client magic
+                        // down converted, batch magic will be set to client magic
                         ConvertedRecords<MemoryRecords> convertedRecords =
                                 memoryRecords.downConvert(magic, startOffset, time);
 
