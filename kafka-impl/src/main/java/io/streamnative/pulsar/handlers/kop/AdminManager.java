@@ -255,74 +255,32 @@ class AdminManager {
             final CompletableFuture<ApiError> errorFuture = new CompletableFuture<>();
             futureMap.put(topic, errorFuture);
 
-            KopTopic kopTopic;
             try {
-                kopTopic = new KopTopic(topic);
+                KopTopic kopTopic = new KopTopic(topic);
+
+                int numPartitions = newPartitions.totalCount();
+                if (numPartitions < 0) {
+                    errorFuture.complete(ApiError.fromThrowable(
+                            new InvalidRequestException("The partition '" + numPartitions + "' is negative")));
+                    if (numTopics.decrementAndGet() == 0) {
+                        complete.run();
+                    }
+                    return;
+                }
+
+                handleUpdatePartitionsAsync(topic,
+                        kopTopic,
+                        numPartitions,
+                        errorFuture,
+                        numTopics,
+                        complete);
+
             } catch (KoPTopicException e) {
                 errorFuture.complete(ApiError.fromThrowable(e));
                 if (numTopics.decrementAndGet() == 0) {
                     complete.run();
                 }
-                return;
             }
-            int numPartitions = newPartitions.totalCount();
-            if (numPartitions < 0) {
-                errorFuture.complete(ApiError.fromThrowable(
-                        new InvalidRequestException("The partition '" + numPartitions + "' is negative")));
-                if (numTopics.decrementAndGet() == 0) {
-                    complete.run();
-                }
-                return;
-            }
-
-            admin.topics().getPartitionedTopicMetadataAsync(kopTopic.getFullName())
-                    .whenComplete((metadata, t) -> {
-                        if (t == null) {
-                            int oldPartitions = metadata.partitions;
-                            if (oldPartitions > numPartitions) {
-                                errorFuture.complete(ApiError.fromThrowable(
-                                        new InvalidPartitionsException(
-                                                "Topic currently has '" + oldPartitions + "' partitions, "
-                                                + "which is higher than the requested '" + numPartitions + "'.")
-                                ));
-                                if (numTopics.decrementAndGet() == 0) {
-                                    complete.run();
-                                }
-                                return;
-                            }
-
-                            admin.topics().updatePartitionedTopicAsync(kopTopic.getFullName(), numPartitions)
-                                    .whenComplete((ignored, e) -> {
-                                        if (e == null) {
-                                            if (log.isDebugEnabled()) {
-                                                log.debug("Successfully create topic '{}' new partitions '{}'",
-                                                        topic, numPartitions);
-                                            }
-                                        } else {
-                                            log.error("Failed to create topic '{}' new partitions '{}': {}",
-                                                    topic, numPartitions, e);
-                                        }
-                                        if (e == null) {
-                                            errorFuture.complete(ApiError.NONE);
-                                        } else {
-                                            errorFuture.complete(ApiError.fromThrowable(e));
-                                        }
-                                        if (numTopics.decrementAndGet() == 0) {
-                                            complete.run();
-                                        }
-                                    });
-                        } else {
-                            if (t instanceof PulsarAdminException.NotFoundException) {
-                                errorFuture.complete(ApiError.fromThrowable(
-                                        new UnknownTopicOrPartitionException("Topic '" + topic + "' doesn't exist.")));
-                            } else {
-                                errorFuture.complete(ApiError.fromThrowable(t));
-                            }
-                            if (numTopics.decrementAndGet() == 0) {
-                                complete.run();
-                            }
-                        }
-                    });
         });
 
         if (timeoutMs <= 0) {
@@ -335,6 +293,61 @@ class AdminManager {
         }
 
         return resultFuture;
+    }
+
+    private void handleUpdatePartitionsAsync(String topic,
+                                             KopTopic kopTopic,
+                                             int newPartitions,
+                                             CompletableFuture<ApiError> errorFuture,
+                                             AtomicInteger numTopics,
+                                             Runnable complete) {
+        admin.topics().getPartitionedTopicMetadataAsync(kopTopic.getFullName())
+                .whenComplete((metadata, t) -> {
+                    if (t == null) {
+                        int oldPartitions = metadata.partitions;
+                        if (oldPartitions > newPartitions) {
+                            errorFuture.complete(ApiError.fromThrowable(
+                                    new InvalidPartitionsException(
+                                            "Topic currently has '" + oldPartitions + "' partitions, "
+                                                    + "which is higher than the requested '" + newPartitions + "'.")
+                            ));
+                            if (numTopics.decrementAndGet() == 0) {
+                                complete.run();
+                            }
+                            return;
+                        }
+
+                        try {
+                            admin.topics().updatePartitionedTopic(kopTopic.getFullName(), newPartitions);
+                            errorFuture.complete(ApiError.NONE);
+
+                            if (log.isDebugEnabled()) {
+                                log.debug("Successfully create topic '{}' new partitions '{}'",
+                                        topic, newPartitions);
+                            }
+
+                        } catch (PulsarAdminException e) {
+                            log.error("Failed to create topic '{}' new partitions '{}': {}",
+                                    topic, newPartitions, e);
+                            errorFuture.complete(ApiError.fromThrowable(e));
+                        } finally {
+                            if (numTopics.decrementAndGet() == 0) {
+                                complete.run();
+                            }
+                        }
+
+                    } else {
+                        if (t instanceof PulsarAdminException.NotFoundException) {
+                            errorFuture.complete(ApiError.fromThrowable(
+                                    new UnknownTopicOrPartitionException("Topic '" + topic + "' doesn't exist.")));
+                        } else {
+                            errorFuture.complete(ApiError.fromThrowable(t));
+                        }
+                        if (numTopics.decrementAndGet() == 0) {
+                            complete.run();
+                        }
+                    }
+                });
     }
 
     public Collection<? extends Node> getBrokers(String listenerName) {

@@ -2411,32 +2411,30 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
         };
         validTopics.forEach((topic, newPartitions) -> {
-            KopTopic kopTopic;
             try {
-                kopTopic = new KopTopic(topic);
+                KopTopic kopTopic = new KopTopic(topic);
+                String fullTopicName = kopTopic.getFullName();
+                // kafka use ALTER acl operation, but now kop does not support ALTER.
+                // So replace ALTER to CREATE.
+                authorize(AclOperation.CREATE, Resource.of(ResourceType.TOPIC, fullTopicName))
+                        .whenComplete((isAuthorized, ex) -> {
+                            if (ex != null) {
+                                log.error("CreatePartitions authorize failed, topic - {}. {}",
+                                        fullTopicName, ex.getMessage());
+                                completeOneErrorTopic.accept(topic,
+                                        new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, ex.getMessage()));
+                                return;
+                            }
+                            if (!isAuthorized) {
+                                completeOneErrorTopic.accept(topic,
+                                        new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null));
+                                return;
+                            }
+                            completeOneTopic.accept(topic, newPartitions);
+                        });
             } catch (KoPTopicException e) {
                 completeOneErrorTopic.accept(topic, ApiError.fromThrowable(e));
-                return;
             }
-            String fullTopicName = kopTopic.getFullName();
-            // kafka use ALTER acl operation, but now kop does not support ALTER.
-            // So replace ALTER to CREATE.
-            authorize(AclOperation.CREATE, Resource.of(ResourceType.TOPIC, fullTopicName))
-                    .whenComplete((isAuthorized, ex) -> {
-                        if (ex != null) {
-                            log.error("CreatePartitions authorize failed, topic - {}. {}",
-                                    fullTopicName, ex.getMessage());
-                            completeOneErrorTopic
-                                    .accept(topic, new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, ex.getMessage()));
-                            return;
-                        }
-                        if (!isAuthorized) {
-                            completeOneErrorTopic
-                                    .accept(topic, new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null));
-                            return;
-                        }
-                        completeOneTopic.accept(topic, newPartitions);
-                    });
         });
     }
 
