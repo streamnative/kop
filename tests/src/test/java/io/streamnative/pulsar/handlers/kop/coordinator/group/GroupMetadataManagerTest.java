@@ -287,6 +287,23 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test
+    public void testOffsetTopicNumPartitionsModify() {
+        int consumerGroupPartitionId =
+                GroupMetadataManager.getPartitionId(groupId, conf.getOffsetsTopicNumPartitions());
+        conf.setOffsetsTopicNumPartitions(100);
+
+        KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
+        // remove here to trigger a new creating for GroupCoordinator
+        handler.getGroupCoordinators().remove(conf.getKafkaMetadataTenant());
+        GroupMetadataManager newMetaManager =
+                handler.getGroupCoordinator(conf.getKafkaMetadataTenant()).getGroupManager();
+
+        int newPartitionsId =
+                GroupMetadataManager.getPartitionId(groupId, newMetaManager.offsetConfig().offsetsTopicNumPartitions());
+        assertEquals(consumerGroupPartitionId, newPartitionsId);
+    }
+
+    @Test
     public void testLoadOffsetsWithoutGroup() throws Exception {
         Map<TopicPartition, Long> committedOffsets = new HashMap<>();
         committedOffsets.put(
@@ -1032,17 +1049,17 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         ByteBuffer buffer = newMemoryRecordsBuffer(newOffsetCommitRecords);
 
         byte[] key = groupMetadataKey(groupId);
-
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
+        int consumerGroupPartitionId =
+                GroupMetadataManager.getPartitionId(groupId, conf.getOffsetsTopicNumPartitions());
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(consumerGroupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
             .eventTime(Time.SYSTEM.milliseconds())
             .send();
-
+        groupMetadataManager.removeLoadingPartition(consumerGroupPartitionId);
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
-        groupMetadataManager.scheduleLoadGroupAndOffsets(
-            groupPartitionId,
+        groupMetadataManager.scheduleLoadGroupAndOffsets(consumerGroupPartitionId,
             groupMetadata -> onLoadedFuture.complete(groupMetadata)
         ).get();
         GroupMetadata group = onLoadedFuture.get();
