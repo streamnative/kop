@@ -55,7 +55,8 @@ public class KopLogValidator {
                                                                  byte magic,
                                                                  TimestampType timestampType,
                                                                  long timestampDiffMaxMs) {
-        if (sourceCodec.name().equals("none") && targetCodec.name().equals("none")) {
+        if (sourceCodec.name().equals(CompressionType.NONE.name)
+                && targetCodec.name().equals(CompressionType.NONE.name)) {
             // check the magic value
             if (!records.hasMatchingMagic(magic)) {
                 return convertAndAssignOffsetsNonCompressed(records,
