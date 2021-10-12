@@ -27,7 +27,6 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.KafkaException;
@@ -162,19 +161,17 @@ public class MixedKafkaEntryFormatter extends AbstractEntryFormatter {
 
     @VisibleForTesting
     public KopLogValidator.CompressionCodec getSourceCodec(MemoryRecords records) {
-        AtomicReference<KopLogValidator.CompressionCodec> sourceCodec =
-                new AtomicReference<>(new KopLogValidator.CompressionCodec(
-                        CompressionType.NONE.name, CompressionType.NONE.id));
-        records.batches().forEach(batch -> {
+        KopLogValidator.CompressionCodec sourceCodec = new KopLogValidator.CompressionCodec(
+                CompressionType.NONE.name, CompressionType.NONE.id);
+        for (RecordBatch batch : records.batches()) {
             CompressionType compressionType = CompressionType.forId(batch.compressionType().id);
             KopLogValidator.CompressionCodec messageCodec = new KopLogValidator.CompressionCodec(
                     compressionType.name, compressionType.id);
             if (!messageCodec.name().equals(CompressionType.NONE.name)) {
-                sourceCodec.set(messageCodec);
+                sourceCodec = messageCodec;
             }
-        });
-
-        return sourceCodec.get();
+        }
+        return sourceCodec;
     }
 
     @VisibleForTesting
