@@ -127,7 +127,7 @@ public class MixedKafkaEntryFormatter extends AbstractEntryFormatter {
                         }
 
                     } else {
-                        //not need down converted, batch magic retains the magic value written in production
+                        // not need down converted, batch magic retains the magic value written in production
                         orderedByteBuf.add(byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes()));
                     }
                 } else {
