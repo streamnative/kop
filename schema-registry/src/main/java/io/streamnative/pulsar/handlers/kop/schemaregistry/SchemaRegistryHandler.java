@@ -52,25 +52,21 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
             log.debug("SchemaRegistry {}", msg);
         }
         FullHttpRequest request = (FullHttpRequest) msg;
-        try {
-            boolean done = false;
-            for (HttpRequestProcessor processor : processors) {
-                FullHttpResponse fullHttpResponse = processor.processRequest(request);
-                if (fullHttpResponse != null) {
-                    ctx.writeAndFlush(fullHttpResponse);
-                    done = true;
-                    break;
-                }
+        boolean done = false;
+        for (HttpRequestProcessor processor : processors) {
+            FullHttpResponse fullHttpResponse = processor.processRequest(request);
+            if (fullHttpResponse != null) {
+                ctx.writeAndFlush(fullHttpResponse);
+                done = true;
+                break;
             }
-            if (!done) {
-                FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1,
-                        NOT_FOUND,
-                        Unpooled.copiedBuffer("Not found - " + request.uri(), CharsetUtil.UTF_8));
-                httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8");
-                ctx.writeAndFlush(httpResponse);
-            }
-        } finally {
-            ReferenceCountUtil.safeRelease(msg);
+        }
+        if (!done) {
+            FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1,
+                    NOT_FOUND,
+                    Unpooled.copiedBuffer("Not found - " + request.uri(), CharsetUtil.UTF_8));
+            httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8");
+            ctx.writeAndFlush(httpResponse);
         }
     }
 
