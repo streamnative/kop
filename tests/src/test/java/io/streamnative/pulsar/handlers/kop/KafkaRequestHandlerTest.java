@@ -23,6 +23,7 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
@@ -60,7 +61,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.ConsumerGroupDescription;
+import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -70,6 +73,7 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.errors.InvalidPartitionsException;
 import org.apache.kafka.common.errors.InvalidRequestException;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.TopicExistsException;
@@ -878,6 +882,148 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         });
 
         consumer.close();
+        kafkaAdmin.close();
+
+    }
+
+    @Test(timeOut = 20000)
+    public void testCreatePartitionsForNonExistedTopic() {
+        final String topic = "test-create-partitions";
+
+        AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
+
+        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
+        NewPartitions newPartitions = NewPartitions.increaseTo(5);
+        newPartitionsMap.put(topic, newPartitions);
+
+        try {
+            kafkaAdmin.createPartitions(newPartitionsMap).all().get();
+        } catch (Exception e) {
+            Assert.assertTrue((e instanceof UnknownTopicOrPartitionException));
+            Assert.assertTrue(e.getMessage().contains("Topic '" + topic + "' doesn't exist."));
+        } finally {
+            kafkaAdmin.close();
+        }
+
+    }
+
+    @Test(timeOut = 20000)
+    public void testCreatePartitionsWithNegative() {
+        final String topic = "test-create-partitions";
+        final int oldPartitions = 5;
+        NewTopic newTopic = new NewTopic(topic, oldPartitions, (short) 1);
+
+        AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
+
+        try {
+            kafkaAdmin.createTopics(Collections.singleton(newTopic)).all().get();
+        } catch (Exception e) {
+            fail(e.getMessage());
+        }
+
+        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
+        final int numPartitions = -1;
+        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
+        newPartitionsMap.put(topic, newPartitions);
+
+        try {
+            kafkaAdmin.createPartitions(newPartitionsMap).all().get();
+        } catch (Exception e) {
+            Assert.assertTrue((e instanceof InvalidPartitionsException));
+            Assert.assertTrue(e.getMessage().contains("The partition '" + numPartitions + "' is negative"));
+        } finally {
+            kafkaAdmin.close();
+        }
+
+    }
+
+    @Test(timeOut = 20000)
+    public void testCreatePartitionsWithDecrease() {
+        final String topic = "test-create-partitions";
+        final int oldPartitions = 5;
+        NewTopic newTopic = new NewTopic(topic, oldPartitions, (short) 1);
+
+        AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
+
+        try {
+            kafkaAdmin.createTopics(Collections.singleton(newTopic)).all().get();
+        } catch (Exception e) {
+            fail(e.getMessage());
+        }
+
+        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
+        final int numPartitions = 2;
+        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
+        newPartitionsMap.put(topic, newPartitions);
+
+        try {
+            kafkaAdmin.createPartitions(newPartitionsMap).all().get();
+        } catch (Exception e) {
+            Assert.assertTrue((e instanceof InvalidPartitionsException));
+            Assert.assertTrue(e.getMessage().contains("Topic currently has '" + oldPartitions + "' partitions, "
+                    + "which is higher than the requested '" + newPartitions + "'."));
+        } finally {
+            kafkaAdmin.close();
+        }
+
+    }
+
+    @Test(timeOut = 20000)
+    public void testCreatePartitionsWithAssignment() {
+        final String topic = "test-create-partitions";
+        final int oldPartitions = 5;
+        NewTopic newTopic = new NewTopic(topic, oldPartitions, (short) 1);
+
+        AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
+
+        try {
+            kafkaAdmin.createTopics(Collections.singleton(newTopic)).all().get();
+        } catch (Exception e) {
+            fail(e.getMessage());
+        }
+
+        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
+        final int numPartitions = 7;
+        ArrayList<List<Integer>> assignments = Lists.newArrayList();
+        assignments.add(Collections.singletonList(1000));
+        assignments.add(Collections.singletonList(1001));
+        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions, assignments);
+        newPartitionsMap.put(topic, newPartitions);
+
+        try {
+            kafkaAdmin.createPartitions(newPartitionsMap).all().get();
+        } catch (Exception e) {
+            Assert.assertTrue((e instanceof InvalidRequestException));
+            Assert.assertTrue(e.getMessage()
+                    .contains("Kop server currently doesn't support manual assignment replica sets '"
+                    + newPartitions.assignments() + "' the number of partitions must be specified "));
+        } finally {
+            kafkaAdmin.close();
+        }
+
+    }
+
+    @Test(timeOut = 20000)
+    public void testCreatePartitions() throws ExecutionException, InterruptedException {
+        final String topic = "test-create-partitions";
+        final int oldPartitions = 5;
+        NewTopic newTopic = new NewTopic(topic, oldPartitions, (short) 1);
+
+        AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
+
+        kafkaAdmin.createTopics(Collections.singleton(newTopic)).all().get();
+
+        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
+        final int numPartitions = 10;
+        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
+        newPartitionsMap.put(topic, newPartitions);
+
+        kafkaAdmin.createPartitions(newPartitionsMap).all().get();
+        Map<String, TopicDescription> topicDescriptionMap =
+                kafkaAdmin.describeTopics(Collections.singletonList(topic)).all().get();
+        Assert.assertTrue(topicDescriptionMap.containsKey(topic));
+        Assert.assertEquals(numPartitions, topicDescriptionMap.get(topic).partitions().size());
+
         kafkaAdmin.close();
 
     }

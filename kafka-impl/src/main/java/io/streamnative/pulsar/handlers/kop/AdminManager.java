@@ -261,19 +261,30 @@ class AdminManager {
                 int numPartitions = newPartitions.totalCount();
                 if (numPartitions < 0) {
                     errorFuture.complete(ApiError.fromThrowable(
-                            new InvalidRequestException("The partition '" + numPartitions + "' is negative")));
+                            new InvalidPartitionsException("The partition '" + numPartitions + "' is negative")));
+
                     if (numTopics.decrementAndGet() == 0) {
                         complete.run();
                     }
-                    return;
-                }
+                } else if (newPartitions.assignments() != null
+                        && !newPartitions.assignments().isEmpty()) {
+                    errorFuture.complete(ApiError.fromThrowable(
+                            new InvalidRequestException(
+                                    "Kop server currently doesn't support manual assignment replica sets '"
+                                    + newPartitions.assignments() + "' the number of partitions must be specified ")
+                    ));
 
-                handleUpdatePartitionsAsync(topic,
-                        kopTopic,
-                        numPartitions,
-                        errorFuture,
-                        numTopics,
-                        complete);
+                    if (numTopics.decrementAndGet() == 0) {
+                        complete.run();
+                    }
+                } else {
+                    handleUpdatePartitionsAsync(topic,
+                            kopTopic,
+                            numPartitions,
+                            errorFuture,
+                            numTopics,
+                            complete);
+                }
 
             } catch (KoPTopicException e) {
                 errorFuture.complete(ApiError.fromThrowable(e));
