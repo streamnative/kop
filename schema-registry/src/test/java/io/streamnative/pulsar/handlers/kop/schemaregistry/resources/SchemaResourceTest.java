@@ -131,7 +131,7 @@ public class SchemaResourceTest {
         assertEquals(result, "{SCHEMA-1}");
     }
 
-    @Test(expectedExceptions = java.io.FileNotFoundException.class)
+    @Test(expectedExceptions = FileNotFoundException.class)
     public void getRawSchemaBySubjectAndVersionNotFound() throws Exception {
         server.executeGet("/subjects/aaa/versions/1/schema");
     }
@@ -143,7 +143,7 @@ public class SchemaResourceTest {
         assertEquals(result, "[ \"AVRO\", \"JSON\", \"PROTOBUF\" ]");
     }
 
-    @Test(expectedExceptions = java.io.FileNotFoundException.class)
+    @Test(expectedExceptions = FileNotFoundException.class)
     public void getSchemaAliasesByIdNotFoundTest() throws Exception {
         String result = server.executeGet("/schemas/ids/1/versions");
         log.info("result {}", result);
