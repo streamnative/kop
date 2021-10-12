@@ -69,7 +69,7 @@ This section lists configurations that may affect the performance.
 
 | Name              | Description                                                  | Range             | Default |
 | ----------------- | ------------------------------------------------------------ | ----------------- | ------- |
-| entryFormat       | The format of an entry. Changing it to `kafka` will avoid unnecessary encoding and decoding to improve the performance, whose cost is that a topic cannot be used by mixed Pulsar clients and Kafka clients. Changing it to `mixed_kafka` supports 0.10.x kafka clients. Note: `kafka` performance is 2 to 3 times that of `mixed_kafka`. | kafka,<br> mixed_kafka,<br> pulsar | kafka   |
+| entryFormat       | The format of an entry. If it is set to`kafka`, there is no unnecessary encoding and decoding work, which helps improve the performance. However,  in this situation, a topic cannot be used by mixed Pulsar clients and Kafka clients. If it is set `mixed_kafka`, Kafka clients (0.10.x) are supported. <br>- **Note**: Compared with performance for `mixed_kafka`, performances are improved by 2 to 3 times when the parameter is set to `kafka`. | kafka, <br> mixed_kafka,<br> pulsar | kafka   |
 | maxReadEntriesNum | The maximum number of entries that are read from the cursor once per time.<br>Increasing this value can make FETCH request read more bytes each time.<br>**NOTE**: Currently, KoP does not check the maximum byte limit. Therefore, if the value is too great, the response size may be over the network limit. |                   | 5       |
 
 ## Network
