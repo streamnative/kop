@@ -251,6 +251,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
 
         try {
             kafkaAdmin.createPartitions(newPartitionsMap).all().get();
+            fail("should have failed");
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("TopicAuthorizationException"));
         } finally {
@@ -283,8 +284,8 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
         kafkaAdmin.createPartitions(newPartitionsMap).all().get();
         Map<String, TopicDescription> topicDescriptionMap =
                 kafkaAdmin.describeTopics(Collections.singletonList(topic)).all().get();
-        Assert.assertTrue(topicDescriptionMap.containsKey(topic));
-        Assert.assertEquals(numPartitions, topicDescriptionMap.get(topic).partitions().size());
+        assertTrue(topicDescriptionMap.containsKey(topic));
+        assertEquals(numPartitions, topicDescriptionMap.get(topic).partitions().size());
 
         kafkaAdmin.close();
     }

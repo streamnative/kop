@@ -898,9 +898,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         try {
             kafkaAdmin.createPartitions(newPartitionsMap).all().get();
+            fail("should have failed");
         } catch (Exception e) {
-            Assert.assertTrue((e instanceof UnknownTopicOrPartitionException));
-            Assert.assertTrue(e.getMessage().contains("Topic '" + topic + "' doesn't exist."));
+            assertTrue((e.getCause() instanceof UnknownTopicOrPartitionException));
+            assertTrue(e.getMessage().contains("Topic '" + topic + "' doesn't exist."));
         } finally {
             kafkaAdmin.close();
         }
@@ -928,9 +929,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         try {
             kafkaAdmin.createPartitions(newPartitionsMap).all().get();
+            fail("should have failed");
         } catch (Exception e) {
-            Assert.assertTrue((e instanceof InvalidPartitionsException));
-            Assert.assertTrue(e.getMessage().contains("The partition '" + numPartitions + "' is negative"));
+            assertTrue((e.getCause() instanceof InvalidPartitionsException));
+            assertTrue(e.getMessage().contains("The partition '" + numPartitions + "' is negative"));
         } finally {
             kafkaAdmin.close();
         }
@@ -958,9 +960,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         try {
             kafkaAdmin.createPartitions(newPartitionsMap).all().get();
+            fail("should have failed");
         } catch (Exception e) {
-            Assert.assertTrue((e instanceof InvalidPartitionsException));
-            Assert.assertTrue(e.getMessage().contains("Topic currently has '" + oldPartitions + "' partitions, "
+            assertTrue((e.getCause() instanceof InvalidPartitionsException));
+            assertTrue(e.getMessage().contains("Topic currently has '" + oldPartitions + "' partitions, "
                     + "which is higher than the requested '" + newPartitions + "'."));
         } finally {
             kafkaAdmin.close();
@@ -992,9 +995,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         try {
             kafkaAdmin.createPartitions(newPartitionsMap).all().get();
+            fail("should have failed");
         } catch (Exception e) {
-            Assert.assertTrue((e instanceof InvalidRequestException));
-            Assert.assertTrue(e.getMessage()
+            assertTrue((e.getCause() instanceof InvalidRequestException));
+            assertTrue(e.getMessage()
                     .contains("Kop server currently doesn't support manual assignment replica sets '"
                     + newPartitions.assignments() + "' the number of partitions must be specified "));
         } finally {
@@ -1021,8 +1025,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         kafkaAdmin.createPartitions(newPartitionsMap).all().get();
         Map<String, TopicDescription> topicDescriptionMap =
                 kafkaAdmin.describeTopics(Collections.singletonList(topic)).all().get();
-        Assert.assertTrue(topicDescriptionMap.containsKey(topic));
-        Assert.assertEquals(numPartitions, topicDescriptionMap.get(topic).partitions().size());
+        assertTrue(topicDescriptionMap.containsKey(topic));
+        assertEquals(numPartitions, topicDescriptionMap.get(topic).partitions().size());
 
         kafkaAdmin.close();
 
