@@ -2386,7 +2386,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         final AtomicInteger validTopicsCount = new AtomicInteger(validTopics.size());
         final Map<String, NewPartitions> authorizedTopics = Maps.newConcurrentMap();
-        Runnable createTopicsAsync = () -> {
+        Runnable createPartitionsAsync = () -> {
             if (authorizedTopics.isEmpty()) {
                 resultFuture.complete(new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, result));
                 return;
@@ -2401,22 +2401,20 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         BiConsumer<String, NewPartitions> completeOneTopic = (topic, newPartitions) -> {
             authorizedTopics.put(topic, newPartitions);
             if (validTopicsCount.decrementAndGet() == 0) {
-                createTopicsAsync.run();
+                createPartitionsAsync.run();
             }
         };
         BiConsumer<String, ApiError> completeOneErrorTopic = (topic, error) -> {
             result.put(topic, error);
             if (validTopicsCount.decrementAndGet() == 0) {
-                createTopicsAsync.run();
+                createPartitionsAsync.run();
             }
         };
         validTopics.forEach((topic, newPartitions) -> {
             try {
                 KopTopic kopTopic = new KopTopic(topic);
                 String fullTopicName = kopTopic.getFullName();
-                // kafka use ALTER acl operation, but now kop does not support ALTER.
-                // So replace ALTER to CREATE.
-                authorize(AclOperation.CREATE, Resource.of(ResourceType.TOPIC, fullTopicName))
+                authorize(AclOperation.ALTER, Resource.of(ResourceType.TOPIC, fullTopicName))
                         .whenComplete((isAuthorized, ex) -> {
                             if (ex != null) {
                                 log.error("CreatePartitions authorize failed, topic - {}. {}",
@@ -2822,6 +2820,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 break;
             case CREATE:
             case DELETE:
+            case ALTER:
             case DESCRIBE_CONFIGS:
             case ALTER_CONFIGS:
                 isAuthorizedFuture = authorizer.canManageTenantAsync(session.getPrincipal(), resource);
@@ -2832,7 +2831,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
                 break;
             case CLUSTER_ACTION:
-            case ALTER:
             case UNKNOWN:
             case ALL:
             default:
