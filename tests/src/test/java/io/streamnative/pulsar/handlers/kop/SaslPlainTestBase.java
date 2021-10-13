@@ -18,12 +18,10 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
-import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import java.time.Duration;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -32,10 +30,6 @@ import java.util.concurrent.ExecutionException;
 import javax.crypto.SecretKey;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.NewPartitions;
-import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -48,7 +42,6 @@ import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.policies.data.TenantInfo;
@@ -222,70 +215,5 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
             assertTrue(e.getCause() instanceof TimeoutException);
             assertTrue(e.getMessage().contains("Failed to update metadata"));
         }
-    }
-
-
-    @Test(timeOut = 20000)
-    public void testCreatePartitionsAuthorizationFailed() throws PulsarAdminException {
-        final String topic = "test-create-partitions-failed";
-        final String fullTopic = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
-        final int oldPartitions = 5;
-
-        admin.topics().createPartitionedTopic(fullTopic, oldPartitions);
-
-        final Properties adminProps = newKafkaAdminClientProperties();
-        adminProps.put(AdminClientConfig.SECURITY_PROTOCOL_CONFIG, "SASL_PLAINTEXT");
-        adminProps.put("sasl.mechanism", "PLAIN");
-        final String kafkaAuth = String.format("username=\"%s\" password=\"%s\";",
-                TENANT + "/" + NAMESPACE, "token:" + anotherToken);
-        adminProps.put("sasl.jaas.config",
-                "org.apache.kafka.common.security.plain.PlainLoginModule required " + kafkaAuth);
-        AdminClient kafkaAdmin = AdminClient.create(adminProps);
-
-        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
-        final int numPartitions = 10;
-        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
-        newPartitionsMap.put(fullTopic, newPartitions);
-
-        try {
-            kafkaAdmin.createPartitions(newPartitionsMap).all().get();
-            fail("should have failed");
-        } catch (Exception e) {
-            e.printStackTrace();
-            assertTrue(e.getMessage().contains("TopicAuthorizationException"));
-        } finally {
-            kafkaAdmin.close();
-        }
-    }
-
-    @Test(timeOut = 20000)
-    public void testCreatePartitionsAuthorizationSuccess() throws Exception {
-        final String topic = "test-create-partitions-success";
-        final String fullTopic = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
-        final int oldPartitions = 5;
-
-        admin.topics().createPartitionedTopic(fullTopic, oldPartitions);
-
-        final Properties adminProps = newKafkaAdminClientProperties();
-        adminProps.put(AdminClientConfig.SECURITY_PROTOCOL_CONFIG, "SASL_PLAINTEXT");
-        adminProps.put("sasl.mechanism", "PLAIN");
-        final String kafkaAuth = String.format("username=\"%s\" password=\"%s\";",
-                TENANT + "/" + NAMESPACE, "token:" + adminToken);
-        adminProps.put("sasl.jaas.config",
-                "org.apache.kafka.common.security.plain.PlainLoginModule required " + kafkaAuth);
-        AdminClient kafkaAdmin = AdminClient.create(adminProps);
-
-        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
-        final int numPartitions = 10;
-        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
-        newPartitionsMap.put(fullTopic, newPartitions);
-
-        kafkaAdmin.createPartitions(newPartitionsMap).all().get();
-        Map<String, TopicDescription> topicDescriptionMap =
-                kafkaAdmin.describeTopics(Collections.singletonList(fullTopic)).all().get();
-        assertTrue(topicDescriptionMap.containsKey(fullTopic));
-        assertEquals(numPartitions, topicDescriptionMap.get(fullTopic).partitions().size());
-
-        kafkaAdmin.close();
     }
 }
