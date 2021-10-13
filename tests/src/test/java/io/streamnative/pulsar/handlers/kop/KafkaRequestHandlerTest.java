@@ -888,7 +888,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testCreatePartitionsForNonExistedTopic() {
-        final String topic = "test-create-partitions";
+        final String topic = "test-create-partitions-existed";
 
         AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
 
@@ -910,7 +910,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testCreatePartitionsWithNegative() {
-        final String topic = "test-create-partitions";
+        final String topic = "test-create-partitions-negative";
         final int oldPartitions = 5;
         NewTopic newTopic = new NewTopic(topic, oldPartitions, (short) 1);
 
@@ -941,7 +941,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testCreatePartitionsWithDecrease() {
-        final String topic = "test-create-partitions";
+        final String topic = "test-create-partitions-decrease";
         final int oldPartitions = 5;
         NewTopic newTopic = new NewTopic(topic, oldPartitions, (short) 1);
 
@@ -962,9 +962,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             kafkaAdmin.createPartitions(newPartitionsMap).all().get();
             fail("should have failed");
         } catch (Exception e) {
+            e.printStackTrace();
             assertTrue((e.getCause() instanceof InvalidPartitionsException));
             assertTrue(e.getMessage().contains("Topic currently has '" + oldPartitions + "' partitions, "
-                    + "which is higher than the requested '" + newPartitions + "'."));
+                    + "which is higher than the requested '" + numPartitions + "'."));
         } finally {
             kafkaAdmin.close();
         }
@@ -973,7 +974,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testCreatePartitionsWithAssignment() {
-        final String topic = "test-create-partitions";
+        final String topic = "test-create-partitions-assignment";
         final int oldPartitions = 5;
         NewTopic newTopic = new NewTopic(topic, oldPartitions, (short) 1);
 
@@ -1009,7 +1010,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testCreatePartitions() throws ExecutionException, InterruptedException {
-        final String topic = "test-create-partitions";
+        final String topic = "test-create-partitions-success";
         final int oldPartitions = 5;
         NewTopic newTopic = new NewTopic(topic, oldPartitions, (short) 1);
 

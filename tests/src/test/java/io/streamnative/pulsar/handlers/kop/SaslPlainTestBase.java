@@ -227,7 +227,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testCreatePartitionsAuthorizationFailed() throws PulsarAdminException {
-        final String topic = "test-create-partitions";
+        final String topic = "test-create-partitions-failed";
         final String fullTopic = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
         final int oldPartitions = 5;
 
@@ -260,7 +260,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testCreatePartitionsAuthorizationSuccess() throws Exception {
-        final String topic = "test-create-partitions";
+        final String topic = "test-create-partitions-success";
         final String fullTopic = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
         final int oldPartitions = 5;
 
