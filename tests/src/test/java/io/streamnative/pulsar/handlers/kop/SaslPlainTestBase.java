@@ -35,7 +35,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewPartitions;
-import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -53,7 +52,6 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.policies.data.TenantInfo;
-import org.testng.Assert;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
@@ -247,12 +245,13 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
         HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
         final int numPartitions = 10;
         NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
-        newPartitionsMap.put(topic, newPartitions);
+        newPartitionsMap.put(fullTopic, newPartitions);
 
         try {
             kafkaAdmin.createPartitions(newPartitionsMap).all().get();
             fail("should have failed");
         } catch (Exception e) {
+            e.printStackTrace();
             assertTrue(e.getMessage().contains("TopicAuthorizationException"));
         } finally {
             kafkaAdmin.close();
@@ -262,8 +261,10 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
     @Test(timeOut = 20000)
     public void testCreatePartitionsAuthorizationSuccess() throws Exception {
         final String topic = "test-create-partitions";
+        final String fullTopic = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
         final int oldPartitions = 5;
-        NewTopic newTopic = new NewTopic(topic, oldPartitions, (short) 1);
+
+        admin.topics().createPartitionedTopic(fullTopic, oldPartitions);
 
         final Properties adminProps = newKafkaAdminClientProperties();
         adminProps.put(AdminClientConfig.SECURITY_PROTOCOL_CONFIG, "SASL_PLAINTEXT");
@@ -274,18 +275,16 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
                 "org.apache.kafka.common.security.plain.PlainLoginModule required " + kafkaAuth);
         AdminClient kafkaAdmin = AdminClient.create(adminProps);
 
-        kafkaAdmin.createTopics(Collections.singleton(newTopic)).all().get();
-
         HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
         final int numPartitions = 10;
         NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
-        newPartitionsMap.put(topic, newPartitions);
+        newPartitionsMap.put(fullTopic, newPartitions);
 
         kafkaAdmin.createPartitions(newPartitionsMap).all().get();
         Map<String, TopicDescription> topicDescriptionMap =
-                kafkaAdmin.describeTopics(Collections.singletonList(topic)).all().get();
-        assertTrue(topicDescriptionMap.containsKey(topic));
-        assertEquals(numPartitions, topicDescriptionMap.get(topic).partitions().size());
+                kafkaAdmin.describeTopics(Collections.singletonList(fullTopic)).all().get();
+        assertTrue(topicDescriptionMap.containsKey(fullTopic));
+        assertEquals(numPartitions, topicDescriptionMap.get(fullTopic).partitions().size());
 
         kafkaAdmin.close();
     }

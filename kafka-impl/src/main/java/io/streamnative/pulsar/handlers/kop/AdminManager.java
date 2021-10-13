@@ -328,25 +328,26 @@ class AdminManager {
                             return;
                         }
 
-                        try {
-                            admin.topics().updatePartitionedTopic(kopTopic.getFullName(), newPartitions);
-                            errorFuture.complete(ApiError.NONE);
+                        admin.topics().updatePartitionedTopicAsync(kopTopic.getFullName(), newPartitions)
+                                .whenComplete((ignored, e) -> {
+                                    if (e == null) {
+                                        if (log.isDebugEnabled()) {
+                                            log.debug("Successfully create topic '{}' new partitions '{}'",
+                                                    topic, newPartitions);
+                                        }
 
-                            if (log.isDebugEnabled()) {
-                                log.debug("Successfully create topic '{}' new partitions '{}'",
-                                        topic, newPartitions);
-                            }
+                                        errorFuture.complete(ApiError.NONE);
+                                    } else {
+                                        log.error("Failed to create topic '{}' new partitions '{}': {}",
+                                                topic, newPartitions, e);
 
-                        } catch (PulsarAdminException e) {
-                            log.error("Failed to create topic '{}' new partitions '{}': {}",
-                                    topic, newPartitions, e);
-                            errorFuture.complete(ApiError.fromThrowable(e));
-                        } finally {
-                            if (numTopics.decrementAndGet() == 0) {
-                                complete.run();
-                            }
-                        }
+                                        errorFuture.complete(ApiError.fromThrowable(e));
+                                    }
 
+                                    if (numTopics.decrementAndGet() == 0) {
+                                        complete.run();
+                                    }
+                                });
                     } else {
                         if (t instanceof PulsarAdminException.NotFoundException) {
                             errorFuture.complete(ApiError.fromThrowable(
