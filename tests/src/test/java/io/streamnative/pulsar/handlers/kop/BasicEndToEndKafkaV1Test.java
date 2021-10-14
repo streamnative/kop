@@ -18,13 +18,13 @@ import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 /**
- * Basic end-to-end test with `entryFormat=mixed_kafka`.
+ * Basic end-to-end test with `entryFormat=kafka`.
  */
 @Slf4j
-public class BasicEndToEndMixedKafkaTest extends BasicEndToEndKafkaTest {
+public class BasicEndToEndKafkaV1Test extends BasicEndToEndKafkaTest {
 
-    public BasicEndToEndMixedKafkaTest() {
-        super("mixed_kafka");
+    public BasicEndToEndKafkaV1Test() {
+        super("kafka");
     }
 
     @DataProvider(name = "enableBatching")
