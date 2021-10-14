@@ -676,11 +676,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         MetadataUtils.createTxnMetadataIfMissing(tenant, pulsarAdmin, clusterData, kafkaConfig);
 
         TransactionCoordinator transactionCoordinator = TransactionCoordinator.of(
-                txnTopicClient,
                 transactionConfig,
-                kafkaConfig.getBrokerId(),
+                txnTopicClient,
                 brokerService.getPulsar().getLocalMetadataStore(),
-                kopBrokerLookupManager);
+                kopBrokerLookupManager,
+                OrderedExecutor.newBuilder().name("TransactionStateManagerExecutor").build());
 
         loadTxnLogTopics(tenant, transactionCoordinator);
 

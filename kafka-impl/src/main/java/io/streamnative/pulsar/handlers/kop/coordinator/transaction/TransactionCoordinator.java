@@ -86,7 +86,7 @@ public class TransactionCoordinator {
                                    Timer timer) {
         this.transactionConfig = transactionConfig;
         this.txnManager = new TransactionStateManager(transactionConfig, txnTopicClient, txnStateManagerScheduler);
-        this.producerIdManager = new ProducerIdManager(transactionConfig.getBrokerId(), zkClient);
+        this.producerIdManager = new ProducerIdManager(transactionConfig.getBrokerId(), metadataStore);
         this.transactionMarkerChannelManager =
                 new TransactionMarkerChannelManager(null, txnManager, kopBrokerLookupManager, false);
         this.timer = timer;
