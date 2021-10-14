@@ -2194,7 +2194,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             String fullTopicName = kopTopic.getFullName();
 
             authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
-                    .thenAccept(isAuthorized -> {
+                    .whenComplete((isAuthorized, ex) -> {
+                        if (ex != null) {
+                            log.error("TxnOffsetCommit authorize failed, topic - {}. {}",
+                                    fullTopicName, ex.getMessage());
+                            completeOne.accept(
+                                    () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                            return;
+                        }
                         if (!isAuthorized) {
                             completeOne.accept(()-> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
                             return;
@@ -2204,12 +2211,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             convertedOffsetData.put(newTopicPartition, commitOffset);
                             replacingIndex.put(newTopicPartition, tp);
                         });
-                    }).exceptionally(ex -> {
-                        log.error("TxnOffsetCommit authorize failed, topic - {}. {}",
-                                fullTopicName, ex.getMessage());
-                        completeOne.accept(
-                                () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
-                        return null;
                     });
         });
     }
