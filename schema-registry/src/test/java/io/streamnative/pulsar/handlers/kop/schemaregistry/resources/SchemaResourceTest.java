@@ -101,6 +101,16 @@ public class SchemaResourceTest {
                 + "}");
     }
 
+    @Test
+    public void getSchemaByIdWithQueryStringTest() throws Exception {
+        putSchema(1, "{SCHEMA-1}");
+        String result = server.executeGet("/schemas/ids/1?fetchMaxId=false");
+        log.info("result {}", result);
+        assertEquals(result, "{\n"
+                + "  \"schema\" : \"{SCHEMA-1}\"\n"
+                + "}");
+    }
+
     @Test(expectedExceptions = FileNotFoundException.class)
     public void getSchemaByIdNotFoundTest() throws Exception {
         server.executeGet("/schemas/ids/1");

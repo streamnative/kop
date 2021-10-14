@@ -51,6 +51,8 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
             log.debug("SchemaRegistry {}", msg);
         }
         FullHttpRequest request = (FullHttpRequest) msg;
+        log.info("SchemaRegistry {} {} from {}", request.method(), request.uri(), ctx.channel().localAddress());
+
         boolean done = false;
         for (HttpRequestProcessor processor : processors) {
             FullHttpResponse fullHttpResponse = processor.processRequest(request);
@@ -65,12 +67,16 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
             }
         }
         if (!done) {
-            String body = "Not found - " + request.uri();
+            String body = "{\n"
+                    + "  \"message\" : \"Not found\",\n"
+                    + "  \"error_code\" : 404\n"
+                    + "}";
             FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1,
                     NOT_FOUND,
                     Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
-            httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8");
+            httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/vnd.schemaregistry.v1+json");
             httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
+            log.info("not found {} {} from {}", request.method(), request.uri(), ctx.channel().localAddress());
             if (log.isDebugEnabled()) {
                 log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), msg,
                         httpResponse);

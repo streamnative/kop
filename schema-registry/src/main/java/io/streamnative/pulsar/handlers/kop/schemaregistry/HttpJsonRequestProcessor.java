@@ -89,7 +89,12 @@ public abstract class HttpJsonRequestProcessor <K, R> extends HttpRequestProcess
     }
 
     private List<String> detectGroups(FullHttpRequest request) {
-        Matcher matcher = pattern.matcher(request.uri());
+        String uri = request.uri();
+        int questionMark = uri.lastIndexOf('?');
+        if (questionMark > 0) {
+            uri = uri.substring(0, questionMark);
+        }
+        Matcher matcher = pattern.matcher(uri);
         if (!matcher.matches()) {
             return null;
         }
