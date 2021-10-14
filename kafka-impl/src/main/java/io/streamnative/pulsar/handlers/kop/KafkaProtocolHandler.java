@@ -604,9 +604,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         adminManager.shutdown();
         groupCoordinatorsByTenant.values().forEach(GroupCoordinator::shutdown);
         kopEventManager.close();
-        transactionCoordinatorByTenant.forEach((__, txnCoordinator) -> {
-            txnCoordinator.shutdown();
-        });
+        transactionCoordinatorByTenant.values().forEach(TransactionCoordinator::shutdown);
         KafkaTopicManager.LOOKUP_CACHE.clear();
         KopBrokerLookupManager.clear();
         KafkaTopicManager.cancelCursorExpireTask();
@@ -681,8 +679,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 brokerService.getPulsar().getLocalMetadataStore(),
                 kopBrokerLookupManager,
                 OrderedExecutor.newBuilder().name("TransactionStateManagerExecutor").build());
-
-        loadTxnLogTopics(tenant, transactionCoordinator);
 
         transactionCoordinator.startup().get();
 
