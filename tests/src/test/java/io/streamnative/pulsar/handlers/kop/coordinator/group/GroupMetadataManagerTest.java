@@ -343,7 +343,6 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         committedOffsets.forEach((tp, offset) ->
             assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset)));
 
-    SystemTopicClient offsetTopicClient = null;
 
     }
 
@@ -1011,7 +1010,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     }
 
-    @Test(invocationCount = 100)
+    @Test
     public void testOffsetWriteAfterGroupRemoved() throws Exception {
         // this test case checks the following scenario:
         // 1. the group exists at some point in time, but is later removed (because all members left)
