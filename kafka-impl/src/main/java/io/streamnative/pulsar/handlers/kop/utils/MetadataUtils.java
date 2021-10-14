@@ -59,7 +59,7 @@ public class MetadataUtils {
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructOffsetsTopicBaseName(tenant, conf));
         createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
-                conf.getOffsetsTopicNumPartitions());
+                true, conf.getOffsetsTopicNumPartitions());
     }
 
     public static void createTxnMetadataIfMissing(String tenant,
@@ -69,7 +69,7 @@ public class MetadataUtils {
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructTxnLogTopicBaseName(tenant, conf));
         createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
-                conf.getTxnLogTopicNumPartitions());
+                true, conf.getTxnLogTopicNumPartitions());
     }
 
     public static void createSchemaRegistryMetadataIfMissing(String tenant,
@@ -78,7 +78,7 @@ public class MetadataUtils {
                                                   KafkaServiceConfiguration conf)
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructSchemaRegistryTopicName(tenant, conf));
-        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic, 1);
+        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic, false, 1);
     }
 
     /**
@@ -100,6 +100,7 @@ public class MetadataUtils {
                                                      ClusterData clusterData,
                                                      KafkaServiceConfiguration conf,
                                                      KopTopic kopTopic,
+                                                     boolean partitioned,
                                                      int partitionNum)
         throws PulsarAdminException {
         String cluster = conf.getClusterName();
@@ -141,7 +142,7 @@ public class MetadataUtils {
             namespaceExists = true;
 
             // Check if the offsets topic exists and create it if not
-            createTopicIfNotExist(pulsarAdmin, kopTopic.getFullName(), partitionNum);
+            createTopicIfNotExist(pulsarAdmin, kopTopic.getFullName(), partitioned, partitionNum);
             offsetsTopicExists = true;
         } catch (PulsarAdminException e) {
             if (e instanceof ConflictException) {
@@ -293,8 +294,9 @@ public class MetadataUtils {
 
     private static void createTopicIfNotExist(final PulsarAdmin admin,
                                               final String topic,
+                                              boolean partitioned,
                                               final int numPartitions) throws PulsarAdminException {
-        if (numPartitions > 1) {
+        if (partitioned) {
             try {
                 admin.topics().createPartitionedTopic(topic, numPartitions);
             } catch (PulsarAdminException.ConflictException e) {
