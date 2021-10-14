@@ -78,8 +78,7 @@ public class MetadataUtils {
                                                   KafkaServiceConfiguration conf)
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructSchemaRegistryTopicName(tenant, conf));
-        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
-                conf.getTxnLogTopicNumPartitions());
+        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic, 1);
     }
 
     /**
@@ -295,15 +294,23 @@ public class MetadataUtils {
     private static void createTopicIfNotExist(final PulsarAdmin admin,
                                               final String topic,
                                               final int numPartitions) throws PulsarAdminException {
-        try {
-            admin.topics().createPartitionedTopic(topic, numPartitions);
-        } catch (PulsarAdminException.ConflictException e) {
-            log.info("Resources concurrent creating for topic : {}, caused by : {}", topic, e.getMessage());
-        }
-        try {
-            // Ensure all partitions are created
-            admin.topics().createMissedPartitions(topic);
-        } catch (PulsarAdminException ignored) {
+        if (numPartitions > 1) {
+            try {
+                admin.topics().createPartitionedTopic(topic, numPartitions);
+            } catch (PulsarAdminException.ConflictException e) {
+                log.info("Resources concurrent creating for topic : {}, caused by : {}", topic, e.getMessage());
+            }
+            try {
+                // Ensure all partitions are created
+                admin.topics().createMissedPartitions(topic);
+            } catch (PulsarAdminException ignored) {
+            }
+        } else {
+            try {
+                admin.topics().createNonPartitionedTopic(topic);
+            } catch (PulsarAdminException.ConflictException e) {
+                log.info("Resources concurrent creating for topic : {}, caused by : {}", topic, e.getMessage());
+            }
         }
     }
 }

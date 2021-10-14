@@ -55,23 +55,33 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
         for (HttpRequestProcessor processor : processors) {
             FullHttpResponse fullHttpResponse = processor.processRequest(request);
             if (fullHttpResponse != null) {
+                if (log.isDebugEnabled()) {
+                    log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), msg,
+                            fullHttpResponse);
+                }
                 ctx.writeAndFlush(fullHttpResponse);
                 done = true;
                 break;
             }
         }
         if (!done) {
+            String body = "Not found - " + request.uri();
             FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1,
                     NOT_FOUND,
-                    Unpooled.copiedBuffer("Not found - " + request.uri(), CharsetUtil.UTF_8));
+                    Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
             httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8");
+            httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
+            if (log.isDebugEnabled()) {
+                log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), msg,
+                        httpResponse);
+            }
             ctx.writeAndFlush(httpResponse);
         }
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        log.error("Unhandled error, closing conection to {}", ctx.channel(), cause);
+        log.error("Unhandled error, closing connection to {}", ctx.channel(), cause);
         ctx.close();
     }
 }
