@@ -26,6 +26,8 @@ public class EncodeResult {
     ByteBuf encodedByteBuf;
     int numMessages;
 
+    private final Recycler.Handle<EncodeResult> recyclerHandle;
+
     public static EncodeResult get(MemoryRecords records,
                                    ByteBuf encodedByteBuf,
                                    int numMessages) {
@@ -35,8 +37,6 @@ public class EncodeResult {
         encodeResult.numMessages = numMessages;
         return encodeResult;
     }
-
-    private final Recycler.Handle<EncodeResult> recyclerHandle;
 
     private EncodeResult(Recycler.Handle<EncodeResult> recyclerHandle) {
         this.recyclerHandle = recyclerHandle;

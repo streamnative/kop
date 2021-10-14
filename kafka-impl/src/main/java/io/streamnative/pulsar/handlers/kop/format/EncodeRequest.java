@@ -24,6 +24,8 @@ public class EncodeRequest {
     MemoryRecords records;
     long baseOffset;
 
+    private final Recycler.Handle<EncodeRequest> recyclerHandle;
+
     public static EncodeRequest get(MemoryRecords records) {
         return get(records, 0L);
     }
@@ -35,8 +37,6 @@ public class EncodeRequest {
         encodeRequest.baseOffset = baseOffset;
         return encodeRequest;
     }
-
-    private final Recycler.Handle<EncodeRequest> recyclerHandle;
 
     private EncodeRequest(Recycler.Handle<EncodeRequest> recyclerHandle) {
         this.recyclerHandle = recyclerHandle;
