@@ -887,9 +887,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 20000)
-    public void testCreatePartitionsForNonExistedTopic() {
+    public void testCreatePartitionsForNonExistedTopic() throws Exception {
         final String topic = "test-create-partitions-existed";
 
+        @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
 
         HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
@@ -899,28 +900,23 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         try {
             kafkaAdmin.createPartitions(newPartitionsMap).all().get();
             fail("should have failed");
-        } catch (Exception e) {
+        } catch (ExecutionException e) {
             assertTrue((e.getCause() instanceof UnknownTopicOrPartitionException));
             assertTrue(e.getMessage().contains("Topic '" + topic + "' doesn't exist."));
-        } finally {
-            kafkaAdmin.close();
         }
 
     }
 
     @Test(timeOut = 20000)
-    public void testCreatePartitionsWithNegative() {
+    public void testCreatePartitionsWithNegative() throws Exception {
         final String topic = "test-create-partitions-negative";
         final int oldPartitions = 5;
         NewTopic newTopic = new NewTopic(topic, oldPartitions, (short) 1);
 
+        @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
 
-        try {
-            kafkaAdmin.createTopics(Collections.singleton(newTopic)).all().get();
-        } catch (Exception e) {
-            fail(e.getMessage());
-        }
+        kafkaAdmin.createTopics(Collections.singleton(newTopic)).all().get();
 
         HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
         final int numPartitions = -1;
@@ -930,28 +926,23 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         try {
             kafkaAdmin.createPartitions(newPartitionsMap).all().get();
             fail("should have failed");
-        } catch (Exception e) {
+        } catch (ExecutionException e) {
             assertTrue((e.getCause() instanceof InvalidPartitionsException));
             assertTrue(e.getMessage().contains("The partition '" + numPartitions + "' is negative"));
-        } finally {
-            kafkaAdmin.close();
         }
 
     }
 
     @Test(timeOut = 20000)
-    public void testCreatePartitionsWithDecrease() {
+    public void testCreatePartitionsWithDecrease() throws Exception {
         final String topic = "test-create-partitions-decrease";
         final int oldPartitions = 5;
         NewTopic newTopic = new NewTopic(topic, oldPartitions, (short) 1);
 
+        @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
 
-        try {
-            kafkaAdmin.createTopics(Collections.singleton(newTopic)).all().get();
-        } catch (Exception e) {
-            fail(e.getMessage());
-        }
+        kafkaAdmin.createTopics(Collections.singleton(newTopic)).all().get();
 
         HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
         final int numPartitions = 2;
@@ -961,30 +952,24 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         try {
             kafkaAdmin.createPartitions(newPartitionsMap).all().get();
             fail("should have failed");
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (ExecutionException e) {
             assertTrue((e.getCause() instanceof InvalidPartitionsException));
             assertTrue(e.getMessage().contains("Topic currently has '" + oldPartitions + "' partitions, "
                     + "which is higher than the requested '" + numPartitions + "'."));
-        } finally {
-            kafkaAdmin.close();
         }
 
     }
 
     @Test(timeOut = 20000)
-    public void testCreatePartitionsWithAssignment() {
+    public void testCreatePartitionsWithAssignment() throws Exception {
         final String topic = "test-create-partitions-assignment";
         final int oldPartitions = 5;
         NewTopic newTopic = new NewTopic(topic, oldPartitions, (short) 1);
 
+        @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
 
-        try {
-            kafkaAdmin.createTopics(Collections.singleton(newTopic)).all().get();
-        } catch (Exception e) {
-            fail(e.getMessage());
-        }
+        kafkaAdmin.createTopics(Collections.singleton(newTopic)).all().get();
 
         HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
         final int numPartitions = 7;
@@ -997,13 +982,11 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         try {
             kafkaAdmin.createPartitions(newPartitionsMap).all().get();
             fail("should have failed");
-        } catch (Exception e) {
+        } catch (ExecutionException e) {
             assertTrue((e.getCause() instanceof InvalidRequestException));
             assertTrue(e.getMessage()
                     .contains("Kop server currently doesn't support manual assignment replica sets '"
                     + newPartitions.assignments() + "' the number of partitions must be specified "));
-        } finally {
-            kafkaAdmin.close();
         }
 
     }
@@ -1014,6 +997,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         final int oldPartitions = 5;
         NewTopic newTopic = new NewTopic(topic, oldPartitions, (short) 1);
 
+        @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
 
         kafkaAdmin.createTopics(Collections.singleton(newTopic)).all().get();
@@ -1028,8 +1012,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 kafkaAdmin.describeTopics(Collections.singletonList(topic)).all().get();
         assertTrue(topicDescriptionMap.containsKey(topic));
         assertEquals(numPartitions, topicDescriptionMap.get(topic).partitions().size());
-
-        kafkaAdmin.close();
 
     }
 
