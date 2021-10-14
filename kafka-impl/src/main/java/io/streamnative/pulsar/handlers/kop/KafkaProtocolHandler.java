@@ -87,8 +87,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
     private MetadataCache<LocalBrokerData> localBrokerDataCache;
-    private SystemTopicClient offsetTopicClient;
     private SystemTopicClient txnTopicClient;
+
+    @Getter
+    @VisibleForTesting
+    protected SystemTopicClient offsetTopicClient;
 
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
@@ -616,7 +619,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         statsProvider.stop();
     }
 
-    private GroupCoordinator startGroupCoordinator(String tenant, SystemTopicClient client) {
+    @VisibleForTesting
+    protected GroupCoordinator startGroupCoordinator(String tenant, SystemTopicClient client) {
         GroupConfig groupConfig = new GroupConfig(
             kafkaConfig.getGroupMinSessionTimeoutMs(),
             kafkaConfig.getGroupMaxSessionTimeoutMs(),
