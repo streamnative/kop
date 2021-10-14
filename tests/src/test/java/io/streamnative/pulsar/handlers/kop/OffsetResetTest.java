@@ -78,7 +78,7 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 30000)
     public void testGreaterThanEndOffset() throws Exception {
-        final String topic = "persistent://public/default/test-reset-offset-topic";
+        final String topic = "test-reset-offset-topic";
         final String group = "test-reset-offset-groupid";
         final int numPartitions = 1;
 
@@ -385,7 +385,7 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 30000)
     public void testCliReset() throws Exception {
-        String topic = "persistent://public/default/test-reset-offset-topic";
+        String topic = "test-reset-offset-topic";
         final String group = "test-reset-offset-groupid";
         final int numPartitions = 10;
 

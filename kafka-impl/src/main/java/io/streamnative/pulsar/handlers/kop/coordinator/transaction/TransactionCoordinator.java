@@ -56,7 +56,7 @@ import org.apache.kafka.common.requests.InitProducerIdResponse;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.zookeeper.ZooKeeper;
+import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 
 
 /**
@@ -80,7 +80,7 @@ public class TransactionCoordinator {
 
     private TransactionCoordinator(TransactionConfig transactionConfig,
                                    SystemTopicClient txnTopicClient,
-                                   ZooKeeper zkClient,
+                                   MetadataStoreExtended metadataStore,
                                    KopBrokerLookupManager kopBrokerLookupManager,
                                    OrderedExecutor txnStateManagerScheduler,
                                    Timer timer) {
@@ -94,14 +94,14 @@ public class TransactionCoordinator {
 
     public static TransactionCoordinator of(TransactionConfig transactionConfig,
                                             SystemTopicClient txnTopicClient,
-                                            ZooKeeper zkClient,
+                                            MetadataStoreExtended metadataStore,
                                             KopBrokerLookupManager kopBrokerLookupManager,
                                             OrderedExecutor orderedExecutor) {
 
         return new TransactionCoordinator(
                 transactionConfig,
                 txnTopicClient,
-                zkClient,
+                metadataStore,
                 kopBrokerLookupManager,
                 orderedExecutor,
                 SystemTimer.builder()

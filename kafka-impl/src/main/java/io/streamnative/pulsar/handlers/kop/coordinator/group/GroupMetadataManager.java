@@ -26,6 +26,7 @@ import static io.streamnative.pulsar.handlers.kop.utils.CoreUtils.inLock;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.CommitRecordMetadataAndOffset;
@@ -1364,7 +1365,8 @@ public class GroupMetadataManager {
      *
      * <p>Visible for testing
      */
-    boolean removeLoadingPartition(int partition) {
+    @VisibleForTesting
+    public boolean removeLoadingPartition(int partition) {
         return inLock(partitionLock, () -> loadingPartitions.remove(partition));
     }
 

@@ -18,6 +18,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicName;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
@@ -61,6 +62,7 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.Lookup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
@@ -101,6 +103,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
         return groupCoordinatorsByTenant.computeIfAbsent(tenant, this::createAndBootGroupCoordinator);
+    }
+
+    @VisibleForTesting
+    public Map<String, GroupCoordinator> getGroupCoordinators() {
+        return groupCoordinatorsByTenant;
     }
 
     @Override
@@ -602,7 +609,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         });
         KafkaTopicManager.LOOKUP_CACHE.clear();
         KopBrokerLookupManager.clear();
-        KafkaTopicManager.closeKafkaTopicConsumerManagers();
+        KafkaTopicManager.cancelCursorExpireTask();
+        KafkaTopicConsumerManagerCache.getInstance().close();
         KafkaTopicManager.getReferences().clear();
         KafkaTopicManager.getTopics().clear();
         statsProvider.stop();
@@ -615,11 +623,27 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             kafkaConfig.getGroupInitialRebalanceDelayMs()
         );
 
+        String topicName = tenant + "/" + kafkaConfig.getKafkaMetadataNamespace()
+                + "/" + Topic.GROUP_METADATA_TOPIC_NAME;
+
+        PulsarAdmin pulsarAdmin;
+        int offsetTopicNumPartitions;
+        try {
+            pulsarAdmin = brokerService.getPulsar().getAdminClient();
+            offsetTopicNumPartitions = pulsarAdmin.topics().getPartitionedTopicMetadata(topicName).partitions;
+            if (offsetTopicNumPartitions == 0) {
+                log.error("Offset topic should not be a non-partitioned topic.");
+                throw new IllegalStateException("Offset topic should not be a non-partitioned topic.");
+            }
+        }  catch (PulsarServerException | PulsarAdminException e) {
+            log.error("Failed to get offset topic partition metadata .", e);
+            throw new IllegalStateException(e);
+        }
+
+
         OffsetConfig offsetConfig = OffsetConfig.builder()
-            .offsetsTopicName(tenant + "/"
-                + kafkaConfig.getKafkaMetadataNamespace()
-                + "/" + Topic.GROUP_METADATA_TOPIC_NAME)
-            .offsetsTopicNumPartitions(kafkaConfig.getOffsetsTopicNumPartitions())
+            .offsetsTopicName(topicName)
+            .offsetsTopicNumPartitions(offsetTopicNumPartitions)
             .offsetsTopicCompressionType(CompressionType.valueOf(kafkaConfig.getOffsetsTopicCompressionCodec()))
             .maxMetadataSize(kafkaConfig.getOffsetMetadataMaxSize())
             .offsetsRetentionCheckIntervalMs(kafkaConfig.getOffsetsRetentionCheckIntervalMs())
@@ -652,11 +676,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         MetadataUtils.createTxnMetadataIfMissing(tenant, pulsarAdmin, clusterData, kafkaConfig);
 
         TransactionCoordinator transactionCoordinator = TransactionCoordinator.of(
-                transactionConfig,
                 txnTopicClient,
-                brokerService.getPulsar().getZkClient(),
-                kopBrokerLookupManager,
-                OrderedExecutor.newBuilder().name("TransactionStateManagerExecutor").build());
+                transactionConfig,
+                kafkaConfig.getBrokerId(),
+                brokerService.getPulsar().getLocalMetadataStore(),
+                kopBrokerLookupManager);
+
+        loadTxnLogTopics(tenant, transactionCoordinator);
 
         transactionCoordinator.startup().get();
 

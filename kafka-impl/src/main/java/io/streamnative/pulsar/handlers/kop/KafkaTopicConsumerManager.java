@@ -265,4 +265,9 @@ public class KafkaTopicConsumerManager implements Closeable {
     public int getNumCreatedCursors() {
         return numCreatedCursors;
     }
+
+    @VisibleForTesting
+    public boolean isClosed() {
+        return closed.get();
+    }
 }
