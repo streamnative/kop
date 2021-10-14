@@ -96,6 +96,7 @@ import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
+import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
@@ -118,6 +119,8 @@ import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
 import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
+import org.apache.kafka.common.requests.CreatePartitionsRequest;
+import org.apache.kafka.common.requests.CreatePartitionsResponse;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteGroupsRequest;
@@ -2402,6 +2405,84 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
+    @Override
+    protected void handleCreatePartitions(KafkaHeaderAndRequest createPartitions,
+                                          CompletableFuture<AbstractResponse> resultFuture) {
+        checkArgument(createPartitions.getRequest() instanceof CreatePartitionsRequest);
+        CreatePartitionsRequest request = (CreatePartitionsRequest) createPartitions.getRequest();
+
+        final Map<String, ApiError> result = Maps.newConcurrentMap();
+        final Map<String, NewPartitions> validTopics = Maps.newHashMap();
+        final Set<String> duplicateTopics = request.duplicates();
+
+        request.newPartitions().forEach((topic, newPartition) -> {
+            if (!duplicateTopics.contains(topic)) {
+                validTopics.put(topic, newPartition);
+            } else {
+                final String errorMessage = "Create topics partitions request from client `"
+                        + createPartitions.getHeader().clientId()
+                        + "` contains multiple entries for the following topics: " + duplicateTopics;
+                result.put(topic, new ApiError(Errors.INVALID_REQUEST, errorMessage));
+            }
+        });
+
+        if (validTopics.isEmpty()) {
+            resultFuture.complete(new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, result));
+            return;
+        }
+
+        final AtomicInteger validTopicsCount = new AtomicInteger(validTopics.size());
+        final Map<String, NewPartitions> authorizedTopics = Maps.newConcurrentMap();
+        Runnable createPartitionsAsync = () -> {
+            if (authorizedTopics.isEmpty()) {
+                resultFuture.complete(new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, result));
+                return;
+            }
+            adminManager.createPartitionsAsync(authorizedTopics, request.timeout()).thenApply(validResult -> {
+                result.putAll(validResult);
+                resultFuture.complete(new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, result));
+                return null;
+            });
+        };
+
+        BiConsumer<String, NewPartitions> completeOneTopic = (topic, newPartitions) -> {
+            authorizedTopics.put(topic, newPartitions);
+            if (validTopicsCount.decrementAndGet() == 0) {
+                createPartitionsAsync.run();
+            }
+        };
+        BiConsumer<String, ApiError> completeOneErrorTopic = (topic, error) -> {
+            result.put(topic, error);
+            if (validTopicsCount.decrementAndGet() == 0) {
+                createPartitionsAsync.run();
+            }
+        };
+        validTopics.forEach((topic, newPartitions) -> {
+            try {
+                KopTopic kopTopic = new KopTopic(topic);
+                String fullTopicName = kopTopic.getFullName();
+                authorize(AclOperation.ALTER, Resource.of(ResourceType.TOPIC, fullTopicName))
+                        .whenComplete((isAuthorized, ex) -> {
+                            if (ex != null) {
+                                log.error("CreatePartitions authorize failed, topic - {}. {}",
+                                        fullTopicName, ex.getMessage());
+                                completeOneErrorTopic.accept(topic,
+                                        new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, ex.getMessage()));
+                                return;
+                            }
+                            if (!isAuthorized) {
+                                completeOneErrorTopic.accept(topic,
+                                        new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null));
+                                return;
+                            }
+                            completeOneTopic.accept(topic, newPartitions);
+                        });
+            } catch (KoPTopicException e) {
+                completeOneErrorTopic.accept(topic, ApiError.fromThrowable(e));
+            }
+        });
+    }
+
     /**
      * Write the txn marker to the topic partition.
      *
@@ -2786,6 +2867,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 break;
             case CREATE:
             case DELETE:
+            case ALTER:
             case DESCRIBE_CONFIGS:
             case ALTER_CONFIGS:
                 isAuthorizedFuture = authorizer.canManageTenantAsync(session.getPrincipal(), resource);
@@ -2796,7 +2878,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
                 break;
             case CLUSTER_ACTION:
-            case ALTER:
             case UNKNOWN:
             case ALL:
             default:

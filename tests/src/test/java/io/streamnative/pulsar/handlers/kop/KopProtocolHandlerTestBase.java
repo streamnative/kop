@@ -50,6 +50,7 @@ import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.util.ZkUtils;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.Callback;
@@ -718,6 +719,12 @@ public abstract class KopProtocolHandlerTestBase {
         final Properties props = newKafkaConsumerProperties();
         props.put(ConsumerConfig.GROUP_ID_CONFIG, group);
         return props;
+    }
+
+    protected Properties newKafkaAdminClientProperties() {
+        final Properties adminProps = new Properties();
+        adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        return adminProps;
     }
 
 }
