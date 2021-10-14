@@ -953,7 +953,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final RecordBatch batch = records.batchIterator().next();
         offsetFuture.whenComplete((offset, e) -> {
             completeSendOperationForThrottling(byteBuf.readableBytes());
-            byteBuf.release();
             encodeResult.recycle();
             if (e == null) {
                 if (batch.isTransactional()) {

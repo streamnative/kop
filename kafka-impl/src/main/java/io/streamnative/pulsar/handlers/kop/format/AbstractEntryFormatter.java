@@ -86,7 +86,6 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                     final ByteBuf kafkaBuffer = decodeResult.getOrCreateByteBuf();
                     totalSize += kafkaBuffer.readableBytes();
                     batchedByteBuf.writeBytes(kafkaBuffer);
-                    kafkaBuffer.release();
                     decodeResult.recycle();
                 }
 

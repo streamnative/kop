@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.format;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
+import io.netty.util.ReferenceCountUtil;
 import org.apache.kafka.common.record.MemoryRecords;
 
 /**
@@ -52,7 +53,7 @@ public class EncodeResult {
     public void recycle() {
         records = null;
         if (encodedByteBuf != null) {
-            encodedByteBuf.release();
+            ReferenceCountUtil.safeRelease(encodedByteBuf);
             encodedByteBuf = null;
         }
         numMessages = -1;

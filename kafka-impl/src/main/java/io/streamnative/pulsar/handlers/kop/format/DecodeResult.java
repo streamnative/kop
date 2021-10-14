@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.format;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.Recycler;
+import io.netty.util.ReferenceCountUtil;
 import lombok.NonNull;
 import org.apache.kafka.common.record.MemoryRecords;
 
@@ -55,7 +56,7 @@ public class DecodeResult {
     public void recycle() {
         records = null;
         if (releasedByteBuf != null) {
-            releasedByteBuf.release();
+            ReferenceCountUtil.safeRelease(releasedByteBuf);
             releasedByteBuf = null;
         }
         recyclerHandle.recycle(this);
