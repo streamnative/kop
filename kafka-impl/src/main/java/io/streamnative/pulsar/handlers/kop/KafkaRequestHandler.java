@@ -31,6 +31,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -99,6 +100,7 @@ import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
+import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
@@ -118,8 +120,11 @@ import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
 import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
+import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
+import org.apache.kafka.common.requests.CreatePartitionsRequest;
+import org.apache.kafka.common.requests.CreatePartitionsResponse;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteGroupsRequest;
@@ -2114,7 +2119,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     // Current KoP don't support Broker Resource.
                 case UNKNOWN:
                 default:
-                    completeOne.accept(()->{});
+                    completeOne.accept(() -> log.error("KoP doesn't support resource type: " + configResource.type()));
                     break;
             }
         });
@@ -2134,9 +2139,54 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleAddPartitionsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                             CompletableFuture<AbstractResponse> response) {
         AddPartitionsToTxnRequest request = (AddPartitionsToTxnRequest) kafkaHeaderAndRequest.getRequest();
-        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
-        transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
-                request.producerId(), request.producerEpoch(), request.partitions(), response);
+        List<TopicPartition> partitionsToAdd = request.partitions();
+        Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
+        Map<TopicPartition, Errors> nonExistingTopicErrors = Maps.newConcurrentMap();
+        Set<TopicPartition> authorizedPartitions = Sets.newConcurrentHashSet();
+
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(partitionsToAdd.size());
+        Consumer<Runnable> completeOne = (action) -> {
+            action.run();
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                if (!unauthorizedTopicErrors.isEmpty() || !nonExistingTopicErrors.isEmpty()) {
+                    Map<TopicPartition, Errors> partitionErrors = Maps.newHashMap();
+                    partitionErrors.putAll(unauthorizedTopicErrors);
+                    partitionErrors.putAll(nonExistingTopicErrors);
+                    for (TopicPartition topicPartition : authorizedPartitions) {
+                        partitionErrors.put(topicPartition, Errors.OPERATION_NOT_ATTEMPTED);
+                    }
+                    response.complete(new AddPartitionsToTxnResponse(0, partitionErrors));
+                } else {
+                    TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
+                    transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
+                            request.producerId(), request.producerEpoch(), partitionsToAdd, response);
+                }
+            }
+        };
+        partitionsToAdd.forEach(tp -> {
+            String fullPartitionName;
+            try {
+                fullPartitionName = KopTopic.toString(tp);
+            } catch (KoPTopicException e) {
+                log.warn("Invalid topic name: {}", tp.topic(), e);
+                completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                return;
+            }
+            authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
+                    .whenComplete((isAuthorized, ex) -> {
+                if (ex != null) {
+                    log.error("AddPartitionsToTxn topic authorize failed, topic - {}. {}",
+                            fullPartitionName, ex.getMessage());
+                    completeOne.accept(() -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                    return;
+                }
+                if (!isAuthorized) {
+                    completeOne.accept(() -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                    return;
+                }
+                completeOne.accept(() -> authorizedPartitions.add(tp));
+            });
+        });
     }
 
     @Override
@@ -2368,6 +2418,84 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 __ -> completeOne.accept(topic, Errors.NONE),
                                 __ -> completeOne.accept(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION));
                     });
+        });
+    }
+
+    @Override
+    protected void handleCreatePartitions(KafkaHeaderAndRequest createPartitions,
+                                          CompletableFuture<AbstractResponse> resultFuture) {
+        checkArgument(createPartitions.getRequest() instanceof CreatePartitionsRequest);
+        CreatePartitionsRequest request = (CreatePartitionsRequest) createPartitions.getRequest();
+
+        final Map<String, ApiError> result = Maps.newConcurrentMap();
+        final Map<String, NewPartitions> validTopics = Maps.newHashMap();
+        final Set<String> duplicateTopics = request.duplicates();
+
+        request.newPartitions().forEach((topic, newPartition) -> {
+            if (!duplicateTopics.contains(topic)) {
+                validTopics.put(topic, newPartition);
+            } else {
+                final String errorMessage = "Create topics partitions request from client `"
+                        + createPartitions.getHeader().clientId()
+                        + "` contains multiple entries for the following topics: " + duplicateTopics;
+                result.put(topic, new ApiError(Errors.INVALID_REQUEST, errorMessage));
+            }
+        });
+
+        if (validTopics.isEmpty()) {
+            resultFuture.complete(new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, result));
+            return;
+        }
+
+        final AtomicInteger validTopicsCount = new AtomicInteger(validTopics.size());
+        final Map<String, NewPartitions> authorizedTopics = Maps.newConcurrentMap();
+        Runnable createPartitionsAsync = () -> {
+            if (authorizedTopics.isEmpty()) {
+                resultFuture.complete(new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, result));
+                return;
+            }
+            adminManager.createPartitionsAsync(authorizedTopics, request.timeout()).thenApply(validResult -> {
+                result.putAll(validResult);
+                resultFuture.complete(new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, result));
+                return null;
+            });
+        };
+
+        BiConsumer<String, NewPartitions> completeOneTopic = (topic, newPartitions) -> {
+            authorizedTopics.put(topic, newPartitions);
+            if (validTopicsCount.decrementAndGet() == 0) {
+                createPartitionsAsync.run();
+            }
+        };
+        BiConsumer<String, ApiError> completeOneErrorTopic = (topic, error) -> {
+            result.put(topic, error);
+            if (validTopicsCount.decrementAndGet() == 0) {
+                createPartitionsAsync.run();
+            }
+        };
+        validTopics.forEach((topic, newPartitions) -> {
+            try {
+                KopTopic kopTopic = new KopTopic(topic);
+                String fullTopicName = kopTopic.getFullName();
+                authorize(AclOperation.ALTER, Resource.of(ResourceType.TOPIC, fullTopicName))
+                        .whenComplete((isAuthorized, ex) -> {
+                            if (ex != null) {
+                                log.error("CreatePartitions authorize failed, topic - {}. {}",
+                                        fullTopicName, ex.getMessage());
+                                completeOneErrorTopic.accept(topic,
+                                        new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, ex.getMessage()));
+                                return;
+                            }
+                            if (!isAuthorized) {
+                                completeOneErrorTopic.accept(topic,
+                                        new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null));
+                                return;
+                            }
+                            completeOneTopic.accept(topic, newPartitions);
+                        });
+            } catch (KoPTopicException e) {
+                completeOneErrorTopic.accept(topic, ApiError.fromThrowable(e));
+            }
         });
     }
 
@@ -2755,6 +2883,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 break;
             case CREATE:
             case DELETE:
+            case ALTER:
             case DESCRIBE_CONFIGS:
             case ALTER_CONFIGS:
                 isAuthorizedFuture = authorizer.canManageTenantAsync(session.getPrincipal(), resource);
@@ -2765,7 +2894,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
                 break;
             case CLUSTER_ACTION:
-            case ALTER:
             case UNKNOWN:
             case ALL:
             default:
