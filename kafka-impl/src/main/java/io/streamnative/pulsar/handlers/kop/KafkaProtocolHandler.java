@@ -84,7 +84,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
     private MetadataCache<LocalBrokerData> localBrokerDataCache;
-    private MetadataStoreExtended metadataStore;
     private SystemTopicClient offsetTopicClient;
 
     @Getter
@@ -321,7 +320,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         kopBrokerLookupManager = new KopBrokerLookupManager(
                 brokerService.getPulsar(), false,
                 kafkaConfig.getKafkaAdvertisedListeners());
-        metadataStore = brokerService.pulsar().getLocalMetadataStore();
+        MetadataStoreExtended metadataStore = brokerService.pulsar().getLocalMetadataStore();
         // Currently each time getMetadataCache() is called, a new MetadataCache<T> instance will be created, even for
         // the same type. So we must reuse the same MetadataCache<LocalBrokerData> to avoid creating a lot of instances.
         localBrokerDataCache = metadataStore.getMetadataCache(LocalBrokerData.class);
