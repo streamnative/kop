@@ -76,7 +76,6 @@ import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.utils.Time;
-import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
@@ -118,9 +117,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
             .numThreads(1)
             .build();
 
-        ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
-        groupMetadataManager = ((KafkaProtocolHandler) handler)
-                .getGroupCoordinator(conf.getKafkaMetadataTenant()).getGroupManager();
+        GroupCoordinator groupCoordinator = createNewGroupCoordinator("public");
+        groupMetadataManager = groupCoordinator.getGroupManager();
     }
 
     @AfterMethod

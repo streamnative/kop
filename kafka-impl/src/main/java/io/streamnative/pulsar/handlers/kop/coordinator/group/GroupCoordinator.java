@@ -80,8 +80,9 @@ public class GroupCoordinator {
         Time time
     ) {
         ScheduledExecutorService coordinatorExecutor = OrderedScheduler.newSchedulerBuilder()
-            .name("group-coordinator-executor")
-            .build();
+                .name("group-coordinator-executor")
+                .numThreads(1)
+                .build();
 
         GroupMetadataManager metadataManager = new GroupMetadataManager(
             offsetConfig,
