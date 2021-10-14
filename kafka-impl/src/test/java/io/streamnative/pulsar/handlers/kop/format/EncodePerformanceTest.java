@@ -33,13 +33,13 @@ public class EncodePerformanceTest {
     private static final int NUM_MESSAGES = 2048;
     private static final int MESSAGE_SIZE = 1024;
     private static final KafkaServiceConfiguration pulsarServiceConfiguration = new KafkaServiceConfiguration();
-    private static final KafkaServiceConfiguration lazyKafkaServiceConfiguration = new KafkaServiceConfiguration();
-    private static final KafkaServiceConfiguration mixedKafkaServiceConfiguration = new KafkaServiceConfiguration();
+    private static final KafkaServiceConfiguration KafkaV1ServiceConfiguration = new KafkaServiceConfiguration();
+    private static final KafkaServiceConfiguration kafkaMixedServiceConfiguration = new KafkaServiceConfiguration();
 
     public static void main(String[] args) {
         pulsarServiceConfiguration.setEntryFormat("pulsar");
-        lazyKafkaServiceConfiguration.setEntryFormat("kafka");
-        mixedKafkaServiceConfiguration.setEntryFormat("mixed_kafka");
+        KafkaV1ServiceConfiguration.setEntryFormat("kafka");
+        kafkaMixedServiceConfiguration.setEntryFormat("mixed_kafka");
         // The first time to run PulsarEntryFormatter a warn log will be printed that could take a lot of time.
         runSingleTest(prepareFixedRecords(), "fixed records", 1);
 
@@ -51,10 +51,10 @@ public class EncodePerformanceTest {
     }
 
     private static void runSingleTest(final MemoryRecords records, final String description, final int repeatTimes) {
-        final EncodeRequest encodeRequest = new EncodeRequest(records, 0);
+        final EncodeRequest encodeRequest = EncodeRequest.get(records);
         final EntryFormatter pulsarFormatter = EntryFormatterFactory.create(pulsarServiceConfiguration);
-        final EntryFormatter lazyKafkaFormatter = EntryFormatterFactory.create(lazyKafkaServiceConfiguration);
-        final EntryFormatter mixedKafkaFormatter = EntryFormatterFactory.create(mixedKafkaServiceConfiguration);
+        final EntryFormatter kafkaV1Formatter = EntryFormatterFactory.create(KafkaV1ServiceConfiguration);
+        final EntryFormatter kafkaMixedFormatter = EntryFormatterFactory.create(kafkaMixedServiceConfiguration);
         // Here we also add a comparison with NoHeaderKafkaEntryFormatter to measure the overhead of adding a header
         // and copy the ByteBuffer of MemoryRecords that are done by KafkaEntryFormatter.
         final EntryFormatter noHeaderKafkaFormatter = new NoHeaderKafkaEntryFormatter();
@@ -63,7 +63,7 @@ public class EncodePerformanceTest {
 
         long t1 = System.currentTimeMillis();
         for (int i = 0; i < repeatTimes; i++) {
-            pulsarFormatter.encode(encodeRequest).release();
+            pulsarFormatter.encode(encodeRequest).recycle();
         }
         long t2 = System.currentTimeMillis();
         System.out.println("PulsarEntryFormatter encode time: " + (t2 - t1) + " ms");
@@ -71,22 +71,22 @@ public class EncodePerformanceTest {
         t1 = System.currentTimeMillis();
         long currentBaseOffset = 0;
         for (int i = 0; i < repeatTimes; i++) {
-            mixedKafkaFormatter.encode(encodeRequest).release();
+            kafkaMixedFormatter.encode(encodeRequest).recycle();
             encodeRequest.setBaseOffset(currentBaseOffset + NUM_MESSAGES);
         }
         t2 = System.currentTimeMillis();
-        System.out.println("MixedKafkaEntryFormatter encode time: " + (t2 - t1) + " ms");
+        System.out.println("KafkaMixedEntryFormatter encode time: " + (t2 - t1) + " ms");
 
         t1 = System.currentTimeMillis();
         for (int i = 0; i < repeatTimes; i++) {
-            lazyKafkaFormatter.encode(encodeRequest).release();
+            kafkaV1Formatter.encode(encodeRequest).recycle();
         }
         t2 = System.currentTimeMillis();
-        System.out.println("LazyKafkaEntryFormatter encode time: " + (t2 - t1) + " ms");
+        System.out.println("KafkaV1EntryFormatter encode time: " + (t2 - t1) + " ms");
 
         t1 = System.currentTimeMillis();
         for (int i = 0; i < repeatTimes; i++) {
-            noHeaderKafkaFormatter.encode(encodeRequest).release();
+            noHeaderKafkaFormatter.encode(encodeRequest).recycle();
         }
         t2 = System.currentTimeMillis();
         System.out.println("NoHeaderKafkaEntryFormatter encode time: " + (t2 - t1) + " ms");

@@ -36,9 +36,9 @@ public class EntryFormatterFactory {
                 case PULSAR:
                     return new PulsarEntryFormatter();
                 case KAFKA:
-                    return new LazyKafkaEntryFormatter();
+                    return new KafkaV1EntryFormatter();
                 case MIXED_KAFKA:
-                    return new MixedKafkaEntryFormatter(kafkaConfig.getKafkaCompressionType());
+                    return new KafkaMixedEntryFormatter(kafkaConfig.getKafkaCompressionType());
                 default:
                     throw new Exception("No EntryFormatter for " + entryFormat);
             }

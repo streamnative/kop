@@ -90,7 +90,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
 
         batchedMessageMetadataAndPayload.release();
 
-        return new EncodeResult(records, buf, numMessages);
+        return EncodeResult.get(records, buf, numMessages);
     }
 
     @Override

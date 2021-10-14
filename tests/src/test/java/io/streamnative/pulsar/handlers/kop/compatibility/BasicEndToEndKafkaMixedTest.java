@@ -18,9 +18,9 @@ import org.testng.annotations.Test;
 /**
  * Basic end-to-end test for different versions of Kafka clients with `entryFormat=mixed_kafka`.
  */
-public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
+public class BasicEndToEndKafkaMixedTest extends BasicEndToEndTestBase {
 
-    public BasicEndToEndKafkaTest() {
+    public BasicEndToEndKafkaMixedTest() {
         super("mixed_kafka");
     }
 

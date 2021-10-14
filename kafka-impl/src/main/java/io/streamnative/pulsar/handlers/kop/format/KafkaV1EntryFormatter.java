@@ -23,12 +23,12 @@ import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 
 /**
- * The entry formatter that only uses Kafka's magic=2 format.
- * This formatter don't validate all kafka records,
- * so call it Lazy entry formatter.
+ * The entry formatter that uses Kafka's V1/V2 format.
+ * This formatter don't validate all kafka records
+ * so call it V1 entry formatter.
  */
 @Slf4j
-public class LazyKafkaEntryFormatter extends AbstractEntryFormatter {
+public class KafkaV1EntryFormatter extends AbstractEntryFormatter {
 
     @Override
     public EncodeResult encode(final EncodeRequest encodeRequest) {
@@ -41,7 +41,7 @@ public class LazyKafkaEntryFormatter extends AbstractEntryFormatter {
                 recordsWrapper);
         recordsWrapper.release();
 
-        return new EncodeResult(records, buf, numMessages);
+        return EncodeResult.get(records, buf, numMessages);
     }
 
     @Override

@@ -11,11 +11,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop.compatibility.saslplain;
+package io.streamnative.pulsar.handlers.kop.format;
 
-public class SaslPlainEndToEndKafkaTest extends SaslPlainEndToEndTestBase {
+import org.testng.annotations.Test;
 
-    public SaslPlainEndToEndKafkaTest() {
-        super("mixed_kafka");
+/**
+ * Test for entryFormat=kafka.
+ */
+public class KafkaV1EntryFormatterTest extends EntryFormatterTestBase {
+
+    public KafkaV1EntryFormatterTest() {
+        super("kafka");
     }
+
+    @Test(timeOut = 20000)
+    public void testChangeKafkaEntryFormat() throws Exception {
+        super.testChangeKafkaEntryFormat();
+    }
+
 }

@@ -45,7 +45,7 @@ import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
 import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
-import io.streamnative.pulsar.handlers.kop.format.MixedKafkaEntryFormatter;
+import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -954,6 +954,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         offsetFuture.whenComplete((offset, e) -> {
             completeSendOperationForThrottling(byteBuf.readableBytes());
             byteBuf.release();
+            encodeResult.recycle();
             if (e == null) {
                 if (batch.isTransactional()) {
                     getTransactionCoordinator().addActivePidOffset(TopicName.get(partitionName), batch.producerId(),
@@ -1097,14 +1098,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     return;
                 }
 
-                final EncodeRequest encodeRequest = new EncodeRequest(validRecords, 0L);
-                if (entryFormatter instanceof MixedKafkaEntryFormatter) {
+                final EncodeRequest encodeRequest = EncodeRequest.get(validRecords);
+                if (entryFormatter instanceof KafkaMixedEntryFormatter) {
                     final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
                     final long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
                     encodeRequest.setBaseOffset(logEndOffset);
                 }
 
                 final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
+                encodeRequest.recycle();
                 requestStats.getProduceEncodeStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
                 startSendOperationForThrottling(encodeResult.getEncodedByteBuf().readableBytes());

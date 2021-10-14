@@ -14,25 +14,60 @@
 package io.streamnative.pulsar.handlers.kop.format;
 
 import io.netty.buffer.ByteBuf;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NonNull;
+import io.netty.util.Recycler;
 import org.apache.kafka.common.record.MemoryRecords;
 
 /**
  * Result of encode in entry formatter.
  */
-@Data
-@AllArgsConstructor
 public class EncodeResult {
 
-    private @NonNull MemoryRecords records;
-    private ByteBuf encodedByteBuf;
-    private int numMessages;
+    MemoryRecords records;
+    ByteBuf encodedByteBuf;
+    int numMessages;
 
-    public void release() {
+    public static EncodeResult get(MemoryRecords records,
+                                   ByteBuf encodedByteBuf,
+                                   int numMessages) {
+        EncodeResult encodeResult = RECYCLER.get();
+        encodeResult.records = records;
+        encodeResult.encodedByteBuf = encodedByteBuf;
+        encodeResult.numMessages = numMessages;
+        return encodeResult;
+    }
+
+    private final Recycler.Handle<EncodeResult> recyclerHandle;
+
+    private EncodeResult(Recycler.Handle<EncodeResult> recyclerHandle) {
+        this.recyclerHandle = recyclerHandle;
+    }
+
+    private static final Recycler<EncodeResult> RECYCLER = new Recycler<EncodeResult>() {
+        @Override
+        protected EncodeResult newObject(Recycler.Handle<EncodeResult> handle) {
+            return new EncodeResult(handle);
+        }
+    };
+
+    public void recycle() {
+        records = null;
         if (encodedByteBuf != null) {
             encodedByteBuf.release();
+            encodedByteBuf = null;
         }
+        numMessages = -1;
+        recyclerHandle.recycle(this);
+    }
+
+    public MemoryRecords getRecords() {
+        return records;
+    }
+
+    public int getNumMessages() {
+        return numMessages;
+    }
+
+    public ByteBuf getEncodedByteBuf() {
+        return encodedByteBuf;
     }
 }

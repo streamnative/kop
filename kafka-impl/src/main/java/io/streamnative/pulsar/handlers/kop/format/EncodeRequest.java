@@ -13,19 +13,57 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NonNull;
+import io.netty.util.Recycler;
 import org.apache.kafka.common.record.MemoryRecords;
 
 /**
  * Request of encode in entry formatter.
  */
-@Data
-@AllArgsConstructor
 public class EncodeRequest {
 
-    private @NonNull MemoryRecords records;
-    private long baseOffset;
+    MemoryRecords records;
+    long baseOffset;
 
+    public static EncodeRequest get(MemoryRecords records) {
+        return get(records, 0L);
+    }
+
+    public static EncodeRequest get(MemoryRecords records,
+                                    long baseOffset) {
+        EncodeRequest encodeRequest = RECYCLER.get();
+        encodeRequest.records = records;
+        encodeRequest.baseOffset = baseOffset;
+        return encodeRequest;
+    }
+
+    private final Recycler.Handle<EncodeRequest> recyclerHandle;
+
+    private EncodeRequest(Recycler.Handle<EncodeRequest> recyclerHandle) {
+        this.recyclerHandle = recyclerHandle;
+    }
+
+    private static final Recycler<EncodeRequest> RECYCLER = new Recycler<EncodeRequest>() {
+        @Override
+        protected EncodeRequest newObject(Recycler.Handle<EncodeRequest> handle) {
+            return new EncodeRequest(handle);
+        }
+    };
+
+    public void recycle() {
+        records = null;
+        baseOffset = -1L;
+        recyclerHandle.recycle(this);
+    }
+
+    public void setBaseOffset(long baseOffset) {
+        this.baseOffset = baseOffset;
+    }
+
+    public MemoryRecords getRecords() {
+        return records;
+    }
+
+    public long getBaseOffset() {
+        return baseOffset;
+    }
 }

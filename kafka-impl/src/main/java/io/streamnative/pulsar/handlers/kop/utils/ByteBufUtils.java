@@ -102,7 +102,7 @@ public class ByteBufUtils {
         if (metadata.hasMarkerType()
                 && (metadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
                 || metadata.getMarkerType() == MarkerType.TXN_ABORT_VALUE)) {
-            return new DecodeResult(MemoryRecords.withEndTransactionMarker(
+            return DecodeResult.get(MemoryRecords.withEndTransactionMarker(
                     baseOffset,
                     metadata.getPublishTime(),
                     0,
@@ -183,7 +183,7 @@ public class ByteBufUtils {
 
         final MemoryRecords records = builder.build();
         uncompressedPayload.release();
-        return new DecodeResult(records, directBufferOutputStream.getByteBuf());
+        return DecodeResult.get(records, directBufferOutputStream.getByteBuf());
     }
 
     @NonNull

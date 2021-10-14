@@ -13,9 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import static org.apache.kafka.common.record.Records.MAGIC_OFFSET;
 import static org.apache.kafka.common.record.Records.OFFSET_OFFSET;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
 import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
@@ -24,7 +26,9 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.record.ConvertedRecords;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.KeyValue;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
@@ -36,6 +40,7 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
     // These key-value identifies the entry's format as kafka
     public static final String IDENTITY_KEY = "entry.format";
     public static final String IDENTITY_VALUE = EntryFormatterFactory.EntryFormat.KAFKA.name().toLowerCase();
+    private final Time time = Time.SYSTEM;
 
     @Override
     public DecodeResult decode(List<Entry> entries, byte magic) {
@@ -48,10 +53,33 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                 final ByteBuf byteBuf = entry.getDataBuffer();
                 final MessageMetadata metadata = Commands.parseMessageMetadata(byteBuf);
                 if (isKafkaEntryFormat(metadata)) {
+                    byte batchMagic = byteBuf.getByte(byteBuf.readerIndex() + MAGIC_OFFSET);
                     byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
-                    ByteBuf buf = byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes());
-                    totalSize += buf.readableBytes();
-                    batchedByteBuf.writeBytes(buf);
+
+                    // batch magic greater than the magic corresponding to the version requested by the client
+                    // need down converted
+                    if (batchMagic > magic) {
+                        MemoryRecords memoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
+                        // down converted, batch magic will be set to client magic
+                        ConvertedRecords<MemoryRecords> convertedRecords =
+                                memoryRecords.downConvert(magic, startOffset, time);
+
+                        final ByteBuf kafkaBuffer = Unpooled.wrappedBuffer(convertedRecords.records().buffer());
+                        totalSize += kafkaBuffer.readableBytes();
+                        batchedByteBuf.writeBytes(kafkaBuffer);
+                        kafkaBuffer.release();
+                        if (log.isTraceEnabled()) {
+                            log.trace("[{}:{}] MemoryRecords down converted, start offset {},"
+                                            + " entry magic: {}, client magic: {}",
+                                    entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
+                        }
+
+                    } else {
+                        // not need down converted, batch magic retains the magic value written in production
+                        ByteBuf buf = byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes());
+                        totalSize += buf.readableBytes();
+                        batchedByteBuf.writeBytes(buf);
+                    }
                 } else {
                     final DecodeResult decodeResult =
                             ByteBufUtils.decodePulsarEntryToKafkaRecords(metadata, byteBuf, startOffset, magic);
@@ -59,6 +87,7 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                     totalSize += kafkaBuffer.readableBytes();
                     batchedByteBuf.writeBytes(kafkaBuffer);
                     kafkaBuffer.release();
+                    decodeResult.recycle();
                 }
 
                 // Almost all exceptions in Kafka inherit from KafkaException and will be captured
@@ -72,7 +101,7 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
             }
         }
 
-        return new DecodeResult(
+        return DecodeResult.get(
                 MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(batchedByteBuf)), batchedByteBuf);
     }
 

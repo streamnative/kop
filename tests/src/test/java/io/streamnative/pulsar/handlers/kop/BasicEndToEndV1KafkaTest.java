@@ -21,9 +21,9 @@ import org.testng.annotations.Test;
  * Basic end-to-end test with `entryFormat=kafka`.
  */
 @Slf4j
-public class BasicEndToEndLazyKafkaTest extends BasicEndToEndKafkaTest {
+public class BasicEndToEndV1KafkaTest extends BasicEndToEndKafkaTest {
 
-    public BasicEndToEndLazyKafkaTest() {
+    public BasicEndToEndV1KafkaTest() {
         super("kafka");
     }
 
