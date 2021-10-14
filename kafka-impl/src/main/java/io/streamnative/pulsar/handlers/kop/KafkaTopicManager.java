@@ -101,6 +101,15 @@ public class KafkaTopicManager {
         }
     }
 
+    public static void cancelCursorExpireTask() {
+        synchronized (KafkaTopicManager.class) {
+            if (cursorExpireTask != null) {
+                cursorExpireTask.cancel(true);
+                cursorExpireTask = null;
+            }
+        }
+    }
+
     // update Ctx information, since at internalServerCnx create time there is no ctx passed into kafkaRequestHandler.
     public void setRemoteAddress(SocketAddress remoteAddress) {
         internalServerCnx.updateCtx(remoteAddress);
@@ -326,7 +335,7 @@ public class KafkaTopicManager {
         }
 
         try {
-            closeKafkaTopicConsumerManagers();
+            TCM_CACHE.removeAndCloseByAddress(remoteAddress);
 
             topics.keySet().forEach(topicName -> {
                 if (log.isDebugEnabled()) {
@@ -377,20 +386,10 @@ public class KafkaTopicManager {
         try {
             removeTopicManagerCache(topicName);
 
-            TCM_CACHE.removeAndClose(topicName);
+            TCM_CACHE.removeAndCloseByTopic(topicName);
             removePersistentTopicAndReferenceProducer(topicName);
         } catch (Exception e) {
             log.error("Failed to close reference for individual topic {}. exception:", topicName, e);
         }
-    }
-
-    public static void closeKafkaTopicConsumerManagers() {
-        synchronized (KafkaTopicManager.class) {
-            if (cursorExpireTask != null) {
-                cursorExpireTask.cancel(true);
-                cursorExpireTask = null;
-            }
-        }
-        TCM_CACHE.close();
     }
 }

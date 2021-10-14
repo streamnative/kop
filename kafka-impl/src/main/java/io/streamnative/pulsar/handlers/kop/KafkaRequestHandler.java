@@ -15,6 +15,8 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_ALLNAMESPACES_PLACEHOLDER;
+import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_IN;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_IN;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
@@ -26,8 +28,10 @@ import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -61,6 +65,7 @@ import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -71,6 +76,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -92,6 +98,7 @@ import org.apache.commons.lang3.NotImplementedException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
+import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
@@ -107,6 +114,7 @@ import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
 import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
+import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
@@ -189,6 +197,7 @@ import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 @Getter
 public class KafkaRequestHandler extends KafkaCommandDecoder {
     public static final long DEFAULT_TIMESTAMP = 0L;
+    private static final String POLICY_ROOT = "/admin/policies/";
 
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
@@ -209,7 +218,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
     private final int failedAuthenticationDelayMs;
-    private final Set<String> allowedNamespaces;
     // store the group name for current connected client.
     private final ConcurrentHashMap<String, String> currentConnectedGroup;
     private final String groupIdStoredPath;
@@ -240,6 +248,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private volatile boolean autoReadDisabledPublishBufferLimiting = false;
 
     private String getCurrentTenant() {
+        return getCurrentTenant(kafkaConfig.getKafkaMetadataTenant());
+    }
+
+    private String getCurrentTenant(String defaultTenant) {
         if (kafkaConfig.isKafkaEnableMultiTenantMetadata()
                 && authenticator != null
                 && authenticator.session() != null
@@ -250,9 +262,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         // fallback to using system (default) tenant
         if (log.isDebugEnabled()) {
-            log.debug("using {} as tenant", kafkaConfig.getKafkaMetadataTenant());
+            log.debug("using {} as tenant", defaultTenant);
         }
-        return kafkaConfig.getKafkaMetadataTenant();
+        return defaultTenant;
     }
 
     private static String extractTenantFromTenantSpec(String tenantSpec) {
@@ -311,7 +323,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
-        this.allowedNamespaces = kafkaConfig.getKopAllowedNamespaces();
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
         this.currentConnectedGroup = new ConcurrentHashMap<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
@@ -477,6 +488,47 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 || partitionedTopicName.endsWith("/" + TRANSACTION_STATE_TOPIC_NAME);
     }
 
+    private static String path(String... parts) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(POLICY_ROOT);
+        Joiner.on('/').appendTo(sb, parts);
+        return sb.toString();
+    }
+
+    private CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces) {
+        String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
+        return expandAllowedNamespaces(allowedNamespaces, currentTenant, pulsarService);
+    }
+
+    @VisibleForTesting
+    static CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces,
+                                                                  String currentTenant,
+                                                                  PulsarService pulsarService) {
+        Set<String> result = new CopyOnWriteArraySet<>();
+        List<CompletableFuture<?>> results = new ArrayList<>();
+        for (String namespaceTemplate : allowedNamespaces) {
+            String namespace = namespaceTemplate.replace(TENANT_PLACEHOLDER, currentTenant);
+            if (!namespace.endsWith("/" + TENANT_ALLNAMESPACES_PLACEHOLDER)) {
+                result.add(namespace);
+                results.add(CompletableFuture.completedFuture(namespace));
+            } else {
+                int slash = namespace.lastIndexOf('/');
+                String tenant = namespace.substring(0, slash);
+                results.add(pulsarService.getPulsarResources()
+                        .getNamespaceResources()
+                        .getChildrenAsync(path(tenant))
+                        .thenAccept(children -> {
+                            children.forEach(ns -> {
+                                result.add(tenant + "/" + ns);
+                            });
+                        }));
+            }
+        }
+        return CompletableFuture
+                .allOf(results.toArray(new CompletableFuture<?>[0]))
+                .thenApply(f -> result);
+    }
+
     // Get all topics in the configured allowed namespaces.
     //   key: the full topic name without partition suffix, e.g. persistent://public/default/my-topic
     //   value: the partitions associated with the key, e.g. for a topic with 3 partitions,
@@ -486,32 +538,40 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private CompletableFuture<Map<String, List<TopicName>>> getAllTopicsAsync() {
         CompletableFuture<Map<String, List<TopicName>>> topicMapFuture = new CompletableFuture<>();
         final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
-        final AtomicInteger pendingNamespacesCount = new AtomicInteger(allowedNamespaces.size());
+        final CompletableFuture<Set<String>> allowedNamespacesFuture =
+                expandAllowedNamespaces(kafkaConfig.getKopAllowedNamespaces());
 
-        for (String namespace : allowedNamespaces) {
-            pulsarService.getNamespaceService().getListOfPersistentTopics(NamespaceName.get(namespace))
-                    .whenComplete((topics, e) -> {
-                        if (e != null) {
-                            log.error("Failed to getListOfPersistentTopic of {}", namespace, e);
-                            topicMapFuture.completeExceptionally(e);
-                            return;
-                        }
-                        if (topicMapFuture.isCompletedExceptionally()) {
-                            return;
-                        }
-                        for (String topic : topics) {
-                            final TopicName topicName = TopicName.get(topic);
-                            final String key = topicName.getPartitionedTopicName();
-                            topicMap.computeIfAbsent(
-                                    KopTopic.removeDefaultNamespacePrefix(key),
-                                    ignored -> Collections.synchronizedList(new ArrayList<>())
-                            ).add(topicName);
-                        }
-                        if (pendingNamespacesCount.decrementAndGet() == 0) {
-                            topicMapFuture.complete(topicMap);
-                        }
-                    });
-        }
+        allowedNamespacesFuture.thenAccept(allowedNamespaces -> {
+            final AtomicInteger pendingNamespacesCount = new AtomicInteger(allowedNamespaces.size());
+
+            for (String namespace : allowedNamespaces) {
+                pulsarService.getNamespaceService().getListOfPersistentTopics(NamespaceName.get(namespace))
+                        .whenComplete((topics, e) -> {
+                            if (e != null) {
+                                log.error("Failed to getListOfPersistentTopic of {}", namespace, e);
+                                topicMapFuture.completeExceptionally(e);
+                                return;
+                            }
+                            if (topicMapFuture.isCompletedExceptionally()) {
+                                return;
+                            }
+                            for (String topic : topics) {
+                                final TopicName topicName = TopicName.get(topic);
+                                final String key = topicName.getPartitionedTopicName();
+                                topicMap.computeIfAbsent(
+                                        KopTopic.removeDefaultNamespacePrefix(key),
+                                        ignored -> Collections.synchronizedList(new ArrayList<>())
+                                ).add(topicName);
+                            }
+                            if (pendingNamespacesCount.decrementAndGet() == 0) {
+                                topicMapFuture.complete(topicMap);
+                            }
+                        });
+            }
+        }).exceptionally(error -> {
+            topicMapFuture.completeExceptionally(error);
+            return null;
+        });
         return topicMapFuture;
     }
 
@@ -1147,12 +1207,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return future;
     }
 
-    private <T> void replaceTopicPartition(Map<TopicPartition, T> replacedMap,
-                                           Map<TopicPartition, TopicPartition> replacingIndex) {
+    @VisibleForTesting
+    public <T> void replaceTopicPartition(Map<TopicPartition, T> replacedMap,
+                                          Map<TopicPartition, TopicPartition> replacingIndex) {
         Map<TopicPartition, T> newMap = new HashMap<>();
         replacedMap.entrySet().removeIf(entry -> {
             if (replacingIndex.containsKey(entry.getKey())) {
                 newMap.put(replacingIndex.get(entry.getKey()), entry.getValue());
+                return true;
+            } else if (KopTopic.isFullTopicName(entry.getKey().topic())) {
+                newMap.put(new TopicPartition(
+                                KopTopic.removeDefaultNamespacePrefix(entry.getKey().topic()),
+                                entry.getKey().partition()),
+                        entry.getValue());
                 return true;
             }
             return false;
@@ -2002,15 +2069,82 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(describeConfigs.getRequest() instanceof DescribeConfigsRequest);
         DescribeConfigsRequest request = (DescribeConfigsRequest) describeConfigs.getRequest();
 
-        adminManager.describeConfigsAsync(new ArrayList<>(request.resources()).stream()
-                .collect(Collectors.toMap(
-                        resource -> resource,
-                        resource -> Optional.ofNullable(request.configNames(resource)).map(HashSet::new)
-                ))
-        ).thenApply(configResourceConfigMap -> {
-            resultFuture.complete(new DescribeConfigsResponse(0, configResourceConfigMap));
-            return null;
+        if (request.resources().isEmpty()) {
+            resultFuture.complete(new DescribeConfigsResponse(0, Maps.newHashMap()));
+            return;
+        }
+
+        Collection<ConfigResource> authorizedResources = Collections.synchronizedList(new ArrayList<>());
+        Map<ConfigResource, DescribeConfigsResponse.Config> failedConfigResourceMap =
+                Maps.newConcurrentMap();
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(request.resources().size());
+
+
+        Consumer<Runnable> completeOne = (action) -> {
+            // When complete one authorization or failed, will do the action first.
+            action.run();
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                adminManager.describeConfigsAsync(authorizedResources.stream()
+                        .collect(Collectors.toMap(
+                                resource -> resource,
+                                resource -> Optional.ofNullable(request.configNames(resource)).map(HashSet::new)
+                        ))
+                ).thenApply(configResourceConfigMap -> {
+                    configResourceConfigMap.putAll(failedConfigResourceMap);
+                    resultFuture.complete(new DescribeConfigsResponse(0, configResourceConfigMap));
+                    return null;
+                });
+            }
+        };
+
+        // Do authorization for each of resource
+        request.resources().forEach(configResource -> {
+            switch (configResource.type()) {
+                case TOPIC:
+                    KopTopic kopTopic;
+                    try {
+                        kopTopic = new KopTopic(configResource.name());
+                    } catch (KoPTopicException e) {
+                        completeOne.accept(() -> {
+                            final ApiError error = new ApiError(
+                                    Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                                    "Topic " + configResource.name() + " doesn't exist");
+                            failedConfigResourceMap.put(configResource, new DescribeConfigsResponse.Config(
+                                    error, Collections.emptyList()));
+                        });
+                        return;
+                    }
+                    String fullTopicName = kopTopic.getFullName();
+                    authorize(AclOperation.DESCRIBE_CONFIGS, Resource.of(ResourceType.TOPIC, fullTopicName))
+                            .whenComplete((isAuthorized, ex) -> {
+                                if (ex != null) {
+                                    log.error("DescribeConfigs in topic authorize failed, topic - {}. {}",
+                                            fullTopicName, ex.getMessage());
+                                    completeOne.accept(() -> failedConfigResourceMap.put(configResource,
+                                            new DescribeConfigsResponse.Config(
+                                                    new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null),
+                                                    Collections.emptyList())));
+                                    return;
+                                }
+                                if (isAuthorized) {
+                                    completeOne.accept(() -> authorizedResources.add(configResource));
+                                    return;
+                                }
+                                completeOne.accept(() -> failedConfigResourceMap.put(configResource,
+                                        new DescribeConfigsResponse.Config(
+                                                new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null),
+                                                Collections.emptyList())));
+                            });
+                    break;
+                case BROKER:
+                    // Current KoP don't support Broker Resource.
+                case UNKNOWN:
+                default:
+                    completeOne.accept(() -> log.error("KoP doesn't support resource type: " + configResource.type()));
+                    break;
+            }
         });
+
     }
 
     @Override
@@ -2026,9 +2160,54 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleAddPartitionsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                             CompletableFuture<AbstractResponse> response) {
         AddPartitionsToTxnRequest request = (AddPartitionsToTxnRequest) kafkaHeaderAndRequest.getRequest();
-        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
-        transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
-                request.producerId(), request.producerEpoch(), request.partitions(), response);
+        List<TopicPartition> partitionsToAdd = request.partitions();
+        Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
+        Map<TopicPartition, Errors> nonExistingTopicErrors = Maps.newConcurrentMap();
+        Set<TopicPartition> authorizedPartitions = Sets.newConcurrentHashSet();
+
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(partitionsToAdd.size());
+        Consumer<Runnable> completeOne = (action) -> {
+            action.run();
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                if (!unauthorizedTopicErrors.isEmpty() || !nonExistingTopicErrors.isEmpty()) {
+                    Map<TopicPartition, Errors> partitionErrors = Maps.newHashMap();
+                    partitionErrors.putAll(unauthorizedTopicErrors);
+                    partitionErrors.putAll(nonExistingTopicErrors);
+                    for (TopicPartition topicPartition : authorizedPartitions) {
+                        partitionErrors.put(topicPartition, Errors.OPERATION_NOT_ATTEMPTED);
+                    }
+                    response.complete(new AddPartitionsToTxnResponse(0, partitionErrors));
+                } else {
+                    TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
+                    transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
+                            request.producerId(), request.producerEpoch(), partitionsToAdd, response);
+                }
+            }
+        };
+        partitionsToAdd.forEach(tp -> {
+            String fullPartitionName;
+            try {
+                fullPartitionName = KopTopic.toString(tp);
+            } catch (KoPTopicException e) {
+                log.warn("Invalid topic name: {}", tp.topic(), e);
+                completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                return;
+            }
+            authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
+                    .whenComplete((isAuthorized, ex) -> {
+                if (ex != null) {
+                    log.error("AddPartitionsToTxn topic authorize failed, topic - {}. {}",
+                            fullPartitionName, ex.getMessage());
+                    completeOne.accept(() -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                    return;
+                }
+                if (!isAuthorized) {
+                    completeOne.accept(() -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                    return;
+                }
+                completeOne.accept(() -> authorizedPartitions.add(tp));
+            });
+        });
     }
 
     @Override
