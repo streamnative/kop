@@ -76,7 +76,6 @@ import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.utils.Time;
-import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
@@ -118,9 +117,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
             .numThreads(1)
             .build();
 
-        ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
-        groupMetadataManager = ((KafkaProtocolHandler) handler)
-                .getGroupCoordinator(conf.getKafkaMetadataTenant()).getGroupManager();
+        GroupCoordinator groupCoordinator = createNewGroupCoordinator("public");
+        groupMetadataManager = groupCoordinator.getGroupManager();
     }
 
     @AfterMethod
@@ -284,6 +282,23 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         builder.appendEndTxnMarker(Time.SYSTEM.milliseconds(), new EndTransactionMarker(controlRecordType, 0));
         builder.build();
         return 1;
+    }
+
+    @Test
+    public void testOffsetTopicNumPartitionsModify() {
+        int consumerGroupPartitionId =
+                GroupMetadataManager.getPartitionId(groupId, conf.getOffsetsTopicNumPartitions());
+        conf.setOffsetsTopicNumPartitions(100);
+
+        KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
+        // remove here to trigger a new creating for GroupCoordinator
+        handler.getGroupCoordinators().remove(conf.getKafkaMetadataTenant());
+        GroupMetadataManager newMetaManager =
+                handler.getGroupCoordinator(conf.getKafkaMetadataTenant()).getGroupManager();
+
+        int newPartitionsId =
+                GroupMetadataManager.getPartitionId(groupId, newMetaManager.offsetConfig().offsetsTopicNumPartitions());
+        assertEquals(consumerGroupPartitionId, newPartitionsId);
     }
 
     @Test
@@ -1032,17 +1047,17 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         ByteBuffer buffer = newMemoryRecordsBuffer(newOffsetCommitRecords);
 
         byte[] key = groupMetadataKey(groupId);
-
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
+        int consumerGroupPartitionId =
+                GroupMetadataManager.getPartitionId(groupId, conf.getOffsetsTopicNumPartitions());
+        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(consumerGroupPartitionId).get();
         producer.newMessage()
             .keyBytes(key)
             .value(buffer)
             .eventTime(Time.SYSTEM.milliseconds())
             .send();
-
+        groupMetadataManager.removeLoadingPartition(consumerGroupPartitionId);
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
-        groupMetadataManager.scheduleLoadGroupAndOffsets(
-            groupPartitionId,
+        groupMetadataManager.scheduleLoadGroupAndOffsets(consumerGroupPartitionId,
             groupMetadata -> onLoadedFuture.complete(groupMetadata)
         ).get();
         GroupMetadata group = onLoadedFuture.get();

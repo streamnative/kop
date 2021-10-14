@@ -53,9 +53,9 @@ public class ProducerIdManagerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testGetProducerId() throws Exception {
-        ProducerIdManager manager1 = new ProducerIdManager(0, mockZooKeeper);
+        ProducerIdManager manager1 = new ProducerIdManager(0, pulsar.getLocalMetadataStore());
         manager1.initialize().get();
-        ProducerIdManager manager2 = new ProducerIdManager(1, mockZooKeeper);
+        ProducerIdManager manager2 = new ProducerIdManager(1, pulsar.getLocalMetadataStore());
         manager2.initialize().get();
 
         long pid1 = manager1.generateProducerId().get();
@@ -84,7 +84,7 @@ public class ProducerIdManagerTest extends KopProtocolHandlerTestBase {
                         new ProducerIdManager.ProducerIdBlock(
                                 1, Long.MAX_VALUE - ProducerIdManager.PID_BLOCK_SIZE, Long.MAX_VALUE)), -1);
 
-        ProducerIdManager producerIdManager = new ProducerIdManager(0, mockZooKeeper);
+        ProducerIdManager producerIdManager = new ProducerIdManager(0, pulsar.getLocalMetadataStore());
         try {
             producerIdManager.initialize().get();
             fail("Have exhausted all producerIds, the initialize operation should be failed.");
