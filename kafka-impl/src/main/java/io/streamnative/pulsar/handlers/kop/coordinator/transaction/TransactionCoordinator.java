@@ -851,6 +851,7 @@ public class TransactionCoordinator {
         log.info("Shutting down transaction coordinator ...");
         producerIdManager.shutdown();
         txnManager.shutdown();
+        transactionMarkerChannelManager.close();
         // TODO shutdown txn
         log.info("Shutdown transaction coordinator complete.");
     }
@@ -871,5 +872,4 @@ public class TransactionCoordinator {
         }
         return abortedTransactions;
     }
-
 }

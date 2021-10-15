@@ -70,6 +70,7 @@ public class TransactionMarkerChannelManager {
     private Map<InetSocketAddress, TxnMarkerQueue> markersQueuePerBroker = new ConcurrentHashMap<>();
     private TxnMarkerQueue markersQueueForUnknownBroker = new TxnMarkerQueue(null);
     private BlockingQueue<PendingCompleteTxn> txnLogAppendRetryQueue = new LinkedBlockingQueue<>();
+    private volatile boolean closed;
 
     @AllArgsConstructor
     private static class PendingCompleteTxn {
@@ -141,8 +142,8 @@ public class TransactionMarkerChannelManager {
         bootstrap.channel(NioSocketChannel.class);
         bootstrap.handler(new TransactionMarkerChannelInitializer(kafkaConfig, enableTls));
 
-        new Thread(() -> {
-            while (true) {
+        Thread thread = new Thread(() -> {
+            while (!closed) {
                 drainQueuedTransactionMarkers();
                 try {
                     Thread.sleep(1);
@@ -150,7 +151,9 @@ public class TransactionMarkerChannelManager {
                     e.printStackTrace();
                 }
             }
-        }).start();
+        }, "kop-transaction-channel-manager");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     public CompletableFuture<TransactionMarkerChannelHandler> getChannel(InetSocketAddress socketAddress) {
@@ -408,6 +411,10 @@ public class TransactionMarkerChannelManager {
                 });
             }
         }
+    }
+
+    public void close() {
+        this.closed = true;
     }
 
 }
