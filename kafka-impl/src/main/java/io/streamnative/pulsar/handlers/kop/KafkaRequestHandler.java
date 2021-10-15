@@ -53,18 +53,17 @@ import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
-import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -188,6 +187,7 @@ import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.metadata.api.MetadataCache;
+import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 
@@ -207,6 +207,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final String clusterName;
     private final ScheduledExecutorService executor;
     private final PulsarAdmin admin;
+    private final MetadataStoreExtended metadataStore;
     private final SaslAuthenticator authenticator;
     private final Authorizer authorizer;
     private final AdminManager adminManager;
@@ -219,8 +220,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     public final int maxReadEntriesNum;
     private final int failedAuthenticationDelayMs;
     // store the group name for current connected client.
-    private final ConcurrentHashMap<String, String> currentConnectedGroup;
+    private final ConcurrentHashMap<String, CompletableFuture<String>> currentConnectedGroup;
     private final String groupIdStoredPath;
+
     @Getter
     private final EntryFormatter entryFormatter;
 
@@ -304,6 +306,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
+        this.metadataStore = pulsarService.getLocalMetadataStore();
         final boolean authenticationEnabled = pulsarService.getBrokerService().isAuthenticationEnabled()
                 && !kafkaConfig.getSaslAllowedMechanisms().isEmpty();
         this.authenticator = authenticationEnabled
@@ -1138,36 +1141,52 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             throw new NotImplementedException("FindCoordinatorRequest not support TRANSACTION type "
                 + request.coordinatorType());
         }
-        // store group name to zk for current client
+
         String groupId = request.coordinatorKey();
-        String zkSubPath = ZooKeeperUtils.groupIdPathFormat(findCoordinator.getClientHost(),
+        String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
                 findCoordinator.getHeader().clientId());
-        byte[] groupIdBytes = groupId.getBytes(Charset.forName("UTF-8"));
-        ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(), groupIdStoredPath + zkSubPath, groupIdBytes);
 
-        findBroker(TopicName.get(pulsarTopicName))
-                .whenComplete((node, t) -> {
-                    if (t != null || node == null){
-                        log.error("[{}] Request {}: Error while find coordinator, .",
-                                ctx.channel(), findCoordinator.getHeader(), t);
+        // Store group name to metadata store for current client.
+        storeGroupId(groupId, groupIdPath)
+                .thenAccept(__ -> findBroker(TopicName.get(pulsarTopicName))
+                        .whenComplete((node, t) -> {
+                            if (t != null || node == null){
+                                log.error("[{}] Request {}: Error while find coordinator, .",
+                                        ctx.channel(), findCoordinator.getHeader(), t);
 
-                        AbstractResponse response = new FindCoordinatorResponse(
-                                Errors.LEADER_NOT_AVAILABLE,
-                                Node.noNode());
-                        resultFuture.complete(response);
-                        return;
-                    }
+                                AbstractResponse response = new FindCoordinatorResponse(
+                                        Errors.LEADER_NOT_AVAILABLE,
+                                        Node.noNode());
+                                resultFuture.complete(response);
+                                return;
+                            }
 
-                    if (log.isDebugEnabled()) {
-                        log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
-                                ctx.channel(), node.leader(), request.coordinatorKey(), partition);
-                    }
+                            if (log.isDebugEnabled()) {
+                                log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
+                                        ctx.channel(), node.leader(), request.coordinatorKey(), partition);
+                            }
 
-                    AbstractResponse response = new FindCoordinatorResponse(
-                            Errors.NONE,
-                            node.leader());
-                    resultFuture.complete(response);
+                            AbstractResponse response = new FindCoordinatorResponse(
+                                    Errors.NONE,
+                                    node.leader());
+                            resultFuture.complete(response);
+                        }))
+                .exceptionally(ex -> {
+                    log.error("Store groupId failed.", ex);
+                    return null;
                 });
+    }
+
+    private CompletableFuture<Void> storeGroupId(String groupId, String groupIdPath) {
+        String path = groupIdStoredPath + groupIdPath;
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        metadataStore.put(path, groupId.getBytes(UTF_8), Optional.empty())
+                .thenAccept(__ -> future.complete(null))
+                .exceptionally(ex -> {
+                    future.completeExceptionally(ex);
+                    return null;
+                });
+        return future;
     }
 
     @VisibleForTesting
@@ -2392,10 +2411,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             deleteTopicsResponse.put(topic, errors);
             if (errors == Errors.NONE) {
                 // create topic ZNode to trigger the coordinator DeleteTopicsEvent event
-                ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(),
-                        KopEventManager.getDeleteTopicsPath() + "/"
-                                + TopicNameUtils.getTopicNameWithUrlEncoded(topic),
-                        new byte[0]);
+                metadataStore.put(
+                        KopEventManager.getDeleteTopicsPath()
+                                + "/" + TopicNameUtils.getTopicNameWithUrlEncoded(topic),
+                        new byte[0],
+                        Optional.empty());
             }
             if (topicToDeleteCount.decrementAndGet() == 0) {
                 resultFuture.complete(new DeleteTopicsResponse(deleteTopicsResponse));
