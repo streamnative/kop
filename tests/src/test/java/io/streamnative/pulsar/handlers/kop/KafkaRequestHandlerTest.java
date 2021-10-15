@@ -14,7 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 
-import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
+import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicName;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getPartitionedTopicNameWithoutPartitions;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.mockito.Mockito.doReturn;
@@ -314,8 +314,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         TopicName topicNamePartition =
             TopicName.get(topicString + PARTITIONED_TOPIC_SUFFIX + partitionIndex);
 
-        assertEquals(localName, getKafkaTopicNameFromPulsarTopicname(topicName));
-        assertEquals(localName, getKafkaTopicNameFromPulsarTopicname(topicNamePartition));
+        assertEquals(localName, getKafkaTopicNameFromPulsarTopicName(topicName));
+        assertEquals(localName, getKafkaTopicNameFromPulsarTopicName(topicNamePartition));
     }
 
     private void createTopicsByKafkaAdmin(AdminClient admin, Map<String, Integer> topicToNumPartitions)
