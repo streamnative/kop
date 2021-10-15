@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
-import io.netty.buffer.ByteBuf;
 import java.nio.ByteBuffer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -64,11 +63,11 @@ public class TransactionLogKey {
         return byteBuffer.array();
     }
 
-    public static TransactionLogKey decode(ByteBuf byteBuf, short schemaVersion) {
+    public static TransactionLogKey decode(ByteBuffer byteBuffer, short schemaVersion) {
         Schema schema = getSchema(schemaVersion);
         // skip version
-        byteBuf.readShort();
-        Struct struct = schema.read(byteBuf.nioBuffer());
+        byteBuffer.getShort();
+        Struct struct = schema.read(byteBuffer);
         return new TransactionLogKey(struct.getString(TXN_ID_FIELD));
     }
 

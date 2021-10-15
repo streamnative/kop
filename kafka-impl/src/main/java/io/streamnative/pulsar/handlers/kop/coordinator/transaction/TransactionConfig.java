@@ -30,7 +30,12 @@ public class TransactionConfig {
     public static final long DefaultTransactionalIdExpirationMs = TimeUnit.DAYS.toMillis(7);
     public static final long DefaultAbortTimedOutTransactionsIntervalMs = TimeUnit.SECONDS.toMillis(10);
     public static final long DefaultRemoveExpiredTransactionalIdsIntervalMs = TimeUnit.HOURS.toMillis(1);
+    public static final int DefaultTransactionCoordinatorSchedulerNum = 1;
+    public static final int DefaultTransactionStateManagerSchedulerNum = 1;
+    public static final int DefaultTransactionLogNumPartitions = 8;
 
+    @Default
+    private int brokerId = 1;
     @Default
     private String transactionMetadataTopicName = DefaultTransactionMetadataTopicName;
     @Default
@@ -38,12 +43,16 @@ public class TransactionConfig {
     @Default
     private long transactionalIdExpirationMs = DefaultTransactionalIdExpirationMs;
     @Default
-    private int transactionLogNumPartitions = TransactionLog.DefaultNumPartitions;
+    private int transactionLogNumPartitions = DefaultTransactionLogNumPartitions;
     @Default
     private long abortTimedOutTransactionsIntervalMs = DefaultAbortTimedOutTransactionsIntervalMs;
     @Default
     private long removeExpiredTransactionalIdsIntervalMs = DefaultRemoveExpiredTransactionalIdsIntervalMs;
     @Default
     private long requestTimeoutMs = 30000;
+    @Default
+    private int transactionCoordinatorSchedulerNum = DefaultTransactionCoordinatorSchedulerNum;
+    @Default
+    private int transactionStateManagerSchedulerNum = DefaultTransactionStateManagerSchedulerNum;
 
 }

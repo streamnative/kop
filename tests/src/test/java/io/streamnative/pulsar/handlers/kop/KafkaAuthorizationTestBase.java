@@ -133,7 +133,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                         this.conf.getBrokerClientAuthenticationParameters()).build());
     }
 
-    @AfterClass
+    @AfterClass(timeOut = 30000)
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
@@ -156,7 +156,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             admin.topics().createPartitionedTopic(testTopic, 1);
             @Cleanup
             KProducer kProducer = new KProducer(testTopic, false, "localhost", getKafkaBrokerPort(),
-                    TENANT + "/" + NAMESPACE, "token:" + userToken);
+                    newTenant + "/" + NAMESPACE, "token:" + userToken);
             kProducer.getProducer().send(new ProducerRecord<>(testTopic, 0, "")).get();
             fail("should have failed");
         } catch (Exception e) {

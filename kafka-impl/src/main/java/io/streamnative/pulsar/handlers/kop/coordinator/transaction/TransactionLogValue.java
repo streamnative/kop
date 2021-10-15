@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
@@ -97,11 +96,11 @@ public class TransactionLogValue {
         return SCHEMAS[schemaVersion];
     }
 
-    public byte[] toBytes() {
-        return toBytes(HIGHEST_SUPPORTED_VERSION);
+    public ByteBuffer toByteBuffer() {
+        return toByteBuffer(HIGHEST_SUPPORTED_VERSION);
     }
 
-    public byte[] toBytes(short schemaVersion) {
+    public ByteBuffer toByteBuffer(short schemaVersion) {
         if (this.getTransactionStatus() == TransactionState.EMPTY.getValue() && !transactionPartitions.isEmpty()) {
             throw new IllegalStateException("Transaction is not expected to have any partitions since its state is "
                     + transactionStatus);
@@ -118,16 +117,17 @@ public class TransactionLogValue {
         struct.set(TXN_START_TIMESTAMP_FIELD, transactionStartTimestampMs);
 
         ByteBuffer byteBuffer = ByteBuffer.allocate(2 /* version */ + struct.sizeOf());
-        byteBuffer.putShort(HIGHEST_SUPPORTED_VERSION);
+        byteBuffer.putShort(schemaVersion);
         struct.writeTo(byteBuffer);
-        return byteBuffer.array();
+        byteBuffer.flip();
+        return byteBuffer;
     }
 
-    public static TransactionLogValue decode(ByteBuf byteBuf, short schemaVersion) {
+    public static TransactionLogValue decode(ByteBuffer byteBuffer, short schemaVersion) {
         Schema schema = getSchema(schemaVersion);
         // skip version
-        byteBuf.readShort();
-        Struct struct = schema.read(byteBuf.nioBuffer());
+        byteBuffer.getShort();
+        Struct struct = schema.read(byteBuffer);
 
         List<PartitionsSchema> partitionsSchemas =
                 Arrays.stream(struct.getArray(TXN_PARTITIONS_FIELD))
@@ -145,12 +145,12 @@ public class TransactionLogValue {
         );
     }
 
-    public static TransactionMetadata readTxnRecordValue(String transactionalId, byte[] bytes) {
+    public static TransactionMetadata readTxnRecordValue(String transactionalId, ByteBuffer byteBuffer) {
         // tombstone
-        if (bytes == null) {
+        if (byteBuffer == null) {
             return null;
         }
-        TransactionLogValue value = decode(Unpooled.wrappedBuffer(bytes), HIGHEST_SUPPORTED_VERSION);
+        TransactionLogValue value = decode(byteBuffer, HIGHEST_SUPPORTED_VERSION);
         TransactionMetadata metadata = TransactionMetadata.builder()
                 .transactionalId(transactionalId)
                 .producerId(value.getProducerId())

@@ -144,7 +144,7 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
                         this.conf.getBrokerClientAuthenticationParameters()).build());
     }
 
-    @AfterClass
+    @AfterClass(timeOut = 30000)
     protected void cleanup() throws Exception {
         super.internalCleanup();
         if (jaasConfigFile != null) {
