@@ -458,9 +458,7 @@ public final class MessageFetchContext {
                 });
         groupNameFuture.whenComplete((groupName, ex) -> {
             if (ex != null) {
-                if (log.isDebugEnabled()) {
-                    log.debug("Get groupId failed.", ex);
-                }
+                log.error("Get groupId failed.", ex);
                 groupName = "";
             }
             // collect consumer metrics
