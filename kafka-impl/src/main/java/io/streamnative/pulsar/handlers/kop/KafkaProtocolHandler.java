@@ -606,6 +606,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         txnTopicClient.close();
         adminManager.shutdown();
         groupCoordinatorsByTenant.values().forEach(GroupCoordinator::shutdown);
+        transactionCoordinatorByTenant.values().forEach(TransactionCoordinator::close);
         kopEventManager.close();
         transactionCoordinatorByTenant.values().forEach(TransactionCoordinator::shutdown);
         KafkaTopicManager.LOOKUP_CACHE.clear();

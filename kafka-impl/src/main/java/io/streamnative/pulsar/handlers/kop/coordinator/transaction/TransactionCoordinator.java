@@ -872,4 +872,7 @@ public class TransactionCoordinator {
         return abortedTransactions;
     }
 
+    public void close() {
+        this.transactionMarkerChannelManager.close();
+    }
 }
