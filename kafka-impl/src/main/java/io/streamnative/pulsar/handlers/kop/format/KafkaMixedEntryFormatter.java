@@ -98,7 +98,7 @@ public class KafkaMixedEntryFormatter extends AbstractEntryFormatter {
             CompressionType compressionType = CompressionType.forId(batch.compressionType().id);
             KopLogValidator.CompressionCodec messageCodec = new KopLogValidator.CompressionCodec(
                     compressionType.name, compressionType.id);
-            if (!messageCodec.name().equals(CompressionType.NONE.name)) {
+            if (messageCodec.codec() != CompressionType.NONE.id) {
                 sourceCodec = messageCodec;
             }
         }

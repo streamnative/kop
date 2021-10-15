@@ -15,17 +15,18 @@ package io.streamnative.pulsar.handlers.kop.format;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
-import io.netty.util.ReferenceCountUtil;
+import lombok.Getter;
 import org.apache.kafka.common.record.MemoryRecords;
 
 /**
  * Result of encode in entry formatter.
  */
+@Getter
 public class EncodeResult {
 
-    MemoryRecords records;
-    ByteBuf encodedByteBuf;
-    int numMessages;
+    private MemoryRecords records;
+    private ByteBuf encodedByteBuf;
+    private int numMessages;
 
     private final Recycler.Handle<EncodeResult> recyclerHandle;
 
@@ -53,22 +54,11 @@ public class EncodeResult {
     public void recycle() {
         records = null;
         if (encodedByteBuf != null) {
-            ReferenceCountUtil.safeRelease(encodedByteBuf);
+            encodedByteBuf.release();
             encodedByteBuf = null;
         }
         numMessages = -1;
         recyclerHandle.recycle(this);
     }
 
-    public MemoryRecords getRecords() {
-        return records;
-    }
-
-    public int getNumMessages() {
-        return numMessages;
-    }
-
-    public ByteBuf getEncodedByteBuf() {
-        return encodedByteBuf;
-    }
 }

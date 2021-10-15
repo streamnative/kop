@@ -16,74 +16,67 @@ package io.streamnative.pulsar.handlers.kop.format;
 import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
-import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.record.TimestampType;
 import org.testng.Assert;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 /**
  * Test for KafkaMixedEntryFormatter.
  */
-public class KafkaMixedEntryFormatTest {
+@Slf4j
+public class KafkaMixedEntryFormatterTest {
 
-    @Test
-    public void testCompressionType() {
-        final MemoryRecords recordsNone = newMemoryRecordsBuilder(CompressionType.NONE);
-        final MemoryRecords recordsGzip = newMemoryRecordsBuilder(CompressionType.GZIP);
-        final MemoryRecords recordsSnappy = newMemoryRecordsBuilder(CompressionType.SNAPPY);
-        final MemoryRecords recordsLz4 = newMemoryRecordsBuilder(CompressionType.LZ4);
+    @DataProvider(name = "compressionTypesAndMagic")
+    public static Object[][] compressionTypesAndMagic() {
+        return new Object[][] {
+                {CompressionType.NONE, (byte) 0},
+                {CompressionType.NONE, (byte) 1},
+                {CompressionType.NONE, (byte) 2},
+                {CompressionType.LZ4, (byte) 0},
+                {CompressionType.LZ4, (byte) 1},
+                {CompressionType.LZ4, (byte) 2},
+                {CompressionType.GZIP, (byte) 0},
+                {CompressionType.GZIP, (byte) 1},
+                {CompressionType.GZIP, (byte) 2},
+                {CompressionType.SNAPPY, (byte) 0},
+                {CompressionType.SNAPPY, (byte) 1},
+                {CompressionType.SNAPPY, (byte) 2},
+        };
+    }
+
+    @Test(dataProvider = "compressionTypesAndMagic")
+    public void testCompressionType(CompressionType compressionType, byte magic) {
+        final MemoryRecords records = newMemoryRecordsBuilder(compressionType, magic);
 
         // test brokerCompressionType=producer
         final KafkaMixedEntryFormatter producerEntryFormatter =
                 new KafkaMixedEntryFormatter("none");
-        Assert.assertEquals(CompressionType.NONE.name,
-                checkRecordsCodec(producerEntryFormatter, recordsNone).name());
-        Assert.assertEquals(CompressionType.GZIP.name,
-                checkRecordsCodec(producerEntryFormatter, recordsGzip).name());
-        Assert.assertEquals(CompressionType.SNAPPY.name,
-                checkRecordsCodec(producerEntryFormatter, recordsSnappy).name());
-        Assert.assertEquals(CompressionType.LZ4.name,
-                checkRecordsCodec(producerEntryFormatter, recordsLz4).name());
+        Assert.assertEquals(compressionType.name,
+                checkRecordsCodec(producerEntryFormatter, records).name());
 
         // test brokerCompressionType=gzip
         final KafkaMixedEntryFormatter gzipEntryFormatter =
                 new KafkaMixedEntryFormatter("gzip");
         Assert.assertEquals(CompressionType.GZIP.name,
-                checkRecordsCodec(gzipEntryFormatter, recordsNone).name());
-        Assert.assertEquals(CompressionType.GZIP.name,
-                checkRecordsCodec(gzipEntryFormatter, recordsGzip).name());
-        Assert.assertEquals(CompressionType.GZIP.name,
-                checkRecordsCodec(gzipEntryFormatter, recordsSnappy).name());
-        Assert.assertEquals(CompressionType.GZIP.name,
-                checkRecordsCodec(gzipEntryFormatter, recordsLz4).name());
+                checkRecordsCodec(gzipEntryFormatter, records).name());
 
         // test brokerCompressionType=snappy
         final KafkaMixedEntryFormatter snappyEntryFormatter =
                 new KafkaMixedEntryFormatter("snappy");
         Assert.assertEquals(CompressionType.SNAPPY.name,
-                checkRecordsCodec(snappyEntryFormatter, recordsNone).name());
-        Assert.assertEquals(CompressionType.SNAPPY.name,
-                checkRecordsCodec(snappyEntryFormatter, recordsGzip).name());
-        Assert.assertEquals(CompressionType.SNAPPY.name,
-                checkRecordsCodec(snappyEntryFormatter, recordsSnappy).name());
-        Assert.assertEquals(CompressionType.SNAPPY.name,
-                checkRecordsCodec(snappyEntryFormatter, recordsLz4).name());
+                checkRecordsCodec(snappyEntryFormatter, records).name());
 
         // test brokerCompressionType=lz4
         final KafkaMixedEntryFormatter lz4EntryFormatter =
                 new KafkaMixedEntryFormatter("lz4");
         Assert.assertEquals(CompressionType.LZ4.name,
-                checkRecordsCodec(lz4EntryFormatter, recordsNone).name());
-        Assert.assertEquals(CompressionType.LZ4.name,
-                checkRecordsCodec(lz4EntryFormatter, recordsGzip).name());
-        Assert.assertEquals(CompressionType.LZ4.name,
-                checkRecordsCodec(lz4EntryFormatter, recordsSnappy).name());
-        Assert.assertEquals(CompressionType.LZ4.name,
-                checkRecordsCodec(lz4EntryFormatter, recordsLz4).name());
+                checkRecordsCodec(lz4EntryFormatter, records).name());
     }
 
     private static KopLogValidator.CompressionCodec checkRecordsCodec(final KafkaMixedEntryFormatter entryFormatter,
@@ -92,10 +85,10 @@ public class KafkaMixedEntryFormatTest {
         return entryFormatter.getTargetCodec(sourceCodec);
     }
 
-    private static MemoryRecords newMemoryRecordsBuilder(final CompressionType type) {
+    private static MemoryRecords newMemoryRecordsBuilder(final CompressionType type, byte magic) {
         MemoryRecordsBuilder builder = MemoryRecords.builder(
                 ByteBuffer.allocate(1024 * 1024 * 5),
-                RecordBatch.CURRENT_MAGIC_VALUE,
+                magic,
                 type,
                 TimestampType.CREATE_TIME,
                 0L);

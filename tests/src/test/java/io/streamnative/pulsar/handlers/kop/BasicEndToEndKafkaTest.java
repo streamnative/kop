@@ -40,17 +40,25 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.TypedMessageBuilder;
+import org.testng.annotations.DataProvider;
+import org.testng.annotations.Test;
 
 /**
- * Basic end-to-end test with `entryFormat=kafka` and `entryFormat=mixed_kafka`.
+ * Basic end-to-end test with `entryFormat=kafka`.
  */
 @Slf4j
 public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
-    public BasicEndToEndKafkaTest(final String entryFormatter) {
-        super(entryFormatter);
+    public BasicEndToEndKafkaTest() {
+        super("kafka");
     }
 
+    @DataProvider(name = "enableBatching")
+    public static Object[][] enableBatching() {
+        return new Object[][]{ { true }, { false } };
+    }
+
+    @Test(timeOut = 20000)
     public void testNullValueMessages() throws Exception {
         final String topic = "test-produce-null-value";
 
@@ -67,6 +75,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         assertEquals(kafkaReceives, expectedMessages);
     }
 
+    @Test(timeOut = 20000)
     public void testDeleteClosedTopics() throws Exception {
         final String topic = "test-delete-closed-topics";
         final List<String> expectedMessages = Collections.singletonList("msg");
@@ -113,6 +122,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         kafkaConsumer2.close();
     }
 
+    @Test(timeOut = 20000)
     public void testPollEmptyTopic() throws Exception {
         int partitionNumber = 50;
         String kafkaTopic = "kopPollEmptyTopic" + partitionNumber;
@@ -167,6 +177,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
     }
 
+    @Test(timeOut = 20000, dataProvider = "enableBatching")
     public void testPulsarProduceKafkaConsume(boolean enableBatching) throws Exception {
         final String topic = "test-pulsar-produce-kafka-consume";
         final int numMessages = 30;
@@ -228,6 +239,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         assertEquals(getFirstHeadersFromRecords(receivedRecords), headers);
     }
 
+    @Test(timeOut = 20000)
     public void testMixedProduceKafkaConsume() throws Exception {
         final String topic = "test-mixed-produce-kafka-consume";
         final int numMessages = 10;

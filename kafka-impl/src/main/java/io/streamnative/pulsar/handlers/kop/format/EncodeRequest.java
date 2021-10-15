@@ -14,15 +14,19 @@
 package io.streamnative.pulsar.handlers.kop.format;
 
 import io.netty.util.Recycler;
+import lombok.Getter;
+import lombok.Setter;
 import org.apache.kafka.common.record.MemoryRecords;
 
 /**
  * Request of encode in entry formatter.
  */
+@Getter
+@Setter
 public class EncodeRequest {
 
-    MemoryRecords records;
-    long baseOffset;
+    private MemoryRecords records;
+    private long baseOffset;
 
     private final Recycler.Handle<EncodeRequest> recyclerHandle;
 
@@ -55,15 +59,4 @@ public class EncodeRequest {
         recyclerHandle.recycle(this);
     }
 
-    public void setBaseOffset(long baseOffset) {
-        this.baseOffset = baseOffset;
-    }
-
-    public MemoryRecords getRecords() {
-        return records;
-    }
-
-    public long getBaseOffset() {
-        return baseOffset;
-    }
 }

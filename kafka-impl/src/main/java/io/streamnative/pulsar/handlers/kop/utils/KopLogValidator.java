@@ -55,8 +55,8 @@ public class KopLogValidator {
                                                                  byte magic,
                                                                  TimestampType timestampType,
                                                                  long timestampDiffMaxMs) {
-        if (sourceCodec.name().equals(CompressionType.NONE.name)
-                && targetCodec.name().equals(CompressionType.NONE.name)) {
+        if (sourceCodec.codec() == CompressionType.NONE.id
+                && targetCodec.codec() == CompressionType.NONE.id) {
             // check the magic value
             if (!records.hasMatchingMagic(magic)) {
                 return convertAndAssignOffsetsNonCompressed(records,
@@ -202,13 +202,13 @@ public class KopLogValidator {
             validateBatch(batch, toMagic);
 
             // Do not compress control records unless they are written compressed
-            if (sourceCodec.name().equals(CompressionType.NONE.name) && batch.isControlBatch()) {
+            if (sourceCodec.codec() == CompressionType.NONE.id && batch.isControlBatch()) {
                 inPlaceAssignment = true;
             }
 
             for (Record record : batch) {
                 validateRecord(batch, record, now, timestampType, timestampDiffMaxMs, compactedTopic);
-                if (!sourceCodec.name().equals(CompressionType.NONE.name) && record.isCompressed()) {
+                if (sourceCodec.codec() != CompressionType.NONE.id && record.isCompressed()) {
                     throw new InvalidRecordException(String.format(
                             "Compressed outer record should not have an inner record with a "
                             + "compression attribute set: %s", record));
