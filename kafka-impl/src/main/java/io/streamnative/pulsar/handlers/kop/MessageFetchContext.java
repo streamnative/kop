@@ -437,53 +437,49 @@ public final class MessageFetchContext {
 
         MemoryRecords kafkaRecords = decodeResult.getRecords();
 
-        String groupName = requestHandler
+        CompletableFuture<String> groupNameFuture = requestHandler
                 .getCurrentConnectedGroup()
-                .get(clientHost);
-        if (groupName != null) {
+                .computeIfAbsent(clientHost, clientHost -> {
+                    CompletableFuture<String> future = new CompletableFuture<>();
+                    String groupIdPath = GroupIdUtils.groupIdPathFormat(clientHost, header.clientId());
+                    requestHandler.getMetadataStore()
+                            .get(requestHandler.getGroupIdStoredPath() + groupIdPath)
+                            .thenAccept(getResultOpt -> {
+                                if (getResultOpt.isPresent()) {
+                                    GetResult getResult = getResultOpt.get();
+                                    future.complete(new String(getResult.getValue() == null ?
+                                            new byte[0] : getResult.getValue(), StandardCharsets.UTF_8));
+                                }
+                            }).exceptionally(ex -> {
+                                future.completeExceptionally(ex);
+                                return null;
+                            });
+                    return future;
+                });
+        groupNameFuture.whenComplete((groupName, ex) -> {
+            if (ex != null) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Get groupId failed.", ex);
+                }
+                groupName = "";
+            }
             // collect consumer metrics
             updateConsumerStats(topicPartition,
                     kafkaRecords,
                     entries.size(),
                     groupName);
-        } else {
-            String groupIdPath = GroupIdUtils.groupIdPathFormat(clientHost,
-                    header.clientId());
-            requestHandler.getMetadataStore()
-                    .get(requestHandler.getGroupIdStoredPath() + groupIdPath)
-                    .whenComplete((getResultOpt, ex) -> {
-                        if (ex != null && log.isDebugEnabled()) {
-                            log.debug("Get groupId failed.", ex);
-                        }
-                        String groupId = "";
-                        if (getResultOpt.isPresent()) {
-                            GetResult getResult = getResultOpt.get();
-                            groupId = new String(getResult.getValue() == null ? new byte[0] : getResult.getValue(),
-                                    StandardCharsets.UTF_8);
-                        }
-                        log.info("get group name from zk for current connection:{} groupId:{}",
-                                clientHost, groupId);
-                        requestHandler
-                                .getCurrentConnectedGroup().put(clientHost, groupId);
-                        // collect consumer metrics
-                        updateConsumerStats(topicPartition,
-                                kafkaRecords,
-                                entries.size(),
-                                groupId);
-                    });
-        }
-
-        final List<FetchResponse.AbortedTransaction> abortedTransactions =
-                (readCommitted ? tc.getAbortedIndexList(partitionData.fetchOffset) : null);
-        responseData.put(topicPartition, new PartitionData<>(
-                Errors.NONE,
-                highWatermark,
-                lso,
-                highWatermark, // TODO: should it be changed to the logStartOffset?
-                abortedTransactions,
-                kafkaRecords));
-        bytesReadable.getAndAdd(kafkaRecords.sizeInBytes());
-        tryComplete();
+            final List<FetchResponse.AbortedTransaction> abortedTransactions =
+                    (readCommitted ? tc.getAbortedIndexList(partitionData.fetchOffset) : null);
+            responseData.put(topicPartition, new PartitionData<>(
+                    Errors.NONE,
+                    highWatermark,
+                    lso,
+                    highWatermark, // TODO: should it be changed to the logStartOffset?
+                    abortedTransactions,
+                    kafkaRecords));
+            bytesReadable.getAndAdd(kafkaRecords.sizeInBytes());
+            tryComplete();
+        });
     }
 
     private List<Entry> getCommittedEntries(List<Entry> entries, long lso) {

@@ -219,7 +219,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     public final int maxReadEntriesNum;
     private final int failedAuthenticationDelayMs;
     // store the group name for current connected client.
-    private final ConcurrentHashMap<String, String> currentConnectedGroup;
+    private final ConcurrentHashMap<String, CompletableFuture<String>> currentConnectedGroup;
     private final String groupIdStoredPath;
 
     @Getter
@@ -1146,7 +1146,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 findCoordinator.getHeader().clientId());
 
         // Store group name to metadata store for current client.
-        storeGroupId(groupId, groupIdPath, -1L)
+        storeGroupId(groupId, groupIdPath)
                 .thenAccept(__ -> findBroker(TopicName.get(pulsarTopicName))
                         .whenComplete((node, t) -> {
                             if (t != null || node == null){
@@ -1171,37 +1171,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             resultFuture.complete(response);
                         }))
                 .exceptionally(ex -> {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Store groupId failed.", ex);
-                    }
+                    log.error("Store groupId failed.", ex);
                     return null;
                 });
     }
 
-    private CompletableFuture<Void> storeGroupId(String groupId, String groupIdPath, Long expectedVersion) {
+    private CompletableFuture<Void> storeGroupId(String groupId, String groupIdPath) {
         String path = groupIdStoredPath + groupIdPath;
         CompletableFuture<Void> future = new CompletableFuture<>();
-        metadataStore.put(path, groupId.getBytes(UTF_8), Optional.of(expectedVersion))
-                .thenAccept(__ -> future.complete(null)).exceptionally(ex -> {
-                    // Update data
-                    if (ex.getCause() instanceof MetadataStoreException.BadVersionException) {
-                        metadataStore.get(path)
-                                .thenAccept(getResultOpt -> {
-                                    if (getResultOpt.isPresent()) {
-                                        GetResult getResult = getResultOpt.get();
-                                        storeGroupId(groupId, groupIdPath, getResult.getStat().getVersion())
-                                                .thenAccept(future::complete).exceptionally(e -> {
-                                                    future.completeExceptionally(e.getCause());
-                                                    return null;
-                                                });
-                                    }
-                                }).exceptionally(throwable -> {
-                                    future.completeExceptionally(throwable);
-                                    return null;
-                                });
-                    } else {
-                        future.completeExceptionally(ex);
-                    }
+        metadataStore.put(path, groupId.getBytes(UTF_8), Optional.empty())
+                .thenAccept(__ -> future.complete(null))
+                .exceptionally(ex -> {
+                    future.completeExceptionally(ex);
                     return null;
                 });
         return future;
