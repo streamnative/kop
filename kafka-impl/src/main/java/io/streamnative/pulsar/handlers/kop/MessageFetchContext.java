@@ -447,8 +447,8 @@ public final class MessageFetchContext {
                             .thenAccept(getResultOpt -> {
                                 if (getResultOpt.isPresent()) {
                                     GetResult getResult = getResultOpt.get();
-                                    future.complete(new String(getResult.getValue() == null ?
-                                            new byte[0] : getResult.getValue(), StandardCharsets.UTF_8));
+                                    future.complete(new String(getResult.getValue() == null
+                                            ? new byte[0] : getResult.getValue(), StandardCharsets.UTF_8));
                                 }
                             }).exceptionally(ex -> {
                                 future.completeExceptionally(ex);
