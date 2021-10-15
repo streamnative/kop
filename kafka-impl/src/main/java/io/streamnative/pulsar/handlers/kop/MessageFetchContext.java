@@ -449,6 +449,8 @@ public final class MessageFetchContext {
                                     GetResult getResult = getResultOpt.get();
                                     future.complete(new String(getResult.getValue() == null
                                             ? new byte[0] : getResult.getValue(), StandardCharsets.UTF_8));
+                                } else {
+                                    future.complete("");
                                 }
                             }).exceptionally(ex -> {
                                 future.completeExceptionally(ex);
