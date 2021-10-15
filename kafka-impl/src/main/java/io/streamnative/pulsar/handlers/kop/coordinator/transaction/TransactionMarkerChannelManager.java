@@ -348,7 +348,7 @@ public class TransactionMarkerChannelManager {
             });
         }
 
-        markersQueuePerBroker.forEach((address, txnMarkerQueue) -> {
+        markersQueuePerBroker.forEach((__, txnMarkerQueue) -> {
             BlockingQueue<TxnIdAndMarkerEntry> markerEntries =
                     txnMarkerQueue.removeMarkersForTxnTopicPartition(txnTopicPartitionId);
             if (markerEntries != null) {

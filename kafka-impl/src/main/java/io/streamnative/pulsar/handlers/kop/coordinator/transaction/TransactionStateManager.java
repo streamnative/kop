@@ -19,6 +19,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -37,6 +38,7 @@ import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.protocol.types.SchemaException;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.SystemTime;
@@ -175,8 +177,10 @@ public class TransactionStateManager {
                     partitionResponseMap.put(topicPartition, new ProduceResponse.PartitionResponse(Errors.NONE));
                     updateCacheCallback(transactionalId, newMetadata, topicPartition, coordinatorEpoch,
                             partitionResponseMap, responseCallback, retryOnError);
-                    log.debug("Appending new metadata {} for transaction id {} to the local transaction log with "
-                            + "messageId {}", newMetadata, transactionalId, messageId);
+                    if (log.isDebugEnabled()) {
+                        log.debug("Appending new metadata {} for transaction id {} to the local transaction log with "
+                                + "messageId {}", newMetadata, transactionalId, messageId);
+                    }
                 });
                 return null;
             });
@@ -297,9 +301,9 @@ public class TransactionStateManager {
                                     + "successed", transactionalId, newMetadata, coordinatorEpoch, transactionalId);
                         }
                         metadata.completeTransitionTo(newMetadata);
-                    } catch (Exception e) {
-                        log.error("Failed to complete transition.", e);
-                        result.setErrors(Errors.forException(e));
+                    } catch (IllegalStateException ex) {
+                        log.error("Failed to complete transition.", ex);
+                        result.setErrors(Errors.forException(ex));
                     }
                 }
                 return null;
@@ -497,7 +501,7 @@ public class TransactionStateManager {
 
         if (shuttingDown.get()) {
             loadFuture.completeExceptionally(
-                    new Exception("Transaction metadata manager is shutting down."));
+                    new IllegalStateException("Transaction metadata manager is shutting down."));
             return;
         }
 
@@ -526,10 +530,10 @@ public class TransactionStateManager {
                         logKey.getTransactionId(),
                         TransactionLogValue.readTxnRecordValue(logKey.getTransactionId(), message.getValue()));
                 loadNextTransaction(partition, reader, lastMessageId, loadFuture, transactionMetadataMap);
-            } catch (Exception e) {
+            } catch (SchemaException | BufferUnderflowException ex) {
                 log.error("Failed to decode transaction log with message {} for partition {}.",
-                        message.getMessageId(), partition, e);
-                loadFuture.completeExceptionally(e);
+                        message.getMessageId(), partition, ex);
+                loadFuture.completeExceptionally(ex);
             }
         });
     }

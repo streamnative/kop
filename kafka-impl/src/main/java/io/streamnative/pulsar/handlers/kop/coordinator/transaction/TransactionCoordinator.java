@@ -24,8 +24,6 @@ import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
-import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
-import io.streamnative.pulsar.handlers.kop.utils.timer.Timer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -70,8 +68,6 @@ public class TransactionCoordinator {
     @Getter
     private final TransactionStateManager txnManager;
     private final TransactionMarkerChannelManager transactionMarkerChannelManager;
-    private final Timer timer;
-    private final AtomicBoolean isActive = new AtomicBoolean(false);
 
     // map from topic to the map from initial offset to producerId
     private final Map<TopicName, NavigableMap<Long, Long>> activeOffsetPidMap = new HashMap<>();
@@ -82,14 +78,12 @@ public class TransactionCoordinator {
                                    SystemTopicClient txnTopicClient,
                                    MetadataStoreExtended metadataStore,
                                    KopBrokerLookupManager kopBrokerLookupManager,
-                                   OrderedExecutor txnStateManagerScheduler,
-                                   Timer timer) {
+                                   OrderedExecutor txnStateManagerScheduler) {
         this.transactionConfig = transactionConfig;
         this.txnManager = new TransactionStateManager(transactionConfig, txnTopicClient, txnStateManagerScheduler);
         this.producerIdManager = new ProducerIdManager(transactionConfig.getBrokerId(), metadataStore);
         this.transactionMarkerChannelManager =
                 new TransactionMarkerChannelManager(null, txnManager, kopBrokerLookupManager, false);
-        this.timer = timer;
     }
 
     public static TransactionCoordinator of(TransactionConfig transactionConfig,
@@ -103,11 +97,7 @@ public class TransactionCoordinator {
                 txnTopicClient,
                 metadataStore,
                 kopBrokerLookupManager,
-                orderedExecutor,
-                SystemTimer.builder()
-                        .executorName("txn-coordinator-timer")
-                        .build()
-                );
+                orderedExecutor);
     }
 
     interface EndTxnCallback {
@@ -846,7 +836,6 @@ public class TransactionCoordinator {
 
         // TODO abort timeout transactions
         // TODO transaction id expiration
-        isActive.set(true);
 
         return this.producerIdManager.initialize().thenCompose(ignored -> {
             log.info("Startup transaction coordinator complete.");
@@ -860,8 +849,6 @@ public class TransactionCoordinator {
      */
     public void shutdown() {
         log.info("Shutting down transaction coordinator ...");
-        isActive.set(false);
-        timer.shutdown();
         producerIdManager.shutdown();
         txnManager.shutdown();
         // TODO shutdown txn
