@@ -467,7 +467,7 @@ public class TransactionMetadata {
     private void throwStateTransitionFailure(TxnTransitMetadata txnTransitMetadata) throws IllegalStateException {
         log.error("{} transition to {} failed: this should not happen.", this, txnTransitMetadata);
         throw new IllegalStateException("TransactionalId " + transactionalId + " failed transition to state "
-                + txnTransitMetadata + "due to unexpected metadata");
+                + txnTransitMetadata + " due to unexpected metadata");
     }
 
     public boolean isProducerEpochExhausted() {

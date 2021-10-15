@@ -11,14 +11,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
+package io.streamnative.pulsar.handlers.kop.utils;
+
+import lombok.extern.slf4j.Slf4j;
+
 
 /**
- * Transaction log.
+ * Utils for GroupId.
  */
-public class TransactionLog {
+@Slf4j
+public class GroupIdUtils {
 
-    // log-level config default values and enforced values
-    public static final int DefaultNumPartitions = 50;
-
+    public static String groupIdPathFormat(String clientHost, String clientId) {
+        String path = clientHost.split(":")[0] + "-" + clientId;
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+        return path;
+    }
 }

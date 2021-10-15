@@ -37,7 +37,7 @@ import org.eclipse.jetty.util.StringUtil;
 
 
 /**
- * Broker lookup manager.
+ * Kop broker lookup manager.
  */
 @Slf4j
 public class KopBrokerLookupManager {

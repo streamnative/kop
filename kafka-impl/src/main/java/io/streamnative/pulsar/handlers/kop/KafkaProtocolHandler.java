@@ -15,7 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
-import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
+import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicName;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -32,7 +32,6 @@ import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
-import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -48,6 +47,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.kafka.common.internals.Topic;
@@ -68,6 +68,7 @@ import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.metadata.api.MetadataCache;
+import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 
 /**
@@ -86,6 +87,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
     private MetadataCache<LocalBrokerData> localBrokerDataCache;
+    private SystemTopicClient txnTopicClient;
 
     @Getter
     @VisibleForTesting
@@ -179,9 +181,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         final String brokerUrl;
 
         public OffsetAndTopicListener(BrokerService service,
-                                   String tenant,
-                                   KafkaServiceConfiguration kafkaConfig,
-                                   GroupCoordinator groupCoordinator) {
+                                      String tenant,
+                                      KafkaServiceConfiguration kafkaConfig,
+                                      GroupCoordinator groupCoordinator) {
             this.service = service;
             this.kafkaMetaNs = NamespaceName
                 .get(tenant, kafkaConfig.getKafkaMetadataNamespace());
@@ -204,8 +206,10 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                         log.info("get owned topic list when onLoad bundle {}, topic size {} ", bundle, topics.size());
                         for (String topic : topics) {
                             TopicName name = TopicName.get(topic);
+                            String kafkaTopicName = getKafkaTopicNameFromPulsarTopicName(name);
+
                             // already filtered namespace, check the local name without partition
-                            if (Topic.GROUP_METADATA_TOPIC_NAME.equals(getKafkaTopicNameFromPulsarTopicname(name))) {
+                            if (Topic.GROUP_METADATA_TOPIC_NAME.equals(kafkaTopicName)) {
                                 checkState(name.isPartitioned(),
                                     "OffsetTopic should be partitioned in onLoad, but get " + name);
 
@@ -237,9 +241,10 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                         log.info("get owned topic list when unLoad bundle {}, topic size {} ", bundle, topics.size());
                         for (String topic : topics) {
                             TopicName name = TopicName.get(topic);
+                            String kafkaTopicName = getKafkaTopicNameFromPulsarTopicName(name);
 
                             // already filtered namespace, check the local name without partition
-                            if (Topic.GROUP_METADATA_TOPIC_NAME.equals(getKafkaTopicNameFromPulsarTopicname(name))) {
+                            if (Topic.GROUP_METADATA_TOPIC_NAME.equals(kafkaTopicName)) {
                                 checkState(name.isPartitioned(),
                                     "OffsetTopic should be partitioned in unLoad, but get " + name);
 
@@ -268,6 +273,110 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     }
 
+    /**
+     * Listener for the changing of transaction topic when namespace bundle load or unload.
+     */
+    public static class TransactionStateRecover implements NamespaceBundleOwnershipListener {
+        private final BrokerService service;
+        private final NamespaceName kafkaMetaNs;
+        private final NamespaceName kafkaTopicNs;
+        private final String brokerUrl;
+        private final TransactionCoordinator txnCoordinator;
+
+        public TransactionStateRecover(
+                BrokerService service,
+                String tenant,
+                KafkaServiceConfiguration kafkaConfig,
+                TransactionCoordinator txnCoordinator) {
+            this.service = service;
+            this.kafkaMetaNs = NamespaceName
+                    .get(tenant, kafkaConfig.getKafkaMetadataNamespace());
+            this.kafkaTopicNs = NamespaceName
+                    .get(tenant, kafkaConfig.getKafkaNamespace());
+            this.brokerUrl = service.pulsar().getBrokerServiceUrl();
+            this.txnCoordinator = txnCoordinator;
+        }
+
+        @Override
+        public void onLoad(NamespaceBundle bundle) {
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] onLoad bundle: {}", brokerUrl, bundle);
+            }
+            // 1. get new partitions owned by this pulsar service.
+            // 2. load partitions by TransactionCoordinator.handleTxnImmigration.
+            service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
+                    .whenComplete((topics, ex) -> {
+                        if (ex == null) {
+                            log.info("get owned topic list when onLoad bundle {}, topic size {} ",
+                                    bundle, topics.size());
+                            for (String topic : topics) {
+                                TopicName name = TopicName.get(topic);
+                                String kafkaTopicName = getKafkaTopicNameFromPulsarTopicName(name);
+
+                                if (Topic.TRANSACTION_STATE_TOPIC_NAME.equals(kafkaTopicName)) {
+                                    checkState(name.isPartitioned(),
+                                            "TxnTopic should be partitioned in onLoad, but get " + name);
+
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("New transaction partition load:  {}, broker: {}",
+                                                name, service.pulsar().getBrokerServiceUrl());
+                                    }
+                                    txnCoordinator.handleTxnImmigration(name.getPartitionIndex());
+                                }
+                            }
+                        } else {
+                            log.error("Failed to get owned topic list for "
+                                            + "TransactionStateRecover when triggering on-loading bundle {}.",
+                                    bundle, ex);
+                        }
+                    });
+        }
+
+        @Override
+        public void unLoad(NamespaceBundle bundle) {
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] unLoad bundle: {}", brokerUrl, bundle);
+            }
+            // 1. get partitions owned by this pulsar service.
+            // 2. remove partitions by groupCoordinator.handleGroupEmigration.
+            service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
+                    .whenComplete((topics, ex) -> {
+                        if (ex == null) {
+                            log.info("get owned topic list when unLoad bundle {}, topic size {} ",
+                                    bundle, topics.size());
+                            for (String topic : topics) {
+                                TopicName name = TopicName.get(topic);
+                                String kafkaTopicName = getKafkaTopicNameFromPulsarTopicName(name);
+
+                                // Filter TRANSACTION_STATE_TOPIC
+                                if (Topic.TRANSACTION_STATE_TOPIC_NAME.equals(kafkaTopicName)
+                                        && txnCoordinator != null) {
+                                    checkState(name.isPartitioned(),
+                                            "TxnTopic should be partitioned in unLoad, but get " + name);
+
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("Txn partition unload: {}, broker: {}",
+                                                name, service.pulsar().getBrokerServiceUrl());
+                                    }
+                                    txnCoordinator.handleTxnEmigration(name.getPartitionIndex());
+                                }
+                            }
+                        } else {
+                            log.error("Failed to get owned topic list for "
+                                            + "TransactionStateRecover when triggering un-loading bundle {}.",
+                                    bundle, ex);
+                        }
+                    });
+        }
+
+        // Verify that this bundle is served by this broker,
+        // and namespace is related to kafka metadata namespace
+        @Override
+        public boolean test(NamespaceBundle namespaceBundle) {
+            return namespaceBundle.getNamespaceObject().equals(kafkaMetaNs)
+                    || namespaceBundle.getNamespaceObject().equals(kafkaTopicNs);
+        }
+    }
 
     @Override
     public String protocolName() {
@@ -321,11 +430,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Override
     public void start(BrokerService service) {
-        brokerService = service;
-        kopBrokerLookupManager = new KopBrokerLookupManager(
-                brokerService.getPulsar(), false,
-                kafkaConfig.getKafkaAdvertisedListeners());
-
         log.info("Starting KafkaProtocolHandler, kop version is: '{}'", KopVersion.getVersion());
         log.info("Git Revision {}", KopVersion.getGitSha());
         log.info("Built by {} on {} at {}",
@@ -333,18 +437,14 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             KopVersion.getBuildHost(),
             KopVersion.getBuildTime());
 
+        brokerService = service;
+        kopBrokerLookupManager = new KopBrokerLookupManager(
+                brokerService.getPulsar(), false,
+                kafkaConfig.getKafkaAdvertisedListeners());
+        MetadataStoreExtended metadataStore = brokerService.pulsar().getLocalMetadataStore();
         // Currently each time getMetadataCache() is called, a new MetadataCache<T> instance will be created, even for
         // the same type. So we must reuse the same MetadataCache<LocalBrokerData> to avoid creating a lot of instances.
-        localBrokerDataCache = brokerService.pulsar().getLocalMetadataStore().getMetadataCache(LocalBrokerData.class);
-
-        ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
-                kafkaConfig.getGroupIdZooKeeperPath(), new byte[0]);
-
-        ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
-                KopEventManager.getKopPath(), new byte[0]);
-
-        ZooKeeperUtils.tryCreatePath(brokerService.pulsar().getZkClient(),
-                KopEventManager.getDeleteTopicsPath(), new byte[0]);
+        localBrokerDataCache = metadataStore.getMetadataCache(LocalBrokerData.class);
 
         PulsarAdmin pulsarAdmin;
         try {
@@ -357,6 +457,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         LOOKUP_CLIENT_MAP.put(brokerService.pulsar(), new LookupClient(brokerService.pulsar(), kafkaConfig));
         offsetTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
+        txnTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
 
         brokerService.pulsar()
                 .getNamespaceService()
@@ -374,7 +475,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         kopEventManager.start();
 
         if (kafkaConfig.isEnableTransactionCoordinator()) {
-            getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
+            TransactionCoordinator transactionCoordinator =
+                    getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
+            try {
+                loadTxnLogTopics(kafkaConfig.getKafkaMetadataTenant(), transactionCoordinator);
+            } catch (Exception e) {
+                log.error("Failed to load transaction log", e);
+            }
         }
 
         Configuration conf = new PropertiesConfiguration();
@@ -394,7 +501,15 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 .build();
 
         try {
-            return initTransactionCoordinator(tenant, brokerService.getPulsar().getAdminClient(), clusterData);
+            TransactionCoordinator transactionCoordinator =
+                    initTransactionCoordinator(tenant, brokerService.getPulsar().getAdminClient(), clusterData);
+            // Listening transaction topic load/unload
+            brokerService.pulsar()
+                    .getNamespaceService()
+                    .addNamespaceBundleOwnershipListener(
+                            new TransactionStateRecover(brokerService, tenant, kafkaConfig, transactionCoordinator));
+
+            return transactionCoordinator;
         } catch (Exception e) {
             log.error("Initialized transaction coordinator failed.", e);
             throw new IllegalStateException(e);
@@ -479,9 +594,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     public void close() {
         Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
         offsetTopicClient.close();
+        txnTopicClient.close();
         adminManager.shutdown();
         groupCoordinatorsByTenant.values().forEach(GroupCoordinator::shutdown);
         kopEventManager.close();
+        transactionCoordinatorByTenant.values().forEach(TransactionCoordinator::shutdown);
         KafkaTopicManager.LOOKUP_CACHE.clear();
         KopBrokerLookupManager.clear();
         KafkaTopicManager.cancelCursorExpireTask();
@@ -546,17 +663,17 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         TransactionConfig transactionConfig = TransactionConfig.builder()
                 .transactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions())
                 .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(tenant, kafkaConfig))
+                .brokerId(kafkaConfig.getBrokerId())
                 .build();
 
         MetadataUtils.createTxnMetadataIfMissing(tenant, pulsarAdmin, clusterData, kafkaConfig);
 
         TransactionCoordinator transactionCoordinator = TransactionCoordinator.of(
                 transactionConfig,
-                kafkaConfig.getBrokerId(),
+                txnTopicClient,
                 brokerService.getPulsar().getLocalMetadataStore(),
-                kopBrokerLookupManager);
-
-        loadTxnLogTopics(tenant, transactionCoordinator);
+                kopBrokerLookupManager,
+                OrderedExecutor.newBuilder().name("TransactionStateManagerExecutor").build());
 
         transactionCoordinator.startup().get();
 
@@ -564,7 +681,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     }
 
     /**
-     * This method discovers ownership of offset topic partitions and attempts to load offset topics
+     * This method discovers ownership of offset topic partitions and attempts to load transaction topics
      * assigned to this broker.
      */
     private void loadTxnLogTopics(String tenant, TransactionCoordinator txnCoordinator) throws Exception {
@@ -588,7 +705,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         if (null != partitionsOwnedByCurrentBroker && !partitionsOwnedByCurrentBroker.isEmpty()) {
             List<CompletableFuture<Void>> lists = partitionsOwnedByCurrentBroker.stream().map(
-                (partition) -> txnCoordinator.loadTransactionMetadata(partition)).collect(Collectors.toList());
+                    txnCoordinator::handleTxnImmigration).collect(Collectors.toList());
 
             FutureUtil.waitForAll(lists).get();
         } else {

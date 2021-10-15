@@ -31,12 +31,13 @@ import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
+import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
-import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -74,6 +75,7 @@ import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.metadata.api.GetResult;
 
 /**
  * MessageFetchContext handling FetchRequest.
@@ -426,19 +428,6 @@ public final class MessageFetchContext {
             magic = RecordBatch.MAGIC_VALUE_V1;
         }
 
-        // get group and consumer
-        final String groupName = requestHandler
-                .getCurrentConnectedGroup().computeIfAbsent(clientHost, ignored -> {
-                    String zkSubPath = ZooKeeperUtils.groupIdPathFormat(clientHost,
-                            header.clientId());
-                    String groupId = ZooKeeperUtils.getData(
-                            requestHandler.getPulsarService().getZkClient(),
-                            requestHandler.getGroupIdStoredPath(),
-                            zkSubPath);
-                    log.info("get group name from zk for current connection:{} groupId:{}",
-                            clientHost, groupId);
-                    return groupId;
-                });
         final long startDecodingEntriesNanos = MathUtils.nowInNano();
         final DecodeResult decodeResult = requestHandler
                 .getEntryFormatter().decode(entries, magic);
@@ -447,23 +436,50 @@ public final class MessageFetchContext {
         decodeResults.add(decodeResult);
 
         MemoryRecords kafkaRecords = decodeResult.getRecords();
-        // collect consumer metrics
-        updateConsumerStats(topicPartition,
-                kafkaRecords,
-                entries.size(),
-                groupName);
 
-        final List<FetchResponse.AbortedTransaction> abortedTransactions =
-                (readCommitted ? tc.getAbortedIndexList(partitionData.fetchOffset) : null);
-        responseData.put(topicPartition, new PartitionData<>(
-                Errors.NONE,
-                highWatermark,
-                lso,
-                highWatermark, // TODO: should it be changed to the logStartOffset?
-                abortedTransactions,
-                kafkaRecords));
-        bytesReadable.getAndAdd(kafkaRecords.sizeInBytes());
-        tryComplete();
+        CompletableFuture<String> groupNameFuture = requestHandler
+                .getCurrentConnectedGroup()
+                .computeIfAbsent(clientHost, clientHost -> {
+                    CompletableFuture<String> future = new CompletableFuture<>();
+                    String groupIdPath = GroupIdUtils.groupIdPathFormat(clientHost, header.clientId());
+                    requestHandler.getMetadataStore()
+                            .get(requestHandler.getGroupIdStoredPath() + groupIdPath)
+                            .thenAccept(getResultOpt -> {
+                                if (getResultOpt.isPresent()) {
+                                    GetResult getResult = getResultOpt.get();
+                                    future.complete(new String(getResult.getValue() == null
+                                            ? new byte[0] : getResult.getValue(), StandardCharsets.UTF_8));
+                                } else {
+                                    future.complete("");
+                                }
+                            }).exceptionally(ex -> {
+                                future.completeExceptionally(ex);
+                                return null;
+                            });
+                    return future;
+                });
+        groupNameFuture.whenComplete((groupName, ex) -> {
+            if (ex != null) {
+                log.error("Get groupId failed.", ex);
+                groupName = "";
+            }
+            // collect consumer metrics
+            updateConsumerStats(topicPartition,
+                    kafkaRecords,
+                    entries.size(),
+                    groupName);
+            final List<FetchResponse.AbortedTransaction> abortedTransactions =
+                    (readCommitted ? tc.getAbortedIndexList(partitionData.fetchOffset) : null);
+            responseData.put(topicPartition, new PartitionData<>(
+                    Errors.NONE,
+                    highWatermark,
+                    lso,
+                    highWatermark, // TODO: should it be changed to the logStartOffset?
+                    abortedTransactions,
+                    kafkaRecords));
+            bytesReadable.getAndAdd(kafkaRecords.sizeInBytes());
+            tryComplete();
+        });
     }
 
     private List<Entry> getCommittedEntries(List<Entry> entries, long lso) {

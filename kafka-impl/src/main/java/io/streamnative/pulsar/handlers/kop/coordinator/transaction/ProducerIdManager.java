@@ -297,4 +297,9 @@ public class ProducerIdManager {
     private String getProducerIdBlockStr(byte[] bytes) {
         return new String(bytes, StandardCharsets.UTF_8);
     }
+
+    public void shutdown() {
+        log.info("Shutdown complete: last producerId assigned {}", nextProducerId);
+    }
+
 }

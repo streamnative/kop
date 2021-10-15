@@ -55,6 +55,8 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private static final int OffsetsMessageTTL = 3 * 24 * 3600;
     // txn configuration
     public static final int DefaultTxnLogTopicNumPartitions = 50;
+    public static final int DefaultTxnCoordinatorSchedulerNum = 1;
+    public static final int DefaultTxnStateManagerSchedulerNum = 1;
 
     @Category
     private static final String CATEGORY_KOP = "Kafka on Pulsar";

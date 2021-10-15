@@ -13,33 +13,41 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
-import com.google.common.collect.Lists;
-import io.netty.buffer.ByteBuf;
+
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import java.nio.BufferUnderflowException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
-import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.protocol.types.SchemaException;
 import org.apache.kafka.common.requests.ProduceResponse;
-import org.apache.kafka.common.requests.RequestHeader;
-import org.apache.kafka.common.requests.RequestUtils;
 import org.apache.kafka.common.requests.TransactionResult;
-import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.pulsar.client.api.MessageId;
+import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Transaction state manager.
@@ -48,21 +56,43 @@ import org.apache.kafka.common.utils.Utils;
 public class TransactionStateManager {
 
     private final TransactionConfig transactionConfig;
-    private final Map<String, TransactionMetadata> transactionStateMap;
-    private ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
+    private final SystemTopicClient txnTopicClient;
+    private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
+    private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
+    private final AtomicBoolean loading = new AtomicBoolean(false);
 
     // Number of partitions for the transaction log topic.
-    private int transactionTopicPartitionCount;
+    private final int transactionTopicPartitionCount;
 
     // Partitions of transaction topic that are being loaded, state lock should be called BEFORE accessing this set.
-    private Set<TransactionPartitionAndLeaderEpoch> loadingPartitions = new HashSet<>();
+    @VisibleForTesting
+    protected final Set<Integer> loadingPartitions = Sets.newHashSet();
+
+    // partitions of transaction topic that are being removed, state lock should be called BEFORE accessing this set.
+    @VisibleForTesting
+    protected final Set<Integer> leavingPartitions = Sets.newHashSet();
+
+    private final Map<Integer, CompletableFuture<Producer<ByteBuffer>>> txnLogProducerMap = Maps.newHashMap();
+    private final Map<Integer, CompletableFuture<Reader<ByteBuffer>>> txnLogReaderMap = Maps.newHashMap();
 
     // Transaction metadata cache indexed by assigned transaction topic partition ids
-    private Map<Integer, TxnMetadataCacheEntry> transactionMetadataCache = new HashMap<>();
+    @VisibleForTesting
+    protected final Map<Integer, Map<String, TransactionMetadata>> transactionMetadataCache = Maps.newHashMap();
 
-    public TransactionStateManager(TransactionConfig transactionConfig) {
+    private final OrderedExecutor executor;
+
+    @VisibleForTesting
+    protected boolean isLoading() {
+        return this.loading.get();
+    }
+
+
+    public TransactionStateManager(TransactionConfig transactionConfig,
+                                   SystemTopicClient txnTopicClient,
+                                   OrderedExecutor executor) {
         this.transactionConfig = transactionConfig;
-        this.transactionStateMap = new ConcurrentHashMap<>();
+        this.txnTopicClient = txnTopicClient;
+        this.executor = executor;
         this.transactionTopicPartitionCount = transactionConfig.getTransactionLogNumPartitions();
     }
 
@@ -94,21 +124,11 @@ public class TransactionStateManager {
     }
 
     /**
-     * TransactionPartition and leader epoch.
-     */
-    @AllArgsConstructor
-    private static class TransactionPartitionAndLeaderEpoch {
-        private Integer txnPartitionId;
-        private final Integer coordinatorEpoch;
-    }
-
-    /**
      * TransactionalId, coordinatorEpoch and TransitMetadata.
      */
     @AllArgsConstructor
-    private static class TransactionalIdCoordinatorEpochAndTransitMetadata {
+    private static class TransactionalIdAndTransitMetadata {
         private final String transactionalId;
-        private int coordinatorEpoch;
         private TransactionResult result;
         private TransactionMetadata txnMetadata;
         private TransactionMetadata.TxnTransitMetadata transitMetadata;
@@ -152,13 +172,16 @@ public class TransactionStateManager {
                     responseCallback.fail(Errors.NOT_COORDINATOR);
                     return null;
                 }
-                // append log
-                Map<TopicPartition, ProduceResponse.PartitionResponse> partitionResponseMap = new HashMap<>();
-                partitionResponseMap.put(topicPartition, new ProduceResponse.PartitionResponse(Errors.NONE));
-                updateCacheCallback(transactionalId, newMetadata, topicPartition, coordinatorEpoch,
-                        partitionResponseMap, responseCallback, retryOnError);
-                log.info("Appending new metadata {} for transaction id {} with coordinator epoch {} "
-                        + "to the local transaction log", newMetadata, transactionalId, coordinatorEpoch);
+                storeTxnLog(transactionalId, newMetadata).thenAccept(messageId -> {
+                    Map<TopicPartition, ProduceResponse.PartitionResponse> partitionResponseMap = new HashMap<>();
+                    partitionResponseMap.put(topicPartition, new ProduceResponse.PartitionResponse(Errors.NONE));
+                    updateCacheCallback(transactionalId, newMetadata, topicPartition, coordinatorEpoch,
+                            partitionResponseMap, responseCallback, retryOnError);
+                    if (log.isDebugEnabled()) {
+                        log.debug("Appending new metadata {} for transaction id {} to the local transaction log with "
+                                + "messageId {}", newMetadata, transactionalId, messageId);
+                    }
+                });
                 return null;
             });
             return null;
@@ -272,11 +295,15 @@ public class TransactionStateManager {
                             coordinatorEpoch, Errors.NOT_CONTROLLER);
                     result.setErrors(Errors.NOT_COORDINATOR);
                 } else {
-                    metadata.completeTransitionTo(newMetadata);
-                    if (log.isDebugEnabled()) {
-                        log.debug("Updating {}'s transaction state to {} with coordinator epoch {} for {} "
-                                + "succeezded", transactionalId, newMetadata, coordinatorEpoch, transactionalId);
-
+                    try {
+                        if (log.isDebugEnabled()) {
+                            log.debug("Updating {}'s transaction state to {} with coordinator epoch {} for {} "
+                                    + "successed", transactionalId, newMetadata, coordinatorEpoch, transactionalId);
+                        }
+                        metadata.completeTransitionTo(newMetadata);
+                    } catch (IllegalStateException ex) {
+                        log.error("Failed to complete transition.", ex);
+                        result.setErrors(Errors.forException(ex));
                     }
                 }
                 return null;
@@ -350,20 +377,6 @@ public class TransactionStateManager {
         boolean retry(Errors errors);
     }
 
-    public ByteBuf getWriteMarker(String transactionalId) {
-        TransactionMetadata metadata = transactionStateMap.get(transactionalId);
-        WriteTxnMarkersRequest.TxnMarkerEntry txnMarkerEntry = new WriteTxnMarkersRequest.TxnMarkerEntry(
-                metadata.getProducerId(),
-                metadata.getProducerEpoch(),
-                1,
-                TransactionResult.COMMIT,
-                new ArrayList<>(metadata.getTopicPartitions()));
-        WriteTxnMarkersRequest txnMarkersRequest = new WriteTxnMarkersRequest.Builder(
-                Lists.newArrayList(txnMarkerEntry)).build();
-        RequestHeader requestHeader = new RequestHeader(ApiKeys.WRITE_TXN_MARKERS, txnMarkersRequest.version(), "", -1);
-        return RequestUtils.serializeRequest(txnMarkersRequest.version(), requestHeader, txnMarkersRequest);
-    }
-
     public ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> getTransactionState(String transactionalId) {
         return getAndMaybeAddTransactionState(transactionalId, Optional.empty());
     }
@@ -396,19 +409,20 @@ public class TransactionStateManager {
             Optional<TransactionMetadata> createdTxnMetadataOpt) {
         return CoreUtils.inReadLock(stateLock, () -> {
             int partitionId = partitionFor(transactionalId);
-            if (loadingPartitions.stream().anyMatch(
-                    txnPartitionAndEpoch -> txnPartitionAndEpoch.txnPartitionId == partitionId)) {
-                return new ErrorsAndData<>(Errors.CONCURRENT_TRANSACTIONS);
+            if (loadingPartitions.stream().anyMatch(partition -> partition == partitionId)) {
+                return new ErrorsAndData<>(Errors.COORDINATOR_LOAD_IN_PROGRESS);
+            } else if (leavingPartitions.stream().anyMatch(partition -> partition == partitionId)) {
+                return new ErrorsAndData<>(Errors.NOT_COORDINATOR);
             } else {
-                TxnMetadataCacheEntry cacheEntry = transactionMetadataCache.get(partitionId);
-                if (cacheEntry == null) {
+                Map<String, TransactionMetadata> metadataMap = transactionMetadataCache.get(partitionId);
+                if (metadataMap == null) {
                     return new ErrorsAndData<>(Errors.NOT_COORDINATOR);
                 }
                 Optional<TransactionMetadata> txnMetadata;
-                TransactionMetadata txnMetadataCache = cacheEntry.metadataPerTransactionalId.get(transactionalId);
+                TransactionMetadata txnMetadataCache = metadataMap.get(transactionalId);
                 if (txnMetadataCache == null) {
                     if (createdTxnMetadataOpt.isPresent()) {
-                        cacheEntry.metadataPerTransactionalId.put(transactionalId, createdTxnMetadataOpt.get());
+                        metadataMap.put(transactionalId, createdTxnMetadataOpt.get());
                         txnMetadata = createdTxnMetadataOpt;
                     } else {
                         txnMetadata = Optional.empty();
@@ -418,9 +432,8 @@ public class TransactionStateManager {
                 }
 
                 return txnMetadata
-                        .map(metadata ->
-                                new ErrorsAndData<>(Optional.of(
-                                        new CoordinatorEpochAndTxnMetadata(cacheEntry.coordinatorEpoch, metadata))))
+                        .map(metadata -> new ErrorsAndData<>(
+                                Optional.of(new CoordinatorEpochAndTxnMetadata(-1, metadata))))
                         .orElseGet(() -> new ErrorsAndData<>(Optional.empty()));
             }
         });
@@ -431,73 +444,111 @@ public class TransactionStateManager {
     }
 
     /**
-     * Add a transaction topic partition into the cache.
-     */
-    private void addLoadedTransactionsToCache(int txnTopicPartition,
-                                              int coordinatorEpoch,
-                                              Map<String, TransactionMetadata> loadedTransactions) {
-        TxnMetadataCacheEntry txnMetadataCacheEntry = new TxnMetadataCacheEntry(coordinatorEpoch, loadedTransactions);
-        TxnMetadataCacheEntry previousTxnMetadataCacheEntryOpt =
-                transactionMetadataCache.put(txnTopicPartition, txnMetadataCacheEntry);
-
-        log.warn("Unloaded transaction metadata {} from {} as part of loading metadata at epoch {}",
-                previousTxnMetadataCacheEntryOpt, txnTopicPartition, coordinatorEpoch);
-    }
-
-    private Map<String, TransactionMetadata> loadTransactionMetadata(TopicPartition topicPartition,
-                                                                     int coordinatorEpoch) {
-        // TODO recover transaction metadata
-        log.info("load transaction metadata for topicPartition: {}, coordinatorEpoch: {}",
-                topicPartition, coordinatorEpoch);
-        Map<String, TransactionMetadata> loadedTransactions = new HashMap<>();
-        return loadedTransactions;
-    }
-
-    /**
      * When this broker becomes a leader for a transaction log partition, load this partition and populate the
      * transaction metadata cache with the transactional ids. This operation must be resilient to any partial state
      * left off from the previous loading / unloading operation.
      */
     public CompletableFuture<Void> loadTransactionsForTxnTopicPartition(
                                                                 int partitionId,
-                                                                int coordinatorEpoch,
                                                                 SendTxnMarkersCallback sendTxnMarkers) {
         TopicPartition topicPartition = new TopicPartition(Topic.TRANSACTION_STATE_TOPIC_NAME, partitionId);
-        TransactionPartitionAndLeaderEpoch partitionAndLeaderEpoch =
-                new TransactionPartitionAndLeaderEpoch(partitionId, coordinatorEpoch);
 
         CoreUtils.inWriteLock(stateLock, () -> {
-            loadingPartitions.add(partitionAndLeaderEpoch);
+            leavingPartitions.remove(partitionId);
+            loadingPartitions.add(partitionId);
+            transactionMetadataCache.putIfAbsent(topicPartition.partition(), Maps.newConcurrentMap());
+            loading.set(true);
             return null;
         });
 
-        long scheduleStartMs = SystemTime.SYSTEM.milliseconds();
-        loadTransactions(scheduleStartMs, topicPartition, coordinatorEpoch, partitionAndLeaderEpoch, sendTxnMarkers);
-        return CompletableFuture.completedFuture(null);
+        long startTimeMs = SystemTime.SYSTEM.milliseconds();
+        return getProducer(topicPartition.partition())
+                .thenCompose(producer ->
+                        producer.newMessage().value(ByteBuffer.wrap(new byte[0])).sendAsync())
+                .thenCompose(lastMsgId -> {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Successfully write a placeholder record into {} @ {}",
+                                topicPartition, lastMsgId);
+                    }
+                    return getReader(topicPartition.partition()).thenCompose(reader ->
+                            loadTransactionMetadata(topicPartition.partition(), reader, lastMsgId));
+                }).thenAccept(__ ->
+                        completeLoadedTransactions(topicPartition, startTimeMs, sendTxnMarkers))
+                .exceptionally(ex -> {
+                    log.error("Error to load transactions exceptions : [{}]", ex.getMessage());
+                    loading.set(false);
+                    return null;
+                });
     }
 
-    private void loadTransactions(long startTimeMs,
-                                  TopicPartition topicPartition,
-                                  int coordinatorEpoch,
-                                  TransactionPartitionAndLeaderEpoch partitionAndLeaderEpoch,
-                                  SendTxnMarkersCallback sendTxnMarkersCallback) {
-        long schedulerTimeMs = SystemTime.SYSTEM.milliseconds() - startTimeMs;
-        log.info("Loading transaction metadata from {} at epoch {}", topicPartition, coordinatorEpoch);
-//        validateTransactionTopicPartitionCountIsStable();
+    private CompletableFuture<Void> loadTransactionMetadata(int partition,
+                                                            Reader<ByteBuffer> reader,
+                                                            MessageId lastMessageId) {
+        if (log.isDebugEnabled()) {
+            log.debug("Start load transaction metadata for partition {} till messageId {}", partition, lastMessageId);
+        }
+        CompletableFuture<Void> loadFuture = new CompletableFuture<>();
+        Map<String, TransactionMetadata> transactionMetadataMap = new HashMap<>();
+        loadNextTransaction(partition, reader, lastMessageId, loadFuture, transactionMetadataMap);
+        return loadFuture;
+    }
 
-        Map<String, TransactionMetadata> loadedTransactions = loadTransactionMetadata(topicPartition, coordinatorEpoch);
+    private void loadNextTransaction(int partition,
+                                     Reader<ByteBuffer> reader,
+                                     MessageId lastMessageId,
+                                     CompletableFuture<Void> loadFuture,
+                                     Map<String, TransactionMetadata> transactionMetadataMap) {
+
+        if (shuttingDown.get()) {
+            loadFuture.completeExceptionally(
+                    new IllegalStateException("Transaction metadata manager is shutting down."));
+            return;
+        }
+
+        reader.readNextAsync().whenComplete((message, throwable) -> {
+            if (throwable != null) {
+                log.error("Failed to load transaction log.", throwable);
+                loadFuture.completeExceptionally(throwable);
+            }
+            if (message.getMessageId().compareTo(lastMessageId) >= 0) {
+                // reach the end of partition
+                transactionMetadataCache.put(partition, transactionMetadataMap);
+                loadFuture.complete(null);
+                return;
+            }
+
+            // skip place holder
+            if (message.getKeyBytes() == null || message.getValue().limit() == 0) {
+                loadNextTransaction(partition, reader, lastMessageId, loadFuture, transactionMetadataMap);
+                return;
+            }
+
+            try {
+                TransactionLogKey logKey = TransactionLogKey.decode(
+                        ByteBuffer.wrap(message.getKeyBytes()), TransactionLogKey.HIGHEST_SUPPORTED_VERSION);
+                transactionMetadataMap.put(
+                        logKey.getTransactionId(),
+                        TransactionLogValue.readTxnRecordValue(logKey.getTransactionId(), message.getValue()));
+                loadNextTransaction(partition, reader, lastMessageId, loadFuture, transactionMetadataMap);
+            } catch (SchemaException | BufferUnderflowException ex) {
+                log.error("Failed to decode transaction log with message {} for partition {}.",
+                        message.getMessageId(), partition, ex);
+                loadFuture.completeExceptionally(ex);
+            }
+        });
+    }
+
+    private void completeLoadedTransactions(TopicPartition topicPartition, long startTimeMs,
+                                                               SendTxnMarkersCallback sendTxnMarkersCallback) {
+        Map<String, TransactionMetadata> loadedTransactions = transactionMetadataCache.get(topicPartition.partition());
         long endTimeMs = SystemTime.SYSTEM.milliseconds();
         long totalLoadingTimeMs = endTimeMs - startTimeMs;
-        log.info("Finished loading {} transaction metadata from {} in {} milliseconds, of which {} milliseconds "
-                + "was spent in the scheduler.", loadedTransactions.size(), topicPartition, totalLoadingTimeMs,
-                schedulerTimeMs);
+        log.info("Finished loading transaction metadata {} from {} in {} milliseconds",
+                loadedTransactions.size(), topicPartition, totalLoadingTimeMs);
 
         CoreUtils.inWriteLock(stateLock, () -> {
-            if (loadingPartitions.contains(partitionAndLeaderEpoch)) {
-                addLoadedTransactionsToCache(topicPartition.partition(), coordinatorEpoch, loadedTransactions);
-
-                List<TransactionalIdCoordinatorEpochAndTransitMetadata> transactionsPendingForCompletion =
-                        new ArrayList<>();
+            if (loadingPartitions.contains(topicPartition.partition())) {
+                List<TransactionalIdAndTransitMetadata> transactionsPendingForCompletion = new ArrayList<>();
 
                 for (Map.Entry<String, TransactionMetadata> entry : loadedTransactions.entrySet()) {
                     TransactionMetadata txnMetadata = entry.getValue();
@@ -505,9 +556,8 @@ public class TransactionStateManager {
                         switch (txnMetadata.getState()) {
                             case PREPARE_ABORT:
                                 transactionsPendingForCompletion.add(
-                                        new TransactionalIdCoordinatorEpochAndTransitMetadata(
+                                        new TransactionalIdAndTransitMetadata(
                                                 entry.getKey(),
-                                                coordinatorEpoch,
                                                 TransactionResult.ABORT,
                                                 txnMetadata,
                                                 txnMetadata.prepareComplete(SystemTime.SYSTEM.milliseconds())
@@ -515,9 +565,8 @@ public class TransactionStateManager {
                                 break;
                             case PREPARE_COMMIT:
                                 transactionsPendingForCompletion.add(
-                                        new TransactionalIdCoordinatorEpochAndTransitMetadata(
+                                        new TransactionalIdAndTransitMetadata(
                                                 entry.getKey(),
-                                                coordinatorEpoch,
                                                 TransactionResult.COMMIT,
                                                 txnMetadata,
                                                 txnMetadata.prepareComplete(SystemTime.SYSTEM.milliseconds())
@@ -533,23 +582,132 @@ public class TransactionStateManager {
                 // We first remove the partition from loading partition then send out the markers for those pending to
                 // be completed transactions, so that when the markers get sent the attempt of appending the complete
                 // transaction log would not be blocked by the coordinator loading error.
-                loadingPartitions.remove(partitionAndLeaderEpoch);
+                loadingPartitions.remove(topicPartition.partition());
 
                 transactionsPendingForCompletion.forEach(pendingTxn -> {
-                    sendTxnMarkersCallback.send(pendingTxn.coordinatorEpoch, pendingTxn.result,
-                            pendingTxn.txnMetadata, pendingTxn.transitMetadata);
+                    sendTxnMarkersCallback.send(pendingTxn.result, pendingTxn.txnMetadata, pendingTxn.transitMetadata);
                 });
             }
+            loadingPartitions.remove(topicPartition.partition());
+            return null;
+        });
+        if (!loading.compareAndSet(true, false)) {
+            log.error("Completed with error stat.");
+        }
+        log.info("Completed loading transaction metadata from {}", topicPartition);
+    }
+
+    public void removeTransactionsForTxnTopicPartition(int partition) {
+        TopicPartition topicPartition = new TopicPartition(Topic.TRANSACTION_STATE_TOPIC_NAME, partition);
+        log.info("Scheduling unloading transaction metadata from {}", topicPartition);
+
+        CoreUtils.inWriteLock(stateLock, () -> {
+            loadingPartitions.remove(partition);
+            leavingPartitions.add(partition);
             return null;
         });
 
-        log.info("Completed loading transaction metadata from {} for coordinator epoch {}",
-                topicPartition, coordinatorEpoch);
+        Runnable removeTransactions = () -> {
+            CoreUtils.inWriteLock(stateLock, () -> {
+                if (leavingPartitions.contains(partition)) {
+                    transactionMetadataCache.remove(partition).forEach((txnId, metadata) -> {
+                        log.info("Unloaded transaction metadata {} for {} following local partition deletion",
+                                metadata, topicPartition);
+                    });
+
+                    // remove related producers and readers
+                    CompletableFuture<Producer<ByteBuffer>> producer = txnLogProducerMap.remove(partition);
+                    CompletableFuture<Reader<ByteBuffer>> reader = txnLogReaderMap.remove(partition);
+                    if (producer != null) {
+                        producer.thenApply(Producer::closeAsync).whenCompleteAsync((ignore, t) -> {
+                            if (t != null) {
+                                log.error("Failed to close producer when remove partition {}.",
+                                        producer.join().getTopic());
+                            }
+                        });
+                    }
+                    if (reader != null) {
+                        reader.thenApply(Reader::closeAsync).whenCompleteAsync((ignore, t) -> {
+                            if (t != null) {
+                                log.error("Failed to close reader when remove partition {}.",
+                                        reader.join().getTopic());
+                            }
+                        });
+                    }
+                    leavingPartitions.remove(partition);
+                }
+                return null;
+            });
+        };
+        executor.submit(removeTransactions);
     }
 
     interface SendTxnMarkersCallback {
-        void send(int coordinatorEpoch, TransactionResult transactionResult, TransactionMetadata transactionMetadata,
-             TransactionMetadata.TxnTransitMetadata txnTransitMetadata);
+        void send(TransactionResult transactionResult, TransactionMetadata transactionMetadata,
+                  TransactionMetadata.TxnTransitMetadata txnTransitMetadata);
+    }
+
+    private CompletableFuture<Producer<ByteBuffer>> getProducer(Integer partition) {
+        return txnLogProducerMap.computeIfAbsent(partition, key -> {
+            String topic = transactionConfig.getTransactionMetadataTopicName()
+                    + TopicName.PARTITIONED_TOPIC_SUFFIX + partition;
+            return txnTopicClient.newProducerBuilder().clone().topic(topic).createAsync();
+        });
+    }
+
+    private CompletableFuture<MessageId> storeTxnLog(String transactionalId,
+                                                     TransactionMetadata.TxnTransitMetadata txnTransitMetadata) {
+        byte[] keyBytes = new TransactionLogKey(transactionalId).toBytes();
+        ByteBuffer valueByteBuffer = new TransactionLogValue(txnTransitMetadata).toByteBuffer();
+        return getProducer(partitionFor(transactionalId)).thenCompose(producer ->
+                producer.newMessage().keyBytes(keyBytes).value(valueByteBuffer).sendAsync());
+    }
+
+    private CompletableFuture<Reader<ByteBuffer>> getReader(Integer partition) {
+        return txnLogReaderMap.computeIfAbsent(partition, key -> {
+            String topic = transactionConfig.getTransactionMetadataTopicName()
+                    + TopicName.PARTITIONED_TOPIC_SUFFIX + partition;
+            return txnTopicClient.newReaderBuilder().clone().topic(topic)
+                    .startMessageId(MessageId.earliest).readCompacted(true).createAsync();
+        });
+    }
+
+
+    public void shutdown() {
+        shuttingDown.set(true);
+        loadingPartitions.clear();
+        transactionMetadataCache.clear();
+        List<CompletableFuture<Void>> txnLogProducerCloses = txnLogProducerMap.values().stream()
+                .map(producerCompletableFuture -> producerCompletableFuture
+                        .thenComposeAsync(Producer::closeAsync, executor))
+                .collect(Collectors.toList());
+        txnLogProducerMap.clear();
+        List<CompletableFuture<Void>> txnLogReaderCloses = txnLogReaderMap.values().stream()
+                .map(readerCompletableFuture -> readerCompletableFuture
+                        .thenComposeAsync(Reader::closeAsync, executor))
+                .collect(Collectors.toList());
+        txnLogProducerMap.clear();
+        FutureUtil.waitForAll(txnLogProducerCloses).whenCompleteAsync((ignore, t) -> {
+            if (t != null) {
+                log.error("Error when close all the {} txnLogProducers in TransactionStateManager",
+                        txnLogProducerCloses.size(), t);
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("Closed all the {} txnLogProducers in TransactionStateManager", txnLogProducerCloses.size());
+            }
+        }, executor);
+
+        FutureUtil.waitForAll(txnLogReaderCloses).whenCompleteAsync((ignore, t) -> {
+            if (t != null) {
+                log.error("Error when close all the {} txnLogReaders in TransactionStateManager",
+                        txnLogReaderCloses.size(), t);
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("Closed all the {} txnLogReaders in TransactionStateManager.", txnLogReaderCloses.size());
+            }
+        }, executor);
+        executor.shutdown();
+        log.info("Shutdown transaction state manager complete.");
     }
 
 }

@@ -56,18 +56,17 @@ import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
-import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -192,6 +191,7 @@ import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.metadata.api.MetadataCache;
+import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 
@@ -211,6 +211,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final String clusterName;
     private final ScheduledExecutorService executor;
     private final PulsarAdmin admin;
+    private final MetadataStoreExtended metadataStore;
     private final SaslAuthenticator authenticator;
     private final Authorizer authorizer;
     private final AdminManager adminManager;
@@ -223,8 +224,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     public final int maxReadEntriesNum;
     private final int failedAuthenticationDelayMs;
     // store the group name for current connected client.
-    private final ConcurrentHashMap<String, String> currentConnectedGroup;
+    private final ConcurrentHashMap<String, CompletableFuture<String>> currentConnectedGroup;
     private final String groupIdStoredPath;
+
     @Getter
     private final EntryFormatter entryFormatter;
 
@@ -308,6 +310,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
+        this.metadataStore = pulsarService.getLocalMetadataStore();
         final boolean authenticationEnabled = pulsarService.getBrokerService().isAuthenticationEnabled()
                 && !kafkaConfig.getSaslAllowedMechanisms().isEmpty();
         this.authenticator = authenticationEnabled
@@ -1155,36 +1158,52 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             throw new NotImplementedException("FindCoordinatorRequest not support TRANSACTION type "
                 + request.coordinatorType());
         }
-        // store group name to zk for current client
+
         String groupId = request.coordinatorKey();
-        String zkSubPath = ZooKeeperUtils.groupIdPathFormat(findCoordinator.getClientHost(),
+        String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
                 findCoordinator.getHeader().clientId());
-        byte[] groupIdBytes = groupId.getBytes(Charset.forName("UTF-8"));
-        ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(), groupIdStoredPath + zkSubPath, groupIdBytes);
 
-        findBroker(TopicName.get(pulsarTopicName))
-                .whenComplete((node, t) -> {
-                    if (t != null || node == null){
-                        log.error("[{}] Request {}: Error while find coordinator, .",
-                                ctx.channel(), findCoordinator.getHeader(), t);
+        // Store group name to metadata store for current client.
+        storeGroupId(groupId, groupIdPath)
+                .thenAccept(__ -> findBroker(TopicName.get(pulsarTopicName))
+                        .whenComplete((node, t) -> {
+                            if (t != null || node == null){
+                                log.error("[{}] Request {}: Error while find coordinator, .",
+                                        ctx.channel(), findCoordinator.getHeader(), t);
 
-                        AbstractResponse response = new FindCoordinatorResponse(
-                                Errors.LEADER_NOT_AVAILABLE,
-                                Node.noNode());
-                        resultFuture.complete(response);
-                        return;
-                    }
+                                AbstractResponse response = new FindCoordinatorResponse(
+                                        Errors.LEADER_NOT_AVAILABLE,
+                                        Node.noNode());
+                                resultFuture.complete(response);
+                                return;
+                            }
 
-                    if (log.isDebugEnabled()) {
-                        log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
-                                ctx.channel(), node.leader(), request.coordinatorKey(), partition);
-                    }
+                            if (log.isDebugEnabled()) {
+                                log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
+                                        ctx.channel(), node.leader(), request.coordinatorKey(), partition);
+                            }
 
-                    AbstractResponse response = new FindCoordinatorResponse(
-                            Errors.NONE,
-                            node.leader());
-                    resultFuture.complete(response);
+                            AbstractResponse response = new FindCoordinatorResponse(
+                                    Errors.NONE,
+                                    node.leader());
+                            resultFuture.complete(response);
+                        }))
+                .exceptionally(ex -> {
+                    log.error("Store groupId failed.", ex);
+                    return null;
                 });
+    }
+
+    private CompletableFuture<Void> storeGroupId(String groupId, String groupIdPath) {
+        String path = groupIdStoredPath + groupIdPath;
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        metadataStore.put(path, groupId.getBytes(UTF_8), Optional.empty())
+                .thenAccept(__ -> future.complete(null))
+                .exceptionally(ex -> {
+                    future.completeExceptionally(ex);
+                    return null;
+                });
+        return future;
     }
 
     @VisibleForTesting
@@ -2133,7 +2152,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         InitProducerIdRequest request = (InitProducerIdRequest) kafkaHeaderAndRequest.getRequest();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         transactionCoordinator.handleInitProducerId(
-                request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(), this, response);
+                request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(), response);
     }
 
     @Override
@@ -2209,51 +2228,76 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                          CompletableFuture<AbstractResponse> response) {
         TxnOffsetCommitRequest request = (TxnOffsetCommitRequest) kafkaHeaderAndRequest.getRequest();
 
+        if (request.offsets().isEmpty()) {
+            response.complete(new TxnOffsetCommitResponse(0, Maps.newHashMap()));
+            return;
+        }
         // TODO not process nonExistingTopic at this time.
-        Map<TopicPartition, Errors> nonExistingTopic = nonExistingTopicErrors();
+        Map<TopicPartition, Errors> nonExistingTopicErrors = nonExistingTopicErrors();
+        Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
 
         // convert raw topic name to KoP full name
         // we need to ensure that topic name in __consumer_offsets is globally unique
-        Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> convertedOffsetData = new HashMap<>();
-        Map<TopicPartition, TopicPartition> replacingIndex = new HashMap<>();
-        request.offsets().entrySet().removeIf(entry -> {
-            TopicPartition tp = entry.getKey();
-            try {
-                TopicPartition newTopicPartition = new TopicPartition(
-                        new KopTopic(tp.topic()).getFullName(), tp.partition());
+        Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> convertedOffsetData = Maps.newConcurrentMap();
+        Map<TopicPartition, TopicPartition> replacingIndex = Maps.newHashMap();
 
-                convertedOffsetData.put(newTopicPartition, entry.getValue());
-                replacingIndex.put(newTopicPartition, tp);
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(request.offsets().size());
+
+        Consumer<Runnable> completeOne = (action) -> {
+            action.run();
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                if (log.isTraceEnabled()) {
+                    StringBuffer traceInfo = new StringBuffer();
+                    replacingIndex.forEach((inner, outer) ->
+                            traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
+                    log.trace("TXN_OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo.toString());
+                }
+
+                getGroupCoordinator().handleTxnCommitOffsets(
+                        request.consumerGroupId(),
+                        request.producerId(),
+                        request.producerEpoch(),
+                        convertTxnOffsets(convertedOffsetData)).whenComplete((resultMap, throwable) -> {
+
+                    // recover to original topic name
+                    replaceTopicPartition(resultMap, replacingIndex);
+
+                    resultMap.putAll(nonExistingTopicErrors);
+                    resultMap.putAll(unauthorizedTopicErrors);
+                    response.complete(new TxnOffsetCommitResponse(0, resultMap));
+                });
+            }
+        };
+        request.offsets().forEach((tp, commitOffset) -> {
+            KopTopic kopTopic;
+            try {
+                kopTopic = new KopTopic(tp.topic());
             } catch (KoPTopicException e) {
                 log.warn("Invalid topic name: {}", tp.topic(), e);
-                nonExistingTopic.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+                completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                return;
             }
-            return true;
-        });
+            String fullTopicName = kopTopic.getFullName();
 
-        if (log.isTraceEnabled()) {
-            StringBuffer traceInfo = new StringBuffer();
-            replacingIndex.forEach((inner, outer) ->
-                    traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
-            log.trace("TXN_OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo.toString());
-        }
-
-        // update the request data
-        request.offsets().putAll(convertedOffsetData);
-
-        getGroupCoordinator().handleTxnCommitOffsets(
-                request.consumerGroupId(),
-                request.producerId(),
-                request.producerEpoch(),
-                convertTxnOffsets(request.offsets())).whenComplete((resultMap, throwable) -> {
-
-            // recover to original topic name
-            replaceTopicPartition(resultMap, replacingIndex);
-
-            if (!nonExistingTopic.isEmpty()) {
-                resultMap.putAll(nonExistingTopic);
-            }
-            response.complete(new TxnOffsetCommitResponse(0, resultMap));
+            authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
+                    .whenComplete((isAuthorized, ex) -> {
+                        if (ex != null) {
+                            log.error("TxnOffsetCommit authorize failed, topic - {}. {}",
+                                    fullTopicName, ex.getMessage());
+                            completeOne.accept(
+                                    () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                            return;
+                        }
+                        if (!isAuthorized) {
+                            completeOne.accept(()-> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                            return;
+                        }
+                        completeOne.accept(()->{
+                            TopicPartition newTopicPartition = new TopicPartition(fullTopicName, tp.partition());
+                            convertedOffsetData.put(newTopicPartition, commitOffset);
+                            replacingIndex.put(newTopicPartition, tp);
+                        });
+                    });
         });
     }
 
@@ -2285,7 +2329,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 request.producerId(),
                 request.producerEpoch(),
                 request.command(),
-                this,
                 response);
     }
 
@@ -2385,10 +2428,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             deleteTopicsResponse.put(topic, errors);
             if (errors == Errors.NONE) {
                 // create topic ZNode to trigger the coordinator DeleteTopicsEvent event
-                ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(),
-                        KopEventManager.getDeleteTopicsPath() + "/"
-                                + TopicNameUtils.getTopicNameWithUrlEncoded(topic),
-                        new byte[0]);
+                metadataStore.put(
+                        KopEventManager.getDeleteTopicsPath()
+                                + "/" + TopicNameUtils.getTopicNameWithUrlEncoded(topic),
+                        new byte[0],
+                        Optional.empty());
             }
             if (topicToDeleteCount.decrementAndGet() == 0) {
                 resultFuture.complete(new DeleteTopicsResponse(deleteTopicsResponse));
