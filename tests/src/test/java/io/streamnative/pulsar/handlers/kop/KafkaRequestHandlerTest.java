@@ -168,7 +168,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                         return transactionCoordinator;
                     }
                 },
-                handler.getKopBrokerLookupManager(),
+                ((KafkaProtocolHandler) handler1).getKopBrokerLookupManager(),
                 adminManager,
                 pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
                 false,
