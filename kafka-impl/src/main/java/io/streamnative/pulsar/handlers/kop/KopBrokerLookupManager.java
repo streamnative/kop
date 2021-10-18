@@ -42,7 +42,6 @@ import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 public class KopBrokerLookupManager {
 
     private final PulsarService pulsarService;
-    private final Boolean tlsEnabled;
     private final String advertisedListeners;
     private final LookupClient lookupClient;
     private final MetadataCache<LocalBrokerData> localBrokerDataCache;
@@ -55,17 +54,11 @@ public class KopBrokerLookupManager {
     public static final ConcurrentHashMap<String, CompletableFuture<Optional<String>>>
             KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
 
-    public KopBrokerLookupManager(PulsarService pulsarService, Boolean tlsEnabled,
-                                  String advertisedListeners) {
+    public KopBrokerLookupManager(PulsarService pulsarService, String advertisedListeners) {
         this.pulsarService = pulsarService;
-        this.tlsEnabled = tlsEnabled;
         this.advertisedListeners = advertisedListeners;
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
         this.localBrokerDataCache = pulsarService.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class);
-    }
-
-    public CompletableFuture<Optional<InetSocketAddress>> findBroker(@NonNull TopicName topic) {
-        return findBroker(topic, null);
     }
 
     public CompletableFuture<Optional<InetSocketAddress>> findBroker(@NonNull TopicName topic,
@@ -90,8 +83,8 @@ public class KopBrokerLookupManager {
                     // It's the `kafkaAdvertisedListeners` config that's written to ZK
                     final String listeners = listenersOptional.get();
                     final EndPoint endPoint =
-                            (tlsEnabled ? EndPoint.getSslEndPoint(listeners) :
-                                    EndPoint.getPlainTextEndPoint(listeners));
+                            (advertisedEndPoint != null && advertisedEndPoint.isTlsEnabled()
+                                    ? EndPoint.getSslEndPoint(listeners) : EndPoint.getPlainTextEndPoint(listeners));
 
                     if (log.isDebugEnabled()) {
                         log.debug("Found broker localListeners: {} for topicName: {}, "

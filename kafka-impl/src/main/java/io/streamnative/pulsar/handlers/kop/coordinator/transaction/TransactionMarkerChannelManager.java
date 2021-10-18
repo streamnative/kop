@@ -17,6 +17,7 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.streamnative.pulsar.handlers.kop.EndPoint;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -60,6 +61,7 @@ public class TransactionMarkerChannelManager {
     private final EventLoopGroup eventLoopGroup;
     private final boolean enableTls;
     private final SslContextFactory sslContextFactory;
+    private final EndPoint sslEndPoint;
     private final KopBrokerLookupManager kopBrokerLookupManager;
 
     private final Bootstrap bootstrap;
@@ -134,8 +136,10 @@ public class TransactionMarkerChannelManager {
         this.enableTls = enableTls;
         if (this.enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
+            sslEndPoint = EndPoint.getSslEndPoint(kafkaConfig.getKafkaListeners());
         } else {
             sslContextFactory = null;
+            sslEndPoint = null;
         }
         eventLoopGroup = new NioEventLoopGroup();
         bootstrap = new Bootstrap();
@@ -221,7 +225,7 @@ public class TransactionMarkerChannelManager {
         for (TopicPartition topicPartition : topicPartitions) {
             String pulsarTopic = new KopTopic(topicPartition.topic()).getPartitionName(topicPartition.partition());
             CompletableFuture<Optional<InetSocketAddress>> addressFuture =
-                    kopBrokerLookupManager.findBroker(TopicName.get(pulsarTopic));
+                    kopBrokerLookupManager.findBroker(TopicName.get(pulsarTopic), sslEndPoint);
             CompletableFuture<Void> addFuture = new CompletableFuture<>();
             addressFutureList.add(addFuture);
             addressFuture.whenComplete((address, throwable) -> {
