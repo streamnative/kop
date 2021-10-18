@@ -44,6 +44,7 @@ import org.apache.pulsar.broker.authentication.AuthenticationState;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.PulsarClient;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.api.AuthData;
 import org.apache.pulsar.common.policies.data.ClusterData;
 
@@ -54,11 +55,13 @@ public class SchemaRegistryManager {
     private final AuthenticationService authenticationService;
     private final SchemaRegistryRequestAuthenticator schemaRegistryRequestAuthenticator;
     private final Authorizer authorizer;
+    private final PulsarClient pulsarClient;
 
     public SchemaRegistryManager(KafkaServiceConfiguration kafkaConfig,
                                  PulsarService pulsar,
                                  AuthenticationService authenticationService) {
         this.kafkaConfig = kafkaConfig;
+        this.pulsarClient = SystemTopicClient.createPulsarClient(pulsar, kafkaConfig, (___) -> {});
         this.pulsar = pulsar;
         this.authenticationService = authenticationService;
         this.schemaRegistryRequestAuthenticator = new HttpRequestAuthenticator();
@@ -167,7 +170,6 @@ public class SchemaRegistryManager {
         if (!kafkaConfig.isKopSchemaRegistryEnable()) {
             return Optional.empty();
         }
-        PulsarClient pulsarClient = pulsar.getClient();
         PulsarAdmin pulsarAdmin = pulsar.getAdminClient();
         SchemaRegistryHandler handler = new SchemaRegistryHandler();
         SchemaStorageAccessor schemaStorage = new PulsarSchemaStorageAccessor((tenant) -> {
@@ -192,5 +194,13 @@ public class SchemaRegistryManager {
         new SchemaResource(schemaStorage, schemaRegistryRequestAuthenticator).register(handler);
         new SubjectResource(schemaStorage, schemaRegistryRequestAuthenticator).register(handler);
         return Optional.of(new SchemaRegistryChannelInitializer(handler));
+    }
+
+    public void close() {
+        try {
+            pulsarClient.close();
+        } catch (PulsarClientException err) {
+            log.error("Error while shutting down", err);
+        }
     }
 }
