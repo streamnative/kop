@@ -28,7 +28,6 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
-import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.metadata.api.MetadataCache;
@@ -105,7 +104,7 @@ public class KopBrokerLookupManager {
                     if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
                         removeTopicManagerCache(topic.toString());
                     }
-                    checkTopicOwner(returnFuture, topic.toString(), endPoint);
+                    returnFuture.complete(Optional.of(endPoint.getInetAddress()));
                 })).exceptionally(throwable -> {
                     log.error("Not get advertise data for Kafka topic:{}. throwable: [{}]",
                             topic, throwable.getMessage());
@@ -152,49 +151,6 @@ public class KopBrokerLookupManager {
             return CompletableFuture.completedFuture(null);
         }
         return lookupClient.getBrokerAddress(TopicName.get(topic), listenerName);
-    }
-
-
-    private void checkTopicOwner(CompletableFuture<Optional<InetSocketAddress>> future,
-                                 String topic,
-                                 EndPoint endPoint) {
-        getTopic(topic).whenComplete((persistentTopic, exception) -> {
-            if (exception != null || persistentTopic == null) {
-                log.warn("findBroker: Failed to getOrCreateTopic {}. broker:{}, exception:",
-                        topic, endPoint.getOriginalListener(), exception);
-                // remove cache when topic is null
-                removeTopicManagerCache(topic);
-                future.complete(Optional.empty());
-                return;
-            }
-
-            if (log.isDebugEnabled()) {
-                log.debug("Add topic: {} into TopicManager while findBroker.", topic);
-            }
-            future.complete(Optional.of(endPoint.getInetAddress()));
-        });
-    }
-
-    private CompletableFuture<PersistentTopic> getTopic(String topicName) {
-        CompletableFuture<PersistentTopic> topicCompletableFuture = new CompletableFuture<>();
-        pulsarService.getBrokerService()
-                .getTopic(topicName, pulsarService.getBrokerService().isAllowAutoTopicCreation(topicName))
-                .whenComplete((topic, throwable) -> {
-                    if (throwable != null) {
-                        log.error("Failed to getTopic {}. exception:", topicName, throwable);
-                        // failed to getTopic from current broker, remove cache, which added in getTopicBroker.
-                        removeTopicManagerCache(topicName);
-                        topicCompletableFuture.complete(null);
-                        return;
-                    }
-                    if (topic.isPresent()) {
-                        topicCompletableFuture.complete((PersistentTopic) topic.get());
-                    } else {
-                        log.error("Get empty topic for name {}", topicName);
-                        topicCompletableFuture.complete(null);
-                    }
-                });
-        return topicCompletableFuture;
     }
 
     private CompletableFuture<Optional<String>> getProtocolDataToAdvertise(
