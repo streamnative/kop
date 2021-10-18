@@ -78,6 +78,7 @@ public class EndPoint {
                 break;
             default:
                 this.tlsEnabled = false;
+                break;
         }
 
         final String originalHostname = matcher.group(2);
