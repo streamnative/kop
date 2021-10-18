@@ -89,7 +89,6 @@ import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
-import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
@@ -186,7 +185,6 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                 },
                 ((KafkaProtocolHandler) handler1).getKopBrokerLookupManager(),
                 adminManager,
-                pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
                 false,
                 getPlainEndPoint(),
                 NullStatsLogger.INSTANCE);

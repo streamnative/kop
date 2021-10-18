@@ -26,8 +26,6 @@ import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import java.util.concurrent.TimeUnit;
 import lombok.Getter;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.metadata.api.MetadataCache;
-import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 /**
@@ -55,7 +53,6 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final SslContextFactory.Server sslContextFactory;
     @Getter
     private final StatsLogger statsLogger;
-    private final MetadataCache<LocalBrokerData> localBrokerDataCache;
 
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
@@ -64,8 +61,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    AdminManager adminManager,
                                    boolean enableTLS,
                                    EndPoint advertisedEndPoint,
-                                   StatsLogger statsLogger,
-                                   MetadataCache<LocalBrokerData> localBrokerDataCache) {
+                                   StatsLogger statsLogger) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -75,7 +71,6 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.enableTls = enableTLS;
         this.advertisedEndPoint = advertisedEndPoint;
         this.statsLogger = statsLogger;
-        this.localBrokerDataCache = localBrokerDataCache;
         if (enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
         } else {
@@ -99,7 +94,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
                 new KafkaRequestHandler(pulsarService, kafkaConfig,
-                        tenantContextManager, kopBrokerLookupManager, adminManager, localBrokerDataCache,
+                        tenantContextManager, kopBrokerLookupManager, adminManager,
                         enableTls, advertisedEndPoint, statsLogger));
     }
 

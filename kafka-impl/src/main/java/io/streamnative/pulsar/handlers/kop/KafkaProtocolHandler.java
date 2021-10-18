@@ -67,9 +67,6 @@ import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.util.FutureUtil;
-import org.apache.pulsar.metadata.api.MetadataCache;
-import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
-import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 
 /**
  * Kafka Protocol Handler load and run by Pulsar Service.
@@ -87,7 +84,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Getter
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
-    private MetadataCache<LocalBrokerData> localBrokerDataCache;
     private SystemTopicClient txnTopicClient;
 
     @Getter
@@ -439,12 +435,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             KopVersion.getBuildTime());
 
         brokerService = service;
-
-        MetadataStoreExtended metadataStore = brokerService.pulsar().getLocalMetadataStore();
-        // Currently each time getMetadataCache() is called, a new MetadataCache<T> instance will be created, even for
-        // the same type. So we must reuse the same MetadataCache<LocalBrokerData> to avoid creating a lot of instances.
-        localBrokerDataCache = metadataStore.getMetadataCache(LocalBrokerData.class);
-
         PulsarAdmin pulsarAdmin;
         try {
             pulsarAdmin = brokerService.getPulsar().getAdminClient();
@@ -581,8 +571,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                                                 adminManager,
                                                 false,
                                                 endPoint,
-                                                scopeStatsLogger,
-                                                localBrokerDataCache));
+                                                scopeStatsLogger));
                                 break;
                             case SSL:
                             case SASL_SSL:
@@ -595,8 +584,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                                                 adminManager,
                                                 true,
                                                 endPoint,
-                                                scopeStatsLogger,
-                                                localBrokerDataCache));
+                                                scopeStatsLogger));
                                 break;
                             default:
                         }

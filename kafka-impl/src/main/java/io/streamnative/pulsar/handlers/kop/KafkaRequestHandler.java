@@ -185,9 +185,7 @@ import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
-import org.apache.pulsar.metadata.api.MetadataCache;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
-import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 
 /**
@@ -211,7 +209,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final SaslAuthenticator authenticator;
     private final Authorizer authorizer;
     private final AdminManager adminManager;
-    private final MetadataCache<LocalBrokerData> localBrokerDataCache;
 
     private final Boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
@@ -297,7 +294,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                TenantContextManager tenantContextManager,
                                KopBrokerLookupManager kopBrokerLookupManager,
                                AdminManager adminManager,
-                               MetadataCache<LocalBrokerData> localBrokerDataCache,
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
                                StatsLogger statsLogger) throws Exception {
@@ -319,7 +315,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ? new SimpleAclAuthorizer(pulsarService)
                 : null;
         this.adminManager = adminManager;
-        this.localBrokerDataCache = localBrokerDataCache;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
         this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
