@@ -84,6 +84,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private StatsLogger rootStatsLogger;
     private StatsLogger scopeStatsLogger;
     private PrometheusMetricsProvider statsProvider;
+    @Getter
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
     private MetadataCache<LocalBrokerData> localBrokerDataCache;
@@ -438,9 +439,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             KopVersion.getBuildTime());
 
         brokerService = service;
-        kopBrokerLookupManager = new KopBrokerLookupManager(
-                brokerService.getPulsar(), false,
-                kafkaConfig.getKafkaAdvertisedListeners());
+
         MetadataStoreExtended metadataStore = brokerService.pulsar().getLocalMetadataStore();
         // Currently each time getMetadataCache() is called, a new MetadataCache<T> instance will be created, even for
         // the same type. So we must reuse the same MetadataCache<LocalBrokerData> to avoid creating a lot of instances.
@@ -458,6 +457,10 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         LOOKUP_CLIENT_MAP.put(brokerService.pulsar(), new LookupClient(brokerService.pulsar(), kafkaConfig));
         offsetTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
         txnTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
+
+        kopBrokerLookupManager = new KopBrokerLookupManager(
+                brokerService.getPulsar(), false,
+                kafkaConfig.getKafkaAdvertisedListeners());
 
         brokerService.pulsar()
                 .getNamespaceService()
@@ -563,7 +566,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         try {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
-                    ImmutableMap.<InetSocketAddress, ChannelInitializer<SocketChannel>>builder();
+                    ImmutableMap.builder();
 
             EndPoint.parseListeners(kafkaConfig.getListeners(), kafkaConfig.getKafkaProtocolMap()).
                     forEach((listener, endPoint) -> {
@@ -571,13 +574,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, this, adminManager, false,
+                                kafkaConfig, this, kopBrokerLookupManager, adminManager, false,
                                 endPoint, scopeStatsLogger, localBrokerDataCache));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaChannelInitializer(brokerService.getPulsar(),
-                                kafkaConfig, this, adminManager, true,
+                                kafkaConfig, this, kopBrokerLookupManager, adminManager, true,
                                 endPoint, scopeStatsLogger, localBrokerDataCache));
                         break;
                     default:
@@ -599,12 +602,12 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         groupCoordinatorsByTenant.values().forEach(GroupCoordinator::shutdown);
         kopEventManager.close();
         transactionCoordinatorByTenant.values().forEach(TransactionCoordinator::shutdown);
-        KafkaTopicManager.LOOKUP_CACHE.clear();
         KopBrokerLookupManager.clear();
         KafkaTopicManager.cancelCursorExpireTask();
         KafkaTopicConsumerManagerCache.getInstance().close();
         KafkaTopicManager.getReferences().clear();
         KafkaTopicManager.getTopics().clear();
+        kopBrokerLookupManager.close();
         statsProvider.stop();
     }
 

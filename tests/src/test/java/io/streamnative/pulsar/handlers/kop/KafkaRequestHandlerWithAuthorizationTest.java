@@ -184,6 +184,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                         return transactionCoordinator;
                     }
                 },
+                ((KafkaProtocolHandler) handler1).getKopBrokerLookupManager(),
                 adminManager,
                 pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
                 false,

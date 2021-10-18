@@ -43,6 +43,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
+import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.ChannelFutures;
 import org.eclipse.jetty.util.BlockingArrayQueue;
@@ -219,7 +220,8 @@ public class TransactionMarkerChannelManager {
         List<CompletableFuture<Void>> addressFutureList = new ArrayList<>();
         for (TopicPartition topicPartition : topicPartitions) {
             String pulsarTopic = new KopTopic(topicPartition.topic()).getPartitionName(topicPartition.partition());
-            CompletableFuture<InetSocketAddress> addressFuture = kopBrokerLookupManager.findBroker(pulsarTopic);
+            CompletableFuture<Optional<InetSocketAddress>> addressFuture =
+                    kopBrokerLookupManager.findBroker(TopicName.get(pulsarTopic));
             CompletableFuture<Void> addFuture = new CompletableFuture<>();
             addressFutureList.add(addFuture);
             addressFuture.whenComplete((address, throwable) -> {
@@ -229,7 +231,7 @@ public class TransactionMarkerChannelManager {
                     addFuture.completeExceptionally(throwable);
                     return;
                 }
-                addressAndPartitionMap.compute(address, (key, set) -> {
+                addressAndPartitionMap.compute(address.orElse(null), (__, set) -> {
                     if (set == null) {
                         set = new ArrayList<>();
                     }

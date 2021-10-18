@@ -43,6 +43,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final KafkaServiceConfiguration kafkaConfig;
     @Getter
     private final TenantContextManager tenantContextManager;
+    @Getter
+    private final KopBrokerLookupManager kopBrokerLookupManager;
 
     private final AdminManager adminManager;
     @Getter
@@ -58,6 +60,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
                                    TenantContextManager tenantContextManager,
+                                   KopBrokerLookupManager kopBrokerLookupManager,
                                    AdminManager adminManager,
                                    boolean enableTLS,
                                    EndPoint advertisedEndPoint,
@@ -67,6 +70,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
         this.tenantContextManager = tenantContextManager;
+        this.kopBrokerLookupManager = kopBrokerLookupManager;
         this.adminManager = adminManager;
         this.enableTls = enableTLS;
         this.advertisedEndPoint = advertisedEndPoint;
@@ -95,7 +99,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
                 new KafkaRequestHandler(pulsarService, kafkaConfig,
-                        tenantContextManager, adminManager, localBrokerDataCache,
+                        tenantContextManager, kopBrokerLookupManager, adminManager, localBrokerDataCache,
                         enableTls, advertisedEndPoint, statsLogger));
     }
 
