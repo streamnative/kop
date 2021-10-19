@@ -73,7 +73,6 @@ public class SimpleAclAuthorizer implements Authorizer {
                     new IllegalArgumentException("Resource name must contains namespace."));
             return permissionFuture;
         }
-        String policiesPath = path(namespace.toString());
         String tenantName = namespace.getTenant();
         isSuperUserOrTenantAdmin(tenantName, principal.getName()).whenComplete((isSuperUserOrAdmin, exception) -> {
             if (exception != null) {
@@ -90,7 +89,7 @@ public class SimpleAclAuthorizer implements Authorizer {
             getPulsarService()
                     .getPulsarResources()
                     .getNamespaceResources()
-                    .getAsync(policiesPath)
+                    .getPoliciesAsync(namespace)
                     .thenAccept(policies -> {
                         if (!policies.isPresent()) {
                             if (log.isDebugEnabled()) {
@@ -177,7 +176,7 @@ public class SimpleAclAuthorizer implements Authorizer {
         getPulsarService()
                 .getPulsarResources()
                 .getTenantResources()
-                .getAsync(path(tenant))
+                .getTenantAsync(tenant)
                 .thenAccept(tenantInfo -> {
                     permissionFuture.complete(tenantInfo.isPresent());
                 }).exceptionally(ex -> {
@@ -234,7 +233,7 @@ public class SimpleAclAuthorizer implements Authorizer {
             if (ex != null || !isSuperUser) {
                 pulsarService.getPulsarResources()
                         .getTenantResources()
-                        .getAsync(path(tenant))
+                        .getTenantAsync(tenant)
                         .thenAccept(tenantInfo -> {
                             if (!tenantInfo.isPresent()) {
                                 future.complete(false);
