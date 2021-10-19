@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -67,19 +66,12 @@ public class KafkaTopicManager {
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    public static final ConcurrentHashMap<String, ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>>
-        LOOKUP_CACHE = new ConcurrentHashMap<>();
-
-    public static final ConcurrentHashMap<String, CompletableFuture<Optional<String>>>
-            KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
-
     KafkaTopicManager(KafkaRequestHandler kafkaRequestHandler) {
         this.requestHandler = kafkaRequestHandler;
         PulsarService pulsarService = kafkaRequestHandler.getPulsarService();
         this.brokerService = pulsarService.getBrokerService();
         this.internalServerCnx = new InternalServerCnx(requestHandler);
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
-
         initializeCursorExpireTask(brokerService.executor());
     }
 
@@ -159,16 +151,6 @@ public class KafkaTopicManager {
         );
     }
 
-    public static void removeTopicManagerCache(String topicName) {
-        LOOKUP_CACHE.remove(topicName);
-        KOP_ADDRESS_CACHE.remove(topicName);
-    }
-
-    public static void clearTopicManagerCache() {
-        LOOKUP_CACHE.clear();
-        KOP_ADDRESS_CACHE.clear();
-    }
-
     private Producer registerInPersistentTopic(PersistentTopic persistentTopic) {
         Producer producer = new InternalProducer(persistentTopic, internalServerCnx,
             lookupClient.getPulsarClient().newRequestId(),
@@ -182,49 +164,6 @@ public class KafkaTopicManager {
         // this will register and add USAGE_COUNT_UPDATER.
         persistentTopic.addProducer(producer, new CompletableFuture<>());
         return producer;
-    }
-
-    // call pulsarclient.lookup.getbroker to get and
-    // own a topic.
-    //    // when error happens, the returned future will complete with null.
-    public CompletableFuture<InetSocketAddress> getTopicBroker(String topicName, String listenerName) {
-        if (closed.get()) {
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Return null for getTopicBroker({}) since channel closing",
-                        requestHandler.ctx.channel(), topicName);
-            }
-            return CompletableFuture.completedFuture(null);
-        }
-
-        ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>> topicLookupCache =
-                LOOKUP_CACHE.computeIfAbsent(topicName, t-> {
-                    if (log.isDebugEnabled()) {
-                        log.debug("[{}] topic {} not in Lookup_cache, call lookupBroker",
-                                requestHandler.ctx.channel(), topicName);
-                    }
-                    ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>> cache = new ConcurrentHashMap<>();
-                    cache.put(listenerName == null ? "" : listenerName, lookupBroker(topicName, listenerName));
-                    return cache;
-                });
-
-        return topicLookupCache.computeIfAbsent(listenerName == null ? "" : listenerName, t-> {
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] topic {} not in Lookup_cache, call lookupBroker",
-                        requestHandler.ctx.channel(), topicName);
-            }
-            return lookupBroker(topicName, listenerName);
-        });
-    }
-
-    private CompletableFuture<InetSocketAddress> lookupBroker(final String topic, String listenerName) {
-        if (closed.get()) {
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Return null for getTopic({}) since channel closing",
-                        requestHandler.ctx.channel(), topic);
-            }
-            return CompletableFuture.completedFuture(null);
-        }
-        return lookupClient.getBrokerAddress(TopicName.get(topic), listenerName);
     }
 
     // A wrapper of `BrokerService#getTopic` that is to find the topic's associated `PersistentTopic` instance
@@ -241,7 +180,7 @@ public class KafkaTopicManager {
             TopicName topicNameObject = TopicName.get(topicName);
             if (throwable != null) {
                 // Failed to getTopic from current broker, remove cache, which added in getTopicBroker.
-                removeTopicManagerCache(topicName);
+                KopBrokerLookupManager.removeTopicManagerCache(topicName);
                 if (topicNameObject.getPartitionIndex() == 0) {
                     log.warn("Get partition-0 error [{}].", throwable.getMessage());
                 } else {
@@ -265,7 +204,7 @@ public class KafkaTopicManager {
                         handleGetTopicException(nonPartitionedTopicName, topicCompletableFuture, ex);
                         // Failed to getTopic from current broker, remove non-partitioned topic cache,
                         // which added in getTopicBroker.
-                        removeTopicManagerCache(nonPartitionedTopicName);
+                        KopBrokerLookupManager.removeTopicManagerCache(nonPartitionedTopicName);
                         return;
                     }
                     if (nonPartitionedTopic.isPresent()) {
@@ -274,14 +213,14 @@ public class KafkaTopicManager {
                     } else {
                         log.error("[{}]Get empty non-partitioned topic for name {}",
                                 requestHandler.ctx.channel(), nonPartitionedTopicName);
-                        removeTopicManagerCache(nonPartitionedTopicName);
+                        KopBrokerLookupManager.removeTopicManagerCache(nonPartitionedTopicName);
                         topicCompletableFuture.complete(Optional.empty());
                     }
                 });
                 return;
             }
             log.error("[{}]Get empty topic for name {}", requestHandler.ctx.channel(), topicName);
-            removeTopicManagerCache(topicName);
+            KopBrokerLookupManager.removeTopicManagerCache(topicName);
             topicCompletableFuture.complete(Optional.empty());
         });
         // cache for removing producer
@@ -360,7 +299,7 @@ public class KafkaTopicManager {
         final Producer producer = references.remove(topicName);
 
         if (topicFuture == null) {
-            removeTopicManagerCache(topicName);
+            KopBrokerLookupManager.removeTopicManagerCache(topicName);
             return;
         }
 
@@ -384,7 +323,7 @@ public class KafkaTopicManager {
 
     public static void deReference(String topicName) {
         try {
-            removeTopicManagerCache(topicName);
+            KopBrokerLookupManager.removeTopicManagerCache(topicName);
 
             TCM_CACHE.removeAndCloseByTopic(topicName);
             removePersistentTopicAndReferenceProducer(topicName);

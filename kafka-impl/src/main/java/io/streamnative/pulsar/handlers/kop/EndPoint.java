@@ -48,6 +48,8 @@ public class EndPoint {
     private final int port;
     @Getter
     private final boolean multiListener;
+    @Getter
+    private final boolean tlsEnabled;
 
     public EndPoint(final String listener, final Map<String, SecurityProtocol> protocolMap) {
         this.originalListener = listener;
@@ -65,6 +67,7 @@ public class EndPoint {
                 throw new IllegalStateException(this.listenerName + " is not set in kafkaProtocolMap");
             }
         }
+        this.tlsEnabled = (securityProtocol == SecurityProtocol.SSL) || (securityProtocol == SecurityProtocol.SASL_SSL);
 
         final String originalHostname = matcher.group(2);
         if (originalHostname.isEmpty()) {
