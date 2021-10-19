@@ -432,7 +432,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         }
 
         // Cleanup
-        kConsumer.close();
         admin.topics().deletePartitionedTopic(fullNewTopicName);
     }
 
