@@ -492,4 +492,8 @@ public class TransactionMetadata {
         topicPartitions.addAll(partitions);
     }
 
+    public Boolean pendingTransitionInProgress() {
+        return this.pendingState.isPresent();
+    }
+
 }

@@ -136,6 +136,7 @@ import org.apache.kafka.common.requests.DescribeGroupsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsResponse.GroupMember;
 import org.apache.kafka.common.requests.DescribeGroupsResponse.GroupMetadata;
 import org.apache.kafka.common.requests.EndTxnRequest;
+import org.apache.kafka.common.requests.EndTxnResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FindCoordinatorRequest;
 import org.apache.kafka.common.requests.FindCoordinatorResponse;
@@ -2315,7 +2316,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 request.producerId(),
                 request.producerEpoch(),
                 request.command(),
-                response);
+                errors -> response.complete(new EndTxnResponse(0, errors)));
     }
 
     @Override

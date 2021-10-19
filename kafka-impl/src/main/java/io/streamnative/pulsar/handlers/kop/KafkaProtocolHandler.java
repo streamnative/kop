@@ -48,6 +48,7 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedExecutor;
+import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.kafka.common.internals.Topic;
@@ -657,6 +658,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         TransactionConfig transactionConfig = TransactionConfig.builder()
                 .transactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions())
                 .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(tenant, kafkaConfig))
+                .abortTimedOutTransactionsIntervalMs(kafkaConfig.getTxnAbortTimedOutTransactionCleanupIntervalMs())
                 .brokerId(kafkaConfig.getBrokerId())
                 .build();
 
@@ -667,7 +669,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 txnTopicClient,
                 brokerService.getPulsar().getLocalMetadataStore(),
                 kopBrokerLookupManager,
-                OrderedExecutor.newBuilder().name("TransactionStateManagerExecutor").build());
+                OrderedScheduler.newSchedulerBuilder().name("transaction-log-manager").numThreads(1).build(),
+                Time.SYSTEM);
 
         transactionCoordinator.startup().get();
 
