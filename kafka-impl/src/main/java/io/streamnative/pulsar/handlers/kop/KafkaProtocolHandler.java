@@ -47,7 +47,6 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
@@ -83,8 +82,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private StatsLogger scopeStatsLogger;
     private PrometheusMetricsProvider statsProvider;
     @Getter
+    @VisibleForTesting
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
+    @Getter
+    @VisibleForTesting
     private SystemTopicClient txnTopicClient;
 
     @Getter

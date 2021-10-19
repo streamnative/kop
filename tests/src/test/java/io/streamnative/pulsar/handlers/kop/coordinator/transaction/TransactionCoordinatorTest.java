@@ -13,9 +13,173 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
-/**
- * TransactionCoordinator test.
- */
-public class TransactionCoordinatorTest {
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.testng.AssertJUnit.assertEquals;
 
+import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
+import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
+import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
+import org.apache.bookkeeper.common.util.OrderedScheduler;
+import org.apache.curator.shaded.com.google.common.collect.Lists;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.protocol.Errors;
+import org.apache.pulsar.broker.protocol.ProtocolHandler;
+import org.mockito.Mockito;
+import org.testng.annotations.AfterClass;
+import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Test;
+
+/**
+ * Unit test {@link TransactionCoordinator}.
+ */
+public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
+
+    protected final long DEFAULT_TIMEOUT = 20000;
+
+    private final AtomicLong nextPid = new AtomicLong(0L);
+    private TransactionCoordinator transactionCoordinator;
+    private final MockTime time = new MockTime();
+
+    private OrderedScheduler scheduler;
+    private ProducerIdManager producerIdManager;
+    private TransactionStateManager transactionManager;
+    private TransactionCoordinator.InitProducerIdResult result = null;
+    private final Set<TopicPartition> partitions = Sets.newHashSet(new TopicPartition("topic1", 0));
+
+    private final String transactionalId = "known";
+    private final long producerId = 10L;
+    private final short producerEpoch = 1;
+    private final int txnTimeoutMs = 1;
+    private final int coordinatorEpoch = 0;
+
+    private final Consumer<TransactionCoordinator.InitProducerIdResult> initProducerIdMockCallback = (ret) -> {
+        result = ret;
+    };
+
+    @BeforeClass
+    @Override
+    protected void setup() throws Exception {
+        super.internalSetup();
+
+        ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
+        KafkaProtocolHandler kafkaProtocolHandler = (KafkaProtocolHandler) handler;
+        SystemTopicClient txnTopicClient = kafkaProtocolHandler.getTxnTopicClient();
+
+        scheduler = OrderedScheduler.newSchedulerBuilder()
+                .name("test-txn-coordinator-scheduler")
+                .numThreads(1)
+                .build();
+
+        initMockPidManager();
+        initTransactionManager();
+
+        transactionCoordinator = new TransactionCoordinator(
+                TransactionConfig.builder().build(),
+                txnTopicClient,
+                kafkaProtocolHandler.getKopBrokerLookupManager(),
+                scheduler,
+                producerIdManager,
+                transactionManager,
+                time);
+    }
+
+    @AfterClass
+    @Override
+    protected void cleanup() throws Exception {
+        transactionCoordinator.shutdown();
+        super.internalCleanup();
+    }
+
+    private void initMockPidManager() {
+        this.producerIdManager = mock(ProducerIdManager.class);
+        Mockito.doAnswer(__ -> getNextPid()).when(producerIdManager).generateProducerId();
+    }
+
+    private void initTransactionManager() {
+        this.transactionManager = mock(TransactionStateManager.class);
+    }
+
+    private CompletableFuture<Long> getNextPid() {
+        CompletableFuture<Long> future = new CompletableFuture<>();
+        future.complete(nextPid.getAndIncrement());
+        return future;
+    }
+
+    @Test(timeOut = DEFAULT_TIMEOUT)
+    public void shouldReturnInvalidRequestWhenTransactionalIdIsEmpty() {
+        transactionCoordinator.handleInitProducerId(
+                "",
+                txnTimeoutMs,
+                Optional.empty(),
+                initProducerIdMockCallback);
+        assertEquals(
+                new TransactionCoordinator.InitProducerIdResult(-1L, (short) -1, Errors.INVALID_REQUEST),
+                result);
+        transactionCoordinator.handleInitProducerId(
+                "",
+                txnTimeoutMs,
+                Optional.empty(),
+                initProducerIdMockCallback);
+        assertEquals(
+                new TransactionCoordinator.InitProducerIdResult(-1L, (short) -1, Errors.INVALID_REQUEST),
+                result);
+    }
+
+    @Test(timeOut = DEFAULT_TIMEOUT)
+    public void shouldAcceptInitPidAndReturnNextPidWhenTransactionalIdIsNull() {
+        transactionCoordinator.handleInitProducerId(
+                null,
+                txnTimeoutMs,
+                Optional.empty(),
+                initProducerIdMockCallback);
+        assertEquals(
+                new TransactionCoordinator.InitProducerIdResult(0L, (short) 0, Errors.NONE),
+                result);
+        transactionCoordinator.handleInitProducerId(
+                null,
+                txnTimeoutMs,
+                Optional.empty(),
+                initProducerIdMockCallback);
+        assertEquals(
+                new TransactionCoordinator.InitProducerIdResult(1L, (short) 0, Errors.NONE),
+                result);
+    }
+
+    @Test(timeOut = DEFAULT_TIMEOUT)
+    public void shouldAbortExpiredTransactionsInOngoingStateAndBumpEpoch() {
+        long now = time.milliseconds();
+        TransactionMetadata txnMetadata = new TransactionMetadata(
+                transactionalId,
+                producerId,
+                -1L,
+                producerEpoch,
+                (short) -1,
+                txnTimeoutMs,
+                TransactionState.ONGOING,
+                partitions,
+                now,
+                now,
+                Optional.empty(),
+                false);
+
+        Mockito.doReturn(
+                Lists.newArrayList(new TransactionStateManager
+                        .TransactionalIdAndProducerIdEpoch(transactionalId, producerId, producerEpoch)))
+                .when(transactionManager)
+                .timedOutTransactions();
+
+        Mockito.doReturn(
+                new ErrorsAndData<>(new TransactionStateManager
+                        .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))
+        ).when(transactionManager)
+                .getTransactionState(eq(transactionalId));
+    }
 }

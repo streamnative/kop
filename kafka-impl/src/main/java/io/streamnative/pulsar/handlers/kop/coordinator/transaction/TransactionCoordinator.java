@@ -40,6 +40,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
@@ -80,15 +81,16 @@ public class TransactionCoordinator {
 
     private final ScheduledExecutorService scheduler;
 
-    private TransactionCoordinator(TransactionConfig transactionConfig,
-                                   SystemTopicClient txnTopicClient,
-                                   MetadataStoreExtended metadataStore,
-                                   KopBrokerLookupManager kopBrokerLookupManager,
-                                   ScheduledExecutorService scheduler,
-                                   Time time) {
+    protected TransactionCoordinator(TransactionConfig transactionConfig,
+                                     SystemTopicClient txnTopicClient,
+                                     KopBrokerLookupManager kopBrokerLookupManager,
+                                     ScheduledExecutorService scheduler,
+                                     ProducerIdManager producerIdManager,
+                                     TransactionStateManager txnManager,
+                                     Time time) {
         this.transactionConfig = transactionConfig;
-        this.txnManager = new TransactionStateManager(transactionConfig, txnTopicClient, scheduler, time);
-        this.producerIdManager = new ProducerIdManager(transactionConfig.getBrokerId(), metadataStore);
+        this.txnManager = txnManager;
+        this.producerIdManager = producerIdManager;
         this.transactionMarkerChannelManager =
                 new TransactionMarkerChannelManager(null, txnManager, kopBrokerLookupManager, false);
         this.scheduler = scheduler;
@@ -104,9 +106,10 @@ public class TransactionCoordinator {
         return new TransactionCoordinator(
                 transactionConfig,
                 txnTopicClient,
-                metadataStore,
                 kopBrokerLookupManager,
                 scheduler,
+                new ProducerIdManager(transactionConfig.getBrokerId(), metadataStore),
+                new TransactionStateManager(transactionConfig, txnTopicClient, scheduler, time),
                 time);
     }
 
@@ -167,28 +170,37 @@ public class TransactionCoordinator {
         return topicPartitionName + PARTITIONED_TOPIC_SUFFIX + partitionId;
     }
 
+    @Data
+    @EqualsAndHashCode
+    @AllArgsConstructor
+    public static class InitProducerIdResult {
+        private Long producerId;
+        private Short producerEpoch;
+        private Errors error;
+    }
+
     public void handleInitProducerId(String transactionalId,
                                      int transactionTimeoutMs,
                                      Optional<ProducerIdAndEpoch> expectedProducerIdAndEpoch,
-                                     CompletableFuture<AbstractResponse> response) {
+                                     Consumer<InitProducerIdResult> responseCallback) {
         if (transactionalId == null) {
             // if the transactional id is null, then always blindly accept the request
             // and return a new producerId from the producerId manager
             producerIdManager.generateProducerId().whenComplete((pid, throwable) -> {
                 short producerEpoch = 0;
                 if (throwable != null) {
-                    response.complete(new InitProducerIdResponse(0, Errors.UNKNOWN_SERVER_ERROR, pid, producerEpoch));
+                    responseCallback.accept(new InitProducerIdResult(pid, producerEpoch, Errors.UNKNOWN_SERVER_ERROR));
                     return;
                 }
-                response.complete(new InitProducerIdResponse(0, Errors.NONE, pid, producerEpoch));
+                responseCallback.accept(new InitProducerIdResult(pid, producerEpoch, Errors.NONE));
             });
         } else if (StringUtils.isEmpty(transactionalId)) {
             // if transactional id is empty then return error as invalid request. This is
             // to make TransactionCoordinator's behavior consistent with producer client
-            response.complete(new InitProducerIdResponse(0, Errors.INVALID_REQUEST));
+            responseCallback.accept(initTransactionError(Errors.INVALID_REQUEST));
         } else if (!txnManager.validateTransactionTimeoutMs(transactionTimeoutMs)){
             // check transactionTimeoutMs is not larger than the broker configured maximum allowed value
-            response.complete(new InitProducerIdResponse(0, Errors.INVALID_TRANSACTION_TIMEOUT));
+            responseCallback.accept(initTransactionError(Errors.INVALID_TRANSACTION_TIMEOUT));
         } else {
             ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> existMeta =
                     txnManager.getTransactionState(transactionalId);
@@ -199,8 +211,10 @@ public class TransactionCoordinator {
                 producerIdManager.generateProducerId().whenComplete((pid, throwable) -> {
                     short producerEpoch = 0;
                     if (throwable != null) {
-                        response.complete(new InitProducerIdResponse(
-                                0, Errors.UNKNOWN_SERVER_ERROR, -1, producerEpoch));
+                        responseCallback.accept(new InitProducerIdResult(
+                                -1L,
+                                producerEpoch
+                                , Errors.UNKNOWN_SERVER_ERROR));
                         return;
                     }
                     TransactionMetadata newMetadata = TransactionMetadata.builder()
@@ -231,7 +245,7 @@ public class TransactionCoordinator {
 
                     prepareInitProducerIdResult.whenComplete((errorsAndData, prepareThrowable) -> {
                         completeInitProducer(
-                                transactionalId, coordinatorEpoch, errorsAndData, prepareThrowable, response);
+                                transactionalId, coordinatorEpoch, errorsAndData, prepareThrowable, responseCallback);
                     });
                     return null;
                 });
@@ -244,14 +258,14 @@ public class TransactionCoordinator {
                                       int coordinatorEpoch,
                                       ErrorsAndData<EpochAndTxnTransitMetadata> errorsAndData,
                                       Throwable prepareInitPidThrowable,
-                                      CompletableFuture<AbstractResponse> response) {
+                                      Consumer<InitProducerIdResult> responseCallback) {
         if (errorsAndData.hasErrors()) {
-            initTransactionError(response, errorsAndData.getErrors());
+            responseCallback.accept(initTransactionError(errorsAndData.getErrors()));
             return;
         }
         if (prepareInitPidThrowable != null) {
             log.error("Failed to init producerId.", prepareInitPidThrowable);
-            initTransactionError(response, Errors.forException(prepareInitPidThrowable));
+            responseCallback.accept(initTransactionError(Errors.forException(prepareInitPidThrowable)));
             return;
         }
         TxnTransitMetadata newMetadata = errorsAndData.getData().txnTransitMetadata;
@@ -263,9 +277,9 @@ public class TransactionCoordinator {
                     false,
                     errors -> {
                         if (errors != Errors.NONE) {
-                            initTransactionError(response, errors);
+                            responseCallback.accept(initTransactionError(errors));
                         } else {
-                            initTransactionError(response, Errors.CONCURRENT_TRANSACTIONS);
+                            responseCallback.accept(initTransactionError(Errors.CONCURRENT_TRANSACTIONS));
                         }
                     });
         } else {
@@ -278,24 +292,24 @@ public class TransactionCoordinator {
                                     newMetadata.getProducerId(), newMetadata.getProducerEpoch(),
                                     Topic.TRANSACTION_STATE_TOPIC_NAME,
                                     txnManager.partitionFor(transactionalId));
-                            response.complete(new InitProducerIdResponse(
-                                    0, Errors.NONE, newMetadata.getProducerId(),
-                                    newMetadata.getProducerEpoch()));
+                            responseCallback.accept(new InitProducerIdResult(
+                                    newMetadata.getProducerId(),
+                                    newMetadata.getProducerEpoch(),
+                                    Errors.NONE));
                         }
 
                         @Override
                         public void fail(Errors errors) {
                             log.info("Returning {} error code to client for {}'s InitProducerId "
                                     + "request", errors, transactionalId);
-                            initTransactionError(response, errors);
+                            responseCallback.accept(initTransactionError(errors));
                         }
                     }, errors -> true);
         }
     }
 
-    private void initTransactionError(CompletableFuture<AbstractResponse> response, Errors errors) {
-        response.complete(
-                new InitProducerIdResponse(0, errors, RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH));
+    private InitProducerIdResult initTransactionError(Errors error) {
+        return new InitProducerIdResult(RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH, error);
     }
 
     @AllArgsConstructor
@@ -328,7 +342,7 @@ public class TransactionCoordinator {
                                             Optional<ProducerIdAndEpoch> expectedProducerIdAndEpoch) {
 
         CompletableFuture<ErrorsAndData<EpochAndTxnTransitMetadata>> resultFuture = new CompletableFuture<>();
-        if (txnMetadata.getPendingState().isPresent()) {
+        if (txnMetadata.pendingTransitionInProgress()) {
             // return a retriable exception to let the client backoff and retry
             resultFuture.complete(new ErrorsAndData<>(Errors.CONCURRENT_TRANSACTIONS));
             return resultFuture;

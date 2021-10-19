@@ -38,6 +38,7 @@ import org.apache.kafka.common.record.RecordBatch;
 @Slf4j
 @Builder
 @Data
+@AllArgsConstructor
 public class TransactionMetadata {
 
     private static final int DefaultTxnTimeOutMs = 1000 * 60;
