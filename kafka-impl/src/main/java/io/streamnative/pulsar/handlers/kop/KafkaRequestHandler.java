@@ -2595,27 +2595,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (log.isDebugEnabled()) {
             log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }
-        CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
-
-        kopBrokerLookupManager.findBroker(topic, advertisedEndPoint)
-                        .thenAccept(listenerInetSocketAddressOpt -> {
-                            if (!listenerInetSocketAddressOpt.isPresent()) {
-                                log.error("Not get advertise data for Kafka topic:{}.", topic);
-                                KopBrokerLookupManager.removeTopicManagerCache(topic.toString());
-                                returnFuture.complete(null);
-                                return;
-                            }
-                            final Node node = newNode(listenerInetSocketAddressOpt.get());
-
-                            returnFuture.complete(newPartitionMetadata(topic, node));
-                        }).exceptionally(throwable -> {
-                            log.error("Not get advertise data for Kafka topic:{}. throwable: [{}]",
-                                    topic, throwable.getMessage());
-                            KopBrokerLookupManager.removeTopicManagerCache(topic.toString());
-                            returnFuture.complete(null);
-                            return null;
-                        });
-        return returnFuture;
+        return kopBrokerLookupManager.findBroker(topic, advertisedEndPoint)
+                .thenApply(listenerInetSocketAddressOpt -> listenerInetSocketAddressOpt
+                        .map(inetSocketAddress -> newPartitionMetadata(topic, newNode(inetSocketAddress)))
+                        .orElse(null)
+                );
     }
 
     static Node newNode(InetSocketAddress address) {

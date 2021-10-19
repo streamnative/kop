@@ -67,19 +67,7 @@ public class EndPoint {
                 throw new IllegalStateException(this.listenerName + " is not set in kafkaProtocolMap");
             }
         }
-        switch (securityProtocol) {
-            case PLAINTEXT:
-            case SASL_PLAINTEXT:
-                this.tlsEnabled = false;
-                break;
-            case SSL:
-            case SASL_SSL:
-                this.tlsEnabled = true;
-                break;
-            default:
-                this.tlsEnabled = false;
-                break;
-        }
+        this.tlsEnabled = (securityProtocol == SecurityProtocol.SSL) || (securityProtocol == SecurityProtocol.SASL_SSL);
 
         final String originalHostname = matcher.group(2);
         if (originalHostname.isEmpty()) {
