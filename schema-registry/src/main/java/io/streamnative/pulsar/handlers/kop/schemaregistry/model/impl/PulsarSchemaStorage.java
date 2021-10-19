@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -116,7 +117,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                 reader = pulsarClient.newReader(avroSchema)
                         .topic(topic)
                         .startMessageId(MessageId.earliest)
-                        .subscriptionRolePrefix("kafak-schema-registry-")
+                        .subscriptionRolePrefix("kafka-schema-registry")
                         .create();
             }
             return reader;
