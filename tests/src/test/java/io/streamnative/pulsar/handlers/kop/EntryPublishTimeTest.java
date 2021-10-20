@@ -24,7 +24,6 @@ import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
-import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.AfterMethod;
@@ -58,7 +57,7 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
         adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         kafkaRequestHandler = new KafkaRequestHandler(
                 pulsar,
-                (KafkaServiceConfiguration) conf,
+                conf,
                 new TenantContextManager() {
                     @Override
                     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -70,8 +69,8 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
                         return transactionCoordinator;
                     }
                 },
+                ((KafkaProtocolHandler) handler).getKopBrokerLookupManager(),
                 adminManager,
-                pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
                 false,
                 getPlainEndPoint(),
                 NullStatsLogger.INSTANCE);

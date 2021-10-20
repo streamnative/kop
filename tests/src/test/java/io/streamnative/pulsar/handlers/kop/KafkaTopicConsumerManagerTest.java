@@ -61,7 +61,6 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.policies.data.TopicStats;
-import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
@@ -89,8 +88,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
 
         adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         kafkaRequestHandler = new KafkaRequestHandler(
-            pulsar,
-            (KafkaServiceConfiguration) conf,
+                pulsar,
+                conf,
                 new TenantContextManager() {
                     @Override
                     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -102,11 +101,11 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
                         return transactionCoordinator;
                     }
                 },
-            adminManager,
-            pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
-            false,
-            getPlainEndPoint(),
-            NullStatsLogger.INSTANCE);
+                ((KafkaProtocolHandler) handler).getKopBrokerLookupManager(),
+                adminManager,
+                false,
+                getPlainEndPoint(),
+                NullStatsLogger.INSTANCE);
 
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);

@@ -103,7 +103,6 @@ import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
-import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -155,8 +154,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         handler = new KafkaRequestHandler(
-            pulsar,
-            (KafkaServiceConfiguration) conf,
+                pulsar,
+                conf,
                 new TenantContextManager() {
                     @Override
                     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -168,11 +167,11 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                         return transactionCoordinator;
                     }
                 },
-            adminManager,
-            pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
-            false,
-            getPlainEndPoint(),
-            NullStatsLogger.INSTANCE);
+                ((KafkaProtocolHandler) handler1).getKopBrokerLookupManager(),
+                adminManager,
+                false,
+                getPlainEndPoint(),
+                NullStatsLogger.INSTANCE);
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
