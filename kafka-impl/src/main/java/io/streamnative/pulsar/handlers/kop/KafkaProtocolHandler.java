@@ -451,7 +451,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         try {
             kopBrokerLookupManager = new KopBrokerLookupManager(
                     brokerService.getPulsar(), kafkaConfig.getKafkaAdvertisedListeners(),
-                    kafkaConfig.getBrokerLookupTimeoutSeconds());
+                    kafkaConfig.getBrokerLookupTimeoutMs());
         } catch (Exception ex) {
             log.error("Failed to get kopBrokerLookupManager", ex);
             throw new IllegalStateException(ex);

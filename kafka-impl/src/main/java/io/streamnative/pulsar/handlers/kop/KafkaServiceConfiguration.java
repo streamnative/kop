@@ -233,9 +233,9 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "The timeout for broker lookups (in seconds)"
+            doc = "The timeout for broker lookups (in milliseconds)"
     )
-    private int brokerLookupTimeoutSeconds = 30;
+    private int brokerLookupTimeoutMs = 30_000;
 
     // Kafka SSL configs
     @FieldContext(

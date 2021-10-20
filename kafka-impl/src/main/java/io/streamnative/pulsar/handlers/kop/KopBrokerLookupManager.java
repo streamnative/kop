@@ -50,11 +50,11 @@ public class KopBrokerLookupManager {
             KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
 
     public KopBrokerLookupManager(
-            PulsarService pulsarService, String advertisedListeners, int brokerLookupTimeoutSeconds) throws Exception {
+            PulsarService pulsarService, String advertisedListeners, int brokerLookupTimeoutMs) throws Exception {
         this.advertisedListeners = advertisedListeners;
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
         this.metadataStoreCacheLoader = new MetadataStoreCacheLoader(pulsarService.getPulsarResources(),
-                brokerLookupTimeoutSeconds);
+                brokerLookupTimeoutMs);
     }
 
     public CompletableFuture<Optional<InetSocketAddress>> findBroker(@NonNull TopicName topic,
