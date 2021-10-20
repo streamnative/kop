@@ -36,8 +36,6 @@ import org.apache.pulsar.common.policies.data.TenantInfo;
 @Slf4j
 public class SimpleAclAuthorizer implements Authorizer {
 
-    private static final String POLICY_ROOT = "/admin/policies/";
-
     private final PulsarService pulsarService;
 
     private final ServiceConfiguration conf;
@@ -251,12 +249,6 @@ public class SimpleAclAuthorizer implements Authorizer {
         return future;
     }
 
-    private static String path(String... parts) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(POLICY_ROOT);
-        Joiner.on('/').appendTo(sb, parts);
-        return sb.toString();
-    }
 
     @Override
     public CompletableFuture<Boolean> canAccessTenantAsync(KafkaPrincipal principal, Resource resource) {
