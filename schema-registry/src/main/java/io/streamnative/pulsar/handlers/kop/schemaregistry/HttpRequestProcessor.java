@@ -76,10 +76,7 @@ public abstract class HttpRequestProcessor {
         }
     }
 
-<<<<<<< HEAD
-    protected FullHttpResponse buildJsonErrorResponse(SchemaStorageException err) {
-        HttpResponseStatus error = HttpResponseStatus.valueOf(err.getHttpStatusCode());
-=======
+
     public static FullHttpResponse buildJsonErrorResponse(Throwable err) {
         while (err instanceof CompletionException) {
             err = err.getCause();
@@ -88,11 +85,9 @@ public abstract class HttpRequestProcessor {
                 ? ((SchemaStorageException) err).getHttpStatusCode()
                 : INTERNAL_SERVER_ERROR.code();
         HttpResponseStatus error = HttpResponseStatus.valueOf(httpStatusCode);
->>>>>>> cfc3733 (Make SchemaRegistry fully async)
-
         FullHttpResponse httpResponse = null;
         try {
-            String body = MAPPER.writeValueAsString(new ErrorModel(err.getHttpStatusCode(), err.getMessage()));
+            String body = MAPPER.writeValueAsString(new ErrorModel(httpStatusCode, err.getMessage()));
             httpResponse = new DefaultFullHttpResponse(HTTP_1_1,  error,
                     Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
             httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/vnd.schemaregistry.v1+json");
