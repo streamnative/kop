@@ -13,8 +13,13 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.testng.AssertJUnit.assertEquals;
 
 import com.google.common.collect.Sets;
@@ -22,17 +27,23 @@ import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.curator.shaded.com.google.common.collect.Lists;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.record.RecordBatch;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
+import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -43,6 +54,7 @@ import org.testng.annotations.Test;
 public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     protected final long DEFAULT_TIMEOUT = 20000;
+    public static final long DefaultAbortTimedOutTransactionsIntervalMs = TimeUnit.SECONDS.toMillis(1);
 
     private final AtomicLong nextPid = new AtomicLong(0L);
     private TransactionCoordinator transactionCoordinator;
@@ -82,7 +94,9 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         initTransactionManager();
 
         transactionCoordinator = new TransactionCoordinator(
-                TransactionConfig.builder().build(),
+                TransactionConfig.builder()
+                        .abortTimedOutTransactionsIntervalMs(DefaultAbortTimedOutTransactionsIntervalMs)
+                        .build(),
                 txnTopicClient,
                 kafkaProtocolHandler.getKopBrokerLookupManager(),
                 scheduler,
@@ -100,7 +114,8 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     private void initMockPidManager() {
         this.producerIdManager = mock(ProducerIdManager.class);
-        Mockito.doAnswer(__ -> getNextPid()).when(producerIdManager).generateProducerId();
+        doAnswer(__ -> getNextPid()).when(producerIdManager).generateProducerId();
+        doReturn(CompletableFuture.completedFuture(null)).when(producerIdManager).initialize();
     }
 
     private void initTransactionManager() {
@@ -159,9 +174,9 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         TransactionMetadata txnMetadata = new TransactionMetadata(
                 transactionalId,
                 producerId,
-                -1L,
+                producerId,
                 producerEpoch,
-                (short) -1,
+                RecordBatch.NO_PRODUCER_EPOCH,
                 txnTimeoutMs,
                 TransactionState.ONGOING,
                 partitions,
@@ -170,16 +185,39 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 Optional.empty(),
                 false);
 
-        Mockito.doReturn(
-                Lists.newArrayList(new TransactionStateManager
+        doReturn(Lists.newArrayList(
+                new TransactionStateManager
                         .TransactionalIdAndProducerIdEpoch(transactionalId, producerId, producerEpoch)))
-                .when(transactionManager)
-                .timedOutTransactions();
+                .when(transactionManager).timedOutTransactions();
 
-        Mockito.doReturn(
-                new ErrorsAndData<>(new TransactionStateManager
-                        .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))
-        ).when(transactionManager)
-                .getTransactionState(eq(transactionalId));
+
+        Mockito.when(transactionManager.getTransactionState(eq(transactionalId)))
+                .thenReturn(new ErrorsAndData<>(Optional.of(new TransactionStateManager
+                        .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))));
+
+        time.sleep(DefaultAbortTimedOutTransactionsIntervalMs + 1000);
+        transactionCoordinator.abortTimedOutTransactions();
+        verify(transactionManager, times(1)).timedOutTransactions();
+//        verify(transactionManager, times(2)).getTransactionState(eq(transactionalId));
+        short bumpedEpoch = producerEpoch + 1;
+        TransactionMetadata.TxnTransitMetadata expectedTransition =
+                new TransactionMetadata.TxnTransitMetadata(
+                        producerId,
+                        -1,
+                        bumpedEpoch,
+                        (short) -1,
+                        txnTimeoutMs,
+                        TransactionState.PREPARE_ABORT,
+                        partitions,
+                        now,
+                        now + DefaultAbortTimedOutTransactionsIntervalMs);
+
+        Mockito.verify(transactionManager).appendTransactionToLog(
+                eq(transactionalId),
+                eq(coordinatorEpoch),
+                eq(expectedTransition),
+                any(),
+                any()
+        );
     }
 }

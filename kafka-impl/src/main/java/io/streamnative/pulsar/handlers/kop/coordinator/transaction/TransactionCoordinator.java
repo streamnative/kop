@@ -113,10 +113,6 @@ public class TransactionCoordinator {
                 time);
     }
 
-    interface EndTxnCallback {
-        void complete(Errors errors);
-    }
-
     /**
      * Load state from the given partition and begin handling requests for groups which map to this partition.
      *
@@ -495,8 +491,14 @@ public class TransactionCoordinator {
         return data;
     }
 
+    private static class EpochFenceErrors extends Throwable {
+
+        public EpochFenceErrors(String message) {
+            super(message);
+        }
+    }
     private Errors producerEpochFenceErrors() {
-        return Errors.forException(new Throwable("There is a newer producer with the same transactionalId "
+        return Errors.forException(new EpochFenceErrors("There is a newer producer with the same transactionalId "
                 + "which fences the current one."));
     }
 
@@ -521,10 +523,10 @@ public class TransactionCoordinator {
                                 Short producerEpoch,
                                 TransactionResult txnMarkerResult,
                                 Boolean isFromClient,
-                                EndTxnCallback callback) {
+                                Consumer<Errors> callback) {
         AtomicBoolean isEpochFence = new AtomicBoolean(false);
         if (transactionalId == null || transactionalId.isEmpty()) {
-            callback.complete(Errors.INVALID_REQUEST);
+            callback.accept(Errors.INVALID_REQUEST);
             return;
         }
 
@@ -532,7 +534,7 @@ public class TransactionCoordinator {
                 txnManager.getTransactionState(transactionalId).getData();
 
         if (!epochAndMetadata.isPresent()) {
-            callback.complete(Errors.INVALID_PRODUCER_ID_MAPPING);
+            callback.accept(Errors.INVALID_PRODUCER_ID_MAPPING);
             return;
         }
 
@@ -543,7 +545,7 @@ public class TransactionCoordinator {
         if (preAppendResult.hasErrors()) {
             log.error("Aborting append of {} to transaction log with coordinator and returning {} error to client "
                     + "for {}'s EndTransaction request", txnMarkerResult, preAppendResult.getErrors(), transactionalId);
-            callback.complete(preAppendResult.getErrors());
+            callback.accept(preAppendResult.getErrors());
             return;
         }
 
@@ -581,7 +583,7 @@ public class TransactionCoordinator {
                         }
 
 
-                        callback.complete(errors);
+                        callback.accept(errors);
                     }
                 }, retryErrors -> true);
     }
@@ -704,7 +706,7 @@ public class TransactionCoordinator {
                                 long producerId,
                                 int producerEpoch,
                                 TransactionResult txnMarkerResult,
-                                EndTxnCallback callback) {
+                                Consumer<Errors> callback) {
 
         ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> errorsAndData =
                 txnManager.getTransactionState(transactionalId);
@@ -787,11 +789,11 @@ public class TransactionCoordinator {
             log.info("Aborting sending of transaction markers after appended {} to transaction log "
                             + "and returning {} error to client for $transactionalId's EndTransaction request",
                     txnMarkerResult, preSendResult.getErrors());
-            callback.complete(preSendResult.getErrors());
+            callback.accept(preSendResult.getErrors());
             return;
         }
 
-        callback.complete(Errors.NONE);
+        callback.accept(Errors.NONE);
         transactionMarkerChannelManager.addTxnMarkersToSend(
                 coordinatorEpoch, txnMarkerResult, epochAndTxnMetadata.getTransactionMetadata(),
                 preSendResult.getData().getTxnTransitMetadata());
@@ -852,7 +854,7 @@ public class TransactionCoordinator {
         return map.firstKey();
     }
 
-    private void abortTimedOutTransactions() {
+    protected void abortTimedOutTransactions() {
         for (TransactionStateManager.TransactionalIdAndProducerIdEpoch txnIdAndPidEpoch :
                 txnManager.timedOutTransactions()) {
             txnManager.getTransactionState(txnIdAndPidEpoch.getTransactionalId()).getData()
@@ -874,30 +876,32 @@ public class TransactionCoordinator {
                         });
                         if (!transitMetadata.hasErrors()) {
                             TxnTransitMetadata txnTransitMetadata = transitMetadata.getData();
-                            handleEndTransaction(
+                            endTransaction(
                                     txnMetadata.getTransactionalId(),
                                     txnTransitMetadata.getProducerId(),
                                     txnTransitMetadata.getProducerEpoch(),
-                                    TransactionResult.ABORT, errors -> {
+                                    TransactionResult.ABORT,
+                                    false,
+                                    errors -> {
                                         switch (errors) {
                                             case NONE:
-                                                log.info("Completed rollback ongoing transaction of transactionalId: {}"
-                                                        + " due to timeout", txnIdAndPidEpoch.getTransactionalId());
+                                                log.info("Completed rollback of ongoing transaction for transactionalId " +
+                                                        "{} due to timeout", txnIdAndPidEpoch.getTransactionalId());
                                                 break;
                                             case INVALID_PRODUCER_ID_MAPPING:
-                                            case INVALID_PRODUCER_EPOCH:
+                                            // case PRODUCER_FENCED:
                                             case CONCURRENT_TRANSACTIONS:
                                                 if (log.isDebugEnabled()) {
-                                                    log.debug("Rolling back ongoing transaction of transactionalId: {}"
-                                                            + " has aborted due to {}",
-                                                            txnIdAndPidEpoch.getProducerEpoch(),
-                                                            errors.exceptionName());
+                                                    log.debug("Rollback of ongoing transaction for transactionalId {} " +
+                                                            "has been cancelled due to error {}",
+                                                            txnIdAndPidEpoch.getTransactionalId(), errors);
                                                 }
                                                 break;
                                             default:
-                                                log.warn("Rolling back ongoing transaction of transactionalId: {} "
-                                                        + "failed due to {}", txnIdAndPidEpoch.getTransactionalId(),
-                                                        errors.exceptionName());
+                                                log.warn("Rollback of ongoing transaction for transactionalId {} " +
+                                                        "failed due to error {}",
+                                                        txnIdAndPidEpoch.getTransactionalId(), errors);
+                                                break;
                                         }
                                     });
                         }
