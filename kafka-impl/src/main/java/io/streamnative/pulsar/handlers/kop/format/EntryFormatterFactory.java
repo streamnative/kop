@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+
 /**
  * Factory of EntryFormatter.
  *
@@ -22,17 +24,21 @@ public class EntryFormatterFactory {
 
     enum EntryFormat {
         PULSAR,
-        KAFKA
+        KAFKA,
+        MIXED_KAFKA
     }
 
-    public static EntryFormatter create(final String format) {
+    public static EntryFormatter create(final KafkaServiceConfiguration kafkaConfig) {
+        final String format = kafkaConfig.getEntryFormat();
         try {
             EntryFormat entryFormat = Enum.valueOf(EntryFormat.class, format.toUpperCase());
             switch (entryFormat) {
                 case PULSAR:
                     return new PulsarEntryFormatter();
                 case KAFKA:
-                    return new KafkaEntryFormatter();
+                    return new KafkaV1EntryFormatter();
+                case MIXED_KAFKA:
+                    return new KafkaMixedEntryFormatter(kafkaConfig.getKafkaCompressionType());
                 default:
                     throw new Exception("No EntryFormatter for " + entryFormat);
             }

@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
-import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.List;
 import org.apache.bookkeeper.mledger.Entry;
@@ -25,9 +24,11 @@ import org.apache.kafka.common.record.MemoryRecords;
 public class NoHeaderKafkaEntryFormatter implements EntryFormatter {
 
     @Override
-    public ByteBuf encode(MemoryRecords records, int numMessages) {
+    public EncodeResult encode(final EncodeRequest encodeRequest) {
+        final MemoryRecords records = encodeRequest.getRecords();
+        final int numMessages = EntryFormatter.parseNumMessages(records);
         // The difference from KafkaEntryFormatter is here we don't add the header
-        return Unpooled.wrappedBuffer(records.buffer());
+        return EncodeResult.get(records, Unpooled.wrappedBuffer(records.buffer()), numMessages);
     }
 
     @Override

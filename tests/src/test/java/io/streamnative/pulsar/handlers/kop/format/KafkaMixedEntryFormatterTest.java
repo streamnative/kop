@@ -16,16 +16,17 @@ package io.streamnative.pulsar.handlers.kop.format;
 import org.testng.annotations.Test;
 
 /**
- * Test for entryFormat=pulsar.
+ * Test for entryFormat=mixed_kafka.
  */
-public class PulsarEntryFormatterTest extends EntryFormatterTestBase {
+public class KafkaMixedEntryFormatterTest extends EntryFormatterTestBase {
 
-    public PulsarEntryFormatterTest() {
-        super("pulsar");
+    public KafkaMixedEntryFormatterTest() {
+        super("mixed_kafka");
     }
 
     @Test(timeOut = 20000)
-    public void testChangePulsarEntryFormat() throws Exception {
-        super.testChangePulsarEntryFormat();
+    public void testChangeKafkaEntryFormat() throws Exception {
+        super.testChangeKafkaEntryFormat();
     }
+
 }

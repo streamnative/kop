@@ -41,8 +41,11 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.Group
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.AbortedIndexEntry;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
+import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
+import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -90,6 +93,7 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
+import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
@@ -321,7 +325,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
-        this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
+        this.entryFormatter = EntryFormatterFactory.create(kafkaConfig);
         this.currentConnectedGroup = new ConcurrentHashMap<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
@@ -914,19 +918,22 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private void publishMessages(final Optional<PersistentTopic> persistentTopicOpt,
-                                 final ByteBuf byteBuf,
-                                 final int numMessages,
-                                 final MemoryRecords records,
+                                 final EncodeResult encodeResult,
                                  final TopicPartition topicPartition,
                                  final Consumer<Long> offsetConsumer,
                                  final Consumer<Errors> errorsConsumer) {
+        final MemoryRecords records = encodeResult.getRecords();
+        final int numMessages = encodeResult.getNumMessages();
+        final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
         if (!persistentTopicOpt.isPresent()) {
+            encodeResult.recycle();
             // It will trigger a retry send of Kafka client
             errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
             return;
         }
         PersistentTopic persistentTopic = persistentTopicOpt.get();
         if (persistentTopic.isSystemTopic()) {
+            encodeResult.recycle();
             log.error("Not support producing message to system topic: {}", persistentTopic);
             errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
             return;
@@ -948,7 +955,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final RecordBatch batch = records.batchIterator().next();
         offsetFuture.whenComplete((offset, e) -> {
             completeSendOperationForThrottling(byteBuf.readableBytes());
-            byteBuf.release();
+            encodeResult.recycle();
             if (e == null) {
                 if (batch.isTransactional()) {
                     getTransactionCoordinator().addActivePidOffset(TopicName.get(partitionName), batch.producerId(),
@@ -1071,17 +1078,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             final long beforeRecordsProcess = MathUtils.nowInNano();
             final MemoryRecords validRecords =
                     validateRecords(produceHar.getHeader().apiVersion(), topicPartition, records);
-            final int numMessages = EntryFormatter.parseNumMessages(validRecords);
-            final ByteBuf byteBuf = entryFormatter.encode(validRecords, numMessages);
-            requestStats.getProduceEncodeStats().registerSuccessfulEvent(
-                    MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
-            startSendOperationForThrottling(byteBuf.readableBytes());
-
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Request {}: Produce messages for topic {} partition {}, "
-                                + "request size: {} ", ctx.channel(), produceHar.getHeader(),
-                        topicPartition.topic(), topicPartition.partition(), numPartitions);
-            }
 
             final CompletableFuture<Optional<PersistentTopic>> topicFuture =
                     topicManager.getTopic(fullPartitionName);
@@ -1098,8 +1094,31 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
 
             final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
-                publishMessages(persistentTopicOpt, byteBuf, numMessages, validRecords, topicPartition,
-                        offsetConsumer, errorsConsumer);
+                if (!persistentTopicOpt.isPresent()) {
+                    errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
+                    return;
+                }
+
+                final EncodeRequest encodeRequest = EncodeRequest.get(validRecords);
+                if (entryFormatter instanceof KafkaMixedEntryFormatter) {
+                    final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
+                    final long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
+                    encodeRequest.setBaseOffset(logEndOffset);
+                }
+
+                final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
+                encodeRequest.recycle();
+                requestStats.getProduceEncodeStats().registerSuccessfulEvent(
+                        MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
+                startSendOperationForThrottling(encodeResult.getEncodedByteBuf().readableBytes());
+
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Request {}: Produce messages for topic {} partition {}, "
+                                    + "request size: {} ", ctx.channel(), produceHar.getHeader(),
+                            topicPartition.topic(), topicPartition.partition(), numPartitions);
+                }
+
+                publishMessages(persistentTopicOpt, encodeResult, topicPartition, offsetConsumer, errorsConsumer);
             };
 
             if (topicFuture.isDone()) {

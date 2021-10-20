@@ -337,7 +337,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "The format of an entry. Default: pulsar. Optional: [pulsar, kafka]"
+            doc = "The format of an entry. Default: pulsar. Optional: [pulsar, kafka, mixed_kafka]"
     )
     private String entryFormat = "pulsar";
 
@@ -387,6 +387,14 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
                     + "If it's not set or empty, the allowed namespaces will be \"<kafkaTenant>/<kafkaNamespace>\"."
     )
     private Set<String> kopAllowedNamespaces;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "KOP server compression type. Only used for entryFormat=mixed_kafka. If it's not set to none, "
+                    + "the client messages will be used compression type which configured in here.\n"
+                    + "The supported compression types are: [\"none\", \"gzip\", \"snappy\", \"lz4\"]"
+    )
+    private String kafkaCompressionType = "none";
 
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();
