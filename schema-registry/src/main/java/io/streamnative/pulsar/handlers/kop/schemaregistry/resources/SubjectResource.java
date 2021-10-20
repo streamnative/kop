@@ -22,6 +22,7 @@ import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorageAccessor;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.Getter;
@@ -52,10 +53,10 @@ public class SubjectResource extends AbstractResource {
         }
 
         @Override
-        protected List<String> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<List<String>> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
                 throws Exception {
             SchemaStorage schemaStorage = getSchemaStorage(request);
-            List<String> subjects = schemaStorage.getAllSubjects();
+            CompletableFuture<List<String>> subjects = schemaStorage.getAllSubjects();
             return subjects;
         }
 
@@ -69,15 +70,17 @@ public class SubjectResource extends AbstractResource {
         }
 
         @Override
-        protected List<Integer> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<List<Integer>> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
                 throws Exception {
             SchemaStorage schemaStorage = getSchemaStorage(request);
             String subject = getString(0, patternGroups);
-            List<Integer> versions = schemaStorage.getAllVersionsForSubject(subject);
-            if (versions.isEmpty()) {
-                return null;
-            }
-            return versions;
+            CompletableFuture<List<Integer>> versions = schemaStorage.getAllVersionsForSubject(subject);
+            return versions.thenApply(v -> {
+                if (v.isEmpty()) {
+                    return null;
+                }
+                return v;
+            });
         }
 
     }
@@ -90,16 +93,18 @@ public class SubjectResource extends AbstractResource {
         }
 
         @Override
-        protected List<Integer> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<List<Integer>> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
                 throws Exception {
             SchemaStorage schemaStorage = getSchemaStorage(request);
             String subject = getString(0, patternGroups);
 
-            List<Integer> versions = schemaStorage.deleteSubject(subject);
-            if (versions.isEmpty()) {
-                return null;
-            }
-            return versions;
+            CompletableFuture<List<Integer>> versions = schemaStorage.deleteSubject(subject);
+            return versions.thenApply(v -> {
+                if (v.isEmpty()) {
+                    return null;
+                }
+                return v;
+            });
         }
 
     }
@@ -121,19 +126,21 @@ public class SubjectResource extends AbstractResource {
         }
 
         @Override
-        protected GetSchemaBySubjectAndVersionResponse processRequest(Void payload,
+        protected CompletableFuture<GetSchemaBySubjectAndVersionResponse> processRequest(Void payload,
                                                                       List<String> patternGroups,
                                                                       FullHttpRequest request)
                 throws Exception {
             String subject = getString(0, patternGroups);
             int version = getInt(1, patternGroups);
             SchemaStorage schemaStorage = getSchemaStorage(request);
-            Schema schema = schemaStorage.findSchemaBySubjectAndVersion(subject, version);
-            if (schema == null) {
-                return null;
-            }
-            return new GetSchemaBySubjectAndVersionResponse(schema.getSubject(),
-                    schema.getVersion(), schema.getSchemaDefinition());
+            CompletableFuture<Schema> schema = schemaStorage.findSchemaBySubjectAndVersion(subject, version);
+            return schema.thenApply(s -> {
+                if (s == null) {
+                    return null;
+                }
+                return new GetSchemaBySubjectAndVersionResponse(s.getSubject(),
+                        s.getVersion(), s.getSchemaDefinition());
+            });
         }
 
     }
@@ -146,16 +153,18 @@ public class SubjectResource extends AbstractResource {
         }
 
         @Override
-        protected String processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<String> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
                 throws Exception {
             String subject = getString(0, patternGroups);
             int version = getInt(1, patternGroups);
             SchemaStorage schemaStorage = getSchemaStorage(request);
-            Schema schema = schemaStorage.findSchemaBySubjectAndVersion(subject, version);
-            if (schema == null) {
-                return null;
-            }
-            return schema.getSchemaDefinition();
+            CompletableFuture<Schema> schema = schemaStorage.findSchemaBySubjectAndVersion(subject, version);
+            return schema.thenApply(s -> {
+                if (s == null) {
+                    return null;
+                }
+                return s.getSchemaDefinition();
+            });
         }
 
     }
@@ -191,14 +200,14 @@ public class SubjectResource extends AbstractResource {
         }
 
         @Override
-        protected CreateSchemaResponse processRequest(CreateSchemaRequest payload, List<String> patternGroups,
+        protected CompletableFuture<CreateSchemaResponse> processRequest(CreateSchemaRequest payload, List<String> patternGroups,
                                                       FullHttpRequest request)
                 throws Exception {
             String subject = getString(0, patternGroups);
             SchemaStorage schemaStorage = getSchemaStorage(request);
-            Schema schema = schemaStorage.createSchemaVersion(subject,
+            CompletableFuture<Schema> schema = schemaStorage.createSchemaVersion(subject,
                     payload.schemaType, payload.schema, true);
-            return new CreateSchemaResponse(schema.getId());
+            return schema.thenApply(s -> new CreateSchemaResponse(s.getId()));
         }
 
     }
@@ -212,14 +221,14 @@ public class SubjectResource extends AbstractResource {
         }
 
         @Override
-        protected CreateSchemaResponse processRequest(CreateSchemaRequest payload, List<String> patternGroups,
+        protected CompletableFuture<CreateSchemaResponse> processRequest(CreateSchemaRequest payload, List<String> patternGroups,
                                                       FullHttpRequest request)
                 throws Exception {
             String subject = getString(0, patternGroups);
             SchemaStorage schemaStorage = getSchemaStorage(request);
-            Schema schema = schemaStorage.createSchemaVersion(subject,
+            CompletableFuture<Schema> schema = schemaStorage.createSchemaVersion(subject,
                     payload.schemaType, payload.schema, false);
-            return new CreateSchemaResponse(schema.getId());
+            return schema.thenApply(s -> new CreateSchemaResponse(s.getId()));
         }
 
     }

@@ -22,6 +22,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -39,6 +40,7 @@ import org.apache.pulsar.client.api.ProducerAccessMode;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.common.util.FutureUtil;
 
 @Slf4j
 public class PulsarSchemaStorage implements SchemaStorage, Closeable {
@@ -52,7 +54,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
     private final PulsarClient pulsarClient;
     private final String topic;
     private final String tenant;
-    private Reader<Op> reader;
+    private CompletableFuture<Reader<Op>> reader;
 
     private enum SchemaStatus {
         ACTIVE,
@@ -110,41 +112,50 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
         return tenant;
     }
 
-    private synchronized Reader<Op> getReader() throws SchemaStorageException {
-        try {
-            if (reader == null) {
-                reader = pulsarClient.newReader(avroSchema)
+    private synchronized CompletableFuture<Reader<Op>> getReaderHandle() {
+        if (reader == null) {
+            reader = pulsarClient.newReader(avroSchema)
                         .topic(topic)
                         .startMessageId(MessageId.earliest)
                         .subscriptionRolePrefix("kafka-schema-registry")
-                        .create();
-            }
-            return reader;
-        } catch (PulsarClientException err) {
-            throw new SchemaStorageException(err);
+                        .createAsync();
         }
+        return reader;
     }
 
-    private synchronized void ensureLatestData() throws SchemaStorageException {
-        Reader<Op> reader = getReader();
-        try {
-            while (reader.hasMessageAvailable()) {
-                Message<Op> opMessage = reader.readNext(1, TimeUnit.SECONDS);
-                if (opMessage != null) {
-                    Op value = opMessage.getValue();
-                    log.info("read {} from pulsar", value);
-                    SchemaEntry schemaEntry = value.toSchemaEntry();
-                    schemas.put(schemaEntry.id, schemaEntry);
-                }
-            }
-        } catch (PulsarClientException err) {
-            throw new SchemaStorageException(err);
-        }
+    private CompletableFuture<?> readNextMessageIfAvailable(Reader<Op> reader) {
+        return reader
+                .hasMessageAvailableAsync()
+                .thenCompose(hasMessageAvailable -> {
+                    if (hasMessageAvailable == null
+                            || !hasMessageAvailable) {
+                        return CompletableFuture.completedFuture(null);
+                    } else {
+                        CompletableFuture<Message<Op>> opMessage = reader.readNextAsync();
+                        // here we use thenApplyAsync in order to detach from the current thread
+                        return opMessage.thenApplyAsync(msg -> {
+                            Op value = msg.getValue();
+                            log.info("read {} from pulsar", value);
+                            SchemaEntry schemaEntry = value.toSchemaEntry();
+                            schemas.put(schemaEntry.id, schemaEntry);
+                            return readNextMessageIfAvailable(reader);
+                        });
+                    }
+                });
+    }
+
+    private CompletableFuture<?> ensureLatestData() {
+        CompletableFuture<Reader<Op>> readerHandle = getReaderHandle();
+        return readerHandle.thenCompose(this::readNextMessageIfAvailable);
     }
 
     @Override
-    public Schema findSchemaById(int id) throws SchemaStorageException {
+    public CompletableFuture<Schema> findSchemaById(int id) {
         return getSchemaFromSchemaEntry(fetchSchemaEntry(() -> schemas.get(id)));
+    }
+
+    private static CompletableFuture<Schema> getSchemaFromSchemaEntry(CompletableFuture<SchemaEntry> res) {
+        return res.thenApply(PulsarSchemaStorage::getSchemaFromSchemaEntry);
     }
 
     private static Schema getSchemaFromSchemaEntry(SchemaEntry res) {
@@ -163,8 +174,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
     }
 
     @Override
-    public Schema findSchemaBySubjectAndVersion(String subject, int version)
-                            throws SchemaStorageException {
+    public CompletableFuture<Schema> findSchemaBySubjectAndVersion(String subject, int version) {
         return getSchemaFromSchemaEntry(fetchSchemaEntry(() ->schemas
                 .values()
                 .stream()
@@ -174,35 +184,41 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                 .orElse(null)));
     }
 
-    private SchemaEntry fetchSchemaEntry(Supplier<SchemaEntry> procedure)
-            throws SchemaStorageException {
+    private CompletableFuture<SchemaEntry> fetchSchemaEntry(Supplier<SchemaEntry> procedure) {
         return fetch(procedure,
                 (schemaEntry) -> schemaEntry != null && schemaEntry.status == SchemaStatus.DELETED,
                 schemaEntry ->  schemaEntry == null);
     }
 
-    private <T> T fetch(Supplier<T> procedure,
+    private <T> CompletableFuture<T> fetch(Supplier<T> procedure,
                         Function<T, Boolean> isDeleted,
-                        Function<T, Boolean> requiresFetch)
-            throws SchemaStorageException {
+                        Function<T, Boolean> requiresFetch) {
         T res = procedure.get();
         if (isDeleted.apply(res)) {
-            return null;
+            return CompletableFuture.completedFuture(null);
         }
         if (requiresFetch.apply(res)) {
             // ensure we are in sync with the latest write
-            ensureLatestData();
-            res = procedure.get();
+            return ensureLatestData().thenApply(___ -> {
+                T res2 = procedure.get();
+                if (isDeleted.apply(res2)) {
+                    return null;
+                }
+                return res2;
+            });
+        } else {
+            // we are happy with the result, so return it to the caller
+            if (isDeleted.apply(res)) {
+                return CompletableFuture.completedFuture(null);
+            }
+            return CompletableFuture.completedFuture(res);
         }
-        if (isDeleted.apply(res)) {
-            return null;
-        }
-        return res;
+
     }
 
     @Override
-    public List<Schema> findSchemaByDefinition(String schemaDefinition) throws SchemaStorageException {
-        List<SchemaEntry> list = fetch(
+    public CompletableFuture<List<Schema>> findSchemaByDefinition(String schemaDefinition) {
+        return fetch(
                 () ->  schemas
                     .values()
                     .stream()
@@ -210,16 +226,18 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                     .sorted(Comparator.comparing(SchemaEntry::getId)) // this is good for unit tests
                     .collect(Collectors.toList())
                 , (res) -> false  // not applicable
-                , (res) -> res.isEmpty()); // fetch again if nothing found, useful for demos/testing
-        return list
-                .stream()
-                .map(PulsarSchemaStorage::getSchemaFromSchemaEntry)
-                .collect(Collectors.toList());
+                , (res) -> res.isEmpty())  // fetch again if nothing found, useful for demos/testing
+                .thenApply(l -> {
+                    return l
+                            .stream()
+                            .map(PulsarSchemaStorage::getSchemaFromSchemaEntry)
+                            .collect(Collectors.toList());
+                });
     }
 
     @Override
-    public List<String> getAllSubjects() throws SchemaStorageException {
-        List<String> list = fetch(
+    public CompletableFuture<List<String>> getAllSubjects() {
+        return fetch(
                 () -> schemas
                         .values()
                         .stream()
@@ -228,12 +246,11 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                         .collect(Collectors.toList()),
                 (res) -> false, // not applicable
                 (res) -> res.isEmpty()); // fetch again if nothing found, useful for demos/testing
-        return list;
     }
 
     @Override
-    public List<Integer> getAllVersionsForSubject(String subject) throws SchemaStorageException {
-        List<Integer> list = fetch(
+    public CompletableFuture<List<Integer>> getAllVersionsForSubject(String subject) {
+        return fetch(
                 () -> schemas
                 .values()
                 .stream()
@@ -243,50 +260,61 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                 .collect(Collectors.toList()),
                 (res) -> false,  // not applicable
                 (res) -> res.isEmpty()); // fetch again if nothing found, useful for demos/testing
-        return list;
     }
 
-    private synchronized <T> List<T> executeWriteOp(Supplier<List<Map.Entry<Op, T>>> opBuilder)
-            throws SchemaStorageException {
-        try (Producer<Op> opProducer = pulsarClient.newProducer(avroSchema)
+
+    private synchronized <T> CompletableFuture<List<T>> executeWriteOp(Supplier<List<Map.Entry<Op, T>>> opBuilder) {
+        log.info("opening exclusive producer to {}", topic);
+        CompletableFuture<Producer<Op>> producerHandle = pulsarClient.newProducer(avroSchema)
                 .enableBatching(false)
                 .topic(topic)
                 .accessMode(ProducerAccessMode.WaitForExclusive)
                 .blockIfQueueFull(true)
-                .create();) {
+                .createAsync();
+        return producerHandle.thenCompose(opProducer -> {
             // nobody can write now to the topic
             // wait for local cache to be up-to-date
-            ensureLatestData();
+            CompletableFuture<List<T>> dummy = ensureLatestData()
+                    .thenCompose((___) -> {
+                        // build the Op, this will usually use the contents of the local cache
+                        List<Map.Entry<Op, T>> ops = opBuilder.get();
+                        List<T> res = new ArrayList<>();
+                        List<CompletableFuture<?>> sendHandles = new ArrayList<>();
+                        // write to Pulsar
+                        // if the write fails we lost the lock
+                        for (Map.Entry<Op, T> action : ops) {
+                            Op op = action.getKey();
+                            // if "op" is null, then we do not have to write to Pulsar
+                            if (op != null) {
+                                if (!op.tenant.equals(getTenant())) {
+                                    sendHandles.add(FutureUtil.failedFuture(new SchemaStorageException(
+                                            "Invalid tenant " + op.tenant + ", expected " + tenant)));
+                                } else {
+                                    sendHandles.add(opProducer.sendAsync(op).thenRun(() -> {
+                                        // write to local memory
+                                        SchemaEntry schemaEntry = op.toSchemaEntry();
+                                        schemas.put(schemaEntry.id, schemaEntry);
+                                    }));
+                                }
+                            }
+                            res.add(action.getValue());
+                        }
+                        return CompletableFuture
+                                .allOf(sendHandles.toArray(new CompletableFuture[0]))
+                                .thenApply(____ -> res);
 
-            // build the Op, this will usually use the contents of the local cache
-            List<Map.Entry<Op, T>> ops = opBuilder.get();
-            List<T> res = new ArrayList<>();
-            // write to Pulsar
-            // if the write fails we lost the lock
-            for (Map.Entry<Op, T> action : ops) {
-                Op op = action.getKey();
-                // if "op" is null, then we do not have to write to Pulsar
-                if (op != null) {
-                    if (!op.tenant.equals(getTenant())) {
-                        throw new SchemaStorageException("Invalid tenant " + op.tenant + ", expected " + tenant);
-                    }
-                    opProducer.send(op);
-                    // write to local memory
-                    SchemaEntry schemaEntry = op.toSchemaEntry();
-                    schemas.put(schemaEntry.id, schemaEntry);
-                }
-                res.add(action.getValue());
-            }
-
-            return res;
-        } catch (PulsarClientException err) {
-            throw new SchemaStorageException(err);
-        }
+                    });
+            // ensure that we release the exclusive producer in any case
+            dummy.whenComplete((___, err) -> {
+                opProducer.closeAsync();
+            });
+            return dummy;
+        });
     }
 
     @Override
-    public List<Integer> deleteSubject(String subject) throws SchemaStorageException {
-        List<Integer> versionsRes = executeWriteOp(() -> {
+    public CompletableFuture<List<Integer>> deleteSubject(String subject) {
+        return executeWriteOp(() -> {
             List<SchemaEntry> entriesToDelete = schemas
                     .values()
                     .stream()
@@ -313,15 +341,14 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
 
                 return operationsAndResults;
         });
-        return versionsRes;
     }
 
     @Override
-    public Schema createSchemaVersion(String subject, String schemaType, String schemaDefinition,
-                                      boolean forceCreate) throws SchemaStorageException {
+    public CompletableFuture<Schema> createSchemaVersion(String subject, String schemaType, String schemaDefinition,
+                                      boolean forceCreate) {
         if (!forceCreate) {
             // read from cache, this is the most common case
-            SchemaEntry found = fetchSchemaEntry(() -> schemas
+            CompletableFuture<SchemaEntry> found = fetchSchemaEntry(() -> schemas
                     .values()
                     .stream()
                     .filter(s -> s.getTenant().equals(tenant)
@@ -330,17 +357,26 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                     .sorted(Comparator.comparing(SchemaEntry::getVersion).reversed())
                     .findFirst()
                     .orElse(null));
-            if (found != null) {
-                return getSchemaFromSchemaEntry(found);
-            }
+            return found.thenCompose(schemaEntry ->  {
+                if (schemaEntry != null) {
+                    return CompletableFuture.completedFuture(getSchemaFromSchemaEntry(schemaEntry));
+                } else {
+                    // execute the operation, in write lock
+                    return executeWriteOp(buildWriteSchemaOp(subject,
+                            schemaType, schemaDefinition, forceCreate))
+                            // this function will always return something
+                            .thenApply(sr -> {return getSchemaFromSchemaEntry(sr.get(0));});
+                }
+            });
+        } else {
+            // execute the operation, in write lock
+            return executeWriteOp(buildWriteSchemaOp(subject,
+                    schemaType, schemaDefinition, forceCreate))
+                    // this function will always return something
+                    .thenApply(sr -> {
+                        return getSchemaFromSchemaEntry(sr.get(0));
+                    });
         }
-
-        // enter the lock
-        List<SchemaEntry> schemaRes = executeWriteOp(buildWriteSchemaOp(subject,
-                schemaType, schemaDefinition, forceCreate));
-
-        // this function will always return something
-        return getSchemaFromSchemaEntry(schemaRes.get(0));
     }
 
     private Supplier<List<Map.Entry<Op, SchemaEntry>>> buildWriteSchemaOp(String subject,

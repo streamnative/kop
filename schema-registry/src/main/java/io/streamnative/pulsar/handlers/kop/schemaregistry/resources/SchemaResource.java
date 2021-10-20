@@ -21,6 +21,7 @@ import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorageAccessor;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -58,15 +59,17 @@ public class SchemaResource extends AbstractResource {
         }
 
         @Override
-        protected GetSchemaResponse processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<GetSchemaResponse> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
                                     throws Exception{
             int id = getInt(0, patternGroups);
             SchemaStorage schemaStorage = getSchemaStorage(request);
-            Schema schemaById = schemaStorage.findSchemaById(id);
-            if (schemaById == null) {
-                return null;
-            }
-            return new GetSchemaResponse(schemaById.getSchemaDefinition());
+            CompletableFuture<Schema> schemaById = schemaStorage.findSchemaById(id);
+            return schemaById.thenApply(s -> {
+                if (s == null) {
+                    return null;
+                }
+                return new GetSchemaResponse(s.getSchemaDefinition());
+            });
         }
 
     }
@@ -80,8 +83,8 @@ public class SchemaResource extends AbstractResource {
         }
 
         @Override
-        protected List<String> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request) {
-           return Schema.getAllTypes();
+        protected CompletableFuture<List<String>> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request) {
+           return CompletableFuture.completedFuture(Schema.getAllTypes());
         }
 
     }
@@ -103,21 +106,22 @@ public class SchemaResource extends AbstractResource {
         }
 
         @Override
-        protected List<SubjectVersionPair> processRequest(Void payload,
+        protected CompletableFuture<List<SubjectVersionPair>> processRequest(Void payload,
                                                           List<String> patternGroups, FullHttpRequest request)
                                 throws Exception {
             SchemaStorage schemaStorage = getSchemaStorage(request);
             int id = getInt(0, patternGroups);
-            Schema schema =  schemaStorage.findSchemaById(id);
-            if (schema == null) {
-                return null;
-            }
-            List<Schema> schemaAliases = schemaStorage.findSchemaByDefinition(schema.getSchemaDefinition());
-            return schemaAliases
-                    .stream()
-                    .map(s -> new SubjectVersionPair(schema.getSubject(), schema.getVersion()))
-                    .collect(Collectors.toList());
-
+            CompletableFuture<Schema> schema =  schemaStorage.findSchemaById(id);
+            return schema.thenCompose(s -> {
+                if (s == null) {
+                    return CompletableFuture.completedFuture(null);
+                }
+                CompletableFuture<List<Schema>> schemaAliases = schemaStorage.findSchemaByDefinition(s.getSchemaDefinition());
+                return schemaAliases.thenApply(sh -> sh
+                        .stream()
+                        .map(sv -> new SubjectVersionPair(sv.getSubject(), sv.getVersion()))
+                        .collect(Collectors.toList()));
+            });
         }
 
     }

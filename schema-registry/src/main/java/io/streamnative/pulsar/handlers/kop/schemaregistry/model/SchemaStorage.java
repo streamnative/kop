@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.schemaregistry.model;
 
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.SchemaStorageException;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 public interface SchemaStorage {
 
@@ -29,34 +30,34 @@ public interface SchemaStorage {
      * @param id the id
      * @return the Schema or null
      */
-    Schema findSchemaById(int id) throws SchemaStorageException;
+    CompletableFuture<Schema> findSchemaById(int id);
 
     /**
      * Find Schemas that have the same definition.
      * @param schemaDefinition the expected schema
      * @return the list of schemas
      */
-    List<Schema> findSchemaByDefinition(String schemaDefinition) throws SchemaStorageException;
+    CompletableFuture<List<Schema>> findSchemaByDefinition(String schemaDefinition);
 
     /**
      * Get all existing subjects.
      * @return
      */
-    List<String> getAllSubjects() throws SchemaStorageException;
+    CompletableFuture<List<String>> getAllSubjects();
 
     /**
      * Get all versions for a given subject.
      * @param subject the Subject
      * @return the list of versions
      */
-    List<Integer> getAllVersionsForSubject(String subject) throws SchemaStorageException;
+    CompletableFuture<List<Integer>> getAllVersionsForSubject(String subject);
 
     /**
      * Delete all the versions of a subject.
      * @param subject the Subject
      * @return the versions
      */
-    List<Integer> deleteSubject(String subject) throws SchemaStorageException;
+    CompletableFuture<List<Integer>> deleteSubject(String subject);
 
     /**
      * Lookup a schema by subject and version.
@@ -64,7 +65,7 @@ public interface SchemaStorage {
      * @param version the Version
      * @return the Schema
      */
-    Schema findSchemaBySubjectAndVersion(String subject, int version) throws SchemaStorageException;
+    CompletableFuture<Schema> findSchemaBySubjectAndVersion(String subject, int version);
 
     /**
      * Create a new schema.
@@ -74,6 +75,6 @@ public interface SchemaStorage {
      * @param forceCreate require to create a new version, without looking for an existing schema
      * @return the new Schema
      */
-    Schema createSchemaVersion(String subject, String schemaType, String schemaDefinition,
-                               boolean forceCreate) throws SchemaStorageException;
+    CompletableFuture<Schema> createSchemaVersion(String subject, String schemaType, String schemaDefinition,
+                               boolean forceCreate);
 }

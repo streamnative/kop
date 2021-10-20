@@ -56,14 +56,14 @@ public class PulsarSchemaStorageTest extends KopProtocolHandlerTestBase {
                     "persistent://public/default/__schemaregistry-2");) {
             // writing using instance1
             Schema schemaVersion = instance1.createSchemaVersion(subject1,
-                    Schema.TYPE_AVRO, "{test}", true);
+                    Schema.TYPE_AVRO, "{test}", true).get();
 
             // read using instance2
-            Schema lookup2 = instance2.findSchemaById(schemaVersion.getId());
+            Schema lookup2 = instance2.findSchemaById(schemaVersion.getId()).get();
             assertEquals(schemaVersion, lookup2);
 
             // read using instance1
-            Schema lookup1 = instance2.findSchemaById(schemaVersion.getId());
+            Schema lookup1 = instance2.findSchemaById(schemaVersion.getId()).get();
             assertEquals(schemaVersion, lookup1);
         }
     }

@@ -27,6 +27,7 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.util.CharsetUtil;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -53,20 +54,14 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
         FullHttpRequest request = (FullHttpRequest) msg;
         log.info("SchemaRegistry {} {} from {}", request.method(), request.uri(), ctx.channel().localAddress());
 
-        boolean done = false;
-        for (HttpRequestProcessor processor : processors) {
-            FullHttpResponse fullHttpResponse = processor.processRequest(request);
-            if (fullHttpResponse != null) {
-                if (log.isDebugEnabled()) {
-                    log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), msg,
-                            fullHttpResponse);
-                }
-                ctx.writeAndFlush(fullHttpResponse);
-                done = true;
+        HttpRequestProcessor processor =  null;
+        for (HttpRequestProcessor p : processors) {
+            if (p.acceptRequest(request)) {
+                processor = p;
                 break;
             }
         }
-        if (!done) {
+        if (processor == null) {
             String body = "{\n"
                     + "  \"message\" : \"Not found\",\n"
                     + "  \"error_code\" : 404\n"
@@ -82,7 +77,25 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
                         httpResponse);
             }
             ctx.writeAndFlush(httpResponse);
+            return;
         }
+
+        CompletableFuture<FullHttpResponse> fullHttpResponse = processor.processRequest(request);
+        fullHttpResponse.thenAccept(resp -> {
+            if (log.isDebugEnabled()) {
+                log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), msg,
+                        resp);
+            }
+            ctx.writeAndFlush(resp);
+        }).exceptionally(err -> {
+            FullHttpResponse resp = HttpRequestProcessor.buildJsonErrorResponse(err);
+            if (log.isDebugEnabled()) {
+                log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), msg,
+                        resp);
+            }
+            ctx.writeAndFlush(resp);
+            return null;
+        });
     }
 
     @Override

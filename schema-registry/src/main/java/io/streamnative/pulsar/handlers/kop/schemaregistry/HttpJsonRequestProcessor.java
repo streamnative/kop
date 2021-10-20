@@ -25,6 +25,7 @@ import java.io.DataInput;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
@@ -45,15 +46,21 @@ public abstract class HttpJsonRequestProcessor <K, R> extends HttpRequestProcess
     }
 
     @Override
-    FullHttpResponse processRequest(FullHttpRequest request) {
+
+    public boolean acceptRequest(FullHttpRequest request) {
         if (!request.method().name().equals(method)) {
-            return null;
+            return false;
         }
         List<String> groups = detectGroups(request);
         if (groups == null) {
-            return null;
+            return false;
         }
+        return true;
+    }
 
+    @Override
+    public CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request) {
+        List<String> groups = detectGroups(request);
         try (ByteBufInputStream  inputStream = new ByteBufInputStream(request.content());) {
             K decodeRequest;
             if (requestModel == Void.class) {
@@ -62,29 +69,24 @@ public abstract class HttpJsonRequestProcessor <K, R> extends HttpRequestProcess
                 decodeRequest = MAPPER.readValue((DataInput) inputStream, requestModel);
             }
 
-            R result = null;
-            try {
-                result = processRequest(decodeRequest, groups, request);
-            } catch (SchemaStorageException err) {
+            CompletableFuture<R> result = processRequest(decodeRequest, groups, request);
+            return result.thenApply(resp -> {
+                if (resp == null) {
+                    return buildErrorResponse(NOT_FOUND, "Not found", "text/plain");
+                }
+                if (resp.getClass() == String.class) {
+                    return buildStringResponse(((String) resp), RESPONSE_CONTENT_TYPE);
+                } else {
+                    return buildJsonResponse(resp, RESPONSE_CONTENT_TYPE);
+                }
+            }).exceptionally(err -> {
                 log.error("Error while processing request", err);
                 return buildJsonErrorResponse(err);
-            } catch (Exception err) {
-                log.error("Error while processing request", err);
-                return buildErrorResponse(INTERNAL_SERVER_ERROR,
-                        "Error while processing request", "text/plain");
-            }
-            if (result == null) {
-                return buildErrorResponse(NOT_FOUND, "Not found", "text/plain");
-            }
-            if (result.getClass() == String.class) {
-                return buildStringResponse(((String) result), RESPONSE_CONTENT_TYPE);
-            } else {
-                return buildJsonResponse(result, RESPONSE_CONTENT_TYPE);
-            }
-        } catch (IOException err) {
+            });
+        } catch (Exception err) {
             log.error("Error while processing request", err);
-            return buildErrorResponse(HttpResponseStatus.BAD_REQUEST,
-                    "Cannot decode request: " + err.getMessage(), "text/plain");
+            return CompletableFuture.completedFuture(buildErrorResponse(HttpResponseStatus.BAD_REQUEST,
+                    "Cannot decode request: " + err.getMessage(), "text/plain"));
         }
     }
 
@@ -105,8 +107,8 @@ public abstract class HttpJsonRequestProcessor <K, R> extends HttpRequestProcess
         return groups;
     }
 
-    protected abstract R processRequest(K payload, List<String> patternGroups,
-                                        FullHttpRequest request) throws Exception;
+    protected abstract CompletableFuture<R> processRequest(K payload, List<String> patternGroups,
+                                                           FullHttpRequest request) throws Exception;
 
     protected static int getInt(int position, List<String> queryStringGroups) {
         return Integer.parseInt(queryStringGroups.get(position));

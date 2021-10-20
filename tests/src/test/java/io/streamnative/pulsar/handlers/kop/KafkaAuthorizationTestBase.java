@@ -668,7 +668,8 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         return new KafkaConsumer<>(props);
     }
 
-    @Test(timeOut = 40000)
+    // this test creates the schema registry topic, and this may interfere with other tests
+    @Test(timeOut = 30000, priority = 1000)
     public void testAvroProduceAndConsumeWithAuth() throws Exception {
 
         if (conf.isKafkaEnableMultiTenantMetadata()) {

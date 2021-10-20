@@ -21,8 +21,10 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.SchemaStorageException;
 import java.io.FileNotFoundException;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import org.apache.pulsar.common.util.FutureUtil;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -47,11 +49,13 @@ public class SchemaRegistryHandlerTest {
     private static class DemoHandler extends HttpRequestProcessor {
 
         @Override
-        public FullHttpResponse processRequest(FullHttpRequest request) {
-            if (!request.uri().startsWith("/demo")) {
-                return null;
-            }
-            return buildStringResponse("ok", "text/plain; charset=UTF-8");
+        public boolean acceptRequest(FullHttpRequest request) {
+            return request.uri().startsWith("/demo");
+        }
+
+        @Override
+        public CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request) {
+            return CompletableFuture.completedFuture(buildStringResponse("ok", "text/plain; charset=UTF-8"));
         }
     }
 
@@ -64,12 +68,14 @@ public class SchemaRegistryHandlerTest {
         }
 
         @Override
-        public FullHttpResponse processRequest(FullHttpRequest request) {
-            if (!request.uri().startsWith("/json")) {
-                return null;
-            }
+        public boolean acceptRequest(FullHttpRequest request) {
+            return request.uri().startsWith("/json");
+        }
+
+        @Override
+        public CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request) {
             String content = request.uri();
-            return buildJsonResponse(new SchemaPojo(content), "application/json; charset=UTF-8");
+            return CompletableFuture.completedFuture(buildJsonResponse(new SchemaPojo(content), "application/json; charset=UTF-8"));
         }
     }
 
@@ -93,19 +99,18 @@ public class SchemaRegistryHandlerTest {
         }
 
         @Override
-        protected ResponsePojo processRequest(RequestPojo payload, List<String> groups, FullHttpRequest request)
-                                                        throws Exception {
+        protected CompletableFuture<ResponsePojo> processRequest(RequestPojo payload, List<String> groups, FullHttpRequest request)  {
             String subject = groups.get(0);
             if (subject.equals("errorsubject401")) {
-                throw new SchemaStorageException("Bad auth", HttpResponseStatus.UNAUTHORIZED.code());
+                return FutureUtil.failedFuture(new SchemaStorageException("Bad auth", HttpResponseStatus.UNAUTHORIZED.code()));
             }
             if (subject.equals("errorsubject403")) {
-                throw new SchemaStorageException("Forbidden", HttpResponseStatus.FORBIDDEN.code());
+                return FutureUtil.failedFuture(new  SchemaStorageException("Forbidden", HttpResponseStatus.FORBIDDEN.code()));
             }
             if (subject.equals("errorsubject500")) {
-                throw new SchemaStorageException("Error");
+                return FutureUtil.failedFuture(new  SchemaStorageException("Error"));
             }
-            return new ResponsePojo(subject, payload.value);
+            return CompletableFuture.completedFuture(new ResponsePojo(subject, payload.value));
         }
 
     }

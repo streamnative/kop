@@ -30,37 +30,37 @@ public class SchemaStorageTestsBase {
     private SchemaStorageAccessor storageAccessor;
 
     @Test
-    public void testWriteGet() throws SchemaStorageException {
+    public void testWriteGet() throws Exception {
         SchemaStorage storage = storageAccessor.getSchemaStorageForTenant("test-tenant");
         String subject1 = "aa";
-        Schema schemaVersion = storage.createSchemaVersion(subject1, Schema.TYPE_AVRO, "{test}", true);
-        Schema lookup = storage.findSchemaById(schemaVersion.getId());
+        Schema schemaVersion = storage.createSchemaVersion(subject1, Schema.TYPE_AVRO, "{test}", true).get();
+        Schema lookup = storage.findSchemaById(schemaVersion.getId()).get();
         assertEquals(schemaVersion, lookup);
-        List<Integer> versions = storage.deleteSubject(subject1);
+        List<Integer> versions = storage.deleteSubject(subject1).get();
         assertEquals(1, versions.size());
-        lookup = storage.findSchemaById(schemaVersion.getId());
+        lookup = storage.findSchemaById(schemaVersion.getId()).get();
         assertNull(lookup);
 
         String subject2 = "bb";
-        Schema schemaVersion2 = storage.createSchemaVersion(subject2, Schema.TYPE_AVRO, "{test}", true);
-        Schema lookup2 = storage.findSchemaById(schemaVersion2.getId());
+        Schema schemaVersion2 = storage.createSchemaVersion(subject2, Schema.TYPE_AVRO, "{test}", true).get();
+        Schema lookup2 = storage.findSchemaById(schemaVersion2.getId()).get();
         assertEquals(schemaVersion2, lookup2);
 
 
-        Schema schemaVersion3 = storage.createSchemaVersion(subject2, Schema.TYPE_AVRO, "{test}", false);
-        Schema lookup3 = storage.findSchemaById(schemaVersion3.getId());
+        Schema schemaVersion3 = storage.createSchemaVersion(subject2, Schema.TYPE_AVRO, "{test}", false).get();
+        Schema lookup3 = storage.findSchemaById(schemaVersion3.getId()).get();
         assertEquals(schemaVersion3, lookup3);
 
         // we must have received the same schema id
         assertEquals(lookup2, lookup3);
 
-        Schema schemaVersion4 = storage.createSchemaVersion(subject2, Schema.TYPE_AVRO, "{test}", true);
-        Schema lookup4 = storage.findSchemaById(schemaVersion4.getId());
+        Schema schemaVersion4 = storage.createSchemaVersion(subject2, Schema.TYPE_AVRO, "{test}", true).get();
+        Schema lookup4 = storage.findSchemaById(schemaVersion4.getId()).get();
         assertEquals(schemaVersion4, lookup4);
 
         assertNotEquals(lookup3.getId(), lookup4.getId());
 
-        Schema lookupNonExistingSchema = storage.findSchemaById(-10);
+        Schema lookupNonExistingSchema = storage.findSchemaById(-10).get();
         assertNull(lookupNonExistingSchema);
 
     }

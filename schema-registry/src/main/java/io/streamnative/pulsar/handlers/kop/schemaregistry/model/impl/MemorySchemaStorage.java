@@ -18,6 +18,7 @@ import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -37,54 +38,54 @@ public class MemorySchemaStorage implements SchemaStorage {
     }
 
     @Override
-    public Schema findSchemaById(int id) throws SchemaStorageException {
-        return schemas.get(id);
+    public CompletableFuture<Schema> findSchemaById(int id) {
+        return CompletableFuture.completedFuture(schemas.get(id));
     }
 
     @Override
-    public Schema findSchemaBySubjectAndVersion(String subject, int version) {
-        return schemas
+    public CompletableFuture<Schema> findSchemaBySubjectAndVersion(String subject, int version) {
+        return CompletableFuture.completedFuture(schemas
                 .values()
                 .stream()
                 .filter(s -> s.getSubject().equals(subject)
                         && s.getVersion() == version)
                 .findAny()
-                .orElse(null);
+                .orElse(null));
     }
 
     @Override
-    public List<Schema> findSchemaByDefinition(String schemaDefinition) {
-        return schemas
+    public CompletableFuture<List<Schema>> findSchemaByDefinition(String schemaDefinition) {
+        return CompletableFuture.completedFuture(schemas
                 .values()
                 .stream()
                 .filter(s -> s.getSchemaDefinition().equals(schemaDefinition))
                 .sorted(Comparator.comparing(Schema::getId)) // this is good for unit tests
-                .collect(Collectors.toList());
+                .collect(Collectors.toList()));
     }
 
     @Override
-    public List<String> getAllSubjects() {
-        return schemas
+    public CompletableFuture<List<String>> getAllSubjects() {
+        return CompletableFuture.completedFuture(schemas
                 .values()
                 .stream()
                 .map(Schema::getSubject)
                 .distinct()
-                .collect(Collectors.toList());
+                .collect(Collectors.toList()));
     }
 
     @Override
-    public List<Integer> getAllVersionsForSubject(String subject) {
-        return schemas
+    public CompletableFuture<List<Integer>> getAllVersionsForSubject(String subject) {
+        return CompletableFuture.completedFuture(schemas
                 .values()
                 .stream()
                 .filter(s -> s.getSubject().equals(subject))
                 .map(Schema::getVersion)
                 .sorted() // this is goodfor unit tests
-                .collect(Collectors.toList());
+                .collect(Collectors.toList()));
     }
 
     @Override
-    public List<Integer> deleteSubject(String subject) {
+    public CompletableFuture<List<Integer>> deleteSubject(String subject) {
         // please note that this implementation is not meant to be fully
         // thread safe, it is only for tests
         List<Integer> keys = schemas
@@ -100,11 +101,11 @@ public class MemorySchemaStorage implements SchemaStorage {
                 versions.add(remove.getVersion());
             }
         });
-        return versions;
+        return CompletableFuture.completedFuture(versions);
     }
 
     @Override
-    public Schema createSchemaVersion(String subject, String schemaType,
+    public CompletableFuture<Schema> createSchemaVersion(String subject, String schemaType,
                                       String schemaDefinition, boolean forceCreate) {
         // please note that this implementation is not meant to be fully
         // thread safe, it is only for tests
@@ -119,7 +120,7 @@ public class MemorySchemaStorage implements SchemaStorage {
                     .findFirst()
                     .orElse(null);
             if (found != null) {
-                return found;
+                return CompletableFuture.completedFuture(found);
             }
         }
 
@@ -142,7 +143,7 @@ public class MemorySchemaStorage implements SchemaStorage {
                 .tenant(getTenant())
                 .build();
         schemas.put(newSchema.getId(), newSchema);
-        return newSchema;
+        return CompletableFuture.completedFuture(newSchema);
     }
 
     public void storeSchema(Schema schema) {
