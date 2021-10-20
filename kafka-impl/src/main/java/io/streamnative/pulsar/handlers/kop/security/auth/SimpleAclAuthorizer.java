@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop.security.auth;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
-import com.google.common.base.Joiner;
 import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
 import java.util.Map;
 import java.util.Set;
