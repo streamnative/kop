@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Random;
@@ -25,14 +26,20 @@ import org.apache.kafka.common.record.TimestampType;
 
 
 /**
- * The performance test for {@link EntryFormatter#encode(MemoryRecords, int)}.
+ * The performance test for {@link EntryFormatter#encode(EncodeRequest)}.
  */
 public class EncodePerformanceTest {
 
     private static final int NUM_MESSAGES = 2048;
     private static final int MESSAGE_SIZE = 1024;
+    private static final KafkaServiceConfiguration pulsarServiceConfiguration = new KafkaServiceConfiguration();
+    private static final KafkaServiceConfiguration KafkaV1ServiceConfiguration = new KafkaServiceConfiguration();
+    private static final KafkaServiceConfiguration kafkaMixedServiceConfiguration = new KafkaServiceConfiguration();
 
     public static void main(String[] args) {
+        pulsarServiceConfiguration.setEntryFormat("pulsar");
+        KafkaV1ServiceConfiguration.setEntryFormat("kafka");
+        kafkaMixedServiceConfiguration.setEntryFormat("mixed_kafka");
         // The first time to run PulsarEntryFormatter a warn log will be printed that could take a lot of time.
         runSingleTest(prepareFixedRecords(), "fixed records", 1);
 
@@ -44,8 +51,10 @@ public class EncodePerformanceTest {
     }
 
     private static void runSingleTest(final MemoryRecords records, final String description, final int repeatTimes) {
-        final EntryFormatter pulsarFormatter = EntryFormatterFactory.create("pulsar");
-        final EntryFormatter kafkaFormatter = EntryFormatterFactory.create("kafka");
+        final EncodeRequest encodeRequest = EncodeRequest.get(records);
+        final EntryFormatter pulsarFormatter = EntryFormatterFactory.create(pulsarServiceConfiguration);
+        final EntryFormatter kafkaV1Formatter = EntryFormatterFactory.create(KafkaV1ServiceConfiguration);
+        final EntryFormatter kafkaMixedFormatter = EntryFormatterFactory.create(kafkaMixedServiceConfiguration);
         // Here we also add a comparison with NoHeaderKafkaEntryFormatter to measure the overhead of adding a header
         // and copy the ByteBuffer of MemoryRecords that are done by KafkaEntryFormatter.
         final EntryFormatter noHeaderKafkaFormatter = new NoHeaderKafkaEntryFormatter();
@@ -54,21 +63,30 @@ public class EncodePerformanceTest {
 
         long t1 = System.currentTimeMillis();
         for (int i = 0; i < repeatTimes; i++) {
-            pulsarFormatter.encode(records, NUM_MESSAGES).release();
+            pulsarFormatter.encode(encodeRequest).recycle();
         }
         long t2 = System.currentTimeMillis();
         System.out.println("PulsarEntryFormatter encode time: " + (t2 - t1) + " ms");
 
         t1 = System.currentTimeMillis();
+        long currentBaseOffset = 0;
         for (int i = 0; i < repeatTimes; i++) {
-            kafkaFormatter.encode(records, NUM_MESSAGES).release();
+            kafkaMixedFormatter.encode(encodeRequest).recycle();
+            encodeRequest.setBaseOffset(currentBaseOffset + NUM_MESSAGES);
         }
         t2 = System.currentTimeMillis();
-        System.out.println("KafkaEntryFormatter encode time: " + (t2 - t1) + " ms");
+        System.out.println("KafkaMixedEntryFormatter encode time: " + (t2 - t1) + " ms");
 
         t1 = System.currentTimeMillis();
         for (int i = 0; i < repeatTimes; i++) {
-            noHeaderKafkaFormatter.encode(records, NUM_MESSAGES).release();
+            kafkaV1Formatter.encode(encodeRequest).recycle();
+        }
+        t2 = System.currentTimeMillis();
+        System.out.println("KafkaV1EntryFormatter encode time: " + (t2 - t1) + " ms");
+
+        t1 = System.currentTimeMillis();
+        for (int i = 0; i < repeatTimes; i++) {
+            noHeaderKafkaFormatter.encode(encodeRequest).recycle();
         }
         t2 = System.currentTimeMillis();
         System.out.println("NoHeaderKafkaEntryFormatter encode time: " + (t2 - t1) + " ms");

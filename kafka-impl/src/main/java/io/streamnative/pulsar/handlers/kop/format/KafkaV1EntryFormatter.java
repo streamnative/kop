@@ -23,20 +23,25 @@ import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 
 /**
- * The entry formatter that uses Kafka's format.
+ * The entry formatter that uses Kafka's V1/V2 format.
+ * This formatter don't validate all kafka records
+ * so call it V1 entry formatter.
  */
 @Slf4j
-public class KafkaEntryFormatter extends AbstractEntryFormatter {
+public class KafkaV1EntryFormatter extends AbstractEntryFormatter {
 
     @Override
-    public ByteBuf encode(MemoryRecords records, int numMessages) {
+    public EncodeResult encode(final EncodeRequest encodeRequest) {
+        final MemoryRecords records = encodeRequest.getRecords();
+        final int numMessages = EntryFormatter.parseNumMessages(records);
         final ByteBuf recordsWrapper = Unpooled.wrappedBuffer(records.buffer());
         final ByteBuf buf = Commands.serializeMetadataAndPayload(
                 Commands.ChecksumType.None,
                 getMessageMetadataWithNumberMessages(numMessages),
                 recordsWrapper);
         recordsWrapper.release();
-        return buf;
+
+        return EncodeResult.get(records, buf, numMessages);
     }
 
     @Override

@@ -213,7 +213,7 @@ public final class MessageFetchContext {
         if (resultFuture.isCancelled()) {
             // The request was cancelled by KafkaCommandDecoder when channel is closed or this request is expired,
             // so the Netty buffers should be released.
-            decodeResults.forEach(DecodeResult::release);
+            decodeResults.forEach(DecodeResult::recycle);
             return;
         }
         if (resultFuture.isDone()) {
@@ -251,7 +251,7 @@ public final class MessageFetchContext {
                                 fetchRequest.metadata().sessionId()),
                         () -> {
                             // release the batched ByteBuf if necessary
-                            decodeResults.forEach(DecodeResult::release);
+                            decodeResults.forEach(DecodeResult::recycle);
                         }));
         recycle();
     }

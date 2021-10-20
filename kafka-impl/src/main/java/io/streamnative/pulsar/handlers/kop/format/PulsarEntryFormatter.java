@@ -42,7 +42,9 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
     private static final int MAX_MESSAGE_BATCH_SIZE_BYTES = 128 * 1024;
 
     @Override
-    public ByteBuf encode(final MemoryRecords records, final int numMessages) {
+    public EncodeResult encode(final EncodeRequest encodeRequest) {
+        final MemoryRecords records = encodeRequest.getRecords();
+        final int numMessages = EntryFormatter.parseNumMessages(records);
         long currentBatchSizeBytes = 0;
         int numMessagesInBatch = 0;
 
@@ -88,7 +90,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
 
         batchedMessageMetadataAndPayload.release();
 
-        return buf;
+        return EncodeResult.get(records, buf, numMessages);
     }
 
     @Override

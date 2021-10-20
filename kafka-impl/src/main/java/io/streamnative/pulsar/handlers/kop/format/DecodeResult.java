@@ -15,29 +15,52 @@ package io.streamnative.pulsar.handlers.kop.format;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import io.netty.util.Recycler;
+import lombok.Getter;
 import lombok.NonNull;
 import org.apache.kafka.common.record.MemoryRecords;
 
 /**
  * Result of decode in entry formatter.
  */
-@Data
-@AllArgsConstructor
 public class DecodeResult {
 
-    private @NonNull MemoryRecords records;
+    @Getter
+    private MemoryRecords records;
     private ByteBuf releasedByteBuf;
 
-    public DecodeResult(@NonNull MemoryRecords records) {
-        this.records = records;
+    private final Recycler.Handle<DecodeResult> recyclerHandle;
+
+    public static DecodeResult get(MemoryRecords records) {
+        return get(records, null);
     }
 
-    public void release() {
+    public static DecodeResult get(MemoryRecords records,
+                                   ByteBuf releasedByteBuf) {
+        DecodeResult decodeResult = RECYCLER.get();
+        decodeResult.records = records;
+        decodeResult.releasedByteBuf = releasedByteBuf;
+        return decodeResult;
+    }
+
+    private DecodeResult(Recycler.Handle<DecodeResult> recyclerHandle) {
+        this.recyclerHandle = recyclerHandle;
+    }
+
+    private static final Recycler<DecodeResult> RECYCLER = new Recycler<DecodeResult>() {
+        @Override
+        protected DecodeResult newObject(Recycler.Handle<DecodeResult> handle) {
+            return new DecodeResult(handle);
+        }
+    };
+
+    public void recycle() {
+        records = null;
         if (releasedByteBuf != null) {
             releasedByteBuf.release();
+            releasedByteBuf = null;
         }
+        recyclerHandle.recycle(this);
     }
 
     public @NonNull ByteBuf getOrCreateByteBuf() {
@@ -47,4 +70,5 @@ public class DecodeResult {
             return Unpooled.wrappedBuffer(records.buffer());
         }
     }
+
 }
