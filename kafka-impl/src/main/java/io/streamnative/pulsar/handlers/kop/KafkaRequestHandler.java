@@ -186,7 +186,6 @@ import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
-import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 
 /**
  * This class contains all the request handling methods.
@@ -2656,14 +2655,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             log.debug("Request {} get failed response ", requestHar.getHeader().apiKey(), e);
         }
         return requestHar.getRequest().getErrorResponse(((Integer) THROTTLE_TIME_MS.defaultValue), e);
-    }
-
-    // whether a ServiceLookupData contains wanted address.
-    static boolean lookupDataContainsAddress(ServiceLookupData data, String hostAndPort) {
-        return (data.getPulsarServiceUrl() != null && data.getPulsarServiceUrl().contains(hostAndPort))
-            || (data.getPulsarServiceUrlTls() != null && data.getPulsarServiceUrlTls().contains(hostAndPort))
-            || (data.getWebServiceUrl() != null && data.getWebServiceUrl().contains(hostAndPort))
-            || (data.getWebServiceUrlTls() != null && data.getWebServiceUrlTls().contains(hostAndPort));
     }
 
     private static MemoryRecords validateRecords(short version, TopicPartition topicPartition, MemoryRecords records) {

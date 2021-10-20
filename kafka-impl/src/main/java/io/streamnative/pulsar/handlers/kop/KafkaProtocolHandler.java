@@ -448,8 +448,14 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         offsetTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
         txnTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
 
-        kopBrokerLookupManager = new KopBrokerLookupManager(
-                brokerService.getPulsar(), kafkaConfig.getKafkaAdvertisedListeners());
+        try {
+            kopBrokerLookupManager = new KopBrokerLookupManager(
+                    brokerService.getPulsar(), kafkaConfig.getKafkaAdvertisedListeners(),
+                    kafkaConfig.getBrokerLookupTimeoutSeconds());
+        } catch (Exception ex) {
+            log.error("Failed to get kopBrokerLookupManager", ex);
+            throw new IllegalStateException(ex);
+        }
 
         brokerService.pulsar()
                 .getNamespaceService()
