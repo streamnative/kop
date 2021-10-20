@@ -117,14 +117,30 @@ public class SchemaRegistryManager {
             if (kafkaConfig.isAuthorizationEnabled() && kafkaConfig.isKafkaEnableMultiTenantMetadata()) {
                 KafkaPrincipal kafkaPrincipal = new KafkaPrincipal(KafkaPrincipal.USER_TYPE, role, username);
                 String topicName = MetadataUtils.constructSchemaRegistryTopicName(tenant, kafkaConfig);
-                Boolean hasPermission = authorizer
-                        .canProduceAsync(kafkaPrincipal, Resource.of(ResourceType.TOPIC, topicName))
-                        .get();
-                if (hasPermission == null || !hasPermission) {
-                    log.debug("SchemaRegistry username {} role {} tenant {} cannot access topic {}",
-                            username, role, tenant, topicName);
-                    throw new SchemaStorageException("Role " + role + " cannot access topic " + topicName,
-                            HttpResponseStatus.FORBIDDEN.code());
+                try {
+                    Boolean tenantExists =
+                            authorizer.canAccessTenantAsync(kafkaPrincipal, Resource.of(ResourceType.TENANT, tenant))
+                                    .get();
+                    if (tenantExists == null || !tenantExists) {
+                        log.debug("SchemaRegistry username {} role {} tenant {} does not exist",
+                                username, role, tenant, topicName);
+                        throw new SchemaStorageException("Role " + role + " cannot access topic " + topicName+" "
+                                + "tenant "+tenant+" does not exist (wrong username?)",
+                                HttpResponseStatus.FORBIDDEN.code());
+                    }
+                    Boolean hasPermission = authorizer
+                            .canProduceAsync(kafkaPrincipal, Resource.of(ResourceType.TOPIC, topicName))
+                            .get();
+                    if (hasPermission == null || !hasPermission) {
+                        log.debug("SchemaRegistry username {} role {} tenant {} cannot access topic {}",
+                                username, role, tenant, topicName);
+                        throw new SchemaStorageException("Role " + role + " cannot access topic " + topicName,
+                                HttpResponseStatus.FORBIDDEN.code());
+                    }
+                } catch (ExecutionException err) {
+                    throw new SchemaStorageException(err.getCause());
+                } catch (InterruptedException err) {
+                    throw new SchemaStorageException(err);
                 }
             }
         }
