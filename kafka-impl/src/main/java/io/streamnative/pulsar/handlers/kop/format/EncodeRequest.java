@@ -22,10 +22,10 @@ import org.apache.kafka.common.record.MemoryRecords;
  * Request of encode in entry formatter.
  */
 @Getter
-@Setter
 public class EncodeRequest {
 
     private MemoryRecords records;
+    @Setter
     private long baseOffset;
 
     private final Recycler.Handle<EncodeRequest> recyclerHandle;

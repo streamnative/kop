@@ -122,7 +122,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         kafkaConsumer2.close();
     }
 
-    @Test(timeOut = 20000)
+    @Test(timeOut = 30000)
     public void testPollEmptyTopic() throws Exception {
         int partitionNumber = 50;
         String kafkaTopic = "kopPollEmptyTopic" + partitionNumber;

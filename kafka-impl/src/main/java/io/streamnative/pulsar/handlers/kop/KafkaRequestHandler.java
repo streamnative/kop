@@ -929,12 +929,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final int numMessages = encodeResult.getNumMessages();
         final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
         if (!persistentTopicOpt.isPresent()) {
+            encodeResult.recycle();
             // It will trigger a retry send of Kafka client
             errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
             return;
         }
         PersistentTopic persistentTopic = persistentTopicOpt.get();
         if (persistentTopic.isSystemTopic()) {
+            encodeResult.recycle();
             log.error("Not support producing message to system topic: {}", persistentTopic);
             errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
             return;
