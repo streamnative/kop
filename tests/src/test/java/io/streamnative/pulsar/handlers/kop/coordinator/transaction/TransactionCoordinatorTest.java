@@ -21,6 +21,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.testng.AssertJUnit.assertEquals;
+import static org.testng.AssertJUnit.assertTrue;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
@@ -30,15 +31,17 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.curator.shaded.com.google.common.collect.Lists;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
-import org.mockito.Mockito;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -46,6 +49,7 @@ import org.testng.annotations.Test;
 /**
  * Unit test {@link TransactionCoordinator}.
  */
+@Slf4j
 public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     protected final long defaultTestTimeout = 20000;
@@ -73,6 +77,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
+        conf.setEnableTransactionCoordinator(false);
         super.internalSetup();
 
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
@@ -182,10 +187,10 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                         .TransactionalIdAndProducerIdEpoch(transactionalId, producerId, producerEpoch)))
                 .when(transactionManager).timedOutTransactions();
 
+        doReturn(new ErrorsAndData<>(Optional.of(new TransactionStateManager
+                .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
+                .when(transactionManager).getTransactionState(eq(transactionalId));
 
-        Mockito.when(transactionManager.getTransactionState(eq(transactionalId)))
-                .thenReturn(new ErrorsAndData<>(Optional.of(new TransactionStateManager
-                        .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))));
         short bumpedEpoch = producerEpoch + 1;
         TransactionMetadata.TxnTransitMetadata expectedTransition =
                 new TransactionMetadata.TxnTransitMetadata(
@@ -209,5 +214,67 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 any(),
                 any()
         );
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldNotAcceptSmallerEpochDuringTransactionExpiration() {
+        long now = time.milliseconds();
+        TransactionMetadata txnMetadata = new TransactionMetadata(
+                transactionalId,
+                producerId,
+                producerId,
+                producerEpoch,
+                RecordBatch.NO_PRODUCER_EPOCH,
+                txnTimeoutMs,
+                TransactionState.ONGOING,
+                partitions,
+                now,
+                now,
+                Optional.empty(),
+                false);
+
+        doReturn(Lists.newArrayList(
+                new TransactionStateManager
+                        .TransactionalIdAndProducerIdEpoch(transactionalId, producerId, producerEpoch)))
+                .when(transactionManager).timedOutTransactions();
+
+        TransactionMetadata bumpedTxnMetadata = new TransactionMetadata(
+                transactionalId,
+                producerId,
+                producerId,
+                (short) (producerEpoch + 2),
+                RecordBatch.NO_PRODUCER_EPOCH,
+                txnTimeoutMs,
+                TransactionState.ONGOING,
+                partitions,
+                now,
+                now,
+                Optional.empty(),
+                false);
+
+        AtomicInteger times = new AtomicInteger(0);
+        doAnswer(__ -> {
+            if (times.getAndIncrement() == 0) {
+                return new ErrorsAndData<>(Optional.of(new TransactionStateManager
+                        .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata)));
+            }
+            return new ErrorsAndData<>(Optional.of(new TransactionStateManager
+                    .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, bumpedTxnMetadata)));
+        }).when(transactionManager).getTransactionState(eq(transactionalId));
+
+        AtomicBoolean isCalledOnComplete = new AtomicBoolean(false);
+        transactionCoordinator.abortTimedOutTransactions((__, error) -> {
+                isCalledOnComplete.set(true);
+                assertEquals(Errors.UNKNOWN_SERVER_ERROR, error);
+                // We can't test in here, because current API don't support PRODUCER_FENCED,
+                // we need upgrade kafka dependency.
+
+                // assertEquals(error.message(), "There is a newer producer with the same transactionalId "
+                //        + "which fences the current one.");
+        });
+        assertTrue(isCalledOnComplete.get());
+
+        verify(transactionManager, times(1)).timedOutTransactions();
+        verify(transactionManager, times(2)).getTransactionState(eq(transactionalId));
     }
 }

@@ -19,6 +19,7 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.Transa
 import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState.PREPARE_EPOCH_FENCE;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
@@ -37,6 +38,7 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -603,7 +605,7 @@ public class TransactionCoordinator {
                 preAppendResult.setErrors(Errors.INVALID_PRODUCER_ID_MAPPING);
                 return null;
             }
-            if (isFromClient && producerEpoch != txnMetadata.getProducerEpoch()
+            if ((isFromClient && producerEpoch != txnMetadata.getProducerEpoch())
                     || producerEpoch < txnMetadata.getProducerEpoch()) {
                 // TODO the error should be Errors.PRODUCER, needs upgrade kafka client version
                 preAppendResult.setErrors(producerEpochFenceErrors());
@@ -853,7 +855,9 @@ public class TransactionCoordinator {
         return map.firstKey();
     }
 
-    protected void abortTimedOutTransactions() {
+    @VisibleForTesting
+    protected void abortTimedOutTransactions(
+            BiConsumer<TransactionStateManager.TransactionalIdAndProducerIdEpoch, Errors> onComplete) {
         for (TransactionStateManager.TransactionalIdAndProducerIdEpoch txnIdAndPidEpoch :
                 txnManager.timedOutTransactions()) {
             txnManager.getTransactionState(txnIdAndPidEpoch.getTransactionalId()).getData()
@@ -880,33 +884,42 @@ public class TransactionCoordinator {
                                     txnTransitMetadata.getProducerEpoch(),
                                     TransactionResult.ABORT,
                                     false,
-                                    errors -> {
-                                        switch (errors) {
-                                            case NONE:
-                                                log.info("Completed rollback of ongoing transaction for"
-                                                        + " transactionalId {} due to timeout",
-                                                        txnIdAndPidEpoch.getTransactionalId());
-                                                break;
-                                            case INVALID_PRODUCER_ID_MAPPING:
-                                            // case PRODUCER_FENCED:
-                                            case CONCURRENT_TRANSACTIONS:
-                                                if (log.isDebugEnabled()) {
-                                                    log.debug("Rollback of ongoing transaction for transactionalId {} "
-                                                                    + "has been cancelled due to error {}",
-                                                            txnIdAndPidEpoch.getTransactionalId(), errors);
-                                                }
-                                                break;
-                                            default:
-                                                log.warn("Rollback of ongoing transaction for transactionalId {} "
-                                                                + "failed due to error {}",
-                                                        txnIdAndPidEpoch.getTransactionalId(), errors);
-                                                break;
-                                        }
-                                    });
+                                    errors -> onComplete.accept(txnIdAndPidEpoch, errors));
                         }
                     });
         }
     }
+
+    @VisibleForTesting
+    protected void abortTimedOutTransactions() {
+        this.abortTimedOutTransactions(onEndTransactionComplete);
+    }
+
+    private final BiConsumer<TransactionStateManager.TransactionalIdAndProducerIdEpoch, Errors>
+            onEndTransactionComplete =
+            (txnIdAndPidEpoch, errors) -> {
+                switch (errors) {
+                    case NONE:
+                        log.info("Completed rollback of ongoing transaction for"
+                                        + " transactionalId {} due to timeout",
+                                txnIdAndPidEpoch.getTransactionalId());
+                        break;
+                    case INVALID_PRODUCER_ID_MAPPING:
+                        // case PRODUCER_FENCED:
+                    case CONCURRENT_TRANSACTIONS:
+                        if (log.isDebugEnabled()) {
+                            log.debug("Rollback of ongoing transaction for transactionalId {} "
+                                            + "has been cancelled due to error {}",
+                                    txnIdAndPidEpoch.getTransactionalId(), errors);
+                        }
+                        break;
+                    default:
+                        log.warn("Rollback of ongoing transaction for transactionalId {} "
+                                        + "failed due to error {}",
+                                txnIdAndPidEpoch.getTransactionalId(), errors);
+                        break;
+                }
+            };
 
     /**
      * Startup logic executed at the same time when the server starts up.
