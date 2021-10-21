@@ -25,7 +25,6 @@ import static org.testng.AssertJUnit.assertEquals;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
-import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.util.Optional;
 import java.util.Set;
@@ -79,7 +78,6 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         KafkaProtocolHandler kafkaProtocolHandler = (KafkaProtocolHandler) handler;
-        SystemTopicClient txnTopicClient = kafkaProtocolHandler.getTxnTopicClient();
 
         scheduler = OrderedScheduler.newSchedulerBuilder()
                 .name("test-txn-coordinator-scheduler")

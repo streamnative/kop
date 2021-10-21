@@ -82,11 +82,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private StatsLogger scopeStatsLogger;
     private PrometheusMetricsProvider statsProvider;
     @Getter
-    @VisibleForTesting
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
-    @Getter
-    @VisibleForTesting
     private SystemTopicClient txnTopicClient;
 
     @Getter
