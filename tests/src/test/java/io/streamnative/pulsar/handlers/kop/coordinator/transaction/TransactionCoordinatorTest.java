@@ -20,6 +20,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.internal.verification.VerificationModeFactory.atLeastOnce;
 import static org.testng.AssertJUnit.assertEquals;
 import static org.testng.AssertJUnit.assertTrue;
 
@@ -55,15 +56,14 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     protected final long defaultTestTimeout = 20000;
     public static final long DefaultAbortTimedOutTransactionsIntervalMs = TimeUnit.SECONDS.toMillis(1);
 
-    private final AtomicLong nextPid = new AtomicLong(0L);
     private TransactionCoordinator transactionCoordinator;
-    private final MockTime time = new MockTime();
-
     private ProducerIdManager producerIdManager;
     private TransactionStateManager transactionManager;
     private TransactionCoordinator.InitProducerIdResult result = null;
-    private final Set<TopicPartition> partitions = Sets.newHashSet(new TopicPartition("topic1", 0));
 
+    private final AtomicLong nextPid = new AtomicLong(0L);
+    private final MockTime time = new MockTime();
+    private final Set<TopicPartition> partitions = Sets.newHashSet(new TopicPartition("topic1", 0));
     private final String transactionalId = "known";
     private final long producerId = 10L;
     private final short producerEpoch = 1;
@@ -205,9 +205,9 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                         now + DefaultAbortTimedOutTransactionsIntervalMs);
         time.sleep(DefaultAbortTimedOutTransactionsIntervalMs);
         transactionCoordinator.abortTimedOutTransactions();
-        verify(transactionManager, times(1)).timedOutTransactions();
+        verify(transactionManager, atLeastOnce()).timedOutTransactions();
         verify(transactionManager, times(2)).getTransactionState(eq(transactionalId));
-        verify(transactionManager).appendTransactionToLog(
+        verify(transactionManager, times(1)).appendTransactionToLog(
                 eq(transactionalId),
                 eq(coordinatorEpoch),
                 eq(expectedTransition),
@@ -274,8 +274,8 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         });
         assertTrue(isCalledOnComplete.get());
 
-        verify(transactionManager, times(1)).timedOutTransactions();
-        verify(transactionManager, times(2)).getTransactionState(eq(transactionalId));
+        verify(transactionManager, atLeastOnce()).timedOutTransactions();
+        verify(transactionManager, atLeastOnce()).getTransactionState(eq(transactionalId));
     }
 
     @Test(timeOut = defaultTestTimeout)
@@ -306,7 +306,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
         time.sleep(DefaultAbortTimedOutTransactionsIntervalMs);
         transactionCoordinator.abortTimedOutTransactions();
-        verify(transactionManager, times(1)).timedOutTransactions();
-        verify(transactionManager, times(1)).getTransactionState(eq(transactionalId));
+        verify(transactionManager, atLeastOnce()).timedOutTransactions();
+        verify(transactionManager, atLeastOnce()).getTransactionState(eq(transactionalId));
     }
 }
