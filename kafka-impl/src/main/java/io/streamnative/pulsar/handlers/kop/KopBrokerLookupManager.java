@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import javax.annotation.Nullable;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.resources.MetadataStoreCacheLoader;
 import org.apache.pulsar.common.naming.TopicName;
@@ -211,10 +212,8 @@ public class KopBrokerLookupManager {
 
     // whether a ServiceLookupData contains wanted address.
     private boolean lookupDataContainsAddress(ServiceLookupData data, String hostAndPort) {
-        return (data.getPulsarServiceUrl() != null && data.getPulsarServiceUrl().contains(hostAndPort))
-                || (data.getPulsarServiceUrlTls() != null && data.getPulsarServiceUrlTls().contains(hostAndPort))
-                || (data.getWebServiceUrl() != null && data.getWebServiceUrl().contains(hostAndPort))
-                || (data.getWebServiceUrlTls() != null && data.getWebServiceUrlTls().contains(hostAndPort));
+        return StringUtils.endsWith(data.getPulsarServiceUrl(), hostAndPort)
+                || StringUtils.endsWith(data.getPulsarServiceUrlTls(), hostAndPort);
     }
 
     public static void removeTopicManagerCache(String topicName) {
