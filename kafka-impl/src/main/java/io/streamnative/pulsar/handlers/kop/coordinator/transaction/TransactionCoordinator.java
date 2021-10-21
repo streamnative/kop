@@ -82,6 +82,32 @@ public class TransactionCoordinator {
 
     private final Time time;
 
+    private final BiConsumer<TransactionStateManager.TransactionalIdAndProducerIdEpoch, Errors>
+            onEndTransactionComplete =
+            (txnIdAndPidEpoch, errors) -> {
+                switch (errors) {
+                    case NONE:
+                        log.info("Completed rollback of ongoing transaction for"
+                                        + " transactionalId {} due to timeout",
+                                txnIdAndPidEpoch.getTransactionalId());
+                        break;
+                    case INVALID_PRODUCER_ID_MAPPING:
+                        // case PRODUCER_FENCED:
+                    case CONCURRENT_TRANSACTIONS:
+                        if (log.isDebugEnabled()) {
+                            log.debug("Rollback of ongoing transaction for transactionalId {} "
+                                            + "has been cancelled due to error {}",
+                                    txnIdAndPidEpoch.getTransactionalId(), errors);
+                        }
+                        break;
+                    default:
+                        log.warn("Rollback of ongoing transaction for transactionalId {} "
+                                        + "failed due to error {}",
+                                txnIdAndPidEpoch.getTransactionalId(), errors);
+                        break;
+                }
+            };
+
     protected TransactionCoordinator(TransactionConfig transactionConfig,
                                      KopBrokerLookupManager kopBrokerLookupManager,
                                      ScheduledExecutorService scheduler,
@@ -899,32 +925,6 @@ public class TransactionCoordinator {
     protected void abortTimedOutTransactions() {
         this.abortTimedOutTransactions(onEndTransactionComplete);
     }
-
-    private final BiConsumer<TransactionStateManager.TransactionalIdAndProducerIdEpoch, Errors>
-            onEndTransactionComplete =
-            (txnIdAndPidEpoch, errors) -> {
-                switch (errors) {
-                    case NONE:
-                        log.info("Completed rollback of ongoing transaction for"
-                                        + " transactionalId {} due to timeout",
-                                txnIdAndPidEpoch.getTransactionalId());
-                        break;
-                    case INVALID_PRODUCER_ID_MAPPING:
-                        // case PRODUCER_FENCED:
-                    case CONCURRENT_TRANSACTIONS:
-                        if (log.isDebugEnabled()) {
-                            log.debug("Rollback of ongoing transaction for transactionalId {} "
-                                            + "has been cancelled due to error {}",
-                                    txnIdAndPidEpoch.getTransactionalId(), errors);
-                        }
-                        break;
-                    default:
-                        log.warn("Rollback of ongoing transaction for transactionalId {} "
-                                        + "failed due to error {}",
-                                txnIdAndPidEpoch.getTransactionalId(), errors);
-                        break;
-                }
-            };
 
     /**
      * Startup logic executed at the same time when the server starts up.
