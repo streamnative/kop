@@ -55,7 +55,6 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     private TransactionCoordinator transactionCoordinator;
     private final MockTime time = new MockTime();
 
-    private OrderedScheduler scheduler;
     private ProducerIdManager producerIdManager;
     private TransactionStateManager transactionManager;
     private TransactionCoordinator.InitProducerIdResult result = null;
@@ -79,7 +78,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         KafkaProtocolHandler kafkaProtocolHandler = (KafkaProtocolHandler) handler;
 
-        scheduler = OrderedScheduler.newSchedulerBuilder()
+        OrderedScheduler scheduler = OrderedScheduler.newSchedulerBuilder()
                 .name("test-txn-coordinator-scheduler")
                 .numThreads(1)
                 .build();
@@ -203,7 +202,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         transactionCoordinator.abortTimedOutTransactions();
         verify(transactionManager, times(1)).timedOutTransactions();
         verify(transactionManager, times(2)).getTransactionState(eq(transactionalId));
-        Mockito.verify(transactionManager).appendTransactionToLog(
+        verify(transactionManager).appendTransactionToLog(
                 eq(transactionalId),
                 eq(coordinatorEpoch),
                 eq(expectedTransition),
