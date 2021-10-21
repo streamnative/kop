@@ -18,6 +18,7 @@ import static org.junit.Assert.assertEquals;
 import io.streamnative.kafka.client.api.Header;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
@@ -25,6 +26,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -100,6 +102,22 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
 
         final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
         consumer.subscribe(Collections.singleton(topic));
+        return consumer;
+    }
+
+    protected KafkaConsumer<String, String> newKafkaConsumer(final Pattern pattern, final String group) {
+        final Properties props =  new Properties();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers());
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, (group == null) ? GROUP_ID : group);
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+
+        // with Pattern subscription, we want to detect metadata changes to see new topic
+        props.put(ConsumerConfig.METADATA_MAX_AGE_CONFIG, 1000);
+
+        final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
+        consumer.subscribe(pattern);
         return consumer;
     }
 

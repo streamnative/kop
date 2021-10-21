@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.streams;
 
+import static org.testng.Assert.assertTrue;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
@@ -28,8 +29,10 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -55,32 +58,8 @@ import org.apache.kafka.streams.StreamsConfig;
 public class TestUtils {
 
     public static final String INTERNAL_LEAVE_GROUP_ON_CLOSE = "internal.leave.group.on.close";
-
-    /**
-     * Wait for condition to be met for at most {@code maxWaitMs} and throw assertion failure otherwise.
-     * This should be used instead of {@code Thread.sleep} whenever possible as it allows a longer timeout to be used
-     * without unnecessarily increasing test time (as the condition is checked frequently). The longer timeout is needed
-     * to avoid transient failures due to slow or overloaded machines.
-     */
-    public static void waitForCondition(
-            final TestCondition testCondition, final long maxWaitMs, String conditionDetails)
-            throws InterruptedException {
-        final long startTime = System.currentTimeMillis();
-
-        boolean testConditionMet;
-        while (!(testConditionMet = testCondition.conditionMet())
-                && ((System.currentTimeMillis() - startTime) < maxWaitMs)) {
-            Thread.sleep(Math.min(maxWaitMs, 100L));
-        }
-
-        // don't re-evaluate testCondition.conditionMet() because this might slow down some tests significantly (this
-        // could be avoided by making the implementations more robust, but we have a large number of such
-        // implementations and it's easier to simply avoid the issue altogether)
-        if (!testConditionMet) {
-            conditionDetails = conditionDetails != null ? conditionDetails : "";
-            throw new AssertionError("Condition not met within timeout " + maxWaitMs + ". " + conditionDetails);
-        }
-    }
+    public static final long DEFAULT_POLL_INTERVAL_MS = 100;
+    public static final long DEFAULT_MAX_WAIT_MS = Integer.MAX_VALUE;
 
     /**
      * Wait until enough data (key-value records) has been consumed.
@@ -404,5 +383,176 @@ public class TestUtils {
 
     private static boolean continueConsuming(final int messagesConsumed, final int maxMessages) {
         return maxMessages <= 0 || messagesConsumed < maxMessages;
+    }
+
+
+    public static Properties consumerConfig(final String bootstrapServers,
+                                            final String groupId,
+                                            final Class<?> keyDeserializer,
+                                            final Class<?> valueDeserializer,
+                                            final Properties additional) {
+
+        final Properties consumerConfig = new Properties();
+        consumerConfig.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        consumerConfig.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+        consumerConfig.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        consumerConfig.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, keyDeserializer);
+        consumerConfig.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, valueDeserializer);
+        consumerConfig.putAll(additional);
+        return consumerConfig;
+    }
+
+    public static Properties consumerConfig(final String bootstrapServers,
+                                            final String groupId,
+                                            final Class<?> keyDeserializer,
+                                            final Class<?> valueDeserializer) {
+        return consumerConfig(bootstrapServers,
+                groupId,
+                keyDeserializer,
+                valueDeserializer,
+                new Properties());
+    }
+
+    /**
+     * returns consumer config with random UUID for the Group ID
+     */
+    public static Properties consumerConfig(final String bootstrapServers, final Class<?> keyDeserializer, final Class<?> valueDeserializer) {
+        return consumerConfig(bootstrapServers,
+                UUID.randomUUID().toString(),
+                keyDeserializer,
+                valueDeserializer,
+                new Properties());
+    }
+
+    /**
+     * uses default value of 15 seconds for timeout
+     */
+    public static void waitForCondition(final TestCondition testCondition, final String conditionDetails) throws InterruptedException {
+        waitForCondition(testCondition, DEFAULT_MAX_WAIT_MS, () -> conditionDetails);
+    }
+
+    /**
+     * uses default value of 15 seconds for timeout
+     */
+    public static void waitForCondition(final TestCondition testCondition, final Supplier<String> conditionDetailsSupplier) throws InterruptedException {
+        waitForCondition(testCondition, DEFAULT_MAX_WAIT_MS, conditionDetailsSupplier);
+    }
+
+    /**
+     * Wait for condition to be met for at most {@code maxWaitMs} and throw assertion failure otherwise.
+     * This should be used instead of {@code Thread.sleep} whenever possible as it allows a longer timeout to be used
+     * without unnecessarily increasing test time (as the condition is checked frequently). The longer timeout is needed to
+     * avoid transient failures due to slow or overloaded machines.
+     */
+    public static void waitForCondition(final TestCondition testCondition, final long maxWaitMs, String conditionDetails) throws InterruptedException {
+        waitForCondition(testCondition, maxWaitMs, () -> conditionDetails);
+    }
+
+    /**
+     * Wait for condition to be met for at most {@code maxWaitMs} and throw assertion failure otherwise.
+     * This should be used instead of {@code Thread.sleep} whenever possible as it allows a longer timeout to be used
+     * without unnecessarily increasing test time (as the condition is checked frequently). The longer timeout is needed to
+     * avoid transient failures due to slow or overloaded machines.
+     */
+    public static void waitForCondition(final TestCondition testCondition, final long maxWaitMs, Supplier<String> conditionDetailsSupplier) throws InterruptedException {
+        waitForCondition(testCondition, maxWaitMs, DEFAULT_POLL_INTERVAL_MS, conditionDetailsSupplier);
+    }
+
+    /**
+     * Wait for condition to be met for at most {@code maxWaitMs} with a polling interval of {@code pollIntervalMs}
+     * and throw assertion failure otherwise. This should be used instead of {@code Thread.sleep} whenever possible
+     * as it allows a longer timeout to be used without unnecessarily increasing test time (as the condition is
+     * checked frequently). The longer timeout is needed to avoid transient failures due to slow or overloaded
+     * machines.
+     */
+    public static void waitForCondition(
+            final TestCondition testCondition,
+            final long maxWaitMs,
+            final long pollIntervalMs,
+            Supplier<String> conditionDetailsSupplier
+    ) throws InterruptedException {
+        retryOnExceptionWithTimeout(maxWaitMs, pollIntervalMs, () -> {
+            String conditionDetailsSupplied = conditionDetailsSupplier != null ? conditionDetailsSupplier.get() : null;
+            String conditionDetails = conditionDetailsSupplied != null ? conditionDetailsSupplied : "";
+            assertTrue(testCondition.conditionMet(),
+                    "Condition not met within timeout " + maxWaitMs + ". " + conditionDetails);
+        });
+    }
+
+    /**
+     * Wait for the given runnable to complete successfully, i.e. throw now {@link Exception}s or
+     * {@link AssertionError}s, or for the given timeout to expire. If the timeout expires then the
+     * last exception or assertion failure will be thrown thus providing context for the failure.
+     *
+     * @param timeoutMs the total time in milliseconds to wait for {@code runnable} to complete successfully.
+     * @param runnable the code to attempt to execute successfully.
+     * @throws InterruptedException if the current thread is interrupted while waiting for {@code runnable} to complete successfully.
+     */
+    public static void retryOnExceptionWithTimeout(final long timeoutMs,
+                                                   final ValuelessCallable runnable) throws InterruptedException {
+        retryOnExceptionWithTimeout(timeoutMs, DEFAULT_POLL_INTERVAL_MS, runnable);
+    }
+
+    /**
+     * Wait for the given runnable to complete successfully, i.e. throw now {@link Exception}s or
+     * {@link AssertionError}s, or for the default timeout to expire. If the timeout expires then the
+     * last exception or assertion failure will be thrown thus providing context for the failure.
+     *
+     * @param runnable the code to attempt to execute successfully.
+     * @throws InterruptedException if the current thread is interrupted while waiting for {@code runnable} to complete successfully.
+     */
+    public static void retryOnExceptionWithTimeout(final ValuelessCallable runnable) throws InterruptedException {
+        retryOnExceptionWithTimeout(DEFAULT_MAX_WAIT_MS, DEFAULT_POLL_INTERVAL_MS, runnable);
+    }
+
+    /**
+     * Wait for the given runnable to complete successfully, i.e. throw now {@link Exception}s or
+     * {@link AssertionError}s, or for the given timeout to expire. If the timeout expires then the
+     * last exception or assertion failure will be thrown thus providing context for the failure.
+     *
+     * @param timeoutMs the total time in milliseconds to wait for {@code runnable} to complete successfully.
+     * @param pollIntervalMs the interval in milliseconds to wait between invoking {@code runnable}.
+     * @param runnable the code to attempt to execute successfully.
+     * @throws InterruptedException if the current thread is interrupted while waiting for {@code runnable} to complete successfully.
+     */
+    public static void retryOnExceptionWithTimeout(final long timeoutMs,
+                                                   final long pollIntervalMs,
+                                                   final ValuelessCallable runnable) throws InterruptedException {
+        final long expectedEnd = System.currentTimeMillis() + timeoutMs;
+
+        while (true) {
+            try {
+                runnable.call();
+                return;
+            } catch (final NoRetryException e) {
+                throw e;
+            } catch (final AssertionError t) {
+                if (expectedEnd <= System.currentTimeMillis()) {
+                    throw t;
+                }
+            } catch (final Exception e) {
+                if (expectedEnd <= System.currentTimeMillis()) {
+                    throw new AssertionError(String.format("Assertion failed with an exception after %s ms", timeoutMs), e);
+                }
+            }
+            Thread.sleep(Math.min(pollIntervalMs, timeoutMs));
+        }
+    }
+
+    public interface ValuelessCallable {
+        void call() throws Exception;
+    }
+
+    public static class NoRetryException extends RuntimeException {
+        private final Throwable cause;
+
+        public NoRetryException(Throwable cause) {
+            this.cause = cause;
+        }
+
+        @Override
+        public Throwable getCause() {
+            return this.cause;
+        }
     }
 }

@@ -14,10 +14,12 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
 
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
@@ -95,5 +97,27 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
         kafkaConsumer = newKafkaConsumer(topic, subscription);
         assertEquals(kafkaConsumer.poll(Duration.ofSeconds(1)).count(), 0);
         kafkaConsumer.close();
+    }
+
+
+    @Test(timeOut = 20000)
+    public void testMultiTopicRegExpKafkaConsumer() throws Exception {
+        final String topic1 = "test-multiple-1";
+        final String topic2 = "test-multiple-2";
+
+        @Cleanup
+        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        sendSingleMessages(kafkaProducer, topic1, Arrays.asList("1"));
+
+        Pattern pattern = Pattern.compile("test-multiple.*");
+        @Cleanup
+        final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(pattern, null);
+        List<String> kafkaReceives = receiveMessages(kafkaConsumer, 1);
+        assertTrue(kafkaReceives.contains("1"));
+
+        //create and write to second topic
+        sendSingleMessages(kafkaProducer, topic2, Arrays.asList("2"));
+        kafkaReceives = receiveMessages(kafkaConsumer, 1);
+        assertTrue(kafkaReceives.contains("2"));
     }
 }

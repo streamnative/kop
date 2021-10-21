@@ -23,6 +23,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
@@ -36,7 +37,7 @@ public abstract class KafkaStreamsTestBase extends KopProtocolHandlerTestBase {
     protected String bootstrapServers;
     @Getter
     private int testNo = 0; // the suffix of the prefix of test topic name or application id, etc.
-    private Properties streamsConfiguration;
+    protected Properties streamsConfiguration;
     protected StreamsBuilder builder; // the builder to build `kafkaStreams` and other objects of Kafka Streams
     protected KafkaStreams kafkaStreams;
 
@@ -55,6 +56,28 @@ public abstract class KafkaStreamsTestBase extends KopProtocolHandlerTestBase {
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
+    }
+
+    protected void createTopics(String ... topics) throws Exception {
+        createTopics(1, topics);;
+    }
+    protected void createTopics(int partitions, String ... topics) throws Exception {
+        for (String topic : topics) {
+            try {
+                admin.topics().deletePartitionedTopic(topic, true, true);
+            } catch (PulsarAdminException.NotFoundException ok) {
+            }
+            admin.topics().createPartitionedTopic(topic, partitions);
+        }
+    }
+
+    protected void deleteTopic(String ... topics) throws Exception {
+        for (String topic : topics) {
+            try {
+                admin.topics().deletePartitionedTopic(topic, true, true);
+            } catch (PulsarAdminException.NotFoundException ok) {
+            }
+        }
     }
 
     @BeforeMethod
