@@ -33,7 +33,7 @@ public class Producer009Impl<K, V> extends KafkaProducer<K, V> implements Produc
     @SuppressWarnings("unchecked")
     @Override
     public Future<RecordMetadata> sendAsync(final ProduceContext<K, V> context) {
-        send(context.createProducerRecord(ProducerRecord.class), context::complete);
+        send(context.createV0ProducerRecord(ProducerRecord.class), context::complete);
         return context.getFuture();
     }
 }

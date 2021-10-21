@@ -209,7 +209,8 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
             keys.add(key);
             values.add(value);
             // Because there is no header in ProducerRecord before 0.11.x.
-            if (!(version.equals(KafkaVersion.KAFKA_0_10_0_0) || version.equals(KafkaVersion.KAFKA_0_9_0_0))) {
+            if (!(version.equals(KafkaVersion.KAFKA_0_10_0_0)
+                    || version.equals(KafkaVersion.KAFKA_0_9_0_0))) {
                 headers.add(new Header("header-" + key, "header-" + value));
             }
 
@@ -249,7 +250,8 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
                         .filter(Objects::nonNull)
                         .collect(Collectors.toList()), keys);
             }
-            if (!(version.equals(KafkaVersion.KAFKA_0_10_0_0) || version.equals(KafkaVersion.KAFKA_0_9_0_0))) {
+            if (!(version.equals(KafkaVersion.KAFKA_0_10_0_0)
+                    || version.equals(KafkaVersion.KAFKA_0_9_0_0))) {
                 assertEquals(records.stream()
                         .map(ConsumerRecord::getHeaders)
                         .filter(Objects::nonNull)
@@ -294,7 +296,8 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
                 fail("should have failed");
             } catch (Exception e) {
                 // v0 sasl_handshake failed but not receive response, so need catch TimeoutException
-                if (version.equals(KafkaVersion.KAFKA_0_10_0_0) || version.equals(KafkaVersion.KAFKA_0_9_0_0)) {
+                if (version.equals(KafkaVersion.KAFKA_0_10_0_0)
+                        || version.equals(KafkaVersion.KAFKA_0_9_0_0)) {
                     assertTrue(e.getMessage().contains("Failed to update metadata"));
                 } else {
                     assertTrue(e.getMessage().contains("SaslAuthenticationException"));
