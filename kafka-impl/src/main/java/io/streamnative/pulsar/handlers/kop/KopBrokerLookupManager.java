@@ -13,25 +13,22 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.KafkaRequestHandler.lookupDataContainsAddress;
 
-import com.google.common.collect.Lists;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.loadbalance.LoadManager;
+import org.apache.pulsar.broker.resources.MetadataStoreCacheLoader;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.util.FutureUtil;
-import org.apache.pulsar.metadata.api.MetadataCache;
-import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
+import org.apache.pulsar.policies.data.loadbalancer.LoadManagerReport;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 
 
@@ -41,10 +38,9 @@ import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 @Slf4j
 public class KopBrokerLookupManager {
 
-    private final PulsarService pulsarService;
     private final String advertisedListeners;
     private final LookupClient lookupClient;
-    private final MetadataCache<LocalBrokerData> localBrokerDataCache;
+    private final MetadataStoreCacheLoader metadataStoreCacheLoader;
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -54,11 +50,12 @@ public class KopBrokerLookupManager {
     public static final ConcurrentHashMap<String, CompletableFuture<Optional<String>>>
             KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
 
-    public KopBrokerLookupManager(PulsarService pulsarService, String advertisedListeners) {
-        this.pulsarService = pulsarService;
+    public KopBrokerLookupManager(
+            PulsarService pulsarService, String advertisedListeners, int brokerLookupTimeoutMs) throws Exception {
         this.advertisedListeners = advertisedListeners;
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
-        this.localBrokerDataCache = pulsarService.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class);
+        this.metadataStoreCacheLoader = new MetadataStoreCacheLoader(pulsarService.getPulsarResources(),
+                brokerLookupTimeoutMs);
     }
 
     public CompletableFuture<Optional<InetSocketAddress>> findBroker(@NonNull TopicName topic,
@@ -184,81 +181,37 @@ public class KopBrokerLookupManager {
             return returnFuture;
         }
 
-        // advertised data is write in  /loadbalance/brokers/advertisedAddress:webServicePort
-        // here we get the broker url, need to find related webServiceUrl.
-        pulsarService.getPulsarResources()
-                .getDynamicConfigResources()
-                .getChildrenAsync(LoadManager.LOADBALANCE_BROKERS_ROOT)
-                .whenComplete((set, throwable) -> {
-                    if (throwable != null) {
-                        log.error("Error in getChildrenAsync(zk://loadbalance) for {}", pulsarAddress, throwable);
-                        returnFuture.complete(Optional.empty());
-                        return;
-                    }
+        List<LoadManagerReport> availableBrokers = metadataStoreCacheLoader.getAvailableBrokers();
+        if (log.isDebugEnabled()) {
+            availableBrokers.forEach(loadManagerReport ->
+                    log.debug("Handle getProtocolDataToAdvertise for {}, pulsarUrl: {}, "
+                                    + "pulsarUrlTls: {}, webUrl: {}, webUrlTls: {} kafka: {}",
+                            topic,
+                            loadManagerReport.getPulsarServiceUrl(),
+                            loadManagerReport.getPulsarServiceUrlTls(),
+                            loadManagerReport.getWebServiceUrl(),
+                            loadManagerReport.getWebServiceUrlTls(),
+                            loadManagerReport.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME)));
+        }
 
-                    String hostAndPort = pulsarAddress.getHostName() + ":" + pulsarAddress.getPort();
-                    List<String> matchBrokers = Lists.newArrayList();
-                    // match host part of url
-                    for (String activeBroker : set) {
-                        if (activeBroker.startsWith(pulsarAddress.getHostName() + ":")) {
-                            matchBrokers.add(activeBroker);
-                        }
-                    }
-
-                    if (matchBrokers.isEmpty()) {
-                        log.error("No node for broker {} under zk://loadbalance", pulsarAddress);
-                        returnFuture.complete(Optional.empty());
-                        removeTopicManagerCache(topic.toString());
-                        return;
-                    }
-
-                    // Get a list of ServiceLookupData for each matchBroker.
-                    List<CompletableFuture<Optional<LocalBrokerData>>> list = matchBrokers.stream()
-                            .map(matchBroker -> localBrokerDataCache.get(
-                                    String.format("%s/%s", LoadManager.LOADBALANCE_BROKERS_ROOT, matchBroker)))
-                            .collect(Collectors.toList());
-
-                    FutureUtil.waitForAll(list).whenComplete((ignore, th) -> {
-                        if (th != null) {
-                            log.error("Error in getDataAsync() for {}", pulsarAddress, th);
-                            returnFuture.complete(Optional.empty());
-                            removeTopicManagerCache(topic.toString());
-                            return;
-                        }
-
-                        try {
-                            for (CompletableFuture<Optional<LocalBrokerData>> lookupData : list) {
-                                ServiceLookupData data = lookupData.get().get();
-                                if (log.isDebugEnabled()) {
-                                    log.debug("Handle getProtocolDataToAdvertise for {}, pulsarUrl: {}, "
-                                                    + "pulsarUrlTls: {}, webUrl: {}, webUrlTls: {} kafka: {}",
-                                            topic,
-                                            data.getPulsarServiceUrl(),
-                                            data.getPulsarServiceUrlTls(),
-                                            data.getWebServiceUrl(),
-                                            data.getWebServiceUrlTls(),
-                                            data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
-                                }
-
-                                if (lookupDataContainsAddress(data, hostAndPort)) {
-                                    KOP_ADDRESS_CACHE.put(topic.toString(), returnFuture);
-                                    returnFuture.complete(data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
-                                    return;
-                                }
-                            }
-                        } catch (Exception e) {
-                            log.error("Error in {} lookupFuture get: ", pulsarAddress, e);
-                            returnFuture.complete(Optional.empty());
-                            removeTopicManagerCache(topic.toString());
-                            return;
-                        }
-
-                        // no matching lookup data in all matchBrokers.
-                        log.error("Not able to search {} in all child of zk://loadbalance", pulsarAddress);
-                        returnFuture.complete(Optional.empty());
-                    });
-                });
+        String hostAndPort = pulsarAddress.getHostName() + ":" + pulsarAddress.getPort();
+        Optional<LoadManagerReport> serviceLookupData = availableBrokers.stream()
+                .filter(loadManagerReport -> lookupDataContainsAddress(loadManagerReport, hostAndPort)).findAny();
+        if (serviceLookupData.isPresent()) {
+            KOP_ADDRESS_CACHE.put(topic.toString(), returnFuture);
+            returnFuture.complete(serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
+        } else {
+            log.error("No node for broker {} under loadBalance", pulsarAddress);
+            removeTopicManagerCache(topic.toString());
+            returnFuture.complete(Optional.empty());
+        }
         return returnFuture;
+    }
+
+    // whether a ServiceLookupData contains wanted address.
+    private static boolean lookupDataContainsAddress(ServiceLookupData data, String hostAndPort) {
+        return StringUtils.endsWith(data.getPulsarServiceUrl(), hostAndPort)
+                || StringUtils.endsWith(data.getPulsarServiceUrlTls(), hostAndPort);
     }
 
     public static void removeTopicManagerCache(String topicName) {
@@ -279,6 +232,11 @@ public class KopBrokerLookupManager {
             return;
         }
         clear();
+        try {
+            metadataStoreCacheLoader.close();
+        } catch (IOException e) {
+            log.error("Close metadataStoreCacheLoader failed.", e);
+        }
     }
 
 }
