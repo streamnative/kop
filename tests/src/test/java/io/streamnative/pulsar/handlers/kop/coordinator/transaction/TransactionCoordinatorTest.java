@@ -27,7 +27,6 @@ import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -41,9 +40,6 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.mockito.Mockito;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
-import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -53,7 +49,7 @@ import org.testng.annotations.Test;
  */
 public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
-    protected final long DEFAULT_TIMEOUT = 20000;
+    protected final long defaultTestTimeout = 20000;
     public static final long DefaultAbortTimedOutTransactionsIntervalMs = TimeUnit.SECONDS.toMillis(1);
 
     private final AtomicLong nextPid = new AtomicLong(0L);
@@ -97,7 +93,6 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 TransactionConfig.builder()
                         .abortTimedOutTransactionsIntervalMs(DefaultAbortTimedOutTransactionsIntervalMs)
                         .build(),
-                txnTopicClient,
                 kafkaProtocolHandler.getKopBrokerLookupManager(),
                 scheduler,
                 producerIdManager,
@@ -128,7 +123,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         return future;
     }
 
-    @Test(timeOut = DEFAULT_TIMEOUT)
+    @Test(timeOut = defaultTestTimeout)
     public void shouldReturnInvalidRequestWhenTransactionalIdIsEmpty() {
         transactionCoordinator.handleInitProducerId(
                 "",
@@ -148,7 +143,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 result);
     }
 
-    @Test(timeOut = DEFAULT_TIMEOUT)
+    @Test(timeOut = defaultTestTimeout)
     public void shouldAcceptInitPidAndReturnNextPidWhenTransactionalIdIsNull() {
         transactionCoordinator.handleInitProducerId(
                 null,
@@ -168,7 +163,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 result);
     }
 
-    @Test(timeOut = DEFAULT_TIMEOUT)
+    @Test(timeOut = defaultTestTimeout)
     public void shouldAbortExpiredTransactionsInOngoingStateAndBumpEpoch() {
         long now = time.milliseconds();
         TransactionMetadata txnMetadata = new TransactionMetadata(
@@ -194,16 +189,11 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         Mockito.when(transactionManager.getTransactionState(eq(transactionalId)))
                 .thenReturn(new ErrorsAndData<>(Optional.of(new TransactionStateManager
                         .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))));
-
-        time.sleep(DefaultAbortTimedOutTransactionsIntervalMs + 1000);
-        transactionCoordinator.abortTimedOutTransactions();
-        verify(transactionManager, times(1)).timedOutTransactions();
-//        verify(transactionManager, times(2)).getTransactionState(eq(transactionalId));
         short bumpedEpoch = producerEpoch + 1;
         TransactionMetadata.TxnTransitMetadata expectedTransition =
                 new TransactionMetadata.TxnTransitMetadata(
                         producerId,
-                        -1,
+                        producerId,
                         bumpedEpoch,
                         (short) -1,
                         txnTimeoutMs,
@@ -211,7 +201,10 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                         partitions,
                         now,
                         now + DefaultAbortTimedOutTransactionsIntervalMs);
-
+        time.sleep(DefaultAbortTimedOutTransactionsIntervalMs);
+        transactionCoordinator.abortTimedOutTransactions();
+        verify(transactionManager, times(1)).timedOutTransactions();
+        verify(transactionManager, times(2)).getTransactionState(eq(transactionalId));
         Mockito.verify(transactionManager).appendTransactionToLog(
                 eq(transactionalId),
                 eq(coordinatorEpoch),
