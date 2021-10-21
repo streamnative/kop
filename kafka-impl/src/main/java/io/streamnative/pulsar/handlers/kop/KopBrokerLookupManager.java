@@ -181,8 +181,6 @@ public class KopBrokerLookupManager {
             return returnFuture;
         }
 
-        // advertised data is written in  /loadbalance/brokers/advertisedAddress:webServicePort
-        // here we get the broker url, need to find related webServiceUrl.
         List<LoadManagerReport> availableBrokers = metadataStoreCacheLoader.getAvailableBrokers();
         if (log.isDebugEnabled()) {
             availableBrokers.forEach(loadManagerReport ->
@@ -204,14 +202,14 @@ public class KopBrokerLookupManager {
             returnFuture.complete(serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
         } else {
             log.error("No node for broker {} under loadBalance", pulsarAddress);
-            returnFuture.complete(Optional.empty());
             removeTopicManagerCache(topic.toString());
+            returnFuture.complete(Optional.empty());
         }
         return returnFuture;
     }
 
     // whether a ServiceLookupData contains wanted address.
-    private boolean lookupDataContainsAddress(ServiceLookupData data, String hostAndPort) {
+    private static boolean lookupDataContainsAddress(ServiceLookupData data, String hostAndPort) {
         return StringUtils.endsWith(data.getPulsarServiceUrl(), hostAndPort)
                 || StringUtils.endsWith(data.getPulsarServiceUrlTls(), hostAndPort);
     }
