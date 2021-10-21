@@ -277,4 +277,36 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         verify(transactionManager, times(1)).timedOutTransactions();
         verify(transactionManager, times(2)).getTransactionState(eq(transactionalId));
     }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldNotAbortExpiredTransactionsThatHaveAPendingStateTransition() {
+        long now = time.milliseconds();
+        TransactionMetadata metadata = new TransactionMetadata(
+                transactionalId,
+                producerId,
+                producerId,
+                producerEpoch,
+                RecordBatch.NO_PRODUCER_EPOCH,
+                txnTimeoutMs,
+                TransactionState.ONGOING,
+                partitions,
+                now,
+                now,
+                Optional.empty(),
+                false);
+        metadata.prepareAbortOrCommit(TransactionState.PREPARE_ABORT, now);
+        doReturn(Lists.newArrayList(
+                new TransactionStateManager
+                        .TransactionalIdAndProducerIdEpoch(transactionalId, producerId, producerEpoch)))
+                .when(transactionManager).timedOutTransactions();
+
+        doReturn(new ErrorsAndData<>(Optional.of(new TransactionStateManager
+                .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, metadata))))
+                .when(transactionManager).getTransactionState(eq(transactionalId));
+
+        time.sleep(DefaultAbortTimedOutTransactionsIntervalMs);
+        transactionCoordinator.abortTimedOutTransactions();
+        verify(transactionManager, times(1)).timedOutTransactions();
+        verify(transactionManager, times(1)).getTransactionState(eq(transactionalId));
+    }
 }

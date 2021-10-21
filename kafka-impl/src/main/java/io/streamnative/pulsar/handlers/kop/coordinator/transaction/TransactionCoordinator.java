@@ -872,6 +872,11 @@ public class TransactionCoordinator {
                                         txnMetadata.getProducerId());
                                 return new ErrorsAndData<>(Errors.INVALID_PRODUCER_ID_MAPPING);
                             } else if (txnMetadata.pendingTransitionInProgress()) {
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Skipping abort of timed out transaction {} since there "
+                                                    + "is a pending state transition",
+                                            txnIdAndPidEpoch.getTransactionalId());
+                                }
                                 return new ErrorsAndData<>(Errors.CONCURRENT_TRANSACTIONS);
                             } else {
                                 return new ErrorsAndData<>(txnMetadata.prepareFenceProducerEpoch());
