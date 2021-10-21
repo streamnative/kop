@@ -21,6 +21,7 @@ import io.streamnative.kafka.client.api.TopicOffsetAndMetadata;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +41,7 @@ public class Consumer009Impl<K, V> extends KafkaConsumer<K, V> implements Consum
 
     @Override
     public void subscribe(Collection<String> topics) {
-        super.subscribe((List<String>) topics);
+        super.subscribe(new ArrayList<>(topics));
     }
 
     @Override
