@@ -52,7 +52,7 @@ import org.testng.annotations.Test;
  * test topics in different namespaces.
  */
 @Slf4j
-public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestBase {
+public class DifferentNamespaceTest extends KopProtocolHandlerTestBase {
 
     private static final String DEFAULT_TENANT = "default-tenant";
     private static final String DEFAULT_NAMESPACE = "default-ns";
@@ -60,10 +60,6 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
     private static final String ANOTHER_NAMESPACE = "my-ns";
     private static final String NOT_ALLOWED_TENANT = "non-kop-tenant";
     private static final String NOT_ALLOWED_NAMESPACE = "non-kop-ns";
-
-    public DifferentNamespaceTestBase(final String entryFormat) {
-        super(entryFormat);
-    }
 
     @DataProvider(name = "topics")
     public static Object[][] topics() {
@@ -156,7 +152,8 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         assertEquals(sortedSuffixes, expectedSuffixes);
     }
 
-    protected void testListNonexistentNamespace() throws Exception {
+    @Test
+    public void testListNonexistentNamespace() throws Exception {
         final String defaultNamespace = DEFAULT_TENANT + "/" + DEFAULT_NAMESPACE;
         final String nonexistentNamespace = "xxxxxxx/yyyyyyy";
         conf.setKopAllowedNamespaces(Sets.newHashSet(defaultNamespace, nonexistentNamespace));
@@ -178,7 +175,8 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         kafkaAdmin.close();
     }
 
-    protected void testListTopics() throws Exception {
+    @Test
+    public void testListTopics() throws Exception {
         final String defaultNamespacePrefix = DEFAULT_TENANT + "/" + DEFAULT_NAMESPACE + "/";
         final String anotherNamespacePrefix = ANOTHER_TENANT + "/" + ANOTHER_NAMESPACE + "/";
         final String notAllowedNamespacePrefix = NOT_ALLOWED_TENANT + "/" + NOT_ALLOWED_NAMESPACE + "/";
