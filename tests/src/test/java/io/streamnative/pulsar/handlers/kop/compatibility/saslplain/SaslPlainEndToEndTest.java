@@ -183,6 +183,12 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
         long offset = 0;
         // 2.0.0, 1.0.0 and 0.10.0.0 kafka clients will authenticate and perform write operations.
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
+            // Since Kafka supports SASL/PLAIN authentication from 0.10.0.0,
+            // So skip 0.9.0.0 kafka client for sasl/plain test
+            // see detail in https://kafka.apache.org/0100/documentation.html#security_overview
+            if (version.equals(KafkaVersion.KAFKA_0_9_0_0)) {
+                continue;
+            }
             final Producer<String, String> producer = kafkaClientFactories.get(version)
                     .createProducer(producerConfigurationWithSaslPlain(version,
                             TENANT + "/" + NAMESPACE,
@@ -227,6 +233,12 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
 
         // 2.0.0, 1.0.0 and 0.10.0.0 kafka clients will authenticate and perform read operations.
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
+            // Since Kafka supports SASL/PLAIN authentication from 0.10.0.0,
+            // So skip 0.9.0.0 kafka client for sasl/plain test
+            // see detail in https://kafka.apache.org/0100/documentation.html#security_overview
+            if (version.equals(KafkaVersion.KAFKA_0_9_0_0)) {
+                continue;
+            }
             final Consumer<String, String> consumer = kafkaClientFactories.get(version)
                     .createConsumer(consumerConfigurationWithSaslPlain(version,
                             TENANT + "/" + NAMESPACE,
@@ -276,6 +288,12 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
         writeJaasFile(badCredential);
 
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
+            // Since Kafka supports SASL/PLAIN authentication from 0.10.0.0,
+            // So skip 0.9.0.0 kafka client for sasl/plain test
+            // see detail in https://kafka.apache.org/0100/documentation.html#security_overview
+            if (version.equals(KafkaVersion.KAFKA_0_9_0_0)) {
+                continue;
+            }
             try {
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(ProducerConfiguration.builder()
@@ -309,6 +327,12 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
         writeJaasFile(badUser);
 
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
+            // Since Kafka supports SASL/PLAIN authentication from 0.10.0.0,
+            // So skip 0.9.0.0 kafka client for sasl/plain test
+            // see detail in https://kafka.apache.org/0100/documentation.html#security_overview
+            if (version.equals(KafkaVersion.KAFKA_0_9_0_0)) {
+                continue;
+            }
             try {
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(producerConfigurationWithSaslPlain(version,
@@ -330,6 +354,12 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
         final int metadataTimeoutMs = 3000;
 
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
+            // Since Kafka supports SASL/PLAIN authentication from 0.10.0.0,
+            // So skip 0.9.0.0 kafka client for sasl/plain test
+            // see detail in https://kafka.apache.org/0100/documentation.html#security_overview
+            if (version.equals(KafkaVersion.KAFKA_0_9_0_0)) {
+                continue;
+            }
             try {
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(ProducerConfiguration.builder()
