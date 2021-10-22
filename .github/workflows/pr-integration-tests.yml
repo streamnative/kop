@@ -23,10 +23,10 @@ jobs:
         java-version: 1.8
 
     - name: Build with Maven skipTests
-      run: mvn clean install -DskipTests
+      run: mvn clean install -ntp -B -DskipTests
 
     - name: kop integration test
-      run: mvn test '-Dtest=KafkaIntegration*Test' -pl tests
+      run: mvn test -ntp -B '-Dtest=KafkaIntegration*Test' -pl tests
 
     - name: package surefire artifacts
       if: failure()
