@@ -82,7 +82,7 @@ public class TransactionCoordinator {
 
     private final Time time;
 
-    private final BiConsumer<TransactionStateManager.TransactionalIdAndProducerIdEpoch, Errors>
+    private static final BiConsumer<TransactionStateManager.TransactionalIdAndProducerIdEpoch, Errors>
             onEndTransactionComplete =
             (txnIdAndPidEpoch, errors) -> {
                 switch (errors) {
@@ -518,14 +518,8 @@ public class TransactionCoordinator {
         return data;
     }
 
-    private static class EpochFenceErrors extends Throwable {
-
-        public EpochFenceErrors(String message) {
-            super(message);
-        }
-    }
     private Errors producerEpochFenceErrors() {
-        return Errors.forException(new EpochFenceErrors("There is a newer producer with the same transactionalId "
+        return Errors.forException(new Throwable("There is a newer producer with the same transactionalId "
                 + "which fences the current one."));
     }
 
