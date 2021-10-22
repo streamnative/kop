@@ -23,24 +23,24 @@ jobs:
         java-version: 1.8
 
     - name: License check
-      run: mvn license:check
+      run: mvn -ntp -B license:check
 
     - name: Build with Maven skipTests
-      run: mvn clean install -DskipTests
+      run: mvn clean install -ntp -B -DskipTests
 
     - name: Style check
-      run: mvn checkstyle:check
+      run: mvn -ntp -B checkstyle:check
 
     - name: Spotbugs check
-      run: mvn spotbugs:check
+      run: mvn -ntp -B spotbugs:check
 
     - name: kafka-impl test after build
-      run: mvn test -DfailIfNoTests=false -pl kafka-impl
+      run: mvn test -ntp -B -DfailIfNoTests=false -pl kafka-impl
 
     # The DistributedClusterTest is hard to pass in CI tests environment, we disable it first
     # the track issue: https://github.com/streamnative/kop/issues/184
 #    - name: DistributedClusterTest
-#      run: mvn test '-Dtest=DistributedClusterTest' -pl tests
+#      run: mvn test -ntp -B '-Dtest=DistributedClusterTest' -pl tests
 
     - name: package surefire artifacts
       if: failure()

@@ -23,10 +23,10 @@ jobs:
         java-version: 1.8
 
     - name: Build with Maven skipTests
-      run: mvn clean install -DskipTests
+      run: mvn clean install -ntp -B -DskipTests
 
     - name: tests module
-      run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test' -pl tests
+      run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test' -pl tests
       timeout-minutes: 60
 
     - name: package surefire artifacts
