@@ -355,7 +355,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     void testCannotAccessAnotherTenant() throws Exception {
         String newTopic = "newTestListTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
-        KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getClientPort(), false,
+        KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getKafkaBrokerPort(), false,
             TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
         // ensure that topic does not exist
@@ -387,7 +387,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             // try to access a topic belonging to the newTenant
             // authentication pass because username (tenant) is for an existing tenant,
             // and the user cannot access that tenant
-            KConsumer kConsumer2 = new KConsumer(newTenantTopic, "localhost", getClientPort(), false,
+            KConsumer kConsumer2 = new KConsumer(newTenantTopic, "localhost", getKafkaBrokerPort(), false,
                 TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
 
             result = kConsumer2.getConsumer().listTopics(Duration.ofSeconds(1));
@@ -410,13 +410,13 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             kConsumer2.close();
 
             // assert that user can produce to a legit topic
-            KProducer kProducer = new KProducer(TOPIC, false, "localhost", getClientPort(),
+            KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
                     newTenant + "/" + NAMESPACE, "token:" + userToken);
             kProducer.getProducer().send(new ProducerRecord<>(TOPIC, 0, "")).get();
             kProducer.close();
 
             // assert that user cannot produce to the other tenant
-            KProducer kProducer2 = new KProducer(newTenantTopic, false, "localhost", getClientPort(),
+            KProducer kProducer2 = new KProducer(newTenantTopic, false, "localhost", getKafkaBrokerPort(),
                     newTenant + "/" + NAMESPACE, "token:" + userToken);
             try {
                 kProducer2.getProducer().send(new ProducerRecord<>(newTenantTopic, 0, "")).get();
