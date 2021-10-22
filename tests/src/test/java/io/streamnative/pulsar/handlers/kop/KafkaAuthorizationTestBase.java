@@ -423,7 +423,8 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                 fail("should fail");
             } catch (ExecutionException expected) {
                 assertTrue(expected.getCause() instanceof TopicAuthorizationException);
-                assertEquals("Not authorized to access topics: [" + newTenantTopic + "]", expected.getCause().getMessage());
+                assertEquals("Not authorized to access topics: [" + newTenantTopic + "]",
+                        expected.getCause().getMessage());
             }
             kProducer2.close();
         } finally {
