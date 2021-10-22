@@ -33,7 +33,6 @@ import org.testng.annotations.BeforeMethod;
  * Test for entry publish time.
  */
 public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
-    private static final Logger log = LoggerFactory.getLogger(EntryPublishTimeTest.class);
 
     KafkaRequestHandler kafkaRequestHandler;
     SocketAddress serviceAddress;
