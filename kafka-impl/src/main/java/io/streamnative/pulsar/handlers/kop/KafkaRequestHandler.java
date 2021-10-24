@@ -20,6 +20,7 @@ import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENA
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_IN;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_IN;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_MESSAGE_CONVERSIONS;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
@@ -924,6 +925,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final MemoryRecords records = encodeResult.getRecords();
         final int numMessages = encodeResult.getNumMessages();
         final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
+        final int conversionCount = encodeResult.getConversionCount();
         if (!persistentTopicOpt.isPresent()) {
             encodeResult.recycle();
             // It will trigger a retry send of Kafka client
@@ -944,7 +946,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final Producer producer = KafkaTopicManager.getReferenceProducer(partitionName);
         producer.updateRates(numMessages, byteBuf.readableBytes());
         producer.getTopic().incrementPublishCount(numMessages, byteBuf.readableBytes());
-        updateProducerStats(topicPartition, numMessages, byteBuf.readableBytes());
+        updateProducerStats(topicPartition, numMessages, byteBuf.readableBytes(), conversionCount);
 
         // publish
         final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
@@ -2725,7 +2727,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return validRecords;
     }
 
-    private void updateProducerStats(final TopicPartition topicPartition, final int numMessages, final int numBytes) {
+    private void updateProducerStats(final TopicPartition topicPartition,
+                                     final int numMessages,
+                                     final int numBytes,
+                                     final int conversionCount) {
         requestStats.getStatsLogger()
                 .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
                 .scopeLabel(PARTITION_SCOPE, String.valueOf((topicPartition.partition())))
@@ -2737,6 +2742,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 .scopeLabel(PARTITION_SCOPE, String.valueOf((topicPartition.partition())))
                 .getCounter(MESSAGE_IN)
                 .add(numMessages);
+
+        if (conversionCount > 0) {
+            requestStats.getStatsLogger()
+                    .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
+                    .getCounter(PRODUCE_MESSAGE_CONVERSIONS)
+                    .add(conversionCount);
+        }
 
         RequestStats.BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE.set(numMessages);
     }

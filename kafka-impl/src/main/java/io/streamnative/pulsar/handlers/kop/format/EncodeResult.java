@@ -27,16 +27,19 @@ public class EncodeResult {
     private MemoryRecords records;
     private ByteBuf encodedByteBuf;
     private int numMessages;
+    private int conversionCount;
 
     private final Recycler.Handle<EncodeResult> recyclerHandle;
 
     public static EncodeResult get(MemoryRecords records,
                                    ByteBuf encodedByteBuf,
-                                   int numMessages) {
+                                   int numMessages,
+                                   int conversionCount) {
         EncodeResult encodeResult = RECYCLER.get();
         encodeResult.records = records;
         encodeResult.encodedByteBuf = encodedByteBuf;
         encodeResult.numMessages = numMessages;
+        encodeResult.conversionCount = conversionCount;
         return encodeResult;
     }
 
@@ -58,6 +61,7 @@ public class EncodeResult {
             encodedByteBuf = null;
         }
         numMessages = -1;
+        conversionCount = -1;
         recyclerHandle.recycle(this);
     }
 

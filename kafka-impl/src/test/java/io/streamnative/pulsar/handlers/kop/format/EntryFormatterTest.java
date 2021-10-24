@@ -54,7 +54,13 @@ public class EntryFormatterTest {
     private static EntryFormatter pulsarFormatter;
     private static EntryFormatter kafkaV1Formatter;
     private static EntryFormatter kafkaMixedFormatter;
-    private static long baseOffset = 100;
+    // Kafka's absolute message offset is allocated by the Kafka server,
+    // so each batch of messages on the client always starts from 0.
+    // If it starts from non-zero, KopLogValidator will think that
+    // the internal offset of these messages is damaged and will reconstruct the message.
+    // I found this problem after adding the message conversion metrics,
+    // so here I changed it to 0.
+    private static final long baseOffset = 0;
 
     private void init() {
         pulsarServiceConfiguration.setEntryFormat("pulsar");
@@ -104,14 +110,24 @@ public class EntryFormatterTest {
         EncodeResult encodeResult;
         // Verify that KafkaV1EntryFormatter cannot fix the wrong relative offset.
         encodeResult = kafkaV1Formatter.encode(EncodeRequest.get(records));
+        Assert.assertEquals(0, encodeResult.getConversionCount());
         checkWrongOffset(encodeResult.getRecords(), compressionType, magic);
 
         // Verify that PulsarEntryFormatter cannot fix the wrong relative offset.
         encodeResult = pulsarFormatter.encode(EncodeRequest.get(records));
+        Assert.assertEquals(NUM_MESSAGES, encodeResult.getConversionCount());
         checkWrongOffset(encodeResult.getRecords(), compressionType, magic);
 
         // Verify that KafkaMixedEntryFormatter can fix incorrect relative offset.
         encodeResult = kafkaMixedFormatter.encode(EncodeRequest.get(records));
+        if (magic == RecordBatch.MAGIC_VALUE_V2) {
+            // After changing baseOffset to 0,
+            // KafkaMixedFormatter will not reconstruct the message with magic=2,
+            // so the conversion count here is always 0.
+            Assert.assertEquals(0, encodeResult.getConversionCount());
+        } else {
+            Assert.assertEquals(NUM_MESSAGES, encodeResult.getConversionCount());
+        }
         checkCorrectOffset(encodeResult.getRecords());
 
     }

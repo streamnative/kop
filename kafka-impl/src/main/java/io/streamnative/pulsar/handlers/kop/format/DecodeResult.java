@@ -28,18 +28,22 @@ public class DecodeResult {
     @Getter
     private MemoryRecords records;
     private ByteBuf releasedByteBuf;
+    @Getter
+    private int conversionCount;
 
     private final Recycler.Handle<DecodeResult> recyclerHandle;
 
     public static DecodeResult get(MemoryRecords records) {
-        return get(records, null);
+        return get(records, null, 0);
     }
 
     public static DecodeResult get(MemoryRecords records,
-                                   ByteBuf releasedByteBuf) {
+                                   ByteBuf releasedByteBuf,
+                                   int conversionCount) {
         DecodeResult decodeResult = RECYCLER.get();
         decodeResult.records = records;
         decodeResult.releasedByteBuf = releasedByteBuf;
+        decodeResult.conversionCount = conversionCount;
         return decodeResult;
     }
 
@@ -60,6 +64,7 @@ public class DecodeResult {
             releasedByteBuf.release();
             releasedByteBuf = null;
         }
+        conversionCount = -1;
         recyclerHandle.recycle(this);
     }
 

@@ -45,6 +45,7 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
     @Override
     public DecodeResult decode(List<Entry> entries, byte magic) {
         int totalSize = 0;
+        int conversionCount = 0;
         // batched ByteBuf should be released after sending to client
         ByteBuf batchedByteBuf = PulsarByteBufAllocator.DEFAULT.directBuffer(totalSize);
         for (Entry entry : entries) {
@@ -63,6 +64,7 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                         // down converted, batch magic will be set to client magic
                         ConvertedRecords<MemoryRecords> convertedRecords =
                                 memoryRecords.downConvert(magic, startOffset, time);
+                        conversionCount += convertedRecords.recordConversionStats().numRecordsConverted();
 
                         final ByteBuf kafkaBuffer = Unpooled.wrappedBuffer(convertedRecords.records().buffer());
                         totalSize += kafkaBuffer.readableBytes();
@@ -83,6 +85,7 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                 } else {
                     final DecodeResult decodeResult =
                             ByteBufUtils.decodePulsarEntryToKafkaRecords(metadata, byteBuf, startOffset, magic);
+                    conversionCount += decodeResult.getConversionCount();
                     final ByteBuf kafkaBuffer = decodeResult.getOrCreateByteBuf();
                     totalSize += kafkaBuffer.readableBytes();
                     batchedByteBuf.writeBytes(kafkaBuffer);
@@ -101,7 +104,9 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
         }
 
         return DecodeResult.get(
-                MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(batchedByteBuf)), batchedByteBuf);
+                MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(batchedByteBuf)),
+                batchedByteBuf,
+                conversionCount);
     }
 
     protected static boolean isKafkaEntryFormat(final MessageMetadata messageMetadata) {

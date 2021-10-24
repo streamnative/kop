@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_OUT;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.CONSUMER_MESSAGE_CONVERSIONS;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.ENTRIES_OUT;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.GROUP_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_OUT;
@@ -435,7 +436,8 @@ public final class MessageFetchContext {
                 MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
         decodeResults.add(decodeResult);
 
-        MemoryRecords kafkaRecords = decodeResult.getRecords();
+        final MemoryRecords kafkaRecords = decodeResult.getRecords();
+        final int conversionCount = decodeResult.getConversionCount();
 
         CompletableFuture<String> groupNameFuture = requestHandler
                 .getCurrentConnectedGroup()
@@ -467,7 +469,8 @@ public final class MessageFetchContext {
             updateConsumerStats(topicPartition,
                     kafkaRecords,
                     entries.size(),
-                    groupName);
+                    groupName,
+                    conversionCount);
             final List<FetchResponse.AbortedTransaction> abortedTransactions =
                     (readCommitted ? tc.getAbortedIndexList(partitionData.fetchOffset) : null);
             responseData.put(topicPartition, new PartitionData<>(
@@ -588,7 +591,7 @@ public final class MessageFetchContext {
     }
 
     private void updateConsumerStats(final TopicPartition topicPartition, final MemoryRecords records,
-                                     int entrySize, final String groupId) {
+                                     int entrySize, final String groupId, int conversionCount) {
         int numMessages = EntryFormatter.parseNumMessages(records);
 
         statsLogger.getStatsLogger()
@@ -611,5 +614,12 @@ public final class MessageFetchContext {
                 .scopeLabel(GROUP_SCOPE, groupId)
                 .getCounter(ENTRIES_OUT)
                 .add(entrySize);
+
+        if (conversionCount > 0) {
+            statsLogger.getStatsLogger()
+                    .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
+                    .getCounter(CONSUMER_MESSAGE_CONVERSIONS)
+                    .add(conversionCount);
+        }
     }
 }
