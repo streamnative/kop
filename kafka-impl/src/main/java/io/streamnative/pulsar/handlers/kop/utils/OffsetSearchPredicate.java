@@ -36,7 +36,7 @@ public class OffsetSearchPredicate implements com.google.common.base.Predicate<E
         try {
             BrokerEntryMetadata brokerEntryMetadata =
                     Commands.parseBrokerEntryMetadataIfExist(entry.getDataBuffer());
-            if (brokerEntryMetadata != null ) {
+            if (brokerEntryMetadata != null) {
                 return brokerEntryMetadata.getIndex() < indexToSearch;
             } else {
                 return false;
