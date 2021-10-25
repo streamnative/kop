@@ -93,7 +93,7 @@ import org.apache.pulsar.common.util.FutureUtil;
 @Slf4j
 public class GroupMetadataManager {
 
-    private final static byte MAGIC_VALUE = RecordBatch.CURRENT_MAGIC_VALUE;
+    private static final byte MAGIC_VALUE = RecordBatch.CURRENT_MAGIC_VALUE;
     private final CompressionType compressionType;
     @Getter
     private final OffsetConfig offsetConfig;
