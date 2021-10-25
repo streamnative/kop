@@ -72,56 +72,13 @@ import org.apache.pulsar.common.util.FutureUtil;
 @Slf4j
 public class GroupCoordinator {
 
-    public static GroupCoordinator of(
-        String tenant,
-        SystemTopicClient client,
-        GroupConfig groupConfig,
-        OffsetConfig offsetConfig,
-        Timer timer,
-        Time time
-    ) {
-        ScheduledExecutorService coordinatorExecutor = OrderedScheduler.newSchedulerBuilder()
-                .name("group-coordinator-executor")
-                .numThreads(1)
-                .build();
-
-        GroupMetadataManager metadataManager = new GroupMetadataManager(
-            tenant,
-            offsetConfig,
-            client.newProducerBuilder(),
-            client.newReaderBuilder(),
-            coordinatorExecutor,
-            time
-        );
-
-        DelayedOperationPurgatory<DelayedJoin> joinPurgatory = DelayedOperationPurgatory.<DelayedJoin>builder()
-            .purgatoryName("group-coordinator-delayed-join")
-            .timeoutTimer(timer)
-            .build();
-
-        DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory =
-            DelayedOperationPurgatory.<DelayedHeartbeat>builder()
-                .purgatoryName("group-coordinator-delayed-heartbeat")
-                .timeoutTimer(timer)
-                .build();
-
-        return new GroupCoordinator(
-                tenant,
-                groupConfig,
-                metadataManager,
-                heartbeatPurgatory,
-                joinPurgatory,
-                time
-        );
-    }
-
-    static final String NoState = "";
-    static final String NoProtocolType = "";
+    private static final String NoState = "";
+    private static final String NoProtocolType = "";
     static final String NoProtocol = "";
-    static final String NoLeader = "";
-    static final int NoGeneration = -1;
-    static final String NoMemberId = "";
-    static final GroupSummary EmptyGroup = new GroupSummary(
+    private static final String NoLeader = "";
+    private static final int NoGeneration = -1;
+    private static final String NoMemberId = "";
+    private static final GroupSummary EmptyGroup = new GroupSummary(
         NoState,
         NoProtocolType,
         NoProtocol,
@@ -141,6 +98,50 @@ public class GroupCoordinator {
     private final DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory;
     private final DelayedOperationPurgatory<DelayedJoin> joinPurgatory;
     private final Time time;
+
+
+    public static GroupCoordinator of(
+            String tenant,
+            SystemTopicClient client,
+            GroupConfig groupConfig,
+            OffsetConfig offsetConfig,
+            Timer timer,
+            Time time
+    ) {
+        ScheduledExecutorService coordinatorExecutor = OrderedScheduler.newSchedulerBuilder()
+                .name("group-coordinator-executor")
+                .numThreads(1)
+                .build();
+
+        GroupMetadataManager metadataManager = new GroupMetadataManager(
+                tenant,
+                offsetConfig,
+                client.newProducerBuilder(),
+                client.newReaderBuilder(),
+                coordinatorExecutor,
+                time
+        );
+
+        DelayedOperationPurgatory<DelayedJoin> joinPurgatory = DelayedOperationPurgatory.<DelayedJoin>builder()
+                .purgatoryName("group-coordinator-delayed-join")
+                .timeoutTimer(timer)
+                .build();
+
+        DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory =
+                DelayedOperationPurgatory.<DelayedHeartbeat>builder()
+                        .purgatoryName("group-coordinator-delayed-heartbeat")
+                        .timeoutTimer(timer)
+                        .build();
+
+        return new GroupCoordinator(
+                tenant,
+                groupConfig,
+                metadataManager,
+                heartbeatPurgatory,
+                joinPurgatory,
+                time
+        );
+    }
 
     public GroupCoordinator(
         String tenant,
