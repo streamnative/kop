@@ -37,7 +37,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
@@ -54,7 +53,6 @@ import org.apache.pulsar.metadata.api.Notification;
 @Slf4j
 public class KopEventManager {
     private static final String kopEventThreadName = "kop-event-thread";
-    private final ReentrantLock putLock = new ReentrantLock();
     private static final LinkedBlockingQueue<KopEventWrapper> queue =
             new LinkedBlockingQueue<>();
     private final KopEventThread thread =
@@ -104,28 +102,20 @@ public class KopEventManager {
 
 
     public void put(KopEventWrapper eventWrapper) {
-        putLock.lock();
         try {
             queue.put(eventWrapper);
             KopEventManagerStats.KOP_EVENT_QUEUE_SIZE_INSTANCE.incrementAndGet();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("Error put event {} to coordinator event queue",
+            log.error("Error put event {} to kop event queue",
                     eventWrapper.toString(), e);
-        } finally {
-            putLock.unlock();
         }
     }
 
     public void clearAndPut(KopEventWrapper eventWrapper) {
-        putLock.lock();
-        try {
-            queue.clear();
-            KopEventManagerStats.KOP_EVENT_QUEUE_SIZE_INSTANCE.set(0);
-            put(eventWrapper);
-        } finally {
-            putLock.unlock();
-        }
+        queue.clear();
+        KopEventManagerStats.KOP_EVENT_QUEUE_SIZE_INSTANCE.set(0);
+        put(eventWrapper);
     }
 
     public void registerEventQueuedLatency(KopEventWrapper eventWrapper) {
