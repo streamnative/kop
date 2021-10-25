@@ -73,6 +73,7 @@ import org.apache.pulsar.common.util.FutureUtil;
 public class GroupCoordinator {
 
     public static GroupCoordinator of(
+        String tenant,
         SystemTopicClient client,
         GroupConfig groupConfig,
         OffsetConfig offsetConfig,
@@ -85,6 +86,7 @@ public class GroupCoordinator {
                 .build();
 
         GroupMetadataManager metadataManager = new GroupMetadataManager(
+            tenant,
             offsetConfig,
             client.newProducerBuilder(),
             client.newReaderBuilder(),
@@ -104,6 +106,7 @@ public class GroupCoordinator {
                 .build();
 
         return new GroupCoordinator(
+                tenant,
                 groupConfig,
                 metadataManager,
                 heartbeatPurgatory,
@@ -131,6 +134,7 @@ public class GroupCoordinator {
         Collections.emptyList()
     );
 
+    private String tenant;
     private final AtomicBoolean isActive = new AtomicBoolean(false);
     private final GroupConfig groupConfig;
     private final GroupMetadataManager groupManager;
@@ -139,12 +143,14 @@ public class GroupCoordinator {
     private final Time time;
 
     public GroupCoordinator(
+        String tenant,
         GroupConfig groupConfig,
         GroupMetadataManager groupManager,
         DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory,
         DelayedOperationPurgatory<DelayedJoin> joinPurgatory,
         Time time
         ) {
+        this.tenant = tenant;
         this.groupConfig = groupConfig;
         this.groupManager = groupManager;
         this.heartbeatPurgatory = heartbeatPurgatory;
@@ -156,7 +162,7 @@ public class GroupCoordinator {
      * Startup logic executed at the same time when the server starts up.
      */
     public void startup(boolean enableMetadataExpiration) {
-        log.info("Starting up group coordinator.");
+        log.info("Starting up group coordinator for tenant {}...", tenant);
         groupManager.startup(enableMetadataExpiration);
         isActive.set(true);
         log.info("Group coordinator started.");
@@ -167,7 +173,7 @@ public class GroupCoordinator {
      * Ordering of actions should be reversed from the startup process.
      */
     public void shutdown() {
-        log.info("Shutting down group coordinator ...");
+        log.info("Shutting down group coordinator for tenant {}...", tenant);
         isActive.set(false);
         groupManager.shutdown();
         heartbeatPurgatory.shutdown();

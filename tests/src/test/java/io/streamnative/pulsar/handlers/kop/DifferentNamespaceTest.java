@@ -41,6 +41,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.internals.Topic;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -94,11 +95,21 @@ public class DifferentNamespaceTest extends KopProtocolHandlerTestBase {
                         .allowedClusters(Collections.singleton(configClusterName))
                         .build());
         admin.namespaces().createNamespace(NOT_ALLOWED_TENANT + "/" + NOT_ALLOWED_NAMESPACE);
+
+        // ensure that the 'public' tenant does not exist
+        try {
+            admin.tenants().deleteTenant("public", true);
+        } catch (PulsarAdminException.NotFoundException ok) {
+        }
     }
 
     @AfterClass
     @Override
     protected void cleanup() throws Exception {
+
+        // ensure that nobody tried to create the "public" tenant
+        assertTrue(!admin.tenants().getTenants().contains("public"));
+
         super.internalCleanup();
     }
 

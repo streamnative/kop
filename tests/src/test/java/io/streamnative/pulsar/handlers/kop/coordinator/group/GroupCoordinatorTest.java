@@ -22,6 +22,7 @@ import static org.testng.Assert.fail;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
@@ -134,6 +135,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         otherGroupId = "otherGroupId";
         offsetConfig.offsetsTopicNumPartitions(4);
         groupMetadataManager = spy(new GroupMetadataManager(
+            conf.getKafkaMetadataTenant(),
             offsetConfig,
             producerBuilder,
             readerBuilder,
@@ -164,6 +166,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
                 .build();
 
         groupCoordinator = new GroupCoordinator(
+            tenant,
             groupConfig,
             groupMetadataManager,
             heartbeatPurgatory,

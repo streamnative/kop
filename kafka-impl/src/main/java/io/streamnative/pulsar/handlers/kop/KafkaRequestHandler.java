@@ -1811,7 +1811,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 log.trace("Sending join group response {} for correlation id {} to client {}.",
                     response, joinGroup.getHeader().correlationId(), joinGroup.getHeader().clientId());
             }
-
             resultFuture.complete(response);
         });
     }
@@ -2200,7 +2199,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                          CompletableFuture<AbstractResponse> response) {
         AddOffsetsToTxnRequest request = (AddOffsetsToTxnRequest) kafkaHeaderAndRequest.getRequest();
         int partition = getGroupCoordinator().partitionFor(request.consumerGroupId());
-        String offsetTopicName = getGroupCoordinator().getGroupManager().getOffsetConfig().offsetsTopicName();
+        String currentTenant = getCurrentTenant();
+        String offsetTopicName = getGroupCoordinator().getGroupManager().getOffsetConfig().getCurrentOffsetsTopicName(currentTenant);
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         transactionCoordinator.handleAddPartitionsToTransaction(
                 request.transactionalId(),

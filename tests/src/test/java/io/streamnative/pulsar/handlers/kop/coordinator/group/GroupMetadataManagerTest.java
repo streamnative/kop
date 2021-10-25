@@ -823,6 +823,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     @Test
     public void testGroupNotExits() {
         groupMetadataManager = new GroupMetadataManager(
+            conf.getKafkaMetadataTenant(),
             offsetConfig,
             producer,
             consumer,
@@ -1165,6 +1166,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     @Test
     public void testAddGroup() {
         groupMetadataManager = new GroupMetadataManager(
+            conf.getKafkaMetadataTenant(),
             offsetConfig,
             producer,
             consumer,
