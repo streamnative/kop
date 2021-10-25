@@ -57,7 +57,7 @@ public class KafkaClientFactoryImpl implements KafkaClientFactory {
             return new ConsumerImpl<>(conf);
         } else if (kafkaVersion.equals(KafkaVersion.KAFKA_0_10_0_0)) {
             return new Consumer010Impl<>(conf);
-        }else if (kafkaVersion.equals(KafkaVersion.KAFKA_2_4_1)) {
+        } else if (kafkaVersion.equals(KafkaVersion.KAFKA_2_4_1)) {
                 return new Consumer241Impl<>(conf);
         } else if (kafkaVersion.equals(KafkaVersion.KAFKA_2_8_0)) {
             return new Consumer280Impl<>(conf);
