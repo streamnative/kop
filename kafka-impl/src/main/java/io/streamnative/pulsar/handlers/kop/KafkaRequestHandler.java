@@ -361,6 +361,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void close() {
         if (isActive.getAndSet(false)) {
             super.close();
+            try {
+                TimeUnit.SECONDS.sleep(1);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
             topicManager.close();
             String clientHost = ctx.channel().remoteAddress().toString();
             if (currentConnectedGroup.containsKey(clientHost)){
