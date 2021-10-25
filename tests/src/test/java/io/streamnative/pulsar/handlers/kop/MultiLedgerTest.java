@@ -120,10 +120,13 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
                     .subscriptionName("test_produce_consume_multi_ledger_sub")
                     .subscribe();
 
-            Message<byte[]> msg = null;
-            for (int i = 0; i < totalMsgs; i++) {
-                msg = consumer.receive(100, TimeUnit.MILLISECONDS);
-                assertNotNull(msg);
+            int i = 0;
+            while (i < totalMsgs) {
+                Message<byte[]> msg = consumer.receive(100, TimeUnit.MILLISECONDS);
+                if (msg == null) {
+                    log.info("Message is null.");
+                    continue;
+                }
                 Integer key = kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey()));
                 assertEquals(messageStrPrefix + key.toString(), new String(msg.getValue()));
 
@@ -139,13 +142,14 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
                 assertEquals(i, key.intValue());
 
                 // each ledger should only have 5 entry.
-                assertTrue(messageId.getEntryId() / 5 == 0);
+                assertEquals(messageId.getEntryId() / 5, 0);
 
                 consumer.acknowledge(msg);
+                i++;
             }
 
             // verify have received all messages
-            msg = consumer.receive(100, TimeUnit.MILLISECONDS);
+            Message<byte[]> msg = consumer.receive(100, TimeUnit.MILLISECONDS);
             assertNull(msg);
         }
 
