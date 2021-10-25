@@ -23,7 +23,7 @@ import org.apache.kafka.common.protocol.types.Struct;
  * Provide util classes to access protected fields in kafka structures.
  */
 @Slf4j
-public class RequestUtils {
+public class KopRequestUtils {
 
     /**
      * Serialize a kafka request into a byte buf.

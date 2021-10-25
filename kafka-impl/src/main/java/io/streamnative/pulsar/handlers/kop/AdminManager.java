@@ -35,7 +35,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.InvalidPartitionsException;
@@ -44,6 +43,7 @@ import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
+import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -230,8 +230,9 @@ class AdminManager {
         }
     }
 
-    CompletableFuture<Map<String, ApiError>> createPartitionsAsync(Map<String, NewPartitions> createInfo,
-                                                                   int timeoutMs) {
+    CompletableFuture<Map<String, ApiError>> createPartitionsAsync(
+            Map<String, CreatePartitionsRequest.PartitionDetails> createInfo,
+            int timeoutMs) {
         final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();
         final AtomicInteger numTopics = new AtomicInteger(createInfo.size());
         final CompletableFuture<Map<String, ApiError>> resultFuture = new CompletableFuture<>();
@@ -266,12 +267,12 @@ class AdminManager {
                     if (numTopics.decrementAndGet() == 0) {
                         complete.run();
                     }
-                } else if (newPartitions.assignments() != null
-                        && !newPartitions.assignments().isEmpty()) {
+                } else if (newPartitions.newAssignments() != null
+                        && !newPartitions.newAssignments().isEmpty()) {
                     errorFuture.complete(ApiError.fromThrowable(
                             new InvalidRequestException(
                                     "Kop server currently doesn't support manual assignment replica sets '"
-                                    + newPartitions.assignments() + "' the number of partitions must be specified ")
+                                    + newPartitions.newAssignments() + "' the number of partitions must be specified ")
                     ));
 
                     if (numTopics.decrementAndGet() == 0) {

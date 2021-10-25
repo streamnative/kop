@@ -45,8 +45,8 @@ import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
+import org.apache.kafka.common.requests.KopResponseUtils;
 import org.apache.kafka.common.requests.RequestHeader;
-import org.apache.kafka.common.requests.ResponseUtils;
 import org.apache.kafka.common.requests.SaslAuthenticateRequest;
 import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SaslHandshakeRequest;
@@ -383,7 +383,7 @@ public class SaslAuthenticator {
                 && !ApiKeys.API_VERSIONS.isVersionSupported(version)){
             version = ApiKeys.API_VERSIONS.oldestVersion();
         }
-        return ResponseUtils.serializeResponse(
+        return KopResponseUtils.serializeResponse(
                 version,
                 header.toResponseHeader(),
                 backResponse

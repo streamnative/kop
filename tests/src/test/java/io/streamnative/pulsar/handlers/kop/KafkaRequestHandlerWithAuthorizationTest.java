@@ -34,6 +34,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
+import io.streamnative.pulsar.handlers.kop.utils.KafkaCommonUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -50,7 +51,6 @@ import java.util.concurrent.ExecutionException;
 import javax.crypto.SecretKey;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
@@ -345,12 +345,9 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         }
 
         // Test for ListOffset request verify Earliest get earliest
-        Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
-        targetTimes.put(tp, ListOffsetRequest.EARLIEST_TIMESTAMP);
-
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-                .setTargetTimes(targetTimes);
+                .setTargetTimes(KafkaCommonUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.EARLIEST_TIMESTAMP));
 
         KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
@@ -375,9 +372,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-                .setTargetTimes(new HashMap<TopicPartition, Long>(){{
-                    put(tp, ListOffsetRequest.EARLIEST_TIMESTAMP);
-                }});
+                .setTargetTimes(KafkaCommonUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.EARLIEST_TIMESTAMP));
 
         KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
@@ -463,10 +458,9 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         // Build input params
         Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = Maps.newHashMap();
         offsetData.put(topicPartition,
-                new OffsetCommitRequest.PartitionData(1L, ""));
+                KafkaCommonUtils.newOffsetCommitRequestPartitionData(1L, ""));
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(group, offsetData)
-                .setMemberId(memberId)
-                .setRetentionTime(OffsetCommitRequest.DEFAULT_RETENTION_TIME);
+                .setMemberId(memberId);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
         // Handle request
@@ -493,15 +487,14 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         // Build input params
         Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = Maps.newHashMap();
         offsetData.put(topicPartition1,
-                new OffsetCommitRequest.PartitionData(1L, ""));
+                KafkaCommonUtils.newOffsetCommitRequestPartitionData(1L, ""));
         offsetData.put(topicPartition2,
-                new OffsetCommitRequest.PartitionData(2L, ""));
+                KafkaCommonUtils.newOffsetCommitRequestPartitionData(2L, ""));
         offsetData.put(topicPartition3,
-                new OffsetCommitRequest.PartitionData(3L, ""));
+                KafkaCommonUtils.newOffsetCommitRequestPartitionData(3L, ""));
 
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(group, offsetData)
-                .setMemberId(memberId)
-                .setRetentionTime(OffsetCommitRequest.DEFAULT_RETENTION_TIME);
+                .setMemberId(memberId);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
         // Topic: `test` authorize success.
@@ -531,8 +524,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         String group = "test-failed-groupId";
         TopicPartition topicPartition = new TopicPartition("test", 1);
         Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> offsetData = Maps.newHashMap();
-        offsetData.put(topicPartition,
-                new TxnOffsetCommitRequest.CommittedOffset(1L, ""));
+        offsetData.put(topicPartition, KafkaCommonUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
         TxnOffsetCommitRequest.Builder builder =
                 new TxnOffsetCommitRequest.Builder(
                         "1", group, 1, (short) 1, offsetData);
@@ -560,11 +552,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> offsetData = Maps.newHashMap();
         offsetData.put(topicPartition1,
-                new TxnOffsetCommitRequest.CommittedOffset(1L, ""));
+                KafkaCommonUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
         offsetData.put(topicPartition2,
-                new TxnOffsetCommitRequest.CommittedOffset(1L, ""));
+                KafkaCommonUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
         offsetData.put(topicPartition3,
-                new TxnOffsetCommitRequest.CommittedOffset(1L, ""));
+                KafkaCommonUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
 
         TxnOffsetCommitRequest.Builder builder =
                 new TxnOffsetCommitRequest.Builder(
@@ -656,10 +648,9 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         admin.topics().createPartitionedTopic(fullTopic, oldPartitions);
 
-        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
+        HashMap<String, CreatePartitionsRequest.PartitionDetails> newPartitionsMap = Maps.newHashMap();
         final int numPartitions = 10;
-        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
-        newPartitionsMap.put(fullTopic, newPartitions);
+        newPartitionsMap.put(fullTopic, new CreatePartitionsRequest.PartitionDetails(numPartitions));
 
         CreatePartitionsRequest.Builder builder = new CreatePartitionsRequest.Builder(
                 newPartitionsMap, 5000, false);
@@ -693,12 +684,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         admin.topics().createPartitionedTopic(fullTopic2, oldPartitions);
         admin.topics().createPartitionedTopic(fullTopic3, oldPartitions);
 
-        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
+        HashMap<String, CreatePartitionsRequest.PartitionDetails> newPartitionsMap = Maps.newHashMap();
         final int numPartitions = 10;
-        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
-        newPartitionsMap.put(fullTopic1, newPartitions);
-        newPartitionsMap.put(fullTopic2, newPartitions);
-        newPartitionsMap.put(fullTopic3, newPartitions);
+        newPartitionsMap.put(fullTopic1, new CreatePartitionsRequest.PartitionDetails(numPartitions));
+        newPartitionsMap.put(fullTopic2, new CreatePartitionsRequest.PartitionDetails(numPartitions));
+        newPartitionsMap.put(fullTopic3, new CreatePartitionsRequest.PartitionDetails(numPartitions));
 
         CreatePartitionsRequest.Builder builder = new CreatePartitionsRequest.Builder(
                 newPartitionsMap, 5000, false);
@@ -742,10 +732,9 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                         eq(Resource.of(ResourceType.TOPIC, fullTopic))
                 );
 
-        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
+        HashMap<String, CreatePartitionsRequest.PartitionDetails> newPartitionsMap = Maps.newHashMap();
         final int numPartitions = 10;
-        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
-        newPartitionsMap.put(fullTopic, newPartitions);
+        newPartitionsMap.put(fullTopic, new CreatePartitionsRequest.PartitionDetails(numPartitions));
 
         CreatePartitionsRequest.Builder builder = new CreatePartitionsRequest.Builder(
                 newPartitionsMap, 5000, false);

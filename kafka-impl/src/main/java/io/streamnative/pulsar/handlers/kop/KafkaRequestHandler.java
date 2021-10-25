@@ -56,6 +56,7 @@ import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
+import io.streamnative.pulsar.handlers.kop.utils.KafkaCommonUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
@@ -98,7 +99,6 @@ import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
-import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
@@ -196,7 +196,6 @@ import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 @Slf4j
 @Getter
 public class KafkaRequestHandler extends KafkaCommandDecoder {
-    public static final long DEFAULT_TIMESTAMP = 0L;
     private static final String POLICY_ROOT = "/admin/policies/";
 
     private final PulsarService pulsarService;
@@ -1306,17 +1305,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (t != null) {
                 log.error("Failed while get persistentTopic topic: {} ts: {}. ",
                     !perTopicOpt.isPresent() ? "null" : perTopicOpt.get().getName(), timestamp, t);
-                partitionData.complete(new ListOffsetResponse.PartitionData(
-                        Errors.forException(t),
-                        ListOffsetResponse.UNKNOWN_TIMESTAMP,
-                        ListOffsetResponse.UNKNOWN_OFFSET));
+                partitionData.complete(KafkaCommonUtils.newListOffsetResponsePartitionData(Errors.forException(t)));
                 return;
             }
             if (!perTopicOpt.isPresent()) {
-                partitionData.complete(new ListOffsetResponse.PartitionData(
-                        Errors.UNKNOWN_TOPIC_OR_PARTITION,
-                        ListOffsetResponse.UNKNOWN_TIMESTAMP,
-                        ListOffsetResponse.UNKNOWN_OFFSET));
+                partitionData.complete(
+                        KafkaCommonUtils.newListOffsetResponsePartitionData(Errors.UNKNOWN_TOPIC_OR_PARTITION));
                 return;
             }
             PersistentTopic perTopic = perTopicOpt.get();
@@ -1414,16 +1408,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private void fetchOffsetForTimestampFailed(CompletableFuture<ListOffsetResponse.PartitionData> partitionData,
                                                boolean legacyMode) {
         if (legacyMode) {
-            partitionData.complete(new ListOffsetResponse
-                    .PartitionData(
-                    Errors.UNKNOWN_SERVER_ERROR,
-                    Collections.emptyList()));
+            partitionData.complete(
+                    KafkaCommonUtils.Legacy.newListOffsetResponsePartitionData(Errors.UNKNOWN_SERVER_ERROR));
         } else {
-            partitionData.complete(new ListOffsetResponse
-                    .PartitionData(
-                    Errors.UNKNOWN_SERVER_ERROR,
-                    ListOffsetResponse.UNKNOWN_TIMESTAMP,
-                    ListOffsetResponse.UNKNOWN_OFFSET));
+            partitionData.complete(KafkaCommonUtils.newListOffsetResponsePartitionData(Errors.UNKNOWN_SERVER_ERROR));
         }
     }
 
@@ -1431,14 +1419,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                 boolean legacyMode,
                                                 long offset) {
         if (legacyMode) {
-            partitionData.complete(new ListOffsetResponse.PartitionData(
-                    Errors.NONE,
-                    Collections.singletonList(offset)));
+            partitionData.complete(KafkaCommonUtils.Legacy.newListOffsetResponsePartitionData(offset));
         } else {
-            partitionData.complete(new ListOffsetResponse.PartitionData(
-                    Errors.NONE,
-                    DEFAULT_TIMESTAMP,
-                    offset));
+            partitionData.complete(KafkaCommonUtils.newListOffsetResponsePartitionData(offset));
         }
     }
 
@@ -1448,28 +1431,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         Map<TopicPartition, CompletableFuture<ListOffsetResponse.PartitionData>> responseData =
                 Maps.newConcurrentMap();
 
-        request.partitionTimestamps().forEach((topic, times) -> {
+        request.partitionTimestamps().forEach((topic, partitionData) -> {
             String fullPartitionName = KopTopic.toString(topic);
             authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullPartitionName))
                     .whenComplete((isAuthorized, ex) -> {
                                 if (ex != null) {
                                     log.error("Describe topic authorize failed, topic - {}. {}",
                                             fullPartitionName, ex.getMessage());
-                                    responseData.put(topic, CompletableFuture.completedFuture(new ListOffsetResponse
-                                            .PartitionData(
-                                            Errors.TOPIC_AUTHORIZATION_FAILED,
-                                            Collections.emptyList()
-                                    )));
+                                    responseData.put(topic, CompletableFuture.completedFuture(KafkaCommonUtils
+                                            .newListOffsetResponsePartitionData(Errors.TOPIC_AUTHORIZATION_FAILED)
+                                    ));
                                     return;
                                 }
                                 if (!isAuthorized) {
-                                    responseData.put(topic, CompletableFuture.completedFuture(new ListOffsetResponse
-                                            .PartitionData(
-                                            Errors.TOPIC_AUTHORIZATION_FAILED,
-                                            Collections.emptyList()
-                                    )));
+                                    responseData.put(topic, CompletableFuture.completedFuture(KafkaCommonUtils
+                                            .newListOffsetResponsePartitionData(Errors.TOPIC_AUTHORIZATION_FAILED)
+                                    ));
                                     return;
                                 }
+                                final long times = partitionData.timestamp;
                                 responseData.put(topic,
                                         fetchOffsetForTimestamp(fullPartitionName, times, false));
                             }
@@ -1500,7 +1480,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (log.isDebugEnabled()) {
             log.debug("received a v0 listOffset: {}", request.toString(true));
         }
-        request.offsetData().forEach((topic, value) -> {
+        request.partitionTimestamps().forEach((topic, value) -> {
             String fullPartitionName = KopTopic.toString(topic);
 
             authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullPartitionName))
@@ -2294,13 +2274,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         for (Map.Entry<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> entry : offsetsMap.entrySet()) {
             TxnOffsetCommitRequest.CommittedOffset partitionData = entry.getValue();
             String metadata;
-            if (partitionData.metadata() == null) {
+            if (partitionData.metadata == null) {
                 metadata = OffsetAndMetadata.NoMetadata;
             } else {
-                metadata = partitionData.metadata();
+                metadata = partitionData.metadata;
             }
             offsetAndMetadataMap.put(entry.getKey(),
-                    OffsetAndMetadata.apply(partitionData.offset(), metadata, currentTimestamp, -1));
+                    OffsetAndMetadata.apply(partitionData.offset, metadata, currentTimestamp, -1));
         }
         return offsetAndMetadataMap;
     }
@@ -2459,7 +2439,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CreatePartitionsRequest request = (CreatePartitionsRequest) createPartitions.getRequest();
 
         final Map<String, ApiError> result = Maps.newConcurrentMap();
-        final Map<String, NewPartitions> validTopics = Maps.newHashMap();
+        final Map<String, CreatePartitionsRequest.PartitionDetails> validTopics = Maps.newHashMap();
         final Set<String> duplicateTopics = request.duplicates();
 
         request.newPartitions().forEach((topic, newPartition) -> {
@@ -2479,7 +2459,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
 
         final AtomicInteger validTopicsCount = new AtomicInteger(validTopics.size());
-        final Map<String, NewPartitions> authorizedTopics = Maps.newConcurrentMap();
+        final Map<String, CreatePartitionsRequest.PartitionDetails> authorizedTopics = Maps.newConcurrentMap();
         Runnable createPartitionsAsync = () -> {
             if (authorizedTopics.isEmpty()) {
                 resultFuture.complete(new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, result));
@@ -2492,7 +2472,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         };
 
-        BiConsumer<String, NewPartitions> completeOneTopic = (topic, newPartitions) -> {
+        BiConsumer<String, CreatePartitionsRequest.PartitionDetails> completeOneTopic = (topic, newPartitions) -> {
             authorizedTopics.put(topic, newPartitions);
             if (validTopicsCount.decrementAndGet() == 0) {
                 createPartitionsAsync.run();
@@ -2630,14 +2610,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             log.debug("Return PartitionMetadata node: {}, topicName: {}", node, topicName);
         }
 
-        return new PartitionMetadata(
-            Errors.NONE,
-            kafkaPartitionIndex,
-            node,                      // leader
-            Lists.newArrayList(node),  // replicas
-            Lists.newArrayList(node),  // isr
-            Collections.emptyList()     // offline replicas
-        );
+        return KafkaCommonUtils.newMetadataResponsePartitionMetadata(kafkaPartitionIndex, node);
     }
 
     static PartitionMetadata newFailedPartitionMetadata(TopicName topicName) {
@@ -2647,14 +2620,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         log.warn("Failed find Broker metadata, create PartitionMetadata with NOT_LEADER_FOR_PARTITION");
 
         // most of this error happens when topic is in loading/unloading status,
-        return new PartitionMetadata(
-            Errors.NOT_LEADER_FOR_PARTITION,
-            kafkaPartitionIndex,
-            Node.noNode(),                      // leader
-            Lists.newArrayList(Node.noNode()),  // replicas
-            Lists.newArrayList(Node.noNode()),  // isr
-            Collections.emptyList()             // offline replicas
-        );
+        return KafkaCommonUtils.newMetadataResponsePartitionMetadata(
+                Errors.NOT_LEADER_FOR_PARTITION, kafkaPartitionIndex);
     }
 
     static AbstractResponse failedResponse(KafkaHeaderAndRequest requestHar, Throwable e) {
