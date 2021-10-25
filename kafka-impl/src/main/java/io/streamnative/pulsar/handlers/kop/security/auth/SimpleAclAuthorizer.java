@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop.security.auth;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
-import com.google.common.base.Joiner;
 import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
 import java.util.Map;
 import java.util.Set;
@@ -35,8 +34,6 @@ import org.apache.pulsar.common.policies.data.TenantInfo;
  */
 @Slf4j
 public class SimpleAclAuthorizer implements Authorizer {
-
-    private static final String POLICY_ROOT = "/admin/policies/";
 
     private final PulsarService pulsarService;
 
@@ -73,7 +70,6 @@ public class SimpleAclAuthorizer implements Authorizer {
                     new IllegalArgumentException("Resource name must contains namespace."));
             return permissionFuture;
         }
-        String policiesPath = path(namespace.toString());
         String tenantName = namespace.getTenant();
         isSuperUserOrTenantAdmin(tenantName, principal.getName()).whenComplete((isSuperUserOrAdmin, exception) -> {
             if (exception != null) {
@@ -90,7 +86,7 @@ public class SimpleAclAuthorizer implements Authorizer {
             getPulsarService()
                     .getPulsarResources()
                     .getNamespaceResources()
-                    .getAsync(policiesPath)
+                    .getPoliciesAsync(namespace)
                     .thenAccept(policies -> {
                         if (!policies.isPresent()) {
                             if (log.isDebugEnabled()) {
@@ -177,7 +173,7 @@ public class SimpleAclAuthorizer implements Authorizer {
         getPulsarService()
                 .getPulsarResources()
                 .getTenantResources()
-                .getAsync(path(tenant))
+                .getTenantAsync(tenant)
                 .thenAccept(tenantInfo -> {
                     permissionFuture.complete(tenantInfo.isPresent());
                 }).exceptionally(ex -> {
@@ -234,7 +230,7 @@ public class SimpleAclAuthorizer implements Authorizer {
             if (ex != null || !isSuperUser) {
                 pulsarService.getPulsarResources()
                         .getTenantResources()
-                        .getAsync(path(tenant))
+                        .getTenantAsync(tenant)
                         .thenAccept(tenantInfo -> {
                             if (!tenantInfo.isPresent()) {
                                 future.complete(false);
@@ -252,12 +248,6 @@ public class SimpleAclAuthorizer implements Authorizer {
         return future;
     }
 
-    private static String path(String... parts) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(POLICY_ROOT);
-        Joiner.on('/').appendTo(sb, parts);
-        return sb.toString();
-    }
 
     @Override
     public CompletableFuture<Boolean> canAccessTenantAsync(KafkaPrincipal principal, Resource resource) {
