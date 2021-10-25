@@ -67,9 +67,9 @@ The KoP metrics are exposed under "/metrics" at port `8000` along with Pulsar me
 | kop_server_TOTAL_MESSAGE_READ | Summary | The total message read latency in milliseconds in this fetch request|
 | kop_server_MESSAGE_READ | Summary | The message read latency in milliseconds for one cursor read entry request|
 | kop_server_FETCH_DECODE | Summary | The message decode latency in milliseconds|
-| kop_server_BYTES_OUT | Counter | The consumer bytes out stats. <br> Available labels: *topic*, *partition*, *group*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li><li>*group*: the group id for consumer to consumer message from topic-partition</li></ul>|
-| kop_server_MESSAGE_OUT | Counter | The consumer message out stats. <br> Available labels: *topic*, *partition*, *group*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li><li>*group*: the group id for consumer to consumer message from topic-partition</li></ul>|
-| kop_server_ENTRIES_OUT | Counter | The consumer entries out stats. <br> Available labels: *topic*, *partition*, *group*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li><li>*group*: the group id for consumer to consumer message from topic-partition</li></ul>|
+| kop_server_BYTES_OUT | Counter | The consumer bytes out stats. <br> Available labels: *topic*, *partition*, *group*. </br> <ul><li>*topic*: the topic name to consume.</li><li>*partition*: the partition id for the topic to consume</li><li>*group*: the group id for consumer to consumer message from topic-partition</li></ul>|
+| kop_server_MESSAGE_OUT | Counter | The consumer message out stats. <br> Available labels: *topic*, *partition*, *group*. </br> <ul><li>*topic*: the topic name to consume.</li><li>*partition*: the partition id for the topic to consume</li><li>*group*: the group id for consumer to consumer message from topic-partition</li></ul>|
+| kop_server_ENTRIES_OUT | Counter | The consumer entries out stats. <br> Available labels: *topic*, *partition*, *group*. </br> <ul><li>*topic*: the topic name to consume.</li><li>*partition*: the partition id for the topic to consume</li><li>*group*: the group id for consumer to consumer message from topic-partition</li></ul>|
 
 ### Kop event metrics
 
