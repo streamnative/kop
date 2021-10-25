@@ -28,7 +28,6 @@ import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -489,13 +488,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 || partitionedTopicName.endsWith("/" + TRANSACTION_STATE_TOPIC_NAME);
     }
 
-    private static String path(String... parts) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(POLICY_ROOT);
-        Joiner.on('/').appendTo(sb, parts);
-        return sb.toString();
-    }
-
     private CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces) {
         String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
         return expandAllowedNamespaces(allowedNamespaces, currentTenant, pulsarService);
@@ -517,12 +509,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 String tenant = namespace.substring(0, slash);
                 results.add(pulsarService.getPulsarResources()
                         .getNamespaceResources()
-                        .getChildrenAsync(path(tenant))
-                        .thenAccept(children -> {
-                            children.forEach(ns -> {
-                                result.add(tenant + "/" + ns);
-                            });
-                        }));
+                        .listNamespacesAsync(tenant)
+                        .thenAccept(namespaces -> namespaces.forEach(ns -> result.add(tenant + "/" + ns))));
             }
         }
         return CompletableFuture

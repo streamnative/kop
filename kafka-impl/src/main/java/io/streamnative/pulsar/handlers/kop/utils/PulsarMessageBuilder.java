@@ -110,7 +110,7 @@ public class PulsarMessageBuilder {
     }
 
     public Message<byte[]> getMessage() {
-        return MessageImpl.create(metadata, content, SCHEMA);
+        return MessageImpl.create(metadata, content, SCHEMA, null);
     }
 
 }
