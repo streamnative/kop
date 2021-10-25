@@ -69,7 +69,7 @@ This section lists configurations that may affect the performance.
 
 | Name              | Description                                                  | Range             | Default |
 | ----------------- | ------------------------------------------------------------ | ----------------- | ------- |
-| entryFormat       | The format of an entry. If it is set to`kafka`, there is no unnecessary encoding and decoding work, which helps improve the performance. However, in this situation, a topic cannot be used by mixed Pulsar clients and Kafka clients. If it is set to `mixed_kafka`, Kafka clients (0.10.x) are supported. <br>- **Note**: Compared with performance for `mixed_kafka`, performance is improved by 2 to 3 times when the parameter is set to `kafka`. | kafka, <br> mixed_kafka,<br> pulsar | kafka   |
+| entryFormat       | The format of an entry. If it is set to`kafka`, there is no unnecessary encoding and decoding work, which helps improve the performance. However, in this situation, a topic cannot be used by mixed Pulsar clients and Kafka clients. If it is set to `mixed_kafka`, Kafka clients (0.10.x) are supported. <br>- **Note**: Compared with performance for `mixed_kafka`, performance is improved by 2 to 3 times when the parameter is set to `kafka`. | kafka, <br> mixed_kafka,<br> pulsar | pulsar   |
 | maxReadEntriesNum | The maximum number of entries that are read from the cursor once per time.<br>Increasing this value can make FETCH request read more bytes each time.<br>**NOTE**: Currently, KoP does not check the maximum byte limit. Therefore, if the value is too great, the response size may be over the network limit. |                   | 5       |
 
 ## Network
@@ -80,6 +80,7 @@ This section lists configurations that may affect the performance.
 | requestTimeoutMs  | Limit the timeout in milliseconds for request, like `request.timeout.ms` in Kafka client.<br>If a request was not processed in the timeout, KoP would return an error response to client. | 30000   |
 | connectionMaxIdleMs | The idle connection timeout in milliseconds. If the idle connection timeout (such as `connections.max.idle.ms` used in the Kafka server) is reached, the server handler will close this idle connection.<br>**Note**: If it is set to `-1`, it indicates that the idle connection timeout is disabled. | 600000 |
 | failedAuthenticationDelayMs | Connection close delay on failed authentication: this is the time (in milliseconds) by which connection close will be delayed on authentication failure, like `connection.failed.authentication.delay.ms` in Kafka server. | 300 |
+| brokerLookupTimeoutMs | The timeout for broker lookups (in milliseconds). | 30000 |
 
 > **NOTE**
 > 
