@@ -369,7 +369,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
-            doc = "The interval at which to rollback transactions that have timed out"
+            doc = "The interval in milliseconds at which to rollback transactions that have timed out."
     )
     private long txnAbortTimedOutTransactionCleanupIntervalMs = DefaultAbortTimedOutTransactionsIntervalMs;
 

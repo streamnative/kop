@@ -117,6 +117,7 @@ This section lists configurations about the transaction.
 | enableTransactionCoordinator | Whether to enable transaction coordinator.          | false   |
 | brokerId                     | The broker ID that is used to create the producer ID.  | 1       |
 | txnLogTopicNumPartitions     | the number of partitions for the transaction log topic. | 50      |
+| txnAbortTimedOutTransactionCleanupIntervalMs | The interval in milliseconds at which to rollback transactions that have timed out. | 10000 |
 
 ## Authentication
 
