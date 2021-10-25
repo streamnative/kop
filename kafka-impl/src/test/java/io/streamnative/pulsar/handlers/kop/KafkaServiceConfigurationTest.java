@@ -132,7 +132,7 @@ public class KafkaServiceConfigurationTest {
         assertNotNull(kafkaServiceConfig);
         assertEquals(kafkaServiceConfig.getZookeeperServers(), zkServer);
         assertEquals(kafkaServiceConfig.isBrokerDeleteInactiveTopicsEnabled(), true);
-        assertEquals(kafkaServiceConfig.getBacklogQuotaDefaultLimitGB(), 18);
+        assertEquals(kafkaServiceConfig.getBacklogQuotaDefaultLimitGB(), 18.0);
         assertEquals(kafkaServiceConfig.getClusterName(), "usc");
         assertEquals(kafkaServiceConfig.getBrokerClientAuthenticationParameters(), "role:my-role");
         assertEquals(kafkaServiceConfig.getBrokerServicePort().get(), new Integer(7777));
@@ -229,7 +229,7 @@ public class KafkaServiceConfigurationTest {
         NamespaceResources namespaceResources = mock(NamespaceResources.class);
         when(pulsarService.getPulsarResources()).thenReturn(pulsarResources);
         when(pulsarResources.getNamespaceResources()).thenReturn(namespaceResources);
-        when(namespaceResources.getChildrenAsync(any(String.class)))
+        when(namespaceResources.listNamespacesAsync(any(String.class)))
                 .thenReturn(CompletableFuture.completedFuture(Arrays.asList("one", "two")));
         assertEquals(KafkaRequestHandler.expandAllowedNamespaces(conf.getKopAllowedNamespaces(),
                         "logged", pulsarService).get(),
