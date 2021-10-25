@@ -725,7 +725,8 @@ public class GroupMetadataManager {
 
     public CompletableFuture<Void> scheduleLoadGroupAndOffsets(int offsetsPartition,
                                                                Consumer<GroupMetadata> onGroupLoaded) {
-        String topicPartition = offsetConfig.getCurrentOffsetsTopicName(tenant) + PARTITIONED_TOPIC_SUFFIX + offsetsPartition;
+        String topicPartition = offsetConfig.getCurrentOffsetsTopicName(tenant)
+                + PARTITIONED_TOPIC_SUFFIX + offsetsPartition;
         if (addLoadingPartition(offsetsPartition)) {
             log.info("Scheduling loading of offsets and group metadata from {}", topicPartition);
             long startMs = time.milliseconds();
@@ -1279,7 +1280,8 @@ public class GroupMetadataManager {
                         log.error("Failed to append {} tombstones to topic {} for expired/deleted "
                                 + "offsets and/or metadata for group {}",
                             tombstones.size(),
-                                offsetConfig.getCurrentOffsetsTopicName(tenant) + '-' + partitioner.apply(group.groupId()),
+                                offsetConfig.getCurrentOffsetsTopicName(tenant)
+                                        + '-' + partitioner.apply(group.groupId()),
                             group.groupId(), cause);
                         // ignore and continue
                         return 0;
