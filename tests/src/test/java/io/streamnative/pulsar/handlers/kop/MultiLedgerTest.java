@@ -123,7 +123,9 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
             while (i < totalMsgs) {
                 Message<byte[]> msg = consumer.receive(100, TimeUnit.MILLISECONDS);
                 if (msg == null) {
-                    log.info("Message is null.");
+                    if (log.isDebugEnabled()) {
+                        log.debug("Received Message is null, because receive timeout. Skipped.");
+                    }
                     continue;
                 }
                 Integer key = kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey()));
