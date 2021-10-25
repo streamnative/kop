@@ -134,7 +134,7 @@ public class GroupCoordinator {
         Collections.emptyList()
     );
 
-    private String tenant;
+    private final String tenant;
     private final AtomicBoolean isActive = new AtomicBoolean(false);
     private final GroupConfig groupConfig;
     private final GroupMetadataManager groupManager;
