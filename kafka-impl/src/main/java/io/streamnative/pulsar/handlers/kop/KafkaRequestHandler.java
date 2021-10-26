@@ -123,13 +123,9 @@ import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
-import org.apache.kafka.common.requests.CreatePartitionsResponse;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
-import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteGroupsRequest;
-import org.apache.kafka.common.requests.DeleteGroupsResponse;
 import org.apache.kafka.common.requests.DeleteTopicsRequest;
-import org.apache.kafka.common.requests.DeleteTopicsResponse;
 import org.apache.kafka.common.requests.DescribeConfigsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsRequest;
@@ -143,8 +139,6 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
 import org.apache.kafka.common.requests.ListGroupsRequest;
-import org.apache.kafka.common.requests.ListGroupsResponse;
-import org.apache.kafka.common.requests.ListGroupsResponse.Group;
 import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
@@ -159,7 +153,6 @@ import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
 import org.apache.kafka.common.requests.SaslAuthenticateResponse;
-import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.requests.TransactionResult;
@@ -1833,14 +1826,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                            CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(listGroups.getRequest() instanceof ListGroupsRequest);
         KeyValue<Errors, List<GroupOverview>> listResult = getGroupCoordinator().handleListGroups();
-        ListGroupsResponse response = new ListGroupsResponse(
-            listResult.getKey(),
-            listResult.getValue().stream()
-                .map(groupOverview -> new Group(groupOverview.groupId(), groupOverview.protocolType()))
-                .collect(Collectors.toList())
-        );
-
-        resultFuture.complete(response);
+        resultFuture.complete(KafkaCommonUtils.newListGroupsResponse(listResult.getKey(), listResult.getValue()));
     }
 
     @Override
@@ -1849,11 +1835,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(deleteGroups.getRequest() instanceof DeleteGroupsRequest);
         DeleteGroupsRequest request = (DeleteGroupsRequest) deleteGroups.getRequest();
 
-        Map<String, Errors> deleteResult = getGroupCoordinator().handleDeleteGroups(request.groups());
-        DeleteGroupsResponse response = new DeleteGroupsResponse(
-            deleteResult
-        );
-        resultFuture.complete(response);
+        resultFuture.complete(KafkaCommonUtils.newDeleteGroupsResponse(
+                getGroupCoordinator().handleDeleteGroups(request.groups())
+        ));
     }
 
     @Override
@@ -1866,7 +1850,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void handleSaslHandshake(KafkaHeaderAndRequest saslHandshake,
                                        CompletableFuture<AbstractResponse> resultFuture) {
-        resultFuture.complete(new SaslHandshakeResponse(Errors.ILLEGAL_SASL_STATE, Collections.emptySet()));
+        resultFuture.complete(KafkaCommonUtils.newSaslHandshakeResponse(Errors.ILLEGAL_SASL_STATE));
     }
 
     @Override
@@ -1889,7 +1873,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
 
         if (validTopics.isEmpty()) {
-            resultFuture.complete(new CreateTopicsResponse(result));
+            resultFuture.complete(KafkaCommonUtils.newCreateTopicsResponse(result));
             return;
         }
 
@@ -1897,13 +1881,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final Map<String, TopicDetails> authorizedTopics = Maps.newConcurrentMap();
         Runnable createTopicsAsync = () -> {
             if (authorizedTopics.isEmpty()) {
-                resultFuture.complete(new CreateTopicsResponse(result));
+                resultFuture.complete(KafkaCommonUtils.newCreateTopicsResponse(result));
                 return;
             }
             // TODO: handle request.validateOnly()
             adminManager.createTopicsAsync(authorizedTopics, request.timeout()).thenApply(validResult -> {
                 result.putAll(validResult);
-                resultFuture.complete(new CreateTopicsResponse(result));
+                resultFuture.complete(KafkaCommonUtils.newCreateTopicsResponse(result));
                 return null;
             });
         };
@@ -2307,7 +2291,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         DeleteTopicsRequest request = (DeleteTopicsRequest) deleteTopics.getRequest();
         Set<String> topicsToDelete = request.topics();
         if (topicsToDelete == null || topicsToDelete.isEmpty()) {
-            resultFuture.complete(new DeleteTopicsResponse(Maps.newHashMap()));
+            resultFuture.complete(KafkaCommonUtils.newDeleteTopicsResponse(Maps.newHashMap()));
             return;
         }
         Map<String, Errors> deleteTopicsResponse = Maps.newConcurrentMap();
@@ -2323,7 +2307,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         Optional.empty());
             }
             if (topicToDeleteCount.decrementAndGet() == 0) {
-                resultFuture.complete(new DeleteTopicsResponse(deleteTopicsResponse));
+                resultFuture.complete(KafkaCommonUtils.newDeleteTopicsResponse(deleteTopicsResponse));
             }
         };
         topicsToDelete.forEach(topic -> {
@@ -2376,7 +2360,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
 
         if (validTopics.isEmpty()) {
-            resultFuture.complete(new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, result));
+            resultFuture.complete(KafkaCommonUtils.newCreatePartitionsResponse(result));
             return;
         }
 
@@ -2384,12 +2368,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final Map<String, NewPartitions> authorizedTopics = Maps.newConcurrentMap();
         Runnable createPartitionsAsync = () -> {
             if (authorizedTopics.isEmpty()) {
-                resultFuture.complete(new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, result));
+                resultFuture.complete(KafkaCommonUtils.newCreatePartitionsResponse(result));
                 return;
             }
             adminManager.createPartitionsAsync(authorizedTopics, request.timeout()).thenApply(validResult -> {
                 result.putAll(validResult);
-                resultFuture.complete(new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, result));
+                resultFuture.complete(KafkaCommonUtils.newCreatePartitionsResponse(result));
                 return null;
             });
         };
@@ -2484,13 +2468,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 .setProducerName("")
                 .setSequenceId(0L);
         return Commands.serializeMetadataAndPayload(Commands.ChecksumType.None, messageMetadata, byteBuf);
-    }
-
-    private SaslHandshakeResponse checkSaslMechanism(String mechanism) {
-        if (getKafkaConfig().getSaslAllowedMechanisms().contains(mechanism)) {
-            return new SaslHandshakeResponse(Errors.NONE, getKafkaConfig().getSaslAllowedMechanisms());
-        }
-        return new SaslHandshakeResponse(Errors.UNSUPPORTED_SASL_MECHANISM, new HashSet<>());
     }
 
     @Override

@@ -28,22 +28,46 @@ import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
+import org.apache.kafka.common.requests.CreatePartitionsResponse;
+import org.apache.kafka.common.requests.CreateTopicsResponse;
+import org.apache.kafka.common.requests.DeleteGroupsResponse;
+import org.apache.kafka.common.requests.DeleteTopicsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsResponse;
 import org.apache.kafka.common.requests.FindCoordinatorResponse;
 import org.apache.kafka.common.requests.HeartbeatResponse;
 import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupResponse;
+import org.apache.kafka.common.requests.ListGroupsResponse;
 import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
+import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.pulsar.common.schema.KeyValue;
 
 public class KafkaCommonUtils {
+
+    public static CreatePartitionsResponse newCreatePartitionsResponse(Map<String, ApiError> topicToErrors) {
+        return new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, topicToErrors);
+    }
+
+    public static CreateTopicsResponse newCreateTopicsResponse(Map<String, ApiError> errorMap) {
+        return new CreateTopicsResponse(errorMap);
+    }
+
+    public static DeleteGroupsResponse newDeleteGroupsResponse(Map<String, Errors> groupToErrors) {
+        return new DeleteGroupsResponse(groupToErrors);
+    }
+
+    public static DeleteTopicsResponse newDeleteTopicsResponse(Map<String, Errors> topicToErrors) {
+        return new DeleteTopicsResponse(topicToErrors);
+    }
 
     public static DescribeGroupsResponse newDescribeGroupsResponse(
             Map<String, KeyValue<Errors, GroupMetadata.GroupSummary>> groupToSummary) {
@@ -95,6 +119,15 @@ public class KafkaCommonUtils {
 
     public static LeaveGroupResponse newLeaveGroupResponse(Errors errors) {
         return new LeaveGroupResponse(errors);
+    }
+
+    public static ListGroupsResponse newListGroupsResponse(Errors errors,
+                                                           List<GroupMetadata.GroupOverview> groups) {
+        return new ListGroupsResponse(errors, groups.stream()
+                .map(groupOverview -> new ListGroupsResponse.Group(
+                        groupOverview.groupId(), groupOverview.protocolType()))
+                .collect(Collectors.toList())
+        );
     }
 
     public static ListOffsetResponse newListOffsetResponse(Map<TopicPartition, Pair<Errors, Long>> partitionToOffset) {
@@ -150,6 +183,10 @@ public class KafkaCommonUtils {
                 "", // metadata
                 Errors.NONE
         );
+    }
+
+    public static SaslHandshakeResponse newSaslHandshakeResponse(Errors errors) {
+        return new SaslHandshakeResponse(errors, Collections.emptySet());
     }
 
     public static SyncGroupResponse newSyncGroupResponse(Errors errors, ByteBuffer memberState) {
