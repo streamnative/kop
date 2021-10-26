@@ -28,6 +28,7 @@ public class PulsarSchemaStorageTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testUsingSchemaStorageTestsBase() throws Exception {
+        admin.topics().createNonPartitionedTopic("persistent://public/default/__schemaregistry");
         SchemaStorageTestsBase tester = new SchemaStorageTestsBase(new SchemaStorageAccessor() {
             @Override
             public SchemaStorage getSchemaStorageForTenant(String tenant) throws SchemaStorageException {
@@ -50,6 +51,7 @@ public class PulsarSchemaStorageTest extends KopProtocolHandlerTestBase {
     @Test
     public void testTwoInstances() throws Exception {
         String subject1 = "cccc";
+        admin.topics().createNonPartitionedTopic("persistent://public/default/__schemaregistry-2");
         try (PulsarSchemaStorage instance1 = new PulsarSchemaStorage(tenant, pulsarClient,
                 "persistent://public/default/__schemaregistry-2");
             PulsarSchemaStorage instance2 = new PulsarSchemaStorage(tenant, pulsarClient,

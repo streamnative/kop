@@ -132,8 +132,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                         return CompletableFuture.completedFuture(null);
                     } else {
                         CompletableFuture<Message<Op>> opMessage = reader.readNextAsync();
-                        // here we use thenApplyAsync in order to detach from the current thread
-                        return opMessage.thenApplyAsync(msg -> {
+                        return opMessage.thenCompose(msg -> {
                             Op value = msg.getValue();
                             log.info("read {} from pulsar", value);
                             SchemaEntry schemaEntry = value.toSchemaEntry();
