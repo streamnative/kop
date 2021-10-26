@@ -458,7 +458,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         // Build input params
         Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = Maps.newHashMap();
         offsetData.put(topicPartition,
-                KafkaCommonUtils.newOffsetCommitRequestPartitionData(1L, ""));
+                KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(1L, ""));
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(group, offsetData)
                 .setMemberId(memberId);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
@@ -487,11 +487,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         // Build input params
         Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = Maps.newHashMap();
         offsetData.put(topicPartition1,
-                KafkaCommonUtils.newOffsetCommitRequestPartitionData(1L, ""));
+                KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(1L, ""));
         offsetData.put(topicPartition2,
-                KafkaCommonUtils.newOffsetCommitRequestPartitionData(2L, ""));
+                KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(2L, ""));
         offsetData.put(topicPartition3,
-                KafkaCommonUtils.newOffsetCommitRequestPartitionData(3L, ""));
+                KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(3L, ""));
 
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(group, offsetData)
                 .setMemberId(memberId);
@@ -524,7 +524,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         String group = "test-failed-groupId";
         TopicPartition topicPartition = new TopicPartition("test", 1);
         Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> offsetData = Maps.newHashMap();
-        offsetData.put(topicPartition, KafkaCommonUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
+        offsetData.put(topicPartition, KafkaCommonTestUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
         TxnOffsetCommitRequest.Builder builder =
                 new TxnOffsetCommitRequest.Builder(
                         "1", group, 1, (short) 1, offsetData);
@@ -552,11 +552,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> offsetData = Maps.newHashMap();
         offsetData.put(topicPartition1,
-                KafkaCommonUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
+                KafkaCommonTestUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
         offsetData.put(topicPartition2,
-                KafkaCommonUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
+                KafkaCommonTestUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
         offsetData.put(topicPartition3,
-                KafkaCommonUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
+                KafkaCommonTestUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
 
         TxnOffsetCommitRequest.Builder builder =
                 new TxnOffsetCommitRequest.Builder(

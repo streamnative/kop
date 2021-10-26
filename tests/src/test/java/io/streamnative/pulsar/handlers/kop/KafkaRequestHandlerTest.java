@@ -38,7 +38,6 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManage
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
-import io.streamnative.pulsar.handlers.kop.utils.KafkaCommonUtils;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -584,7 +583,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // build input params
         Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
-        offsetData.put(topicPartition, KafkaCommonUtils.newOffsetCommitRequestPartitionData(1L, ""));
+        offsetData.put(topicPartition, KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(1L, ""));
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder("test-groupId", offsetData)
                 .setGenerationId(generationId)
                 .setMemberId(memberId);
@@ -617,7 +616,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // build input params
         Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
-        offsetData.put(topicPartition, KafkaCommonUtils.newOffsetCommitRequestPartitionData(1L, ""));
+        offsetData.put(topicPartition, KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(1L, ""));
 
         // convert
         Map<TopicPartition, OffsetAndMetadata> converted =
@@ -647,7 +646,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // build input params
         Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
-        offsetData.put(topicPartition, KafkaCommonUtils.newOffsetCommitRequestPartitionData(1L, ""));
+        offsetData.put(topicPartition, KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(1L, ""));
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder("test-groupId", offsetData)
                 .setGenerationId(generationId)
                 .setMemberId(memberId);

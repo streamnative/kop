@@ -187,7 +187,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                                                               String topic,
                                                               int invalidPartitionId) {
         TopicPartition invalidTopicPartition = new TopicPartition(topic, invalidPartitionId);
-        PartitionData partitionOffsetCommitData = KafkaCommonUtils.newOffsetCommitRequestPartitionData(15L, "");
+        PartitionData partitionOffsetCommitData = KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(15L, "");
         Map<TopicPartition, PartitionData> offsetData = Maps.newHashMap();
         offsetData.put(invalidTopicPartition, partitionOffsetCommitData);
         KafkaHeaderAndRequest request = buildRequest(new OffsetCommitRequest.Builder("groupId", offsetData));
@@ -602,7 +602,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                                                                                Map<TopicPartition, Long> offsetMap) {
         return topicPartitions.stream()
             .map(topic ->
-                Pair.of(topic, KafkaCommonUtils.newFetchRequestPartitionData(
+                Pair.of(topic, KafkaCommonTestUtils.newFetchRequestPartitionData(
                         offsetMap.getOrDefault(topic, 0L),
                         0L,
                         maxPartitionBytes)))

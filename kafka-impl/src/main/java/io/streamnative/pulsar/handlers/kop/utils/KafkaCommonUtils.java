@@ -19,13 +19,11 @@ import java.util.Optional;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
-import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 
 public class KafkaCommonUtils {
 
@@ -36,25 +34,6 @@ public class KafkaCommonUtils {
                 timestamp,
                 Optional.empty() // leader epoch
         ));
-    }
-
-    public static FetchRequest.PartitionData newFetchRequestPartitionData(long fetchOffset,
-                                                                          long logStartOffset,
-                                                                          int maxBytes) {
-        return new FetchRequest.PartitionData(fetchOffset,
-                logStartOffset,
-                maxBytes,
-                Optional.empty() // leader epoch
-        );
-    }
-
-    public static TxnOffsetCommitRequest.CommittedOffset newTxnOffsetCommitRequestCommittedOffset(
-            long offset,
-            String metadata) {
-        return new TxnOffsetCommitRequest.CommittedOffset(offset,
-                metadata,
-                Optional.empty() // leader epoch
-        );
     }
 
     public static ListOffsetResponse.PartitionData newListOffsetResponsePartitionData(long offset) {
@@ -94,14 +73,6 @@ public class KafkaCommonUtils {
                 Collections.singletonList(Node.noNode()), // replicas
                 Collections.singletonList(Node.noNode()), // isr
                 Collections.emptyList() // offline replicas
-        );
-    }
-
-    public static OffsetCommitRequest.PartitionData newOffsetCommitRequestPartitionData(long offset,
-                                                                                        String metadata) {
-        return new OffsetCommitRequest.PartitionData(offset,
-                Optional.empty(), // leader epoch
-                metadata
         );
     }
 
