@@ -610,8 +610,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 10000)
     public void testConvertOffsetCommitRetentionMsIfRetentionMsSet() throws Exception {
 
-        String memberId = "test_member_id";
-        int generationId = 0;
         long currentTime = 100;
         int offsetsConfigRetentionMs = 1000;
         int requestSetRetentionMs = 10000;
@@ -620,18 +618,13 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         // build input params
         Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
         offsetData.put(topicPartition, KafkaCommonUtils.newOffsetCommitRequestPartitionData(1L, ""));
-        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder("test-groupId", offsetData)
-                .setGenerationId(generationId)
-                .setMemberId(memberId);
-        OffsetCommitRequest offsetCommitRequest = builder.build();
-
 
         // convert
         Map<TopicPartition, OffsetAndMetadata> converted =
                 handler.convertOffsetCommitRequestRetentionMs(
                         offsetData,
-                        offsetCommitRequest.retentionTime(),
-                        builder.latestAllowedVersion(),
+                        requestSetRetentionMs,
+                        (short) 4, // V2 adds retention time to the request and V5 removes retention time
                         currentTime,
                         offsetsConfigRetentionMs);
 

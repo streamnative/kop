@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
-import com.google.common.annotations.VisibleForTesting;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
@@ -30,7 +29,6 @@ import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 
 public class KafkaCommonUtils {
 
-    @VisibleForTesting
     public static Map<TopicPartition, ListOffsetRequest.PartitionData> newListOffsetTargetTimes(
             TopicPartition topicPartition,
             long timestamp) {
@@ -40,7 +38,6 @@ public class KafkaCommonUtils {
         ));
     }
 
-    @VisibleForTesting
     public static FetchRequest.PartitionData newFetchRequestPartitionData(long fetchOffset,
                                                                           long logStartOffset,
                                                                           int maxBytes) {
@@ -51,7 +48,6 @@ public class KafkaCommonUtils {
         );
     }
 
-    @VisibleForTesting
     public static TxnOffsetCommitRequest.CommittedOffset newTxnOffsetCommitRequestCommittedOffset(
             long offset,
             String metadata) {
@@ -125,7 +121,7 @@ public class KafkaCommonUtils {
         );
     }
 
-    public static class Legacy {
+    public static class LegacyUtils {
 
         public static ListOffsetResponse.PartitionData newListOffsetResponsePartitionData(long offset) {
             return new ListOffsetResponse.PartitionData(Errors.NONE, Collections.singletonList(offset));
@@ -134,6 +130,11 @@ public class KafkaCommonUtils {
         public static ListOffsetResponse.PartitionData newListOffsetResponsePartitionData(Errors errors) {
             return new ListOffsetResponse.PartitionData(errors,
                     Collections.emptyList());
+        }
+
+        // V2 adds retention time to the request and V5 removes retention time
+        public static long getRetentionTime(OffsetCommitRequest request) {
+            return request.retentionTime();
         }
     }
 

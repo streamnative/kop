@@ -1409,7 +1409,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                boolean legacyMode) {
         if (legacyMode) {
             partitionData.complete(
-                    KafkaCommonUtils.Legacy.newListOffsetResponsePartitionData(Errors.UNKNOWN_SERVER_ERROR));
+                    KafkaCommonUtils.LegacyUtils.newListOffsetResponsePartitionData(Errors.UNKNOWN_SERVER_ERROR));
         } else {
             partitionData.complete(KafkaCommonUtils.newListOffsetResponsePartitionData(Errors.UNKNOWN_SERVER_ERROR));
         }
@@ -1419,7 +1419,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                 boolean legacyMode,
                                                 long offset) {
         if (legacyMode) {
-            partitionData.complete(KafkaCommonUtils.Legacy.newListOffsetResponsePartitionData(offset));
+            partitionData.complete(KafkaCommonUtils.LegacyUtils.newListOffsetResponsePartitionData(offset));
         } else {
             partitionData.complete(KafkaCommonUtils.newListOffsetResponsePartitionData(offset));
         }
@@ -1573,13 +1573,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             long currentTimeStamp,
             long configOffsetsRetentionMs) {
 
-        // commit from kafka
-        // > for version 1 and beyond store offsets in offset manager
-        // > compute the retention time based on the request version:
-        // commit from kafka
-
+        // V2 adds retention time to the request and V5 removes retention time
         long offsetRetention;
-        if (apiVersion <= 1 || retentionTime == OffsetCommitRequest.DEFAULT_RETENTION_TIME) {
+        if (apiVersion <= 1 || apiVersion >= 5 || retentionTime == OffsetCommitRequest.DEFAULT_RETENTION_TIME) {
             offsetRetention = configOffsetsRetentionMs;
         } else {
             offsetRetention = retentionTime;
@@ -1671,7 +1667,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     Map<TopicPartition, OffsetAndMetadata> convertedPartitionData =
                             convertOffsetCommitRequestRetentionMs(
                                     convertedOffsetData,
-                                    request.retentionTime(),
+                                    KafkaCommonUtils.LegacyUtils.getRetentionTime(request),
                                     offsetCommit.getHeader().apiVersion(),
                                     Time.SYSTEM.milliseconds(),
                                     getGroupCoordinator().offsetConfig().offsetsRetentionMs()
