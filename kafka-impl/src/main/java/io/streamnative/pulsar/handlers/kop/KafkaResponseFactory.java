@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
 import org.apache.commons.lang3.tuple.Pair;
@@ -44,6 +45,7 @@ import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
+import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.pulsar.common.schema.KeyValue;
@@ -216,6 +218,18 @@ public class KafkaResponseFactory {
                 "", // metadata
                 Errors.NONE
         );
+    }
+
+    public static SaslAuthenticateResponse newSaslAuthenticate(ByteBuffer saslAuthBytes) {
+        return new SaslAuthenticateResponse(Errors.NONE, "", saslAuthBytes);
+    }
+
+    public static SaslAuthenticateResponse newSaslAuthenticate(Errors errors, String message) {
+        return new SaslAuthenticateResponse(errors, message);
+    }
+
+    public static SaslHandshakeResponse newSaslHandshake(Set<String> allowedMechanisms) {
+        return new SaslHandshakeResponse(Errors.NONE, allowedMechanisms);
     }
 
     public static SaslHandshakeResponse newSaslHandshake(Errors errors) {
