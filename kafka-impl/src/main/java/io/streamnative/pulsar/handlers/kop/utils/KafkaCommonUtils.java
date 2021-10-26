@@ -16,9 +16,12 @@ package io.streamnative.pulsar.handlers.kop.utils;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.BiConsumer;
+import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataResponse;
@@ -90,6 +93,14 @@ public class KafkaCommonUtils {
                 "", // metadata
                 Errors.NONE
         );
+    }
+
+    public static void forEachCreatePartitionsRequest(CreatePartitionsRequest request,
+                                                      BiConsumer<String, NewPartitions> consumer) {
+        request.newPartitions().forEach((topic, partitionDetails) -> {
+            consumer.accept(topic,
+                    NewPartitions.increaseTo(partitionDetails.totalCount(), partitionDetails.newAssignments()));
+        });
     }
 
     public static class LegacyUtils {
