@@ -79,7 +79,7 @@ public class KopEventManager {
         this.deletionTopicsHandler = new DeletionTopicsHandler(this);
         this.brokersChangeHandler = new BrokersChangeHandler(this);
         this.metadataStore = metadataStore;
-        this.eventManagerStats = new KopEventManagerStats(statsLogger);
+        this.eventManagerStats = new KopEventManagerStats(statsLogger, queue);
         this.groupCoordinatorsByTenant = groupCoordinatorsByTenant;
     }
 
@@ -104,7 +104,6 @@ public class KopEventManager {
     public void put(KopEventWrapper eventWrapper) {
         try {
             queue.put(eventWrapper);
-            KopEventManagerStats.KOP_EVENT_QUEUE_SIZE_INSTANCE.set(queue.size());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("Error put event {} to kop event queue",
@@ -136,7 +135,6 @@ public class KopEventManager {
             KopEventWrapper eventWrapper = null;
             try {
                 eventWrapper = queue.take();
-                KopEventManagerStats.KOP_EVENT_QUEUE_SIZE_INSTANCE.decrementAndGet();
                 registerEventQueuedLatency(eventWrapper);
 
                 if (eventWrapper.kopEvent instanceof ShutdownEventThread) {
