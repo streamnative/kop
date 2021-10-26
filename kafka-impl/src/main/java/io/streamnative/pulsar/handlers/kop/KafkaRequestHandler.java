@@ -2594,7 +2594,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("Caught error in handler, closing channel", cause);
-        ctx.close();
+        this.close();
     }
 
     public CompletableFuture<PartitionMetadata> findBroker(TopicName topic) {
