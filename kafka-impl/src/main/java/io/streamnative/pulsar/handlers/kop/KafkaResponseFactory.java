@@ -19,7 +19,6 @@ import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
@@ -163,8 +162,7 @@ public class KafkaResponseFactory {
                 pair -> new ListOffsetResponse.PartitionData(
                         pair.getLeft(), // error
                         0L, // timestamp
-                        pair.getRight(), // offset
-                        Optional.empty() // leader epoch
+                        pair.getRight() // offset
                 )
         ));
     }
@@ -181,7 +179,6 @@ public class KafkaResponseFactory {
         return new MetadataResponse.PartitionMetadata(Errors.NONE,
                 partition,
                 node, // leader
-                Optional.empty(), // leader epoch
                 Collections.singletonList(node), // replicas
                 Collections.singletonList(node), // isr
                 Collections.emptyList() // offline replicas
@@ -193,7 +190,6 @@ public class KafkaResponseFactory {
         return new MetadataResponse.PartitionMetadata(errors,
                 partition,
                 Node.noNode(), // leader
-                Optional.empty(), // leader epoch
                 Collections.singletonList(Node.noNode()), // replicas
                 Collections.singletonList(Node.noNode()), // isr
                 Collections.emptyList() // offline replicas
@@ -207,14 +203,12 @@ public class KafkaResponseFactory {
     public static OffsetFetchResponse.PartitionData newOffsetFetchPartition(long offset,
                                                                             String metadata) {
         return new OffsetFetchResponse.PartitionData(offset,
-                Optional.empty(), // leader epoch
                 metadata,
                 Errors.NONE);
     }
 
     public static OffsetFetchResponse.PartitionData newOffsetFetchPartition() {
         return new OffsetFetchResponse.PartitionData(OffsetFetchResponse.INVALID_OFFSET,
-                Optional.empty(), // leader epoch
                 "", // metadata
                 Errors.NONE
         );

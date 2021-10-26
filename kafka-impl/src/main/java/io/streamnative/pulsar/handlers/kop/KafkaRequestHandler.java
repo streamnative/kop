@@ -2179,13 +2179,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         for (Map.Entry<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> entry : offsetsMap.entrySet()) {
             TxnOffsetCommitRequest.CommittedOffset partitionData = entry.getValue();
             String metadata;
-            if (partitionData.metadata == null) {
+            if (partitionData.metadata() == null) {
                 metadata = OffsetAndMetadata.NoMetadata;
             } else {
-                metadata = partitionData.metadata;
+                metadata = partitionData.metadata();
             }
             offsetAndMetadataMap.put(entry.getKey(),
-                    OffsetAndMetadata.apply(partitionData.offset, metadata, currentTimestamp, -1));
+                    OffsetAndMetadata.apply(partitionData.offset(), metadata, currentTimestamp, -1));
         }
         return offsetAndMetadataMap;
     }

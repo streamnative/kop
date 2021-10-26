@@ -26,17 +26,12 @@ public class KafkaRequestUtils {
 
     public static void forEachCreatePartitionsRequest(CreatePartitionsRequest request,
                                                       BiConsumer<String, NewPartitions> consumer) {
-        request.newPartitions().forEach((topic, partitionDetails) -> {
-            consumer.accept(topic,
-                    NewPartitions.increaseTo(partitionDetails.totalCount(), partitionDetails.newAssignments()));
-        });
+        request.newPartitions().forEach(consumer);
     }
 
     public static void forEachListOffsetRequest(ListOffsetRequest request,
                                                 BiConsumer<TopicPartition, Long> consumer) {
-        request.partitionTimestamps().forEach((topicPartition, partitionData) -> {
-            consumer.accept(topicPartition, partitionData.timestamp);
-        });
+        request.partitionTimestamps().forEach(consumer);
     }
 
     public static class LegacyUtils {
@@ -44,7 +39,7 @@ public class KafkaRequestUtils {
         public static void forEachListOffsetRequest(
                 ListOffsetRequest request,
                 Function<TopicPartition, Function<Long, Consumer<Integer>>> function) {
-            request.partitionTimestamps().forEach((topicPartition, partitionData) -> {
+            request.offsetData().forEach((topicPartition, partitionData) -> {
                 function.apply(topicPartition).apply(partitionData.timestamp).accept(partitionData.maxNumOffsets);
             });
         }
