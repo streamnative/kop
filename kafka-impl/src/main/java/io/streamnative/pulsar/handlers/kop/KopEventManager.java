@@ -104,7 +104,7 @@ public class KopEventManager {
     public void put(KopEventWrapper eventWrapper) {
         try {
             queue.put(eventWrapper);
-            KopEventManagerStats.KOP_EVENT_QUEUE_SIZE_INSTANCE.incrementAndGet();
+            KopEventManagerStats.KOP_EVENT_QUEUE_SIZE_INSTANCE.set(queue.size());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("Error put event {} to kop event queue",
@@ -114,7 +114,6 @@ public class KopEventManager {
 
     public void clearAndPut(KopEventWrapper eventWrapper) {
         queue.clear();
-        KopEventManagerStats.KOP_EVENT_QUEUE_SIZE_INSTANCE.set(0);
         put(eventWrapper);
     }
 
