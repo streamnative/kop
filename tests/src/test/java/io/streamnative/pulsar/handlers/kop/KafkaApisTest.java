@@ -267,7 +267,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         // 2. real test, for ListOffset request verify Earliest get earliest
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
             .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-            .setTargetTimes(KafkaCommonUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.EARLIEST_TIMESTAMP));
+            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.EARLIEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
@@ -317,7 +317,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         // 2. real test, for ListOffset request verify Earliest get earliest
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
             .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-            .setTargetTimes(KafkaCommonUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.LATEST_TIMESTAMP));
+            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.LATEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
@@ -539,7 +539,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     private ListOffsetResponse listOffset(long timestamp, TopicPartition tp) throws Exception {
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-                .setTargetTimes(KafkaCommonUtils.newListOffsetTargetTimes(tp, timestamp));
+                .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, timestamp));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
@@ -861,7 +861,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         TopicPartition tp = new TopicPartition(topicName, 0);
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
             .forConsumer(false, IsolationLevel.READ_UNCOMMITTED)
-            .setTargetTimes(KafkaCommonUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.LATEST_TIMESTAMP));
+            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.LATEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();

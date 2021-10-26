@@ -100,7 +100,7 @@ public class EntryPublishTimeKafkaFormatTest extends EntryPublishTimeTest {
         // time before first message
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-                .setTargetTimes(KafkaCommonUtils.newListOffsetTargetTimes(tp, startTime));
+                .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, startTime));
 
         KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();

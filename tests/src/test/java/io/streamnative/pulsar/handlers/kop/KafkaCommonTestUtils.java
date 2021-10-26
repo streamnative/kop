@@ -13,12 +13,25 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import java.util.Collections;
+import java.util.Map;
 import java.util.Optional;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.requests.FetchRequest;
+import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 
 public class KafkaCommonTestUtils {
+
+    public static Map<TopicPartition, ListOffsetRequest.PartitionData> newListOffsetTargetTimes(
+            TopicPartition topicPartition,
+            long timestamp) {
+        return Collections.singletonMap(topicPartition, new ListOffsetRequest.PartitionData(
+                timestamp,
+                Optional.empty() // leader epoch
+        ));
+    }
 
     public static FetchRequest.PartitionData newFetchRequestPartitionData(long fetchOffset,
                                                                           long logStartOffset,

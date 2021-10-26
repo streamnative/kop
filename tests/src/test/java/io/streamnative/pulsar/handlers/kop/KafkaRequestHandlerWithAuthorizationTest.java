@@ -347,7 +347,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         // Test for ListOffset request verify Earliest get earliest
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-                .setTargetTimes(KafkaCommonUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.EARLIEST_TIMESTAMP));
+                .setTargetTimes(KafkaCommonTestUtils
+                        .newListOffsetTargetTimes(tp, ListOffsetRequest.EARLIEST_TIMESTAMP));
 
         KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
@@ -372,7 +373,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-                .setTargetTimes(KafkaCommonUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.EARLIEST_TIMESTAMP));
+                .setTargetTimes(KafkaCommonTestUtils
+                        .newListOffsetTargetTimes(tp, ListOffsetRequest.EARLIEST_TIMESTAMP));
 
         KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();

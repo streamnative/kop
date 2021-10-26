@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import java.util.Collections;
-import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -31,15 +30,6 @@ import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 
 public class KafkaCommonUtils {
-
-    public static Map<TopicPartition, ListOffsetRequest.PartitionData> newListOffsetTargetTimes(
-            TopicPartition topicPartition,
-            long timestamp) {
-        return Collections.singletonMap(topicPartition, new ListOffsetRequest.PartitionData(
-                timestamp,
-                Optional.empty() // leader epoch
-        ));
-    }
 
     public static ListOffsetResponse.PartitionData newListOffsetResponsePartitionData(long offset) {
         return new ListOffsetResponse.PartitionData(Errors.NONE,
