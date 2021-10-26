@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
@@ -26,11 +27,16 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.FindCoordinatorResponse;
+import org.apache.kafka.common.requests.HeartbeatResponse;
+import org.apache.kafka.common.requests.JoinGroupResponse;
+import org.apache.kafka.common.requests.LeaveGroupResponse;
 import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
+import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
+import org.apache.kafka.common.requests.SyncGroupResponse;
 
 public class KafkaCommonUtils {
 
@@ -40,6 +46,23 @@ public class KafkaCommonUtils {
 
     public static FindCoordinatorResponse newFindCoordinatorResponse(Errors errors) {
         return new FindCoordinatorResponse(errors, Node.noNode());
+    }
+
+    public static HeartbeatResponse newHeartbeatResponse(Errors errors) {
+        return new HeartbeatResponse(errors);
+    }
+
+    public static JoinGroupResponse newJoinGroupResponse(Errors errors,
+                                                         int generationId,
+                                                         String groupProtocol,
+                                                         String memberId,
+                                                         String leaderId,
+                                                         Map<String, ByteBuffer> groupMembers) {
+        return new JoinGroupResponse(errors, generationId, groupProtocol, memberId, leaderId, groupMembers);
+    }
+
+    public static LeaveGroupResponse newLeaveGroupResponse(Errors errors) {
+        return new LeaveGroupResponse(errors);
     }
 
     public static ListOffsetResponse newListOffsetResponse(Map<TopicPartition, Pair<Errors, Long>> partitionToOffset) {
@@ -77,6 +100,10 @@ public class KafkaCommonUtils {
         );
     }
 
+    public static OffsetCommitResponse newOffsetCommitResponse(Map<TopicPartition, Errors> responseData) {
+        return new OffsetCommitResponse(responseData);
+    }
+
     public static OffsetFetchResponse.PartitionData newOffsetFetchResponsePartitionData(long offset,
                                                                                         String metadata) {
         return new OffsetFetchResponse.PartitionData(offset,
@@ -91,6 +118,10 @@ public class KafkaCommonUtils {
                 "", // metadata
                 Errors.NONE
         );
+    }
+
+    public static SyncGroupResponse newSyncGroupResponse(Errors errors, ByteBuffer memberState) {
+        return new SyncGroupResponse(errors, memberState);
     }
 
     public static void forEachCreatePartitionsRequest(CreatePartitionsRequest request,

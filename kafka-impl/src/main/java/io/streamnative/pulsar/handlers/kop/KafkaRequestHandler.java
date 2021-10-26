@@ -146,7 +146,6 @@ import org.apache.kafka.common.requests.InitProducerIdRequest;
 import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
-import org.apache.kafka.common.requests.LeaveGroupResponse;
 import org.apache.kafka.common.requests.ListGroupsRequest;
 import org.apache.kafka.common.requests.ListGroupsResponse;
 import org.apache.kafka.common.requests.ListGroupsResponse.Group;
@@ -1601,7 +1600,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
 
         if (request.offsetData().isEmpty()) {
-            resultFuture.complete(new OffsetCommitResponse(Maps.newHashMap()));
+            resultFuture.complete(KafkaCommonUtils.newOffsetCommitResponse(Maps.newHashMap()));
             return;
         }
         // convert raw topic name to KoP full name
@@ -1626,7 +1625,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     offsetCommitResult.putAll(nonExistingTopicErrors);
                     offsetCommitResult.putAll(unauthorizedTopicErrors);
 
-                    OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
+                    OffsetCommitResponse response = KafkaCommonUtils.newOffsetCommitResponse(offsetCommitResult);
                     resultFuture.complete(response);
 
                 } else {
@@ -1651,7 +1650,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         offsetCommitResult.putAll(nonExistingTopicErrors);
                         offsetCommitResult.putAll(unauthorizedTopicErrors);
 
-                        OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
+                        OffsetCommitResponse response = KafkaCommonUtils.newOffsetCommitResponse(offsetCommitResult);
                         resultFuture.complete(response);
                     });
 
@@ -1740,7 +1739,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             joinGroupResult.getMembers().forEach((memberId, protocol) ->
                 members.put(memberId, ByteBuffer.wrap(protocol)));
 
-            JoinGroupResponse response = new JoinGroupResponse(
+            JoinGroupResponse response = KafkaCommonUtils.newJoinGroupResponse(
                 joinGroupResult.getError(),
                 joinGroupResult.getGenerationId(),
                 joinGroupResult.getSubProtocol(),
@@ -1773,7 +1772,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 request.groupAssignment(), Utils::toArray
             )
         ).thenAccept(syncGroupResult -> {
-            SyncGroupResponse response = new SyncGroupResponse(
+            SyncGroupResponse response = KafkaCommonUtils.newSyncGroupResponse(
                 syncGroupResult.getKey(),
                 ByteBuffer.wrap(syncGroupResult.getValue())
             );
@@ -1794,7 +1793,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             request.memberId(),
             request.groupGenerationId()
         ).thenAccept(errors -> {
-            HeartbeatResponse response = new HeartbeatResponse(errors);
+            HeartbeatResponse response = KafkaCommonUtils.newHeartbeatResponse(errors);
 
             if (log.isTraceEnabled()) {
                 log.trace("Sending heartbeat response {} for correlation id {} to client {}.",
@@ -1816,9 +1815,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             request.groupId(),
             request.memberId()
         ).thenAccept(errors -> {
-            LeaveGroupResponse response = new LeaveGroupResponse(errors);
-
-            resultFuture.complete(response);
+            resultFuture.complete(KafkaCommonUtils.newHeartbeatResponse(errors));
         });
     }
 
