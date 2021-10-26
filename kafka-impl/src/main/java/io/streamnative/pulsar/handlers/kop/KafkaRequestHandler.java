@@ -421,24 +421,23 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     protected ApiVersionsResponse overloadDefaultApiVersionsResponse(boolean unsupportedApiVersion) {
-        List<ApiVersionsResponse.ApiVersion> versionList = new ArrayList<>();
         if (unsupportedApiVersion){
-            return new ApiVersionsResponse(0, Errors.UNSUPPORTED_VERSION, versionList);
+            return KafkaResponseFactory.newApiVersions(Errors.UNSUPPORTED_VERSION);
         } else {
+            List<ApiVersion> versionList = new ArrayList<>();
             for (ApiKeys apiKey : ApiKeys.values()) {
                 if (apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE) {
                     switch (apiKey) {
                         case LIST_OFFSETS:
                             // V0 is needed for librdkafka
-                            versionList.add(new ApiVersionsResponse.ApiVersion((short) 2, (short) 0,
-                                    apiKey.latestVersion()));
+                            versionList.add(new ApiVersion((short) 2, (short) 0, apiKey.latestVersion()));
                             break;
                         default:
-                            versionList.add(new ApiVersionsResponse.ApiVersion(apiKey));
+                            versionList.add(new ApiVersion(apiKey));
                     }
                 }
             }
-            return new ApiVersionsResponse(0, Errors.NONE, versionList);
+            return KafkaResponseFactory.newApiVersions(versionList);
         }
     }
 
@@ -749,7 +748,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 log.warn("[{}] Request {}: Exception fetching metadata, will return null Response",
                     ctx.channel(), metadataHar.getHeader(), e);
                 MetadataResponse finalResponse =
-                        new MetadataResponse(
+                        KafkaResponseFactory.newMetadata(
                                 allNodes,
                                 clusterName,
                                 controllerId,
@@ -763,7 +762,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (topicsNumber == 0) {
                 // no topic partitions added, return now.
                 MetadataResponse finalResponse =
-                        new MetadataResponse(
+                        KafkaResponseFactory.newMetadata(
                                 allNodes,
                                 clusterName,
                                 controllerId,
@@ -830,7 +829,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     if (finishedTopics == topicsNumber) {
                                         // TODO: confirm right value for controller_id
                                         MetadataResponse finalResponse =
-                                                new MetadataResponse(
+                                                KafkaResponseFactory.newMetadata(
                                                         allNodes,
                                                         clusterName,
                                                         controllerId,

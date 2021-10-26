@@ -21,12 +21,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import lombok.AllArgsConstructor;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiError;
+import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.CreatePartitionsResponse;
 import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteGroupsResponse;
@@ -45,7 +48,36 @@ import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.pulsar.common.schema.KeyValue;
 
+@AllArgsConstructor
+class ApiVersion {
+
+    public final short apiKey;
+    public final short minVersion;
+    public final short maxVersion;
+
+    public ApiVersion(ApiKeys apiKey) {
+        this(apiKey.id, apiKey.oldestVersion(), apiKey.latestVersion());
+    }
+
+    @Override
+    public String toString() {
+        return "ApiVersion(apiKey=" + apiKey + ", minVersion=" + minVersion + ", maxVersion= " + maxVersion + ")";
+    }
+}
+
 public class KafkaResponseFactory {
+
+    public static ApiVersionsResponse newApiVersions(List<ApiVersion> versionList) {
+        return new ApiVersionsResponse(0, Errors.NONE, versionList.stream()
+                .map(apiVersion -> new ApiVersionsResponse.ApiVersion(
+                        apiVersion.apiKey, apiVersion.minVersion, apiVersion.maxVersion))
+                .collect(Collectors.toList())
+        );
+    }
+
+    public static ApiVersionsResponse newApiVersions(Errors errors) {
+        return new ApiVersionsResponse(0, errors, Collections.emptyList());
+    }
 
     public static CreatePartitionsResponse newCreatePartitions(Map<String, ApiError> topicToErrors) {
         return new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, topicToErrors);
@@ -133,6 +165,13 @@ public class KafkaResponseFactory {
                         Optional.empty() // leader epoch
                 )
         ));
+    }
+
+    public static MetadataResponse newMetadata(List<Node> nodes,
+                                               String clusterName,
+                                               int controllerId,
+                                               List<MetadataResponse.TopicMetadata> topicMetadata) {
+        return new MetadataResponse(nodes, clusterName, controllerId, topicMetadata);
     }
 
     public static MetadataResponse.PartitionMetadata newMetadataPartition(int partition,
