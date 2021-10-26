@@ -696,8 +696,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 new RequestHeader(ApiKeys.LIST_OFFSETS, ApiKeys.LIST_OFFSETS.latestVersion(), "client", 0);
         final ListOffsetRequest request =
                 ListOffsetRequest.Builder.forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-                        .setTargetTimes(Collections.singletonMap(topicPartition, new ListOffsetRequest.PartitionData(
-                                ListOffsetRequest.EARLIEST_TIMESTAMP, Optional.empty())))
+                        .setTargetTimes(KafkaCommonTestUtils
+                                .newListOffsetTargetTimes(topicPartition, ListOffsetRequest.EARLIEST_TIMESTAMP))
                         .build(ApiKeys.LIST_OFFSETS.latestVersion());
         handler.handleListOffsetRequest(
                 new KafkaHeaderAndRequest(header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),

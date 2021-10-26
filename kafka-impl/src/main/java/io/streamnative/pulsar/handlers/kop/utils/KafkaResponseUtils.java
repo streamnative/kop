@@ -11,14 +11,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop;
+package io.streamnative.pulsar.handlers.kop.utils;
 
+import io.streamnative.pulsar.handlers.kop.ApiVersion;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
@@ -49,24 +51,7 @@ import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.pulsar.common.schema.KeyValue;
 
-@AllArgsConstructor
-class ApiVersion {
-
-    public final short apiKey;
-    public final short minVersion;
-    public final short maxVersion;
-
-    public ApiVersion(ApiKeys apiKey) {
-        this(apiKey.id, apiKey.oldestVersion(), apiKey.latestVersion());
-    }
-
-    @Override
-    public String toString() {
-        return "ApiVersion(apiKey=" + apiKey + ", minVersion=" + minVersion + ", maxVersion= " + maxVersion + ")";
-    }
-}
-
-public class KafkaResponseFactory {
+public class KafkaResponseUtils {
 
     public static ApiVersionsResponse newApiVersions(List<ApiVersion> versionList) {
         return new ApiVersionsResponse(0, Errors.NONE, versionList.stream()
@@ -157,14 +142,26 @@ public class KafkaResponseFactory {
         );
     }
 
-    public static ListOffsetResponse newListOffset(Map<TopicPartition, Pair<Errors, Long>> partitionToOffset) {
-        return new ListOffsetResponse(CoreUtils.mapValue(partitionToOffset,
-                pair -> new ListOffsetResponse.PartitionData(
-                        pair.getLeft(), // error
-                        0L, // timestamp
-                        pair.getRight() // offset
-                )
-        ));
+    public static ListOffsetResponse newListOffset(
+            Map<TopicPartition,
+            Pair<Errors, Long>> partitionToOffset,
+            boolean legacy) {
+        if (legacy) {
+            return new ListOffsetResponse(CoreUtils.mapValue(partitionToOffset,
+                    pair -> new ListOffsetResponse.PartitionData(
+                            pair.getLeft(),
+                            Optional.ofNullable(pair.getRight()).map(Collections::singletonList)
+                                    .orElse(Collections.emptyList()))
+                    ));
+        } else {
+            return new ListOffsetResponse(CoreUtils.mapValue(partitionToOffset,
+                    pair -> new ListOffsetResponse.PartitionData(
+                            pair.getLeft(), // error
+                            0L, // timestamp
+                            Optional.ofNullable(pair.getRight()).orElse(0L) // offset
+                    )
+            ));
+        }
     }
 
     public static MetadataResponse newMetadata(List<Node> nodes,

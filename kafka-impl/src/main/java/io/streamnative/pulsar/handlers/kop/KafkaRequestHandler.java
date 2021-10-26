@@ -56,6 +56,7 @@ import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaRequestUtils;
+import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
@@ -422,7 +423,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     protected ApiVersionsResponse overloadDefaultApiVersionsResponse(boolean unsupportedApiVersion) {
         if (unsupportedApiVersion){
-            return KafkaResponseFactory.newApiVersions(Errors.UNSUPPORTED_VERSION);
+            return KafkaResponseUtils.newApiVersions(Errors.UNSUPPORTED_VERSION);
         } else {
             List<ApiVersion> versionList = new ArrayList<>();
             for (ApiKeys apiKey : ApiKeys.values()) {
@@ -437,7 +438,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     }
                 }
             }
-            return KafkaResponseFactory.newApiVersions(versionList);
+            return KafkaResponseUtils.newApiVersions(versionList);
         }
     }
 
@@ -748,7 +749,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 log.warn("[{}] Request {}: Exception fetching metadata, will return null Response",
                     ctx.channel(), metadataHar.getHeader(), e);
                 MetadataResponse finalResponse =
-                        KafkaResponseFactory.newMetadata(
+                        KafkaResponseUtils.newMetadata(
                                 allNodes,
                                 clusterName,
                                 controllerId,
@@ -762,7 +763,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (topicsNumber == 0) {
                 // no topic partitions added, return now.
                 MetadataResponse finalResponse =
-                        KafkaResponseFactory.newMetadata(
+                        KafkaResponseUtils.newMetadata(
                                 allNodes,
                                 clusterName,
                                 controllerId,
@@ -829,7 +830,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     if (finishedTopics == topicsNumber) {
                                         // TODO: confirm right value for controller_id
                                         MetadataResponse finalResponse =
-                                                KafkaResponseFactory.newMetadata(
+                                                KafkaResponseUtils.newMetadata(
                                                         allNodes,
                                                         clusterName,
                                                         controllerId,
@@ -1144,7 +1145,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 log.error("[{}] Request {}: Error while find coordinator, .",
                                         ctx.channel(), findCoordinator.getHeader(), t);
 
-                                resultFuture.complete(KafkaResponseFactory
+                                resultFuture.complete(KafkaResponseUtils
                                         .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
                                 return;
                             }
@@ -1154,7 +1155,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         ctx.channel(), node.leader(), request.coordinatorKey(), partition);
                             }
 
-                            resultFuture.complete(KafkaResponseFactory.newFindCoordinator(node.leader()));
+                            resultFuture.complete(KafkaResponseUtils.newFindCoordinator(node.leader()));
                         }))
                 .exceptionally(ex -> {
                     log.error("Store groupId failed.", ex);
@@ -1280,8 +1281,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
-    private CompletableFuture<Pair<Errors, Long>>
-    fetchOffsetForTimestamp(String topicName, Long timestamp, boolean legacyMode) {
+    private CompletableFuture<Pair<Errors, Long>> fetchOffset(String topicName, Long timestamp) {
         CompletableFuture<Pair<Errors, Long>> partitionData = new CompletableFuture<>();
 
         topicManager.getTopic(topicName).whenComplete((perTopicOpt, t) -> {
@@ -1331,60 +1331,80 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
 
             } else {
-                // find with real wanted timestamp
-                OffsetFinder offsetFinder = new OffsetFinder(managedLedger);
-
-                offsetFinder.findMessages(timestamp, new AsyncCallbacks.FindEntryCallback() {
-                    @Override
-                    public void findEntryComplete(Position position, Object ctx) {
-                        PositionImpl finalPosition;
-                        if (position == null) {
-                            finalPosition = OffsetFinder.getFirstValidPosition(managedLedger);
-                            if (finalPosition == null) {
-                                log.warn("Unable to find position for topic {} time {}. get NULL position",
-                                    perTopic.getName(), timestamp);
-                                partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, null));
-                                return;
-                            }
-                        } else {
-                            finalPosition = (PositionImpl) position;
-                        }
-
-
-                        if (log.isDebugEnabled()) {
-                            log.debug("Find position for topic {} time {}. position: {}",
-                                perTopic.getName(), timestamp, finalPosition);
-                        }
-
-                        if (finalPosition.compareTo(lac) > 0 || MessageIdUtils.getCurrentOffset(managedLedger) < 0) {
-                            long offset = Math.max(0, MessageIdUtils.getCurrentOffset(managedLedger));
-                            partitionData.complete(Pair.of(Errors.NONE, offset));
-                        } else {
-                            MessageIdUtils.getOffsetOfPosition(managedLedger, finalPosition, true, timestamp)
-                                    .whenComplete((offset, throwable) -> {
-                                        if (throwable != null) {
-                                            log.error("[{}] Failed to get offset for position {}",
-                                                    perTopic, finalPosition, throwable);
-                                            partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, null));
-                                            return;
-                                        }
-                                        partitionData.complete(Pair.of(Errors.NONE, offset));
-                                    });
-                        }
-                    }
-
-                    @Override
-                    public void findEntryFailed(ManagedLedgerException exception,
-                                                Optional<Position> position, Object ctx) {
-                        log.warn("Unable to find position for topic {} time {}. Exception:",
-                            perTopic.getName(), timestamp, exception);
-                        partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, null));
-                    }
-                });
+                fetchOffsetByTimestamp(partitionData, managedLedger, lac, timestamp, perTopic.getName());
             }
         });
 
         return partitionData;
+    }
+
+    private void fetchOffsetByTimestamp(CompletableFuture<Pair<Errors, Long>> partitionData,
+                                        ManagedLedgerImpl managedLedger,
+                                        PositionImpl lac,
+                                        long timestamp,
+                                        String topic) {
+        // find with real wanted timestamp
+        OffsetFinder offsetFinder = new OffsetFinder(managedLedger);
+
+        offsetFinder.findMessages(timestamp, new AsyncCallbacks.FindEntryCallback() {
+            @Override
+            public void findEntryComplete(Position position, Object ctx) {
+                PositionImpl finalPosition;
+                if (position == null) {
+                    finalPosition = OffsetFinder.getFirstValidPosition(managedLedger);
+                    if (finalPosition == null) {
+                        log.warn("Unable to find position for topic {} time {}. get NULL position",
+                                topic, timestamp);
+                        partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, null));
+                        return;
+                    }
+                } else {
+                    finalPosition = (PositionImpl) position;
+                }
+
+
+                if (log.isDebugEnabled()) {
+                    log.debug("Find position for topic {} time {}. position: {}",
+                            topic, timestamp, finalPosition);
+                }
+
+                if (finalPosition.compareTo(lac) > 0 || MessageIdUtils.getCurrentOffset(managedLedger) < 0) {
+                    long offset = Math.max(0, MessageIdUtils.getCurrentOffset(managedLedger));
+                    partitionData.complete(Pair.of(Errors.NONE, offset));
+                } else {
+                    MessageIdUtils.getOffsetOfPosition(managedLedger, finalPosition, true, timestamp)
+                            .whenComplete((offset, throwable) -> {
+                                if (throwable != null) {
+                                    log.error("[{}] Failed to get offset for position {}",
+                                            topic, finalPosition, throwable);
+                                    partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, null));
+                                    return;
+                                }
+                                partitionData.complete(Pair.of(Errors.NONE, offset));
+                            });
+                }
+            }
+
+            @Override
+            public void findEntryFailed(ManagedLedgerException exception,
+                                        Optional<Position> position, Object ctx) {
+                log.warn("Unable to find position for topic {} time {}. Exception:",
+                        topic, timestamp, exception);
+                partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, null));
+            }
+        });
+    }
+
+    private void waitResponseDataComplete(CompletableFuture<AbstractResponse> resultFuture,
+                                          Map<TopicPartition, CompletableFuture<Pair<Errors, Long>>> responseData,
+                                          boolean legacy) {
+        CompletableFuture
+                .allOf(responseData.values().toArray(new CompletableFuture<?>[0]))
+                .whenComplete((ignore, ex) -> {
+                    ListOffsetResponse response = KafkaResponseUtils.newListOffset(
+                            CoreUtils.mapValue(responseData, CompletableFuture::join), legacy);
+                    resultFuture.complete(response);
+                });
     }
 
     private void handleListOffsetRequestV1AndAbove(KafkaHeaderAndRequest listOffset,
@@ -1411,20 +1431,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     ));
                                     return;
                                 }
-                                responseData.put(topic,
-                                        fetchOffsetForTimestamp(fullPartitionName, times, false));
+                                responseData.put(topic, fetchOffset(fullPartitionName, times));
                             }
                         );
 
         });
-
-        CompletableFuture
-                .allOf(responseData.values().toArray(new CompletableFuture<?>[0]))
-                .whenComplete((ignore, ex) -> {
-                    ListOffsetResponse response = KafkaResponseFactory.newListOffset(
-                            CoreUtils.mapValue(responseData, CompletableFuture::join));
-                    resultFuture.complete(response);
-                });
+        waitResponseDataComplete(resultFuture, responseData, false);
     }
 
     // Some info can be found here
@@ -1468,19 +1480,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, null));
                         }
 
-                        partitionData = fetchOffsetForTimestamp(fullPartitionName, times, true);
+                        partitionData = fetchOffset(fullPartitionName, times);
                         responseData.put(topic, partitionData);
                     });
 
         });
 
-        CompletableFuture
-                .allOf(responseData.values().toArray(new CompletableFuture<?>[0]))
-                .whenComplete((ignore, ex) -> {
-                    ListOffsetResponse response = KafkaResponseFactory.newListOffset(
-                            CoreUtils.mapValue(responseData, CompletableFuture::join));
-                    resultFuture.complete(response);
-                });
+        waitResponseDataComplete(resultFuture, responseData, true);
     }
 
     // get offset from underline managedLedger
@@ -1588,7 +1594,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
 
         if (request.offsetData().isEmpty()) {
-            resultFuture.complete(KafkaResponseFactory.newOffsetCommit(Maps.newHashMap()));
+            resultFuture.complete(KafkaResponseUtils.newOffsetCommit(Maps.newHashMap()));
             return;
         }
         // convert raw topic name to KoP full name
@@ -1613,7 +1619,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     offsetCommitResult.putAll(nonExistingTopicErrors);
                     offsetCommitResult.putAll(unauthorizedTopicErrors);
 
-                    OffsetCommitResponse response = KafkaResponseFactory.newOffsetCommit(offsetCommitResult);
+                    OffsetCommitResponse response = KafkaResponseUtils.newOffsetCommit(offsetCommitResult);
                     resultFuture.complete(response);
 
                 } else {
@@ -1638,7 +1644,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         offsetCommitResult.putAll(nonExistingTopicErrors);
                         offsetCommitResult.putAll(unauthorizedTopicErrors);
 
-                        OffsetCommitResponse response = KafkaResponseFactory.newOffsetCommit(offsetCommitResult);
+                        OffsetCommitResponse response = KafkaResponseUtils.newOffsetCommit(offsetCommitResult);
                         resultFuture.complete(response);
                     });
 
@@ -1727,7 +1733,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             joinGroupResult.getMembers().forEach((memberId, protocol) ->
                 members.put(memberId, ByteBuffer.wrap(protocol)));
 
-            JoinGroupResponse response = KafkaResponseFactory.newJoinGroup(
+            JoinGroupResponse response = KafkaResponseUtils.newJoinGroup(
                 joinGroupResult.getError(),
                 joinGroupResult.getGenerationId(),
                 joinGroupResult.getSubProtocol(),
@@ -1760,7 +1766,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 request.groupAssignment(), Utils::toArray
             )
         ).thenAccept(syncGroupResult -> {
-            SyncGroupResponse response = KafkaResponseFactory.newSyncGroup(
+            SyncGroupResponse response = KafkaResponseUtils.newSyncGroup(
                 syncGroupResult.getKey(),
                 ByteBuffer.wrap(syncGroupResult.getValue())
             );
@@ -1781,7 +1787,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             request.memberId(),
             request.groupGenerationId()
         ).thenAccept(errors -> {
-            HeartbeatResponse response = KafkaResponseFactory.newHeartbeat(errors);
+            HeartbeatResponse response = KafkaResponseUtils.newHeartbeat(errors);
 
             if (log.isTraceEnabled()) {
                 log.trace("Sending heartbeat response {} for correlation id {} to client {}.",
@@ -1803,7 +1809,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             request.groupId(),
             request.memberId()
         ).thenAccept(errors -> {
-            resultFuture.complete(KafkaResponseFactory.newLeaveGroup(errors));
+            resultFuture.complete(KafkaResponseUtils.newLeaveGroup(errors));
         });
     }
 
@@ -1814,7 +1820,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         DescribeGroupsRequest request = (DescribeGroupsRequest) describeGroup.getRequest();
 
         // let the coordinator to handle heartbeat
-        resultFuture.complete(KafkaResponseFactory.newDescribeGroups(request.groupIds().stream()
+        resultFuture.complete(KafkaResponseUtils.newDescribeGroups(request.groupIds().stream()
                 .map(groupId -> Pair.of(groupId, getGroupCoordinator().handleDescribeGroup(groupId)))
                 .collect(Collectors.toMap(Pair::getLeft, Pair::getRight))
         ));
@@ -1825,7 +1831,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                            CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(listGroups.getRequest() instanceof ListGroupsRequest);
         KeyValue<Errors, List<GroupOverview>> listResult = getGroupCoordinator().handleListGroups();
-        resultFuture.complete(KafkaResponseFactory.newListGroups(listResult.getKey(), listResult.getValue()));
+        resultFuture.complete(KafkaResponseUtils.newListGroups(listResult.getKey(), listResult.getValue()));
     }
 
     @Override
@@ -1834,7 +1840,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(deleteGroups.getRequest() instanceof DeleteGroupsRequest);
         DeleteGroupsRequest request = (DeleteGroupsRequest) deleteGroups.getRequest();
 
-        resultFuture.complete(KafkaResponseFactory.newDeleteGroups(
+        resultFuture.complete(KafkaResponseUtils.newDeleteGroups(
                 getGroupCoordinator().handleDeleteGroups(request.groups())
         ));
     }
@@ -1849,7 +1855,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void handleSaslHandshake(KafkaHeaderAndRequest saslHandshake,
                                        CompletableFuture<AbstractResponse> resultFuture) {
-        resultFuture.complete(KafkaResponseFactory.newSaslHandshake(Errors.ILLEGAL_SASL_STATE));
+        resultFuture.complete(KafkaResponseUtils.newSaslHandshake(Errors.ILLEGAL_SASL_STATE));
     }
 
     @Override
@@ -1872,7 +1878,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
 
         if (validTopics.isEmpty()) {
-            resultFuture.complete(KafkaResponseFactory.newCreateTopics(result));
+            resultFuture.complete(KafkaResponseUtils.newCreateTopics(result));
             return;
         }
 
@@ -1880,13 +1886,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final Map<String, TopicDetails> authorizedTopics = Maps.newConcurrentMap();
         Runnable createTopicsAsync = () -> {
             if (authorizedTopics.isEmpty()) {
-                resultFuture.complete(KafkaResponseFactory.newCreateTopics(result));
+                resultFuture.complete(KafkaResponseUtils.newCreateTopics(result));
                 return;
             }
             // TODO: handle request.validateOnly()
             adminManager.createTopicsAsync(authorizedTopics, request.timeout()).thenApply(validResult -> {
                 result.putAll(validResult);
-                resultFuture.complete(KafkaResponseFactory.newCreateTopics(result));
+                resultFuture.complete(KafkaResponseUtils.newCreateTopics(result));
                 return null;
             });
         };
@@ -2290,7 +2296,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         DeleteTopicsRequest request = (DeleteTopicsRequest) deleteTopics.getRequest();
         Set<String> topicsToDelete = request.topics();
         if (topicsToDelete == null || topicsToDelete.isEmpty()) {
-            resultFuture.complete(KafkaResponseFactory.newDeleteTopics(Maps.newHashMap()));
+            resultFuture.complete(KafkaResponseUtils.newDeleteTopics(Maps.newHashMap()));
             return;
         }
         Map<String, Errors> deleteTopicsResponse = Maps.newConcurrentMap();
@@ -2306,7 +2312,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         Optional.empty());
             }
             if (topicToDeleteCount.decrementAndGet() == 0) {
-                resultFuture.complete(KafkaResponseFactory.newDeleteTopics(deleteTopicsResponse));
+                resultFuture.complete(KafkaResponseUtils.newDeleteTopics(deleteTopicsResponse));
             }
         };
         topicsToDelete.forEach(topic -> {
@@ -2359,7 +2365,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
 
         if (validTopics.isEmpty()) {
-            resultFuture.complete(KafkaResponseFactory.newCreatePartitions(result));
+            resultFuture.complete(KafkaResponseUtils.newCreatePartitions(result));
             return;
         }
 
@@ -2367,12 +2373,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final Map<String, NewPartitions> authorizedTopics = Maps.newConcurrentMap();
         Runnable createPartitionsAsync = () -> {
             if (authorizedTopics.isEmpty()) {
-                resultFuture.complete(KafkaResponseFactory.newCreatePartitions(result));
+                resultFuture.complete(KafkaResponseUtils.newCreatePartitions(result));
                 return;
             }
             adminManager.createPartitionsAsync(authorizedTopics, request.timeout()).thenApply(validResult -> {
                 result.putAll(validResult);
-                resultFuture.complete(KafkaResponseFactory.newCreatePartitions(result));
+                resultFuture.complete(KafkaResponseUtils.newCreatePartitions(result));
                 return null;
             });
         };
@@ -2508,7 +2514,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             log.debug("Return PartitionMetadata node: {}, topicName: {}", node, topicName);
         }
 
-        return KafkaResponseFactory.newMetadataPartition(kafkaPartitionIndex, node);
+        return KafkaResponseUtils.newMetadataPartition(kafkaPartitionIndex, node);
     }
 
     static PartitionMetadata newFailedPartitionMetadata(TopicName topicName) {
@@ -2518,7 +2524,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         log.warn("Failed find Broker metadata, create PartitionMetadata with NOT_LEADER_FOR_PARTITION");
 
         // most of this error happens when topic is in loading/unloading status,
-        return KafkaResponseFactory.newMetadataPartition(
+        return KafkaResponseUtils.newMetadataPartition(
                 Errors.NOT_LEADER_FOR_PARTITION, kafkaPartitionIndex);
     }
 

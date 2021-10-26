@@ -20,7 +20,7 @@ import com.google.common.annotations.VisibleForTesting;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
-import io.streamnative.pulsar.handlers.kop.KafkaResponseFactory;
+import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import java.nio.ByteBuffer;
 import java.util.Collections;
@@ -489,7 +489,7 @@ public class SaslAuthenticator {
                 sendKafkaResponse(ctx,
                         header,
                         request,
-                        KafkaResponseFactory.newSaslAuthenticate(responseBuf),
+                        KafkaResponseUtils.newSaslAuthenticate(responseBuf),
                         null);
                 if (log.isDebugEnabled()) {
                     log.debug("Authenticate successfully for client, header {}, request {}, session {} username {}",
@@ -499,7 +499,7 @@ public class SaslAuthenticator {
             } catch (SaslException e) {
                 registerRequestLatency.accept(apiKey.name, startProcessTime);
                 buildResponseOnAuthenticateFailure(header, request,
-                        KafkaResponseFactory.newSaslAuthenticate(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()), e);
+                        KafkaResponseUtils.newSaslAuthenticate(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()), e);
                 sendAuthenticationFailureResponse();
                 if (log.isDebugEnabled()) {
                     log.debug("Authenticate failed for client, header {}, request {}, reason {}",
@@ -568,7 +568,7 @@ public class SaslAuthenticator {
             sendKafkaResponse(ctx,
                     header,
                     request,
-                    KafkaResponseFactory.newSaslHandshake(allowedMechanisms),
+                    KafkaResponseUtils.newSaslHandshake(allowedMechanisms),
                     null);
             return mechanism;
         } else {
@@ -577,7 +577,7 @@ public class SaslAuthenticator {
             }
             registerRequestLatency.accept(header.apiKey().name, startProcessTime);
             buildResponseOnAuthenticateFailure(header, request,
-                    KafkaResponseFactory.newSaslHandshake(Errors.UNSUPPORTED_SASL_MECHANISM),
+                    KafkaResponseUtils.newSaslHandshake(Errors.UNSUPPORTED_SASL_MECHANISM),
                     null);
             throw new UnsupportedSaslMechanismException(mechanism);
         }

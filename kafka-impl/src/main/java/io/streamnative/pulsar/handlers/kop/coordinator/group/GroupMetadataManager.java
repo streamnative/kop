@@ -29,7 +29,7 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import io.streamnative.pulsar.handlers.kop.KafkaResponseFactory;
+import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.CommitRecordMetadataAndOffset;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
@@ -616,7 +616,7 @@ public class GroupMetadataManager {
                 .stream()
                 .collect(Collectors.toMap(
                     tp -> tp,
-                    __ -> KafkaResponseFactory.newOffsetFetchPartition()
+                    __ -> KafkaResponseUtils.newOffsetFetchPartition()
                 ));
         }
 
@@ -626,7 +626,7 @@ public class GroupMetadataManager {
                     .stream()
                     .collect(Collectors.toMap(
                         tp -> tp,
-                        tp -> KafkaResponseFactory.newOffsetFetchPartition()
+                        tp -> KafkaResponseUtils.newOffsetFetchPartition()
                     ));
             }
 
@@ -636,11 +636,11 @@ public class GroupMetadataManager {
                         tp -> tp,
                         topicPartition ->
                             group.offset(topicPartition)
-                                .map(offsetAndMetadata -> KafkaResponseFactory.newOffsetFetchPartition(
+                                .map(offsetAndMetadata -> KafkaResponseUtils.newOffsetFetchPartition(
                                     offsetAndMetadata.offset(),
                                     offsetAndMetadata.metadata())
                                 )
-                                .orElseGet(KafkaResponseFactory::newOffsetFetchPartition)
+                                .orElseGet(KafkaResponseUtils::newOffsetFetchPartition)
                     ))
             ).orElseGet(() ->
                 group.allOffsets().entrySet()
@@ -649,7 +649,7 @@ public class GroupMetadataManager {
                         e -> e.getKey(),
                         e -> {
                             OffsetAndMetadata oam = e.getValue();
-                            return KafkaResponseFactory.newOffsetFetchPartition(
+                            return KafkaResponseUtils.newOffsetFetchPartition(
                                 oam.offset(),
                                 oam.metadata()
                             );
