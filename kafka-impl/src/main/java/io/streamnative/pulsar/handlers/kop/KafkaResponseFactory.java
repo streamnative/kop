@@ -11,26 +11,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop.utils;
+package io.streamnative.pulsar.handlers.kop;
 
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
+import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiError;
-import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.CreatePartitionsResponse;
 import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteGroupsResponse;
@@ -41,35 +37,33 @@ import org.apache.kafka.common.requests.HeartbeatResponse;
 import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupResponse;
 import org.apache.kafka.common.requests.ListGroupsResponse;
-import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataResponse;
-import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.pulsar.common.schema.KeyValue;
 
-public class KafkaCommonUtils {
+public class KafkaResponseFactory {
 
-    public static CreatePartitionsResponse newCreatePartitionsResponse(Map<String, ApiError> topicToErrors) {
+    public static CreatePartitionsResponse newCreatePartitions(Map<String, ApiError> topicToErrors) {
         return new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, topicToErrors);
     }
 
-    public static CreateTopicsResponse newCreateTopicsResponse(Map<String, ApiError> errorMap) {
+    public static CreateTopicsResponse newCreateTopics(Map<String, ApiError> errorMap) {
         return new CreateTopicsResponse(errorMap);
     }
 
-    public static DeleteGroupsResponse newDeleteGroupsResponse(Map<String, Errors> groupToErrors) {
+    public static DeleteGroupsResponse newDeleteGroups(Map<String, Errors> groupToErrors) {
         return new DeleteGroupsResponse(groupToErrors);
     }
 
-    public static DeleteTopicsResponse newDeleteTopicsResponse(Map<String, Errors> topicToErrors) {
+    public static DeleteTopicsResponse newDeleteTopics(Map<String, Errors> topicToErrors) {
         return new DeleteTopicsResponse(topicToErrors);
     }
 
-    public static DescribeGroupsResponse newDescribeGroupsResponse(
+    public static DescribeGroupsResponse newDescribeGroups(
             Map<String, KeyValue<Errors, GroupMetadata.GroupSummary>> groupToSummary) {
         return new DescribeGroupsResponse(CoreUtils.mapValue(groupToSummary, pair -> {
             final Errors errors = pair.getKey();
@@ -96,33 +90,33 @@ public class KafkaCommonUtils {
         }));
     }
 
-    public static FindCoordinatorResponse newFindCoordinatorResponse(Node node) {
+    public static FindCoordinatorResponse newFindCoordinator(Node node) {
         return new FindCoordinatorResponse(Errors.NONE, node);
     }
 
-    public static FindCoordinatorResponse newFindCoordinatorResponse(Errors errors) {
+    public static FindCoordinatorResponse newFindCoordinator(Errors errors) {
         return new FindCoordinatorResponse(errors, Node.noNode());
     }
 
-    public static HeartbeatResponse newHeartbeatResponse(Errors errors) {
+    public static HeartbeatResponse newHeartbeat(Errors errors) {
         return new HeartbeatResponse(errors);
     }
 
-    public static JoinGroupResponse newJoinGroupResponse(Errors errors,
-                                                         int generationId,
-                                                         String groupProtocol,
-                                                         String memberId,
-                                                         String leaderId,
-                                                         Map<String, ByteBuffer> groupMembers) {
+    public static JoinGroupResponse newJoinGroup(Errors errors,
+                                                 int generationId,
+                                                 String groupProtocol,
+                                                 String memberId,
+                                                 String leaderId,
+                                                 Map<String, ByteBuffer> groupMembers) {
         return new JoinGroupResponse(errors, generationId, groupProtocol, memberId, leaderId, groupMembers);
     }
 
-    public static LeaveGroupResponse newLeaveGroupResponse(Errors errors) {
+    public static LeaveGroupResponse newLeaveGroup(Errors errors) {
         return new LeaveGroupResponse(errors);
     }
 
-    public static ListGroupsResponse newListGroupsResponse(Errors errors,
-                                                           List<GroupMetadata.GroupOverview> groups) {
+    public static ListGroupsResponse newListGroups(Errors errors,
+                                                   List<GroupMetadata.GroupOverview> groups) {
         return new ListGroupsResponse(errors, groups.stream()
                 .map(groupOverview -> new ListGroupsResponse.Group(
                         groupOverview.groupId(), groupOverview.protocolType()))
@@ -130,7 +124,7 @@ public class KafkaCommonUtils {
         );
     }
 
-    public static ListOffsetResponse newListOffsetResponse(Map<TopicPartition, Pair<Errors, Long>> partitionToOffset) {
+    public static ListOffsetResponse newListOffset(Map<TopicPartition, Pair<Errors, Long>> partitionToOffset) {
         return new ListOffsetResponse(CoreUtils.mapValue(partitionToOffset,
                 pair -> new ListOffsetResponse.PartitionData(
                         pair.getLeft(), // error
@@ -141,8 +135,8 @@ public class KafkaCommonUtils {
         ));
     }
 
-    public static MetadataResponse.PartitionMetadata newMetadataResponsePartitionMetadata(int partition,
-                                                                                          Node node) {
+    public static MetadataResponse.PartitionMetadata newMetadataPartition(int partition,
+                                                                          Node node) {
         return new MetadataResponse.PartitionMetadata(Errors.NONE,
                 partition,
                 node, // leader
@@ -153,8 +147,8 @@ public class KafkaCommonUtils {
         );
     }
 
-    public static MetadataResponse.PartitionMetadata newMetadataResponsePartitionMetadata(Errors errors,
-                                                                                          int partition) {
+    public static MetadataResponse.PartitionMetadata newMetadataPartition(Errors errors,
+                                                                          int partition) {
         return new MetadataResponse.PartitionMetadata(errors,
                 partition,
                 Node.noNode(), // leader
@@ -165,19 +159,19 @@ public class KafkaCommonUtils {
         );
     }
 
-    public static OffsetCommitResponse newOffsetCommitResponse(Map<TopicPartition, Errors> responseData) {
+    public static OffsetCommitResponse newOffsetCommit(Map<TopicPartition, Errors> responseData) {
         return new OffsetCommitResponse(responseData);
     }
 
-    public static OffsetFetchResponse.PartitionData newOffsetFetchResponsePartitionData(long offset,
-                                                                                        String metadata) {
+    public static OffsetFetchResponse.PartitionData newOffsetFetchPartition(long offset,
+                                                                            String metadata) {
         return new OffsetFetchResponse.PartitionData(offset,
                 Optional.empty(), // leader epoch
                 metadata,
                 Errors.NONE);
     }
 
-    public static OffsetFetchResponse.PartitionData newOffsetFetchResponsePartitionData() {
+    public static OffsetFetchResponse.PartitionData newOffsetFetchPartition() {
         return new OffsetFetchResponse.PartitionData(OffsetFetchResponse.INVALID_OFFSET,
                 Optional.empty(), // leader epoch
                 "", // metadata
@@ -185,43 +179,11 @@ public class KafkaCommonUtils {
         );
     }
 
-    public static SaslHandshakeResponse newSaslHandshakeResponse(Errors errors) {
+    public static SaslHandshakeResponse newSaslHandshake(Errors errors) {
         return new SaslHandshakeResponse(errors, Collections.emptySet());
     }
 
-    public static SyncGroupResponse newSyncGroupResponse(Errors errors, ByteBuffer memberState) {
+    public static SyncGroupResponse newSyncGroup(Errors errors, ByteBuffer memberState) {
         return new SyncGroupResponse(errors, memberState);
     }
-
-    public static void forEachCreatePartitionsRequest(CreatePartitionsRequest request,
-                                                      BiConsumer<String, NewPartitions> consumer) {
-        request.newPartitions().forEach((topic, partitionDetails) -> {
-            consumer.accept(topic,
-                    NewPartitions.increaseTo(partitionDetails.totalCount(), partitionDetails.newAssignments()));
-        });
-    }
-
-    public static void forEachListOffsetRequest(ListOffsetRequest request,
-                                                BiConsumer<TopicPartition, Long> consumer) {
-        request.partitionTimestamps().forEach((topicPartition, partitionData) -> {
-            consumer.accept(topicPartition, partitionData.timestamp);
-        });
-    }
-
-    public static class LegacyUtils {
-
-        public static void forEachListOffsetRequest(
-                ListOffsetRequest request,
-                Function<TopicPartition, Function<Long, Consumer<Integer>>> function) {
-            request.partitionTimestamps().forEach((topicPartition, partitionData) -> {
-                function.apply(topicPartition).apply(partitionData.timestamp).accept(partitionData.maxNumOffsets);
-            });
-        }
-
-        // V2 adds retention time to the request and V5 removes retention time
-        public static long getRetentionTime(OffsetCommitRequest request) {
-            return request.retentionTime();
-        }
-    }
-
 }
