@@ -96,7 +96,7 @@ public class GroupMetadataManager {
     /**
      * The key interface.
      */
-    interface BaseKey {
+    public interface BaseKey {
         short version();
         Object key();
     }
@@ -123,7 +123,7 @@ public class GroupMetadataManager {
      */
     @Data
     @Accessors(fluent = true)
-    static class OffsetKey implements BaseKey {
+    public static class OffsetKey implements BaseKey {
 
         private final short version;
         private final GroupTopicPartition key;

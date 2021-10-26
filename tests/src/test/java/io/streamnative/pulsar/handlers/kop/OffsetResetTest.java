@@ -17,19 +17,20 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
+import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataConstants;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.BaseKey;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.OffsetKey;
+import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import kafka.admin.ConsumerGroupCommand;
-import kafka.coordinator.group.BaseKey;
-import kafka.coordinator.group.GroupMetadataManager;
-import kafka.coordinator.group.OffsetKey;
+import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
@@ -39,6 +40,7 @@ import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -328,25 +330,24 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
         }
     }
 
-    private void resetTo(String topic, String group, String pos) {
-        List<String> args = new ArrayList<>();
-        args.add("--bootstrap-server");
-        args.add("localhost:" + getKafkaBrokerPort());
-        args.add("--group");
-        args.add(group);
-        args.add("--topic");
+    // Simulate the Kafka command tools using Kafka's Java client since the Scala Kafka class' version might be
+    // different with kafka-clients' version.
+    private void resetTo(String topic, String group, String pos) throws ExecutionException, InterruptedException {
+        @Cleanup
+        final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties(group));
         // notice we use the raw topic name here
-        args.add(topic.substring(topic.lastIndexOf('/') + 1));
-        args.add("--execute");
-        args.add("--reset-offsets");
-        args.add("--to-" + pos);
-
-        log.info("Start resetting");
-
-        ConsumerGroupCommand.ConsumerGroupCommandOptions opts =
-                new ConsumerGroupCommand.ConsumerGroupCommandOptions(args.stream().toArray(String[]::new));
-        ConsumerGroupCommand.ConsumerGroupService resetService = new ConsumerGroupCommand.ConsumerGroupService(opts);
-        resetService.resetOffsets();
+        final String rawTopic = topic.substring(topic.lastIndexOf('/') + 1);
+        final List<TopicPartition> topicPartitions = consumer.partitionsFor(rawTopic).stream()
+                .map(partitionInfo -> new TopicPartition(rawTopic, partitionInfo.partition()))
+                .collect(Collectors.toList());
+        if (pos.equals("earliest")) {
+            consumer.commitSync(CoreUtils.mapValue(
+                    consumer.beginningOffsets(topicPartitions),
+                    offset -> new OffsetAndMetadata(offset, "")
+            ));
+        } else {
+            throw new IllegalArgumentException("resetTo only support earliest yet");
+        }
     }
 
     private void readFromOffsetMessagePulsar() throws Exception {
@@ -369,10 +370,10 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
 
             for (MutableRecordBatch batch : memRecords.batches()) {
                 for (Record record : batch) {
-                    BaseKey baseKey = GroupMetadataManager.readMessageKey(record.key());
+                    BaseKey baseKey = GroupMetadataConstants.readMessageKey(record.key());
                     if (baseKey != null && (baseKey instanceof OffsetKey)) {
                         OffsetKey offsetKey = (OffsetKey) baseKey;
-                        String formattedValue = String.valueOf(GroupMetadataManager
+                        String formattedValue = String.valueOf(GroupMetadataConstants
                                 .readOffsetMessageValue(record.value()));
                         log.info("__consumer_offsets - key:{}, value:{}", offsetKey, formattedValue);
                     }
