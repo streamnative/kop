@@ -14,15 +14,18 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import java.util.Collections;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
+import org.apache.kafka.common.requests.FindCoordinatorResponse;
 import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataResponse;
@@ -31,20 +34,23 @@ import org.apache.kafka.common.requests.OffsetFetchResponse;
 
 public class KafkaCommonUtils {
 
-    public static ListOffsetResponse.PartitionData newListOffsetResponsePartitionData(long offset) {
-        return new ListOffsetResponse.PartitionData(Errors.NONE,
-                0L, // timestamp
-                offset,
-                Optional.empty() // leader epoch
-        );
+    public static FindCoordinatorResponse newFindCoordinatorResponse(Node node) {
+        return new FindCoordinatorResponse(Errors.NONE, node);
     }
 
-    public static ListOffsetResponse.PartitionData newListOffsetResponsePartitionData(Errors errors) {
-        return new ListOffsetResponse.PartitionData(errors,
-                ListOffsetResponse.UNKNOWN_TIMESTAMP,
-                ListOffsetResponse.UNKNOWN_OFFSET,
-                Optional.empty() // leader epoch
-        );
+    public static FindCoordinatorResponse newFindCoordinatorResponse(Errors errors) {
+        return new FindCoordinatorResponse(errors, Node.noNode());
+    }
+
+    public static ListOffsetResponse newListOffsetResponse(Map<TopicPartition, Pair<Errors, Long>> partitionToOffset) {
+        return new ListOffsetResponse(CoreUtils.mapValue(partitionToOffset,
+                pair -> new ListOffsetResponse.PartitionData(
+                        pair.getLeft(), // error
+                        0L, // timestamp
+                        pair.getRight(), // offset
+                        Optional.empty() // leader epoch
+                )
+        ));
     }
 
     public static MetadataResponse.PartitionMetadata newMetadataResponsePartitionMetadata(int partition,
@@ -103,15 +109,6 @@ public class KafkaCommonUtils {
     }
 
     public static class LegacyUtils {
-
-        public static ListOffsetResponse.PartitionData newListOffsetResponsePartitionData(long offset) {
-            return new ListOffsetResponse.PartitionData(Errors.NONE, Collections.singletonList(offset));
-        }
-
-        public static ListOffsetResponse.PartitionData newListOffsetResponsePartitionData(Errors errors) {
-            return new ListOffsetResponse.PartitionData(errors,
-                    Collections.emptyList());
-        }
 
         public static void forEachListOffsetRequest(
                 ListOffsetRequest request,

@@ -19,7 +19,6 @@ import static org.testng.Assert.assertTrue;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.streamnative.pulsar.handlers.kop.utils.KafkaCommonUtils;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Collections;

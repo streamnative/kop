@@ -34,7 +34,6 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
-import io.streamnative.pulsar.handlers.kop.utils.KafkaCommonUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;

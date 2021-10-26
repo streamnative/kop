@@ -33,7 +33,6 @@ import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndReq
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
-import io.streamnative.pulsar.handlers.kop.utils.KafkaCommonUtils;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
