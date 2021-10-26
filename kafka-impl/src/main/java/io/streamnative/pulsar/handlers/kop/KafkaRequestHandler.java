@@ -36,7 +36,6 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.AbortedIndexEntry;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
@@ -134,9 +133,6 @@ import org.apache.kafka.common.requests.DeleteTopicsResponse;
 import org.apache.kafka.common.requests.DescribeConfigsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsRequest;
-import org.apache.kafka.common.requests.DescribeGroupsResponse;
-import org.apache.kafka.common.requests.DescribeGroupsResponse.GroupMember;
-import org.apache.kafka.common.requests.DescribeGroupsResponse.GroupMetadata;
 import org.apache.kafka.common.requests.EndTxnRequest;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FindCoordinatorRequest;
@@ -1815,7 +1811,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             request.groupId(),
             request.memberId()
         ).thenAccept(errors -> {
-            resultFuture.complete(KafkaCommonUtils.newHeartbeatResponse(errors));
+            resultFuture.complete(KafkaCommonUtils.newLeaveGroupResponse(errors));
         });
     }
 
@@ -1826,43 +1822,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         DescribeGroupsRequest request = (DescribeGroupsRequest) describeGroup.getRequest();
 
         // let the coordinator to handle heartbeat
-        Map<String, GroupMetadata> groups = request.groupIds().stream()
-            .map(groupId -> {
-                KeyValue<Errors, GroupSummary> describeResult = getGroupCoordinator()
-                    .handleDescribeGroup(groupId);
-                GroupSummary summary = describeResult.getValue();
-                List<GroupMember> members = summary.members().stream()
-                    .map(member -> {
-                        ByteBuffer metadata = ByteBuffer.wrap(member.metadata());
-                        ByteBuffer assignment = ByteBuffer.wrap(member.assignment());
-                        return new GroupMember(
-                            member.memberId(),
-                            member.clientId(),
-                            member.clientHost(),
-                            metadata,
-                            assignment
-                        );
-                    })
-                    .collect(Collectors.toList());
-                return new KeyValue<>(
-                    groupId,
-                    new GroupMetadata(
-                        describeResult.getKey(),
-                        summary.state(),
-                        summary.protocolType(),
-                        summary.protocol(),
-                        members
-                    )
-                );
-            })
-            .collect(Collectors.toMap(
-                kv -> kv.getKey(),
-                kv -> kv.getValue()
-            ));
-        DescribeGroupsResponse response = new DescribeGroupsResponse(
-            groups
-        );
-        resultFuture.complete(response);
+        resultFuture.complete(KafkaCommonUtils.newDescribeGroupsResponse(request.groupIds().stream()
+                .map(groupId -> Pair.of(groupId, getGroupCoordinator().handleDescribeGroup(groupId)))
+                .collect(Collectors.toMap(Pair::getLeft, Pair::getRight))
+        ));
     }
 
     @Override

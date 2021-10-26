@@ -13,19 +13,23 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import java.nio.ByteBuffer;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
+import org.apache.kafka.common.requests.DescribeGroupsResponse;
 import org.apache.kafka.common.requests.FindCoordinatorResponse;
 import org.apache.kafka.common.requests.HeartbeatResponse;
 import org.apache.kafka.common.requests.JoinGroupResponse;
@@ -37,8 +41,36 @@ import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.SyncGroupResponse;
+import org.apache.pulsar.common.schema.KeyValue;
 
 public class KafkaCommonUtils {
+
+    public static DescribeGroupsResponse newDescribeGroupsResponse(
+            Map<String, KeyValue<Errors, GroupMetadata.GroupSummary>> groupToSummary) {
+        return new DescribeGroupsResponse(CoreUtils.mapValue(groupToSummary, pair -> {
+            final Errors errors = pair.getKey();
+            final GroupMetadata.GroupSummary summary = pair.getValue();
+            List<DescribeGroupsResponse.GroupMember> members = summary.members().stream()
+                    .map(member -> {
+                        ByteBuffer metadata = ByteBuffer.wrap(member.metadata());
+                        ByteBuffer assignment = ByteBuffer.wrap(member.assignment());
+                        return new DescribeGroupsResponse.GroupMember(
+                                member.memberId(),
+                                member.clientId(),
+                                member.clientHost(),
+                                metadata,
+                                assignment
+                        );
+                    }).collect(Collectors.toList());
+            return new DescribeGroupsResponse.GroupMetadata(
+                    errors,
+                    summary.state(),
+                    summary.protocolType(),
+                    summary.protocol(),
+                    members
+            );
+        }));
+    }
 
     public static FindCoordinatorResponse newFindCoordinatorResponse(Node node) {
         return new FindCoordinatorResponse(Errors.NONE, node);
