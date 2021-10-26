@@ -17,6 +17,8 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
@@ -103,6 +105,13 @@ public class KafkaCommonUtils {
         });
     }
 
+    public static void forEachListOffsetRequest(ListOffsetRequest request,
+                                                BiConsumer<TopicPartition, Long> consumer) {
+        request.partitionTimestamps().forEach((topicPartition, partitionData) -> {
+            consumer.accept(topicPartition, partitionData.timestamp);
+        });
+    }
+
     public static class LegacyUtils {
 
         public static ListOffsetResponse.PartitionData newListOffsetResponsePartitionData(long offset) {
@@ -112,6 +121,14 @@ public class KafkaCommonUtils {
         public static ListOffsetResponse.PartitionData newListOffsetResponsePartitionData(Errors errors) {
             return new ListOffsetResponse.PartitionData(errors,
                     Collections.emptyList());
+        }
+
+        public static void forEachListOffsetRequest(
+                ListOffsetRequest request,
+                Function<TopicPartition, Function<Long, Consumer<Integer>>> function) {
+            request.partitionTimestamps().forEach((topicPartition, partitionData) -> {
+                function.apply(topicPartition).apply(partitionData.timestamp).accept(partitionData.maxNumOffsets);
+            });
         }
 
         // V2 adds retention time to the request and V5 removes retention time

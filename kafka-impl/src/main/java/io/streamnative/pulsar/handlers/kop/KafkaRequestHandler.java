@@ -1432,7 +1432,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         Map<TopicPartition, CompletableFuture<ListOffsetResponse.PartitionData>> responseData =
                 Maps.newConcurrentMap();
 
-        request.partitionTimestamps().forEach((topic, partitionData) -> {
+        KafkaCommonUtils.forEachListOffsetRequest(request, (topic, times) -> {
             String fullPartitionName = KopTopic.toString(topic);
             authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullPartitionName))
                     .whenComplete((isAuthorized, ex) -> {
@@ -1450,7 +1450,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     ));
                                     return;
                                 }
-                                final long times = partitionData.timestamp;
                                 responseData.put(topic,
                                         fetchOffsetForTimestamp(fullPartitionName, times, false));
                             }
@@ -1481,7 +1480,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (log.isDebugEnabled()) {
             log.debug("received a v0 listOffset: {}", request.toString(true));
         }
-        request.partitionTimestamps().forEach((topic, value) -> {
+        KafkaCommonUtils.LegacyUtils.forEachListOffsetRequest(request, topic -> times -> maxNumOffsets -> {
             String fullPartitionName = KopTopic.toString(topic);
 
             authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullPartitionName))
@@ -1489,31 +1488,24 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         if (ex != null) {
                             log.error("Describe topic authorize failed, topic - {}. {}",
                                     fullPartitionName, ex.getMessage());
-                            responseData.put(topic, CompletableFuture.completedFuture(new ListOffsetResponse
-                                    .PartitionData(
-                                    Errors.TOPIC_AUTHORIZATION_FAILED,
-                                    Collections.emptyList())));
+                            responseData.put(topic, CompletableFuture.completedFuture(KafkaCommonUtils.LegacyUtils
+                                    .newListOffsetResponsePartitionData(Errors.TOPIC_AUTHORIZATION_FAILED)));
                             return;
                         }
                         if (!isAuthorized) {
-                            responseData.put(topic, CompletableFuture.completedFuture(new ListOffsetResponse
-                                    .PartitionData(
-                                    Errors.TOPIC_AUTHORIZATION_FAILED,
-                                    Collections.emptyList())));
+                            responseData.put(topic, CompletableFuture.completedFuture(KafkaCommonUtils.LegacyUtils
+                                    .newListOffsetResponsePartitionData(Errors.TOPIC_AUTHORIZATION_FAILED)));
                             return;
                         }
-                        Long times = value.timestamp;
 
                         CompletableFuture<ListOffsetResponse.PartitionData> partitionData;
                         // num_num_offsets > 1 is not handled for now, returning an error
-                        if (value.maxNumOffsets > 1) {
+                        if (maxNumOffsets > 1) {
                             log.warn("request is asking for multiples offsets for {}, not supported for now",
                                     fullPartitionName);
                             partitionData = new CompletableFuture<>();
-                            partitionData.complete(new ListOffsetResponse
-                                    .PartitionData(
-                                    Errors.UNKNOWN_SERVER_ERROR,
-                                    Collections.singletonList(ListOffsetResponse.UNKNOWN_OFFSET)));
+                            partitionData.complete(KafkaCommonUtils.LegacyUtils
+                                    .newListOffsetResponsePartitionData(Errors.UNKNOWN_SERVER_ERROR));
                         }
 
                         partitionData = fetchOffsetForTimestamp(fullPartitionName, times, true);
