@@ -688,9 +688,10 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
         final int numPartitions = 10;
-        newPartitionsMap.put(fullTopic1, NewPartitions.increaseTo(numPartitions));
-        newPartitionsMap.put(fullTopic2, NewPartitions.increaseTo(numPartitions));
-        newPartitionsMap.put(fullTopic3, NewPartitions.increaseTo(numPartitions));
+        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
+        newPartitionsMap.put(fullTopic1, newPartitions);
+        newPartitionsMap.put(fullTopic2, newPartitions);
+        newPartitionsMap.put(fullTopic3, newPartitions);
 
         CreatePartitionsRequest.Builder builder = new CreatePartitionsRequest.Builder(
                 newPartitionsMap, 5000, false);
@@ -736,7 +737,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
         final int numPartitions = 10;
-        newPartitionsMap.put(fullTopic, NewPartitions.increaseTo(numPartitions));
+        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
+        newPartitionsMap.put(fullTopic, newPartitions);
 
         CreatePartitionsRequest.Builder builder = new CreatePartitionsRequest.Builder(
                 newPartitionsMap, 5000, false);

@@ -216,8 +216,8 @@ public class KafkaResponseUtils {
         return new SaslAuthenticateResponse(errors, message);
     }
 
-    public static SaslHandshakeResponse newSaslHandshake(Set<String> allowedMechanisms) {
-        return new SaslHandshakeResponse(Errors.NONE, allowedMechanisms);
+    public static SaslHandshakeResponse newSaslHandshake(Errors errors, Set<String> allowedMechanisms) {
+        return new SaslHandshakeResponse(errors, allowedMechanisms);
     }
 
     public static SaslHandshakeResponse newSaslHandshake(Errors errors) {

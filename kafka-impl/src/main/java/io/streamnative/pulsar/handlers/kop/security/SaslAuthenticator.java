@@ -568,7 +568,7 @@ public class SaslAuthenticator {
             sendKafkaResponse(ctx,
                     header,
                     request,
-                    KafkaResponseUtils.newSaslHandshake(allowedMechanisms),
+                    KafkaResponseUtils.newSaslHandshake(Errors.NONE, allowedMechanisms),
                     null);
             return mechanism;
         } else {
@@ -577,7 +577,7 @@ public class SaslAuthenticator {
             }
             registerRequestLatency.accept(header.apiKey().name, startProcessTime);
             buildResponseOnAuthenticateFailure(header, request,
-                    KafkaResponseUtils.newSaslHandshake(Errors.UNSUPPORTED_SASL_MECHANISM),
+                    KafkaResponseUtils.newSaslHandshake(Errors.UNSUPPORTED_SASL_MECHANISM, allowedMechanisms),
                     null);
             throw new UnsupportedSaslMechanismException(mechanism);
         }
