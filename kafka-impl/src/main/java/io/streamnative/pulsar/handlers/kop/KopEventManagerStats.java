@@ -18,7 +18,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.KOP_EVENT_QUEUE
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.BlockingQueue;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.stats.Gauge;
@@ -38,13 +38,13 @@ import org.apache.bookkeeper.stats.annotations.StatsDoc;
 @Slf4j
 public class KopEventManagerStats {
 
-    public static final AtomicInteger KOP_EVENT_QUEUE_SIZE_INSTANCE = new AtomicInteger(0);
-
+    private final BlockingQueue<KopEventManager.KopEventWrapper> eventQueue;
 
     private final StatsLogger statsLogger;
 
-    public KopEventManagerStats(StatsLogger statsLogger) {
+    public KopEventManagerStats(StatsLogger statsLogger, BlockingQueue<KopEventManager.KopEventWrapper> eventQueue) {
         this.statsLogger = statsLogger;
+        this.eventQueue = eventQueue;
 
         statsLogger.registerGauge(KOP_EVENT_QUEUE_SIZE, new Gauge<Number>() {
             @Override
@@ -54,7 +54,7 @@ public class KopEventManagerStats {
 
             @Override
             public Number getSample() {
-                return KOP_EVENT_QUEUE_SIZE_INSTANCE;
+                return eventQueue.size();
             }
         });
     }
