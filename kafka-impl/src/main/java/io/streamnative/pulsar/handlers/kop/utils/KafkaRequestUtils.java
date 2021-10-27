@@ -21,6 +21,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
+import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 
 public class KafkaRequestUtils {
 
@@ -32,6 +33,14 @@ public class KafkaRequestUtils {
     public static void forEachListOffsetRequest(ListOffsetRequest request,
                                                 BiConsumer<TopicPartition, Long> consumer) {
         request.partitionTimestamps().forEach(consumer);
+    }
+
+    public static String getMetadata(TxnOffsetCommitRequest.CommittedOffset committedOffset) {
+        return committedOffset.metadata();
+    }
+
+    public static long getOffset(TxnOffsetCommitRequest.CommittedOffset committedOffset) {
+        return committedOffset.offset();
     }
 
     public static class LegacyUtils {

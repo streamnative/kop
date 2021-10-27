@@ -2184,14 +2184,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         Map<TopicPartition, OffsetAndMetadata> offsetAndMetadataMap = new HashMap<>();
         for (Map.Entry<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> entry : offsetsMap.entrySet()) {
             TxnOffsetCommitRequest.CommittedOffset partitionData = entry.getValue();
-            String metadata;
+            String metadata = KafkaRequestUtils.getMetadata(partitionData);
             if (partitionData.metadata() == null) {
                 metadata = OffsetAndMetadata.NoMetadata;
-            } else {
-                metadata = partitionData.metadata();
             }
+            long offset = KafkaRequestUtils.getOffset(partitionData);
             offsetAndMetadataMap.put(entry.getKey(),
-                    OffsetAndMetadata.apply(partitionData.offset(), metadata, currentTimestamp, -1));
+                    OffsetAndMetadata.apply(offset, metadata, currentTimestamp, -1));
         }
         return offsetAndMetadataMap;
     }
