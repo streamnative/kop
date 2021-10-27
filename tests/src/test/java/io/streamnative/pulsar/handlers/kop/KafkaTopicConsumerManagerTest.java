@@ -488,6 +488,11 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         assertFalse(originalTcmList.get(1).isClosed());
 
         consumers.get(1).close(); // trigger KafkaTopicManager#close, only the partition 1 related cache was removed
+        // Because the KafkaRequestHandler.close() is called by channelInActive, when channelInActive called,
+        // the tcp connect already closed. We need ensure topicManager.close() is called.
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(3))
+                .until(() -> originalTcmList.get(1).getNumCreatedCursors() == 0);
         assertSame(getTcmForPartition.apply(0), originalTcmList.get(0));
         assertFalse(originalTcmList.get(0).isClosed());
         // The tcm of partition 1 was closed and it was removed from cache
@@ -495,6 +500,9 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         assertTrue(originalTcmList.get(1).isClosed());
 
         consumers.get(0).close(); // Now all TCM cache was cleared
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(3))
+                .until(() -> originalTcmList.get(0).getNumCreatedCursors() == 0);
         assertNull(getTcmForPartition.apply(0));
         assertNull(getTcmForPartition.apply(1));
         assertTrue(originalTcmList.get(0).isClosed());
