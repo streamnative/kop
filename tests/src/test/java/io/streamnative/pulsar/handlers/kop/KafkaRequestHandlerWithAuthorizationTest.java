@@ -50,7 +50,6 @@ import java.util.concurrent.ExecutionException;
 import javax.crypto.SecretKey;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
@@ -650,12 +649,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         admin.topics().createPartitionedTopic(fullTopic, oldPartitions);
 
-        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
-        final int numPartitions = 10;
-        newPartitionsMap.put(fullTopic, NewPartitions.increaseTo(numPartitions));
-
         CreatePartitionsRequest.Builder builder = new CreatePartitionsRequest.Builder(
-                newPartitionsMap, 5000, false);
+                KafkaCommonTestUtils.newPartitionsMap(fullTopic, 10), 5000, false);
 
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
@@ -686,15 +681,9 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         admin.topics().createPartitionedTopic(fullTopic2, oldPartitions);
         admin.topics().createPartitionedTopic(fullTopic3, oldPartitions);
 
-        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
-        final int numPartitions = 10;
-        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
-        newPartitionsMap.put(fullTopic1, newPartitions);
-        newPartitionsMap.put(fullTopic2, newPartitions);
-        newPartitionsMap.put(fullTopic3, newPartitions);
-
         CreatePartitionsRequest.Builder builder = new CreatePartitionsRequest.Builder(
-                newPartitionsMap, 5000, false);
+                KafkaCommonTestUtils.newPartitionsMap(Arrays.asList(fullTopic1, fullTopic2, fullTopic3), 10),
+                5000, false);
 
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
@@ -735,13 +724,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                         eq(Resource.of(ResourceType.TOPIC, fullTopic))
                 );
 
-        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
-        final int numPartitions = 10;
-        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
-        newPartitionsMap.put(fullTopic, newPartitions);
-
         CreatePartitionsRequest.Builder builder = new CreatePartitionsRequest.Builder(
-                newPartitionsMap, 5000, false);
+                KafkaCommonTestUtils.newPartitionsMap(fullTopic, 10), 5000, false);
 
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 

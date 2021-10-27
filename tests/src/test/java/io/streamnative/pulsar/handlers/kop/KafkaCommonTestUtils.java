@@ -14,7 +14,10 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
@@ -50,5 +53,14 @@ public class KafkaCommonTestUtils {
         return new OffsetCommitRequest.PartitionData(offset,
                 metadata
         );
+    }
+
+
+    public static Map<String, NewPartitions> newPartitionsMap(List<String> topics, int totalCount) {
+        return topics.stream().collect(Collectors.toMap(topic -> topic, __ -> NewPartitions.increaseTo(totalCount)));
+    }
+
+    public static Map<String, NewPartitions> newPartitionsMap(String topic, int totalCount) {
+        return newPartitionsMap(Collections.singletonList(topic), totalCount);
     }
 }
