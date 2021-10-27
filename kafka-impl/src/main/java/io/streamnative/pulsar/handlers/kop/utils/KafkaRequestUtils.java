@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -36,7 +38,7 @@ public class KafkaRequestUtils {
     }
 
     public static String getMetadata(TxnOffsetCommitRequest.CommittedOffset committedOffset) {
-        return committedOffset.metadata();
+        return Optional.ofNullable(committedOffset.metadata()).orElse(OffsetAndMetadata.NoMetadata);
     }
 
     public static long getOffset(TxnOffsetCommitRequest.CommittedOffset committedOffset) {

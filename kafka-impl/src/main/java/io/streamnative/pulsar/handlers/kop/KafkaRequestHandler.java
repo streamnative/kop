@@ -2185,9 +2185,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         for (Map.Entry<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> entry : offsetsMap.entrySet()) {
             TxnOffsetCommitRequest.CommittedOffset partitionData = entry.getValue();
             String metadata = KafkaRequestUtils.getMetadata(partitionData);
-            if (partitionData.metadata() == null) {
-                metadata = OffsetAndMetadata.NoMetadata;
-            }
             long offset = KafkaRequestUtils.getOffset(partitionData);
             offsetAndMetadataMap.put(entry.getKey(),
                     OffsetAndMetadata.apply(offset, metadata, currentTimestamp, -1));
