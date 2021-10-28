@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.Getter;
+import lombok.NonNull;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 
@@ -113,6 +114,18 @@ public class EndPoint {
     @VisibleForTesting
     public static Map<String, EndPoint> parseListeners(final String listeners, final String protocolMapString) {
         return parseListeners(listeners, parseProtocolMap(protocolMapString));
+    }
+
+    public static String findListener(@NonNull final String listeners, final String name) {
+        if (name == null) {
+            return null;
+        }
+        for (String listener : listeners.split(END_POINT_SEPARATOR)) {
+            if (listener.contains(":") && listener.substring(0, listener.indexOf(":")).equals(name)) {
+                return listener;
+            }
+        }
+        return null;
     }
 
     public static EndPoint getPlainTextEndPoint(final String listeners) {
