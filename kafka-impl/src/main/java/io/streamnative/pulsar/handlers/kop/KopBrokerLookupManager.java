@@ -50,12 +50,11 @@ public class KopBrokerLookupManager {
     public static final ConcurrentHashMap<String, CompletableFuture<Optional<String>>>
             KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
 
-    public KopBrokerLookupManager(
-            PulsarService pulsarService, String advertisedListeners, int brokerLookupTimeoutMs) throws Exception {
-        this.advertisedListeners = advertisedListeners;
+    public KopBrokerLookupManager(KafkaServiceConfiguration conf, PulsarService pulsarService) throws Exception {
+        this.advertisedListeners = conf.getKafkaAdvertisedListeners();
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
         this.metadataStoreCacheLoader = new MetadataStoreCacheLoader(pulsarService.getPulsarResources(),
-                brokerLookupTimeoutMs);
+                conf.getBrokerLookupTimeoutMs());
     }
 
     public CompletableFuture<Optional<InetSocketAddress>> findBroker(@NonNull TopicName topic,
@@ -66,7 +65,7 @@ public class KopBrokerLookupManager {
         CompletableFuture<Optional<InetSocketAddress>> returnFuture = new CompletableFuture<>();
 
         getTopicBroker(topic.toString(),
-                advertisedEndPoint != null && advertisedEndPoint.isMultiListener()
+                advertisedEndPoint != null && advertisedEndPoint.isValidInProtocolMap()
                         ? advertisedEndPoint.getListenerName() : null)
                 .thenApply(address -> getProtocolDataToAdvertise(address, topic, advertisedEndPoint))
                 .thenAccept(kopAddressFuture -> kopAddressFuture.thenAccept(listenersOptional -> {
@@ -168,7 +167,7 @@ public class KopBrokerLookupManager {
             return future;
         }
 
-        if (advertisedEndPoint != null && advertisedEndPoint.isMultiListener()) {
+        if (advertisedEndPoint != null && advertisedEndPoint.isValidInProtocolMap()) {
             // if kafkaProtocolMap is set, the lookup result is the advertised address
             String kafkaAdvertisedAddress = String.format("%s://%s:%s", advertisedEndPoint.getSecurityProtocol().name,
                     pulsarAddress.getHostName(), pulsarAddress.getPort());
