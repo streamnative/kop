@@ -203,7 +203,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private final Boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
-    private final String advertisedListeners;
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
     private final int failedAuthenticationDelayMs;
@@ -308,7 +307,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.adminManager = adminManager;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
-        this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();

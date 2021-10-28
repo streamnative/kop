@@ -195,10 +195,11 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private String kafkaProtocolMap;
 
-    @Deprecated
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "Use kafkaProtocolMap, kafkaListeners and advertisedAddress instead."
+            doc = "Specify the internal listener name for the broker.\n"
+                    + "The listener name must be contained in the advertisedListeners.\n"
+                    + "This config is used as the listener name in topic lookup."
     )
     private String kafkaAdvertisedListeners;
 
