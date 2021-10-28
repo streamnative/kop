@@ -332,7 +332,7 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
 
     // Simulate the Kafka command tools using Kafka's Java client since the Scala Kafka class' version might be
     // different with kafka-clients' version.
-    private void resetTo(String topic, String group, String pos) throws ExecutionException, InterruptedException {
+    private void resetTo(String topic, String group, String pos) {
         @Cleanup
         final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties(group));
         // notice we use the raw topic name here
