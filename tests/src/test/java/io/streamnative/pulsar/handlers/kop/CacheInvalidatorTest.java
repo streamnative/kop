@@ -74,7 +74,6 @@ public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
             assertEquals("value", record.value());
         }
 
-        assertFalse(KopBrokerLookupManager.KOP_ADDRESS_CACHE.isEmpty());
         assertFalse(KopBrokerLookupManager.LOOKUP_CACHE.isEmpty());
 
         BundlesData bundles = pulsar.getAdminClient().namespaces().getBundles(
@@ -88,8 +87,6 @@ public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
 
         Awaitility.await().untilAsserted(() -> {
             log.info("LOOKUP_CACHE {}", KopBrokerLookupManager.LOOKUP_CACHE);
-            log.info("KOP_ADDRESS_CACHE {}", KopBrokerLookupManager.KOP_ADDRESS_CACHE);
-            assertTrue(KopBrokerLookupManager.KOP_ADDRESS_CACHE.isEmpty());
             assertTrue(KopBrokerLookupManager.LOOKUP_CACHE.isEmpty());
         });
 

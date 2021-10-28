@@ -2481,7 +2481,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (log.isDebugEnabled()) {
             log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }
-        return kopBrokerLookupManager.findBroker(topic, advertisedEndPoint)
+        return kopBrokerLookupManager.findBroker(topic.toString(), advertisedEndPoint)
                 .thenApply(listenerInetSocketAddressOpt -> listenerInetSocketAddressOpt
                         .map(inetSocketAddress -> newPartitionMetadata(topic, newNode(inetSocketAddress)))
                         .orElse(null)

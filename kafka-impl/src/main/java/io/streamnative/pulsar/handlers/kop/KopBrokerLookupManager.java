@@ -23,7 +23,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.annotation.Nullable;
-import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
@@ -49,8 +48,6 @@ public class KopBrokerLookupManager {
     public static final ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>
             LOOKUP_CACHE = new ConcurrentHashMap<>();
 
-    public static final ConcurrentHashMap<String, String> KOP_ADDRESS_CACHE = new ConcurrentHashMap<>();
-
     public KopBrokerLookupManager(KafkaServiceConfiguration conf, PulsarService pulsarService) throws Exception {
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
         // TODO: change it to getKafkaAdvertisedProtocolMap
@@ -59,33 +56,35 @@ public class KopBrokerLookupManager {
                 conf.getBrokerLookupTimeoutMs());
     }
 
-    public CompletableFuture<Optional<InetSocketAddress>> findBroker(@NonNull TopicName topic,
+    public CompletableFuture<Optional<InetSocketAddress>> findBroker(String topic,
                                                                      @Nullable EndPoint advertisedEndPoint) {
-        if (log.isDebugEnabled()) {
-            log.debug("Handle Lookup for topic {}", topic);
-        }
-
-        return getTopicBroker(topic.toString())
+        return getTopicBroker(topic)
                 .thenApply(internalListenerAddress -> {
-                    final String listener = getAdvertisedListener(
-                            internalListenerAddress, topic, advertisedEndPoint);
-                    if (listener == null) {
-                        removeTopicManagerCache(topic.toString());
+                    if (internalListenerAddress == null) {
+                        log.error("[{}] failed get pulsar address, returned null.", topic);
+                        removeTopicManagerCache(topic);
                         return Optional.empty();
+                    } else if (log.isDebugEnabled()) {
+                        log.debug("[{}] Found broker's internal listener address: {}",
+                                topic, internalListenerAddress);
                     }
 
                     try {
+                        final String listener = getAdvertisedListener(
+                                internalListenerAddress, topic, advertisedEndPoint);
+                        if (log.isDebugEnabled()) {
+                            log.debug("Found listener {} for topic {}", listener, topic);
+                        }
                         final EndPoint endPoint = new EndPoint(listener, protocolMap);
                         return Optional.of(new InetSocketAddress(endPoint.getHostname(), endPoint.getPort()));
                     } catch (IllegalStateException e) {
-                        log.error("Failed to create EndPoint from '{}': {}", listener, e.getMessage());
+                        log.error("Failed to find the advertised listener: {}", e.getMessage());
+                        removeTopicManagerCache(topic);
                         return Optional.empty();
                     }
                 });
     }
 
-    // call pulsarclient.lookup.getbroker to get and own a topic.
-    // when error happens, the returned future will complete with null.
     public CompletableFuture<InetSocketAddress> getTopicBroker(String topicName) {
         if (closed.get()) {
             if (log.isDebugEnabled()) {
@@ -94,6 +93,9 @@ public class KopBrokerLookupManager {
             return CompletableFuture.completedFuture(null);
         }
 
+        if (log.isDebugEnabled()) {
+            log.debug("Handle Lookup for topic {}", topicName);
+        }
         return LOOKUP_CACHE.computeIfAbsent(topicName, this::lookupBroker);
     }
 
@@ -108,24 +110,10 @@ public class KopBrokerLookupManager {
     }
 
     private String getAdvertisedListener(InetSocketAddress internalListenerAddress,
-                                         TopicName topic,
+                                         String topic,
                                          @Nullable EndPoint advertisedEndPoint) {
-        if (internalListenerAddress == null) {
-            log.error("[{}] failed get pulsar address, returned null.", topic);
-            return null;
-        }
 
-        if (log.isDebugEnabled()) {
-            log.debug("[{}] Found broker's internal listener address: {}",
-                    topic, internalListenerAddress);
-        }
-
-        final String protocolDataToAdvertise = KOP_ADDRESS_CACHE.get(topic.toString());
-        if (protocolDataToAdvertise != null) {
-            return protocolDataToAdvertise;
-        } // else: either the key doesn't exist or a null value was put
-
-        List<LoadManagerReport> availableBrokers = metadataStoreCacheLoader.getAvailableBrokers();
+        final List<LoadManagerReport> availableBrokers = metadataStoreCacheLoader.getAvailableBrokers();
         if (log.isDebugEnabled()) {
             availableBrokers.forEach(loadManagerReport ->
                     log.debug("Handle getProtocolDataToAdvertise for {}, pulsarUrl: {}, "
@@ -146,24 +134,13 @@ public class KopBrokerLookupManager {
             return null;
         }
 
-        final String kafkaAdvertisedListeners =
-                serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME).orElse(null);
-        if (kafkaAdvertisedListeners == null) {
-            log.error("No kafkaAdvertisedListeners found in broker {}", internalListenerAddress);
-            return null;
-        }
-
-        if (log.isDebugEnabled()) {
-            log.debug("Found kafkaAdvertisedListeners: {}", kafkaAdvertisedListeners);
-        }
-
-        final String listenerName = (advertisedEndPoint != null) ? advertisedEndPoint.getListenerName() : null;
-        if (listenerName == null) {
-            // Treat the whole kafkaAdvertisedListeners as the listener
-            return kafkaAdvertisedListeners;
-        } else {
-            return EndPoint.findListener(kafkaAdvertisedListeners, listenerName);
-        }
+        return serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME).map(kafkaAdvertisedListeners ->
+            Optional.ofNullable(advertisedEndPoint)
+                    .map(endPoint -> EndPoint.findListener(kafkaAdvertisedListeners, endPoint.getListenerName()))
+                    .orElse(EndPoint.findFirstListener(kafkaAdvertisedListeners))
+        ).orElseGet(() -> {
+            throw new IllegalStateException("No kafkaAdvertisedListeners found in broker " + internalListenerAddress);
+        });
     }
 
     // whether a ServiceLookupData contains wanted address.
@@ -174,12 +151,10 @@ public class KopBrokerLookupManager {
 
     public static void removeTopicManagerCache(String topicName) {
         LOOKUP_CACHE.remove(topicName);
-        KOP_ADDRESS_CACHE.remove(topicName);
     }
 
     public static void clear() {
         LOOKUP_CACHE.clear();
-        KOP_ADDRESS_CACHE.clear();
     }
 
     public void close() {
