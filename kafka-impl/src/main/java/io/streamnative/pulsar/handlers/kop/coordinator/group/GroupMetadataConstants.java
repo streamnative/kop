@@ -59,7 +59,7 @@ import org.apache.pulsar.common.schema.KeyValue;
  *     -> value version 0:       [protocol_type, generation, protocol, leader, members]
  */
 @Slf4j
-final class GroupMetadataConstants {
+public final class GroupMetadataConstants {
 
     static final short CURRENT_OFFSET_KEY_SCHEMA_VERSION = 1;
     static final short CURRENT_GROUP_KEY_SCHEMA_VERSION = 2;
@@ -348,7 +348,7 @@ final class GroupMetadataConstants {
     /**
      * Decodes the offset messages' key.
      */
-    static BaseKey readMessageKey(ByteBuffer buffer) {
+    public static BaseKey readMessageKey(ByteBuffer buffer) {
         short version = buffer.getShort();
         Schema keySchema = schemaForKey(version);
         Struct key = keySchema.read(buffer);
@@ -376,7 +376,7 @@ final class GroupMetadataConstants {
         }
     }
 
-    static OffsetAndMetadata readOffsetMessageValue(ByteBuffer buffer) {
+    public static OffsetAndMetadata readOffsetMessageValue(ByteBuffer buffer) {
         if (null == buffer) {
             return null;
         }

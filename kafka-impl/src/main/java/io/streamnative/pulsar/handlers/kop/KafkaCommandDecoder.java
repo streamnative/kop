@@ -42,10 +42,10 @@ import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
+import org.apache.kafka.common.requests.KopResponseUtils;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.kafka.common.requests.ResponseHeader;
-import org.apache.kafka.common.requests.ResponseUtils;
 
 
 /**
@@ -161,7 +161,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     apiVersion = ApiKeys.API_VERSIONS.oldestVersion();
                 }
             }
-            return ResponseUtils.serializeResponse(
+            return KopResponseUtils.serializeResponse(
                 apiVersion,
                 kafkaHeaderAndResponse.getHeader(),
                 kafkaHeaderAndResponse.getResponse()
