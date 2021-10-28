@@ -582,12 +582,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // build input params
         Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
-        offsetData.put(topicPartition,
-                new OffsetCommitRequest.PartitionData(1L, ""));
+        offsetData.put(topicPartition, KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(1L, ""));
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder("test-groupId", offsetData)
                 .setGenerationId(generationId)
-                .setMemberId(memberId)
-                .setRetentionTime(OffsetCommitRequest.DEFAULT_RETENTION_TIME);
+                .setMemberId(memberId);
         OffsetCommitRequest offsetCommitRequest = builder.build();
 
 
@@ -610,8 +608,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 10000)
     public void testConvertOffsetCommitRetentionMsIfRetentionMsSet() throws Exception {
 
-        String memberId = "test_member_id";
-        int generationId = 0;
         long currentTime = 100;
         int offsetsConfigRetentionMs = 1000;
         int requestSetRetentionMs = 10000;
@@ -619,21 +615,14 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // build input params
         Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
-        offsetData.put(topicPartition,
-                new OffsetCommitRequest.PartitionData(1L, ""));
-        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder("test-groupId", offsetData)
-                .setGenerationId(generationId)
-                .setMemberId(memberId)
-                .setRetentionTime(requestSetRetentionMs);
-        OffsetCommitRequest offsetCommitRequest = builder.build();
-
+        offsetData.put(topicPartition, KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(1L, ""));
 
         // convert
         Map<TopicPartition, OffsetAndMetadata> converted =
                 handler.convertOffsetCommitRequestRetentionMs(
                         offsetData,
-                        offsetCommitRequest.retentionTime(),
-                        builder.latestAllowedVersion(),
+                        requestSetRetentionMs,
+                        (short) 4, // V2 adds retention time to the request and V5 removes retention time
                         currentTime,
                         offsetsConfigRetentionMs);
 
@@ -656,12 +645,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // build input params
         Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
-        offsetData.put(topicPartition,
-                new OffsetCommitRequest.PartitionData(1L, ""));
+        offsetData.put(topicPartition, KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(1L, ""));
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder("test-groupId", offsetData)
                 .setGenerationId(generationId)
-                .setMemberId(memberId)
-                .setRetentionTime(OffsetCommitRequest.DEFAULT_RETENTION_TIME);
+                .setMemberId(memberId);
         OffsetCommitRequest offsetCommitRequest = builder.build();
 
         RequestHeader header = new RequestHeader(ApiKeys.OFFSET_COMMIT, offsetCommitRequest.version(),
@@ -708,7 +695,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 new RequestHeader(ApiKeys.LIST_OFFSETS, ApiKeys.LIST_OFFSETS.latestVersion(), "client", 0);
         final ListOffsetRequest request =
                 ListOffsetRequest.Builder.forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-                        .setTargetTimes(Collections.singletonMap(topicPartition, ListOffsetRequest.EARLIEST_TIMESTAMP))
+                        .setTargetTimes(KafkaCommonTestUtils
+                                .newListOffsetTargetTimes(topicPartition, ListOffsetRequest.EARLIEST_TIMESTAMP))
                         .build(ApiKeys.LIST_OFFSETS.latestVersion());
         handler.handleListOffsetRequest(
                 new KafkaHeaderAndRequest(header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),

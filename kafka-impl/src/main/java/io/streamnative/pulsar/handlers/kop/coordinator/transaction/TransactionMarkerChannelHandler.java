@@ -22,8 +22,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.requests.KopRequestUtils;
 import org.apache.kafka.common.requests.RequestHeader;
-import org.apache.kafka.common.requests.RequestUtils;
 import org.apache.kafka.common.requests.ResponseHeader;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
@@ -66,7 +66,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
         public ByteBuf getRequestData() {
             RequestHeader requestHeader = new RequestHeader(
                     ApiKeys.WRITE_TXN_MARKERS, request.version(), "", (int) requestId);
-            return RequestUtils.serializeRequest(request.version(), requestHeader, request);
+            return KopRequestUtils.serializeRequest(request.version(), requestHeader, request);
         }
 
         public void onComplete(ByteBuffer nio) {

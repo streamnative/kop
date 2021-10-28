@@ -17,13 +17,11 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
 
-import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Collections;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import lombok.Cleanup;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -99,12 +97,9 @@ public class EntryPublishTimeKafkaFormatTest extends EntryPublishTimeTest {
         }
 
         // time before first message
-        Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
-        targetTimes.put(tp, startTime);
-
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-                .setTargetTimes(targetTimes);
+                .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, startTime));
 
         KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
