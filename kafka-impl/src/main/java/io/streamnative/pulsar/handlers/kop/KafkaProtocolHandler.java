@@ -449,9 +449,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         txnTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
 
         try {
-            kopBrokerLookupManager = new KopBrokerLookupManager(
-                    brokerService.getPulsar(), kafkaConfig.getKafkaAdvertisedListeners(),
-                    kafkaConfig.getBrokerLookupTimeoutMs());
+            kopBrokerLookupManager = new KopBrokerLookupManager(kafkaConfig, brokerService.getPulsar());
         } catch (Exception ex) {
             log.error("Failed to get kopBrokerLookupManager", ex);
             throw new IllegalStateException(ex);
@@ -553,6 +551,18 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         return groupCoordinator;
     }
 
+    private KafkaChannelInitializer newKafkaChannelInitializer(final EndPoint endPoint) {
+        return new KafkaChannelInitializer(
+                brokerService.getPulsar(),
+                kafkaConfig,
+                this,
+                kopBrokerLookupManager,
+                adminManager,
+                endPoint.isTlsEnabled(),
+                endPoint,
+                scopeStatsLogger);
+    }
+
     // this is called after initialize, and with kafkaConfig, brokerService all set.
     @Override
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
@@ -564,37 +574,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     ImmutableMap.builder();
 
             EndPoint.parseListeners(kafkaConfig.getListeners(), kafkaConfig.getKafkaProtocolMap()).
-                    forEach((listener, endPoint) -> {
-                        switch (endPoint.getSecurityProtocol()) {
-                            case PLAINTEXT:
-                            case SASL_PLAINTEXT:
-                                builder.put(endPoint.getInetAddress(),
-                                        new KafkaChannelInitializer(
-                                                brokerService.getPulsar(),
-                                                kafkaConfig,
-                                                this,
-                                                kopBrokerLookupManager,
-                                                adminManager,
-                                                false,
-                                                endPoint,
-                                                scopeStatsLogger));
-                                break;
-                            case SSL:
-                            case SASL_SSL:
-                                builder.put(endPoint.getInetAddress(),
-                                        new KafkaChannelInitializer(
-                                                brokerService.getPulsar(),
-                                                kafkaConfig,
-                                                this,
-                                                kopBrokerLookupManager,
-                                                adminManager,
-                                                true,
-                                                endPoint,
-                                                scopeStatsLogger));
-                                break;
-                            default:
-                        }
-            });
+                    forEach((listener, endPoint) ->
+                            builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint))
+                    );
             return builder.build();
         } catch (Exception e){
             log.error("KafkaProtocolHandler newChannelInitializers failed with ", e);
