@@ -17,15 +17,14 @@ package io.streamnative.pulsar.handlers.kop;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
 import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.resources.MetadataStoreCacheLoader;
 import org.apache.pulsar.common.naming.TopicName;
@@ -40,7 +39,6 @@ import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 public class KopBrokerLookupManager {
 
     private final LookupClient lookupClient;
-    private final Map<String, SecurityProtocol> protocolMap;
     private final MetadataStoreCacheLoader metadataStoreCacheLoader;
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -50,8 +48,6 @@ public class KopBrokerLookupManager {
 
     public KopBrokerLookupManager(KafkaServiceConfiguration conf, PulsarService pulsarService) throws Exception {
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
-        // TODO: change it to getKafkaAdvertisedProtocolMap
-        this.protocolMap = EndPoint.parseProtocolMap(conf.getKafkaProtocolMap());
         this.metadataStoreCacheLoader = new MetadataStoreCacheLoader(pulsarService.getPulsarResources(),
                 conf.getBrokerLookupTimeoutMs());
     }
@@ -75,9 +71,10 @@ public class KopBrokerLookupManager {
                         if (log.isDebugEnabled()) {
                             log.debug("Found listener {} for topic {}", listener, topic);
                         }
-                        final EndPoint endPoint = new EndPoint(listener, protocolMap);
-                        return Optional.of(new InetSocketAddress(endPoint.getHostname(), endPoint.getPort()));
-                    } catch (IllegalStateException e) {
+                        final Matcher matcher = EndPoint.matcherListener(listener,
+                                listener + " cannot be split into 3 parts");
+                        return Optional.of(new InetSocketAddress(matcher.group(2), Integer.parseInt(matcher.group(3))));
+                    } catch (IllegalStateException | NumberFormatException e) {
                         log.error("Failed to find the advertised listener: {}", e.getMessage());
                         removeTopicManagerCache(topic);
                         return Optional.empty();
