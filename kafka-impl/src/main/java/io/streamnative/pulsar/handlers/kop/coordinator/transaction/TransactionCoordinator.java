@@ -19,6 +19,7 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.Transa
 import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState.PREPARE_EPOCH_FENCE;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
+import com.google.api.client.util.Sets;
 import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
@@ -229,7 +230,7 @@ public class TransactionCoordinator {
 
             CompletableFuture<ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>>>
                     epochAndTxnMetaFuture = new CompletableFuture<>();
-            if (!existMeta.getData().isPresent()) {
+            if (existMeta.getData() == null || !existMeta.getData().isPresent()) {
                 producerIdManager.generateProducerId().whenComplete((pid, throwable) -> {
                     short producerEpoch = 0;
                     if (throwable != null) {
@@ -242,9 +243,11 @@ public class TransactionCoordinator {
                     TransactionMetadata newMetadata = TransactionMetadata.builder()
                             .transactionalId(transactionalId)
                             .producerId(pid)
-                            .producerEpoch(producerEpoch)
+                            .lastProducerId(RecordBatch.NO_PRODUCER_ID)
+                            .producerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
+                            .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
                             .state(TransactionState.EMPTY)
-                            .topicPartitions(new HashSet<>())
+                            .topicPartitions(Sets.newHashSet())
                             .txnLastUpdateTimestamp(time.milliseconds())
                             .build();
                     epochAndTxnMetaFuture.complete(txnManager.putTransactionStateIfNotExists(newMetadata));

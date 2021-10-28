@@ -13,16 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 import static org.mockito.internal.verification.VerificationModeFactory.atLeastOnce;
-import static org.testng.AssertJUnit.assertEquals;
-import static org.testng.AssertJUnit.assertTrue;
+import static org.testng.AssertJUnit.*;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
@@ -43,6 +37,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
+import org.mockito.ArgumentCaptor;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -119,6 +114,10 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         this.transactionManager = mock(TransactionStateManager.class);
     }
 
+    private void initPidGenericMocks() {
+        doReturn(true).when(transactionManager).validateTransactionTimeoutMs(anyInt());
+    }
+
     private CompletableFuture<Long> getNextPid() {
         CompletableFuture<Long> future = new CompletableFuture<>();
         future.complete(nextPid.getAndIncrement());
@@ -163,6 +162,46 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         assertEquals(
                 new TransactionCoordinator.InitProducerIdResult(1L, (short) 0, Errors.NONE),
                 result);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldInitPidWithEpochZeroForNewTransactionalId() {
+        initPidGenericMocks();
+        ArgumentCaptor<TransactionMetadata> capturedTxn = ArgumentCaptor.forClass(TransactionMetadata.class);
+        ArgumentCaptor<TransactionStateManager.ResponseCallback> capturedErrorsCallback
+                = ArgumentCaptor.forClass(TransactionStateManager.ResponseCallback.class);
+
+        doReturn(new ErrorsAndData<>(Errors.NONE))
+                .when(transactionManager).getTransactionState(eq(transactionalId));
+
+        doAnswer(__ -> {
+            assertNotNull(capturedTxn.getValue());
+            return new ErrorsAndData<>(
+                    Optional.of(
+                            new TransactionStateManager
+                                    .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, capturedTxn.getValue())));
+        }).when(transactionManager).putTransactionStateIfNotExists(capturedTxn.capture());
+
+        doAnswer(__ -> {
+            capturedErrorsCallback.getValue().complete();
+            return null;
+        }).when(transactionManager)
+                .appendTransactionToLog(
+                        eq(transactionalId),
+                        eq(coordinatorEpoch),
+                        any(TransactionMetadata.TxnTransitMetadata.class),
+                        capturedErrorsCallback.capture(),
+                        any(TransactionStateManager.RetryOnError.class)
+                );
+
+        transactionCoordinator.handleInitProducerId(transactionalId, txnTimeoutMs, Optional.empty(),
+                initProducerIdMockCallback);
+
+        assertEquals(
+                new TransactionCoordinator
+                        .InitProducerIdResult(nextPid.get() - 1, (short) 0, Errors.NONE), result);
+
+        assertNotNull(capturedTxn.getValue());
     }
 
     @Test(timeOut = defaultTestTimeout)
