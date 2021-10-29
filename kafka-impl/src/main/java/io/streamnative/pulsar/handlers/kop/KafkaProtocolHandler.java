@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicName;
-import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
@@ -34,15 +33,10 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NonNull;
@@ -59,14 +53,12 @@ import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.namespace.NamespaceBundleOwnershipListener;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
-import org.apache.pulsar.client.admin.Lookup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
-import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Kafka Protocol Handler load and run by Pulsar Service.
@@ -474,13 +466,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         kopEventManager.start();
 
         if (kafkaConfig.isEnableTransactionCoordinator()) {
-            TransactionCoordinator transactionCoordinator =
-                    getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
-            try {
-                loadTxnLogTopics(kafkaConfig.getKafkaMetadataTenant(), transactionCoordinator);
-            } catch (Exception e) {
-                log.error("Failed to load transaction log", e);
-            }
+//            TransactionCoordinator transactionCoordinator =
+            getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
+//            try {
+//                loadTxnLogTopics(kafkaConfig.getKafkaMetadataTenant(), transactionCoordinator);
+//            } catch (Exception e) {
+//                log.error("Failed to load transaction log", e);
+//            }
         }
 
         Configuration conf = new PropertiesConfiguration();
@@ -678,39 +670,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         transactionCoordinator.startup().get();
 
         return transactionCoordinator;
-    }
-
-    /**
-     * This method discovers ownership of offset topic partitions and attempts to load transaction topics
-     * assigned to this broker.
-     */
-    private void loadTxnLogTopics(String tenant, TransactionCoordinator txnCoordinator) throws Exception {
-        Lookup lookupService = brokerService.pulsar().getAdminClient().lookups();
-        String currentBroker = brokerService.pulsar().getBrokerServiceUrl();
-        String topicBase = MetadataUtils.constructTxnLogTopicBaseName(tenant, kafkaConfig);
-        int numPartitions = kafkaConfig.getTxnLogTopicNumPartitions();
-
-        Map<String, List<Integer>> mapBrokerToPartition = new HashMap<>();
-
-        for (int i = 0; i < numPartitions; i++) {
-            String broker = lookupService.lookupTopic(topicBase + PARTITIONED_TOPIC_SUFFIX + i);
-            mapBrokerToPartition.putIfAbsent(broker, new ArrayList<>());
-            mapBrokerToPartition.get(broker).add(i);
-        }
-
-        mapBrokerToPartition.forEach(
-                (key, value) -> log.info("Discovered broker: {} owns txn log topic partitions: {} ", key, value));
-
-        List<Integer> partitionsOwnedByCurrentBroker = mapBrokerToPartition.get(currentBroker);
-
-        if (null != partitionsOwnedByCurrentBroker && !partitionsOwnedByCurrentBroker.isEmpty()) {
-            List<CompletableFuture<Void>> lists = partitionsOwnedByCurrentBroker.stream().map(
-                    txnCoordinator::handleTxnImmigration).collect(Collectors.toList());
-
-            FutureUtil.waitForAll(lists).get();
-        } else {
-            log.info("Current broker: {} does not own any of the txn log topic partitions", currentBroker);
-        }
     }
 
     public static @NonNull LookupClient getLookupClient(final PulsarService pulsarService) {
