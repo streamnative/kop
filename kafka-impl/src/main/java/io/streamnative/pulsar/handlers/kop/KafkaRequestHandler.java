@@ -203,7 +203,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private final Boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
-    private final String advertisedListeners;
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
     private final int failedAuthenticationDelayMs;
@@ -308,7 +307,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.adminManager = adminManager;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
-        this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
@@ -2481,7 +2479,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (log.isDebugEnabled()) {
             log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }
-        return kopBrokerLookupManager.findBroker(topic, advertisedEndPoint)
+        return kopBrokerLookupManager.findBroker(topic.toString(), advertisedEndPoint)
                 .thenApply(listenerInetSocketAddressOpt -> listenerInetSocketAddressOpt
                         .map(inetSocketAddress -> newPartitionMetadata(topic, newNode(inetSocketAddress)))
                         .orElse(null)

@@ -90,6 +90,18 @@ public class EndPoint {
         return new InetSocketAddress(hostname, port);
     }
 
+    // listeners must be enable to be split into at least 1 token
+    private static String[] getListenerArray(final String listeners) {
+        if (StringUtils.isEmpty(listeners)) {
+            throw new IllegalStateException("listeners is empty");
+        }
+        final String[] listenerArray = listeners.split(END_POINT_SEPARATOR);
+        if (listenerArray.length == 0) {
+            throw new IllegalStateException(listeners + " is split into 0 tokens by " + END_POINT_SEPARATOR);
+        }
+        return listenerArray;
+    }
+
     @VisibleForTesting
     public static Map<String, EndPoint> parseListeners(final String listeners) {
         return parseListeners(listeners, "");
@@ -98,7 +110,7 @@ public class EndPoint {
     private static Map<String, EndPoint> parseListeners(final String listeners,
                                                         final Map<String, SecurityProtocol> protocolMap) {
         final Map<String, EndPoint> endPointMap = new HashMap<>();
-        for (String listener : listeners.split(END_POINT_SEPARATOR)) {
+        for (String listener : getListenerArray(listeners)) {
             final EndPoint endPoint = new EndPoint(listener, protocolMap);
             if (endPointMap.containsKey(endPoint.listenerName)) {
                 throw new IllegalStateException(
@@ -113,6 +125,22 @@ public class EndPoint {
     @VisibleForTesting
     public static Map<String, EndPoint> parseListeners(final String listeners, final String protocolMapString) {
         return parseListeners(listeners, parseProtocolMap(protocolMapString));
+    }
+
+    public static String findListener(final String listeners, final String name) {
+        if (name == null) {
+            return null;
+        }
+        for (String listener : getListenerArray(listeners)) {
+            if (listener.contains(":") && listener.substring(0, listener.indexOf(":")).equals(name)) {
+                return listener;
+            }
+        }
+        throw new IllegalStateException("listener \"" + name + "\" doesn't exist in " + listeners);
+    }
+
+    public static String findFirstListener(String listeners) {
+        return getListenerArray(listeners)[0];
     }
 
     public static EndPoint getPlainTextEndPoint(final String listeners) {

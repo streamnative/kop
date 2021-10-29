@@ -44,7 +44,6 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
-import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.ChannelFutures;
 import org.eclipse.jetty.util.BlockingArrayQueue;
@@ -225,7 +224,7 @@ public class TransactionMarkerChannelManager {
         for (TopicPartition topicPartition : topicPartitions) {
             String pulsarTopic = new KopTopic(topicPartition.topic()).getPartitionName(topicPartition.partition());
             CompletableFuture<Optional<InetSocketAddress>> addressFuture =
-                    kopBrokerLookupManager.findBroker(TopicName.get(pulsarTopic), sslEndPoint);
+                    kopBrokerLookupManager.findBroker(pulsarTopic, sslEndPoint);
             CompletableFuture<Void> addFuture = new CompletableFuture<>();
             addressFutureList.add(addFuture);
             addressFuture.whenComplete((address, throwable) -> {

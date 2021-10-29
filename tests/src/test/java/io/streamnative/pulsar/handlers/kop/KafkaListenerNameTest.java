@@ -13,7 +13,21 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
+import static org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
+import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -22,6 +36,11 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.Node;
+import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.common.requests.MetadataRequest;
+import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.testng.Assert;
@@ -42,6 +61,72 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
     @Override
     protected void cleanup() throws Exception {
         // Clean up in the test method
+    }
+
+    @Test(timeOut = 30000)
+    public void testMetadataRequestForMultiListeners() throws Exception {
+        final Map<Integer, InetSocketAddress> bindPortToAdvertisedAddress = new HashMap<>();
+        final int anotherKafkaPort = PortManager.nextFreePort();
+        bindPortToAdvertisedAddress.put(kafkaBrokerPort,
+                InetSocketAddress.createUnresolved("192.168.0.1", PortManager.nextFreePort()));
+        bindPortToAdvertisedAddress.put(anotherKafkaPort,
+                InetSocketAddress.createUnresolved("192.168.0.2", PortManager.nextFreePort()));
+
+        super.resetConfig();
+        conf.setKafkaListeners("PLAINTEXT://0.0.0.0:" + kafkaBrokerPort + ",GW://0.0.0.0:" + anotherKafkaPort);
+        conf.setKafkaProtocolMap("PLAINTEXT:PLAINTEXT,GW:PLAINTEXT");
+
+        conf.setKafkaAdvertisedListeners(String.format("PLAINTEXT://%s,GW://%s",
+                bindPortToAdvertisedAddress.get(kafkaBrokerPort),
+                bindPortToAdvertisedAddress.get(anotherKafkaPort)));
+        super.internalSetup();
+
+        final String topic = "persistent://public/default/test-metadata-request-for-multi-listeners";
+        final int numPartitions = 3;
+        admin.topics().createPartitionedTopic(topic, numPartitions);
+
+        final KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                pulsar.getProtocolHandlers().protocol(KafkaProtocolHandler.PROTOCOL_NAME);
+        protocolHandler.getChannelInitializerMap().forEach((inetSocketAddress, channelInitializer) -> {
+            try {
+                final KafkaRequestHandler requestHandler = ((KafkaChannelInitializer) channelInitializer).newCnx();
+                ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
+                doReturn(mock(Channel.class)).when(mockCtx).channel();
+                requestHandler.ctx = mockCtx;
+
+                final InetSocketAddress expectedAddress = bindPortToAdvertisedAddress.get(inetSocketAddress.getPort());
+
+                final KafkaHeaderAndRequest metadataRequest = KafkaApisTest.buildRequest(
+                        new MetadataRequest.Builder(Collections.singletonList(topic), true),
+                        inetSocketAddress);
+                final CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
+                requestHandler.handleTopicMetadataRequest(metadataRequest, future);
+                final MetadataResponse metadataResponse = (MetadataResponse) future.get();
+                Assert.assertEquals(metadataResponse.brokers().size(), 1);
+                final List<Node> brokers = new ArrayList<>(metadataResponse.brokers());
+                Assert.assertEquals(brokers.size(), 1);
+                Assert.assertEquals(brokers.get(0).host(), expectedAddress.getHostName());
+                Assert.assertEquals(brokers.get(0).port(), expectedAddress.getPort());
+
+                final List<MetadataResponse.TopicMetadata> topicMetadataList =
+                        new ArrayList<>(metadataResponse.topicMetadata());
+                Assert.assertEquals(topicMetadataList.size(), 1);
+                Assert.assertEquals(topicMetadataList.get(0).topic(), topic);
+
+                final List<PartitionMetadata> partitionMetadataList = topicMetadataList.get(0).partitionMetadata();
+                Assert.assertEquals(partitionMetadataList.size(), numPartitions);
+                for (int i = 0; i < numPartitions; i++) {
+                    final PartitionMetadata partitionMetadata = partitionMetadataList.get(i);
+                    Assert.assertEquals(partitionMetadata.error(), Errors.NONE);
+                    Assert.assertEquals(partitionMetadata.leader().host(), expectedAddress.getHostName());
+                    Assert.assertEquals(partitionMetadata.leader().port(), expectedAddress.getPort());
+                }
+            } catch (Exception e) {
+                Assert.fail(e.getMessage());
+            }
+        });
+
+        super.internalCleanup();
     }
 
     @Test(timeOut = 30000)

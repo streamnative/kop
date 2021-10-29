@@ -164,7 +164,12 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
+    private KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
+        return buildRequest(builder, serviceAddress);
+    }
+
+    static KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
+                                              SocketAddress serviceAddress) {
         AbstractRequest request = builder.build();
         builder.apiKey();
 
