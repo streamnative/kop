@@ -466,13 +466,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         kopEventManager.start();
 
         if (kafkaConfig.isEnableTransactionCoordinator()) {
-//            TransactionCoordinator transactionCoordinator =
             getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
-//            try {
-//                loadTxnLogTopics(kafkaConfig.getKafkaMetadataTenant(), transactionCoordinator);
-//            } catch (Exception e) {
-//                log.error("Failed to load transaction log", e);
-//            }
         }
 
         Configuration conf = new PropertiesConfiguration();
