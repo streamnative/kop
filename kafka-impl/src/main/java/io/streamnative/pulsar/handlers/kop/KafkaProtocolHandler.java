@@ -130,22 +130,23 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         }
 
         private void invalidateBundleCache(NamespaceBundle bundle) {
-            log.info("invalidateBundleCache for {}", bundle);
+            log.info("invalidateBundleCache for namespaceBundle {}", bundle);
             service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
                     .whenComplete((topics, ex) -> {
                         if (ex == null) {
                             for (String topic : topics) {
                                 TopicName name = TopicName.get(topic);
 
-                                log.info("invalidateBundleCache for topic {}", topic);
-                                KopBrokerLookupManager.removeTopicManagerCache(topic);
+                                if (log.isDebugEnabled()) {
+                                    log.debug("invalidateBundleCache for topic {}", topic);
+                                }
+
                                 KafkaTopicManager.deReference(topic);
 
                                 // For non-partitioned topic.
                                 if (!name.isPartitioned()) {
                                     String partitionedZeroTopicName = name.getPartition(0).toString();
                                     KafkaTopicManager.deReference(partitionedZeroTopicName);
-                                    KopBrokerLookupManager.removeTopicManagerCache(partitionedZeroTopicName);
                                 }
                             }
                         } else {
