@@ -184,6 +184,8 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         category = CATEGORY_KOP,
         doc = "Comma-separated list of URIs we will listen on and the listener names.\n"
                 + "e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093.\n"
+                + "Each URI's scheme represents a listener name if `kafkaProtocolMap` is configured.\n"
+                + "Otherwise, the scheme must be a valid protocol in [PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL].\n"
                 + "If hostname is not set, bind to the default interface."
     )
     private String kafkaListeners;
@@ -197,9 +199,8 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "Specify the internal listener name for the broker.\n"
-                    + "The listener name must be contained in the advertisedListeners.\n"
-                    + "This config is used as the listener name in topic lookup."
+            doc = "Listeners to publish to ZooKeeper for clients to use.\n"
+                    + "The format is the same as `kafkaListeners`.\n"
     )
     private String kafkaAdvertisedListeners;
 
