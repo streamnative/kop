@@ -28,13 +28,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.Errors;
@@ -42,6 +42,7 @@ import org.apache.kafka.common.protocol.types.SchemaException;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.SystemTime;
+import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
@@ -79,7 +80,9 @@ public class TransactionStateManager {
     @VisibleForTesting
     protected final Map<Integer, Map<String, TransactionMetadata>> transactionMetadataCache = Maps.newHashMap();
 
-    private final OrderedExecutor executor;
+    private final ScheduledExecutorService scheduler;
+
+    private final Time time;
 
     @VisibleForTesting
     protected boolean isLoading() {
@@ -89,11 +92,51 @@ public class TransactionStateManager {
 
     public TransactionStateManager(TransactionConfig transactionConfig,
                                    SystemTopicClient txnTopicClient,
-                                   OrderedExecutor executor) {
+                                   ScheduledExecutorService scheduler,
+                                   Time time) {
         this.transactionConfig = transactionConfig;
         this.txnTopicClient = txnTopicClient;
-        this.executor = executor;
+        this.scheduler = scheduler;
         this.transactionTopicPartitionCount = transactionConfig.getTransactionLogNumPartitions();
+        this.time = time;
+    }
+
+    // this is best-effort expiration of an ongoing transaction which has been open for more than its
+    // txn timeout value, we do not need to grab the lock on the metadata object upon checking its state
+    // since the timestamp is volatile and we will get the lock when actually trying to transit the transaction
+    // metadata to abort later.
+    protected List<TransactionalIdAndProducerIdEpoch> timedOutTransactions() {
+        long now = time.milliseconds();
+        return CoreUtils.inReadLock(stateLock, () -> transactionMetadataCache.entrySet()
+                .stream()
+                .filter(entry -> !leavingPartitions.contains(entry.getKey()))
+                .flatMap(entry -> entry.getValue().entrySet().stream().filter(txnMetadataEntry -> {
+                    TransactionMetadata txnMetadata = txnMetadataEntry.getValue();
+                    if (txnMetadata.pendingTransitionInProgress()) {
+                        return false;
+                    } else {
+                        if (txnMetadata.getState().equals(TransactionState.ONGOING)) {
+                            return txnMetadata.getTxnStartTimestamp() + txnMetadata.getTxnTimeoutMs() < now;
+                        } else {
+                            return false;
+                        }
+                    }
+                }).map(txnMetadataEntry -> {
+                    String txnId = txnMetadataEntry.getKey();
+                    TransactionMetadata txnMetadata = txnMetadataEntry.getValue();
+                    return new TransactionalIdAndProducerIdEpoch(txnId, txnMetadata
+                            .getProducerId(), txnMetadata.getProducerEpoch());
+                }))
+                .collect(Collectors.toList())
+        );
+    }
+
+    @Data
+    @AllArgsConstructor
+    protected static class TransactionalIdAndProducerIdEpoch {
+        private String transactionalId;
+        private Long producerId;
+        private Short producerEpoch;
     }
 
     /**
@@ -639,7 +682,7 @@ public class TransactionStateManager {
                 return null;
             });
         };
-        executor.submit(removeTransactions);
+        scheduler.submit(removeTransactions);
     }
 
     interface SendTxnMarkersCallback {
@@ -679,12 +722,12 @@ public class TransactionStateManager {
         transactionMetadataCache.clear();
         List<CompletableFuture<Void>> txnLogProducerCloses = txnLogProducerMap.values().stream()
                 .map(producerCompletableFuture -> producerCompletableFuture
-                        .thenComposeAsync(Producer::closeAsync, executor))
+                        .thenComposeAsync(Producer::closeAsync, scheduler))
                 .collect(Collectors.toList());
         txnLogProducerMap.clear();
         List<CompletableFuture<Void>> txnLogReaderCloses = txnLogReaderMap.values().stream()
                 .map(readerCompletableFuture -> readerCompletableFuture
-                        .thenComposeAsync(Reader::closeAsync, executor))
+                        .thenComposeAsync(Reader::closeAsync, scheduler))
                 .collect(Collectors.toList());
         txnLogProducerMap.clear();
         FutureUtil.waitForAll(txnLogProducerCloses).whenCompleteAsync((ignore, t) -> {
@@ -695,7 +738,7 @@ public class TransactionStateManager {
             if (log.isDebugEnabled()) {
                 log.debug("Closed all the {} txnLogProducers in TransactionStateManager", txnLogProducerCloses.size());
             }
-        }, executor);
+        }, scheduler);
 
         FutureUtil.waitForAll(txnLogReaderCloses).whenCompleteAsync((ignore, t) -> {
             if (t != null) {
@@ -705,8 +748,8 @@ public class TransactionStateManager {
             if (log.isDebugEnabled()) {
                 log.debug("Closed all the {} txnLogReaders in TransactionStateManager.", txnLogReaderCloses.size());
             }
-        }, executor);
-        executor.shutdown();
+        }, scheduler);
+        scheduler.shutdown();
         log.info("Shutdown transaction state manager complete.");
     }
 
