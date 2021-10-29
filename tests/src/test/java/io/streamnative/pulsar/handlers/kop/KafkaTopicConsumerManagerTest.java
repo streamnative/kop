@@ -22,6 +22,7 @@ import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertSame;
 import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -36,6 +37,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -505,5 +507,39 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         assertNull(getTcmForPartition.apply(1));
         assertTrue(originalTcmList.get(0).isClosed());
         assertTrue(originalTcmList.get(1).isClosed());
+    }
+
+    @Test(timeOut = 20000)
+    public void testUnloadTopic() throws Exception {
+        final String topic = "test-unload-topic";
+        final String fullTopicName = "persistent://public/default/" + topic + "-partition-0";
+        final int numPartitions = 1;
+        admin.topics().createPartitionedTopic(topic, numPartitions);
+
+        final int totalMessages = 5;
+        @Cleanup
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+        int numMessages = 0;
+        while (numMessages < totalMessages) {
+            producer.send(new ProducerRecord<>(topic, null, "test-value" + numMessages)).get();
+            numMessages++;
+        }
+
+        // We first get KafkaTopicConsumerManager, and then unload topic,
+        // so that KafkaTopicConsumerManager will become invalid
+        CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager.getTopicConsumerManager(fullTopicName);
+        KafkaTopicConsumerManager topicConsumerManager = tcm.get();
+        // unload topic
+        admin.topics().unload(fullTopicName);
+
+        // This proves that ManagedLedger has been closed
+        // and that the newly added code has taken effect.
+        try {
+            topicConsumerManager.removeCursorFuture(totalMessages - 1).get();
+            fail("should have failed");
+        } catch (ExecutionException ex) {
+            assertTrue(ex.getCause().getMessage().contains("Current managedLedger has been closed."));
+        }
+
     }
 }
