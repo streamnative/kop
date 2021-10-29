@@ -221,6 +221,15 @@ public class KafkaTopicConsumerManager implements Closeable {
             return CompletableFuture.completedFuture(null);
         }
         final ManagedLedger ledger = topic.getManagedLedger();
+
+        if (((ManagedLedgerImpl) ledger).getState() == ManagedLedgerImpl.State.Closed) {
+            log.error("[{}] Async get cursor for offset {} failed, because current managedLedger has been closed",
+                    requestHandler.ctx.channel(), offset);
+            CompletableFuture<Pair<ManagedCursor, Long>> future = new CompletableFuture<>();
+            future.completeExceptionally(new Exception("Current managedLedger has been closed."));
+            return future;
+        }
+
         return ledger.asyncFindPosition(new OffsetSearchPredicate(offset)).thenApply(position -> {
             final String cursorName = "kop-consumer-cursor-" + topic.getName()
                     + "-" + position.getLedgerId() + "-" + position.getEntryId()
