@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
@@ -92,10 +93,13 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         ch.pipeline().addLast(new LengthFieldPrepender(4));
         ch.pipeline().addLast("frameDecoder",
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
-        ch.pipeline().addLast("handler",
-                new KafkaRequestHandler(pulsarService, kafkaConfig,
-                        tenantContextManager, kopBrokerLookupManager, adminManager,
-                        enableTls, advertisedEndPoint, statsLogger));
+        ch.pipeline().addLast("handler", newCnx());
     }
 
+    @VisibleForTesting
+    public KafkaRequestHandler newCnx() throws Exception {
+        return new KafkaRequestHandler(pulsarService, kafkaConfig,
+                tenantContextManager, kopBrokerLookupManager, adminManager,
+                enableTls, advertisedEndPoint, statsLogger);
+    }
 }
