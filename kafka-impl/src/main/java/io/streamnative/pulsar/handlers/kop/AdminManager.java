@@ -35,6 +35,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.config.ConfigResource;
@@ -48,6 +50,7 @@ import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.common.util.ObjectMapperFactory;
 
 @Slf4j
 class AdminManager {
@@ -229,6 +232,36 @@ class AdminManager {
             errorConsumer.accept(topicToDelete);
         }
     }
+
+    public void truncateTopic(String topicToDelete,
+                              long offset,
+                              Position position,
+                              Consumer<String> successConsumer,
+                              Consumer<String> errorConsumer) {
+        log.info("truncateTopic {} at offset {}, pulsar position {}", topicToDelete, offset, position);
+        if (position == null) {
+            errorConsumer.accept("Cannot find position");
+            return;
+        }
+        if (position.equals(PositionImpl.latest)) {
+            admin.topics()
+                .truncateAsync(topicToDelete)
+                .thenRun(() -> {
+                    log.info("truncated topic {} successfully.", topicToDelete);
+                    successConsumer.accept(topicToDelete);
+                })
+                .exceptionally((e -> {
+                    log.error("truncated topic {} failed, exception: ", topicToDelete, e);
+                    errorConsumer.accept(topicToDelete);
+                    return null;
+                }));
+        } else {
+            errorConsumer.accept("Not implemented truncate topic at position " + position);
+        }
+
+    }
+
+
 
     CompletableFuture<Map<String, ApiError>> createPartitionsAsync(Map<String, NewPartitions> createInfo,
                                                                    int timeoutMs) {

@@ -126,6 +126,8 @@ import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.DeleteGroupsRequest;
+import org.apache.kafka.common.requests.DeleteRecordsRequest;
+import org.apache.kafka.common.requests.DeleteRecordsResponse;
 import org.apache.kafka.common.requests.DeleteTopicsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
@@ -171,6 +173,7 @@ import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.common.api.proto.MarkerType;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.naming.NamespaceName;
@@ -2339,6 +2342,63 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         adminManager.deleteTopic(fullTopicName,
                                 __ -> completeOne.accept(topic, Errors.NONE),
                                 __ -> completeOne.accept(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                    });
+        });
+    }
+
+
+    @Override
+    protected void handleDeleteRecords(KafkaHeaderAndRequest deleteTopics,
+                                      CompletableFuture<AbstractResponse> resultFuture) {
+        checkArgument(deleteTopics.getRequest() instanceof DeleteRecordsRequest);
+        DeleteRecordsRequest request = (DeleteRecordsRequest) deleteTopics.getRequest();
+        Map<TopicPartition, Long> partitionOffsets = request.partitionOffsets();
+        if (partitionOffsets == null || partitionOffsets.isEmpty()) {
+            resultFuture.complete(KafkaResponseUtils.newDeleteRecords(Maps.newHashMap()));
+            return;
+        }
+        Map<TopicPartition, DeleteRecordsResponse.PartitionResponse> deleteRecordsResponse =
+                Maps.newConcurrentMap();
+        AtomicInteger topicToDeleteCount = new AtomicInteger(partitionOffsets.size());
+        BiConsumer<TopicPartition, Errors> completeOne = (topic, errors) -> {
+            deleteRecordsResponse.put(topic, new DeleteRecordsResponse.PartitionResponse(0, errors));
+            if (topicToDeleteCount.decrementAndGet() == 0) {
+                resultFuture.complete(KafkaResponseUtils.newDeleteRecords(deleteRecordsResponse));
+            }
+        };
+        partitionOffsets.forEach((topicPartition, offset) -> {
+            KopTopic kopTopic;
+            try {
+                kopTopic = new KopTopic(topicPartition.topic());
+            } catch (KoPTopicException e) {
+                completeOne.accept(topicPartition, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+                return;
+            }
+            String fullTopicName = kopTopic.getPartitionName(topicPartition.partition());
+            authorize(AclOperation.DELETE, Resource.of(ResourceType.TOPIC, fullTopicName))
+                    .whenComplete((isAuthorize, ex) -> {
+                        if (ex != null) {
+                            log.error("DeleteTopics authorize failed, topic - {}. {}",
+                                    fullTopicName, ex.getMessage());
+                            completeOne.accept(topicPartition, Errors.TOPIC_AUTHORIZATION_FAILED);
+                            return;
+                        }
+                        if (!isAuthorize) {
+                            completeOne.accept(topicPartition, Errors.TOPIC_AUTHORIZATION_FAILED);
+                            return;
+                        }
+                        topicManager
+                            .getTopicConsumerManager(fullTopicName)
+                                .thenAccept(topicManager -> {
+                                    topicManager.findPositionForIndex(offset)
+                                            .thenAccept(position -> {
+                                                adminManager.truncateTopic(fullTopicName, offset, position,
+                                                        __ -> completeOne.accept(topicPartition, Errors.NONE),
+                                                        __ -> completeOne.accept(topicPartition,
+                                                                Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                                            });
+                                });
+
                     });
         });
     }
