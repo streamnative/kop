@@ -135,9 +135,8 @@ public class KopBrokerLookupManager {
             Optional.ofNullable(advertisedEndPoint)
                     .map(endPoint -> EndPoint.findListener(kafkaAdvertisedListeners, endPoint.getListenerName()))
                     .orElse(EndPoint.findFirstListener(kafkaAdvertisedListeners))
-        ).orElseGet(() -> {
-            throw new IllegalStateException("No kafkaAdvertisedListeners found in broker " + internalListenerAddress);
-        });
+        ).orElseThrow(() -> new IllegalStateException(
+                "No kafkaAdvertisedListeners found in broker " + internalListenerAddress));
     }
 
     // whether a ServiceLookupData contains wanted address.
