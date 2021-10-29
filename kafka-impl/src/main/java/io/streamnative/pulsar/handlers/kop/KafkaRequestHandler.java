@@ -131,11 +131,13 @@ import org.apache.kafka.common.requests.DescribeConfigsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsRequest;
 import org.apache.kafka.common.requests.EndTxnRequest;
+import org.apache.kafka.common.requests.EndTxnResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FindCoordinatorRequest;
 import org.apache.kafka.common.requests.HeartbeatRequest;
 import org.apache.kafka.common.requests.HeartbeatResponse;
 import org.apache.kafka.common.requests.InitProducerIdRequest;
+import org.apache.kafka.common.requests.InitProducerIdResponse;
 import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
@@ -2027,7 +2029,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         InitProducerIdRequest request = (InitProducerIdRequest) kafkaHeaderAndRequest.getRequest();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         transactionCoordinator.handleInitProducerId(
-                request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(), response);
+                request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(), (resp) -> {
+                    response.complete(
+                            new InitProducerIdResponse(0, resp.getError(), resp.getProducerId(),
+                                    resp.getProducerEpoch()));
+                });
     }
 
     @Override
@@ -2200,7 +2206,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 request.producerId(),
                 request.producerEpoch(),
                 request.command(),
-                response);
+                errors -> response.complete(new EndTxnResponse(0, errors)));
     }
 
     @Override

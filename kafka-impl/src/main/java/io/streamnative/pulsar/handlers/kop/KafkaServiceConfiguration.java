@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import lombok.Getter;
 import lombok.NonNull;
@@ -57,6 +58,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     public static final int DefaultTxnLogTopicNumPartitions = 50;
     public static final int DefaultTxnCoordinatorSchedulerNum = 1;
     public static final int DefaultTxnStateManagerSchedulerNum = 1;
+    public static final long DefaultAbortTimedOutTransactionsIntervalMs = TimeUnit.SECONDS.toMillis(10);
 
     @Category
     private static final String CATEGORY_KOP = "Kafka on Pulsar";
@@ -366,6 +368,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             doc = "Number of partitions for the transaction log topic"
     )
     private int txnLogTopicNumPartitions = DefaultTxnLogTopicNumPartitions;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "The interval in milliseconds at which to rollback transactions that have timed out."
+    )
+    private long txnAbortTimedOutTransactionCleanupIntervalMs = DefaultAbortTimedOutTransactionsIntervalMs;
 
     @FieldContext(
             category = CATEGORY_KOP,
