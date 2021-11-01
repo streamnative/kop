@@ -164,7 +164,12 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
+    private KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
+        return buildRequest(builder, serviceAddress);
+    }
+
+    static KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
+                                              SocketAddress serviceAddress) {
         AbstractRequest request = builder.build();
         builder.apiKey();
 
@@ -186,7 +191,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                                                               String topic,
                                                               int invalidPartitionId) {
         TopicPartition invalidTopicPartition = new TopicPartition(topic, invalidPartitionId);
-        PartitionData partitionOffsetCommitData = new PartitionData(15L, "");
+        PartitionData partitionOffsetCommitData = KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(15L, "");
         Map<TopicPartition, PartitionData> offsetData = Maps.newHashMap();
         offsetData.put(invalidTopicPartition, partitionOffsetCommitData);
         KafkaHeaderAndRequest request = buildRequest(new OffsetCommitRequest.Builder("groupId", offsetData));
@@ -264,12 +269,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         }
 
         // 2. real test, for ListOffset request verify Earliest get earliest
-        Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
-        targetTimes.put(tp, ListOffsetRequest.EARLIEST_TIMESTAMP);
-
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
             .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-            .setTargetTimes(targetTimes);
+            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.EARLIEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
@@ -317,12 +319,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         }
 
         // 2. real test, for ListOffset request verify Earliest get earliest
-        Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
-        targetTimes.put(tp, ListOffsetRequest.LATEST_TIMESTAMP);
-
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
             .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-            .setTargetTimes(targetTimes);
+            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.LATEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
@@ -542,12 +541,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     }
 
     private ListOffsetResponse listOffset(long timestamp, TopicPartition tp) throws Exception {
-        Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
-        targetTimes.put(tp, timestamp);
-
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-                .setTargetTimes(targetTimes);
+                .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, timestamp));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
@@ -610,8 +606,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                                                                                Map<TopicPartition, Long> offsetMap) {
         return topicPartitions.stream()
             .map(topic ->
-                Pair.of(topic,
-                    new FetchRequest.PartitionData(
+                Pair.of(topic, KafkaCommonTestUtils.newFetchRequestPartitionData(
                         offsetMap.getOrDefault(topic, 0L),
                         0L,
                         maxPartitionBytes)))
@@ -868,12 +863,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         String topicName = "kopTestGetOffsetsForUnknownTopic";
 
         TopicPartition tp = new TopicPartition(topicName, 0);
-        Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
-        targetTimes.put(tp, ListOffsetRequest.LATEST_TIMESTAMP);
-
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
             .forConsumer(false, IsolationLevel.READ_UNCOMMITTED)
-            .setTargetTimes(targetTimes);
+            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.LATEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();

@@ -15,14 +15,17 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkState;
 
+import com.google.common.annotations.VisibleForTesting;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.Getter;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 
 /**
@@ -37,7 +40,7 @@ public class EndPoint {
     private static final Pattern PATTERN = Pattern.compile(REGEX);
 
     @Getter
-    private final String originalListener;
+    private final String originalListener; // the original listener string, like "PLAINTEXT://localhost:9092"
     @Getter
     private final String listenerName;
     @Getter
@@ -47,7 +50,7 @@ public class EndPoint {
     @Getter
     private final int port;
     @Getter
-    private final boolean multiListener;
+    private final boolean validInProtocolMap;
     @Getter
     private final boolean tlsEnabled;
 
@@ -58,10 +61,10 @@ public class EndPoint {
 
         this.listenerName = matcher.group(1);
         if (protocolMap == null || protocolMap.isEmpty()) {
-            multiListener = false;
+            validInProtocolMap = false;
             this.securityProtocol = SecurityProtocol.forName(matcher.group(1));
         } else {
-            multiListener = true;
+            validInProtocolMap = true;
             this.securityProtocol = protocolMap.get(this.listenerName);
             if (this.securityProtocol == null) {
                 throw new IllegalStateException(this.listenerName + " is not set in kafkaProtocolMap");
@@ -87,14 +90,27 @@ public class EndPoint {
         return new InetSocketAddress(hostname, port);
     }
 
-    public static Map<String, EndPoint> parseListeners(final String listeners) {
-        return parseListeners(listeners, null);
+    // listeners must be enable to be split into at least 1 token
+    private static String[] getListenerArray(final String listeners) {
+        if (StringUtils.isEmpty(listeners)) {
+            throw new IllegalStateException("listeners is empty");
+        }
+        final String[] listenerArray = listeners.split(END_POINT_SEPARATOR);
+        if (listenerArray.length == 0) {
+            throw new IllegalStateException(listeners + " is split into 0 tokens by " + END_POINT_SEPARATOR);
+        }
+        return listenerArray;
     }
 
-    public static Map<String, EndPoint> parseListeners(final String listeners, final String kafkaProtocolMap) {
+    @VisibleForTesting
+    public static Map<String, EndPoint> parseListeners(final String listeners) {
+        return parseListeners(listeners, "");
+    }
+
+    private static Map<String, EndPoint> parseListeners(final String listeners,
+                                                        final Map<String, SecurityProtocol> protocolMap) {
         final Map<String, EndPoint> endPointMap = new HashMap<>();
-        final Map<String, SecurityProtocol> protocolMap = parseProtocolMap(kafkaProtocolMap);
-        for (String listener : listeners.split(END_POINT_SEPARATOR)) {
+        for (String listener : getListenerArray(listeners)) {
             final EndPoint endPoint = new EndPoint(listener, protocolMap);
             if (endPointMap.containsKey(endPoint.listenerName)) {
                 throw new IllegalStateException(
@@ -104,6 +120,27 @@ public class EndPoint {
             }
         }
         return endPointMap;
+    }
+
+    @VisibleForTesting
+    public static Map<String, EndPoint> parseListeners(final String listeners, final String protocolMapString) {
+        return parseListeners(listeners, parseProtocolMap(protocolMapString));
+    }
+
+    public static String findListener(final String listeners, final String name) {
+        if (name == null) {
+            return null;
+        }
+        for (String listener : getListenerArray(listeners)) {
+            if (listener.contains(":") && listener.substring(0, listener.indexOf(":")).equals(name)) {
+                return listener;
+            }
+        }
+        throw new IllegalStateException("listener \"" + name + "\" doesn't exist in " + listeners);
+    }
+
+    public static String findFirstListener(String listeners) {
+        return getListenerArray(listeners)[0];
     }
 
     public static EndPoint getPlainTextEndPoint(final String listeners) {
@@ -127,11 +164,11 @@ public class EndPoint {
     }
 
     public static Map<String, SecurityProtocol> parseProtocolMap(final String kafkaProtocolMap) {
+        if (StringUtils.isEmpty(kafkaProtocolMap)) {
+            return Collections.emptyMap();
+        }
 
         final Map<String, SecurityProtocol> protocolMap = new HashMap<>();
-        if (kafkaProtocolMap == null) {
-            return protocolMap;
-        }
 
         for (String protocolSet : kafkaProtocolMap.split(PROTOCOL_MAP_SEPARATOR)) {
             String[] protocol = protocolSet.split(PROTOCOL_SEPARATOR);
