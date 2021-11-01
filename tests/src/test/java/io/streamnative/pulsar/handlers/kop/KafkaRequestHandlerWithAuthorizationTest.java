@@ -170,7 +170,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         handler = new KafkaRequestHandler(
                 pulsar,
-                (KafkaServiceConfiguration) conf,
+                conf,
                 new TenantContextManager() {
                     @Override
                     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -193,6 +193,9 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         handler.ctx = mockCtx;
 
         serviceAddress = new InetSocketAddress(pulsar.getBindAddress(), kafkaBrokerPort);
+
+        // Make sure group coordinator already handle immigration
+        handleGroupImmigration();
     }
 
     @Override
@@ -771,6 +774,17 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         partitionRecords.put(topicPartition,
                 MemoryRecords.withRecords(CompressionType.NONE, new SimpleRecord("test".getBytes())));
         return ProduceRequest.Builder.forCurrentMagic((short) 1, 5000, partitionRecords).build();
+    }
+
+    private void handleGroupImmigration() {
+        GroupCoordinator groupCoordinator = handler.getGroupCoordinator();
+        for (int i = 0; i < conf.getOffsetsTopicNumPartitions(); i++) {
+            try {
+                groupCoordinator.handleGroupImmigration(i).get();
+            } catch (InterruptedException | ExecutionException e) {
+                log.error("Failed to handle group immigration.", e);
+            }
+        }
     }
 
 }

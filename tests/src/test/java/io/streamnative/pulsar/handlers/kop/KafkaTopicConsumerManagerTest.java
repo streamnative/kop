@@ -46,6 +46,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+
+import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedCursor;
@@ -62,6 +64,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.TopicStats;
 import org.awaitility.Awaitility;
 import org.testng.annotations.AfterMethod;
@@ -82,7 +85,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
-
+        this.triggerTopicLookup(MetadataUtils.constructOffsetsTopicBaseName(
+                TopicName.PUBLIC_TENANT, this.conf), this.conf.getOffsetsTopicNumPartitions());
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler)
                 .getGroupCoordinator(conf.getKafkaMetadataTenant());
@@ -135,6 +139,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     public void testGetTopicConsumerManager() throws Exception {
         String topicName = "persistent://public/default/testGetTopicConsumerManager";
         registerPartitionedTopic(topicName);
+        triggerTopicLookup(topicName);
         CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager.getTopicConsumerManager(topicName);
         KafkaTopicConsumerManager topicConsumerManager = tcm.get();
 
@@ -159,7 +164,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     public void testTopicConsumerManagerRemoveAndAdd() throws Exception {
         String topicName = "persistent://public/default/testTopicConsumerManagerRemoveAndAdd";
         registerPartitionedTopic(topicName);
-
+        triggerTopicLookup(topicName);
         final Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
