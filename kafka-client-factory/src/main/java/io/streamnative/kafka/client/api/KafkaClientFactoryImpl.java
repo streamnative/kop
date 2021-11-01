@@ -19,6 +19,8 @@ import io.streamnative.kafka.client.three.zero.Consumer300Impl;
 import io.streamnative.kafka.client.three.zero.Producer300Impl;
 import io.streamnative.kafka.client.two.eight.Consumer280Impl;
 import io.streamnative.kafka.client.two.eight.Producer280Impl;
+import io.streamnative.kafka.client.zero.nine.Consumer009Impl;
+import io.streamnative.kafka.client.zero.nine.Producer009Impl;
 import io.streamnative.kafka.client.zero.ten.Consumer010Impl;
 import io.streamnative.kafka.client.zero.ten.Producer010Impl;
 
@@ -43,6 +45,8 @@ public class KafkaClientFactoryImpl implements KafkaClientFactory {
             return new Producer280Impl<>(conf);
         } else if (kafkaVersion.equals(KafkaVersion.KAFKA_3_0_0)) {
             return new Producer300Impl<>(conf);
+        } else if (kafkaVersion.equals(KafkaVersion.KAFKA_0_9_0_0)) {
+            return new Producer009Impl<>(conf);
         }
         throw new IllegalArgumentException("No producer for version: " + kafkaVersion);
     }
@@ -57,6 +61,8 @@ public class KafkaClientFactoryImpl implements KafkaClientFactory {
             return new Consumer280Impl<>(conf);
         } else if (kafkaVersion.equals(KafkaVersion.KAFKA_3_0_0)) {
             return new Consumer300Impl<>(conf);
+        } else if (kafkaVersion.equals(KafkaVersion.KAFKA_0_9_0_0)) {
+            return new Consumer009Impl<>(conf);
         }
         throw new IllegalArgumentException("No consumer for version: " + kafkaVersion);
     }
