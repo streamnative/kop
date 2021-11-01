@@ -183,6 +183,9 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
         long offset = 0;
         // 2.0.0, 1.0.0 and 0.10.0.0 kafka clients will authenticate and perform write operations.
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
+            if (!version.supportSaslPlainAuthentication()) {
+                continue;
+            }
             final Producer<String, String> producer = kafkaClientFactories.get(version)
                     .createProducer(producerConfigurationWithSaslPlain(version,
                             TENANT + "/" + NAMESPACE,
@@ -204,8 +207,8 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
             value = "value-from-" + version.name() + offset;
             keys.add(key);
             values.add(value);
-            // Because there is no header in ProducerRecord before 0.11.x.
-            if (!version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
+
+            if (version.supportHeader()) {
                 headers.add(new Header("header-" + key, "header-" + value));
             }
 
@@ -226,6 +229,9 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
 
         // 2.0.0, 1.0.0 and 0.10.0.0 kafka clients will authenticate and perform read operations.
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
+            if (!version.supportSaslPlainAuthentication()) {
+                continue;
+            }
             final Consumer<String, String> consumer = kafkaClientFactories.get(version)
                     .createConsumer(consumerConfigurationWithSaslPlain(version,
                             TENANT + "/" + NAMESPACE,
@@ -245,7 +251,7 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
                         .filter(Objects::nonNull)
                         .collect(Collectors.toList()), keys);
             }
-            if (!version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
+            if (version.supportHeader()) {
                 assertEquals(records.stream()
                         .map(ConsumerRecord::getHeaders)
                         .filter(Objects::nonNull)
@@ -274,6 +280,9 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
         writeJaasFile(badCredential);
 
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
+            if (!version.supportSaslPlainAuthentication()) {
+                continue;
+            }
             try {
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(ProducerConfiguration.builder()
@@ -306,6 +315,9 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
         writeJaasFile(badUser);
 
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
+            if (!version.supportSaslPlainAuthentication()) {
+                continue;
+            }
             try {
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(producerConfigurationWithSaslPlain(version,
@@ -327,6 +339,9 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
         final int metadataTimeoutMs = 3000;
 
         for (KafkaVersion version : kafkaClientFactories.keySet()) {
+            if (!version.supportSaslPlainAuthentication()) {
+                continue;
+            }
             try {
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(ProducerConfiguration.builder()

@@ -79,7 +79,8 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
             keys.add(record.getKey());
             values.add(record.getValue());
             // message has no header before Kafka 0.11.x version
-            if (version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
+            if (version.equals(KafkaVersion.KAFKA_0_10_0_0)
+                    || version.equals(KafkaVersion.KAFKA_0_9_0_0)) {
                 headers.add(null);
             } else {
                 headers.add(record.getHeaders().get(0));
@@ -153,7 +154,8 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
             Assert.assertEquals(records.size(), 1);
             Assert.assertEquals(records.get(0).getValue(), value);
             Assert.assertEquals(records.get(0).getKey(), key);
-            if (!version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
+            if (!(version.equals(KafkaVersion.KAFKA_0_10_0_0)
+                    || version.equals(KafkaVersion.KAFKA_0_9_0_0))) {
                 Assert.assertEquals(records.get(0).getHeaders().get(0), header);
             }
             consumer.close();

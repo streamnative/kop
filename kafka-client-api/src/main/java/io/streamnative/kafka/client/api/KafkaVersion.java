@@ -24,7 +24,8 @@ import lombok.Getter;
  */
 public enum KafkaVersion {
 
-    DEFAULT("default"), KAFKA_3_0_0("300"), KAFKA_2_8_0("280"), KAFKA_1_0_0("100"), KAFKA_0_10_0_0("010");
+    DEFAULT("default"), KAFKA_3_0_0("300"), KAFKA_2_8_0("280"),
+    KAFKA_1_0_0("100"), KAFKA_0_10_0_0("010"), KAFKA_0_9_0_0("009");
 
     @Getter
     private String name;
@@ -46,4 +47,17 @@ public enum KafkaVersion {
         }
         return String.format("org.apache.kafka%s.common.serialization.StringDeserializer", name);
     }
+
+    // Because there is no header in ProducerRecord before 0.11.x.
+    public boolean supportHeader() {
+        return !equals(KAFKA_0_9_0_0) && !equals(KAFKA_0_10_0_0);
+    }
+
+    // Since Kafka supports SASL/PLAIN authentication from 0.10.0.0,
+    // So skip 0.9.0.0 kafka client for sasl/plain test
+    // see detail in https://kafka.apache.org/0100/documentation.html#security_overview
+    public boolean supportSaslPlainAuthentication() {
+        return !equals(KAFKA_0_9_0_0);
+    }
+
 }
