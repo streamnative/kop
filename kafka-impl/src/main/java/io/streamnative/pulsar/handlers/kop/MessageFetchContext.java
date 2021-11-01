@@ -13,13 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_OUT;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.CONSUMER_MESSAGE_CONVERSIONS;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.ENTRIES_OUT;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.GROUP_SCOPE;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_OUT;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 
 import com.google.common.collect.Lists;
@@ -29,7 +22,6 @@ import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndReq
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
 import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
@@ -449,7 +441,6 @@ public final class MessageFetchContext {
         decodeResults.add(decodeResult);
 
         final MemoryRecords kafkaRecords = decodeResult.getRecords();
-        final int conversionCount = decodeResult.getConversionCount();
 
         CompletableFuture<String> groupNameFuture = requestHandler
                 .getCurrentConnectedGroup()
@@ -478,11 +469,10 @@ public final class MessageFetchContext {
                 groupName = "";
             }
             // collect consumer metrics
-            updateConsumerStats(topicPartition,
-                    kafkaRecords,
+            decodeResult.updateConsumerStats(topicPartition,
                     entries.size(),
                     groupName,
-                    conversionCount);
+                    statsLogger);
             final List<FetchResponse.AbortedTransaction> abortedTransactions =
                     (readCommitted ? tc.getAbortedIndexList(partitionData.fetchOffset) : null);
             responseData.put(topicPartition, new PartitionData<>(
@@ -600,38 +590,5 @@ public final class MessageFetchContext {
                         currentPosition, e);
             }
         }, null);
-    }
-
-    private void updateConsumerStats(final TopicPartition topicPartition, final MemoryRecords records,
-                                     int entrySize, final String groupId, int conversionCount) {
-        int numMessages = EntryFormatter.parseNumMessages(records);
-
-        statsLogger.getStatsLogger()
-                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
-                .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition()))
-                .scopeLabel(GROUP_SCOPE, groupId)
-                .getCounter(BYTES_OUT)
-                .add(records.sizeInBytes());
-
-        statsLogger.getStatsLogger()
-                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
-                .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition()))
-                .scopeLabel(GROUP_SCOPE, groupId)
-                .getCounter(MESSAGE_OUT)
-                .add(numMessages);
-
-        statsLogger.getStatsLogger()
-                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
-                .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition()))
-                .scopeLabel(GROUP_SCOPE, groupId)
-                .getCounter(ENTRIES_OUT)
-                .add(entrySize);
-
-        if (conversionCount > 0) {
-            statsLogger.getStatsLogger()
-                    .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
-                    .getCounter(CONSUMER_MESSAGE_CONVERSIONS)
-                    .add(conversionCount);
-        }
     }
 }

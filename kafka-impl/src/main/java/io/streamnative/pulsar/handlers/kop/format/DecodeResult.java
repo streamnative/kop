@@ -13,11 +13,22 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_OUT;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.CONSUMER_MESSAGE_CONVERSIONS;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.ENTRIES_OUT;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.GROUP_SCOPE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_OUT;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.Recycler;
+import io.streamnative.pulsar.handlers.kop.RequestStats;
+import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import lombok.Getter;
 import lombok.NonNull;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.MemoryRecords;
 
 /**
@@ -74,6 +85,26 @@ public class DecodeResult {
         } else {
             return Unpooled.wrappedBuffer(records.buffer());
         }
+    }
+
+    public void updateConsumerStats(final TopicPartition topicPartition,
+                                    int entrySize,
+                                    final String groupId,
+                                    RequestStats statsLogger) {
+        final int numMessages = EntryFormatter.parseNumMessages(records);
+
+        final StatsLogger statsLoggerForThisPartition = statsLogger.getStatsLogger()
+                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
+                .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition()));
+
+        statsLoggerForThisPartition.getCounter(CONSUMER_MESSAGE_CONVERSIONS).add(conversionCount);
+
+        final StatsLogger statsLoggerForThisGroup = statsLoggerForThisPartition.scopeLabel(GROUP_SCOPE, groupId);
+
+        statsLoggerForThisGroup.getCounter(BYTES_OUT).add(records.sizeInBytes());
+        statsLoggerForThisGroup.getCounter(MESSAGE_OUT).add(numMessages);
+        statsLoggerForThisGroup.getCounter(ENTRIES_OUT).add(entrySize);
+
     }
 
 }

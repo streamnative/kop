@@ -13,10 +13,22 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_IN;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_IN;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_MESSAGE_CONVERSIONS;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
+import io.streamnative.pulsar.handlers.kop.RequestStats;
+import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import lombok.Getter;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.pulsar.broker.service.Producer;
 
 /**
  * Result of encode in entry formatter.
@@ -63,6 +75,25 @@ public class EncodeResult {
         numMessages = -1;
         conversionCount = -1;
         recyclerHandle.recycle(this);
+    }
+
+    public void updateProducerStats(final TopicPartition topicPartition,
+                                    final RequestStats requestStats) {
+        final int numBytes = encodedByteBuf.readableBytes();
+
+        final Producer producer = KafkaTopicManager.getReferenceProducer(KopTopic.toString(topicPartition));
+        producer.updateRates(numMessages, numMessages);
+        producer.getTopic().incrementPublishCount(numMessages, numBytes);
+
+        final StatsLogger statsLoggerForThisPartition = requestStats.getStatsLogger()
+                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
+                .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition()));
+
+        statsLoggerForThisPartition.getCounter(BYTES_IN).add(numBytes);
+        statsLoggerForThisPartition.getCounter(MESSAGE_IN).add(numMessages);
+        statsLoggerForThisPartition.getCounter(PRODUCE_MESSAGE_CONVERSIONS).add(conversionCount);
+
+        RequestStats.BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE.set(numMessages);
     }
 
 }
