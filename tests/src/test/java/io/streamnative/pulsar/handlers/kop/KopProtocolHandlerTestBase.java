@@ -213,7 +213,8 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     /**
-     * Trigger topic to lookup, it will load topic to namespace bundle.
+     * Trigger topic to lookup.
+     * It will load namespace bundle into {@link org.apache.pulsar.broker.namespace.OwnershipCache}.
      *
      * @param topicName topic to lookup.
      * @param numPartitions the topic partition nums.
@@ -226,7 +227,8 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     /**
-     * Trigger one topic to lookup, it will load topic to namespace bundle
+     * Trigger one topic to lookup.
+     * It will load namespace bundle into {@link org.apache.pulsar.broker.namespace.OwnershipCache}.
      *
      * @param topicName topic to lookup
      */
