@@ -306,7 +306,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                 TENANT + "/" + NAMESPACE, "token:" + anotherToken, "DemoAnotherKafkaOnPulsarConsumer");
         anotherConsumer.getConsumer().subscribe(Collections.singleton(fullNewTopicName));
         try {
-            anotherConsumer.getConsumer().poll(Duration.ofSeconds(2));
+            anotherConsumer.getConsumer().poll(Duration.ofSeconds(10));
             fail("expected TopicAuthorizationException");
         } catch (TopicAuthorizationException ignore) {
             log.info("Has TopicAuthorizationException.");
@@ -348,6 +348,91 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         // Cleanup
         kConsumer.close();
         adminClient.close();
+        admin.topics().deletePartitionedTopic(fullNewTopicName);
+    }
+
+    @Test(timeOut = 20000)
+    void testCannotAccessAnotherTenant() throws Exception {
+        String newTopic = "newTestListTopic";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
+        KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getKafkaBrokerPort(), false,
+            TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
+        Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
+        // ensure that topic does not exist
+        assertFalse(result.containsKey(newTopic));
+
+        // Create newTopic
+        admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+        result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
+        assertTrue(result.containsKey(newTopic));
+
+        kConsumer.getConsumer().subscribe(Collections.singleton(newTopic));
+        // okay to read
+        kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+        assertEquals(1, kConsumer.getConsumer().assignment().size());
+        kConsumer.close();
+
+        String newTenant = "secondTenant";
+        String newTenantTopic = "persistent://" + newTenant + "/" + NAMESPACE + "/topic1";
+        try {
+            // create a new tenant on Pulsar
+            admin.tenants().createTenant(newTenant,
+                    TenantInfo.builder()
+                            .adminRoles(Collections.singleton(ADMIN_USER))
+                            .allowedClusters(Collections.singleton(configClusterName))
+                            .build());
+            admin.namespaces().createNamespace(newTenant + "/" + NAMESPACE);
+            admin.topics().createPartitionedTopic(newTenantTopic, 1);
+
+            // try to access a topic belonging to the newTenant
+            // authentication pass because username (tenant) is for an existing tenant,
+            // and the user cannot access that tenant
+            KConsumer kConsumer2 = new KConsumer(newTenantTopic, "localhost", getKafkaBrokerPort(), false,
+                TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
+
+            result = kConsumer2.getConsumer().listTopics(Duration.ofSeconds(1));
+            // ensure that the consumer cannot see the new topic
+            assertFalse(result.containsKey(newTenantTopic));
+
+            // no error on subscribe, subscription is stored in the user tenant
+            // we are not polluting the newTenant space
+            kConsumer2.getConsumer().subscribe(Collections.singleton(newTenantTopic));
+
+            // not okay to read
+            try {
+                kConsumer2.getConsumer().poll(Duration.ofSeconds(1));
+                fail("should fail");
+            } catch (TopicAuthorizationException expected) {
+                assertEquals("Not authorized to access topics: [" + newTenantTopic + "]", expected.getMessage());
+            }
+            assertTrue(kConsumer2.getConsumer().assignment().isEmpty());
+
+            kConsumer2.close();
+
+            // assert that user can produce to a legit topic
+            KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
+                    newTenant + "/" + NAMESPACE, "token:" + userToken);
+            kProducer.getProducer().send(new ProducerRecord<>(TOPIC, 0, "")).get();
+            kProducer.close();
+
+            // assert that user cannot produce to the other tenant
+            KProducer kProducer2 = new KProducer(newTenantTopic, false, "localhost", getKafkaBrokerPort(),
+                    newTenant + "/" + NAMESPACE, "token:" + userToken);
+            try {
+                kProducer2.getProducer().send(new ProducerRecord<>(newTenantTopic, 0, "")).get();
+                fail("should fail");
+            } catch (ExecutionException expected) {
+                assertTrue(expected.getCause() instanceof TopicAuthorizationException);
+                assertEquals("Not authorized to access topics: [" + newTenantTopic + "]",
+                        expected.getCause().getMessage());
+            }
+            kProducer2.close();
+        } finally {
+            // Cleanup
+            admin.topics().deletePartitionedTopic(newTenantTopic);
+        }
+
+        // Cleanup
         admin.topics().deletePartitionedTopic(fullNewTopicName);
     }
 
@@ -444,7 +529,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                     newTenant + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
             kConsumer.getConsumer().subscribe(Collections.singleton(testTopic));
             try {
-                kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+                kConsumer.getConsumer().poll(Duration.ofSeconds(10));
                 fail("expected TopicAuthorizationException");
             } catch (TopicAuthorizationException ignore) {
                 log.info("Has TopicAuthorizationException.");

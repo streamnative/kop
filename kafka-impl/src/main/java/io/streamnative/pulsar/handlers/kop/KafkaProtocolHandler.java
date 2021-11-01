@@ -47,7 +47,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.common.util.OrderedExecutor;
+import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.kafka.common.internals.Topic;
@@ -85,6 +85,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
     private SystemTopicClient txnTopicClient;
+    @VisibleForTesting
+    @Getter
+    private Map<InetSocketAddress, ChannelInitializer<SocketChannel>> channelInitializerMap;
 
     @Getter
     @VisibleForTesting
@@ -130,22 +133,23 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         }
 
         private void invalidateBundleCache(NamespaceBundle bundle) {
-            log.info("invalidateBundleCache for {}", bundle);
+            log.info("invalidateBundleCache for namespaceBundle {}", bundle);
             service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
                     .whenComplete((topics, ex) -> {
                         if (ex == null) {
                             for (String topic : topics) {
                                 TopicName name = TopicName.get(topic);
 
-                                log.info("invalidateBundleCache for topic {}", topic);
-                                KopBrokerLookupManager.removeTopicManagerCache(topic);
+                                if (log.isDebugEnabled()) {
+                                    log.debug("invalidateBundleCache for topic {}", topic);
+                                }
+
                                 KafkaTopicManager.deReference(topic);
 
                                 // For non-partitioned topic.
                                 if (!name.isPartitioned()) {
                                     String partitionedZeroTopicName = name.getPartition(0).toString();
                                     KafkaTopicManager.deReference(partitionedZeroTopicName);
-                                    KopBrokerLookupManager.removeTopicManagerCache(partitionedZeroTopicName);
                                 }
                             }
                         } else {
@@ -449,9 +453,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         txnTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
 
         try {
-            kopBrokerLookupManager = new KopBrokerLookupManager(
-                    brokerService.getPulsar(), kafkaConfig.getKafkaAdvertisedListeners(),
-                    kafkaConfig.getBrokerLookupTimeoutMs());
+            kopBrokerLookupManager = new KopBrokerLookupManager(kafkaConfig, brokerService.getPulsar());
         } catch (Exception ex) {
             log.error("Failed to get kopBrokerLookupManager", ex);
             throw new IllegalStateException(ex);
@@ -553,6 +555,18 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         return groupCoordinator;
     }
 
+    private KafkaChannelInitializer newKafkaChannelInitializer(final EndPoint endPoint) {
+        return new KafkaChannelInitializer(
+                brokerService.getPulsar(),
+                kafkaConfig,
+                this,
+                kopBrokerLookupManager,
+                adminManager,
+                endPoint.isTlsEnabled(),
+                endPoint,
+                scopeStatsLogger);
+    }
+
     // this is called after initialize, and with kafkaConfig, brokerService all set.
     @Override
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
@@ -564,38 +578,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     ImmutableMap.builder();
 
             EndPoint.parseListeners(kafkaConfig.getListeners(), kafkaConfig.getKafkaProtocolMap()).
-                    forEach((listener, endPoint) -> {
-                        switch (endPoint.getSecurityProtocol()) {
-                            case PLAINTEXT:
-                            case SASL_PLAINTEXT:
-                                builder.put(endPoint.getInetAddress(),
-                                        new KafkaChannelInitializer(
-                                                brokerService.getPulsar(),
-                                                kafkaConfig,
-                                                this,
-                                                kopBrokerLookupManager,
-                                                adminManager,
-                                                false,
-                                                endPoint,
-                                                scopeStatsLogger));
-                                break;
-                            case SSL:
-                            case SASL_SSL:
-                                builder.put(endPoint.getInetAddress(),
-                                        new KafkaChannelInitializer(
-                                                brokerService.getPulsar(),
-                                                kafkaConfig,
-                                                this,
-                                                kopBrokerLookupManager,
-                                                adminManager,
-                                                true,
-                                                endPoint,
-                                                scopeStatsLogger));
-                                break;
-                            default:
-                        }
-            });
-            return builder.build();
+                    forEach((listener, endPoint) ->
+                            builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint))
+                    );
+            channelInitializerMap = builder.build();
+            return channelInitializerMap;
         } catch (Exception e){
             log.error("KafkaProtocolHandler newChannelInitializers failed with ", e);
             return null;
@@ -675,6 +662,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         TransactionConfig transactionConfig = TransactionConfig.builder()
                 .transactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions())
                 .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(tenant, kafkaConfig))
+                .abortTimedOutTransactionsIntervalMs(kafkaConfig.getTxnAbortTimedOutTransactionCleanupIntervalMs())
                 .brokerId(kafkaConfig.getBrokerId())
                 .build();
 
@@ -685,7 +673,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 txnTopicClient,
                 brokerService.getPulsar().getLocalMetadataStore(),
                 kopBrokerLookupManager,
-                OrderedExecutor.newBuilder().name("TransactionStateManagerExecutor").build());
+                OrderedScheduler.newSchedulerBuilder().name("transaction-log-manager").numThreads(1).build(),
+                Time.SYSTEM);
 
         transactionCoordinator.startup().get();
 

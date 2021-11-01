@@ -22,6 +22,7 @@ import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertSame;
 import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -36,6 +37,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -61,6 +63,7 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.policies.data.TopicStats;
+import org.awaitility.Awaitility;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
@@ -428,13 +431,15 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
                 KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(partitionName);
         assertEquals(tcmList.size(), numConsumers);
 
+        // All TCMs share the same topic, so each internal PersistentTopic of TCM has `numConsumers` cursors.
         for (int i = 0; i < numConsumers; i++) {
-            assertEquals(tcmList.get(i).getNumCreatedCursors(), 1);
+            assertEquals(tcmList.get(i).getNumCreatedCursors(), numConsumers);
         }
 
         // Since consumer close will make connection disconnected and all TCMs will be cleared, we should call it after
         // the test is verified.
         consumers.forEach(KafkaConsumer::close);
+        Awaitility.await().atMost(Duration.ofSeconds(3)).until(() -> tcmList.get(0).getNumCreatedCursors() == 0);
         for (int i = 0; i < numConsumers; i++) {
             assertEquals(tcmList.get(i).getNumCreatedCursors(), 0);
         }
@@ -483,6 +488,11 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         assertFalse(originalTcmList.get(1).isClosed());
 
         consumers.get(1).close(); // trigger KafkaTopicManager#close, only the partition 1 related cache was removed
+        // Because the KafkaRequestHandler.close() is called by channelInActive, when channelInActive called,
+        // the tcp connect already closed. We need ensure topicManager.close() is called.
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(3))
+                .until(() -> originalTcmList.get(1).getNumCreatedCursors() == 0);
         assertSame(getTcmForPartition.apply(0), originalTcmList.get(0));
         assertFalse(originalTcmList.get(0).isClosed());
         // The tcm of partition 1 was closed and it was removed from cache
@@ -490,9 +500,46 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         assertTrue(originalTcmList.get(1).isClosed());
 
         consumers.get(0).close(); // Now all TCM cache was cleared
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(3))
+                .until(() -> originalTcmList.get(0).getNumCreatedCursors() == 0);
         assertNull(getTcmForPartition.apply(0));
         assertNull(getTcmForPartition.apply(1));
         assertTrue(originalTcmList.get(0).isClosed());
         assertTrue(originalTcmList.get(1).isClosed());
+    }
+
+    @Test(timeOut = 20000)
+    public void testUnloadTopic() throws Exception {
+        final String topic = "test-unload-topic";
+        final String fullTopicName = "persistent://public/default/" + topic + "-partition-0";
+        final int numPartitions = 1;
+        admin.topics().createPartitionedTopic(topic, numPartitions);
+
+        final int totalMessages = 5;
+        @Cleanup
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+        int numMessages = 0;
+        while (numMessages < totalMessages) {
+            producer.send(new ProducerRecord<>(topic, null, "test-value" + numMessages)).get();
+            numMessages++;
+        }
+
+        // We first get KafkaTopicConsumerManager, and then unload topic,
+        // so that KafkaTopicConsumerManager will become invalid
+        CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager.getTopicConsumerManager(fullTopicName);
+        KafkaTopicConsumerManager topicConsumerManager = tcm.get();
+        // unload topic
+        admin.topics().unload(fullTopicName);
+
+        // This proves that ManagedLedger has been closed
+        // and that the newly added code has taken effect.
+        try {
+            topicConsumerManager.removeCursorFuture(totalMessages - 1).get();
+            fail("should have failed");
+        } catch (ExecutionException ex) {
+            assertTrue(ex.getCause().getMessage().contains("Current managedLedger has been closed."));
+        }
+
     }
 }

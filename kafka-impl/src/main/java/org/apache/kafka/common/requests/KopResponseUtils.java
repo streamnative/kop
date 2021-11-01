@@ -23,7 +23,7 @@ import org.apache.kafka.common.protocol.types.Struct;
  * Provide util classes to access protected fields in kafka structures.
  */
 @Slf4j
-public class ResponseUtils {
+public class KopResponseUtils {
 
     /**
      * Serialize a kafka response into a byte buf.
