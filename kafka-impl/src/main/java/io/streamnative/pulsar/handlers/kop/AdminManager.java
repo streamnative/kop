@@ -50,7 +50,6 @@ import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.common.util.ObjectMapperFactory;
 
 @Slf4j
 class AdminManager {

@@ -56,7 +56,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 import lombok.Cleanup;
@@ -419,7 +418,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         AtomicInteger count = new AtomicInteger();
         final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
-        topicToNumPartitions.forEach( (topic, numPartitions) -> {
+        topicToNumPartitions.forEach((topic, numPartitions) -> {
             for (int i = 0; i < numPartitions; i++) {
                 producer.send(new ProducerRecord<>(topic, i, count + "", count + ""));
                 count.incrementAndGet();

@@ -38,7 +38,6 @@ import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.common.util.FutureUtil;
 
 /**
@@ -277,7 +276,7 @@ public class KafkaTopicConsumerManager implements Closeable {
     }
 
     /**
-     * Returns the position in the ManagedLedger for the given offset
+     * Returns the position in the ManagedLedger for the given offset.
      * @param offset
      * @return null if not found, PositionImpl.latest if the offset matches the end of the topic
      */
