@@ -336,7 +336,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 log.debug("[{}] unLoad bundle: {}", brokerUrl, bundle);
             }
             // 1. get partitions owned by this pulsar service.
-            // 2. remove partitions by groupCoordinator.handleGroupEmigration.
+            // 2. remove partitions by TransactionCoordinator.handleTxnImmigration.
             service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
                     .whenComplete((topics, ex) -> {
                         if (ex == null) {
@@ -346,7 +346,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                                 TopicName name = TopicName.get(topic);
                                 String kafkaTopicName = getKafkaTopicNameFromPulsarTopicName(name);
 
-                                // Filter TRANSACTION_STATE_TOPIC
                                 if (Topic.TRANSACTION_STATE_TOPIC_NAME.equals(kafkaTopicName)
                                         && txnCoordinator != null) {
                                     checkState(name.isPartitioned(),
