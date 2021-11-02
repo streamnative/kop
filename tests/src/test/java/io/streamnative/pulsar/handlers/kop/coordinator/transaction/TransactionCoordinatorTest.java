@@ -188,7 +188,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = defaultTestTimeout)
     public void shouldInitPidWithEpochZeroForNewTransactionalId() {
         initPidGenericMocks();
-        doReturn(new ErrorsAndData<>(Errors.NONE))
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.empty()))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
 
         doAnswer(__ -> {
@@ -221,7 +221,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = defaultTestTimeout)
     public void shouldGenerateNewProducerIdIfNoStateAndProducerIdAndEpochProvided() {
         initPidGenericMocks();
-        doReturn(new ErrorsAndData<>(Errors.NONE))
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.empty()))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
         doAnswer(__ -> {
             assertNotNull(capturedTxn.getValue());
