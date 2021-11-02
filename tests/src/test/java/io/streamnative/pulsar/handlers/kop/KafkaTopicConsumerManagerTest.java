@@ -138,7 +138,6 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     public void testGetTopicConsumerManager() throws Exception {
         String topicName = "persistent://public/default/testGetTopicConsumerManager";
         registerPartitionedTopic(topicName);
-        triggerTopicLookup(topicName);
         CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager.getTopicConsumerManager(topicName);
         KafkaTopicConsumerManager topicConsumerManager = tcm.get();
 
@@ -163,7 +162,6 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     public void testTopicConsumerManagerRemoveAndAdd() throws Exception {
         String topicName = "persistent://public/default/testTopicConsumerManagerRemoveAndAdd";
         registerPartitionedTopic(topicName);
-        triggerTopicLookup(topicName);
         final Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
