@@ -401,7 +401,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 10000)
     public void testDeleteRecords() throws Exception {
         Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
 
         @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(props);
