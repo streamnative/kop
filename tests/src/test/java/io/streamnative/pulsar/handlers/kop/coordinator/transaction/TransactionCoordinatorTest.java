@@ -315,6 +315,22 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithCoordinatorLoadInProgressOnInitPidWhenCoordinatorLoading() {
+        initPidGenericMocks();
+        doReturn(new ErrorsAndData<>(Errors.COORDINATOR_LOAD_IN_PROGRESS, Optional.empty()))
+                .when(transactionManager).getTransactionState(eq(transactionalId));
+
+        transactionCoordinator.handleInitProducerId(
+                transactionalId,
+                txnTimeoutMs,
+                Optional.empty(),
+                initProducerIdMockCallback
+        );
+        assertEquals(new TransactionCoordinator
+                .InitProducerIdResult(-1L, (short) -1, Errors.COORDINATOR_LOAD_IN_PROGRESS), result);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
     public void shouldAbortExpiredTransactionsInOngoingStateAndBumpEpoch() {
         long now = time.milliseconds();
         TransactionMetadata txnMetadata = new TransactionMetadata(
