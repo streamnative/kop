@@ -17,10 +17,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_ALLNAMESPACES_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_IN;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_IN;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
@@ -168,7 +164,6 @@ import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
@@ -931,10 +926,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         topicManager.registerProducerInPersistentTopic(partitionName, persistentTopic);
         // collect metrics
-        final Producer producer = KafkaTopicManager.getReferenceProducer(partitionName);
-        producer.updateRates(numMessages, byteBuf.readableBytes());
-        producer.getTopic().incrementPublishCount(numMessages, byteBuf.readableBytes());
-        updateProducerStats(topicPartition, numMessages, byteBuf.readableBytes());
+        encodeResult.updateProducerStats(topicPartition, requestStats);
 
         // publish
         final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
@@ -2596,22 +2588,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
 
         return validRecords;
-    }
-
-    private void updateProducerStats(final TopicPartition topicPartition, final int numMessages, final int numBytes) {
-        requestStats.getStatsLogger()
-                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
-                .scopeLabel(PARTITION_SCOPE, String.valueOf((topicPartition.partition())))
-                .getCounter(BYTES_IN)
-                .add(numBytes);
-
-        requestStats.getStatsLogger()
-                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
-                .scopeLabel(PARTITION_SCOPE, String.valueOf((topicPartition.partition())))
-                .getCounter(MESSAGE_IN)
-                .add(numMessages);
-
-        RequestStats.BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE.set(numMessages);
     }
 
     @VisibleForTesting
