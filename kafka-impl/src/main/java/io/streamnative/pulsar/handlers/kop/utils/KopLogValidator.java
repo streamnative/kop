@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import io.streamnative.pulsar.handlers.kop.format.ValidationAndOffsetAssignResult;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -46,7 +47,7 @@ public class KopLogValidator {
      * the offset of the shallow message with the max timestamp and a boolean indicating
      * whether the message sizes may have changed.
      */
-    public static MemoryRecords validateMessagesAndAssignOffsets(MemoryRecords records,
+    public static ValidationAndOffsetAssignResult validateMessagesAndAssignOffsets(MemoryRecords records,
                                                                  LongRef offsetCounter,
                                                                  long now,
                                                                  CompressionCodec sourceCodec,
@@ -89,13 +90,13 @@ public class KopLogValidator {
         }
     }
 
-    private static MemoryRecords convertAndAssignOffsetsNonCompressed(MemoryRecords records,
-                                                                      LongRef offsetCounter,
-                                                                      boolean compactedTopic,
-                                                                      long now,
-                                                                      TimestampType timestampType,
-                                                                      long timestampDiffMaxMs,
-                                                                      byte toMagicValue) {
+    private static ValidationAndOffsetAssignResult convertAndAssignOffsetsNonCompressed(MemoryRecords records,
+                                                                                        LongRef offsetCounter,
+                                                                                        boolean compactedTopic,
+                                                                                        long now,
+                                                                                        TimestampType timestampType,
+                                                                                        long timestampDiffMaxMs,
+                                                                                        byte toMagicValue) {
         int sizeInBytesAfterConversion = AbstractRecords.estimateSizeInBytes(toMagicValue, offsetCounter.value(),
                 CompressionType.NONE, records.records());
 
@@ -130,16 +131,19 @@ public class KopLogValidator {
             }
         });
 
-        return builder.build();
+        MemoryRecords memoryRecords = builder.build();
+        int conversionCount = builder.numRecords();
+
+        return ValidationAndOffsetAssignResult.get(memoryRecords, conversionCount);
     }
 
-    private static MemoryRecords assignOffsetsNonCompressed(MemoryRecords records,
-                                                            LongRef offsetCounter,
-                                                            long now,
-                                                            boolean compactedTopic,
-                                                            TimestampType timestampType,
-                                                            long timestampDiffMaxMs,
-                                                            byte magic) {
+    private static ValidationAndOffsetAssignResult assignOffsetsNonCompressed(MemoryRecords records,
+                                                                              LongRef offsetCounter,
+                                                                              long now,
+                                                                              boolean compactedTopic,
+                                                                              TimestampType timestampType,
+                                                                              long timestampDiffMaxMs,
+                                                                              byte magic) {
         long maxTimestamp = RecordBatch.NO_TIMESTAMP;
         for (MutableRecordBatch batch : records.batches()) {
             validateBatch(batch, magic);
@@ -172,7 +176,7 @@ public class KopLogValidator {
             }
         }
 
-        return records;
+        return ValidationAndOffsetAssignResult.get(records, 0);
     }
 
     /**
@@ -182,15 +186,17 @@ public class KopLogValidator {
      * 3. When magic value to use is above 0, but some fields of inner messages need to be overwritten.
      * 4. Message format conversion is needed.
      */
-    private static MemoryRecords validateMessagesAndAssignOffsetsCompressed(MemoryRecords records,
-                                                                            LongRef offsetCounter,
-                                                                            long now,
-                                                                            CompressionCodec sourceCodec,
-                                                                            CompressionCodec targetCodec,
-                                                                            boolean compactedTopic,
-                                                                            byte toMagic,
-                                                                            TimestampType timestampType,
-                                                                            long timestampDiffMaxMs) {
+    private static ValidationAndOffsetAssignResult validateMessagesAndAssignOffsetsCompressed(
+            MemoryRecords records,
+            LongRef offsetCounter,
+            long now,
+            CompressionCodec sourceCodec,
+            CompressionCodec targetCodec,
+            boolean compactedTopic,
+            byte toMagic,
+            TimestampType timestampType,
+            long timestampDiffMaxMs) {
+
         // No in place assignment situation 1 and 2
         boolean inPlaceAssignment = sourceCodec == targetCodec && toMagic > RecordBatch.MAGIC_VALUE_V0;
 
@@ -246,15 +252,15 @@ public class KopLogValidator {
 
     }
 
-    private static MemoryRecords buildIfPlaceAssignment(boolean inPlaceAssignment,
-                                                        MemoryRecords records,
-                                                        ArrayList<Record> validatedRecords,
-                                                        LongRef offsetCounter,
-                                                        long now,
-                                                        byte toMagic,
-                                                        TimestampType timestampType,
-                                                        long maxTimestamp,
-                                                        CompressionCodec targetCodec) {
+    private static ValidationAndOffsetAssignResult buildIfPlaceAssignment(boolean inPlaceAssignment,
+                                                                          MemoryRecords records,
+                                                                          ArrayList<Record> validatedRecords,
+                                                                          LongRef offsetCounter,
+                                                                          long now,
+                                                                          byte toMagic,
+                                                                          TimestampType timestampType,
+                                                                          long maxTimestamp,
+                                                                          CompressionCodec targetCodec) {
         if (inPlaceAssignment) {
             return buildInPlaceAssignment(records,
                     validatedRecords,
@@ -274,13 +280,13 @@ public class KopLogValidator {
         }
     }
 
-    private static MemoryRecords buildNoInPlaceAssignment(MemoryRecords records,
-                                                          ArrayList<Record> validatedRecords,
-                                                          LongRef offsetCounter,
-                                                          long now,
-                                                          CompressionCodec targetCodec,
-                                                          byte toMagic,
-                                                          TimestampType timestampType) {
+    private static ValidationAndOffsetAssignResult buildNoInPlaceAssignment(MemoryRecords records,
+                                                                            ArrayList<Record> validatedRecords,
+                                                                            LongRef offsetCounter,
+                                                                            long now,
+                                                                            CompressionCodec targetCodec,
+                                                                            byte toMagic,
+                                                                            TimestampType timestampType) {
         // note that we only reassign offsets for requests coming straight from a producer.
         // For records with magic V2, there should be exactly one RecordBatch per request,
         // so the following is all we need to do. For Records
@@ -296,13 +302,13 @@ public class KopLogValidator {
                 first);
     }
 
-    private static MemoryRecords buildInPlaceAssignment(MemoryRecords records,
-                                                        ArrayList<Record> validatedRecords,
-                                                        LongRef offsetCounter,
-                                                        long now,
-                                                        byte toMagic,
-                                                        TimestampType timestampType,
-                                                        long maxTimestamp) {
+    private static ValidationAndOffsetAssignResult buildInPlaceAssignment(MemoryRecords records,
+                                                                          ArrayList<Record> validatedRecords,
+                                                                          LongRef offsetCounter,
+                                                                          long now,
+                                                                          byte toMagic,
+                                                                          TimestampType timestampType,
+                                                                          long maxTimestamp) {
         long currentMaxTimestamp = maxTimestamp;
         // we can update the batch only and write the compressed payload as is
         MutableRecordBatch batch = records.batches().iterator().next();
@@ -322,16 +328,16 @@ public class KopLogValidator {
             batch.setPartitionLeaderEpoch(RecordBatch.NO_PARTITION_LEADER_EPOCH);
         }
 
-        return records;
+        return ValidationAndOffsetAssignResult.get(records, 0);
     }
 
-    private static MemoryRecords buildRecordsAndAssignOffsets(byte magic,
-                                                              LongRef offsetCounter,
-                                                              TimestampType timestampType,
-                                                              CompressionType compressionType,
-                                                              long logAppendTime,
-                                                              ArrayList<Record> validatedRecords,
-                                                              MutableRecordBatch first) {
+    private static ValidationAndOffsetAssignResult buildRecordsAndAssignOffsets(byte magic,
+                                                                                LongRef offsetCounter,
+                                                                                TimestampType timestampType,
+                                                                                CompressionType compressionType,
+                                                                                long logAppendTime,
+                                                                                ArrayList<Record> validatedRecords,
+                                                                                MutableRecordBatch first) {
         long producerId = first.producerId();
         short producerEpoch = first.producerEpoch();
         int baseSequence = first.baseSequence();
@@ -356,7 +362,10 @@ public class KopLogValidator {
             builder.appendWithOffset(offsetCounter.getAndIncrement(), record);
         });
 
-        return builder.build();
+        MemoryRecords memoryRecords = builder.build();
+        int conversionCount = builder.numRecords();
+
+        return ValidationAndOffsetAssignResult.get(memoryRecords, conversionCount);
     }
 
     private static void validateBatch(RecordBatch batch, byte toMagic) {

@@ -133,8 +133,10 @@ public class ByteBufUtils {
             builder.setProducerState(metadata.getTxnidMostBits(), (short) metadata.getTxnidLeastBits(), 0, true);
         }
 
+        int conversionCount = 0;
         if (metadata.hasNumMessagesInBatch()) {
             final int numMessages = metadata.getNumMessagesInBatch();
+            conversionCount += numMessages;
             for (int i = 0; i < numMessages; i++) {
                 final SingleMessageMetadata singleMessageMetadata = new SingleMessageMetadata();
                 final ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(
@@ -163,6 +165,7 @@ public class ByteBufUtils {
                 singleMessagePayload.release();
             }
         } else {
+            conversionCount += 1;
             final long timestamp = (metadata.getEventTime() > 0)
                     ? metadata.getEventTime()
                     : metadata.getPublishTime();
@@ -183,7 +186,7 @@ public class ByteBufUtils {
 
         final MemoryRecords records = builder.build();
         uncompressedPayload.release();
-        return DecodeResult.get(records, directBufferOutputStream.getByteBuf());
+        return DecodeResult.get(records, directBufferOutputStream.getByteBuf(), conversionCount);
     }
 
     @NonNull

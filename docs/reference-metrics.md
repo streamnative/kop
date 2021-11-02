@@ -58,6 +58,7 @@ The KoP metrics are exposed under "/metrics" at port `8000` along with Pulsar me
 | kop_server_BYTES_IN | Counter | The producer bytes in stats. <br> Available labels: *topic*, *partition*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li></ul>|
 | kop_server_MESSAGE_IN | Counter | The producer message in stats. <br> Available labels: *topic*, *partition*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li></ul>|
 | kop_server_BATCH_COUNT_PER_MEMORYRECORDS | Gauge | The number of batches in each memory records|
+| kop_server_PRODUCE_MESSAGE_CONVERSIONS | Counter | The producer message conversions in stats. <br> Available labels: *topic*, *partition*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li></ul>|
 
 ### Consumer metrics
 
@@ -70,6 +71,7 @@ The KoP metrics are exposed under "/metrics" at port `8000` along with Pulsar me
 | kop_server_BYTES_OUT | Counter | The consumer bytes out stats. <br> Available labels: *topic*, *partition*, *group*. </br> <ul><li>*topic*: the topic name to consume.</li><li>*partition*: the partition id for the topic to consume</li><li>*group*: the group id for consumer to consumer message from topic-partition</li></ul>|
 | kop_server_MESSAGE_OUT | Counter | The consumer message out stats. <br> Available labels: *topic*, *partition*, *group*. </br> <ul><li>*topic*: the topic name to consume.</li><li>*partition*: the partition id for the topic to consume</li><li>*group*: the group id for consumer to consumer message from topic-partition</li></ul>|
 | kop_server_ENTRIES_OUT | Counter | The consumer entries out stats. <br> Available labels: *topic*, *partition*, *group*. </br> <ul><li>*topic*: the topic name to consume.</li><li>*partition*: the partition id for the topic to consume</li><li>*group*: the group id for consumer to consumer message from topic-partition</li></ul>|
+| kop_server_CONSUME_MESSAGE_CONVERSIONS | Counter | The consumer message conversions in stats. <br> Available labels: *topic*, *partition*. </br> <ul><li>*topic*: the topic name to consume.</li><li>*partition*: the partition id for the topic to consume</li></ul>|
 
 ### Kop event metrics
 
