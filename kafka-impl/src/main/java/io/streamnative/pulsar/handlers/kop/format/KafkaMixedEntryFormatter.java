@@ -52,15 +52,19 @@ public class KafkaMixedEntryFormatter extends AbstractEntryFormatter {
         final KopLogValidator.CompressionCodec sourceCodec = getSourceCodec(records);
         final KopLogValidator.CompressionCodec targetCodec = getTargetCodec(sourceCodec);
 
-        final MemoryRecords validRecords = KopLogValidator.validateMessagesAndAssignOffsets(records,
-                offset,
-                System.currentTimeMillis(),
-                sourceCodec,
-                targetCodec,
-                false,
-                RecordBatch.MAGIC_VALUE_V2,
-                TimestampType.CREATE_TIME,
-                Long.MAX_VALUE);
+        final ValidationAndOffsetAssignResult validationAndOffsetAssignResult =
+                KopLogValidator.validateMessagesAndAssignOffsets(records,
+                        offset,
+                        System.currentTimeMillis(),
+                        sourceCodec,
+                        targetCodec,
+                        false,
+                        RecordBatch.MAGIC_VALUE_V2,
+                        TimestampType.CREATE_TIME,
+                        Long.MAX_VALUE);
+
+        MemoryRecords validRecords = validationAndOffsetAssignResult.getRecords();
+        int conversionCount = validationAndOffsetAssignResult.getConversionCount();
 
         final int numMessages = EntryFormatter.parseNumMessages(validRecords);
         final ByteBuf recordsWrapper = Unpooled.wrappedBuffer(validRecords.buffer());
@@ -69,8 +73,9 @@ public class KafkaMixedEntryFormatter extends AbstractEntryFormatter {
                 getMessageMetadataWithNumberMessages(numMessages),
                 recordsWrapper);
         recordsWrapper.release();
+        validationAndOffsetAssignResult.recycle();
 
-        return EncodeResult.get(validRecords, buf, numMessages);
+        return EncodeResult.get(validRecords, buf, numMessages, conversionCount);
     }
 
     @Override
