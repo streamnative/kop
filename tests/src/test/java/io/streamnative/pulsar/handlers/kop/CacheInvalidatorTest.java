@@ -95,6 +95,7 @@ public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
+        conf.setEnableTransactionCoordinator(true);
         super.internalSetup();
     }
 
