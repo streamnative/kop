@@ -63,13 +63,16 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.BookKeeperClientFactory;
+import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.auth.SameThreadOrderedSafeExecutor;
 import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClient;
+import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
 import org.apache.pulsar.zookeeper.ZooKeeperClientFactory;
@@ -173,7 +176,7 @@ public abstract class KopProtocolHandlerTestBase {
         // kafka related settings.
         kafkaConfig.setOffsetsTopicNumPartitions(1);
 
-        kafkaConfig.setEnableTransactionCoordinator(true);
+        kafkaConfig.setEnableTransactionCoordinator(false);
         kafkaConfig.setTxnLogTopicNumPartitions(1);
 
         kafkaConfig.setKafkaListeners(
@@ -207,6 +210,37 @@ public abstract class KopProtocolHandlerTestBase {
     protected final void internalSetup() throws Exception {
         init();
         pulsarClient = KafkaProtocolHandler.getLookupClient(pulsar).getPulsarClient();
+    }
+
+    /**
+     * Trigger topic to lookup.
+     * It will load namespace bundle into {@link org.apache.pulsar.broker.namespace.OwnershipCache}.
+     *
+     * @param topicName topic to lookup.
+     * @param numPartitions the topic partition nums.
+     */
+    protected void triggerTopicLookup(String topicName, int numPartitions) {
+        for (int i = 0; i < numPartitions; ++i) {
+            String topicToLookup = topicName + TopicName.PARTITIONED_TOPIC_SUFFIX + i;
+            triggerTopicLookup(topicToLookup);
+        }
+    }
+
+    /**
+     * Trigger one topic to lookup.
+     * It will load namespace bundle into {@link org.apache.pulsar.broker.namespace.OwnershipCache}.
+     *
+     * @param topicName topic to lookup
+     */
+    protected void triggerTopicLookup(String topicName) {
+        try {
+            String brokerUrl = pulsar.getAdminClient().lookups().lookupTopic(topicName);
+            if (log.isDebugEnabled()) {
+                log.debug("Topic [{}] brokerUrl: {}", topicName, brokerUrl);
+            }
+        } catch (PulsarAdminException | PulsarServerException e) {
+            log.error("Lookup topic: {} failed.", topicName, e);
+        }
     }
 
     protected void createAdmin() throws Exception {
