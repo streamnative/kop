@@ -82,7 +82,7 @@ public interface KopServerStats {
     String BYTES_OUT = "BYTES_OUT";
     String MESSAGE_OUT = "MESSAGE_OUT";
     String ENTRIES_OUT = "ENTRIES_OUT";
-    String CONSUMER_MESSAGE_CONVERSIONS = "CONSUMER_MESSAGE_CONVERSIONS";
+    String CONSUME_MESSAGE_CONVERSIONS = "CONSUME_MESSAGE_CONVERSIONS";
 
     /**
      * Kop event queue stats.

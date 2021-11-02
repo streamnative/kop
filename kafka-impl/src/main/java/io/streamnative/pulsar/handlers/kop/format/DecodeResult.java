@@ -14,7 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.format;
 
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_OUT;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.CONSUMER_MESSAGE_CONVERSIONS;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.CONSUME_MESSAGE_CONVERSIONS;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.ENTRIES_OUT;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.GROUP_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_OUT;
@@ -97,7 +97,7 @@ public class DecodeResult {
                 .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
                 .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition()));
 
-        statsLoggerForThisPartition.getCounter(CONSUMER_MESSAGE_CONVERSIONS).add(conversionCount);
+        statsLoggerForThisPartition.getCounter(CONSUME_MESSAGE_CONVERSIONS).add(conversionCount);
 
         final StatsLogger statsLoggerForThisGroup = statsLoggerForThisPartition.scopeLabel(GROUP_SCOPE, groupId);
 
