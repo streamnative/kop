@@ -32,6 +32,7 @@ import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.CreatePartitionsResponse;
 import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteGroupsResponse;
+import org.apache.kafka.common.requests.DeleteRecordsResponse;
 import org.apache.kafka.common.requests.DeleteTopicsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsResponse;
 import org.apache.kafka.common.requests.FindCoordinatorResponse;
@@ -76,6 +77,11 @@ public class KafkaResponseUtils {
 
     public static DeleteTopicsResponse newDeleteTopics(Map<String, Errors> topicToErrors) {
         return new DeleteTopicsResponse(topicToErrors);
+    }
+
+    public static DeleteRecordsResponse newDeleteRecords(Map<TopicPartition,
+            DeleteRecordsResponse.PartitionResponse> responseMap) {
+        return new DeleteRecordsResponse(-1, responseMap);
     }
 
     public static DescribeGroupsResponse newDescribeGroups(
