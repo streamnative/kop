@@ -18,6 +18,7 @@ import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
+import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
@@ -26,7 +27,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.RecordBatch;
@@ -34,6 +37,7 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.policies.data.BundlesData;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfoImpl;
+import org.apache.pulsar.common.util.FutureUtil;
 import org.awaitility.Awaitility;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
@@ -50,11 +54,17 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
     private static final Short producerEpoch = 0;
     private static final Integer transactionTimeoutMs = 1000;
 
+    private int txnLogTopicNumPartitions;
+    private TransactionCoordinator transactionCoordinator;
+
     @BeforeClass
     @Override
     protected void setup() throws Exception {
         this.conf.setEnableTransactionCoordinator(true);
+        this.txnLogTopicNumPartitions = this.conf.getTxnLogTopicNumPartitions();
+
         internalSetup();
+        transactionCoordinator = getTxnCoordinator();
 
         TenantInfoImpl tenantInfo =
                 new TenantInfoImpl(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("test"));
@@ -103,6 +113,8 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
         transactionStates.put(4L, TransactionState.PREPARE_ABORT);
         transactionStates.put(5L, TransactionState.COMPLETE_ABORT);
 
+        // Make sure transaction state log already loaded.
+        this.loadTxnImmigration();
         TransactionStateManager transactionStateManager = getTxnManager();
 
         CountDownLatch countDownLatch = new CountDownLatch(pidMappings.size());
@@ -223,9 +235,24 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
                 .untilAsserted(() -> assertFalse(txnStateManager.isLoading()));
     }
 
-    private TransactionStateManager getTxnManager() {
+    private TransactionCoordinator getTxnCoordinator() {
         return ((KafkaProtocolHandler) this.pulsar.getProtocolHandlers().protocol("kafka"))
-                .getTransactionCoordinator("public").getTxnManager();
+                .getTransactionCoordinator("public");
     }
 
+    private TransactionStateManager getTxnManager() {
+        return getTxnCoordinator().getTxnManager();
+    }
+
+    private void loadTxnImmigration() {
+        List<CompletableFuture<Void>> allFuture = Lists.newArrayList();
+        for (int i = 0; i < txnLogTopicNumPartitions; i++) {
+            allFuture.add(transactionCoordinator.handleTxnImmigration(i));
+        }
+        try {
+            FutureUtil.waitForAll(allFuture).get();
+        } catch (InterruptedException | ExecutionException e) {
+            log.error("Load txn immigration failed.", e);
+        }
+    }
 }
