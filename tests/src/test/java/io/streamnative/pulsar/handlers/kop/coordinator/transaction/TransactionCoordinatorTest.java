@@ -66,7 +66,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     private ProducerIdManager producerIdManager;
     private TransactionStateManager transactionManager;
     private TransactionCoordinator.InitProducerIdResult result = null;
-    private Errors errors = Errors.NONE;
+    private Errors error = Errors.NONE;
     ArgumentCaptor<TransactionMetadata> capturedTxn = ArgumentCaptor.forClass(TransactionMetadata.class);
     ArgumentCaptor<TransactionStateManager.ResponseCallback> capturedErrorsCallback =
             ArgumentCaptor.forClass(TransactionStateManager.ResponseCallback.class);
@@ -85,7 +85,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     };
 
     private final Consumer<Errors> errorsCallback = (ret) -> {
-        errors = ret;
+        error = ret;
     };
 
     @BeforeClass
@@ -126,7 +126,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     @BeforeMethod
     protected void initializeState() {
         result = null;
-        errors = Errors.NONE;
+        error = Errors.NONE;
         capturedTxn = ArgumentCaptor.forClass(TransactionMetadata.class);
         capturedErrorsCallback = ArgumentCaptor.forClass(TransactionStateManager.ResponseCallback.class);
     }
@@ -335,18 +335,20 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         assertEquals(new TransactionCoordinator
                 .InitProducerIdResult(-1L, (short) -1, Errors.COORDINATOR_LOAD_IN_PROGRESS), result);
     }
-//
-//    @Test(timeOut = defaultTestTimeout)
-//    public void shouldRespondWithInvalidPidMappingOnAddPartitionsToTransactionWhenTransactionalIdNotPresent() {
-//        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.empty()))
-//                .when(transactionManager).getTransactionState(eq(transactionalId));
-//        transactionCoordinator.handleAddPartitionsToTransaction(
-//                0L,
-//                1,
-//                partitions,
-//                errorsCallback
-//        );
-//    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithInvalidPidMappingOnAddPartitionsToTransactionWhenTransactionalIdNotPresent() {
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.empty()))
+                .when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleAddPartitionsToTransaction(
+                transactionalId,
+                0L,
+                (short) 1,
+                partitions,
+                errorsCallback
+        );
+        assertEquals(Errors.INVALID_PRODUCER_ID_MAPPING, error);
+    }
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldAbortExpiredTransactionsInOngoingStateAndBumpEpoch() {

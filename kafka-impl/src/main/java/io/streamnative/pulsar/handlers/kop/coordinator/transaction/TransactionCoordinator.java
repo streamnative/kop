@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -464,15 +465,14 @@ public class TransactionCoordinator {
     public void handleAddPartitionsToTransaction(String transactionalId,
                                                  long producerId,
                                                  short producerEpoch,
-                                                 List<TopicPartition> partitionList,
-                                                 CompletableFuture<AbstractResponse> response) {
+                                                 Set<TopicPartition> partitionList,
+                                                 Consumer<Errors> responseCallback) {
         if (transactionalId == null || transactionalId.isEmpty()) {
             if (log.isDebugEnabled()) {
                 log.debug("Returning {} error code to client for {}'s AddPartitions request",
                         Errors.INVALID_REQUEST, transactionalId);
             }
-            response.complete(
-                    new AddPartitionsToTxnResponse(0, addPartitionError(partitionList, Errors.INVALID_REQUEST)));
+            responseCallback.accept(Errors.INVALID_REQUEST);
             return;
         }
 
@@ -482,9 +482,8 @@ public class TransactionCoordinator {
                 txnManager.getTransactionState(transactionalId);
         ErrorsAndData<EpochAndTxnTransitMetadata> result = new ErrorsAndData<>();
         if (!metadata.getData().isPresent()) {
-            response.complete(
-                    new AddPartitionsToTxnResponse(0,
-                            addPartitionError(partitionList, Errors.INVALID_PRODUCER_ID_MAPPING)));
+            responseCallback.accept(Errors.INVALID_PRODUCER_ID_MAPPING);
+            return;
         } else {
             CoordinatorEpochAndTxnMetadata epochAndTxnMetadata = metadata.getData().get();
             int coordinatorEpoch = epochAndTxnMetadata.getCoordinatorEpoch();
@@ -515,32 +514,23 @@ public class TransactionCoordinator {
         }
 
         if (result.getErrors() != null) {
-            response.complete(new AddPartitionsToTxnResponse(0, addPartitionError(partitionList, result.getErrors())));
+            responseCallback.accept(result.getErrors());
         } else {
             txnManager.appendTransactionToLog(
                     transactionalId, result.getData().coordinatorEpoch, result.getData().txnTransitMetadata,
                     new TransactionStateManager.ResponseCallback() {
                         @Override
                         public void complete() {
-                            response.complete(
-                                    new AddPartitionsToTxnResponse(0, addPartitionError(partitionList, Errors.NONE)));
+                            responseCallback.accept(Errors.NONE);
                         }
 
                         @Override
                         public void fail(Errors e) {
-                            response.complete(new AddPartitionsToTxnResponse(0, addPartitionError(partitionList, e)));
+                            responseCallback.accept(e);
                         }
                     }, errors -> true);
 
         }
-    }
-
-    private Map<TopicPartition, Errors> addPartitionError(List<TopicPartition> partitionList, Errors errors) {
-        Map<TopicPartition, Errors> data = new HashMap<>();
-        for (TopicPartition topicPartition : partitionList) {
-            data.put(topicPartition, errors);
-        }
-        return data;
     }
 
     private Errors producerEpochFenceErrors() {
