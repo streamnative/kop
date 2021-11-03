@@ -269,7 +269,7 @@ public class TransactionCoordinator {
                 Optional<CoordinatorEpochAndTxnMetadata> data = epochAndTxnMeta.getData();
                 if (data.isPresent()) {
                     int coordinatorEpoch = data.get().getCoordinatorEpoch();
-                    TransactionMetadata txnMetadata = epochAndTxnMeta.getData().get().getTransactionMetadata();
+                    TransactionMetadata txnMetadata = data.get().getTransactionMetadata();
 
                     txnMetadata.inLock(() -> {
                         CompletableFuture<ErrorsAndData<EpochAndTxnTransitMetadata>> prepareInitProducerIdResult =
@@ -294,6 +294,7 @@ public class TransactionCoordinator {
                     responseCallback.accept(initTransactionError(Errors.UNKNOWN_SERVER_ERROR));
                 }
             }).exceptionally(ex -> {
+                log.error("Get epoch and TxnMetadata failed.", ex);
                 responseCallback.accept(initTransactionError(Errors.forException(ex.getCause())));
                 return null;
             });
