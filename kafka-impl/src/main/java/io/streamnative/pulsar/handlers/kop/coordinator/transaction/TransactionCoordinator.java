@@ -55,8 +55,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.common.requests.AbstractResponse;
-import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
@@ -480,57 +478,60 @@ public class TransactionCoordinator {
         // if there is no such metadata treat it as invalid producerId mapping error.
         ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> metadata =
                 txnManager.getTransactionState(transactionalId);
+        if (metadata.hasErrors()) {
+            responseCallback.accept(metadata.getErrors());
+            return;
+        }
         ErrorsAndData<EpochAndTxnTransitMetadata> result = new ErrorsAndData<>();
         if (!metadata.getData().isPresent()) {
             responseCallback.accept(Errors.INVALID_PRODUCER_ID_MAPPING);
             return;
-        } else {
-            CoordinatorEpochAndTxnMetadata epochAndTxnMetadata = metadata.getData().get();
-            int coordinatorEpoch = epochAndTxnMetadata.getCoordinatorEpoch();
-            TransactionMetadata txnMetadata = epochAndTxnMetadata.getTransactionMetadata();
-
-            txnMetadata.inLock(() -> {
-                if (txnMetadata.getProducerId() != producerId) {
-                    result.setErrors(Errors.INVALID_PRODUCER_ID_MAPPING);
-                } else if (txnMetadata.getProducerEpoch() != producerEpoch) {
-                    // TODO the error should be Errors.PRODUCER_FENCED, needs upgrade kafka client version
-                    result.setErrors(producerEpochFenceErrors());
-                } else if (txnMetadata.getPendingState().isPresent()) {
-                    // return a retriable exception to let the client backoff and retry
-                    result.setErrors(Errors.CONCURRENT_TRANSACTIONS);
-                } else if (txnMetadata.getState() == PREPARE_COMMIT || txnMetadata.getState() == PREPARE_ABORT) {
-                    result.setErrors(Errors.CONCURRENT_TRANSACTIONS);
-                } else if (txnMetadata.getState() == ONGOING
-                        && txnMetadata.getTopicPartitions().containsAll(partitionList)) {
-                    // this is an optimization: if the partitions are already in the metadata reply OK immediately
-                    result.setErrors(Errors.NONE);
-                } else {
-                    result.setData(new EpochAndTxnTransitMetadata(
-                            coordinatorEpoch, txnMetadata.prepareAddPartitions(
-                                    new HashSet<>(partitionList), time.milliseconds())));
-                }
-                return null;
-            });
         }
+
+        CoordinatorEpochAndTxnMetadata epochAndTxnMetadata = metadata.getData().get();
+        int coordinatorEpoch = epochAndTxnMetadata.getCoordinatorEpoch();
+        TransactionMetadata txnMetadata = epochAndTxnMetadata.getTransactionMetadata();
+
+        txnMetadata.inLock(() -> {
+            if (txnMetadata.getProducerId() != producerId) {
+                result.setErrors(Errors.INVALID_PRODUCER_ID_MAPPING);
+            } else if (txnMetadata.getProducerEpoch() != producerEpoch) {
+                // TODO the error should be Errors.PRODUCER_FENCED, needs upgrade kafka client version
+                result.setErrors(producerEpochFenceErrors());
+            } else if (txnMetadata.getPendingState().isPresent()) {
+                // return a retriable exception to let the client backoff and retry
+                result.setErrors(Errors.CONCURRENT_TRANSACTIONS);
+            } else if (txnMetadata.getState() == PREPARE_COMMIT || txnMetadata.getState() == PREPARE_ABORT) {
+                result.setErrors(Errors.CONCURRENT_TRANSACTIONS);
+            } else if (txnMetadata.getState() == ONGOING
+                    && txnMetadata.getTopicPartitions().containsAll(partitionList)) {
+                // this is an optimization: if the partitions are already in the metadata reply OK immediately
+                result.setErrors(Errors.NONE);
+            } else {
+                result.setData(new EpochAndTxnTransitMetadata(
+                        coordinatorEpoch, txnMetadata.prepareAddPartitions(
+                        new HashSet<>(partitionList), time.milliseconds())));
+            }
+            return null;
+        });
 
         if (result.getErrors() != null) {
             responseCallback.accept(result.getErrors());
-        } else {
-            txnManager.appendTransactionToLog(
-                    transactionalId, result.getData().coordinatorEpoch, result.getData().txnTransitMetadata,
-                    new TransactionStateManager.ResponseCallback() {
-                        @Override
-                        public void complete() {
-                            responseCallback.accept(Errors.NONE);
-                        }
-
-                        @Override
-                        public void fail(Errors e) {
-                            responseCallback.accept(e);
-                        }
-                    }, errors -> true);
-
+            return;
         }
+        txnManager.appendTransactionToLog(
+                transactionalId, result.getData().coordinatorEpoch, result.getData().txnTransitMetadata,
+                new TransactionStateManager.ResponseCallback() {
+                    @Override
+                    public void complete() {
+                        responseCallback.accept(Errors.NONE);
+                    }
+
+                    @Override
+                    public void fail(Errors e) {
+                        responseCallback.accept(e);
+                    }
+                }, errors -> true);
     }
 
     private Errors producerEpochFenceErrors() {

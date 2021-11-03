@@ -32,6 +32,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
+import java.util.Collections;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -93,7 +94,17 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     protected void setup() throws Exception {
         conf.setEnableTransactionCoordinator(false);
         super.internalSetup();
+    }
 
+    @AfterClass
+    @Override
+    protected void cleanup() throws Exception {
+        transactionCoordinator.shutdown();
+        super.internalCleanup();
+    }
+
+    @BeforeMethod
+    protected void initializeState() {
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
         KafkaProtocolHandler kafkaProtocolHandler = (KafkaProtocolHandler) handler;
 
@@ -114,17 +125,6 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 producerIdManager,
                 transactionManager,
                 time);
-    }
-
-    @AfterClass
-    @Override
-    protected void cleanup() throws Exception {
-        transactionCoordinator.shutdown();
-        super.internalCleanup();
-    }
-
-    @BeforeMethod
-    protected void initializeState() {
         result = null;
         error = Errors.NONE;
         capturedTxn = ArgumentCaptor.forClass(TransactionMetadata.class);
@@ -348,6 +348,200 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 errorsCallback
         );
         assertEquals(Errors.INVALID_PRODUCER_ID_MAPPING, error);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithInvalidRequestAddPartitionsToTransactionWhenTransactionalIdIsEmpty() {
+        transactionCoordinator.handleAddPartitionsToTransaction(
+                "",
+                0L,
+                (short) 1,
+                partitions,
+                errorsCallback);
+        assertEquals(Errors.INVALID_REQUEST, error);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithInvalidRequestAddPartitionsToTransactionWhenTransactionalIdIsNull() {
+        transactionCoordinator.handleAddPartitionsToTransaction(
+                null,
+                0L,
+                (short) 1,
+                partitions,
+                errorsCallback);
+        assertEquals(Errors.INVALID_REQUEST, error);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithNotCoordinatorOnAddPartitionsWhenNotCoordinator() {
+        doReturn(new ErrorsAndData<>(Errors.NOT_COORDINATOR, Optional.empty()))
+                .when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleAddPartitionsToTransaction(
+                transactionalId,
+                0L,
+                (short) 1,
+                partitions,
+                errorsCallback
+        );
+        assertEquals(Errors.NOT_COORDINATOR, error);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithCoordinatorLoadInProgressOnAddPartitionsWhenCoordinatorLoading() {
+        doReturn(new ErrorsAndData<>(Errors.COORDINATOR_LOAD_IN_PROGRESS, Optional.empty()))
+                .when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleAddPartitionsToTransaction(
+                transactionalId,
+                0L,
+                (short) 1,
+                partitions,
+                errorsCallback
+        );
+        assertEquals(Errors.COORDINATOR_LOAD_IN_PROGRESS, error);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithConcurrentTransactionsOnAddPartitionsWhenStateIsPrepareCommit() {
+        validateConcurrentTransactions(TransactionState.PREPARE_COMMIT);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithConcurrentTransactionOnAddPartitionsWhenStateIsPrepareAbort() {
+        validateConcurrentTransactions(TransactionState.PREPARE_ABORT);
+    }
+
+    private void validateConcurrentTransactions(TransactionState state) {
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
+                        TransactionMetadata.builder()
+                                .transactionalId(transactionalId)
+                                .producerId(0)
+                                .lastProducerId(0)
+                                .producerEpoch((short) 0)
+                                .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
+                                .txnTimeoutMs(0)
+                                .state(state)
+                                .topicPartitions(Collections.emptySet())
+                                .txnStartTimestamp(0)
+                                .txnLastUpdateTimestamp(0)
+                                .build()
+                )))).when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleAddPartitionsToTransaction(
+                transactionalId,
+                0L,
+                (short) 1,
+                partitions,
+                errorsCallback
+        );
+        // TODO: Should have PRODUCER_FENCED
+        assertEquals(Errors.UNKNOWN_SERVER_ERROR, error);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithProducerFencedOnAddPartitionsWhenEpochsAreDifferent() {
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
+                        TransactionMetadata.builder()
+                                .transactionalId(transactionalId)
+                                .producerId(0)
+                                .lastProducerId(0)
+                                .producerEpoch((short) 10)
+                                .lastProducerEpoch((short) 9)
+                                .txnTimeoutMs(0)
+                                .state(TransactionState.PREPARE_COMMIT)
+                                .topicPartitions(Collections.emptySet())
+                                .txnStartTimestamp(0)
+                                .txnLastUpdateTimestamp(0)
+                                .build()
+                )))).when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleAddPartitionsToTransaction(
+                transactionalId,
+                0L,
+                (short) 1,
+                partitions,
+                errorsCallback
+        );
+        // TODO: Should have PRODUCER_FENCED
+        assertEquals(Errors.UNKNOWN_SERVER_ERROR, error);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldAppendNewMetadataToLogOnAddPartitionsWhenPartitionsAdded() {
+        validateSuccessfulAddPartitions(TransactionState.EMPTY);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithSuccessOnAddPartitionsWhenStateIsOngoing() {
+        validateSuccessfulAddPartitions(TransactionState.ONGOING);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithSuccessOnAddPartitionsWhenStateIsCompleteCommit() {
+        validateSuccessfulAddPartitions(TransactionState.COMPLETE_COMMIT);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithSuccessOnAddPartitionsWhenStateIsCompleteAbort() {
+        validateSuccessfulAddPartitions(TransactionState.COMPLETE_ABORT);
+    }
+
+    private void validateSuccessfulAddPartitions(TransactionState previousState) {
+        long now = time.milliseconds();
+        TransactionMetadata txnMetadata = new TransactionMetadata(
+                transactionalId,
+                producerId,
+                producerId,
+                producerEpoch,
+                (short) (producerEpoch - 1),
+                txnTimeoutMs,
+                previousState,
+                Collections.emptySet(),
+                now,
+                now,
+                Optional.empty(),
+                false);
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata)))
+        ).when(transactionManager).getTransactionState(eq(transactionalId));
+
+        transactionCoordinator.handleAddPartitionsToTransaction(
+                transactionalId,
+                producerId,
+                producerEpoch,
+                partitions,
+                errorsCallback);
+        verify(transactionManager, atLeastOnce()).appendTransactionToLog(
+                eq(transactionalId),
+                eq(coordinatorEpoch),
+                any(TransactionMetadata.TxnTransitMetadata.class),
+                capturedErrorsCallback.capture(),
+                any(TransactionStateManager.RetryOnError.class)
+        );
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithErrorsNoneOnAddPartitionWhenNoErrorsAndPartitionsTheSame() {
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
+                        TransactionMetadata.builder()
+                                .transactionalId(transactionalId)
+                                .producerId(0)
+                                .lastProducerId(0)
+                                .producerEpoch((short) 0)
+                                .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
+                                .txnTimeoutMs(0)
+                                .state(TransactionState.EMPTY)
+                                .topicPartitions(partitions)
+                                .txnStartTimestamp(0)
+                                .txnLastUpdateTimestamp(0)
+                                .build()
+                )))).when(transactionManager).getTransactionState(eq(transactionalId));
+
+        transactionCoordinator.handleAddPartitionsToTransaction(
+                transactionalId, 0L, (short) 0, partitions, errorsCallback);
+        assertEquals(Errors.NONE, error);
+        verify(transactionManager, atLeastOnce())
+                .getTransactionState(eq(transactionalId));
     }
 
     @Test(timeOut = defaultTestTimeout)
