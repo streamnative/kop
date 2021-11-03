@@ -43,6 +43,7 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -54,6 +55,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 import lombok.Cleanup;
@@ -63,6 +65,7 @@ import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.ConsumerGroupDescription;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.RecordsToDelete;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -327,6 +330,26 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         }).collect(Collectors.toList())).all().get();
     }
 
+    private void deleteRecordsByKafkaAdmin(AdminClient admin, Map<String, Integer> topicToNumPartitions)
+            throws ExecutionException, InterruptedException {
+        Map<TopicPartition, RecordsToDelete> toDelete = new HashMap<>();
+        topicToNumPartitions.forEach((topic, numPartitions) -> {
+             try (KConsumer consumer = new KConsumer(topic, getKafkaBrokerPort());) {
+                    Collection<TopicPartition> topicPartitions = new ArrayList<>();
+                    for (int i = 0; i < numPartitions; i++) {
+                        topicPartitions.add(new TopicPartition(topic, i));
+                    }
+                 Map<TopicPartition, Long> map = consumer
+                         .getConsumer().endOffsets(topicPartitions);
+                 map.forEach((TopicPartition topicPartition, Long offset) -> {
+                        log.info("For {} we are truncating at {}", topicPartition, offset);
+                        toDelete.put(topicPartition, RecordsToDelete.beforeOffset(offset));
+                    });
+             }
+        });
+        admin.deleteRecords(toDelete).all().get();
+    }
+
     private void verifyTopicsCreatedByPulsarAdmin(Map<String, Integer> topicToNumPartitions)
             throws PulsarAdminException {
         for (Map.Entry<String, Integer> entry : topicToNumPartitions.entrySet()) {
@@ -373,6 +396,39 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         // delete
         deleteTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions.keySet());
         verifyTopicsDeletedByPulsarAdmin(topicToNumPartitions);
+    }
+
+    @Test(timeOut = 10000)
+    public void testDeleteRecords() throws Exception {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(props);
+        Map<String, Integer> topicToNumPartitions = new HashMap<String, Integer>(){{
+            put("testDeleteRecords-0", 1);
+            put("testDeleteRecords-1", 3);
+            put("my-tenant/my-ns/testDeleteRecords-2", 1);
+            put("persistent://my-tenant/my-ns/testDeleteRecords-3", 5);
+        }};
+        // create
+        createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
+        verifyTopicsCreatedByPulsarAdmin(topicToNumPartitions);
+
+
+        AtomicInteger count = new AtomicInteger();
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+        topicToNumPartitions.forEach((topic, numPartitions) -> {
+            for (int i = 0; i < numPartitions; i++) {
+                producer.send(new ProducerRecord<>(topic, i, count + "", count + ""));
+                count.incrementAndGet();
+            }
+        });
+
+        producer.close();
+
+        // delete
+        deleteRecordsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
     }
 
     @Test(timeOut = 20000)
