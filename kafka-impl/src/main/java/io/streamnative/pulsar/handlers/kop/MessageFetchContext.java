@@ -20,7 +20,7 @@ import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
+import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
@@ -497,7 +497,7 @@ public final class MessageFetchContext {
                 } else {
                     break;
                 }
-            } catch (KoPMessageMetadataNotFoundException e) {
+            } catch (MetadataCorruptedException e) {
                 log.error("[{}:{}] Failed to peek base offset from entry.",
                         entry.getLedgerId(), entry.getEntryId());
             }
@@ -546,7 +546,7 @@ public final class MessageFetchContext {
                                     lastEntry.getLength(), originalOffset, currentPosition,
                                     cursorOffset.get());
                         }
-                    } catch (KoPMessageMetadataNotFoundException e) {
+                    } catch (MetadataCorruptedException e) {
                         log.error("[{}] Failed to peekOffsetFromEntry from position {}: {}",
                                 topicPartition, currentPosition, e.getMessage());
                         messageReadStats.registerFailedEvent(

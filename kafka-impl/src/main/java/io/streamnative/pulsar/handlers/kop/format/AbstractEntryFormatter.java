@@ -18,7 +18,7 @@ import static org.apache.kafka.common.record.Records.OFFSET_OFFSET;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
+import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.io.IOException;
@@ -95,7 +95,7 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                 // and processed in KafkaApis. Here, whether it is down-conversion or the IOException
                 // in builder.appendWithOffset in decodePulsarEntryToKafkaRecords will be caught by Kafka
                 // and the KafkaException will be thrown. So we need to catch KafkaException here.
-            } catch (KoPMessageMetadataNotFoundException | IOException | KafkaException e) { // skip failed decode entry
+            } catch (MetadataCorruptedException | IOException | KafkaException e) { // skip failed decode entry
                 log.error("[{}:{}] Failed to decode entry. ", entry.getLedgerId(), entry.getEntryId(), e);
             } finally {
                 entry.release();

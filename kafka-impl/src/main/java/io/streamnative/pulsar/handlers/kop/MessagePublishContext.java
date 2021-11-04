@@ -16,7 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
-import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
+import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -40,7 +40,7 @@ public final class MessagePublishContext implements PublishContext {
     public void setMetadataFromEntryData(ByteBuf entryData) {
         try {
             baseOffset = MessageMetadataUtils.peekBaseOffset(entryData, numberOfMessages);
-        } catch (KoPMessageMetadataNotFoundException e) {
+        } catch (MetadataCorruptedException e) {
             log.error("Failed to set metadata from entry: {}", e.getMessage());
         }
     }

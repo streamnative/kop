@@ -14,7 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import io.netty.buffer.ByteBuf;
-import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
+import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import java.util.concurrent.CompletableFuture;
 import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
@@ -94,26 +94,26 @@ public class MessageMetadataUtils {
         return future;
     }
 
-    private static void checkNullEntry(Entry entry) throws KoPMessageMetadataNotFoundException {
+    private static void checkNullEntry(Entry entry) throws MetadataCorruptedException {
         if (entry == null) {
-            throw new KoPMessageMetadataNotFoundException("Unexpected null entry");
+            throw new MetadataCorruptedException("Unexpected null entry");
         }
         if (entry.getDataBuffer() == null) {
-            throw new KoPMessageMetadataNotFoundException("Unexpected null buffer in entry " + entry.getPosition());
+            throw new MetadataCorruptedException("Unexpected null buffer in entry " + entry.getPosition());
         }
     }
 
-    public static long peekOffsetFromEntry(Entry entry) throws KoPMessageMetadataNotFoundException {
+    public static long peekOffsetFromEntry(Entry entry) throws MetadataCorruptedException {
         checkNullEntry(entry);
         return unsafePeekOffsetFromEntry(entry);
     }
 
-    private static long unsafePeekOffsetFromEntry(Entry entry) throws KoPMessageMetadataNotFoundException {
+    private static long unsafePeekOffsetFromEntry(Entry entry) throws MetadataCorruptedException {
         return unsafePeekOffset(entry.getDataBuffer(), entry.getPosition());
     }
 
     private static long unsafePeekOffset(ByteBuf buf, @Nullable Position position)
-            throws KoPMessageMetadataNotFoundException {
+            throws MetadataCorruptedException {
         try {
             final BrokerEntryMetadata brokerEntryMetadata =
                     Commands.peekBrokerEntryMetadataIfExist(buf); // might throw IllegalArgumentException
@@ -123,41 +123,41 @@ public class MessageMetadataUtils {
             return brokerEntryMetadata.getIndex(); // might throw IllegalStateException
         } catch (IllegalArgumentException | IllegalStateException e) {
             // This exception could be thrown by both peekBrokerEntryMetadataIfExist or null check
-            throw new KoPMessageMetadataNotFoundException(
+            throw new MetadataCorruptedException(
                     "Failed to peekOffsetFromEntry for " + position + ": " + e.getMessage());
         }
     }
 
-    public static long peekBaseOffsetFromEntry(Entry entry) throws KoPMessageMetadataNotFoundException {
+    public static long peekBaseOffsetFromEntry(Entry entry) throws MetadataCorruptedException {
         checkNullEntry(entry);
         return peekBaseOffset(entry.getDataBuffer(), entry.getPosition());
     }
 
     private static long peekBaseOffset(ByteBuf buf, @Nullable Position position)
-            throws KoPMessageMetadataNotFoundException {
+            throws MetadataCorruptedException {
         MessageMetadata metadata = Commands.peekMessageMetadata(buf, null, 0);
 
         if (metadata == null) {
-            throw new KoPMessageMetadataNotFoundException("Failed to peekMessageMetadata for " + position);
+            throw new MetadataCorruptedException("Failed to peekMessageMetadata for " + position);
         }
 
         return peekBaseOffset(buf, position, metadata.getNumMessagesInBatch());
     }
 
     private static long peekBaseOffset(ByteBuf buf, @Nullable Position position, int numMessages)
-            throws KoPMessageMetadataNotFoundException {
+            throws MetadataCorruptedException {
         return unsafePeekOffset(buf, position) - (numMessages - 1);
     }
 
-    public static long peekBaseOffset(ByteBuf buf, int numMessages) throws KoPMessageMetadataNotFoundException {
+    public static long peekBaseOffset(ByteBuf buf, int numMessages) throws MetadataCorruptedException {
         return peekBaseOffset(buf, null, numMessages);
     }
 
-    public static MessageMetadata parseMessageMetadata(ByteBuf buf) throws KoPMessageMetadataNotFoundException {
+    public static MessageMetadata parseMessageMetadata(ByteBuf buf) throws MetadataCorruptedException {
         try {
             return Commands.parseMessageMetadata(buf);
         } catch (IllegalArgumentException e) {
-            throw new KoPMessageMetadataNotFoundException(e.getMessage());
+            throw new MetadataCorruptedException(e.getMessage());
         }
     }
 
