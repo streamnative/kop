@@ -32,14 +32,16 @@ public class OffsetSearchPredicate implements com.google.common.base.Predicate<E
 
     @Override
     public boolean apply(@Nullable Entry entry) {
+        if (entry == null) {
+            // `entry` should not be null, add the null check here to fix the spotbugs check
+            return false;
+        }
         try {
             return MessageMetadataUtils.peekOffsetFromEntry(entry) < indexToSearch;
         } catch (MetadataCorruptedException e) {
             log.error("Error deserialize message for message position find", e);
         } finally {
-            if (entry != null) { // just to ignore the warning because the null check was done in peekOffsetFromEntry
-                entry.release();
-            }
+            entry.release();
         }
         return false;
     }

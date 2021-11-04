@@ -94,25 +94,11 @@ public class MessageMetadataUtils {
         return future;
     }
 
-    private static void checkNullEntry(Entry entry) throws MetadataCorruptedException {
-        if (entry == null) {
-            throw new MetadataCorruptedException("Unexpected null entry");
-        }
-        if (entry.getDataBuffer() == null) {
-            throw new MetadataCorruptedException("Unexpected null buffer in entry " + entry.getPosition());
-        }
-    }
-
     public static long peekOffsetFromEntry(Entry entry) throws MetadataCorruptedException {
-        checkNullEntry(entry);
-        return unsafePeekOffsetFromEntry(entry);
+        return peekOffset(entry.getDataBuffer(), entry.getPosition());
     }
 
-    private static long unsafePeekOffsetFromEntry(Entry entry) throws MetadataCorruptedException {
-        return unsafePeekOffset(entry.getDataBuffer(), entry.getPosition());
-    }
-
-    private static long unsafePeekOffset(ByteBuf buf, @Nullable Position position)
+    private static long peekOffset(ByteBuf buf, @Nullable Position position)
             throws MetadataCorruptedException {
         try {
             final BrokerEntryMetadata brokerEntryMetadata =
@@ -129,7 +115,6 @@ public class MessageMetadataUtils {
     }
 
     public static long peekBaseOffsetFromEntry(Entry entry) throws MetadataCorruptedException {
-        checkNullEntry(entry);
         return peekBaseOffset(entry.getDataBuffer(), entry.getPosition());
     }
 
@@ -146,7 +131,7 @@ public class MessageMetadataUtils {
 
     private static long peekBaseOffset(ByteBuf buf, @Nullable Position position, int numMessages)
             throws MetadataCorruptedException {
-        return unsafePeekOffset(buf, position) - (numMessages - 1);
+        return peekOffset(buf, position) - (numMessages - 1);
     }
 
     public static long peekBaseOffset(ByteBuf buf, int numMessages) throws MetadataCorruptedException {
