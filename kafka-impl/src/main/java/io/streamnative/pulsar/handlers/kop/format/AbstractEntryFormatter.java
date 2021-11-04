@@ -20,7 +20,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
 import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
-import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.io.IOException;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +32,6 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.KeyValue;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
-import org.apache.pulsar.common.protocol.Commands;
 
 @Slf4j
 public abstract class AbstractEntryFormatter implements EntryFormatter {
@@ -50,9 +49,9 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
         ByteBuf batchedByteBuf = PulsarByteBufAllocator.DEFAULT.directBuffer(totalSize);
         for (Entry entry : entries) {
             try {
-                long startOffset = MessageIdUtils.peekBaseOffsetFromEntry(entry);
+                long startOffset = MessageMetadataUtils.peekBaseOffsetFromEntry(entry);
                 final ByteBuf byteBuf = entry.getDataBuffer();
-                final MessageMetadata metadata = Commands.parseMessageMetadata(byteBuf);
+                final MessageMetadata metadata = MessageMetadataUtils.parseMessageMetadata(byteBuf);
                 if (isKafkaEntryFormat(metadata)) {
                     byte batchMagic = byteBuf.getByte(byteBuf.readerIndex() + MAGIC_OFFSET);
                     byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);

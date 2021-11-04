@@ -26,7 +26,7 @@ import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
-import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
@@ -294,7 +294,7 @@ public final class MessageFetchContext {
                                           long startPrepareMetadataNanos) {
         // handle offset out-of-range exception
         ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) tcm.getManagedLedger();
-        long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
+        long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
         // TODO: Offset out-of-range checks are still incomplete
         // We only check the case of `offset > logEndOffset` and `offset < LogStartOffset`
         // is currently not handled.
@@ -401,7 +401,7 @@ public final class MessageFetchContext {
                                final ManagedCursor cursor,
                                final AtomicLong cursorOffset,
                                final boolean readCommitted) {
-        final long highWatermark = MessageIdUtils.getHighWatermark(cursor.getManagedLedger());
+        final long highWatermark = MessageMetadataUtils.getHighWatermark(cursor.getManagedLedger());
         // Add new offset back to TCM after entries are read successfully
         tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
 
@@ -492,7 +492,7 @@ public final class MessageFetchContext {
         committedEntries = new ArrayList<>();
         for (Entry entry : entries) {
             try {
-                if (lso >= MessageIdUtils.peekBaseOffsetFromEntry(entry)) {
+                if (lso >= MessageMetadataUtils.peekBaseOffsetFromEntry(entry)) {
                     committedEntries.add(entry);
                 } else {
                     break;
@@ -530,7 +530,7 @@ public final class MessageFetchContext {
                             lastEntry.getLedgerId(), lastEntry.getEntryId());
 
                     try {
-                        final long lastOffset = MessageIdUtils.peekOffsetFromEntry(lastEntry);
+                        final long lastOffset = MessageMetadataUtils.peekOffsetFromEntry(lastEntry);
 
                         // commit the offset, so backlog not affect by this cursor.
                         commitOffset((NonDurableCursorImpl) cursor, currentPosition);
@@ -546,9 +546,9 @@ public final class MessageFetchContext {
                                     lastEntry.getLength(), originalOffset, currentPosition,
                                     cursorOffset.get());
                         }
-                    } catch (Exception e) {
-                        log.error("[{}] Failed to peekOffsetFromEntry from position {}",
-                                topicPartition, currentPosition);
+                    } catch (KoPMessageMetadataNotFoundException e) {
+                        log.error("[{}] Failed to peekOffsetFromEntry from position {}: {}",
+                                topicPartition, currentPosition, e.getMessage());
                         messageReadStats.registerFailedEvent(
                                 MathUtils.elapsedNanos(startReadingMessagesNanos), TimeUnit.NANOSECONDS);
                         readFuture.completeExceptionally(e);

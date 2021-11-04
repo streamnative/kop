@@ -13,9 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
 import org.apache.bookkeeper.mledger.Entry;
-import org.apache.pulsar.common.api.proto.BrokerEntryMetadata;
-import org.apache.pulsar.common.protocol.Commands;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,13 +33,13 @@ public class OffsetSearchPredicate implements com.google.common.base.Predicate<E
     @Override
     public boolean apply(@Nullable Entry entry) {
         try {
-            BrokerEntryMetadata brokerEntryMetadata =
-                    Commands.parseBrokerEntryMetadataIfExist(entry.getDataBuffer());
-            return brokerEntryMetadata.getIndex() < indexToSearch;
-        } catch (Exception e) {
+            return MessageMetadataUtils.peekOffsetFromEntry(entry) < indexToSearch;
+        } catch (KoPMessageMetadataNotFoundException e) {
             log.error("Error deserialize message for message position find", e);
         } finally {
-            entry.release();
+            if (entry != null) { // just to ignore the warning because the null check was done in peekOffsetFromEntry
+                entry.release();
+            }
         }
         return false;
     }

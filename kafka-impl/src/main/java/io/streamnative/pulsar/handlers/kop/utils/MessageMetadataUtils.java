@@ -16,15 +16,17 @@ package io.streamnative.pulsar.handlers.kop.utils;
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPMessageMetadataNotFoundException;
 import java.util.concurrent.CompletableFuture;
-import lombok.NonNull;
+import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.intercept.ManagedLedgerInterceptorImpl;
+import org.apache.pulsar.common.api.proto.BrokerEntryMetadata;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 
@@ -32,7 +34,7 @@ import org.apache.pulsar.common.protocol.Commands;
  * Utils for Pulsar MessageId.
  */
 @Slf4j
-public class MessageIdUtils {
+public class MessageMetadataUtils {
 
     public static long getCurrentOffset(ManagedLedger managedLedger) {
         return ((ManagedLedgerInterceptorImpl) managedLedger.getManagedLedgerInterceptor()).getIndex();
@@ -92,19 +94,71 @@ public class MessageIdUtils {
         return future;
     }
 
-    public static long peekOffsetFromEntry(Entry entry) {
-        return Commands.peekBrokerEntryMetadataIfExist(entry.getDataBuffer()).getIndex();
+    private static void checkNullEntry(Entry entry) throws KoPMessageMetadataNotFoundException {
+        if (entry == null) {
+            throw new KoPMessageMetadataNotFoundException("Unexpected null entry");
+        }
+        if (entry.getDataBuffer() == null) {
+            throw new KoPMessageMetadataNotFoundException("Unexpected null buffer in entry " + entry.getPosition());
+        }
     }
 
-    public static long peekBaseOffsetFromEntry(@NonNull Entry entry) throws KoPMessageMetadataNotFoundException {
-        MessageMetadata metadata = Commands.peekMessageMetadata(entry.getDataBuffer(), null, 0);
+    public static long peekOffsetFromEntry(Entry entry) throws KoPMessageMetadataNotFoundException {
+        checkNullEntry(entry);
+        return unsafePeekOffsetFromEntry(entry);
+    }
+
+    private static long unsafePeekOffsetFromEntry(Entry entry) throws KoPMessageMetadataNotFoundException {
+        return unsafePeekOffset(entry.getDataBuffer(), entry.getPosition());
+    }
+
+    private static long unsafePeekOffset(ByteBuf buf, @Nullable Position position)
+            throws KoPMessageMetadataNotFoundException {
+        try {
+            final BrokerEntryMetadata brokerEntryMetadata =
+                    Commands.peekBrokerEntryMetadataIfExist(buf); // might throw IllegalArgumentException
+            if (brokerEntryMetadata == null) {
+                throw new IllegalArgumentException("No BrokerEntryMetadata found");
+            }
+            return brokerEntryMetadata.getIndex(); // might throw IllegalStateException
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            // This exception could be thrown by both peekBrokerEntryMetadataIfExist or null check
+            throw new KoPMessageMetadataNotFoundException(
+                    "Failed to peekOffsetFromEntry for " + position + ": " + e.getMessage());
+        }
+    }
+
+    public static long peekBaseOffsetFromEntry(Entry entry) throws KoPMessageMetadataNotFoundException {
+        checkNullEntry(entry);
+        return peekBaseOffset(entry.getDataBuffer(), entry.getPosition());
+    }
+
+    private static long peekBaseOffset(ByteBuf buf, @Nullable Position position)
+            throws KoPMessageMetadataNotFoundException {
+        MessageMetadata metadata = Commands.peekMessageMetadata(buf, null, 0);
 
         if (metadata == null) {
-            throw new KoPMessageMetadataNotFoundException("[" + entry.getLedgerId() + ":" + entry.getEntryId()
-                    + "] Failed to peek offset from entry");
+            throw new KoPMessageMetadataNotFoundException("Failed to peekMessageMetadata for " + position);
         }
 
-        return peekOffsetFromEntry(entry) - metadata.getNumMessagesInBatch() + 1;
+        return peekBaseOffset(buf, position, metadata.getNumMessagesInBatch());
+    }
+
+    private static long peekBaseOffset(ByteBuf buf, @Nullable Position position, int numMessages)
+            throws KoPMessageMetadataNotFoundException {
+        return unsafePeekOffset(buf, position) - (numMessages - 1);
+    }
+
+    public static long peekBaseOffset(ByteBuf buf, int numMessages) throws KoPMessageMetadataNotFoundException {
+        return peekBaseOffset(buf, null, numMessages);
+    }
+
+    public static MessageMetadata parseMessageMetadata(ByteBuf buf) throws KoPMessageMetadataNotFoundException {
+        try {
+            return Commands.parseMessageMetadata(buf);
+        } catch (IllegalArgumentException e) {
+            throw new KoPMessageMetadataNotFoundException(e.getMessage());
+        }
     }
 
     public static long getMockOffset(long ledgerId, long entryId) {
