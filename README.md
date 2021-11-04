@@ -37,12 +37,14 @@ Since Pulsar 2.6.2, KoP version changes with Pulsar version accordingly. The ver
 
 | KoP version | Pulsar version |
 | :---------- | :------------- |
-| [2.8.0](https://github.com/streamnative/kop/releases/tag/v2.8.0) |Pulsar 2.8.0|
-| [2.7.0](https://github.com/streamnative/kop/releases/tag/v2.7.0) |Pulsar 2.7.0|
-| [2.6.2](https://github.com/streamnative/kop/releases/tag/v2.6.2) |Pulsar 2.6.2|
-| [0.3.0](https://github.com/streamnative/kop/releases/tag/v0.3.0) |Pulsar 2.6.1|
-| [0.2.0](https://github.com/streamnative/kop/releases/tag/v0.2.0) |Pulsar 2.5.0|
-| [0.1.0](https://github.com/streamnative/kop/releases/tag/v0.1.0) |Pulsar 2.5.0|
+| [2.8.1](https://github.com/streamnative/kop/releases/tag/v2.8.1.0) |Pulsar 2.8.1|
+| [2.8.0](https://github.com/streamnative/kop/releases/tag/v2.8.0.1) |Pulsar 2.8.0|
+
+**We highly recommend using KoP 2.8.0 or higher.** You can also find other releases from [here](https://github.com/streamnative/kop/releases), including the old versions.
+
+## Upgrade
+
+**It should be noted that there's a breaking change from version less than 2.8.0 to version 2.8.0 or higher.** See [upgrade.md](docs/upgrade.md) for details.
 
 ## Known Compatibility Issues
 KoP-2.8.0.13, 2.8.0.14, 2.8.0.15 and 2.8.0.16 minor versions with Pulsar-2.8.0 have a known compatibility issue [KoP-768](https://github.com/streamnative/kop/issues/768).
@@ -51,6 +53,7 @@ KoP-2.8.0.13, 2.8.0.14, 2.8.0.15 and 2.8.0.16 minor versions with Pulsar-2.8.0 h
 You can configure and manage KoP based on your requirements. Check the following guides for more details.
 - [Quick Start](docs/kop.md)
 - [Configure KoP](docs/configuration.md)
+- [Upgrade](docs/upgrade.md)
 - [Secure KoP](docs/security.md)
 - [Manage KoP with the Envoy proxy](docs/envoy-proxy.md)
 - [Implementation: How to converse Pulsar and Kafka](docs/implementation.md)
