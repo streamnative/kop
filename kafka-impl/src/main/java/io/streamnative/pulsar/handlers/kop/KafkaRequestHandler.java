@@ -376,7 +376,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void channelPrepare(ChannelHandlerContext ctx,
                                   ByteBuf requestBuf,
                                   BiConsumer<Long, Throwable> registerRequestParseLatency,
-                                  BiConsumer<String, Long> registerRequestLatency)
+                                  BiConsumer<ApiKeys, Long> registerRequestLatency)
             throws AuthenticationException {
         if (authenticator != null) {
             authenticator.authenticate(ctx, requestBuf, registerRequestParseLatency, registerRequestLatency,
