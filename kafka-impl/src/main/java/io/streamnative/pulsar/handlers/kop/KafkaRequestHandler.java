@@ -1051,8 +1051,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             validRecords.batches().forEach(batch->{
                 if (batch.sizeInBytes() > kafkaConfig.getMaxMessageSize()) {
-                    throw new RecordTooLargeException(String.format("Message batch size is %s in append to partition %s which" +
-                            " exceeds the maximum configured size of %s .", batch.sizeInBytes(),topicPartition,kafkaConfig.getMaxMessageSize()));
+                    throw new RecordTooLargeException(String.format("Message batch size is %s "
+                                    + "in append to partition %s which exceeds the maximum configured size of %s .",
+                            batch.sizeInBytes(), topicPartition, kafkaConfig.getMaxMessageSize()));
                 }
             });
 
