@@ -19,7 +19,9 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.Transa
 import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState.PREPARE_EPOCH_FENCE;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
+
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
@@ -230,48 +232,71 @@ public class TransactionCoordinator {
             CompletableFuture<ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>>>
                     epochAndTxnMetaFuture = new CompletableFuture<>();
             if (!existMeta.getData().isPresent()) {
-                producerIdManager.generateProducerId().whenComplete((pid, throwable) -> {
-                    short producerEpoch = 0;
-                    if (throwable != null) {
-                        responseCallback.accept(new InitProducerIdResult(
-                                -1L,
-                                producerEpoch
-                                , Errors.UNKNOWN_SERVER_ERROR));
-                        return;
-                    }
-                    TransactionMetadata newMetadata = TransactionMetadata.builder()
-                            .transactionalId(transactionalId)
-                            .producerId(pid)
-                            .producerEpoch(producerEpoch)
-                            .state(TransactionState.EMPTY)
-                            .topicPartitions(new HashSet<>())
-                            .txnLastUpdateTimestamp(time.milliseconds())
-                            .build();
-                    epochAndTxnMetaFuture.complete(txnManager.putTransactionStateIfNotExists(newMetadata));
-                });
+                if (existMeta.hasErrors()) {
+                    epochAndTxnMetaFuture.complete(existMeta);
+                } else {
+                    producerIdManager.generateProducerId().whenComplete((pid, throwable) -> {
+                        short producerEpoch = 0;
+                        if (throwable != null) {
+                            responseCallback.accept(new InitProducerIdResult(
+                                    -1L,
+                                    producerEpoch
+                                    , Errors.UNKNOWN_SERVER_ERROR));
+                            return;
+                        }
+                        TransactionMetadata newMetadata = TransactionMetadata.builder()
+                                .transactionalId(transactionalId)
+                                .producerId(pid)
+                                .lastProducerId(RecordBatch.NO_PRODUCER_ID)
+                                .producerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
+                                .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
+                                .state(TransactionState.EMPTY)
+                                .topicPartitions(Sets.newHashSet())
+                                .txnLastUpdateTimestamp(time.milliseconds())
+                                .build();
+                        epochAndTxnMetaFuture.complete(txnManager.putTransactionStateIfNotExists(newMetadata));
+                    });
+                }
             } else {
                 epochAndTxnMetaFuture.complete(existMeta);
             }
 
-            epochAndTxnMetaFuture.whenComplete((epochAndTxnMeta, throwable) -> {
-                int coordinatorEpoch = epochAndTxnMeta.getData().get().getCoordinatorEpoch();
-                TransactionMetadata txnMetadata = epochAndTxnMeta.getData().get().getTransactionMetadata();
+            epochAndTxnMetaFuture.thenAccept(epochAndTxnMeta -> {
+                if (epochAndTxnMeta.hasErrors()) {
+                    responseCallback.accept(initTransactionError(epochAndTxnMeta.getErrors()));
+                    return;
+                }
+                Optional<CoordinatorEpochAndTxnMetadata> data = epochAndTxnMeta.getData();
+                if (data.isPresent()) {
+                    int coordinatorEpoch = data.get().getCoordinatorEpoch();
+                    TransactionMetadata txnMetadata = data.get().getTransactionMetadata();
 
-                txnMetadata.inLock(() -> {
-                    CompletableFuture<ErrorsAndData<EpochAndTxnTransitMetadata>> prepareInitProducerIdResult =
-                            prepareInitProducerIdTransit(
-                                transactionalId,
-                                transactionTimeoutMs,
-                                coordinatorEpoch,
-                                txnMetadata,
-                                expectedProducerIdAndEpoch);
+                    txnMetadata.inLock(() -> {
+                        CompletableFuture<ErrorsAndData<EpochAndTxnTransitMetadata>> prepareInitProducerIdResult =
+                                prepareInitProducerIdTransit(
+                                        transactionalId,
+                                        transactionTimeoutMs,
+                                        coordinatorEpoch,
+                                        txnMetadata,
+                                        expectedProducerIdAndEpoch);
 
-                    prepareInitProducerIdResult.whenComplete((errorsAndData, prepareThrowable) -> {
-                        completeInitProducer(
-                                transactionalId, coordinatorEpoch, errorsAndData, prepareThrowable, responseCallback);
+                        prepareInitProducerIdResult.whenComplete((errorsAndData, prepareThrowable) -> {
+                            completeInitProducer(
+                                    transactionalId,
+                                    coordinatorEpoch,
+                                    errorsAndData,
+                                    prepareThrowable,
+                                    responseCallback);
+                        });
+                        return null;
                     });
-                    return null;
-                });
+                } else {
+                    responseCallback.accept(initTransactionError(Errors.UNKNOWN_SERVER_ERROR));
+                }
+            }).exceptionally(ex -> {
+                log.error("Get epoch and TxnMetadata failed.", ex);
+                responseCallback.accept(initTransactionError(Errors.forException(ex.getCause())));
+                return null;
             });
 
         }
