@@ -458,7 +458,7 @@ public class TransactionStateManager {
             } else {
                 Map<String, TransactionMetadata> metadataMap = transactionMetadataCache.get(partitionId);
                 if (metadataMap == null) {
-                    return new ErrorsAndData<>(Errors.NOT_COORDINATOR);
+                    return new ErrorsAndData<>(Errors.NOT_COORDINATOR, Optional.empty());
                 }
                 Optional<TransactionMetadata> txnMetadata;
                 TransactionMetadata txnMetadataCache = metadataMap.get(transactionalId);
@@ -476,7 +476,7 @@ public class TransactionStateManager {
                 return txnMetadata
                         .map(metadata -> new ErrorsAndData<>(
                                 Optional.of(new CoordinatorEpochAndTxnMetadata(-1, metadata))))
-                        .orElseGet(() -> new ErrorsAndData<>(Optional.empty()));
+                        .orElseGet(() -> new ErrorsAndData<>(Errors.NONE, Optional.empty()));
             }
         });
     }

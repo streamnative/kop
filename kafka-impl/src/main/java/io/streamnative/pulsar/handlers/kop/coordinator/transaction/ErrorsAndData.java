@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.apache.kafka.common.protocol.Errors;
 
@@ -20,6 +21,7 @@ import org.apache.kafka.common.protocol.Errors;
  * Errors and data.
  */
 @Data
+@AllArgsConstructor
 public class ErrorsAndData<T> {
 
     private Errors errors;
