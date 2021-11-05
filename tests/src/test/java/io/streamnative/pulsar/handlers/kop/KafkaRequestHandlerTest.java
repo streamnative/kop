@@ -20,6 +20,8 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
@@ -79,6 +81,7 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.InvalidPartitionsException;
 import org.apache.kafka.common.errors.InvalidRequestException;
 import org.apache.kafka.common.errors.InvalidTopicException;
+import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
@@ -97,6 +100,7 @@ import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Time;
@@ -1056,6 +1060,52 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertTrue(topicDescriptionMap.containsKey(topic));
         assertEquals(numPartitions, topicDescriptionMap.get(topic).partitions().size());
 
+    }
+
+    @Test
+    public void testMaxMessageSize() throws PulsarAdminException {
+        String topicName = "testMaxMessageSizeTopic";
+
+        // create partitioned topic.
+        admin.topics().createPartitionedTopic(topicName, 1);
+        TopicPartition tp = new TopicPartition(topicName, 0);
+
+        // producing data and then consuming.
+        Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + getKafkaBrokerPort());
+        props.put(ProducerConfig.CLIENT_ID_CONFIG, "testMaxMessageSize");
+        //set max request size 7M
+        props.put(ProducerConfig.MAX_REQUEST_SIZE_CONFIG, "7340124");
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+        KafkaProducer<String, byte[]> producer = new KafkaProducer<>(props);
+
+        Throwable causeException = null;
+        //send record size is 3M
+        try {
+            producer.send(new ProducerRecord<>(
+                    tp.topic(),
+                    tp.partition(),
+                    "null",
+                    new byte[1024 * 1024 * 3])).get();
+        } catch (Throwable e) {
+            causeException = e.getCause();
+        }
+        assertNull(causeException);
+
+        //send record size is 6M > default 5M
+        try {
+            producer.send(new ProducerRecord<>(
+                    tp.topic(),
+                    tp.partition(),
+                    "null",
+                    new byte[1024 * 1024 * 6])
+            ).get();
+        } catch (Throwable e) {
+            causeException = e.getCause();
+        }
+        assertNotNull(causeException);
+        assertTrue(causeException instanceof RecordTooLargeException);
     }
 
 }

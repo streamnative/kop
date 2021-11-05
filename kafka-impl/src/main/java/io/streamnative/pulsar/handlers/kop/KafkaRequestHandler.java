@@ -105,6 +105,7 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
+import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.ControlRecordType;
@@ -1061,6 +1062,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             final long beforeRecordsProcess = MathUtils.nowInNano();
             final MemoryRecords validRecords =
                     validateRecords(produceHar.getHeader().apiVersion(), topicPartition, records);
+
+            validRecords.batches().forEach(batch->{
+                if (batch.sizeInBytes() > kafkaConfig.getMaxMessageSize()) {
+                    throw new RecordTooLargeException(String.format("Message batch size is %s "
+                                    + "in append to partition %s which exceeds the maximum configured size of %s .",
+                            batch.sizeInBytes(), topicPartition, kafkaConfig.getMaxMessageSize()));
+                }
+            });
 
             final CompletableFuture<Optional<PersistentTopic>> topicFuture =
                     topicManager.getTopic(fullPartitionName);

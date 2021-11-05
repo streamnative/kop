@@ -213,6 +213,13 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
+            doc = "The largest record batch size allowed by Kop, \n"
+                    + "like max.message.bytes in kafka.\n"
+    )
+    private int maxMessageSize = 5 * 1024 * 1024;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
             doc = "limit the timeout for request, \n"
                 + "like request.timeout.ms in kafka\n"
     )
