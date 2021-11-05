@@ -16,10 +16,10 @@ package io.streamnative.pulsar.handlers.kop.exceptions;
 /**
  * Exception is thrown when message metadata is not found in KoP.
  */
-public class KoPMessageMetadataNotFoundException extends KoPBaseException {
+public class MetadataCorruptedException extends KoPBaseException {
     private static final long serialVersionUID = 0L;
 
-    public KoPMessageMetadataNotFoundException(String message) {
+    public MetadataCorruptedException(String message) {
         super(message);
     }
 }

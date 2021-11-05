@@ -16,13 +16,13 @@ package io.streamnative.pulsar.handlers.kop;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
+import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
+import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.Topic.PublishContext;
-import org.apache.pulsar.common.api.proto.BrokerEntryMetadata;
-import org.apache.pulsar.common.protocol.Commands;
 
 /**
  * Implementation for PublishContext.
@@ -33,26 +33,15 @@ public final class MessagePublishContext implements PublishContext {
     private CompletableFuture<Long> offsetFuture;
     private Topic topic;
     private long startTimeNs;
-    private long numberOfMessages;
+    private int numberOfMessages;
     private long baseOffset = -1L;
 
     @Override
     public void setMetadataFromEntryData(ByteBuf entryData) {
         try {
-            final BrokerEntryMetadata brokerEntryMetadata = Commands.peekBrokerEntryMetadataIfExist(entryData);
-            if (brokerEntryMetadata == null) {
-                throw new IllegalStateException("There's no BrokerEntryData, "
-                        + "check if your broker has configured brokerEntryMetadataInterceptors");
-            }
-            if (!brokerEntryMetadata.hasIndex()) {
-                throw new IllegalStateException("The BrokerEntryData has no 'index' field, check if "
-                        + "your broker configured AppendIndexMetadataInterceptor");
-            }
-            baseOffset = brokerEntryMetadata.getIndex() - (numberOfMessages - 1);
-        } catch (IllegalStateException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Failed to set metadata from entry", e);
+            baseOffset = MessageMetadataUtils.peekBaseOffset(entryData, numberOfMessages);
+        } catch (MetadataCorruptedException e) {
+            log.error("Failed to set metadata from entry: {}", e.getMessage());
         }
     }
 
@@ -87,7 +76,7 @@ public final class MessagePublishContext implements PublishContext {
     // recycler
     public static MessagePublishContext get(CompletableFuture<Long> offsetFuture,
                                             Topic topic,
-                                            long numberOfMessages,
+                                            int numberOfMessages,
                                             long startTimeNs) {
         MessagePublishContext callback = RECYCLER.get();
         callback.offsetFuture = offsetFuture;

@@ -33,7 +33,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.Commi
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
-import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -541,7 +541,7 @@ public class GroupMetadataManager {
             .thenApplyAsync(messageId -> {
                 if (!group.is(GroupState.Dead)) {
                     MessageIdImpl lastMessageId = (MessageIdImpl) messageId;
-                    long baseOffset = MessageIdUtils.getMockOffset(
+                    long baseOffset = MessageMetadataUtils.getMockOffset(
                         lastMessageId.getLedgerId(),
                         lastMessageId.getEntryId()
                     );

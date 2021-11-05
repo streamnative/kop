@@ -62,7 +62,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
                     return false;
                 }
                 try {
-                    return MessageIdUtils.getPublishTime(entry.getDataBuffer()) <= timestamp;
+                    return MessageMetadataUtils.getPublishTime(entry.getDataBuffer()) <= timestamp;
                 } catch (Exception e) {
                     log.error("[{}] Error deserialize message for message position find", managedLedger.getName(), e);
                 } finally {
