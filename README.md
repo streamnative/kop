@@ -40,7 +40,7 @@ Since Pulsar 2.6.2, KoP version changes with Pulsar version accordingly. The ver
 | [2.8.1](https://github.com/streamnative/kop/releases/tag/v2.8.1.0) |Pulsar 2.8.1|
 | [2.8.0](https://github.com/streamnative/kop/releases/tag/v2.8.0.1) |Pulsar 2.8.0|
 
-**We highly recommend using KoP 2.8.0 or higher.** You can also find other releases from [here](https://github.com/streamnative/kop/releases), including the old versions.
+**It is highly recommended to use KoP 2.8.0 or higher because there is a breaking change since KoP 2.8.0. For details, see [upgrade.md](docs/upgrade.md).**
 
 ## Upgrade
 
