@@ -13,9 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import org.apache.bookkeeper.mledger.Entry;
-import org.apache.pulsar.common.api.proto.BrokerEntryMetadata;
-import org.apache.pulsar.common.protocol.Commands;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,11 +32,13 @@ public class OffsetSearchPredicate implements com.google.common.base.Predicate<E
 
     @Override
     public boolean apply(@Nullable Entry entry) {
+        if (entry == null) {
+            // `entry` should not be null, add the null check here to fix the spotbugs check
+            return false;
+        }
         try {
-            BrokerEntryMetadata brokerEntryMetadata =
-                    Commands.parseBrokerEntryMetadataIfExist(entry.getDataBuffer());
-            return brokerEntryMetadata.getIndex() < indexToSearch;
-        } catch (Exception e) {
+            return MessageMetadataUtils.peekOffsetFromEntry(entry) < indexToSearch;
+        } catch (MetadataCorruptedException e) {
             log.error("Error deserialize message for message position find", e);
         } finally {
             entry.release();
