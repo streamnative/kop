@@ -60,7 +60,6 @@ public class TransactionStateManager {
     private final SystemTopicClient txnTopicClient;
     private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
-    private final AtomicBoolean loading = new AtomicBoolean(false);
 
     // Number of partitions for the transaction log topic.
     private final int transactionTopicPartitionCount;
@@ -86,7 +85,7 @@ public class TransactionStateManager {
 
     @VisibleForTesting
     protected boolean isLoading() {
-        return this.loading.get();
+        return !this.loadingPartitions.isEmpty();
     }
 
 
@@ -452,9 +451,9 @@ public class TransactionStateManager {
             Optional<TransactionMetadata> createdTxnMetadataOpt) {
         return CoreUtils.inReadLock(stateLock, () -> {
             int partitionId = partitionFor(transactionalId);
-            if (loadingPartitions.stream().anyMatch(partition -> partition == partitionId)) {
+            if (loadingPartitions.contains(partitionId)) {
                 return new ErrorsAndData<>(Errors.COORDINATOR_LOAD_IN_PROGRESS);
-            } else if (leavingPartitions.stream().anyMatch(partition -> partition == partitionId)) {
+            } else if (leavingPartitions.contains(partitionId)) {
                 return new ErrorsAndData<>(Errors.NOT_COORDINATOR);
             } else {
                 Map<String, TransactionMetadata> metadataMap = transactionMetadataCache.get(partitionId);
@@ -496,13 +495,18 @@ public class TransactionStateManager {
                                                                 SendTxnMarkersCallback sendTxnMarkers) {
         TopicPartition topicPartition = new TopicPartition(Topic.TRANSACTION_STATE_TOPIC_NAME, partitionId);
 
-        CoreUtils.inWriteLock(stateLock, () -> {
+        boolean alreadyLoading = CoreUtils.inWriteLock(stateLock, () -> {
             leavingPartitions.remove(partitionId);
-            loadingPartitions.add(partitionId);
+            boolean partitionAlreadyLoading = !loadingPartitions.add(partitionId);
             transactionMetadataCache.putIfAbsent(topicPartition.partition(), Maps.newConcurrentMap());
-            loading.set(true);
-            return null;
+            return partitionAlreadyLoading;
         });
+        if (alreadyLoading) {
+            log.error("Partition {} is already loading", partitionId);
+            return FutureUtil
+                    .failedFuture(new IllegalStateException("Partition " + partitionId + " is already loading"));
+        }
+        log.info("Partition {} start loading", partitionId);
 
         long startTimeMs = SystemTime.SYSTEM.milliseconds();
         return getProducer(topicPartition.partition())
@@ -519,7 +523,7 @@ public class TransactionStateManager {
                         completeLoadedTransactions(topicPartition, startTimeMs, sendTxnMarkers))
                 .exceptionally(ex -> {
                     log.error("Error to load transactions exceptions : [{}]", ex.getMessage());
-                    loading.set(false);
+                    loadingPartitions.remove(partitionId);
                     return null;
                 });
     }
@@ -634,9 +638,6 @@ public class TransactionStateManager {
             loadingPartitions.remove(topicPartition.partition());
             return null;
         });
-        if (!loading.compareAndSet(true, false)) {
-            log.error("Completed with error stat.");
-        }
         log.info("Completed loading transaction metadata from {}", topicPartition);
     }
 
