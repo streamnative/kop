@@ -54,7 +54,7 @@ import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaRequestUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
-import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
+import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
@@ -1080,7 +1080,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 final EncodeRequest encodeRequest = EncodeRequest.get(validRecords);
                 if (entryFormatter instanceof KafkaMixedEntryFormatter) {
                     final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
-                    final long logEndOffset = MessageIdUtils.getLogEndOffset(managedLedger);
+                    final long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
                     encodeRequest.setBaseOffset(logEndOffset);
                 }
 
@@ -1307,7 +1307,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     log.debug("Get latest position for topic {} time {}. result: {}",
                         perTopic.getName(), timestamp, position);
                 }
-                long offset = MessageIdUtils.getLogEndOffset(managedLedger);
+                long offset = MessageMetadataUtils.getLogEndOffset(managedLedger);
                 partitionData.complete(Pair.of(Errors.NONE, offset));
 
             } else if (timestamp == ListOffsetRequest.EARLIEST_TIMESTAMP) {
@@ -1317,11 +1317,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     log.debug("Get earliest position for topic {} time {}. result: {}",
                         perTopic.getName(), timestamp, position);
                 }
-                if (position.compareTo(lac) > 0 || MessageIdUtils.getCurrentOffset(managedLedger) < 0) {
-                    long offset = Math.max(0, MessageIdUtils.getCurrentOffset(managedLedger));
+                if (position.compareTo(lac) > 0 || MessageMetadataUtils.getCurrentOffset(managedLedger) < 0) {
+                    long offset = Math.max(0, MessageMetadataUtils.getCurrentOffset(managedLedger));
                     partitionData.complete(Pair.of(Errors.NONE, offset));
                 } else {
-                    MessageIdUtils.getOffsetOfPosition(managedLedger, position, false, timestamp)
+                    MessageMetadataUtils.getOffsetOfPosition(managedLedger, position, false, timestamp)
                             .whenComplete((offset, throwable) -> {
                                 if (throwable != null) {
                                     log.error("[{}] Failed to get offset for position {}",
@@ -1371,11 +1371,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             topic, timestamp, finalPosition);
                 }
 
-                if (finalPosition.compareTo(lac) > 0 || MessageIdUtils.getCurrentOffset(managedLedger) < 0) {
-                    long offset = Math.max(0, MessageIdUtils.getCurrentOffset(managedLedger));
+                if (finalPosition.compareTo(lac) > 0 || MessageMetadataUtils.getCurrentOffset(managedLedger) < 0) {
+                    long offset = Math.max(0, MessageMetadataUtils.getCurrentOffset(managedLedger));
                     partitionData.complete(Pair.of(Errors.NONE, offset));
                 } else {
-                    MessageIdUtils.getOffsetOfPosition(managedLedger, finalPosition, true, timestamp)
+                    MessageMetadataUtils.getOffsetOfPosition(managedLedger, finalPosition, true, timestamp)
                             .whenComplete((offset, throwable) -> {
                                 if (throwable != null) {
                                     log.error("[{}] Failed to get offset for position {}",
