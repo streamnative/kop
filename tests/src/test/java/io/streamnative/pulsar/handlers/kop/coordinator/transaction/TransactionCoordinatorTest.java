@@ -22,10 +22,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.internal.verification.VerificationModeFactory.atLeastOnce;
-import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
-import static org.testng.Assert.assertNotNull;
-import static org.testng.Assert.assertTrue;
+import static org.testng.AssertJUnit.assertEquals;
+import static org.testng.AssertJUnit.assertNotNull;
+import static org.testng.AssertJUnit.assertTrue;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
@@ -41,12 +41,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.curator.shaded.com.google.common.collect.Lists;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.mockito.ArgumentCaptor;
 import org.testng.annotations.AfterClass;
@@ -543,6 +545,404 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         verify(transactionManager, atLeastOnce())
                 .getTransactionState(eq(transactionalId));
     }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldReplyWithInvalidPidMappingOnEndTxnWhenTxnIdDoesntExist() {
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.empty()))
+                .when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleEndTransaction(
+                transactionalId,
+                0,
+                (short) 0,
+                TransactionResult.COMMIT,
+                errorsCallback);
+        assertEquals(Errors.INVALID_PRODUCER_ID_MAPPING, error);
+        verify(transactionManager, atLeastOnce())
+                .getTransactionState(eq(transactionalId));
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldReplyWithInvalidPidMappingOnEndTxnWhenPidDosentMatchMapped() {
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
+                        TransactionMetadata.builder()
+                                .transactionalId(transactionalId)
+                                .producerId(10)
+                                .lastProducerId(10)
+                                .producerEpoch((short) 0)
+                                .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
+                                .txnTimeoutMs(0)
+                                .state(TransactionState.EMPTY)
+                                .topicPartitions(Collections.emptySet())
+                                .txnStartTimestamp(0)
+                                .txnLastUpdateTimestamp(time.milliseconds())
+                                .build()
+                )))).when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleEndTransaction(
+                transactionalId,
+                0,
+                (short) 0,
+                TransactionResult.COMMIT,
+                errorsCallback);
+        assertEquals(Errors.INVALID_PRODUCER_ID_MAPPING, error);
+        verify(transactionManager, atLeastOnce())
+                .getTransactionState(eq(transactionalId));
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldReplyWithProducerFencedOnEndTxnWhenEpochIsNotSameAsTransaction() {
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
+                        TransactionMetadata.builder()
+                                .transactionalId(transactionalId)
+                                .producerId(producerId)
+                                .lastProducerId(producerId)
+                                .producerEpoch(producerEpoch)
+                                .lastProducerEpoch((short) (producerEpoch - 1))
+                                .txnTimeoutMs(1)
+                                .state(TransactionState.ONGOING)
+                                .topicPartitions(Collections.emptySet())
+                                .txnStartTimestamp(0)
+                                .txnLastUpdateTimestamp(time.milliseconds())
+                                .build()
+                )))).when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleEndTransaction(
+                transactionalId,
+                producerId,
+                (short) 0,
+                TransactionResult.COMMIT,
+                errorsCallback);
+        // TODO: Should have PRODUCER_FENCED
+        assertEquals(Errors.UNKNOWN_SERVER_ERROR, error);
+        verify(transactionManager, atLeastOnce())
+                .getTransactionState(eq(transactionalId));
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldReturnOkOnEndTxnWhenStatusIsCompleteCommitAndResultIsCommit() {
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
+                        TransactionMetadata.builder()
+                                .transactionalId(transactionalId)
+                                .producerId(producerId)
+                                .lastProducerId(producerId)
+                                .producerEpoch(producerEpoch)
+                                .lastProducerEpoch((short) (producerEpoch - 1))
+                                .txnTimeoutMs(1)
+                                .state(TransactionState.COMPLETE_COMMIT)
+                                .topicPartitions(Collections.emptySet())
+                                .txnStartTimestamp(0)
+                                .txnLastUpdateTimestamp(time.milliseconds())
+                                .build()
+                )))).when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleEndTransaction(
+                transactionalId,
+                producerId,
+                (short) 1,
+                TransactionResult.COMMIT,
+                errorsCallback);
+        assertEquals(Errors.NONE, error);
+        verify(transactionManager, atLeastOnce())
+                .getTransactionState(eq(transactionalId));
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldReturnOkOnEndTxnWhenStatusIsCompleteAbortAndResultIsAbort() {
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
+                        TransactionMetadata.builder()
+                                .transactionalId(transactionalId)
+                                .producerId(producerId)
+                                .lastProducerId(producerId)
+                                .producerEpoch(producerEpoch)
+                                .lastProducerEpoch((short) (producerEpoch - 1))
+                                .txnTimeoutMs(1)
+                                .state(TransactionState.COMPLETE_ABORT)
+                                .topicPartitions(Collections.emptySet())
+                                .txnStartTimestamp(0)
+                                .txnLastUpdateTimestamp(time.milliseconds())
+                                .build()
+                )))).when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleEndTransaction(
+                transactionalId,
+                producerId,
+                (short) 1,
+                TransactionResult.ABORT,
+                errorsCallback);
+        assertEquals(Errors.NONE, error);
+        verify(transactionManager, atLeastOnce())
+                .getTransactionState(eq(transactionalId));
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldReturnInvalidTxnRequestOnEndTxnRequestWhenStatusIsCompleteAbortAndResultIsNotAbort() {
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
+                        TransactionMetadata.builder()
+                                .transactionalId(transactionalId)
+                                .producerId(producerId)
+                                .lastProducerId(producerId)
+                                .producerEpoch(producerEpoch)
+                                .lastProducerEpoch((short) (producerEpoch - 1))
+                                .txnTimeoutMs(1)
+                                .state(TransactionState.COMPLETE_ABORT)
+                                .topicPartitions(Collections.emptySet())
+                                .txnStartTimestamp(0)
+                                .txnLastUpdateTimestamp(time.milliseconds())
+                                .build()
+                )))).when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleEndTransaction(
+                transactionalId,
+                producerId,
+                (short) 1,
+                TransactionResult.COMMIT,
+                errorsCallback);
+        assertEquals(Errors.INVALID_TXN_STATE, error);
+        verify(transactionManager, atLeastOnce())
+                .getTransactionState(eq(transactionalId));
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldReturnInvalidTxnRequestOnEndTxnRequestWhenStatusIsCompleteCommitAndResultIsNotCommit() {
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
+                        TransactionMetadata.builder()
+                                .transactionalId(transactionalId)
+                                .producerId(producerId)
+                                .lastProducerId(producerId)
+                                .producerEpoch(producerEpoch)
+                                .lastProducerEpoch((short) (producerEpoch - 1))
+                                .txnTimeoutMs(1)
+                                .state(TransactionState.COMPLETE_COMMIT)
+                                .topicPartitions(Collections.emptySet())
+                                .txnStartTimestamp(0)
+                                .txnLastUpdateTimestamp(time.milliseconds())
+                                .build()
+                )))).when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleEndTransaction(
+                transactionalId,
+                producerId,
+                (short) 1,
+                TransactionResult.ABORT,
+                errorsCallback);
+        assertEquals(Errors.INVALID_TXN_STATE, error);
+        verify(transactionManager, atLeastOnce())
+                .getTransactionState(eq(transactionalId));
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldReturnConcurrentTxnRequestOnEndTxnRequestWhenStatusIsPrepareCommit() {
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
+                        TransactionMetadata.builder()
+                                .transactionalId(transactionalId)
+                                .producerId(producerId)
+                                .lastProducerId(producerId)
+                                .producerEpoch(producerEpoch)
+                                .lastProducerEpoch((short) (producerEpoch - 1))
+                                .txnTimeoutMs(1)
+                                .state(TransactionState.PREPARE_COMMIT)
+                                .topicPartitions(Collections.emptySet())
+                                .txnStartTimestamp(0)
+                                .txnLastUpdateTimestamp(time.milliseconds())
+                                .build()
+                )))).when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleEndTransaction(
+                transactionalId,
+                producerId,
+                (short) 1,
+                TransactionResult.COMMIT,
+                errorsCallback);
+        assertEquals(Errors.CONCURRENT_TRANSACTIONS, error);
+        verify(transactionManager, atLeastOnce())
+                .getTransactionState(eq(transactionalId));
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldReturnInvalidTxnRequestOnEndTxnRequestWhenStatusIsPrepareAbort() {
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
+                        TransactionMetadata.builder()
+                                .transactionalId(transactionalId)
+                                .producerId(producerId)
+                                .lastProducerId(producerId)
+                                .producerEpoch((short) 1)
+                                .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
+                                .txnTimeoutMs(1)
+                                .state(TransactionState.PREPARE_ABORT)
+                                .topicPartitions(Collections.emptySet())
+                                .txnStartTimestamp(0)
+                                .txnLastUpdateTimestamp(time.milliseconds())
+                                .build()
+                )))).when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleEndTransaction(
+                transactionalId,
+                producerId,
+                (short) 1,
+                TransactionResult.COMMIT,
+                errorsCallback);
+        assertEquals(Errors.INVALID_TXN_STATE, error);
+        verify(transactionManager, atLeastOnce())
+                .getTransactionState(eq(transactionalId));
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldAppendPrepareCommitToLogOnEndTxnWhenStatusIsOngoingAndResultIsCommit() {
+        mockPrepare(TransactionState.PREPARE_COMMIT);
+        transactionCoordinator.handleEndTransaction(
+                transactionalId,
+                producerId,
+                producerEpoch,
+                TransactionResult.COMMIT,
+                errorsCallback);
+        verify(transactionManager, atLeastOnce())
+                .getTransactionState(eq(transactionalId));
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldAppendPrepareAbortToLogOnEndTxnWhenStatusIsOngoingAndResultIsAbort() {
+        mockPrepare(TransactionState.PREPARE_ABORT);
+        transactionCoordinator.handleEndTransaction(
+                transactionalId,
+                producerId,
+                producerEpoch,
+                TransactionResult.ABORT,
+                errorsCallback);
+        verify(transactionManager, atLeastOnce())
+                .getTransactionState(eq(transactionalId));
+    }
+
+    private void mockPrepare(TransactionState transactionState) {
+        long now = time.milliseconds();
+        TransactionMetadata originalMetadata = TransactionMetadata.builder()
+                .transactionalId(transactionalId)
+                .producerId(producerId)
+                .lastProducerId(producerId)
+                .producerEpoch(producerEpoch)
+                .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
+                .txnTimeoutMs(txnTimeoutMs)
+                .state(TransactionState.ONGOING)
+                .topicPartitions(partitions)
+                .txnStartTimestamp(now)
+                .txnLastUpdateTimestamp(now)
+                .build();
+
+        TransactionMetadata.TxnTransitMetadata transition = TransactionMetadata.TxnTransitMetadata.builder()
+                .producerId(producerId)
+                .lastProducerId(producerId)
+                .producerEpoch(producerEpoch)
+                .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
+                .txnTimeoutMs(txnTimeoutMs)
+                .txnState(transactionState)
+                .topicPartitions(partitions)
+                .txnStartTimestamp(now)
+                .txnLastUpdateTimestamp(now)
+                .build();
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, originalMetadata))))
+                .when(transactionManager).getTransactionState(eq(transactionalId));
+        doAnswer(__ -> null).when(transactionManager)
+                .appendTransactionToLog(
+                        eq(transactionalId),
+                        eq(coordinatorEpoch),
+                        eq(transition),
+                        capturedErrorsCallback.capture(),
+                        any(TransactionStateManager.RetryOnError.class)
+                );
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithInvalidRequestOnEndTxnWhenTransactionalIdIsNull() {
+        transactionCoordinator.handleEndTransaction(
+                null,
+                0,
+                (short) 0,
+                TransactionResult.COMMIT,
+                errorsCallback);
+        assertEquals(Errors.INVALID_REQUEST, error);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithInvalidRequestOnEndTxnWhenTransactionalIdIsEmpty() {
+        doReturn(new ErrorsAndData<>(Errors.NOT_COORDINATOR, Optional.empty()))
+                .when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleEndTransaction(
+                "",
+                0,
+                (short) 0,
+                TransactionResult.COMMIT,
+                errorsCallback);
+        assertEquals(Errors.INVALID_REQUEST, error);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithNotCoordinatorOnEndTxnWhenIsNotCoordinatorForId() {
+        doReturn(new ErrorsAndData<>(Errors.NOT_COORDINATOR, Optional.empty()))
+                .when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleEndTransaction(
+                transactionalId,
+                0,
+                (short) 0,
+                TransactionResult.COMMIT,
+                errorsCallback);
+        assertEquals(Errors.NOT_COORDINATOR, error);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldRespondWithCoordinatorLoadInProgressOnEndTxnWhenCoordinatorIsLoading() {
+        doReturn(new ErrorsAndData<>(Errors.COORDINATOR_LOAD_IN_PROGRESS, Optional.empty()))
+                .when(transactionManager).getTransactionState(eq(transactionalId));
+        transactionCoordinator.handleEndTransaction(
+                transactionalId,
+                0,
+                (short) 0,
+                TransactionResult.COMMIT,
+                errorsCallback);
+        assertEquals(Errors.COORDINATOR_LOAD_IN_PROGRESS, error);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldReturnInvalidEpochOnEndTxnWhenEpochIsLarger() {
+        short serverProducerEpoch = 1;
+        verifyEndTxnEpoch(serverProducerEpoch, (short) (serverProducerEpoch + 1));
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldReturnInvalidEpochOnEndTxnWhenEpochIsSmaller() {
+        short serverProducerEpoch = 1;
+        verifyEndTxnEpoch(serverProducerEpoch, (short) (serverProducerEpoch - 1));
+    }
+
+
+    private void verifyEndTxnEpoch(short metadataEpoch, short requestEpoch) {
+        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
+                        TransactionMetadata.builder()
+                                .transactionalId(transactionalId)
+                                .producerId(producerId)
+                                .lastProducerId(producerId)
+                                .producerEpoch(metadataEpoch)
+                                .lastProducerEpoch((short) 0)
+                                .txnTimeoutMs(1)
+                                .state(TransactionState.COMPLETE_COMMIT)
+                                .topicPartitions(Collections.emptySet())
+                                .txnStartTimestamp(0)
+                                .txnLastUpdateTimestamp(time.milliseconds())
+                                .build()
+                )))).when(transactionManager).getTransactionState(eq(transactionalId));
+
+        transactionCoordinator.handleEndTransaction(
+                transactionalId,
+                producerId,
+                requestEpoch,
+                TransactionResult.COMMIT,
+                errorsCallback);
+        // TODO: Should have PRODUCER_FENCED
+        assertEquals(Errors.UNKNOWN_SERVER_ERROR, error);
+        verify(transactionManager, atLeastOnce())
+                .getTransactionState(eq(transactionalId));
+    }
+
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldAbortExpiredTransactionsInOngoingStateAndBumpEpoch() {
