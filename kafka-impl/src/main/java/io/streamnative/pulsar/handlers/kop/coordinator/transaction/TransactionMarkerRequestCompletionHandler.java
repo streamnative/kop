@@ -178,8 +178,8 @@ public class TransactionMarkerRequestCompletionHandler {
                             txnMetadata.removePartition(topicPartition);
                             break;
                         default:
-                            throw new IllegalStateException("Unexpected error " + error.exceptionName()
-                                    + " while sending txn marker for $transactionalId");
+                            throw new IllegalStateException(String.format("Unexpected error %s"
+                                    + " while sending txn marker for %s", error.exceptionName(), transactionalId));
                     }
                 }
                 return null;

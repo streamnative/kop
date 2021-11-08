@@ -364,15 +364,16 @@ public class TransactionMetadata {
                 epochBumpResult = new ErrorsAndData<>(new BumpEpochResult(producerEpoch, lastProducerEpoch));
             } else {
                 // Otherwise, the producer has a fenced epoch and should receive an PRODUCER_FENCED error
-                log.info("Expected producer epoch $expectedEpoch does not match current "
-                        + "producer epoch $producerEpoch or previous producer epoch $lastProducerEpoch");
+                log.info("Expected producer epoch {} does not match current "
+                        + "producer epoch {} or previous producer epoch {}",
+                        expectedProducerEpoch, producerEpoch, lastProducerEpoch);
                 // TODO the error should be Errors.PRODUCER_FENCED
                 epochBumpResult = new ErrorsAndData<>(Errors.UNKNOWN_SERVER_ERROR);
             }
         }
 
         if (epochBumpResult.hasErrors()) {
-            return new ErrorsAndData<TxnTransitMetadata>(epochBumpResult.getErrors());
+            return new ErrorsAndData<>(epochBumpResult.getErrors());
         } else {
             return new ErrorsAndData<>(
                     prepareTransitionTo(
