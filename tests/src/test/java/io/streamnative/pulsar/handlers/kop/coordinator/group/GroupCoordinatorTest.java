@@ -107,7 +107,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
     }
 
     @BeforeMethod
-    private void setUp() throws PulsarClientException {
+    protected void setUp() throws PulsarClientException {
         protocols = newProtocols();
 
         scheduler = OrderedScheduler.newSchedulerBuilder()
@@ -188,7 +188,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
     }
 
     @AfterMethod
-    private void tearDown() throws PulsarClientException {
+    protected void tearDown() throws PulsarClientException {
         groupCoordinator.shutdown();
         groupMetadataManager.shutdown();
         consumer.close();
