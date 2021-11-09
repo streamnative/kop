@@ -117,6 +117,7 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
+import org.apache.kafka.common.requests.AddOffsetsToTxnResponse;
 import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
 import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.ApiError;
@@ -2077,7 +2078,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 } else {
                     TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
                     transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
-                            request.producerId(), request.producerEpoch(), partitionsToAdd, response);
+                            request.producerId(), request.producerEpoch(), authorizedPartitions, (errors) -> {
+                                // TODO: handle PRODUCER_FENCED errors
+                                Map<TopicPartition, Errors> topicPartitionErrorsMap =
+                                        addPartitionError(partitionsToAdd, errors);
+                                response.complete(
+                                        new AddPartitionsToTxnResponse(0, topicPartitionErrorsMap));
+                            });
                 }
             }
         };
@@ -2114,11 +2121,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         int partition = getGroupCoordinator().partitionFor(request.consumerGroupId());
         String offsetTopicName = getGroupCoordinator().getGroupManager().getOffsetConfig().offsetsTopicName();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
+        Set<TopicPartition> topicPartitions = Collections.singleton(new TopicPartition(offsetTopicName, partition));
         transactionCoordinator.handleAddPartitionsToTransaction(
                 request.transactionalId(),
                 request.producerId(),
                 request.producerEpoch(),
-                Collections.singletonList(new TopicPartition(offsetTopicName, partition)), response);
+                topicPartitions,
+                (errors) -> {
+                    // TODO: handle PRODUCER_FENCED errors
+                    response.complete(
+                            new AddOffsetsToTxnResponse(0, errors));
+                });
+    }
+
+    private Map<TopicPartition, Errors> addPartitionError(Collection<TopicPartition> partitions, Errors errors) {
+        Map<TopicPartition, Errors> result = Maps.newHashMap();
+        for (TopicPartition partition : partitions) {
+            result.put(partition, errors);
+        }
+        return result;
     }
 
     @Override
