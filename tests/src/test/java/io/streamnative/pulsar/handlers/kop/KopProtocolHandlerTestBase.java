@@ -409,12 +409,6 @@ public abstract class KopProtocolHandlerTestBase {
         return zk;
     }
 
-    protected GroupCoordinator createNewGroupCoordinator(String tenant) {
-        ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
-        KafkaProtocolHandler kafkaProtocolHandler = (KafkaProtocolHandler) handler;
-        return kafkaProtocolHandler.startGroupCoordinator(tenant, kafkaProtocolHandler.getOffsetTopicClient());
-    }
-
     public static NonClosableMockBookKeeper createMockBookKeeper(OrderedExecutor executor) throws Exception {
         return spy(new NonClosableMockBookKeeper(executor));
     }
