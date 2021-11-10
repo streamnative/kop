@@ -49,13 +49,11 @@ import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
-import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
-import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
@@ -81,7 +79,6 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
     private MockTimer timer = null;
     private GroupCoordinator groupCoordinator = null;
 
-    private Consumer<ByteBuffer> consumer;
     private OrderedScheduler scheduler;
     private GroupMetadataManager groupMetadataManager;
     private int groupPartitionId = -1;
@@ -127,12 +124,6 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         timer = new MockTimer();
 
         ProducerBuilder<ByteBuffer> producerBuilder = pulsarClient.newProducer(Schema.BYTEBUFFER);
-
-        consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-                .topic(topicName)
-                .subscriptionName("test-sub")
-                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-                .subscribe();
 
         ReaderBuilder<ByteBuffer> readerBuilder = pulsarClient.newReader(Schema.BYTEBUFFER)
                 .startMessageId(MessageId.earliest);
@@ -191,7 +182,6 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
     protected void tearDown() throws PulsarClientException {
         groupCoordinator.shutdown();
         groupMetadataManager.shutdown();
-        consumer.close();
         scheduler.shutdown();
     }
 
