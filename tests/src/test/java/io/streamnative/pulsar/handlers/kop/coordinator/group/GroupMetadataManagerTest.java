@@ -58,7 +58,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
-
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
@@ -147,7 +146,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                 .subscriptionName("test-sub")
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                 .subscribe();
-        
+
         scheduler = OrderedScheduler.newSchedulerBuilder()
                 .name("test-scheduler")
                 .numThreads(1)
