@@ -63,7 +63,14 @@ public class MessageMetadataUtils {
         managedLedger.asyncReadEntry(position, new AsyncCallbacks.ReadEntryCallback() {
             @Override
             public void readEntryFailed(ManagedLedgerException exception, Object ctx) {
-                future.completeExceptionally(exception);
+                if (exception instanceof ManagedLedgerException.NonRecoverableLedgerException) {
+                    // The position doesn't exist, it usually happens when the rollover of managed ledger leads to
+                    // the deletion of all expired ledgers. In this case, there's only one empty ledger in the managed
+                    // ledger. So here we complete it with the latest offset.
+                    future.complete(getLogEndOffset(managedLedger));
+                } else {
+                    future.completeExceptionally(exception);
+                }
             }
 
             @Override
