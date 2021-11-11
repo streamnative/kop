@@ -53,11 +53,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
-import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
@@ -76,15 +76,19 @@ import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
+import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -100,35 +104,72 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     private static final String protocolType = "protocolType";
     private static final int rebalanceTimeout = 60000;
     private static final int sessionTimeout = 10000;
+    private static final int numOffsetsPartitions = 2;
+    private OffsetConfig offsetConfig = null;
 
-    GroupMetadataManager groupMetadataManager = null;
-    ProducerBuilder<ByteBuffer> producer = null;
-    ReaderBuilder<ByteBuffer> consumer = null;
-    OffsetConfig offsetConfig = OffsetConfig.builder().build();
-    OrderedScheduler scheduler;
+    private GroupMetadataManager groupMetadataManager = null;
+    private ProducerBuilder<ByteBuffer> producerBuilder = null;
+    private ReaderBuilder<ByteBuffer> readerBuilder = null;
+    private Consumer<ByteBuffer> consumer;
+    private OrderedScheduler scheduler;
 
-    @BeforeMethod
+    @BeforeClass
     @Override
     public void setup() throws Exception {
         super.internalSetup();
+    }
+
+    @AfterClass
+    @Override
+    public void cleanup() throws Exception {
+        super.internalCleanup();
+    }
+
+    @BeforeMethod
+    protected void setUp() throws PulsarClientException, PulsarAdminException {
+        producerBuilder = pulsarClient.newProducer(Schema.BYTEBUFFER);
+        readerBuilder = pulsarClient.newReader(Schema.BYTEBUFFER)
+                .startMessageId(MessageId.earliest);
+
+        String topicName = "test-coordinator-" + System.currentTimeMillis();
+        offsetConfig = OffsetConfig.builder()
+                .offsetsTopicName(topicName)
+                .offsetsTopicNumPartitions(numOffsetsPartitions)
+                .offsetsTopicCompressionType(CompressionType.valueOf(conf.getOffsetsTopicCompressionCodec()))
+                .maxMetadataSize(conf.getOffsetMetadataMaxSize())
+                .offsetsRetentionCheckIntervalMs(conf.getOffsetsRetentionCheckIntervalMs())
+                .offsetsRetentionMs(TimeUnit.MINUTES.toMillis(conf.getOffsetsRetentionMinutes()))
+                .build();
+        admin.topics().createPartitionedTopic(topicName, numOffsetsPartitions);
+        consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
+                .topic(topicName)
+                .subscriptionName("test-sub")
+                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                .subscribe();
 
         scheduler = OrderedScheduler.newSchedulerBuilder()
-            .name("test-scheduler")
-            .numThreads(1)
-            .build();
-
-        GroupCoordinator groupCoordinator = createNewGroupCoordinator("public");
-        groupMetadataManager = groupCoordinator.getGroupManager();
+                .name("test-scheduler")
+                .numThreads(1)
+                .build();
+        groupMetadataManager = new GroupMetadataManager(
+                offsetConfig,
+                producerBuilder,
+                readerBuilder,
+                scheduler,
+                Time.SYSTEM
+        );
+        groupMetadataManager.startup(false);
     }
 
     @AfterMethod
-    @Override
-    public void cleanup() throws Exception {
+    protected void tearDown() throws PulsarClientException {
+        if (consumer != null) {
+            consumer.close();
+        }
         if (groupMetadataManager != null) {
             groupMetadataManager.shutdown();
         }
         scheduler.shutdown();
-        super.internalCleanup();
     }
 
     private List<SimpleRecord> createCommittedOffsetRecords(Map<TopicPartition, Long> committedOffsets,
@@ -824,8 +865,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     public void testGroupNotExits() {
         groupMetadataManager = new GroupMetadataManager(
             offsetConfig,
-            producer,
-            consumer,
+                producerBuilder,
+                readerBuilder,
             scheduler,
             new MockTime()
         );
@@ -1166,8 +1207,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     public void testAddGroup() {
         groupMetadataManager = new GroupMetadataManager(
             offsetConfig,
-            producer,
-            consumer,
+                producerBuilder,
+                readerBuilder,
             scheduler,
             new MockTime()
         );
@@ -1180,13 +1221,6 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testStoreEmptyGroup() throws Exception {
-        @Cleanup
-        Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitionName())
-            .subscriptionName("test-sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
-
         int generation = 27;
         String protocolType = "consumer";
         GroupMetadata group = GroupMetadata.loadGroup(
@@ -1242,12 +1276,6 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testStoreEmptySimpleGroup() throws Exception {
-        @Cleanup
-        Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitionName())
-            .subscriptionName("test-sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
         GroupMetadata group = new GroupMetadata(groupId, Empty);
         groupMetadataManager.addGroup(group);
 
@@ -1293,12 +1321,6 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testStoreNoneEmptyGroup() throws Exception {
-        @Cleanup
-        Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitionName())
-            .subscriptionName("test-sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
         String memberId = "memberId";
         String clientId = "clientId";
         String clientHost = "localhost";
@@ -1369,12 +1391,6 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testCommitOffset() throws Exception {
-        @Cleanup
-        Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitionName())
-            .subscriptionName("test-sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
         String memberId = "fakeMemberId";
         TopicPartition topicPartition = new TopicPartition("foo", 0);
         groupMetadataManager.addPartitionOwnership(groupPartitionId);
@@ -1445,12 +1461,6 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testTransactionalCommitOffsetCommitted() throws Exception {
-        @Cleanup
-        Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitionName())
-            .subscriptionName("test-sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
         String memberId = "";
         TopicPartition topicPartition = new TopicPartition("foo", 0);
         long offset = 37L;
@@ -1508,12 +1518,6 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testTransactionalCommitOffsetAppendFailure() throws Exception {
-        @Cleanup
-        Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitionName())
-            .subscriptionName("test-sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
         String memberId = "";
         TopicPartition topicPartition = new TopicPartition("foo", 0);
         long offset = 37L;
@@ -1568,12 +1572,6 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testTransactionalCommitOffsetAborted() throws Exception {
-        @Cleanup
-        Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitionName())
-            .subscriptionName("test-sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
         String memberId = "";
         TopicPartition topicPartition = new TopicPartition("foo", 0);
         long offset = 37L;
@@ -1625,12 +1623,6 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testExpiredOffset() throws Exception {
-        @Cleanup
-        Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitionName())
-            .subscriptionName("test-sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
         String memberId = "fakeMemberId";
         TopicPartition topicPartition1 = new TopicPartition("foo", 0);
         TopicPartition topicPartition2 = new TopicPartition("foo", 1);
@@ -1681,12 +1673,6 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testGroupMetadataRemoval() throws Exception {
-        @Cleanup
-        Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitionName())
-            .subscriptionName("test-sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
         TopicPartition topicPartition1 = new TopicPartition("foo", 0);
         TopicPartition topicPartition2 = new TopicPartition("foo", 1);
 
@@ -1750,12 +1736,6 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testExpireGroupWithOffsetsOnly() throws Exception {
-        @Cleanup
-        Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitionName())
-            .subscriptionName("test-sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
         // verify that the group is removed properly, but no tombstone is written if
         // this is a group which is only using kafka for offset storage
 
@@ -1840,12 +1820,6 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testExpireOffsetsWithActiveGroup() throws Exception {
-        @Cleanup
-        Consumer<ByteBuffer> consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(groupMetadataManager.getTopicPartitionName())
-            .subscriptionName("test-sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
         String memberId = "memberId";
         String clientId = "clientId";
         String clientHost = "localhost";
