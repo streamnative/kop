@@ -23,7 +23,6 @@ import io.confluent.kafka.schemaregistry.avro.AvroCompatibilityLevel;
 import io.confluent.kafka.schemaregistry.rest.SchemaRegistryConfig;
 import io.confluent.kafka.schemaregistry.rest.SchemaRegistryRestApplication;
 import io.netty.channel.EventLoopGroup;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.Closeable;
 import java.io.IOException;
@@ -68,7 +67,6 @@ import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.auth.SameThreadOrderedSafeExecutor;
 import org.apache.pulsar.broker.namespace.NamespaceService;
-import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClient;
@@ -407,12 +405,6 @@ public abstract class KopProtocolHandlerTestBase {
                 .getBytes(ZookeeperClientFactoryImpl.ENCODING_SCHEME), dummyAclList, CreateMode.PERSISTENT);
 
         return zk;
-    }
-
-    protected GroupCoordinator createNewGroupCoordinator(String tenant) {
-        ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
-        KafkaProtocolHandler kafkaProtocolHandler = (KafkaProtocolHandler) handler;
-        return kafkaProtocolHandler.startGroupCoordinator(tenant, kafkaProtocolHandler.getOffsetTopicClient());
     }
 
     public static NonClosableMockBookKeeper createMockBookKeeper(OrderedExecutor executor) throws Exception {
