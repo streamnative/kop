@@ -545,7 +545,7 @@ public class TransactionCoordinator {
                                      TransactionResult transactionResult,
                                      Consumer<Errors> responseCallback) {
         endTransaction(transactionalId, producerId, producerEpoch, transactionResult, true,
-                responseCallback::accept);
+                responseCallback);
     }
 
     @AllArgsConstructor
@@ -567,9 +567,14 @@ public class TransactionCoordinator {
             return;
         }
 
-        Optional<CoordinatorEpochAndTxnMetadata> epochAndMetadata =
-                txnManager.getTransactionState(transactionalId).getData();
+        ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> transactionState =
+                txnManager.getTransactionState(transactionalId);
+        if (transactionState.hasErrors()) {
+            callback.accept(transactionState.getErrors());
+            return;
+        }
 
+        Optional<CoordinatorEpochAndTxnMetadata> epochAndMetadata = transactionState.getData();
         if (!epochAndMetadata.isPresent()) {
             callback.accept(Errors.INVALID_PRODUCER_ID_MAPPING);
             return;
