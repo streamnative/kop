@@ -955,7 +955,7 @@ public class TransactionCoordinator {
                 transactionConfig.getAbortTimedOutTransactionsIntervalMs(),
                 TimeUnit.MILLISECONDS);
 
-        // TODO transaction id expiration
+        txnManager.startup(true);
 
         return this.producerIdManager.initialize().thenCompose(ignored -> {
             log.info("Startup transaction coordinator complete.");

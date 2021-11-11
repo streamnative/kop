@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
 
+import com.google.api.client.util.Lists;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -22,23 +23,32 @@ import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.util.SafeRunnable;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.SchemaException;
+import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.MemoryRecordsBuilder;
+import org.apache.kafka.common.record.Record;
+import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.SystemTime;
@@ -60,6 +70,7 @@ public class TransactionStateManager {
     private final SystemTopicClient txnTopicClient;
     private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
+    private final byte magicValue = RecordBatch.CURRENT_MAGIC_VALUE;
 
     // Number of partitions for the transaction log topic.
     private final int transactionTopicPartitionCount;
@@ -128,6 +139,169 @@ public class TransactionStateManager {
                 }))
                 .collect(Collectors.toList())
         );
+    }
+
+    public void startup(boolean enableTransactionalIdExpiration) {
+        if (enableTransactionalIdExpiration){
+            this.enableTransactionalIdExpiration();
+        }
+    }
+
+    private void enableTransactionalIdExpiration() {
+        scheduler.scheduleAtFixedRate(
+                SafeRunnable.safeRun(this::removeExpiredTransactionalIds,
+                        ex -> log.error("Uncaught exception in scheduled task transactionalId expiration", ex)),
+                transactionConfig.getRemoveExpiredTransactionalIdsIntervalMs(),
+                transactionConfig.getRemoveExpiredTransactionalIdsIntervalMs(),
+                TimeUnit.MILLISECONDS);
+    }
+
+    private void removeExpiredTransactionalIds() {
+        CoreUtils.inReadLock(stateLock, () -> {
+            transactionMetadataCache.forEach((partitionId, partitionCacheEntry) -> {
+                TopicPartition transactionPartition =
+                        new TopicPartition(Topic.TRANSACTION_STATE_TOPIC_NAME, partitionId);
+                removeExpiredTransactionalIds(transactionPartition, partitionCacheEntry);
+            });
+            return null;
+        });
+    }
+
+    private void removeExpiredTransactionalIds(TopicPartition transactionPartition,
+                                               Map<String, TransactionMetadata> txnMetadataCacheEntry) {
+        CoreUtils.inReadLock(stateLock, () -> {
+            long currentTimeMs = time.milliseconds();
+            int maxBatchSize = transactionConfig.getMaxMessageSize();
+            List<TransactionalIdCoordinatorEpochAndMetadata> expired = Lists.newArrayList();
+
+            // In java lambda, it required use array or AtomicReference to access this value.
+            final MemoryRecordsBuilder[] recordsBuilder = new MemoryRecordsBuilder[1];
+            Runnable flushRecordsBuilder = () ->
+                    writeTombstonesForExpiredTransactionalIds(
+                    transactionPartition,
+                    expired,
+                    recordsBuilder[0].build()
+            ).thenAccept(__ -> {
+                expired.clear();
+                recordsBuilder[0] = null;
+            }).exceptionally(ex -> {
+                log.error("Error to flash recordsBuilder.", ex);
+                return null;
+            });
+
+            ArrayList<TransactionMetadata> stateEntries = Lists.newArrayList(txnMetadataCacheEntry.values());
+            int size = stateEntries.size();
+            int index = 0;
+            while (index < size) {
+                TransactionMetadata txnMetadata = stateEntries.get(index);
+                String transactionalId = txnMetadata.getTransactionalId();
+                AtomicBoolean fullBatch = new AtomicBoolean(false);
+                txnMetadata.inLock(() -> {
+                    if (recordsBuilder[0] == null) {
+                        recordsBuilder[0] = MemoryRecords.builder(
+                                ByteBuffer.allocate(Math.min(16384, maxBatchSize)),
+                                magicValue,
+                                transactionConfig.getTransactionMetadataTopicCompressionType(),
+                                TimestampType.CREATE_TIME,
+                                0L,
+                                maxBatchSize
+                        );
+                    }
+                    if (txnMetadata.getPendingState().isPresent() && shouldExpire(txnMetadata, currentTimeMs)) {
+                        if (maybeAppendExpiration(txnMetadata, recordsBuilder[0], currentTimeMs)) {
+                            TransactionMetadata.TxnTransitMetadata transitMetadata = txnMetadata.prepareDead();
+                            expired.add(new TransactionalIdCoordinatorEpochAndMetadata(transactionalId,
+                                    transitMetadata));
+                        } else {
+                            fullBatch.set(true);
+                        }
+                    }
+                    return null;
+                });
+                if (fullBatch.get()) {
+                    flushRecordsBuilder.run();
+                } else {
+                    // Advance the iterator if we do not need to retry to append
+                    index ++;
+                }
+                if (!expired.isEmpty()) {
+                    flushRecordsBuilder.run();
+                }
+            }
+            return null;
+        });
+    }
+
+    private CompletableFuture<Void> writeTombstonesForExpiredTransactionalIds(
+            TopicPartition transactionPartition,
+            List<TransactionalIdCoordinatorEpochAndMetadata> expiredForPartition,
+            MemoryRecords tombstoneRecords) {
+        return CoreUtils.inReadLock(stateLock, () -> getProducer(transactionPartition.partition()).thenCompose(producer ->
+                        producer.newMessage()
+                                .keyBytes(tombstoneRecords.buffer().array())
+                                .value(null)
+                                .sendAsync())
+                .thenAccept(messageId -> {
+                    CoreUtils.inReadLock(stateLock, () -> {
+                        transactionMetadataCache.forEach((partitionId, partitionCacheEntry) -> {
+                            expiredForPartition.forEach(idCoordinatorEpochAndMetadata -> {
+                                String transactionalId = idCoordinatorEpochAndMetadata.getTransactionalId();
+                                TransactionMetadata txnMetadata =
+                                        partitionCacheEntry.get(transactionalId);
+                                txnMetadata.inLock(() -> {
+                                    if (txnMetadata.getPendingState().isPresent()
+                                            && txnMetadata.getPendingState().get().equals(TransactionState.DEAD)
+                                            && txnMetadata.getProducerEpoch()
+                                            == idCoordinatorEpochAndMetadata
+                                            .getTransitMetadata().getProducerEpoch()) {
+                                        partitionCacheEntry.remove(transactionalId);
+                                    } else {
+                                        log.warn("Failed to remove expired transactionalId: {} from cache." +
+                                                " pendingState: {}, producerEpoch: {}," +
+                                                " expected producerEpoch: {}",
+                                                transactionalId, txnMetadata.getPendingState(),
+                                                txnMetadata.getProducerEpoch(),
+                                                idCoordinatorEpochAndMetadata
+                                                        .getTransitMetadata().getProducerEpoch());
+                                        txnMetadata.setPendingState(Optional.empty());
+                                    }
+                                    return null;
+                                });
+                            });
+                        });
+                        return null;
+                    });
+                })
+                .exceptionally(ex -> {
+                    log.error("Error to write tombstones for expired transactionIds.", ex);
+                    return null;
+                }));
+
+    }
+
+    private boolean maybeAppendExpiration(TransactionMetadata txnMetadata,
+                                          MemoryRecordsBuilder recordsBuilder,
+                                          long currentTimeMs) {
+        byte[] keyBytes = new TransactionLogKey(txnMetadata.getTransactionalId()).toBytes();
+        if (recordsBuilder.hasRoomFor(currentTimeMs, keyBytes, null, Record.EMPTY_HEADERS)) {
+            recordsBuilder.append(currentTimeMs, keyBytes, null, Record.EMPTY_HEADERS);
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    private boolean shouldExpire(TransactionMetadata txnMetadata, Long currentTimeMs){
+            return txnMetadata.getState().isExpirationAllowed() && txnMetadata.getTxnLastUpdateTimestamp() <=
+                    (currentTimeMs - transactionConfig.getTransactionalIdExpirationMs());
+    }
+
+    // case class TransactionalIdCoordinatorEpochAndMetadata(transactionalId: String, coordinatorEpoch: Int, transitMetadata: TxnTransitMetadata)
+    @Data
+    @AllArgsConstructor
+    private static class TransactionalIdCoordinatorEpochAndMetadata {
+        private String transactionalId;
+        private TransactionMetadata.TxnTransitMetadata transitMetadata;
     }
 
     @Data

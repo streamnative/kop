@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import lombok.Builder;
 import lombok.Builder.Default;
 import lombok.Data;
+import org.apache.kafka.common.record.CompressionType;
 
 /**
  * Transaction config.
@@ -33,6 +34,7 @@ public class TransactionConfig {
     public static final int DefaultTransactionCoordinatorSchedulerNum = 1;
     public static final int DefaultTransactionStateManagerSchedulerNum = 1;
     public static final int DefaultTransactionLogNumPartitions = 8;
+    public static final int DefaultMaxMessageSize = 5 * 1024 * 1024;
 
     @Default
     private int brokerId = 1;
@@ -54,5 +56,9 @@ public class TransactionConfig {
     private int transactionCoordinatorSchedulerNum = DefaultTransactionCoordinatorSchedulerNum;
     @Default
     private int transactionStateManagerSchedulerNum = DefaultTransactionStateManagerSchedulerNum;
+    @Default
+    private int maxMessageSize = DefaultMaxMessageSize;
+    @Default
+    private CompressionType transactionMetadataTopicCompressionType = CompressionType.NONE;
 
 }

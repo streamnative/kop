@@ -465,6 +465,11 @@ public class TransactionMetadata {
                 txnTimeoutMs, Collections.emptySet(), txnStartTimestamp, updateTimestamp);
     }
 
+    public TxnTransitMetadata prepareDead() {
+        return prepareTransitionTo(TransactionState.DEAD, producerId, producerEpoch, lastProducerEpoch, txnTimeoutMs,
+                Collections.emptySet(), txnStartTimestamp, txnLastUpdateTimestamp);
+    }
+
     private void throwStateTransitionFailure(TxnTransitMetadata txnTransitMetadata) throws IllegalStateException {
         log.error("{} transition to {} failed: this should not happen.", this, txnTransitMetadata);
         throw new IllegalStateException("TransactionalId " + transactionalId + " failed transition to state "
