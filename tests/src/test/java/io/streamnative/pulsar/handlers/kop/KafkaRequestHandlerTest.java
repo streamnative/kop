@@ -64,6 +64,7 @@ import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.ConsumerGroupDescription;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -554,8 +555,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 10000)
-    public void testDescribeConfigs() throws Exception {
-        final String topic = "testDescribeConfigs";
+    public void testDescribeAndAlterConfigs() throws Exception {
+        final String topic = "testDescribeAndAlterConfigs";
         admin.topics().createPartitionedTopic(topic, 1);
 
         Properties props = new Properties();
@@ -588,6 +589,27 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             assertTrue(e.getCause() instanceof InvalidTopicException);
             assertTrue(e.getMessage().contains("Topic " + invalidTopic + " is non-partitioned"));
         }
+
+        // just call the API, currently we are ignoring any value
+        kafkaAdmin.alterConfigs(Collections.singletonMap(
+                new ConfigResource(ConfigResource.Type.TOPIC, invalidTopic),
+                new Config(Collections.emptyList()))).all().get();
+
+    }
+
+    @Test(timeOut = 10000)
+    public void testDescribeBrokerConfigs() throws Exception {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(props);
+        Map<ConfigResource, Config> brokerConfigs = kafkaAdmin.describeConfigs(Collections.singletonList(
+                new ConfigResource(ConfigResource.Type.BROKER, ""))).all().get();
+        assertEquals(1, brokerConfigs.size());
+        Config brokerConfig = brokerConfigs.values().iterator().next();
+        assertEquals(brokerConfig.get("num.partitions").value(), conf.getDefaultNumPartitions() + "");
+        assertEquals(brokerConfig.get("default.replication.factor").value(), "1");
+        assertEquals(brokerConfig.get("delete.topic.enable").value(), "true");
     }
 
     @Test(timeOut = 10000)
