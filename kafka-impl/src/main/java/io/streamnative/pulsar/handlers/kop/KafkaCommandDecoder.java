@@ -335,6 +335,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     case DESCRIBE_CONFIGS:
                         handleDescribeConfigs(kafkaHeaderAndRequest, responseFuture);
                         break;
+                    case ALTER_CONFIGS:
+                        handleAlterConfigs(kafkaHeaderAndRequest, responseFuture);
+                        break;
                     case DELETE_TOPICS:
                         handleDeleteTopics(kafkaHeaderAndRequest, responseFuture);
                         break;
@@ -533,6 +536,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected abstract void
     handleDescribeConfigs(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleAlterConfigs(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
     protected abstract void
     handleInitProducerId(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);

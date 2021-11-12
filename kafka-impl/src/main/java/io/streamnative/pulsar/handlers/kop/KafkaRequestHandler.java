@@ -96,6 +96,7 @@ import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.clients.admin.AlterConfigsOptions;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
@@ -119,6 +120,8 @@ import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
 import org.apache.kafka.common.requests.AddOffsetsToTxnResponse;
 import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
 import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
+import org.apache.kafka.common.requests.AlterConfigsRequest;
+import org.apache.kafka.common.requests.AlterConfigsResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
@@ -1941,6 +1944,27 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
 
 
+    }
+
+    @Override
+    protected void handleAlterConfigs(KafkaHeaderAndRequest describeConfigs,
+                                         CompletableFuture<AbstractResponse> resultFuture) {
+        checkArgument(describeConfigs.getRequest() instanceof AlterConfigsRequest);
+        AlterConfigsRequest request = (AlterConfigsRequest) describeConfigs.getRequest();
+
+        if (request.configs().isEmpty()) {
+            resultFuture.complete(new AlterConfigsResponse(0, Maps.newHashMap()));
+            return;
+        }
+
+        Map<ConfigResource, ApiError> results = new HashMap<>();
+        request.configs().forEach( (ConfigResource configResource, AlterConfigsRequest.Config newConfig) -> {
+            newConfig.entries().forEach(entry -> {
+                log.info("Ignoring ALTER_CONFIG for {} {} = {}", configResource, entry.name(), entry.value());
+            });
+            results.put(configResource, ApiError.NONE);
+        });
+        resultFuture.complete(new AlterConfigsResponse(0, results));
     }
 
     @Override

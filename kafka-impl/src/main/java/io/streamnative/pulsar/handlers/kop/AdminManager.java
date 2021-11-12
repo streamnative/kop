@@ -22,6 +22,7 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -200,7 +201,13 @@ class AdminManager {
                                         });
                                 break;
                             case BROKER:
-                                throw new RuntimeException("KoP doesn't support resource type: " + resource.type());
+                                List<DescribeConfigsResponse.ConfigEntry> dummyConfig = new ArrayList<>();
+                                dummyConfig.add(buildDummyEntryConfig("num.partitions", this.defaultNumPartitions + ""));
+                                // this is useless in KOP, but some tools like KSQL need a value
+                                dummyConfig.add(buildDummyEntryConfig("default.replication.factor", "1"));
+                                dummyConfig.add(buildDummyEntryConfig("delete.topic.enable", "true"));
+                                future.complete(new DescribeConfigsResponse.Config(ApiError.NONE, dummyConfig));
+                                break;
                             default:
                                 throw new InvalidRequestException("Unsupported resource type: " + resource.type());
                         }
@@ -217,6 +224,14 @@ class AdminManager {
             ));
         });
         return resultFuture;
+    }
+
+    private DescribeConfigsResponse.ConfigEntry buildDummyEntryConfig(String configName, String configValue) {
+        DescribeConfigsResponse.ConfigEntry configEntry = new DescribeConfigsResponse.ConfigEntry(
+                configName, configValue,
+                DescribeConfigsResponse.ConfigSource.DEFAULT_CONFIG, true, true,
+                Collections.emptyList());
+        return configEntry;
     }
 
     public void deleteTopic(String topicToDelete,
