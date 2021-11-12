@@ -202,7 +202,8 @@ class AdminManager {
                                 break;
                             case BROKER:
                                 List<DescribeConfigsResponse.ConfigEntry> dummyConfig = new ArrayList<>();
-                                dummyConfig.add(buildDummyEntryConfig("num.partitions", this.defaultNumPartitions + ""));
+                                dummyConfig.add(buildDummyEntryConfig("num.partitions",
+                                        this.defaultNumPartitions + ""));
                                 // this is useless in KOP, but some tools like KSQL need a value
                                 dummyConfig.add(buildDummyEntryConfig("default.replication.factor", "1"));
                                 dummyConfig.add(buildDummyEntryConfig("delete.topic.enable", "true"));

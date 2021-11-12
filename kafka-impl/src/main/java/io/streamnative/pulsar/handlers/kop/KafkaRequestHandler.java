@@ -96,7 +96,6 @@ import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.kafka.clients.admin.AlterConfigsOptions;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
@@ -1958,7 +1957,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
 
         Map<ConfigResource, ApiError> results = new HashMap<>();
-        request.configs().forEach( (ConfigResource configResource, AlterConfigsRequest.Config newConfig) -> {
+        request.configs().forEach((ConfigResource configResource, AlterConfigsRequest.Config newConfig) -> {
             newConfig.entries().forEach(entry -> {
                 log.info("Ignoring ALTER_CONFIG for {} {} = {}", configResource, entry.name(), entry.value());
             });
