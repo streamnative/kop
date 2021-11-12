@@ -15,8 +15,11 @@ package io.streamnative.pulsar.handlers.kop.utils;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static org.apache.bookkeeper.mledger.proto.MLDataFormats.ManagedLedgerInfo.LedgerInfo;
 
 import com.google.common.base.Predicate;
+import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import lombok.extern.slf4j.Slf4j;
@@ -135,7 +138,19 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
         if (firstPosition == null) {
             return null;
         } else {
-            return managedLedger.getNextValidPosition(firstPosition);
+            final PositionImpl validPosition = managedLedger.getNextValidPosition(firstPosition);
+            final NavigableMap<Long, LedgerInfo> ledgers = managedLedger.getLedgersInfo();
+            if (!ledgers.containsKey(validPosition.getLedgerId())) {
+                // It's a rare case if getNextValidPosition() returns a position that doesn't belong to the ledgers map
+                // while the ledgers map contains a non-empty ledger. In this case, return the first position.
+                final Map.Entry<Long, LedgerInfo> entry = ledgers.firstEntry();
+                if (entry != null && entry.getValue().hasEntries() && entry.getValue().getEntries() > 0) {
+                    log.warn("ManagedLedger {} is not empty and doesn't contain {}, return the first position {}:0",
+                            managedLedger.getName(), validPosition, entry.getKey());
+                    return PositionImpl.get(entry.getKey(), 0);
+                }
+            }
+            return validPosition;
         }
     }
 }

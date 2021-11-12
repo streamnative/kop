@@ -14,30 +14,41 @@
 package io.streamnative.pulsar.handlers.kop;
 
 
+import static org.apache.bookkeeper.mledger.proto.MLDataFormats.ManagedLedgerInfo.LedgerInfo;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.TopicMessageIdImpl;
-import org.testng.annotations.AfterMethod;
-import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.Factory;
+import org.apache.pulsar.common.naming.TopicName;
+import org.awaitility.Awaitility;
+import org.testng.annotations.AfterClass;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
 /**
@@ -45,18 +56,6 @@ import org.testng.annotations.Test;
  */
 @Slf4j
 public class MultiLedgerTest extends KopProtocolHandlerTestBase {
-
-    public MultiLedgerTest(final String entryFormat) {
-        super(entryFormat);
-    }
-
-    @Factory
-    public static Object[] instances() {
-        return new Object[] {
-                new MultiLedgerTest("pulsar"),
-                new MultiLedgerTest("kafka")
-        };
-    }
 
     @Override
     protected void resetConfig() {
@@ -66,14 +65,14 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
         this.conf.setManagedLedgerMinLedgerRolloverTimeMinutes(0);
     }
 
-    @BeforeMethod
+    @BeforeClass
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
         log.info("success internal setup");
     }
 
-    @AfterMethod
+    @AfterClass
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
@@ -184,6 +183,63 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
         assertEquals(i, totalMsgs);
     }
 
+    @Test
+    public void testListOffsetForEmptyRolloverLedger() throws Exception {
+        final String topic = "test-list-offset-for-empty-rollover-ledger";
+        final String partitionName = TopicName.get(topic).getPartition(0).toString();
 
+        admin.topics().createPartitionedTopic(topic, 1);
+        admin.lookups().lookupTopic(topic); // trigger the creation of PersistentTopic
 
+        final ManagedLedgerImpl managedLedger = pulsar.getBrokerService().getTopicIfExists(partitionName).get()
+                .map(topicObject -> (ManagedLedgerImpl) ((PersistentTopic) topicObject).getManagedLedger())
+                .orElse(null);
+        assertNotNull(managedLedger);
+        managedLedger.getConfig().setMaxEntriesPerLedger(2);
+
+        @Cleanup
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+        final int numLedgers = 5;
+        final int numMessages = numLedgers * managedLedger.getConfig().getMaxEntriesPerLedger();
+        for (int i = 0; i < numMessages; i++) {
+            producer.send(new ProducerRecord<>(partitionName, "msg-" + i)).get();
+        }
+        assertEquals(managedLedger.getLedgersInfo().size(), numLedgers);
+
+        // Rollover and delete the old ledgers, wait until there is only one empty ledger
+        managedLedger.getConfig().setRetentionTime(0, TimeUnit.MILLISECONDS);
+        managedLedger.rollCurrentLedgerIfFull();
+        Awaitility.await().atMost(Duration.ofSeconds(3))
+                .until(() -> managedLedger.getLedgersInfo().size() == 1);
+        final List<LedgerInfo> ledgerInfoList = managedLedger.getLedgersInfoAsList();
+        assertEquals(ledgerInfoList.size(), 1);
+        assertEquals(ledgerInfoList.get(0).getEntries(), 0);
+
+        // Verify listing offsets for earliest returns a correct offset
+        final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties());
+        final TopicPartition topicPartition = new TopicPartition(topic, 0);
+        try {
+            final Map<TopicPartition, Long> partitionToOffset =
+                    consumer.beginningOffsets(Collections.singleton(topicPartition), Duration.ofSeconds(2));
+            assertTrue(partitionToOffset.containsKey(topicPartition));
+            assertEquals(partitionToOffset.get(topicPartition).intValue(), numMessages);
+        } catch (Exception e) {
+            log.error("Failed to get beginning offsets: {}", e.getMessage());
+            fail(e.getMessage());
+        }
+
+        // Verify consumer can start consuming from the correct position
+        consumer.subscribe(Collections.singleton(topic));
+        producer.send(new ProducerRecord<>(topic, "hello"));
+        final List<String> receivedValues = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            final ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
+            if (!records.isEmpty()) {
+                records.forEach(record -> receivedValues.add(record.value()));
+                break;
+            }
+        }
+        assertEquals(receivedValues.size(), 1);
+        assertEquals(receivedValues.get(0), "hello");
+    }
 }
