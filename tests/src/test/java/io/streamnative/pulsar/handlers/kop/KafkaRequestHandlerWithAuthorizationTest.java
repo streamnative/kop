@@ -30,10 +30,8 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
-import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
-import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -81,7 +79,6 @@ import org.apache.kafka.common.requests.TxnOffsetCommitResponse;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
-import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
@@ -111,7 +108,6 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     private String adminToken;
 
     private KafkaRequestHandler handler;
-    private AdminManager adminManager;
 
     @BeforeClass
     @Override
@@ -161,32 +157,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         log.info("created namespaces, init handler");
 
-        ProtocolHandler handler1 = pulsar.getProtocolHandlers().protocol("kafka");
-        GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler1)
-                .getGroupCoordinator(conf.getKafkaMetadataTenant());
-        TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler1)
-                .getTransactionCoordinator(conf.getKafkaMetadataTenant());
-
-        adminManager = new AdminManager(pulsar.getAdminClient(), conf);
-        handler = new KafkaRequestHandler(
-                pulsar,
-                conf,
-                new TenantContextManager() {
-                    @Override
-                    public GroupCoordinator getGroupCoordinator(String tenant) {
-                        return groupCoordinator;
-                    }
-
-                    @Override
-                    public TransactionCoordinator getTransactionCoordinator(String tenant) {
-                        return transactionCoordinator;
-                    }
-                },
-                ((KafkaProtocolHandler) handler1).getKopBrokerLookupManager(),
-                adminManager,
-                false,
-                getPlainEndPoint(),
-                NullStatsLogger.INSTANCE);
+        handler = newRequestHandler();
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
@@ -208,7 +179,6 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     @AfterClass
     @Override
     protected void cleanup() throws Exception {
-        adminManager.shutdown();
         super.internalCleanup();
     }
 

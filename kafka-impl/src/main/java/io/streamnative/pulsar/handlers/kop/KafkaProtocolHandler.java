@@ -31,6 +31,8 @@ import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
 import java.util.Map;
@@ -77,6 +79,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
     private SystemTopicClient txnTopicClient;
+    private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
+    private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
     @VisibleForTesting
     @Getter
     private Map<InetSocketAddress, ChannelInitializer<SocketChannel>> channelInitializerMap;
@@ -547,6 +551,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 this,
                 kopBrokerLookupManager,
                 adminManager,
+                producePurgatory,
+                fetchPurgatory,
                 endPoint.isTlsEnabled(),
                 endPoint,
                 scopeStatsLogger);
@@ -557,6 +563,15 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
         checkState(kafkaConfig != null);
         checkState(brokerService != null);
+
+        producePurgatory = DelayedOperationPurgatory.<DelayedOperation>builder()
+                .purgatoryName("produce")
+                .timeoutTimer(SystemTimer.builder().executorName("produce").build())
+                .build();
+        fetchPurgatory = DelayedOperationPurgatory.<DelayedOperation>builder()
+                .purgatoryName("fetch")
+                .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
+                .build();
 
         try {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
@@ -577,9 +592,21 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public void close() {
         Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
-        offsetTopicClient.close();
-        txnTopicClient.close();
-        adminManager.shutdown();
+        if (offsetTopicClient != null) {
+            offsetTopicClient.close();
+        }
+        if (txnTopicClient != null) {
+            txnTopicClient.close();
+        }
+        if (adminManager != null) {
+            adminManager.shutdown();
+        }
+        if (producePurgatory != null) {
+            producePurgatory.shutdown();
+        }
+        if (fetchPurgatory != null) {
+            fetchPurgatory.shutdown();
+        }
         groupCoordinatorsByTenant.values().forEach(GroupCoordinator::shutdown);
         kopEventManager.close();
         transactionCoordinatorByTenant.values().forEach(TransactionCoordinator::shutdown);

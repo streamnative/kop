@@ -60,7 +60,6 @@ import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
-import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -219,16 +218,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     // is found.
     private final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap = new ConcurrentHashMap<>();
     // DelayedOperation for produce and fetch
-    private final DelayedOperationPurgatory<DelayedOperation> producePurgatory =
-            DelayedOperationPurgatory.<DelayedOperation>builder()
-                    .purgatoryName("produce")
-                    .timeoutTimer(SystemTimer.builder().executorName("produce").build())
-                    .build();
-    private final DelayedOperationPurgatory<DelayedOperation> fetchPurgatory =
-            DelayedOperationPurgatory.<DelayedOperation>builder()
-                    .purgatoryName("fetch")
-                    .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
-                    .build();
+    private final DelayedOperationPurgatory<DelayedOperation> producePurgatory;
+    private final DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
 
     // Flag to manage throttling-publish-buffer by atomically enable/disable read-channel.
     private final long maxPendingBytes;
@@ -285,6 +276,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                TenantContextManager tenantContextManager,
                                KopBrokerLookupManager kopBrokerLookupManager,
                                AdminManager adminManager,
+                               DelayedOperationPurgatory<DelayedOperation> producePurgatory,
+                               DelayedOperationPurgatory<DelayedOperation> fetchPurgatory,
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
                                StatsLogger statsLogger) throws Exception {
@@ -306,6 +299,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ? new SimpleAclAuthorizer(pulsarService)
                 : null;
         this.adminManager = adminManager;
+        this.producePurgatory = producePurgatory;
+        this.fetchPurgatory = fetchPurgatory;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
         this.topicManager = new KafkaTopicManager(this);
@@ -355,8 +350,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 log.info("currentConnectedGroup remove {}", clientHost);
                 currentConnectedGroup.remove(clientHost);
             }
-            producePurgatory.shutdown();
-            fetchPurgatory.shutdown();
 
             // update alive channel count stat
             RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
