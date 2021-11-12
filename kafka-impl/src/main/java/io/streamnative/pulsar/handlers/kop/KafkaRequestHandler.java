@@ -1316,6 +1316,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             PersistentTopic perTopic = perTopicOpt.get();
             ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) perTopic.getManagedLedger();
             PositionImpl lac = (PositionImpl) managedLedger.getLastConfirmedEntry();
+            if (lac == null) {
+                log.error("[{}] Unexpected LastConfirmedEntry for topic {}, managed ledger: {}",
+                        ctx, perTopic.getName(), managedLedger.getName());
+                partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, -1L));
+                return;
+            }
             if (timestamp == ListOffsetRequest.LATEST_TIMESTAMP) {
                 PositionImpl position = (PositionImpl) managedLedger.getLastConfirmedEntry();
                 if (log.isDebugEnabled()) {
@@ -1327,14 +1333,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             } else if (timestamp == ListOffsetRequest.EARLIEST_TIMESTAMP) {
                 PositionImpl position = OffsetFinder.getFirstValidPosition(managedLedger);
+                if (position == null) {
+                    log.error("[{}] Failed to find first valid position for topic {}", ctx, perTopic.getName());
+                    partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, -1L));
+                    return;
+                }
 
                 if (log.isDebugEnabled()) {
-                    log.debug("Get earliest position for topic {} time {}. result: {}",
-                        perTopic.getName(), timestamp, position);
+                    log.debug("[{}] Get earliest position for topic {}: {}, lac: {}",
+                            ctx, perTopic.getName(), position, lac);
                 }
-                if (position.compareTo(lac) > 0 || MessageMetadataUtils.getCurrentOffset(managedLedger) < 0) {
-                    long offset = Math.max(0, MessageMetadataUtils.getCurrentOffset(managedLedger));
-                    partitionData.complete(Pair.of(Errors.NONE, offset));
+                final long latestOffset = MessageMetadataUtils.getCurrentOffset(managedLedger);
+                if (latestOffset < 0) {
+                    log.warn("[{}] Unexpected latest offset {} (< 0) for topic {}",
+                            ctx, latestOffset, perTopic.getName());
+                    partitionData.complete(Pair.of(Errors.NONE, 0L));
+                    return;
+                }
+                if (position.compareTo(lac) > 0) {
+                    partitionData.complete(Pair.of(Errors.NONE, latestOffset));
                 } else {
                     MessageMetadataUtils.getOffsetOfPosition(managedLedger, position, false, timestamp)
                             .whenComplete((offset, throwable) -> {
