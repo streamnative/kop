@@ -315,8 +315,8 @@ public class TransactionCoordinator {
             responseCallback.accept(initTransactionError(Errors.forException(prepareInitPidThrowable)));
             return;
         }
-        TxnTransitMetadata newMetadata = errorsAndData.getData().txnTransitMetadata;
-        if (errorsAndData.getData().txnTransitMetadata.getTxnState() == PREPARE_EPOCH_FENCE) {
+        TxnTransitMetadata newMetadata = errorsAndData.getData().getTxnTransitMetadata();
+        if (errorsAndData.getData().getTxnTransitMetadata().getTxnState() == PREPARE_EPOCH_FENCE) {
             endTransaction(transactionalId,
                     newMetadata.getProducerId(),
                     newMetadata.getProducerEpoch(),
@@ -359,6 +359,7 @@ public class TransactionCoordinator {
         return new InitProducerIdResult(RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH, error);
     }
 
+    @Data
     @AllArgsConstructor
     private static class EpochAndTxnTransitMetadata {
         private final int coordinatorEpoch;
@@ -377,7 +378,7 @@ public class TransactionCoordinator {
         //      this could be a retry after a valid epoch bump that the producer never received the response for
         return txnMetadata.getProducerEpoch() == RecordBatch.NO_PRODUCER_EPOCH
                 || producerIdAndEpoch.producerId == txnMetadata.getProducerId()
-                || (producerIdAndEpoch.producerId == txnMetadata.getLastProducerEpoch()
+                || (producerIdAndEpoch.producerId == txnMetadata.getLastProducerId()
                 && txnMetadata.isEpochExhausted(producerIdAndEpoch.epoch));
     }
 
@@ -411,30 +412,33 @@ public class TransactionCoordinator {
                 case COMPLETE_ABORT:
                 case COMPLETE_COMMIT:
                 case EMPTY:
-                    final CompletableFuture<TxnTransitMetadata> transitMetadata =
+                    final CompletableFuture<ErrorsAndData<TxnTransitMetadata>> transitMetadata =
                             new CompletableFuture<>();
                     // If the epoch is exhausted and the expected epoch (if provided) matches it, generate a new
                     // producer ID
                     if (txnMetadata.isProducerEpochExhausted()) {
                         CompletableFuture<Long> newProducerId = producerIdManager.generateProducerId();
                         newProducerId.thenAccept(newPid -> {
-                            transitMetadata.complete(
-                                    txnMetadata.prepareProducerIdRotation(
+                            transitMetadata.complete(new ErrorsAndData<>(txnMetadata.prepareProducerIdRotation(
                                             newPid,
                                             transactionTimeoutMs,
                                             time.milliseconds(),
-                                            expectedProducerIdAndEpoch.isPresent()));
+                                            expectedProducerIdAndEpoch.isPresent())));
                         });
                     } else {
                         transitMetadata.complete(
                                 txnMetadata.prepareIncrementProducerEpoch(
                                         transactionTimeoutMs,
                                         expectedProducerIdAndEpoch.map(ProducerIdAndEpoch::getEpoch),
-                                        time.milliseconds()).getData());
+                                        time.milliseconds()));
                     }
                     transitMetadata.whenComplete((txnTransitMetadata, throwable) -> {
+                        if (txnTransitMetadata.hasErrors()) {
+                            resultFuture.complete(new ErrorsAndData<>(txnTransitMetadata.getErrors()));
+                            return;
+                        }
                         resultFuture.complete(new ErrorsAndData<>(
-                                new EpochAndTxnTransitMetadata(coordinatorEpoch, txnTransitMetadata)));
+                                new EpochAndTxnTransitMetadata(coordinatorEpoch, txnTransitMetadata.getData())));
                     });
                     break;
                 case ONGOING:
@@ -520,7 +524,7 @@ public class TransactionCoordinator {
             return;
         }
         txnManager.appendTransactionToLog(
-                transactionalId, result.getData().coordinatorEpoch, result.getData().txnTransitMetadata,
+                transactionalId, result.getData().getCoordinatorEpoch(), result.getData().getTxnTransitMetadata(),
                 new TransactionStateManager.ResponseCallback() {
                     @Override
                     public void complete() {
@@ -618,7 +622,7 @@ public class TransactionCoordinator {
                                     // This was attempted epoch fence that failed, so mark this state on the metadata
                                     epochAndMetadata.get().getTransactionMetadata().setHasFailedEpochFence(true);
                                     log.warn("The coordinator failed to write an epoch fence transition for producer "
-                                            + "{} to the transaction log with error {}. The epoch was increased to ${} "
+                                            + "{} to the transaction log with error {}. The epoch was increased to {} "
                                             + "but not returned to the client", transactionalId, errors,
                                             preAppendResult.getData().getProducerEpoch());
                             }
@@ -829,8 +833,8 @@ public class TransactionCoordinator {
 
         if (preSendResult.hasErrors()) {
             log.info("Aborting sending of transaction markers after appended {} to transaction log "
-                            + "and returning {} error to client for $transactionalId's EndTransaction request",
-                    txnMarkerResult, preSendResult.getErrors());
+                            + "and returning {} error to client for {}'s EndTransaction request",
+                    transactionalId, txnMarkerResult, preSendResult.getErrors());
             callback.accept(preSendResult.getErrors());
             return;
         }
