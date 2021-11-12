@@ -119,6 +119,8 @@ import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
 import org.apache.kafka.common.requests.AddOffsetsToTxnResponse;
 import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
 import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
+import org.apache.kafka.common.requests.AlterConfigsRequest;
+import org.apache.kafka.common.requests.AlterConfigsResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
@@ -1961,6 +1963,27 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     @Override
+    protected void handleAlterConfigs(KafkaHeaderAndRequest describeConfigs,
+                                         CompletableFuture<AbstractResponse> resultFuture) {
+        checkArgument(describeConfigs.getRequest() instanceof AlterConfigsRequest);
+        AlterConfigsRequest request = (AlterConfigsRequest) describeConfigs.getRequest();
+
+        if (request.configs().isEmpty()) {
+            resultFuture.complete(new AlterConfigsResponse(0, Maps.newHashMap()));
+            return;
+        }
+
+        Map<ConfigResource, ApiError> results = new HashMap<>();
+        request.configs().forEach((ConfigResource configResource, AlterConfigsRequest.Config newConfig) -> {
+            newConfig.entries().forEach(entry -> {
+                log.info("Ignoring ALTER_CONFIG for {} {} = {}", configResource, entry.name(), entry.value());
+            });
+            results.put(configResource, ApiError.NONE);
+        });
+        resultFuture.complete(new AlterConfigsResponse(0, results));
+    }
+
+    @Override
     protected void handleDescribeConfigs(KafkaHeaderAndRequest describeConfigs,
                                          CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(describeConfigs.getRequest() instanceof DescribeConfigsRequest);
@@ -2035,6 +2058,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     break;
                 case BROKER:
                     // Current KoP don't support Broker Resource.
+                    // but we are not exposing anything to the client, so it is fine to serve requests.
+                    completeOne.accept(() -> authorizedResources.add(configResource));
+                    break;
                 case UNKNOWN:
                 default:
                     completeOne.accept(() -> log.error("KoP doesn't support resource type: " + configResource.type()));
