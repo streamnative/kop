@@ -595,7 +595,14 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 new ConfigResource(ConfigResource.Type.TOPIC, invalidTopic),
                 new Config(Collections.emptyList()))).all().get();
 
+    }
 
+    @Test(timeOut = 10000)
+    public void testDescribeBrokerConfigs() throws Exception {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(props);
         Map<ConfigResource, Config> brokerConfigs = kafkaAdmin.describeConfigs(Collections.singletonList(
                 new ConfigResource(ConfigResource.Type.BROKER, ""))).all().get();
         assertEquals(1, brokerConfigs.size());
