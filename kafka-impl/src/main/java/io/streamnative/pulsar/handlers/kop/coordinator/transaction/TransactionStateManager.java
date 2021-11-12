@@ -254,7 +254,7 @@ public class TransactionStateManager {
             MemoryRecords tombstoneRecords) {
         return CoreUtils.inReadLock(stateLock, () -> appendTombstoneRecords(
                 transactionPartition.partition(), tombstoneRecords)
-                .thenAccept(__ -> {
+                .whenComplete((__, ex) -> {
                     CoreUtils.inReadLock(stateLock, () -> {
                         Map<String, TransactionMetadata> partitionCacheEntry =
                                 transactionMetadataCache.get(transactionPartition.partition());
@@ -266,13 +266,16 @@ public class TransactionStateManager {
                                     if (txnMetadata.getPendingState().isPresent()
                                             && txnMetadata.getPendingState().get().equals(TransactionState.DEAD)
                                             && txnMetadata.getProducerEpoch()
-                                            == idCoordinatorEpochAndMetadata.getTransitMetadata().getProducerEpoch()) {
+                                            == idCoordinatorEpochAndMetadata.getTransitMetadata().getProducerEpoch()
+                                            && ex == null
+                                    ) {
                                         partitionCacheEntry.remove(transactionalId);
                                     } else {
                                         log.warn("Failed to remove expired transactionalId: {} from cache. " +
+                                                        "Tombstone append error: {}" +
                                                         "pendingState: {}, producerEpoch: {}, " +
                                                         "expected producerEpoch: {}",
-                                                transactionalId, txnMetadata.getPendingState(),
+                                                transactionalId, ex, txnMetadata.getPendingState(),
                                                 txnMetadata.getProducerEpoch(),
                                                 idCoordinatorEpochAndMetadata.getTransitMetadata().getProducerEpoch());
                                         txnMetadata.setPendingState(Optional.empty());
@@ -283,8 +286,10 @@ public class TransactionStateManager {
                         }
                         return null;
                     });
-                }).exceptionally(ex -> {
-                    log.error("Error to write tombstones for expired transactionIds.", ex);
+                })
+                .thenAccept(__ -> {})
+                .exceptionally(ex -> {
+                    log.error("Append Tombstone Records failed: ", ex);
                     return null;
                 }));
 
@@ -645,9 +650,9 @@ public class TransactionStateManager {
         return CoreUtils.inReadLock(stateLock, () -> {
             int partitionId = partitionFor(transactionalId);
             if (loadingPartitions.contains(partitionId)) {
-                return new ErrorsAndData<>(Errors.COORDINATOR_LOAD_IN_PROGRESS);
+                return new ErrorsAndData<>(Errors.COORDINATOR_LOAD_IN_PROGRESS, Optional.empty());
             } else if (leavingPartitions.contains(partitionId)) {
-                return new ErrorsAndData<>(Errors.NOT_COORDINATOR);
+                return new ErrorsAndData<>(Errors.NOT_COORDINATOR, Optional.empty());
             } else {
                 Map<String, TransactionMetadata> metadataMap = transactionMetadataCache.get(partitionId);
                 if (metadataMap == null) {
