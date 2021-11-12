@@ -4,7 +4,7 @@
 
 | Name                     | Description                                                  |
 | ------------------------ | ------------------------------------------------------------ |
-| kafkaListeners           | Comma-separated list of URIs that we will listen on and the listener names.<br>e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093.<br>Each URI's scheme represents a listener name if `kafkaProtocolMap` is configured.<br>Otherwise, the scheme must be a valid protocol in [PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL].<br>If hostname is not set, bind to the default interface. |
+| kafkaListeners           | Comma-separated list of URIs that we will listen on and the listener names.<br>e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093.<br>Each URI's scheme represents a listener name if `kafkaProtocolMap` is configured.<br>Otherwise, the scheme must be a valid protocol in [PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL].<br>If the hostname is not set, it will be bound to the default interface. |
 | kafkaProtocolMap         | Comma-separated map of listener name and protocol.<br>e.g. PRIVATE:PLAINTEXT,PRIVATE_SSL:SSL,PUBLIC:PLAINTEXT,PUBLIC_SSL:SSL. |
 | listeners                | Deprecated. `kafkaListeners` is used.                        |
 | kafkaAdvertisedListeners | Listeners to publish to ZooKeeper for clients to use.<br>The format is the same as `kafkaListeners`. |
@@ -13,7 +13,7 @@
 > 
 > Among all configurations, only `kafkaListeners` or `listeners` (deprecated) is required.
 
-To support multiple listeners, you need to specify different listener names in `kafkaListeners` and `kafkaAdvertisedListeners`. Then map the listener name to the proper protocol in `kafkaProtocolMap`.
+To support multiple listeners, you need to specify different listener names in `kafkaListeners` and `kafkaAdvertisedListeners`. Then, map the listener name to the proper protocol in `kafkaProtocolMap`.
 
 For example, assuming you need to listen on port 9092 and 19092 with the `PLAINTEXT` protocol, the associated names are `kafka_internal` and `kafka_external`. Then you need to add the following configurations:
 
@@ -24,9 +24,9 @@ kafkaAdvertisedListeners=kafka_internal://localhost:9092,kafka_external://localh
 ```
 
 In the above example,
-- `kafkaListener` is split into multiple tokens by a comma (`,`), the format of each token format is `<listener-name>://<host>:<port>`.
-- `kafkaProtocolMap` is split into multiple tokens by a comma (`,`), the format of each token format is `<listener-name>:<protocol>`.
-- `kafkaAdvertisedListeners` is split into multiple tokens by a comma(`,`), the format of each token format is `<listener-name>:<scheme>://<host>:<port>`.
+- `kafkaListener` is split into multiple tokens by a comma (`,`), the token is in a format of `<listener-name>://<host>:<port>`.
+- `kafkaProtocolMap` is split into multiple tokens by a comma (`,`), the token is in a format of `<listener-name>:<protocol>`.
+- `kafkaAdvertisedListeners` is split into multiple tokens by a comma(`,`), the token is in a format of `<listener-name>:<scheme>://<host>:<port>`.
 
 
 ## Logger
