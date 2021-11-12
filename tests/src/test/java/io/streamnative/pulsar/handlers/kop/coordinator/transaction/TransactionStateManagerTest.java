@@ -22,19 +22,18 @@ import static org.testng.AssertJUnit.fail;
 
 import com.google.common.collect.Lists;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
+import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
-import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.SimpleRecord;
-import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.MessageId;
 import org.mockito.ArgumentCaptor;
 import org.testng.annotations.AfterClass;
@@ -50,6 +49,7 @@ import org.testng.collections.Maps;
 @Slf4j
 public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
 
+    protected final long defaultTestTimeout = 20000;
     private static final Short producerEpoch = 0;
     private static final Integer transactionTimeoutMs = 1000;
     private static final int partitionId = 0;
@@ -65,17 +65,14 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
         put(transactionalId1, 1L);
         put(transactionalId2, 2L);
     }};
-    protected final long defaultTestTimeout = 20000;
-    private static final TransactionMetadata txnMetadata1 =
+    private TransactionMetadata txnMetadata1 =
             transactionMetadata(transactionalId1, producerIds.get(transactionalId1), TransactionState.EMPTY,
                     transactionTimeoutMs);
-
-    private static final TransactionMetadata txnMetadata2 =
+    private TransactionMetadata txnMetadata2 =
             transactionMetadata(transactionalId2, producerIds.get(transactionalId2), TransactionState.EMPTY,
                     transactionTimeoutMs);
 
     private TransactionStateManager transactionManager;
-
     private OrderedScheduler scheduler;
     private SystemTopicClient systemTopicClient;
 
@@ -118,10 +115,14 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
         // make sure the transactional id hashes to the assigning partition id
         assertEquals(partitionId, transactionManager.partitionFor(transactionalId1));
         assertEquals(partitionId, transactionManager.partitionFor(transactionalId2));
+        txnMetadata1 = transactionMetadata(transactionalId1, producerIds.get(transactionalId1), TransactionState.EMPTY,
+                transactionTimeoutMs);
+        txnMetadata2 = transactionMetadata(transactionalId2, producerIds.get(transactionalId2), TransactionState.EMPTY,
+                transactionTimeoutMs);
     }
 
     @AfterMethod
-    protected void tearDown() throws PulsarAdminException {
+    protected void tearDown() {
         transactionManager.shutdown();
         systemTopicClient.close();
         scheduler.shutdown();

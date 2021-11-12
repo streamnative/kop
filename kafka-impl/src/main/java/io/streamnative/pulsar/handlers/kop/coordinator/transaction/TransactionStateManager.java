@@ -14,8 +14,8 @@
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
 
-import com.google.api.client.util.Lists;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
@@ -23,9 +23,7 @@ import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -43,7 +41,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
 import org.apache.bookkeeper.util.SafeRunnable;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.SchemaException;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -96,12 +93,6 @@ public class TransactionStateManager {
     private final ScheduledExecutorService scheduler;
 
     private final Time time;
-
-    @VisibleForTesting
-    protected boolean isLoading() {
-        return !this.loadingPartitions.isEmpty();
-    }
-
 
     public TransactionStateManager(TransactionConfig transactionConfig,
                                    SystemTopicClient txnTopicClient,
@@ -173,7 +164,7 @@ public class TransactionStateManager {
                 Integer partitionId = entry.getKey();
                 Map<String, TransactionMetadata> partitionCacheEntry = entry.getValue();
                 TopicPartition transactionPartition =
-                        new TopicPartition(Topic.TRANSACTION_STATE_TOPIC_NAME, partitionId);
+                        new TopicPartition(transactionConfig.getTransactionMetadataTopicName(), partitionId);
                 return removeExpiredTransactionalIds(transactionPartition, partitionCacheEntry);
             }).collect(Collectors.toList());
             return FutureUtils.collect(collect).thenAccept(__ -> {});
@@ -238,7 +229,7 @@ public class TransactionStateManager {
                     flushRecordsBuilder.run();
                 } else {
                     // Advance the iterator if we do not need to retry to append
-                    index ++;
+                    index++;
                 }
                 if (!expired.isEmpty()) {
                     flushRecordsBuilder.run();
@@ -258,7 +249,7 @@ public class TransactionStateManager {
                     CoreUtils.inReadLock(stateLock, () -> {
                         Map<String, TransactionMetadata> partitionCacheEntry =
                                 transactionMetadataCache.get(transactionPartition.partition());
-                        if (partitionCacheEntry != null ) {
+                        if (partitionCacheEntry != null) {
                             expiredForPartition.forEach(idCoordinatorEpochAndMetadata -> {
                                 String transactionalId = idCoordinatorEpochAndMetadata.getTransactionalId();
                                 TransactionMetadata txnMetadata = partitionCacheEntry.get(transactionalId);
@@ -271,10 +262,10 @@ public class TransactionStateManager {
                                     ) {
                                         partitionCacheEntry.remove(transactionalId);
                                     } else {
-                                        log.warn("Failed to remove expired transactionalId: {} from cache. " +
-                                                        "Tombstone append error: {}" +
-                                                        "pendingState: {}, producerEpoch: {}, " +
-                                                        "expected producerEpoch: {}",
+                                        log.warn("Failed to remove expired transactionalId: {} from cache. "
+                                                        + "Tombstone append error: {}"
+                                                        + "pendingState: {}, producerEpoch: {}, "
+                                                        + "expected producerEpoch: {}",
                                                 transactionalId, ex, txnMetadata.getPendingState(),
                                                 txnMetadata.getProducerEpoch(),
                                                 idCoordinatorEpochAndMetadata.getTransitMetadata().getProducerEpoch());
@@ -316,11 +307,10 @@ public class TransactionStateManager {
     }
 
     private boolean shouldExpire(TransactionMetadata txnMetadata, Long currentTimeMs){
-            return txnMetadata.getState().isExpirationAllowed() && txnMetadata.getTxnLastUpdateTimestamp() <=
-                    (currentTimeMs - transactionConfig.getTransactionalIdExpirationMs());
+            return txnMetadata.getState().isExpirationAllowed() && txnMetadata.getTxnLastUpdateTimestamp()
+                    <= (currentTimeMs - transactionConfig.getTransactionalIdExpirationMs());
     }
 
-    // case class TransactionalIdCoordinatorEpochAndMetadata(transactionalId: String, coordinatorEpoch: Int, transitMetadata: TxnTransitMetadata)
     @Data
     @AllArgsConstructor
     private static class TransactionalIdCoordinatorEpochAndMetadata {
@@ -382,7 +372,7 @@ public class TransactionStateManager {
 
         // generate the message for this transaction metadata
         TopicPartition topicPartition = new TopicPartition(
-                Topic.TRANSACTION_STATE_TOPIC_NAME, partitionFor(transactionalId));
+                transactionConfig.getTransactionMetadataTopicName(), partitionFor(transactionalId));
 
         CoreUtils.inReadLock(stateLock, () -> {
             // we need to hold the read lock on the transaction metadata cache until appending to local log returns;
@@ -691,7 +681,8 @@ public class TransactionStateManager {
     public CompletableFuture<Void> loadTransactionsForTxnTopicPartition(
                                                                 int partitionId,
                                                                 SendTxnMarkersCallback sendTxnMarkers) {
-        TopicPartition topicPartition = new TopicPartition(Topic.TRANSACTION_STATE_TOPIC_NAME, partitionId);
+        TopicPartition topicPartition =
+                new TopicPartition(transactionConfig.getTransactionMetadataTopicName(), partitionId);
 
         boolean alreadyLoading = CoreUtils.inWriteLock(stateLock, () -> {
             leavingPartitions.remove(partitionId);
@@ -786,8 +777,8 @@ public class TransactionStateManager {
     @VisibleForTesting
     protected void addLoadedTransactionsToCache(int txnTopicPartition,
                                               Map<String, TransactionMetadata> loadedTransactions) {
-        Map<String, TransactionMetadata> previousTxnMetadataCacheEntry
-                = transactionMetadataCache.put(txnTopicPartition, loadedTransactions);
+        Map<String, TransactionMetadata> previousTxnMetadataCacheEntry =
+                transactionMetadataCache.put(txnTopicPartition, loadedTransactions);
         if (previousTxnMetadataCacheEntry != null && !previousTxnMetadataCacheEntry.isEmpty()) {
             log.warn("Unloaded transaction metadata {} from {} as part of loading metadata.",
                     previousTxnMetadataCacheEntry, txnTopicPartition);
@@ -851,7 +842,8 @@ public class TransactionStateManager {
     }
 
     public void removeTransactionsForTxnTopicPartition(int partition) {
-        TopicPartition topicPartition = new TopicPartition(Topic.TRANSACTION_STATE_TOPIC_NAME, partition);
+        TopicPartition topicPartition =
+                new TopicPartition(transactionConfig.getTransactionMetadataTopicName(), partition);
         log.info("Scheduling unloading transaction metadata from {}", topicPartition);
 
         CoreUtils.inWriteLock(stateLock, () -> {
