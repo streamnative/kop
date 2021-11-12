@@ -13,7 +13,7 @@
 > 
 > Among all configurations, only `kafkaListeners` or `listeners` (deprecated) is required.
 
-To support multiple listeners before, you need to specify different listener names in [`advertisedListeners`](https://pulsar.apache.org/docs/en/concepts-multiple-advertised-listeners/#use-multiple-advertised-listeners). Then map the listener name to the proper protocol in `kafkaProtocolMap`.
+To support multiple listeners, you need to specify different listener names in `kafkaListeners` and `kafkaAdvertisedListeners`. Then map the listener name to the proper protocol in `kafkaProtocolMap`.
 
 For example, assuming you need to listen on port 9092 and 19092 with the `PLAINTEXT` protocol, the associated names are `kafka_internal` and `kafka_external`. Then you need to add the following configurations:
 
