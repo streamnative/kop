@@ -29,7 +29,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -39,15 +38,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
-import org.apache.bookkeeper.util.SafeRunnable;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.SchemaException;
-import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.record.MemoryRecordsBuilder;
-import org.apache.kafka.common.record.Record;
-import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.SystemTime;
@@ -69,7 +62,6 @@ public class TransactionStateManager {
     private final SystemTopicClient txnTopicClient;
     private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
-    private final byte magicValue = RecordBatch.CURRENT_MAGIC_VALUE;
 
     // Number of partitions for the transaction log topic.
     private final int transactionTopicPartitionCount;
@@ -143,14 +135,7 @@ public class TransactionStateManager {
 
     private void enableTransactionalIdExpiration() {
         scheduler.scheduleAtFixedRate(
-                SafeRunnable.safeRun(() -> {
-                            try {
-                                removeExpiredTransactionalIds().get();
-                            } catch (InterruptedException | ExecutionException e) {
-                                log.error("Failed to remove expired transactional.", e);
-                            }
-                        },
-                        ex -> log.error("Uncaught exception in scheduled task transactionalId expiration", ex)),
+                this::removeExpiredTransactionalIds,
                 transactionConfig.getRemoveExpiredTransactionalIdsIntervalMs(),
                 transactionConfig.getRemoveExpiredTransactionalIdsIntervalMs(),
                 TimeUnit.MILLISECONDS);
@@ -159,7 +144,6 @@ public class TransactionStateManager {
     @VisibleForTesting
     protected CompletableFuture<Void> removeExpiredTransactionalIds() {
         return CoreUtils.inReadLock(stateLock, () -> {
-
             List<CompletableFuture<Void>> collect = transactionMetadataCache.entrySet().stream().map(entry -> {
                 Integer partitionId = entry.getKey();
                 Map<String, TransactionMetadata> partitionCacheEntry = entry.getValue();
@@ -175,135 +159,84 @@ public class TransactionStateManager {
                                                Map<String, TransactionMetadata> txnMetadataCacheEntry) {
         return CoreUtils.inReadLock(stateLock, () -> {
             long currentTimeMs = time.milliseconds();
-            int maxBatchSize = transactionConfig.getMaxMessageSize();
-            List<TransactionalIdCoordinatorEpochAndMetadata> expired = Lists.newArrayList();
             List<CompletableFuture<Void>> removeExpiredTransactionalFutures = Lists.newArrayList();
 
-            // In java lambda, it required use array or AtomicReference to access this value.
-            final MemoryRecordsBuilder[] recordsBuilder = new MemoryRecordsBuilder[1];
-            Runnable flushRecordsBuilder = () -> {
-                removeExpiredTransactionalFutures.add(
-                        writeTombstonesForExpiredTransactionalIds(
-                                transactionPartition,
-                                expired,
-                                recordsBuilder[0].build()
-                        ).thenAccept(__ -> {
-                            expired.clear();
-                            recordsBuilder[0] = null;
-                        }).exceptionally(ex -> {
-                            log.error("Error to flash recordsBuilder.", ex);
-                            return null;
-                        }));
-            };
-
-            ArrayList<TransactionMetadata> stateEntries = Lists.newArrayList(txnMetadataCacheEntry.values());
-            int size = stateEntries.size();
-            int index = 0;
-            while (index < size) {
-                TransactionMetadata txnMetadata = stateEntries.get(index);
+            txnMetadataCacheEntry.values().forEach(txnMetadata -> {
                 String transactionalId = txnMetadata.getTransactionalId();
-                AtomicBoolean fullBatch = new AtomicBoolean(false);
                 txnMetadata.inLock(() -> {
-                    if (recordsBuilder[0] == null) {
-                        recordsBuilder[0] = MemoryRecords.builder(
-                                ByteBuffer.allocate(Math.min(16384, maxBatchSize)),
-                                magicValue,
-                                transactionConfig.getTransactionMetadataTopicCompressionType(),
-                                TimestampType.CREATE_TIME,
-                                0L,
-                                maxBatchSize
-                        );
-                    }
                     if (!txnMetadata.getPendingState().isPresent() && shouldExpire(txnMetadata, currentTimeMs)) {
-                        if (maybeAppendExpiration(txnMetadata, recordsBuilder[0], currentTimeMs)) {
-                            TransactionMetadata.TxnTransitMetadata transitMetadata = txnMetadata.prepareDead();
-                            expired.add(new TransactionalIdCoordinatorEpochAndMetadata(transactionalId,
-                                    transitMetadata));
-                        } else {
-                            fullBatch.set(true);
-                        }
+                        byte[] tombstone = new TransactionLogKey(txnMetadata.getTransactionalId()).toBytes();
+                        TransactionMetadata.TxnTransitMetadata transitMetadata = txnMetadata.prepareDead();
+                        removeExpiredTransactionalFutures.add(
+                                writeTombstoneForExpiredTransactionalIds(
+                                        transactionPartition,
+                                        new TransactionalIdCoordinatorEpochAndMetadata(transactionalId,
+                                                transitMetadata),
+                                        tombstone
+                                ));
                     }
                     return null;
                 });
-                if (fullBatch.get()) {
-                    flushRecordsBuilder.run();
-                } else {
-                    // Advance the iterator if we do not need to retry to append
-                    index++;
-                }
-                if (!expired.isEmpty()) {
-                    flushRecordsBuilder.run();
-                }
-            }
-            return FutureUtils.collect(removeExpiredTransactionalFutures).thenAccept(__ -> {});
+            });
+            return FutureUtils.collect(removeExpiredTransactionalFutures).thenAccept(__ -> {}).exceptionally(ex -> {
+                log.error("Error to remove tombstones for expired transactional Ids.", ex);
+                return null;
+            });
         });
     }
 
-    private CompletableFuture<Void> writeTombstonesForExpiredTransactionalIds(
+    private CompletableFuture<Void> writeTombstoneForExpiredTransactionalIds(
             TopicPartition transactionPartition,
-            List<TransactionalIdCoordinatorEpochAndMetadata> expiredForPartition,
-            MemoryRecords tombstoneRecords) {
-        return CoreUtils.inReadLock(stateLock, () -> appendTombstoneRecords(
-                transactionPartition.partition(), tombstoneRecords)
+            TransactionalIdCoordinatorEpochAndMetadata expiredForPartition,
+            byte[] tombstone) {
+        return CoreUtils.inReadLock(stateLock, () -> appendTombstone(
+                transactionPartition.partition(), tombstone)
                 .whenComplete((__, ex) -> {
                     CoreUtils.inReadLock(stateLock, () -> {
                         Map<String, TransactionMetadata> partitionCacheEntry =
                                 transactionMetadataCache.get(transactionPartition.partition());
                         if (partitionCacheEntry != null) {
-                            expiredForPartition.forEach(idCoordinatorEpochAndMetadata -> {
-                                String transactionalId = idCoordinatorEpochAndMetadata.getTransactionalId();
-                                TransactionMetadata txnMetadata = partitionCacheEntry.get(transactionalId);
-                                txnMetadata.inLock(() -> {
-                                    if (txnMetadata.getPendingState().isPresent()
-                                            && txnMetadata.getPendingState().get().equals(TransactionState.DEAD)
-                                            && txnMetadata.getProducerEpoch()
-                                            == idCoordinatorEpochAndMetadata.getTransitMetadata().getProducerEpoch()
-                                            && ex == null
-                                    ) {
-                                        partitionCacheEntry.remove(transactionalId);
-                                    } else {
-                                        log.warn("Failed to remove expired transactionalId: {} from cache. "
-                                                        + "Tombstone append error: {}"
-                                                        + "pendingState: {}, producerEpoch: {}, "
-                                                        + "expected producerEpoch: {}",
-                                                transactionalId, ex, txnMetadata.getPendingState(),
-                                                txnMetadata.getProducerEpoch(),
-                                                idCoordinatorEpochAndMetadata.getTransitMetadata().getProducerEpoch());
-                                        txnMetadata.setPendingState(Optional.empty());
-                                    }
-                                    return null;
-                                });
+                            String transactionalId = expiredForPartition.getTransactionalId();
+                            TransactionMetadata txnMetadata = partitionCacheEntry.get(transactionalId);
+                            txnMetadata.inLock(() -> {
+                                if (txnMetadata.getPendingState().isPresent()
+                                        && txnMetadata.getPendingState().get().equals(TransactionState.DEAD)
+                                        && txnMetadata.getProducerEpoch()
+                                        == expiredForPartition.getTransitMetadata().getProducerEpoch()
+                                        && ex == null
+                                ) {
+                                    partitionCacheEntry.remove(transactionalId);
+                                } else {
+                                    log.warn("Failed to remove expired transactionalId: {} from cache. "
+                                                    + "Tombstone append error: {}"
+                                                    + "pendingState: {}, producerEpoch: {}, "
+                                                    + "expected producerEpoch: {}",
+                                            transactionalId, ex, txnMetadata.getPendingState(),
+                                            txnMetadata.getProducerEpoch(),
+                                            expiredForPartition.getTransitMetadata().getProducerEpoch());
+                                    txnMetadata.setPendingState(Optional.empty());
+                                }
+                                return null;
                             });
                         }
                         return null;
                     });
-                })
-                .thenAccept(__ -> {})
-                .exceptionally(ex -> {
-                    log.error("Append Tombstone Records failed: ", ex);
-                    return null;
                 }));
-
     }
 
-    protected CompletableFuture<MessageId> appendTombstoneRecords(int partition, MemoryRecords tombstoneRecords) {
-        return getProducer(partition).thenCompose(producer ->
+    protected CompletableFuture<Void> appendTombstone(int partition, byte[] tombstone) {
+        return getProducer(partition).thenComposeAsync(producer ->
                 producer.newMessage()
-                        .keyBytes(tombstoneRecords.buffer().array())
+                        .keyBytes(tombstone)
                         .value(null)
-                        .sendAsync());
-    }
-
-    private boolean maybeAppendExpiration(TransactionMetadata txnMetadata,
-                                          MemoryRecordsBuilder recordsBuilder,
-                                          long currentTimeMs) {
-        byte[] keyBytes = new TransactionLogKey(txnMetadata.getTransactionalId()).toBytes();
-        if (recordsBuilder.hasRoomFor(currentTimeMs, keyBytes, null, Record.EMPTY_HEADERS)) {
-            recordsBuilder.append(currentTimeMs, keyBytes, null, Record.EMPTY_HEADERS);
-            return true;
-        } else {
-            return false;
-        }
+                        .sendAsync(), scheduler).thenAcceptAsync(messageId -> {
+                            if (log.isDebugEnabled()) {
+                                log.debug("Append tombstone success, msgId: [{}], tombstone: [{}]",
+                                        messageId,
+                                        TransactionLogKey.decode(ByteBuffer.wrap(tombstone),
+                                                TransactionLogKey.HIGHEST_SUPPORTED_VERSION));
+                            }
+                        }, scheduler);
     }
 
     private boolean shouldExpire(TransactionMetadata txnMetadata, Long currentTimeMs){
@@ -762,9 +695,15 @@ public class TransactionStateManager {
             try {
                 TransactionLogKey logKey = TransactionLogKey.decode(
                         ByteBuffer.wrap(message.getKeyBytes()), TransactionLogKey.HIGHEST_SUPPORTED_VERSION);
-                transactionMetadataMap.put(
-                        logKey.getTransactionId(),
-                        TransactionLogValue.readTxnRecordValue(logKey.getTransactionId(), message.getValue()));
+                String transactionId = logKey.getTransactionId();
+                TransactionMetadata transactionMetadata =
+                        TransactionLogValue.readTxnRecordValue(transactionId, message.getValue());
+                if (transactionMetadata == null) {
+                    // tom
+                    transactionMetadataMap.remove(transactionId);
+                } else {
+                    transactionMetadataMap.put(logKey.getTransactionId(), transactionMetadata);
+                }
                 loadNextTransaction(partition, reader, lastMessageId, loadFuture, transactionMetadataMap);
             } catch (SchemaException | BufferUnderflowException ex) {
                 log.error("Failed to decode transaction log with message {} for partition {}.",

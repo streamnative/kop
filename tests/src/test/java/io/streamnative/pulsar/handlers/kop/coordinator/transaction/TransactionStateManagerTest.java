@@ -24,6 +24,8 @@ import com.google.common.collect.Lists;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
+
+import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,8 +34,6 @@ import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.pulsar.client.api.MessageId;
 import org.mockito.ArgumentCaptor;
 import org.testng.annotations.AfterClass;
@@ -216,7 +216,7 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
         txnMetadata2.setTxnLastUpdateTimestamp(time.milliseconds());
         transactionManager.putTransactionStateIfNotExists(txnMetadata2);
 
-        Map<Integer, List<MemoryRecords>> appendedRecords = Maps.newHashMap();
+        Map<Integer, List<String>> appendedRecords = Maps.newHashMap();
         expectTransactionalIdExpiration(error, appendedRecords);
 
         transactionManager.removeExpiredTransactionalIds();
@@ -224,14 +224,9 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
         boolean stateAllowsExpiration = txnState.isExpirationAllowed();
         if (stateAllowsExpiration) {
             int partitionId = transactionManager.partitionFor(transactionalId1);
-            SimpleRecord expectedTombstone =
-                    new SimpleRecord(time.milliseconds(),
-                            new TransactionLogKey(transactionalId1).toBytes(), null);
-            MemoryRecords expectedRecords =
-                    MemoryRecords.withRecords(txnConfig.getTransactionMetadataTopicCompressionType(),
-                            expectedTombstone);
+            List<String> expectedTombstone = Lists.newArrayList(transactionalId1);
             assertTrue(appendedRecords.containsKey(partitionId));
-            assertEquals(Lists.newArrayList(expectedRecords), appendedRecords.get(partitionId));
+            assertEquals(Lists.newArrayList(expectedTombstone), appendedRecords.get(partitionId));
 
         } else {
             assertTrue(appendedRecords.isEmpty());
@@ -239,16 +234,18 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
     }
 
     private void expectTransactionalIdExpiration(Errors appendError,
-                                                 Map<Integer, List<MemoryRecords>> capturedAppends){
+                                                 Map<Integer, List<String>> capturedAppends){
         ArgumentCaptor<Integer> partitionCapture = ArgumentCaptor.forClass(Integer.class);
 
-        ArgumentCaptor<MemoryRecords> recordsCapture = ArgumentCaptor.forClass(MemoryRecords.class);
+        ArgumentCaptor<byte[]> recordsCapture = ArgumentCaptor.forClass(byte[].class);
 
         doAnswer(__ -> {
             Integer partition = partitionCapture.getValue();
-            MemoryRecords memoryRecords = recordsCapture.getValue();
-            List<MemoryRecords> batches = capturedAppends.getOrDefault(partition, Lists.newArrayList());
-            batches.add(memoryRecords);
+            byte[] transactionIdBytes = recordsCapture.getValue();
+            List<String> batches = capturedAppends.getOrDefault(partition, Lists.newArrayList());
+            batches.add(TransactionLogKey
+                    .decode(ByteBuffer.wrap(transactionIdBytes),
+                            TransactionLogKey.HIGHEST_SUPPORTED_VERSION).getTransactionId());
             capturedAppends.put(partition, batches);
             if (appendError == Errors.NONE) {
                 return CompletableFuture.completedFuture(null);
@@ -257,7 +254,7 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
             completableFuture.completeExceptionally(appendError.exception());
             return completableFuture;
         }).when(transactionManager)
-                .appendTombstoneRecords(partitionCapture.capture(), recordsCapture.capture());
+                .appendTombstone(partitionCapture.capture(), recordsCapture.capture());
     }
 
     private void loadTransactionsForPartitions(int startPartitionNum, int endPartitionNum) {
