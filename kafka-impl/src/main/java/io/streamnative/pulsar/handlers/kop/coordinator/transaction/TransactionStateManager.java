@@ -699,7 +699,7 @@ public class TransactionStateManager {
                 TransactionMetadata transactionMetadata =
                         TransactionLogValue.readTxnRecordValue(transactionId, message.getValue());
                 if (transactionMetadata == null) {
-                    // tom
+                    // Should remove from transactionMetadataMap when it's tombstone message
                     transactionMetadataMap.remove(transactionId);
                 } else {
                     transactionMetadataMap.put(logKey.getTransactionId(), transactionMetadata);
