@@ -633,7 +633,7 @@ public class TransactionStateManager {
         long startTimeMs = SystemTime.SYSTEM.milliseconds();
         return getProducer(topicPartition.partition())
                 .thenCompose(producer ->
-                        producer.newMessage().value(ByteBuffer.wrap(new byte[0])).sendAsync())
+                        producer.newMessage().value(null).sendAsync())
                 .thenCompose(lastMsgId -> {
                     if (log.isDebugEnabled()) {
                         log.debug("Successfully write a placeholder record into {} @ {}",
@@ -687,7 +687,7 @@ public class TransactionStateManager {
             }
 
             // skip place holder
-            if (message.getKeyBytes() == null || message.getValue().limit() == 0) {
+            if (!message.hasKey()) {
                 loadNextTransaction(partition, reader, lastMessageId, loadFuture, transactionMetadataMap);
                 return;
             }
