@@ -839,7 +839,7 @@ public class TransactionStateManager {
         });
     }
 
-    private CompletableFuture<MessageId> storeTxnLog(String transactionalId,
+    protected CompletableFuture<MessageId> storeTxnLog(String transactionalId,
                                                      TransactionMetadata.TxnTransitMetadata txnTransitMetadata) {
         byte[] keyBytes = new TransactionLogKey(transactionalId).toBytes();
         ByteBuffer valueByteBuffer = new TransactionLogValue(txnTransitMetadata).toByteBuffer();

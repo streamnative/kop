@@ -206,7 +206,7 @@ public class TransactionMetadata {
 
         if (!pendingState.isPresent()) {
             throw new IllegalStateException("TransactionalId " + transactionalId
-                    + "completing transaction state transition while it does not have a pending state");
+                    + " completing transaction state transition while it does not have a pending state");
         }
         TransactionState toState = pendingState.get();
 

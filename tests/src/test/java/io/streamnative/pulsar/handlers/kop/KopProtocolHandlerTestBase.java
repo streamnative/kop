@@ -93,7 +93,7 @@ public abstract class KopProtocolHandlerTestBase {
     protected URL brokerUrl;
     protected URL brokerUrlTls;
     protected PulsarClient pulsarClient;
-
+    protected ClusterData clusterData;
     protected int brokerWebservicePort = PortManager.nextFreePort();
     protected int brokerWebservicePortTls = PortManager.nextFreePort();
     @Getter
@@ -266,7 +266,7 @@ public abstract class KopProtocolHandlerTestBase {
         String brokerServiceUrl = "pulsar://" + getAdvertisedAddress() + ":" + brokerPort;
         String brokerServiceUrlTls = null; // TLS not supported at this time
 
-        final ClusterData clusterData = ClusterData.builder()
+        clusterData = ClusterData.builder()
                 .serviceUrl(serviceUrl)
                 .serviceUrlTls(serviceUrlTls)
                 .brokerServiceUrl(brokerServiceUrl)
