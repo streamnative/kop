@@ -24,7 +24,6 @@ import com.google.common.collect.Lists;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
-
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.List;
