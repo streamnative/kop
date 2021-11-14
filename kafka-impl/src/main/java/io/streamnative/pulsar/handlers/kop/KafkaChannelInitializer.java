@@ -23,6 +23,8 @@ import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import java.util.concurrent.TimeUnit;
 import lombok.Getter;
@@ -46,6 +48,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final KopBrokerLookupManager kopBrokerLookupManager;
 
     private final AdminManager adminManager;
+    private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
+    private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
     @Getter
     private final boolean enableTls;
     @Getter
@@ -60,6 +64,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    TenantContextManager tenantContextManager,
                                    KopBrokerLookupManager kopBrokerLookupManager,
                                    AdminManager adminManager,
+                                   DelayedOperationPurgatory<DelayedOperation> producePurgatory,
+                                   DelayedOperationPurgatory<DelayedOperation> fetchPurgatory,
                                    boolean enableTLS,
                                    EndPoint advertisedEndPoint,
                                    StatsLogger statsLogger) {
@@ -69,6 +75,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.tenantContextManager = tenantContextManager;
         this.kopBrokerLookupManager = kopBrokerLookupManager;
         this.adminManager = adminManager;
+        this.producePurgatory = producePurgatory;
+        this.fetchPurgatory = fetchPurgatory;
         this.enableTls = enableTLS;
         this.advertisedEndPoint = advertisedEndPoint;
         this.statsLogger = statsLogger;
@@ -100,6 +108,16 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     public KafkaRequestHandler newCnx() throws Exception {
         return new KafkaRequestHandler(pulsarService, kafkaConfig,
                 tenantContextManager, kopBrokerLookupManager, adminManager,
+                producePurgatory, fetchPurgatory,
+                enableTls, advertisedEndPoint, statsLogger);
+    }
+
+    @VisibleForTesting
+    public KafkaRequestHandler newCnx(final TenantContextManager tenantContextManager,
+                                      final StatsLogger statsLogger) throws Exception {
+        return new KafkaRequestHandler(pulsarService, kafkaConfig,
+                tenantContextManager, kopBrokerLookupManager, adminManager,
+                producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, statsLogger);
     }
 }

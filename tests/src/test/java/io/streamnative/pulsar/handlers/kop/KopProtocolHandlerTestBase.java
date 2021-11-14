@@ -23,6 +23,9 @@ import io.confluent.kafka.schemaregistry.avro.AvroCompatibilityLevel;
 import io.confluent.kafka.schemaregistry.rest.SchemaRegistryConfig;
 import io.confluent.kafka.schemaregistry.rest.SchemaRegistryRestApplication;
 import io.netty.channel.EventLoopGroup;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.Closeable;
 import java.io.IOException;
@@ -752,4 +755,28 @@ public abstract class KopProtocolHandlerTestBase {
         return adminProps;
     }
 
+    public KafkaChannelInitializer getFirstChannelInitializer() {
+        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
+        return (KafkaChannelInitializer) handler.getChannelInitializerMap().entrySet().iterator().next().getValue();
+    }
+
+    public KafkaRequestHandler newRequestHandler() throws Exception {
+        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
+        final GroupCoordinator groupCoordinator = handler.getGroupCoordinator(conf.getKafkaMetadataTenant());
+        final TransactionCoordinator transactionCoordinator =
+                handler.getTransactionCoordinator(conf.getKafkaMetadataTenant());
+
+        return ((KafkaChannelInitializer) handler.getChannelInitializerMap().entrySet().iterator().next().getValue())
+                .newCnx(new TenantContextManager() {
+                    @Override
+                    public GroupCoordinator getGroupCoordinator(String tenant) {
+                        return groupCoordinator;
+                    }
+
+                    @Override
+                    public TransactionCoordinator getTransactionCoordinator(String tenant) {
+                        return transactionCoordinator;
+                    }
+                }, NullStatsLogger.INSTANCE);
+    }
 }
