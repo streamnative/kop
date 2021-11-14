@@ -118,7 +118,8 @@ This section lists configurations about the transaction.
 | brokerId                     | The broker ID that is used to create the producer ID.  | 1       |
 | txnLogTopicNumPartitions     | the number of partitions for the transaction log topic. | 50      |
 | txnAbortTimedOutTransactionCleanupIntervalMs | The interval in milliseconds at which to rollback transactions that have timed out. | 10000 |
-
+| transactionalIdExpirationMs | The time in ms that the transaction coordinator will wait without receiving any transaction status updates for the current transaction before expiring its transactional id. | 604800 |
+| transactionsRemoveExpiredTransactionalIdCleanupIntervalMs | The interval in milliseconds at which to remove transactions that have expired. | 3600 |
 ## Authentication
 
 This section lists configurations about the authentication.

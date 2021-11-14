@@ -59,6 +59,8 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     public static final int DefaultTxnCoordinatorSchedulerNum = 1;
     public static final int DefaultTxnStateManagerSchedulerNum = 1;
     public static final long DefaultAbortTimedOutTransactionsIntervalMs = TimeUnit.SECONDS.toMillis(10);
+    public static final long DefaultRemoveExpiredTransactionalIdsIntervalMs = TimeUnit.HOURS.toMillis(1);
+    public static final long DefaultTransactionalIdExpirationMs = TimeUnit.DAYS.toMillis(7);
 
     @Category
     private static final String CATEGORY_KOP = "Kafka on Pulsar";
@@ -381,6 +383,20 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             doc = "The interval in milliseconds at which to rollback transactions that have timed out."
     )
     private long txnAbortTimedOutTransactionCleanupIntervalMs = DefaultAbortTimedOutTransactionsIntervalMs;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "The time in ms that the transaction coordinator will wait without receiving any transaction status"
+                    + " updates for the current transaction before expiring its transactional id."
+    )
+    private long transactionalIdExpirationMs = DefaultTransactionalIdExpirationMs;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "The interval in milliseconds at which to remove transactions that have expired."
+    )
+    private long transactionsRemoveExpiredTransactionalIdCleanupIntervalMs =
+            DefaultRemoveExpiredTransactionalIdsIntervalMs;
 
     @FieldContext(
             category = CATEGORY_KOP,
