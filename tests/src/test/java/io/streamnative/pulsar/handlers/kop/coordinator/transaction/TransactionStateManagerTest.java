@@ -18,7 +18,6 @@ import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.AssertJUnit.assertEquals;
 import static org.testng.AssertJUnit.assertFalse;
-import static org.testng.AssertJUnit.assertNull;
 import static org.testng.AssertJUnit.assertTrue;
 import static org.testng.AssertJUnit.fail;
 
@@ -39,6 +38,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.pulsar.client.admin.LongRunningProcessStatus;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
@@ -199,36 +199,17 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
         // Make sure transaction partition loaded first.
         loadTransactionsForPartitions(0, numPartitions);
         assertEquals(numPartitions, transactionManager.transactionMetadataCache.size());
-        transactionManager.putTransactionStateIfNotExists(TransactionMetadata.builder()
-                .transactionalId(transactionalId1)
-                .producerId(producerId)
-                .lastProducerId(producerId)
-                .producerEpoch((short) 0)
-                .lastProducerEpoch((short) 0)
-                .txnTimeoutMs(0)
-                .state(TransactionState.COMPLETE_COMMIT)
-                .pendingState(Optional.of(TransactionState.COMPLETE_COMMIT))
-                .topicPartitions(Collections.emptySet())
-                .txnStartTimestamp(now - txnConfig.getTransactionalIdExpirationMs())
-                .txnLastUpdateTimestamp(now - txnConfig.getTransactionalIdExpirationMs())
-                .build());
-        transactionManager.putTransactionStateIfNotExists(TransactionMetadata.builder()
-                .transactionalId(transactionalId2)
-                .producerId(producerId)
-                .lastProducerId(producerId)
-                .producerEpoch((short) 0)
-                .lastProducerEpoch((short) 0)
-                .txnTimeoutMs(0)
-                .state(TransactionState.COMPLETE_COMMIT)
-                .pendingState(Optional.of(TransactionState.COMPLETE_COMMIT))
-                .topicPartitions(Collections.emptySet())
-                .txnStartTimestamp(now - txnConfig.getTransactionalIdExpirationMs())
-                .txnLastUpdateTimestamp(now - txnConfig.getTransactionalIdExpirationMs())
-                .build());
-        assertFalse(transactionManager.transactionMetadataCache
-                .get(transactionManager.partitionFor(transactionalId1)).isEmpty());
-        assertFalse(transactionManager.transactionMetadataCache
-                .get(transactionManager.partitionFor(transactionalId2)).isEmpty());
+
+        transactionManager.putTransactionStateIfNotExists(generateTransactionMetadata(transactionalId1,
+                now - txnConfig.getTransactionalIdExpirationMs(),
+                now - txnConfig.getTransactionalIdExpirationMs()));
+        transactionManager.putTransactionStateIfNotExists(generateTransactionMetadata(transactionalId2,
+                now - txnConfig.getTransactionalIdExpirationMs(),
+                now - txnConfig.getTransactionalIdExpirationMs()));
+        assertTrue(transactionManager.transactionMetadataCache
+                .get(transactionManager.partitionFor(transactionalId1)).containsKey(transactionalId1));
+        assertTrue(transactionManager.transactionMetadataCache
+                .get(transactionManager.partitionFor(transactionalId2)).containsKey(transactionalId2));
 
         TransactionMetadata.TxnTransitMetadata newMetadata1 =
                 new TransactionMetadata.TxnTransitMetadata(
@@ -259,22 +240,30 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
         // The transactionalId2 shouldn't expire.
         appendTransactionToLog(transactionalId2, newMetadata2).get();
 
-        // Sleep let transactional to expire.
+        // Sleep to make transactional expire.
         time.sleep(txnConfig.getTransactionalIdExpirationMs());
         transactionManager.removeExpiredTransactionalIds().get();
 
         // Expired transactional should be removed.
         assertFalse(transactionManager.transactionMetadataCache
-                .get(transactionManager.partitionFor(transactionalId2)).isEmpty());
-        transactionManager.transactionMetadataCache
-                .get(transactionManager.partitionFor(transactionalId2))
-                .forEach((transactionId, transactionMetadata) -> {
-                    assertEquals(transactionalId2, transactionId);
-                });
+                .get(transactionManager.partitionFor(transactionalId1)).containsKey(transactionalId1));
+        assertTrue(transactionManager.transactionMetadataCache
+                .get(transactionManager.partitionFor(transactionalId2)).containsKey(transactionalId2));
 
         String partitionedTopicName = TopicName.get(txnConfig.getTransactionMetadataTopicName())
                 .getPartition(transactionManager.partitionFor(transactionalId1)).toString();
 
+        triggerAndWaitingCompactionSuccess(partitionedTopicName);
+
+        Map<String, TransactionLogValue> transactionLogMap = readTransactionLogToMap(partitionedTopicName);
+
+        // TransactionLog has transactionalId2's log, since transactionalId2 not expired.
+        assertEquals(1, transactionLogMap.size());
+        assertTrue(transactionLogMap.containsKey(transactionalId2));
+        assertNotNull(transactionLogMap.get(transactionalId2));
+    }
+
+    private void triggerAndWaitingCompactionSuccess(String partitionedTopicName) throws PulsarAdminException {
         // Trigger pulsar topic compaction.
         admin.topics().triggerCompaction(partitionedTopicName);
 
@@ -285,44 +274,12 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
 
         // Waiting until compaction success.
         Awaitility.await().untilAsserted(() -> {
-            log.info("Waiting topic {} compaction success.", partitionedTopicName);
+            log.info("Waiting for topic {} compaction success.", partitionedTopicName);
             LongRunningProcessStatus status =
                     admin.topics().compactionStatus(partitionedTopicName);
             assertNotNull(status);
             Assert.assertEquals(status.status, LongRunningProcessStatus.Status.SUCCESS);
         });
-
-        @Cleanup
-        Producer<ByteBuffer> producer = pulsarClient.newProducer(Schema.BYTEBUFFER)
-                .topic(partitionedTopicName).create();
-        MessageId lastMessageId = producer.newMessage().value(null).send();
-
-        // Read transaction metadata from compacted topic.
-        @Cleanup
-        Reader<ByteBuffer> reader = pulsarClient.newReader(Schema.BYTEBUFFER)
-                .topic(partitionedTopicName)
-                .startMessageId(MessageId.earliest)
-                .readCompacted(true).create();
-
-        int count = 0;
-        while (reader.hasMessageAvailable()) {
-            Message<ByteBuffer> message = reader.readNext();
-            // Reach to end, break it.
-            if (message.getMessageId().compareTo(lastMessageId) >= 0) {
-                break;
-            }
-            count++;
-            assertTrue(message.hasKey());
-            TransactionLogKey logKey = TransactionLogKey.decode(
-                    ByteBuffer.wrap(message.getKeyBytes()), TransactionLogKey.HIGHEST_SUPPORTED_VERSION);
-            String transactionId = logKey.getTransactionId();
-            if (transactionalId2.equals(transactionId)) {
-                assertNotNull(message.getValue());
-            } else {
-                assertNull(message.getValue());
-            }
-        }
-        assertEquals(1, count);
     }
 
     private CompletableFuture<Void> appendTransactionToLog(String transactionalId,
@@ -341,6 +298,60 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
                     }
                 }, errors -> true);
         return future;
+    }
+
+    private Map<String, TransactionLogValue> readTransactionLogToMap(String partitionedTopicName)
+            throws Exception {
+        Map<String, TransactionLogValue> result = Maps.newHashMap();
+        @Cleanup
+        Producer<ByteBuffer> producer = pulsarClient.newProducer(Schema.BYTEBUFFER)
+                .topic(partitionedTopicName).create();
+        MessageId lastMessageId = producer.newMessage().value(null).send();
+
+        // Read transaction metadata from compacted topic.
+        @Cleanup
+        Reader<ByteBuffer> reader = pulsarClient.newReader(Schema.BYTEBUFFER)
+                .topic(partitionedTopicName)
+                .startMessageId(MessageId.earliest)
+                .readCompacted(true).create();
+
+        while (reader.hasMessageAvailable()) {
+            Message<ByteBuffer> message = reader.readNext();
+            // Reach to end, break it.
+            if (message.getMessageId().compareTo(lastMessageId) >= 0) {
+                break;
+            }
+            assertTrue(message.hasKey());
+            TransactionLogKey logKey = TransactionLogKey.decode(
+                    ByteBuffer.wrap(message.getKeyBytes()), TransactionLogKey.HIGHEST_SUPPORTED_VERSION);
+            String transactionId = logKey.getTransactionId();
+            if (message.getValue() == null) {
+                result.put(transactionId, null);
+            } else {
+                TransactionLogValue logValue =
+                        TransactionLogValue.decode(message.getValue(), TransactionLogValue.HIGHEST_SUPPORTED_VERSION);
+                result.put(transactionId, logValue);
+            }
+        }
+        return result;
+    }
+
+    private TransactionMetadata generateTransactionMetadata(String transactionalId,
+                                                            long startTime,
+                                                            long LastUpdateTime) {
+        return TransactionMetadata.builder()
+                .transactionalId(transactionalId)
+                .producerId(producerId)
+                .lastProducerId(producerId)
+                .producerEpoch((short) 0)
+                .lastProducerEpoch((short) 0)
+                .txnTimeoutMs(0)
+                .state(TransactionState.COMPLETE_COMMIT)
+                .pendingState(Optional.of(TransactionState.COMPLETE_COMMIT))
+                .topicPartitions(Collections.emptySet())
+                .txnStartTimestamp(startTime)
+                .txnLastUpdateTimestamp(LastUpdateTime)
+                .build();
     }
 
     private void verifyMetadataDoesntExist(String transactionalId) {
