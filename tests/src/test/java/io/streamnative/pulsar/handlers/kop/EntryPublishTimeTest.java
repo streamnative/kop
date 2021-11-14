@@ -18,14 +18,8 @@ import static org.mockito.Mockito.mock;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
-import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
-import org.apache.pulsar.broker.protocol.ProtocolHandler;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 
@@ -33,11 +27,9 @@ import org.testng.annotations.BeforeMethod;
  * Test for entry publish time.
  */
 public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
-    private static final Logger log = LoggerFactory.getLogger(EntryPublishTimeTest.class);
 
     KafkaRequestHandler kafkaRequestHandler;
     SocketAddress serviceAddress;
-    private AdminManager adminManager;
 
     public EntryPublishTimeTest(String format) {
         super(format);
@@ -48,32 +40,7 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
     protected void setup() throws Exception {
         super.internalSetup();
 
-        ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
-        GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler)
-                .getGroupCoordinator(conf.getKafkaMetadataTenant());
-        TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler)
-                .getTransactionCoordinator(conf.getKafkaMetadataTenant());
-
-        adminManager = new AdminManager(pulsar.getAdminClient(), conf);
-        kafkaRequestHandler = new KafkaRequestHandler(
-                pulsar,
-                conf,
-                new TenantContextManager() {
-                    @Override
-                    public GroupCoordinator getGroupCoordinator(String tenant) {
-                        return groupCoordinator;
-                    }
-
-                    @Override
-                    public TransactionCoordinator getTransactionCoordinator(String tenant) {
-                        return transactionCoordinator;
-                    }
-                },
-                ((KafkaProtocolHandler) handler).getKopBrokerLookupManager(),
-                adminManager,
-                false,
-                getPlainEndPoint(),
-                NullStatsLogger.INSTANCE);
+        kafkaRequestHandler = newRequestHandler();
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
@@ -85,7 +52,6 @@ public class EntryPublishTimeTest extends KopProtocolHandlerTestBase {
     @AfterMethod
     @Override
     protected void cleanup() throws Exception {
-        adminManager.shutdown();
         super.internalCleanup();
     }
 }
