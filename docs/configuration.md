@@ -4,33 +4,29 @@
 
 | Name                     | Description                                                  |
 | ------------------------ | ------------------------------------------------------------ |
-| kafkaListeners           | Comma-separated list of URIs that we will listen on and the listener names.<br>e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093.<br>If the hostname is not set, the default interface is used. |
+| kafkaListeners           | Comma-separated list of URIs that we will listen on and the listener names.<br>e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093.<br>Each URI's scheme represents a listener name if `kafkaProtocolMap` is configured.<br>Otherwise, the scheme must be a valid protocol in [PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL].<br>If the hostname is not set, it will be bound to the default interface. |
 | kafkaProtocolMap         | Comma-separated map of listener name and protocol.<br>e.g. PRIVATE:PLAINTEXT,PRIVATE_SSL:SSL,PUBLIC:PLAINTEXT,PUBLIC_SSL:SSL. |
-| listeners                | Deprecated. `kafkaListeners` is used.                   |
-| kafkaAdvertisedListeners | Deprecated. Use kafkaProtocolMap, kafkaListeners and advertisedAddress instead. |
+| listeners                | Deprecated. `kafkaListeners` is used.                        |
+| kafkaAdvertisedListeners | Listeners to publish to ZooKeeper for clients to use.<br>The format is the same as `kafkaListeners`. |
 
 > **NOTE**
 > 
 > Among all configurations, only `kafkaListeners` or `listeners` (deprecated) is required.
 
-To support multiple listeners, you need to specify different listener names in [`advertisedListeners`](https://pulsar.apache.org/docs/en/concepts-multiple-advertised-listeners/#use-multiple-advertised-listeners). Then map the listener name to the proper protocol in `kafkaProtocolMap`.
+To support multiple listeners, you need to specify different listener names in `kafkaListeners` and `kafkaAdvertisedListeners`. Then, map the listener name to the proper protocol in `kafkaProtocolMap`.
 
 For example, assuming you need to listen on port 9092 and 19092 with the `PLAINTEXT` protocol, the associated names are `kafka_internal` and `kafka_external`. Then you need to add the following configurations:
 
 ```properties
-kafkaListeners=kafka_internal://localhost:9092,kafka_external://localhost:19092
+kafkaListeners=kafka_internal://0.0.0.0:9092,kafka_external://0.0.0.0:19092
 kafkaProtocolMap=kafka_internal:PLAINTEXT,kafka_external:PLAINTEXT
-advertisedListeners=pulsar:pulsar://localhost:6650,kafka_internal:pulsar://localhost:9092,kafka_external:pulsar://localhost:19092
+kafkaAdvertisedListeners=kafka_internal://localhost:9092,kafka_external://localhost:19092
 ```
 
 In the above example,
-- `kafkaListener` is split into multiple tokens by a comma (`,`), the format of each token format is `<listener-name>://<host>:<port>`.
-- `kafkaProtocolMap` is split into multiple tokens by a comma (`,`), the format of each token format is `<listener-name>:<protocol>`.
-- `advertisedListeners` is split into multiple tokens by a comma(`,`), the format of each token format is `<listener-name>:<scheme>://<host>:<port>`.
-
-> **NOTE**
->
-> In Pulsar, the `scheme` part could be `pulsar` or `pulsar+ssl`, but in KoP, the `scheme` part must be `pulsar`.
+- `kafkaListener` is split into multiple tokens by a comma (`,`), the token is in a format of `<listener-name>://<host>:<port>`.
+- `kafkaProtocolMap` is split into multiple tokens by a comma (`,`), the token is in a format of `<listener-name>:<protocol>`.
+- `kafkaAdvertisedListeners` is split into multiple tokens by a comma(`,`), the token is in a format of `<listener-name>:<scheme>://<host>:<port>`.
 
 
 ## Logger
