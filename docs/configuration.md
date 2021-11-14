@@ -120,6 +120,8 @@ This section lists configurations about the transaction.
 | txnAbortTimedOutTransactionCleanupIntervalMs | The interval in milliseconds at which to rollback transactions that have timed out. | 10000 |
 | transactionalIdExpirationMs | The time in ms that the transaction coordinator will wait without receiving any transaction status updates for the current transaction before expiring its transactional id. | 604800 |
 | transactionsRemoveExpiredTransactionalIdCleanupIntervalMs | The interval in milliseconds at which to remove transactions that have expired. | 3600 |
+| enableTransactionalIdExpiration | Whether to enable transactional id expiration. | true |
+
 ## Authentication
 
 This section lists configurations about the authentication.

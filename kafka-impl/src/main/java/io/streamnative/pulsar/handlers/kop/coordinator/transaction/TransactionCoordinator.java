@@ -944,7 +944,7 @@ public class TransactionCoordinator {
     /**
      * Startup logic executed at the same time when the server starts up.
      */
-    public CompletableFuture<Void> startup() {
+    public CompletableFuture<Void> startup(boolean enableTransactionalIdExpiration) {
         log.info("Starting up transaction coordinator ...");
 
         // Abort timeout transactions
@@ -955,7 +955,7 @@ public class TransactionCoordinator {
                 transactionConfig.getAbortTimedOutTransactionsIntervalMs(),
                 TimeUnit.MILLISECONDS);
 
-        txnManager.startup(true);
+        txnManager.startup(enableTransactionalIdExpiration);
 
         return this.producerIdManager.initialize().thenCompose(ignored -> {
             log.info("Startup transaction coordinator complete.");

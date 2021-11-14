@@ -664,7 +664,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 OrderedScheduler.newSchedulerBuilder().name("transaction-log-manager").numThreads(1).build(),
                 Time.SYSTEM);
 
-        transactionCoordinator.startup().get();
+        transactionCoordinator.startup(getKafkaConfig().isEnableTransactionalIdExpiration()).get();
 
         return transactionCoordinator;
     }

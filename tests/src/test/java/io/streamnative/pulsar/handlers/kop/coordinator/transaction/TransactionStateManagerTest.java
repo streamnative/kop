@@ -338,7 +338,7 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
 
     private TransactionMetadata generateTransactionMetadata(String transactionalId,
                                                             long startTime,
-                                                            long LastUpdateTime) {
+                                                            long lastUpdateTime) {
         return TransactionMetadata.builder()
                 .transactionalId(transactionalId)
                 .producerId(producerId)
@@ -350,7 +350,7 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
                 .pendingState(Optional.of(TransactionState.COMPLETE_COMMIT))
                 .topicPartitions(Collections.emptySet())
                 .txnStartTimestamp(startTime)
-                .txnLastUpdateTimestamp(LastUpdateTime)
+                .txnLastUpdateTimestamp(lastUpdateTime)
                 .build();
     }
 

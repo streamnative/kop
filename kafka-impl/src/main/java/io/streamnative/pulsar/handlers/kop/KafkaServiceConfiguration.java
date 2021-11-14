@@ -386,6 +386,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
+            doc = "Whether to enable transactional id expiration."
+    )
+    private boolean enableTransactionalIdExpiration = true;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
             doc = "The time in ms that the transaction coordinator will wait without receiving any transaction status"
                     + " updates for the current transaction before expiring its transactional id."
     )
