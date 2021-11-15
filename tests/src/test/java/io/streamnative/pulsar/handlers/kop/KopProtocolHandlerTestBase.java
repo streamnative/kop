@@ -124,6 +124,7 @@ public abstract class KopProtocolHandlerTestBase {
     protected SchemaRegistryRestApplication restApp;
     protected Server restServer;
     protected String restConnect;
+    protected boolean enableBrokerEntryMetadata = true;
 
     private String entryFormat;
 
@@ -313,6 +314,10 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     protected final void internalCleanup() throws Exception {
+        internalCleanup(true);
+    }
+
+    protected final void internalCleanup(boolean clearStorage) throws Exception {
         try {
             // if init fails, some of these could be null, and if so would throw
             // an NPE in shutdown, obscuring the real error
@@ -329,17 +334,19 @@ public abstract class KopProtocolHandlerTestBase {
             if (pulsar != null) {
                 stopBroker();
             }
-            if (mockBookKeeper != null) {
-                mockBookKeeper.reallyShutdown();
-            }
-            if (mockZooKeeper != null) {
-                mockZooKeeper.shutdown();
-            }
             if (sameThreadOrderedSafeExecutor != null) {
                 sameThreadOrderedSafeExecutor.shutdown();
             }
-            if (bkExecutor != null) {
-                bkExecutor.shutdown();
+            if (clearStorage) {
+                if (mockBookKeeper != null) {
+                    mockBookKeeper.reallyShutdown();
+                }
+                if (mockZooKeeper != null) {
+                    mockZooKeeper.shutdown();
+                }
+                if (bkExecutor != null) {
+                    bkExecutor.shutdown();
+                }
             }
         } catch (Exception e) {
             log.warn("Failed to clean up mocked pulsar service:", e);
@@ -367,7 +374,9 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     protected PulsarService startBroker(ServiceConfiguration conf) throws Exception {
-        addBrokerEntryMetadataInterceptors(conf);
+        if (enableBrokerEntryMetadata) {
+            addBrokerEntryMetadataInterceptors(conf);
+        }
         PulsarService pulsar = spy(new PulsarService(conf));
         setupBrokerMocks(pulsar);
         pulsar.start();
