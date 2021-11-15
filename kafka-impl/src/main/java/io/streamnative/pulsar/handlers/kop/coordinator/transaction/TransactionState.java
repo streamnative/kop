@@ -102,5 +102,19 @@ public enum TransactionState {
         }
     }
 
-
+    public boolean isExpirationAllowed() {
+        switch (this) {
+            case EMPTY:
+            case COMPLETE_COMMIT:
+            case COMPLETE_ABORT:
+                return true;
+            case DEAD:
+            case ONGOING:
+            case PREPARE_ABORT:
+            case PREPARE_COMMIT:
+            case PREPARE_EPOCH_FENCE:
+            default:
+                return false;
+        }
+    }
 }
