@@ -206,7 +206,7 @@ public class TransactionMetadata {
 
         if (!pendingState.isPresent()) {
             throw new IllegalStateException("TransactionalId " + transactionalId
-                    + "completing transaction state transition while it does not have a pending state");
+                    + " completing transaction state transition while it does not have a pending state");
         }
         TransactionState toState = pendingState.get();
 
@@ -464,6 +464,11 @@ public class TransactionMetadata {
 
         return prepareTransitionTo(newState, producerId, producerEpoch, lastProducerEpoch,
                 txnTimeoutMs, Collections.emptySet(), txnStartTimestamp, updateTimestamp);
+    }
+
+    public TxnTransitMetadata prepareDead() {
+        return prepareTransitionTo(TransactionState.DEAD, producerId, producerEpoch, lastProducerEpoch, txnTimeoutMs,
+                Collections.emptySet(), txnStartTimestamp, txnLastUpdateTimestamp);
     }
 
     private void throwStateTransitionFailure(TxnTransitMetadata txnTransitMetadata) throws IllegalStateException {
