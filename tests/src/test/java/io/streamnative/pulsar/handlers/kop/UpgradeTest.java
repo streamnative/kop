@@ -35,9 +35,11 @@ import org.testng.collections.Lists;
 public class UpgradeTest extends KopProtocolHandlerTestBase {
 
     private final List<TestTopic> testTopicList = Lists.newArrayList(
-            new TestTopic(8, 2),
+            new TestTopic(9, 1),
+            new TestTopic(7, 3),
             new TestTopic(5, 5),
-            new TestTopic(2, 8)
+            new TestTopic(3, 7),
+            new TestTopic(1, 9)
     );
 
     @BeforeClass(timeOut = 30000L)
