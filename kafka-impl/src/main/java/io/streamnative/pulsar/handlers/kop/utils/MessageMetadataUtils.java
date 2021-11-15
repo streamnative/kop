@@ -156,4 +156,27 @@ public class MessageMetadataUtils {
     public static long getMockOffset(long ledgerId, long entryId) {
         return ledgerId + entryId;
     }
+
+    public static CompletableFuture<Position> asyncFindPosition(final ManagedLedger managedLedger, final long offset) {
+        return managedLedger.asyncFindPosition(entry -> {
+            if (entry == null) {
+                // `entry` should not be null, add the null check here to fix the spotbugs check
+                return false;
+            }
+            try {
+                return peekOffsetFromEntry(entry) < offset;
+            } catch (MetadataCorruptedException.NoBrokerEntryMetadata ignored) {
+                // Here we assume the messages without BrokerEntryMetadata are produced by KoP < 2.8.0 that doesn't
+                // support BrokerEntryMetadata. In this case, these messages should be older than any message produced
+                // by KoP with BrokerEntryMetadata enabled.
+                return true;
+            } catch (MetadataCorruptedException e) {
+                log.error("[{}] Entry {} is corrupted: {}",
+                        managedLedger.getName(), entry.getPosition(), e.getMessage());
+                return false;
+            } finally {
+                entry.release();
+            }
+        });
+    }
 }
