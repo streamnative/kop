@@ -314,10 +314,11 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     protected final void internalCleanup() throws Exception {
-        internalCleanup(true);
+        cleanupBroker();
+        cleanupStorage();
     }
 
-    protected final void internalCleanup(boolean clearStorage) throws Exception {
+    protected final void cleanupBroker() throws Exception {
         try {
             // if init fails, some of these could be null, and if so would throw
             // an NPE in shutdown, obscuring the real error
@@ -337,20 +338,22 @@ public abstract class KopProtocolHandlerTestBase {
             if (sameThreadOrderedSafeExecutor != null) {
                 sameThreadOrderedSafeExecutor.shutdown();
             }
-            if (clearStorage) {
-                if (mockBookKeeper != null) {
-                    mockBookKeeper.reallyShutdown();
-                }
-                if (mockZooKeeper != null) {
-                    mockZooKeeper.shutdown();
-                }
-                if (bkExecutor != null) {
-                    bkExecutor.shutdown();
-                }
-            }
+            cleanupStorage();
         } catch (Exception e) {
             log.warn("Failed to clean up mocked pulsar service:", e);
             throw e;
+        }
+    }
+
+    private void cleanupStorage() throws InterruptedException {
+        if (mockBookKeeper != null) {
+            mockBookKeeper.reallyShutdown();
+        }
+        if (mockZooKeeper != null) {
+            mockZooKeeper.shutdown();
+        }
+        if (bkExecutor != null) {
+            bkExecutor.shutdown();
         }
     }
 

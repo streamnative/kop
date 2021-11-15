@@ -52,7 +52,7 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
             testTopic.sendOldMessages();
         }
 
-        internalCleanup(false);
+        cleanupBroker();
         enableBrokerEntryMetadata = true;
         internalSetup();
         for (TestTopic testTopic : testTopicList) {
