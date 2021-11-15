@@ -392,8 +392,8 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
-            doc = "The time (in ms) that the transaction coordinator waits without receiving any transaction status " +
-                    "updates for the current transaction before expiring its transactional ID."
+            doc = "The time (in ms) that the transaction coordinator waits without receiving any transaction status"
+                    + " updates for the current transaction before expiring its transactional ID."
     )
     private long transactionalIdExpirationMs = DefaultTransactionalIdExpirationMs;
 
