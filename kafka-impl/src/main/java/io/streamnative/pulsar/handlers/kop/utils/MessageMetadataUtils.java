@@ -111,7 +111,7 @@ public class MessageMetadataUtils {
             final BrokerEntryMetadata brokerEntryMetadata =
                     Commands.peekBrokerEntryMetadataIfExist(buf); // might throw IllegalArgumentException
             if (brokerEntryMetadata == null) {
-                throw new IllegalArgumentException("No BrokerEntryMetadata found");
+                throw new MetadataCorruptedException.NoBrokerEntryMetadata();
             }
             return brokerEntryMetadata.getIndex(); // might throw IllegalStateException
         } catch (IllegalArgumentException | IllegalStateException e) {

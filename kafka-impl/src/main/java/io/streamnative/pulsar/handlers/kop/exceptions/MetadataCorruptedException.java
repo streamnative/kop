@@ -22,4 +22,11 @@ public class MetadataCorruptedException extends KoPBaseException {
     public MetadataCorruptedException(String message) {
         super(message);
     }
+
+    public static class NoBrokerEntryMetadata extends MetadataCorruptedException {
+
+        public NoBrokerEntryMetadata() {
+            super("No BrokerEntryMetadata found");
+        }
+    }
 }

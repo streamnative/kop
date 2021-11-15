@@ -25,7 +25,8 @@ import org.slf4j.LoggerFactory;
 public class OffsetSearchPredicate implements com.google.common.base.Predicate<Entry> {
     private static final Logger log = LoggerFactory.getLogger(OffsetSearchPredicate.class);
 
-    long indexToSearch = -1;
+    private final long indexToSearch;
+
     public OffsetSearchPredicate(long indexToSearch) {
         this.indexToSearch = indexToSearch;
     }
@@ -38,6 +39,10 @@ public class OffsetSearchPredicate implements com.google.common.base.Predicate<E
         }
         try {
             return MessageMetadataUtils.peekOffsetFromEntry(entry) < indexToSearch;
+        } catch (MetadataCorruptedException.NoBrokerEntryMetadata ignored) {
+            // Here we assume the messages without BrokerEntryMetadata are produced by KoP < 2.8.0 that doesn't support
+            // BrokerEntryMetadata. In this case, these messages should be older
+            return true;
         } catch (MetadataCorruptedException e) {
             log.error("Error deserialize message for message position find", e);
         } finally {
