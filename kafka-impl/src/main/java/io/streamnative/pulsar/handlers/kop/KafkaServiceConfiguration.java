@@ -386,20 +386,20 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
-            doc = "Whether to enable transactional id expiration."
+            doc = "Whether to enable transactional ID expiration."
     )
     private boolean enableTransactionalIdExpiration = true;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
-            doc = "The time in ms that the transaction coordinator will wait without receiving any transaction status"
-                    + " updates for the current transaction before expiring its transactional id."
+            doc = "The time (in ms) that the transaction coordinator waits without receiving any transaction status " +
+                    "updates for the current transaction before expiring its transactional ID."
     )
     private long transactionalIdExpirationMs = DefaultTransactionalIdExpirationMs;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
-            doc = "The interval in milliseconds at which to remove transactions that have expired."
+            doc = "The interval (in ms) at which to remove expired transactions."
     )
     private long transactionsRemoveExpiredTransactionalIdCleanupIntervalMs =
             DefaultRemoveExpiredTransactionalIdsIntervalMs;
