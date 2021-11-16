@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -26,6 +27,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
@@ -93,10 +95,18 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
         }
     }
 
-    @Test(timeOut = 20000L)
+    // This test's priority is lower because it adds new messages to the topic, which affects the result of other tests
+    @Test(timeOut = 20000L, priority = 1)
     public void testConsumeLatest() throws Exception {
         for (TestTopic testTopic : testTopicList) {
             testTopic.testConsumeLatest();
+        }
+    }
+
+    @Test(timeOut = 20000L)
+    public void testOffsetsForTimes() {
+        for (TestTopic testTopic : testTopicList) {
+            testTopic.testOffsetsForTimes();
         }
     }
 
@@ -206,6 +216,20 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
                     topic, valuesAndOffsets.getLeft(), valuesAndOffsets.getRight());
             Assert.assertEquals(valuesAndOffsets.getLeft(), Lists.newArrayList("msg-" + numMessages));
             Assert.assertEquals(valuesAndOffsets.getRight(), offsets);
+        }
+
+        public void testOffsetsForTimes() {
+            @Cleanup
+            final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties());
+            final TopicPartition topicPartition = new TopicPartition(topic, 0);
+            Map<TopicPartition, OffsetAndTimestamp> partitionToTimestamp =
+                    consumer.offsetsForTimes(Collections.singletonMap(topicPartition, 0L));
+            Assert.assertTrue(partitionToTimestamp.containsKey(topicPartition));
+            Assert.assertEquals(partitionToTimestamp.get(topicPartition).offset(), 0L);
+
+            partitionToTimestamp = consumer.offsetsForTimes(Collections.singletonMap(topicPartition, Long.MAX_VALUE));
+            Assert.assertTrue(partitionToTimestamp.containsKey(topicPartition));
+            Assert.assertEquals(partitionToTimestamp.get(topicPartition).offset(), numNewMessages);
         }
 
         private List<String> receiveValuesByPulsarConsumer(int maxNumMessages) throws Exception {
