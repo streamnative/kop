@@ -22,6 +22,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.pulsar.client.api.MessageId;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -49,12 +50,16 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
         enableBrokerEntryMetadata = false;
         internalSetup();
         for (TestTopic testTopic : testTopicList) {
+            admin.topics().createPartitionedTopic(testTopic.topicName, 1);
+            admin.topics().createSubscription(testTopic.topicName, "my-sub", MessageId.earliest);
             testTopic.sendOldMessages();
         }
 
-        cleanupBroker();
+        stopBroker();
         enableBrokerEntryMetadata = true;
-        internalSetup();
+        startBroker();
+        createAdmin();
+        createClient();
         for (TestTopic testTopic : testTopicList) {
             testTopic.sendNewMessages();
         }

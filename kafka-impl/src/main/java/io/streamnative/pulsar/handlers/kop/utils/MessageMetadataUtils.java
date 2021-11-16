@@ -48,11 +48,15 @@ public class MessageMetadataUtils {
         return getCurrentOffset(managedLedger) + 1;
     }
 
-    public static long getPublishTime(final ByteBuf byteBuf) {
+    public static long getPublishTime(final ByteBuf byteBuf) throws MetadataCorruptedException {
         final int readerIndex = byteBuf.readerIndex();
-        final MessageMetadata metadata = Commands.parseMessageMetadata(byteBuf);
+        final MessageMetadata metadata = parseMessageMetadata(byteBuf);
         byteBuf.readerIndex(readerIndex);
-        return metadata.getPublishTime();
+        if (metadata.hasPublishTime()) {
+            return metadata.getPublishTime();
+        } else {
+            throw new MetadataCorruptedException("Field 'publish_time' is not set");
+        }
     }
 
     public static CompletableFuture<Long> getOffsetOfPosition(ManagedLedgerImpl managedLedger,
@@ -87,8 +91,10 @@ public class MessageMetadataUtils {
                     } else {
                         future.complete(peekBaseOffsetFromEntry(entry));
                     }
-
-                } catch (Exception e) {
+                } catch (MetadataCorruptedException.NoBrokerEntryMetadata ignored) {
+                    log.warn("The entry {} doesn't have BrokerEntryMetadata, return 0 as the offset", position);
+                    future.complete(0L);
+                } catch (MetadataCorruptedException e) {
                     future.completeExceptionally(e);
                 } finally {
                     if (entry != null) {

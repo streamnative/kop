@@ -209,11 +209,6 @@ public abstract class KopProtocolHandlerTestBase {
         this.conf = kafkaConfig;
     }
 
-    protected final void internalSetup() throws Exception {
-        init();
-        pulsarClient = KafkaProtocolHandler.getLookupClient(pulsar).getPulsarClient();
-    }
-
     /**
      * Trigger topic to lookup.
      * It will load namespace bundle into {@link org.apache.pulsar.broker.namespace.OwnershipCache}.
@@ -249,6 +244,10 @@ public abstract class KopProtocolHandlerTestBase {
         this.admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString()).build());
     }
 
+    protected void createClient() throws Exception {
+        this.pulsarClient = KafkaProtocolHandler.getLookupClient(pulsar).getPulsarClient();
+    }
+
     protected String getAdvertisedAddress() {
         if (conf == null || conf.getAdvertisedAddress() == null) {
             return "localhost";
@@ -257,7 +256,7 @@ public abstract class KopProtocolHandlerTestBase {
         }
     }
 
-    protected final void init() throws Exception {
+    protected final void internalSetup() throws Exception {
         sameThreadOrderedSafeExecutor = new SameThreadOrderedSafeExecutor();
 
         bkExecutor = OrderedScheduler.newSchedulerBuilder().numThreads(2).name("mock-pulsar-bk").build();
@@ -284,6 +283,7 @@ public abstract class KopProtocolHandlerTestBase {
         startBroker();
 
         createAdmin();
+        createClient();
 
         MetadataUtils.createOffsetMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
         if (conf.isEnableTransactionCoordinator()) {
@@ -314,11 +314,6 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     protected final void internalCleanup() throws Exception {
-        cleanupBroker();
-        cleanupStorage();
-    }
-
-    protected final void cleanupBroker() throws Exception {
         try {
             // if init fails, some of these could be null, and if so would throw
             // an NPE in shutdown, obscuring the real error
@@ -335,25 +330,21 @@ public abstract class KopProtocolHandlerTestBase {
             if (pulsar != null) {
                 stopBroker();
             }
+            if (mockBookKeeper != null) {
+                mockBookKeeper.reallyShutdown();
+            }
+            if (mockZooKeeper != null) {
+                mockZooKeeper.shutdown();
+            }
             if (sameThreadOrderedSafeExecutor != null) {
                 sameThreadOrderedSafeExecutor.shutdown();
             }
-            cleanupStorage();
+            if (bkExecutor != null) {
+                bkExecutor.shutdown();
+            }
         } catch (Exception e) {
             log.warn("Failed to clean up mocked pulsar service:", e);
             throw e;
-        }
-    }
-
-    private void cleanupStorage() throws InterruptedException {
-        if (mockBookKeeper != null) {
-            mockBookKeeper.reallyShutdown();
-        }
-        if (mockZooKeeper != null) {
-            mockZooKeeper.shutdown();
-        }
-        if (bkExecutor != null) {
-            bkExecutor.shutdown();
         }
     }
 
