@@ -100,10 +100,8 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
         }
     }
 
-    private void sendMessages(final String topic,
-                              final int start,
-                              final int end,
-                              final List<Long> offsets) throws Exception {
+    private List<Long> sendMessages(final String topic, final int start, final int end) throws Exception {
+        final List<Long> offsets = Lists.newArrayList();
         final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
         for (int i = start; i < end; i++) {
             final String value = "msg-" + i;
@@ -117,6 +115,7 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
             }).get();
         }
         producer.close();
+        return offsets;
     }
 
     private class TestTopic {
@@ -124,9 +123,9 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
         private final int numNewMessages;
         private final int numMessages;
         private final String topicName;
-        private final List<Long> oldOffsets = Lists.newArrayList();
+        private List<Long> oldOffsets;
         private final List<Long> expectedOldOffsets = Lists.newArrayList();
-        private final List<Long> newOffsets = Lists.newArrayList();
+        private List<Long> newOffsets;
         private final List<Long> expectedNewOffsets = Lists.newArrayList();
 
         public TestTopic(final int numOldMessages, final int numNewMessages) {
@@ -143,11 +142,11 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
         }
 
         public void sendOldMessages() throws Exception {
-            sendMessages(topicName, 0, numOldMessages, oldOffsets);
+            oldOffsets = sendMessages(topicName, 0, numOldMessages);
         }
 
         public void sendNewMessages() throws Exception {
-            sendMessages(topicName, numOldMessages, numMessages, newOffsets);
+            newOffsets = sendMessages(topicName, numOldMessages, numMessages);
         }
 
         public void testOffsetsInSendCallback() {
@@ -199,8 +198,7 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
             }
             Assert.assertTrue(rebalanceDone.get());
 
-            final List<Long> offsets = Lists.newArrayList();
-            sendMessages(topicName, numMessages, numMessages + 1, offsets);
+            final List<Long> offsets = sendMessages(topicName, numMessages, numMessages + 1);
             Assert.assertEquals(offsets, Lists.newArrayList(Collections.singletonList((long) numNewMessages)));
 
             final Pair<List<String>, List<Long>> valuesAndOffsets = receiveValuesAndOffsets(consumer, 1);
