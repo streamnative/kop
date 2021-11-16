@@ -31,11 +31,14 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
-import io.streamnative.pulsar.handlers.kop.coordinator.transaction.AbortedIndexEntry;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
+import io.streamnative.pulsar.handlers.kop.idempotent.AppendInfoContext;
+import io.streamnative.pulsar.handlers.kop.idempotent.Log;
+import io.streamnative.pulsar.handlers.kop.idempotent.LogManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -47,6 +50,7 @@ import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.storage.AppendRecordsContext;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
+import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicClientFactory;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaRequestUtils;
@@ -2137,13 +2141,21 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         WriteTxnMarkersRequest request = (WriteTxnMarkersRequest) kafkaHeaderAndRequest.getRequest();
         Map<Long, Map<TopicPartition, Errors>> resultMap = new ConcurrentHashMap<>();
         List<CompletableFuture<Void>> resultFutureList = new ArrayList<>();
-        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         String namespacePrefix = currentNamespacePrefix();
         for (WriteTxnMarkersRequest.TxnMarkerEntry txnMarkerEntry : request.markers()) {
             Map<TopicPartition, Errors> partitionErrorsMap =
                     resultMap.computeIfAbsent(txnMarkerEntry.producerId(), pid -> new HashMap<>());
 
             for (TopicPartition topicPartition : txnMarkerEntry.partitions()) {
+                Log kopLog = getLogManager().getLog(topicPartition, namespacePrefix);
+                Log.AnalyzeResult analyzeResult;
+                try {
+                    analyzeResult = validateTxnMarker(txnMarkerEntry, kopLog);
+                } catch (Throwable t) {
+                    partitionErrorsMap.put(topicPartition, Errors.forException(t));
+                    continue;
+                }
+
                 CompletableFuture<Void> resultFuture = new CompletableFuture<>();
                 CompletableFuture<Long> completableFuture = writeTxnMarker(
                         topicPartition,
@@ -2174,7 +2186,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 Collections.singleton(topicPartition.partition()),
                                 txnMarkerEntry.transactionResult());
                     } else {
-                        handleGroupFuture = CompletableFuture.completedFuture(null);
+                        try {
+                            kopLog.appendTxnMarker(analyzeResult, offset);
+                            handleGroupFuture = CompletableFuture.completedFuture(null);
+                        } catch (Exception e) {
+                            handleGroupFuture = FutureUtil.failedFuture(e);
+                        }
                     }
 
                     handleGroupFuture.whenComplete((ignored, handleGroupThrowable) -> {
@@ -2216,6 +2233,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
             response.complete(new WriteTxnMarkersResponse(resultMap));
         });
+    }
+
+    private Log.AnalyzeResult validateTxnMarker(
+            WriteTxnMarkersRequest.TxnMarkerEntry txnMarkerEntry, Log kopLog) {
+        ControlRecordType controlRecordType = txnMarkerEntry.transactionResult().equals(TransactionResult.COMMIT)
+                ? ControlRecordType.COMMIT : ControlRecordType.ABORT;
+        EndTransactionMarker marker = new EndTransactionMarker(
+                controlRecordType, txnMarkerEntry.coordinatorEpoch());
+        MemoryRecords memoryRecords = MemoryRecords.withEndTransactionMarker(
+                txnMarkerEntry.producerId(), txnMarkerEntry.producerEpoch(), marker);
+        return kopLog.analyzeAndValidateProducerState(memoryRecords, Optional.empty(), Log.AppendOrigin.Client);
     }
 
     @Override

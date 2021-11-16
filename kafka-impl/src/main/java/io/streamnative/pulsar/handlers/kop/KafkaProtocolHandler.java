@@ -28,9 +28,11 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.idempotent.LogManager;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
+import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicClientFactory;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
@@ -90,6 +92,10 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Getter
     @VisibleForTesting
     protected SystemTopicClient offsetTopicClient;
+
+    @Getter
+    @VisibleForTesting
+    protected SystemTopicClient producerStateTopicClient;
 
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
@@ -471,6 +477,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         LOOKUP_CLIENT_MAP.put(brokerService.pulsar(), new LookupClient(brokerService.pulsar(), kafkaConfig));
         offsetTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
         txnTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
+        producerStateTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
 
         try {
             kopBrokerLookupManager = new KopBrokerLookupManager(kafkaConfig, brokerService.getPulsar());
@@ -498,6 +505,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
             getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
         }
+
+        systemTopicClientFactory = new SystemTopicClientFactory(getProducerStateTopicClient());
 
         Configuration conf = new PropertiesConfiguration();
         conf.addProperty("prometheusStatsLatencyRolloverSeconds",
@@ -632,6 +641,12 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         }
         if (fetchPurgatory != null) {
             fetchPurgatory.shutdown();
+        }
+        if (systemTopicClientFactory != null) {
+            systemTopicClientFactory.shutdown();
+        }
+        if (producerStateTopicClient != null) {
+            producerStateTopicClient.close();
         }
         groupCoordinatorsByTenant.values().forEach(GroupCoordinator::shutdown);
         kopEventManager.close();

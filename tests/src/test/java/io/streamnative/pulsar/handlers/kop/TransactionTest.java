@@ -42,6 +42,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 /**
@@ -64,19 +65,29 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    @Test(timeOut = 1000 * 10)
-    public void readCommittedTest() throws Exception {
-        basicProduceAndConsumeTest("read-committed-test", "txn-11", "read_committed");
+    @DataProvider(name = "produceConfigProvider")
+    protected static Object[][] produceConfigProvider() {
+        // isBatch
+        return new Object[][]{
+                {true},
+                {false}
+        };
     }
 
-    @Test(timeOut = 1000 * 10)
-    public void readUncommittedTest() throws Exception {
-        basicProduceAndConsumeTest("read-uncommitted-test", "txn-12", "read_uncommitted");
+    @Test(timeOut = 1000 * 10, dataProvider = "produceConfigProvider")
+    public void readCommittedTest(boolean isBatch) throws Exception {
+        basicProduceAndConsumeTest("read-committed-test", "txn-11", "read_committed", isBatch);
+    }
+
+    @Test(timeOut = 1000 * 10, dataProvider = "produceConfigProvider")
+    public void readUncommittedTest(boolean isBatch) throws Exception {
+        basicProduceAndConsumeTest("read-uncommitted-test", "txn-12", "read_uncommitted", isBatch);
     }
 
     public void basicProduceAndConsumeTest(String topicName,
                                            String transactionalId,
-                                           String isolation) throws Exception {
+                                           String isolation,
+                                           boolean isBatch) throws Exception {
         String kafkaServer = "localhost:" + getKafkaBrokerPort();
 
         Properties producerProps = new Properties();
@@ -109,8 +120,13 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 String msgContent = String.format(contentBase, txnIndex, messageIndex);
                 log.info("send txn message {}", msgContent);
                 lastMessage = msgContent;
-                producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
+                if (isBatch) {
+                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent));
+                } else {
+                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
+                }
             }
+            producer.flush();
 
             if (txnIndex % 2 != 0) {
                 producer.commitTransaction();
@@ -281,7 +297,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     private void waitForTxnMarkerWriteComplete(Map<TopicPartition, OffsetAndMetadata> offsets,
-                                  KafkaConsumer<Integer, String> consumer) throws InterruptedException {
+                                               KafkaConsumer<Integer, String> consumer) throws InterruptedException {
         AtomicBoolean flag = new AtomicBoolean();
         for (int i = 0; i < 5; i++) {
             flag.set(true);

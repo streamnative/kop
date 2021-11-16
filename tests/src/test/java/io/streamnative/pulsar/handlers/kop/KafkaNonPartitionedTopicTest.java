@@ -63,7 +63,8 @@ public class KafkaNonPartitionedTopicTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 30000)
     public void testNonPartitionedTopic() throws PulsarAdminException {
-        String topic = "persistent://" + TENANT + "/" + NAMESPACE + "/" + "testNonPartitionedTopic";
+        String shortTopic = "testNonPartitionedTopic";
+        String topic = "persistent://" + TENANT + "/" + NAMESPACE + "/" + shortTopic;
         admin.topics().createNonPartitionedTopic(topic);
         try {
             @Cleanup
@@ -99,7 +100,8 @@ public class KafkaNonPartitionedTopicTest extends KopProtocolHandlerTestBase {
             // Ensure that we can list the topic
             Map<String, List<PartitionInfo>> result = kConsumer
                     .getConsumer().listTopics(Duration.ofSeconds(1));
-            assertEquals(result.size(), 1);
+            assertTrue(result.containsKey(shortTopic),
+                    "list of topics " + result.keySet() + "  does not contains " + topic);
         } finally {
             admin.topics().delete(topic);
         }

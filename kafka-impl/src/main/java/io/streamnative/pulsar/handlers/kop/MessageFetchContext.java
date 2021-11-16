@@ -22,6 +22,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndReq
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
+import io.streamnative.pulsar.handlers.kop.idempotent.Log;
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
@@ -67,7 +68,6 @@ import org.apache.kafka.common.requests.FetchResponse.PartitionData;
 import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
-import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.metadata.api.GetResult;
 
 /**
@@ -410,9 +410,9 @@ public final class MessageFetchContext {
         final long highWatermark = MessageMetadataUtils.getHighWatermark(cursor.getManagedLedger());
         // Add new offset back to TCM after entries are read successfully
         tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
-
+        Log kopLog = requestHandler.getLogManager().getLog(topicPartition, namespacePrefix);
         final long lso = (readCommitted
-                ? tc.getLastStableOffset(TopicName.get(fullTopicName), highWatermark) : highWatermark);
+                ? kopLog.firstUndecidedOffset().orElse(highWatermark) : highWatermark);
         List<Entry> committedEntries = entries;
         if (readCommitted) {
             committedEntries = getCommittedEntries(entries, lso);
@@ -479,8 +479,12 @@ public final class MessageFetchContext {
                     entries.size(),
                     groupName,
                     statsLogger);
-            final List<FetchResponse.AbortedTransaction> abortedTransactions =
-                    (readCommitted ? tc.getAbortedIndexList(partitionData.fetchOffset) : null);
+            List<FetchResponse.AbortedTransaction> abortedTransactions;
+            if (requestHandler.getKafkaConfig().isEnableTransactionCoordinator() && readCommitted && tc != null) {
+                abortedTransactions = kopLog.getAbortedIndexList(partitionData.fetchOffset);
+            } else {
+                abortedTransactions = null;
+            }
             responseData.put(topicPartition, new PartitionData<>(
                     Errors.NONE,
                     highWatermark,

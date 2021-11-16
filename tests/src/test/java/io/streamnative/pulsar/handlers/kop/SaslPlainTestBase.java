@@ -171,7 +171,6 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
         // ensure that we can list the topic
         Map<String, List<PartitionInfo>> result = kConsumer
             .getConsumer().listTopics(Duration.ofSeconds(1));
-        assertEquals(result.size(), 1);
         assertTrue(result.containsKey(TOPIC),
             "list of topics " + result.keySet().toString() + "  does not contains " + TOPIC);
     }

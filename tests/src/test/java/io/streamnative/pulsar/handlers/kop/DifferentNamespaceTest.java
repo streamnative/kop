@@ -204,7 +204,6 @@ public class DifferentNamespaceTest extends KopProtocolHandlerTestBase {
         expectedTopicIsInternalMap.put(topicPrefix + "topic-1", false);
         expectedTopicIsInternalMap.put("persistent://" + anotherNamespacePrefix + topicPrefix + "topic-2", false);
         expectedTopicIsInternalMap.put(Topic.GROUP_METADATA_TOPIC_NAME, true);
-        expectedTopicIsInternalMap.put(Topic.TRANSACTION_STATE_TOPIC_NAME, true);
         final List<String> expectedNames =
                 expectedTopicIsInternalMap.keySet().stream().sorted().collect(Collectors.toList());
 
