@@ -53,6 +53,7 @@ KoP-2.8.0.13, 2.8.0.14, 2.8.0.15 and 2.8.0.16 minor versions with Pulsar-2.8.0 h
 You can configure and manage KoP based on your requirements. Check the following guides for more details.
 -   [Quick Start](docs/kop.md)
 -   [Configure KoP](docs/configuration.md)
+-   [Monitor KoP](docs/reference-metrics.md)
 -   [Upgrade](docs/upgrade.md)
 -   [Secure KoP](docs/security.md)
 -   [Manage KoP with the Envoy proxy](docs/envoy-proxy.md)
