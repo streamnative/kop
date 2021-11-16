@@ -16,13 +16,16 @@ package io.streamnative.pulsar.handlers.kop;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
-import javax.annotation.Nullable;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.pulsar.client.api.MessageId;
+import org.apache.pulsar.client.api.Consumer;
+import org.apache.pulsar.client.api.Message;
+import org.apache.pulsar.client.api.Schema;
+import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -36,11 +39,11 @@ import org.testng.collections.Lists;
 public class UpgradeTest extends KopProtocolHandlerTestBase {
 
     private final List<TestTopic> testTopicList = Lists.newArrayList(
-            new TestTopic(9, 1),
-            new TestTopic(7, 3),
-            new TestTopic(5, 5),
-            new TestTopic(3, 7),
-            new TestTopic(1, 9)
+            new TestTopic(4, 1),
+            new TestTopic(4, 2),
+            new TestTopic(3, 3),
+            new TestTopic(2, 4),
+            new TestTopic(1, 4)
     );
 
     @BeforeClass(timeOut = 30000L)
@@ -50,8 +53,6 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
         enableBrokerEntryMetadata = false;
         internalSetup();
         for (TestTopic testTopic : testTopicList) {
-            admin.topics().createPartitionedTopic(testTopic.topicName, 1);
-            admin.topics().createSubscription(testTopic.topicName, "my-sub", MessageId.earliest);
             testTopic.sendOldMessages();
         }
 
@@ -72,7 +73,7 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 20000L)
-    public void testSkipOldMessages() {
+    public void testSkipOldMessages() throws Exception {
         for (TestTopic testTopic : testTopicList) {
             testTopic.verify();
         }
@@ -81,14 +82,10 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
     private void sendMessages(final String topic,
                               final int start,
                               final int end,
-                              final List<Long> offsets,
-                              @Nullable final List<String> values) throws Exception {
+                              final List<Long> offsets) throws Exception {
         final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
         for (int i = start; i < end; i++) {
             final String value = "msg-" + i;
-            if (values != null) {
-                values.add(value);
-            }
             producer.send(new ProducerRecord<>(topic, value), (metadata, e) -> {
                 if (e == null) {
                     offsets.add(metadata.offset());
@@ -110,7 +107,6 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
         private final List<Long> expectedOldOffsets = Lists.newArrayList();
         private final List<Long> newOffsets = Lists.newArrayList();
         private final List<Long> expectedNewOffsets = Lists.newArrayList();
-        private final List<String> expectedNewValues = Lists.newArrayList();
 
         public TestTopic(final int numOldMessages, final int numNewMessages) {
             this.numOldMessages = numOldMessages;
@@ -126,20 +122,24 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
         }
 
         public void sendOldMessages() throws Exception {
-            sendMessages(topicName, 0, numOldMessages, oldOffsets, null);
+            sendMessages(topicName, 0, numOldMessages, oldOffsets);
         }
 
         public void sendNewMessages() throws Exception {
-            sendMessages(topicName, numOldMessages, numMessages, newOffsets, expectedNewValues);
+            sendMessages(topicName, numOldMessages, numMessages, newOffsets);
         }
 
-        public void verify() {
+        public void verify() throws Exception {
             log.info("[{}] old offsets: {} (expected: {}), new offsets: {} (expected: {})",
                     topicName, oldOffsets, expectedOldOffsets, newOffsets, expectedNewOffsets);
             Assert.assertEquals(oldOffsets.size(), numOldMessages);
             Assert.assertEquals(oldOffsets, expectedOldOffsets);
             Assert.assertEquals(newOffsets.size(), numNewMessages);
             Assert.assertEquals(newOffsets, expectedNewOffsets);
+
+            // Verify the restart of broker doesn't clear the previous messages
+            final List<String> allValues = receiveAllMessages();
+            Assert.assertEquals(allValues.size(), numMessages);
 
             final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties());
             consumer.subscribe(Collections.singleton(topicName));
@@ -154,11 +154,27 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
                 }
             }
 
-            log.info("[{}] Received values: {} (expect: {}), offsets: {} (expect: {})",
-                    topicName, values, expectedNewValues, offsets, expectedNewOffsets);
-            Assert.assertEquals(values, expectedNewValues);
+            log.info("[{}] All values: {}, received: {}, offsets: {} (expect: {})",
+                    topicName, allValues, values, offsets, expectedNewOffsets);
+            Assert.assertEquals(values, allValues.subList(numOldMessages, numMessages));
             Assert.assertEquals(offsets, expectedNewOffsets);
             consumer.close();
+        }
+
+        private List<String> receiveAllMessages() throws Exception {
+            final List<String> values = Lists.newArrayList();
+            final Consumer<byte[]> consumer = pulsarClient.newConsumer()
+                    .topic(topicName)
+                    .subscriptionName("my-sub")
+                    .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                    .subscribe();
+            for (int i = 0; i < numMessages; i++) {
+                final Message<byte[]> message = consumer.receive(3, TimeUnit.SECONDS);
+                Assert.assertNotNull(message);
+                values.add(Schema.STRING.decode(message.getData()));
+            }
+            consumer.close();
+            return values;
         }
     }
 }
