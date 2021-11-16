@@ -110,7 +110,7 @@ public class TransactionCoordinator {
             };
 
     protected TransactionCoordinator(TransactionConfig transactionConfig,
-                                     KopBrokerLookupManager kopBrokerLookupManager,
+                                     TransactionMarkerChannelManager transactionMarkerChannelManager,
                                      ScheduledExecutorService scheduler,
                                      ProducerIdManager producerIdManager,
                                      TransactionStateManager txnManager,
@@ -118,8 +118,7 @@ public class TransactionCoordinator {
         this.transactionConfig = transactionConfig;
         this.txnManager = txnManager;
         this.producerIdManager = producerIdManager;
-        this.transactionMarkerChannelManager =
-                new TransactionMarkerChannelManager(null, txnManager, kopBrokerLookupManager, false);
+        this.transactionMarkerChannelManager = transactionMarkerChannelManager;
         this.scheduler = scheduler;
         this.time = time;
     }
@@ -130,13 +129,14 @@ public class TransactionCoordinator {
                                             KopBrokerLookupManager kopBrokerLookupManager,
                                             ScheduledExecutorService scheduler,
                                             Time time) {
-
+        TransactionStateManager transactionStateManager =
+                new TransactionStateManager(transactionConfig, txnTopicClient, scheduler, time);
         return new TransactionCoordinator(
                 transactionConfig,
-                kopBrokerLookupManager,
+                new TransactionMarkerChannelManager(null, transactionStateManager, kopBrokerLookupManager, false),
                 scheduler,
                 new ProducerIdManager(transactionConfig.getBrokerId(), metadataStore),
-                new TransactionStateManager(transactionConfig, txnTopicClient, scheduler, time),
+                transactionStateManager,
                 time);
     }
 
@@ -617,10 +617,12 @@ public class TransactionCoordinator {
                             if (!errorsAndData.getData().isPresent()) {
                                 log.warn("The coordinator still owns the transaction partition for {}, but there "
                                         + "is no metadata in the cache; this is not expected", transactionalId);
-                            } else if (errorsAndData.getData().isPresent()
-                                    && epochAndMetadata.get().getCoordinatorEpoch() == coordinatorEpoch) {
+                                return;
+                            }
+                            CoordinatorEpochAndTxnMetadata epochAndMetadata = errorsAndData.getData().get();
+                            if (epochAndMetadata.getCoordinatorEpoch() == coordinatorEpoch) {
                                     // This was attempted epoch fence that failed, so mark this state on the metadata
-                                    epochAndMetadata.get().getTransactionMetadata().setHasFailedEpochFence(true);
+                                epochAndMetadata.getTransactionMetadata().setHasFailedEpochFence(true);
                                     log.warn("The coordinator failed to write an epoch fence transition for producer "
                                             + "{} to the transaction log with error {}. The epoch was increased to {} "
                                             + "but not returned to the client", transactionalId, errors,

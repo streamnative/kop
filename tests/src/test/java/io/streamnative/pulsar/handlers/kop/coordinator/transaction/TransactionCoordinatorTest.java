@@ -68,6 +68,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     private TransactionCoordinator transactionCoordinator;
     private ProducerIdManager producerIdManager;
     private TransactionStateManager transactionManager;
+    private TransactionMarkerChannelManager transactionMarkerChannelManager;
     private TransactionCoordinator.InitProducerIdResult result = null;
     private Errors error = Errors.NONE;
     private ArgumentCaptor<TransactionMetadata> capturedTxn = ArgumentCaptor.forClass(TransactionMetadata.class);
@@ -119,12 +120,13 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
         initMockPidManager();
         initTransactionManager();
+        initTransactionMarkerChannelManager();
 
         transactionCoordinator = new TransactionCoordinator(
                 TransactionConfig.builder()
                         .abortTimedOutTransactionsIntervalMs(DefaultAbortTimedOutTransactionsIntervalMs)
                         .build(),
-                kafkaProtocolHandler.getKopBrokerLookupManager(),
+                transactionMarkerChannelManager,
                 scheduler,
                 producerIdManager,
                 transactionManager,
@@ -144,6 +146,10 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     private void initTransactionManager() {
         this.transactionManager = mock(TransactionStateManager.class);
+    }
+
+    private void initTransactionMarkerChannelManager() {
+        this.transactionMarkerChannelManager = mock(TransactionMarkerChannelManager.class);
     }
 
     private void initPidGenericMocks() {
@@ -1628,6 +1634,13 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = defaultTestTimeout)
+    public void shouldRemoveTransactionsForPartitionOnEmigration() {
+        transactionCoordinator.handleTxnEmigration(0);
+        verify(transactionManager).removeTransactionsForTxnTopicPartition(eq(0));
+        verify(transactionMarkerChannelManager).removeMarkersForTxnTopicPartition(0);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
     public void shouldAbortExpiredTransactionsInOngoingStateAndBumpEpoch() {
         long now = time.milliseconds();
         TransactionMetadata txnMetadata = new TransactionMetadata(
@@ -1770,6 +1783,85 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         transactionCoordinator.abortTimedOutTransactions();
         verify(transactionManager, atLeastOnce()).timedOutTransactions();
         verify(transactionManager, atLeastOnce()).getTransactionState(eq(transactionalId));
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldNotBumpEpochWhenAbortingExpiredTransactionIfAppendToLogFails() {
+        long now = time.milliseconds();
+        TransactionMetadata txnMetadata = TransactionMetadata.builder()
+                .transactionalId(transactionalId)
+                .producerId(producerId)
+                .lastProducerId(producerId)
+                .producerEpoch(producerEpoch)
+                .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
+                .txnTimeoutMs(txnTimeoutMs)
+                .state(TransactionState.ONGOING)
+                .topicPartitions(partitions)
+                .txnStartTimestamp(now)
+                .txnLastUpdateTimestamp(now)
+                .build();
+        doReturn(Lists.newArrayList(
+                new TransactionStateManager
+                        .TransactionalIdAndProducerIdEpoch(transactionalId, producerId, producerEpoch)))
+                .when(transactionManager).timedOutTransactions();
+
+        TransactionMetadata txnMetadataAfterAppendFailure = TransactionMetadata.builder()
+                .transactionalId(transactionalId)
+                .producerId(producerId)
+                .lastProducerId(producerId)
+                .producerEpoch((short) (producerEpoch + 1))
+                .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
+                .txnTimeoutMs(txnTimeoutMs)
+                .state(TransactionState.ONGOING)
+                .topicPartitions(partitions)
+                .txnStartTimestamp(now)
+                .txnLastUpdateTimestamp(now)
+                .build();
+        AtomicInteger getTransactionStateTime = new AtomicInteger(0);
+        doAnswer((__) -> {
+            if (getTransactionStateTime.incrementAndGet() <= 2) {
+
+                return new ErrorsAndData<>(Errors.NONE, Optional.of(
+                        new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata)));
+            }
+            return new ErrorsAndData<>(Errors.NONE, Optional.of(
+                    new TransactionStateManager.CoordinatorEpochAndTxnMetadata(
+                            coordinatorEpoch, txnMetadataAfterAppendFailure)));
+        }).when(transactionManager).getTransactionState(eq(transactionalId));
+        TransactionMetadata.TxnTransitMetadata expectedTransition = TransactionMetadata.TxnTransitMetadata.builder()
+                .producerId(producerId)
+                .lastProducerId(producerId)
+                .producerEpoch((short) (producerEpoch + 1))
+                .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
+                .txnTimeoutMs(txnTimeoutMs)
+                .txnState(TransactionState.PREPARE_ABORT)
+                .topicPartitions(partitions)
+                .txnStartTimestamp(now)
+                .txnLastUpdateTimestamp(now + TransactionConfig.DefaultAbortTimedOutTransactionsIntervalMs)
+                .build();
+        doAnswer(__ -> {
+            capturedErrorsCallback.getValue().fail(Errors.NOT_ENOUGH_REPLICAS);
+            return null;
+        }).when(transactionManager)
+                .appendTransactionToLog(
+                        eq(transactionalId),
+                        eq(coordinatorEpoch),
+                        eq(expectedTransition),
+                        capturedErrorsCallback.capture(),
+                        any(TransactionStateManager.RetryOnError.class)
+                );
+        time.sleep(TransactionConfig.DefaultAbortTimedOutTransactionsIntervalMs);
+        transactionCoordinator.abortTimedOutTransactions();
+        verify(transactionManager, atLeastOnce()).timedOutTransactions();
+        verify(transactionManager, times(3)).getTransactionState(eq(transactionalId));
+        verify(transactionManager, times(1)).appendTransactionToLog(
+                eq(transactionalId),
+                eq(coordinatorEpoch),
+                eq(expectedTransition),
+                any(),
+                any());
+        assertEquals((short) (producerEpoch + 1), txnMetadataAfterAppendFailure.getProducerEpoch());
+        assertTrue(txnMetadataAfterAppendFailure.isHasFailedEpochFence());
     }
 
     @Test(timeOut = defaultTestTimeout)
