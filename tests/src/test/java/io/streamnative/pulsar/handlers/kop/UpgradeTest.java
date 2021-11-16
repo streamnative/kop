@@ -14,14 +14,21 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import java.time.Duration;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.Schema;
@@ -72,10 +79,24 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
         internalCleanup();
     }
 
-    @Test(timeOut = 20000L)
-    public void testSkipOldMessages() throws Exception {
+    @Test
+    public void testOffsetsInSendCallback() {
         for (TestTopic testTopic : testTopicList) {
-            testTopic.verify();
+            testTopic.testOffsetsInSendCallback();
+        }
+    }
+
+    @Test(timeOut = 20000L)
+    public void testConsumeEarliest() throws Exception {
+        for (TestTopic testTopic : testTopicList) {
+            testTopic.testConsumeEarliest();
+        }
+    }
+
+    @Test(timeOut = 20000L)
+    public void testConsumeLatest() throws Exception {
+        for (TestTopic testTopic : testTopicList) {
+            testTopic.testConsumeLatest();
         }
     }
 
@@ -129,52 +150,96 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
             sendMessages(topicName, numOldMessages, numMessages, newOffsets);
         }
 
-        public void verify() throws Exception {
+        public void testOffsetsInSendCallback() {
             log.info("[{}] old offsets: {} (expected: {}), new offsets: {} (expected: {})",
                     topicName, oldOffsets, expectedOldOffsets, newOffsets, expectedNewOffsets);
             Assert.assertEquals(oldOffsets.size(), numOldMessages);
             Assert.assertEquals(oldOffsets, expectedOldOffsets);
             Assert.assertEquals(newOffsets.size(), numNewMessages);
             Assert.assertEquals(newOffsets, expectedNewOffsets);
+        }
 
+        public void testConsumeEarliest() throws Exception {
             // Verify the restart of broker doesn't clear the previous messages
-            final List<String> allValues = receiveAllMessages();
+            final List<String> allValues = receiveValuesByPulsarConsumer(numMessages);
             Assert.assertEquals(allValues.size(), numMessages);
 
-            final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties());
+            final KafkaConsumer<String, String> consumer =
+                    new KafkaConsumer<>(newKafkaConsumerProperties("test-consume-earliest"));
             consumer.subscribe(Collections.singleton(topicName));
 
-            final List<String> values = Lists.newArrayList();
-            final List<Long> offsets = Lists.newArrayList();
-            final long startTimeMs = System.currentTimeMillis();
-            while (values.size() < numNewMessages && System.currentTimeMillis() - startTimeMs < 3000L) {
-                for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofSeconds(1))) {
-                    values.add(record.value());
-                    offsets.add(record.offset());
-                }
-            }
-
+            final Pair<List<String>, List<Long>> valuesAndOffsets = receiveValuesAndOffsets(consumer, numMessages);
             log.info("[{}] All values: {}, received: {}, offsets: {} (expect: {})",
-                    topicName, allValues, values, offsets, expectedNewOffsets);
-            Assert.assertEquals(values, allValues.subList(numOldMessages, numMessages));
-            Assert.assertEquals(offsets, expectedNewOffsets);
+                    topicName, allValues, valuesAndOffsets.getLeft(), valuesAndOffsets.getRight(), expectedNewOffsets);
+            Assert.assertEquals(valuesAndOffsets.getLeft(), allValues.subList(numOldMessages, numMessages));
+            Assert.assertEquals(valuesAndOffsets.getRight(), expectedNewOffsets);
             consumer.close();
         }
 
-        private List<String> receiveAllMessages() throws Exception {
+        public void testConsumeLatest() throws Exception {
+            final Properties props = newKafkaConsumerProperties("test-consume-latest");
+            props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+
+            @Cleanup
+            final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
+            final AtomicBoolean rebalanceDone = new AtomicBoolean(false);
+            consumer.subscribe(Collections.singleton(topicName), new ConsumerRebalanceListener() {
+                @Override
+                public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+                    // No ops
+                }
+
+                @Override
+                public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+                    rebalanceDone.set(true);
+                }
+            });
+            for (int i = 0; i < 50 && !rebalanceDone.get(); i++) {
+                Assert.assertEquals(consumer.poll(Duration.ofMillis(100)).count(), 0);
+            }
+            Assert.assertTrue(rebalanceDone.get());
+
+            final List<Long> offsets = Lists.newArrayList();
+            sendMessages(topicName, numMessages, numMessages + 1, offsets);
+            Assert.assertEquals(offsets, Lists.newArrayList(Collections.singletonList((long) numNewMessages)));
+
+            final Pair<List<String>, List<Long>> valuesAndOffsets = receiveValuesAndOffsets(consumer, 1);
+            log.info("[{}] testConsumeLatest received values: {}, offsets: {}",
+                    topicName, valuesAndOffsets.getLeft(), valuesAndOffsets.getRight());
+            Assert.assertEquals(valuesAndOffsets.getLeft(), Lists.newArrayList("msg-" + numMessages));
+            Assert.assertEquals(valuesAndOffsets.getRight(), offsets);
+        }
+
+        private List<String> receiveValuesByPulsarConsumer(int maxNumMessages) throws Exception {
             final List<String> values = Lists.newArrayList();
             final Consumer<byte[]> consumer = pulsarClient.newConsumer()
                     .topic(topicName)
                     .subscriptionName("my-sub")
                     .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                     .subscribe();
-            for (int i = 0; i < numMessages; i++) {
-                final Message<byte[]> message = consumer.receive(3, TimeUnit.SECONDS);
-                Assert.assertNotNull(message);
-                values.add(Schema.STRING.decode(message.getData()));
+            final long startTimeMs = System.currentTimeMillis();
+            while (values.size() < maxNumMessages && System.currentTimeMillis() - startTimeMs < 3000L) {
+                final Message<byte[]> message = consumer.receive(100, TimeUnit.MILLISECONDS);
+                if (message != null) {
+                    values.add(Schema.STRING.decode(message.getData()));
+                }
             }
             consumer.close();
             return values;
+        }
+
+        private Pair<List<String>, List<Long>> receiveValuesAndOffsets(final KafkaConsumer<String, String> consumer,
+                                                                       int maxNumMessages) {
+            final List<String> values = Lists.newArrayList();
+            final List<Long> offsets = Lists.newArrayList();
+            final long startTimeMs = System.currentTimeMillis();
+            while (values.size() < maxNumMessages && System.currentTimeMillis() - startTimeMs < 3000L) {
+                consumer.poll(Duration.ofMillis(100)).forEach(record -> {
+                    values.add(record.value());
+                    offsets.add(record.offset());
+                });
+            }
+            return Pair.of(values, offsets);
         }
     }
 }
