@@ -102,6 +102,7 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
 
     private List<Long> sendMessages(final String topic, final int start, final int end) throws Exception {
         final List<Long> offsets = Lists.newArrayList();
+        @Cleanup
         final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
         for (int i = start; i < end; i++) {
             final String value = "msg-" + i;
@@ -114,7 +115,6 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
                 }
             }).get();
         }
-        producer.close();
         return offsets;
     }
 
@@ -122,7 +122,7 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
         private final int numOldMessages;
         private final int numNewMessages;
         private final int numMessages;
-        private final String topicName;
+        private final String topic;
         private List<Long> oldOffsets;
         private final List<Long> expectedOldOffsets = Lists.newArrayList();
         private List<Long> newOffsets;
@@ -132,7 +132,7 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
             this.numOldMessages = numOldMessages;
             this.numNewMessages = numNewMessages;
             this.numMessages = numOldMessages + numNewMessages;
-            this.topicName = "test-skip-old-messages-" + numOldMessages + "-" + numNewMessages;
+            this.topic = "test-skip-old-messages-" + numOldMessages + "-" + numNewMessages;
             for (int i = 0; i < numOldMessages; i++) {
                 this.expectedOldOffsets.add(MessagePublishContext.DEFAULT_OFFSET);
             }
@@ -142,16 +142,16 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
         }
 
         public void sendOldMessages() throws Exception {
-            oldOffsets = sendMessages(topicName, 0, numOldMessages);
+            oldOffsets = sendMessages(topic, 0, numOldMessages);
         }
 
         public void sendNewMessages() throws Exception {
-            newOffsets = sendMessages(topicName, numOldMessages, numMessages);
+            newOffsets = sendMessages(topic, numOldMessages, numMessages);
         }
 
         public void testOffsetsInSendCallback() {
             log.info("[{}] old offsets: {} (expected: {}), new offsets: {} (expected: {})",
-                    topicName, oldOffsets, expectedOldOffsets, newOffsets, expectedNewOffsets);
+                    topic, oldOffsets, expectedOldOffsets, newOffsets, expectedNewOffsets);
             Assert.assertEquals(oldOffsets.size(), numOldMessages);
             Assert.assertEquals(oldOffsets, expectedOldOffsets);
             Assert.assertEquals(newOffsets.size(), numNewMessages);
@@ -163,16 +163,16 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
             final List<String> allValues = receiveValuesByPulsarConsumer(numMessages);
             Assert.assertEquals(allValues.size(), numMessages);
 
+            @Cleanup
             final KafkaConsumer<String, String> consumer =
                     new KafkaConsumer<>(newKafkaConsumerProperties("test-consume-earliest"));
-            consumer.subscribe(Collections.singleton(topicName));
+            consumer.subscribe(Collections.singleton(topic));
 
             final Pair<List<String>, List<Long>> valuesAndOffsets = receiveValuesAndOffsets(consumer, numMessages);
             log.info("[{}] All values: {}, received: {}, offsets: {} (expect: {})",
-                    topicName, allValues, valuesAndOffsets.getLeft(), valuesAndOffsets.getRight(), expectedNewOffsets);
+                    topic, allValues, valuesAndOffsets.getLeft(), valuesAndOffsets.getRight(), expectedNewOffsets);
             Assert.assertEquals(valuesAndOffsets.getLeft(), allValues.subList(numOldMessages, numMessages));
             Assert.assertEquals(valuesAndOffsets.getRight(), expectedNewOffsets);
-            consumer.close();
         }
 
         public void testConsumeLatest() throws Exception {
@@ -182,7 +182,7 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
             @Cleanup
             final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
             final AtomicBoolean rebalanceDone = new AtomicBoolean(false);
-            consumer.subscribe(Collections.singleton(topicName), new ConsumerRebalanceListener() {
+            consumer.subscribe(Collections.singleton(topic), new ConsumerRebalanceListener() {
                 @Override
                 public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
                     // No ops
@@ -198,20 +198,21 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
             }
             Assert.assertTrue(rebalanceDone.get());
 
-            final List<Long> offsets = sendMessages(topicName, numMessages, numMessages + 1);
+            final List<Long> offsets = sendMessages(topic, numMessages, numMessages + 1);
             Assert.assertEquals(offsets, Lists.newArrayList(Collections.singletonList((long) numNewMessages)));
 
             final Pair<List<String>, List<Long>> valuesAndOffsets = receiveValuesAndOffsets(consumer, 1);
             log.info("[{}] testConsumeLatest received values: {}, offsets: {}",
-                    topicName, valuesAndOffsets.getLeft(), valuesAndOffsets.getRight());
+                    topic, valuesAndOffsets.getLeft(), valuesAndOffsets.getRight());
             Assert.assertEquals(valuesAndOffsets.getLeft(), Lists.newArrayList("msg-" + numMessages));
             Assert.assertEquals(valuesAndOffsets.getRight(), offsets);
         }
 
         private List<String> receiveValuesByPulsarConsumer(int maxNumMessages) throws Exception {
             final List<String> values = Lists.newArrayList();
+            @Cleanup
             final Consumer<byte[]> consumer = pulsarClient.newConsumer()
-                    .topic(topicName)
+                    .topic(topic)
                     .subscriptionName("my-sub")
                     .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                     .subscribe();
@@ -222,7 +223,6 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
                     values.add(Schema.STRING.decode(message.getData()));
                 }
             }
-            consumer.close();
             return values;
         }
 
