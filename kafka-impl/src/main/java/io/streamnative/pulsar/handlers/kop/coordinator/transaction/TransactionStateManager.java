@@ -344,6 +344,11 @@ public class TransactionStateManager {
                         log.debug("Appending new metadata {} for transaction id {} to the local transaction log with "
                                 + "messageId {}", newMetadata, transactionalId, messageId);
                     }
+                }).exceptionally(ex -> {
+                    log.error("Store transactional log failed, transactionalId : {}, metadata: [{}].",
+                            transactionalId, newMetadata, ex);
+                    responseCallback.fail(Errors.forException(ex));
+                    return null;
                 });
                 return null;
             });
