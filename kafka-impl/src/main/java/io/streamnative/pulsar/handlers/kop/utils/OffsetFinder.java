@@ -18,6 +18,7 @@ import static com.google.common.base.Preconditions.checkState;
 import static org.apache.bookkeeper.mledger.proto.MLDataFormats.ManagedLedgerInfo.LedgerInfo;
 
 import com.google.common.base.Predicate;
+import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Optional;
@@ -66,7 +67,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
                 }
                 try {
                     return MessageMetadataUtils.getPublishTime(entry.getDataBuffer()) <= timestamp;
-                } catch (Exception e) {
+                } catch (MetadataCorruptedException e) {
                     log.error("[{}] Error deserialize message for message position find", managedLedger.getName(), e);
                 } finally {
                     entry.release();
