@@ -617,13 +617,17 @@ public class TransactionStateManager {
      * left off from the previous loading / unloading operation.
      */
     public CompletableFuture<Void> loadTransactionsForTxnTopicPartition(
-                                                                int partitionId,
-                                                                SendTxnMarkersCallback sendTxnMarkers) {
+            int partitionId, SendTxnMarkersCallback sendTxnMarkers) {
         TopicPartition topicPartition =
                 new TopicPartition(transactionConfig.getTransactionMetadataTopicName(), partitionId);
 
         boolean alreadyLoading = CoreUtils.inWriteLock(stateLock, () -> {
-            leavingPartitions.remove(partitionId);
+            // The leavingPartitions of partitionId should have been removed in removeTransactionsForTxnTopicPartition,
+            // If loadTransactionsForTxnTopicPartition success remove this partition, we just print a warning log,
+            // ensure this operates have be recorded in logs, for future debugging.
+            if (leavingPartitions.remove(partitionId)) {
+                log.warn("Leaving partition: {} should have been removed.", partitionId);
+            }
             boolean partitionAlreadyLoading = !loadingPartitions.add(partitionId);
             addLoadedTransactionsToCache(topicPartition.partition(), Maps.newConcurrentMap());
             return partitionAlreadyLoading;
@@ -637,17 +641,17 @@ public class TransactionStateManager {
 
         long startTimeMs = SystemTime.SYSTEM.milliseconds();
         return getProducer(topicPartition.partition())
-                .thenCompose(producer ->
-                        producer.newMessage().value(null).sendAsync())
-                .thenCompose(lastMsgId -> {
+                .thenComposeAsync(producer ->
+                        producer.newMessage().value(null).sendAsync(), scheduler)
+                .thenComposeAsync(lastMsgId -> {
                     if (log.isDebugEnabled()) {
                         log.debug("Successfully write a placeholder record into {} @ {}",
                                 topicPartition, lastMsgId);
                     }
-                    return getReader(topicPartition.partition()).thenCompose(reader ->
-                            loadTransactionMetadata(topicPartition.partition(), reader, lastMsgId));
-                }).thenAccept(__ ->
-                        completeLoadedTransactions(topicPartition, startTimeMs, sendTxnMarkers))
+                    return getReader(topicPartition.partition()).thenComposeAsync(reader ->
+                            loadTransactionMetadata(topicPartition.partition(), reader, lastMsgId), scheduler);
+                }, scheduler).thenAcceptAsync(__ ->
+                        completeLoadedTransactions(topicPartition, startTimeMs, sendTxnMarkers), scheduler)
                 .exceptionally(ex -> {
                     log.error("Error to load transactions exceptions : [{}]", ex.getMessage());
                     loadingPartitions.remove(partitionId);
@@ -679,7 +683,7 @@ public class TransactionStateManager {
             return;
         }
 
-        reader.readNextAsync().whenComplete((message, throwable) -> {
+        reader.readNextAsync().whenCompleteAsync((message, throwable) -> {
             if (throwable != null) {
                 log.error("Failed to load transaction log.", throwable);
                 loadFuture.completeExceptionally(throwable);
@@ -715,7 +719,7 @@ public class TransactionStateManager {
                         message.getMessageId(), partition, ex);
                 loadFuture.completeExceptionally(ex);
             }
-        });
+        }, scheduler);
     }
 
     @VisibleForTesting
@@ -796,7 +800,7 @@ public class TransactionStateManager {
             return null;
         });
 
-        Runnable removeTransactions = () -> {
+        scheduler.submit(() -> {
             CoreUtils.inWriteLock(stateLock, () -> {
                 if (leavingPartitions.contains(partition)) {
                     transactionMetadataCache.remove(partition).forEach((txnId, metadata) -> {
@@ -808,27 +812,26 @@ public class TransactionStateManager {
                     CompletableFuture<Producer<ByteBuffer>> producer = txnLogProducerMap.remove(partition);
                     CompletableFuture<Reader<ByteBuffer>> reader = txnLogReaderMap.remove(partition);
                     if (producer != null) {
-                        producer.thenApply(Producer::closeAsync).whenCompleteAsync((ignore, t) -> {
+                        producer.thenApplyAsync(Producer::closeAsync, scheduler).whenCompleteAsync((ignore, t) -> {
                             if (t != null) {
                                 log.error("Failed to close producer when remove partition {}.",
                                         producer.join().getTopic());
                             }
-                        });
+                        }, scheduler);
                     }
                     if (reader != null) {
-                        reader.thenApply(Reader::closeAsync).whenCompleteAsync((ignore, t) -> {
+                        reader.thenApplyAsync(Reader::closeAsync, scheduler).whenCompleteAsync((ignore, t) -> {
                             if (t != null) {
                                 log.error("Failed to close reader when remove partition {}.",
                                         reader.join().getTopic());
                             }
-                        });
+                        }, scheduler);
                     }
                     leavingPartitions.remove(partition);
                 }
                 return null;
             });
-        };
-        scheduler.submit(removeTransactions);
+        });
     }
 
     interface SendTxnMarkersCallback {
