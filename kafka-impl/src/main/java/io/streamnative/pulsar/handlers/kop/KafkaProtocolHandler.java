@@ -77,6 +77,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
     private SystemTopicClient txnTopicClient;
+    @VisibleForTesting
+    @Getter
+    private Map<InetSocketAddress, ChannelInitializer<SocketChannel>> channelInitializerMap;
 
     @Getter
     @VisibleForTesting
@@ -563,7 +566,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     forEach((listener, endPoint) ->
                             builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint))
                     );
-            return builder.build();
+            channelInitializerMap = builder.build();
+            return channelInitializerMap;
         } catch (Exception e){
             log.error("KafkaProtocolHandler newChannelInitializers failed with ", e);
             return null;

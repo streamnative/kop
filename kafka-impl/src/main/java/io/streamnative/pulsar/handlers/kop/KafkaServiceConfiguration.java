@@ -188,6 +188,8 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         category = CATEGORY_KOP,
         doc = "Comma-separated list of URIs we will listen on and the listener names.\n"
                 + "e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093.\n"
+                + "Each URI's scheme represents a listener name if `kafkaProtocolMap` is configured.\n"
+                + "Otherwise, the scheme must be a valid protocol in [PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL].\n"
                 + "If hostname is not set, bind to the default interface."
     )
     private String kafkaListeners;
