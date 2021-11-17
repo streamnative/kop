@@ -30,18 +30,21 @@ import org.apache.pulsar.broker.service.Topic.PublishContext;
 @Slf4j
 public final class MessagePublishContext implements PublishContext {
 
+    public static final long DEFAULT_OFFSET = -1L;
+
     private CompletableFuture<Long> offsetFuture;
     private Topic topic;
     private long startTimeNs;
     private int numberOfMessages;
-    private long baseOffset = -1L;
+    private long baseOffset;
+    private MetadataCorruptedException peekOffsetError;
 
     @Override
     public void setMetadataFromEntryData(ByteBuf entryData) {
         try {
             baseOffset = MessageMetadataUtils.peekBaseOffset(entryData, numberOfMessages);
         } catch (MetadataCorruptedException e) {
-            log.error("Failed to set metadata from entry: {}", e.getMessage());
+            peekOffsetError = e;
         }
     }
 
@@ -64,8 +67,9 @@ public final class MessagePublishContext implements PublishContext {
 
             topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.MICROSECONDS);
             // setMetadataFromEntryData() was called before completed() is called so that baseOffset could be set
-            if (baseOffset < 0) {
-                log.error("Failed to get offset for ({}, {})", ledgerId, entryId);
+            if (baseOffset == DEFAULT_OFFSET) {
+                log.error("[{}] Failed to get offset for ({}, {}): {}",
+                        topic, ledgerId, entryId, peekOffsetError.getMessage());
             }
             offsetFuture.complete(baseOffset);
         }
@@ -83,6 +87,8 @@ public final class MessagePublishContext implements PublishContext {
         callback.topic = topic;
         callback.numberOfMessages = numberOfMessages;
         callback.startTimeNs = startTimeNs;
+        callback.baseOffset = DEFAULT_OFFSET;
+        callback.peekOffsetError = null;
         return callback;
     }
 
@@ -108,6 +114,8 @@ public final class MessagePublishContext implements PublishContext {
         topic = null;
         startTimeNs = -1;
         numberOfMessages = 0;
+        baseOffset = DEFAULT_OFFSET;
+        peekOffsetError = null;
         recyclerHandle.recycle(this);
     }
 }
