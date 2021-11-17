@@ -48,11 +48,15 @@ public class MessageMetadataUtils {
         return getCurrentOffset(managedLedger) + 1;
     }
 
-    public static long getPublishTime(final ByteBuf byteBuf) {
+    public static long getPublishTime(final ByteBuf byteBuf) throws MetadataCorruptedException {
         final int readerIndex = byteBuf.readerIndex();
-        final MessageMetadata metadata = Commands.parseMessageMetadata(byteBuf);
+        final MessageMetadata metadata = parseMessageMetadata(byteBuf);
         byteBuf.readerIndex(readerIndex);
-        return metadata.getPublishTime();
+        if (metadata.hasPublishTime()) {
+            return metadata.getPublishTime();
+        } else {
+            throw new MetadataCorruptedException("Field 'publish_time' is not set");
+        }
     }
 
     public static CompletableFuture<Long> getOffsetOfPosition(ManagedLedgerImpl managedLedger,
@@ -87,8 +91,10 @@ public class MessageMetadataUtils {
                     } else {
                         future.complete(peekBaseOffsetFromEntry(entry));
                     }
-
-                } catch (Exception e) {
+                } catch (MetadataCorruptedException.NoBrokerEntryMetadata ignored) {
+                    log.warn("The entry {} doesn't have BrokerEntryMetadata, return 0 as the offset", position);
+                    future.complete(0L);
+                } catch (MetadataCorruptedException e) {
                     future.completeExceptionally(e);
                 } finally {
                     if (entry != null) {
@@ -111,7 +117,7 @@ public class MessageMetadataUtils {
             final BrokerEntryMetadata brokerEntryMetadata =
                     Commands.peekBrokerEntryMetadataIfExist(buf); // might throw IllegalArgumentException
             if (brokerEntryMetadata == null) {
-                throw new IllegalArgumentException("No BrokerEntryMetadata found");
+                throw new MetadataCorruptedException.NoBrokerEntryMetadata();
             }
             return brokerEntryMetadata.getIndex(); // might throw IllegalStateException
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -155,5 +161,28 @@ public class MessageMetadataUtils {
 
     public static long getMockOffset(long ledgerId, long entryId) {
         return ledgerId + entryId;
+    }
+
+    public static CompletableFuture<Position> asyncFindPosition(final ManagedLedger managedLedger, final long offset) {
+        return managedLedger.asyncFindPosition(entry -> {
+            if (entry == null) {
+                // `entry` should not be null, add the null check here to fix the spotbugs check
+                return false;
+            }
+            try {
+                return peekOffsetFromEntry(entry) < offset;
+            } catch (MetadataCorruptedException.NoBrokerEntryMetadata ignored) {
+                // Here we assume the messages without BrokerEntryMetadata are produced by KoP < 2.8.0 that doesn't
+                // support BrokerEntryMetadata. In this case, these messages should be older than any message produced
+                // by KoP with BrokerEntryMetadata enabled.
+                return true;
+            } catch (MetadataCorruptedException e) {
+                log.error("[{}] Entry {} is corrupted: {}",
+                        managedLedger.getName(), entry.getPosition(), e.getMessage());
+                return false;
+            } finally {
+                entry.release();
+            }
+        });
     }
 }

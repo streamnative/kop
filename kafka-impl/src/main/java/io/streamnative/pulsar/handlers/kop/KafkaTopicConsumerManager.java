@@ -16,7 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static com.google.common.base.Preconditions.checkArgument;
 
 import com.google.common.annotations.VisibleForTesting;
-import io.streamnative.pulsar.handlers.kop.utils.OffsetSearchPredicate;
+import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.List;
@@ -233,7 +233,7 @@ public class KafkaTopicConsumerManager implements Closeable {
             return future;
         }
 
-        return ledger.asyncFindPosition(new OffsetSearchPredicate(offset)).thenApply(position -> {
+        return MessageMetadataUtils.asyncFindPosition(ledger, offset).thenApply(position -> {
             final String cursorName = "kop-consumer-cursor-" + topic.getName()
                     + "-" + position.getLedgerId() + "-" + position.getEntryId()
                     + "-" + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 10);
@@ -287,7 +287,7 @@ public class KafkaTopicConsumerManager implements Closeable {
         }
         final ManagedLedger ledger = topic.getManagedLedger();
 
-        return ledger.asyncFindPosition(new OffsetSearchPredicate(offset)).thenApply(position -> {
+        return MessageMetadataUtils.asyncFindPosition(ledger, offset).thenApply(position -> {
             PositionImpl lastConfirmedEntry = (PositionImpl) ledger.getLastConfirmedEntry();
             log.info("Found position {} for offset {}, lastConfirmedEntry {}", position, offset, lastConfirmedEntry);
             if (position == null) {
