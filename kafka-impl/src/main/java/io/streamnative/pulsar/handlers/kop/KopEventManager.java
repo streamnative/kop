@@ -34,7 +34,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -306,7 +305,8 @@ public class KopEventManager {
                         HashSet<KopTopic> kopTopicsSet = Sets.newHashSet();
                         String namespacePrefix = MetadataUtils.constructMetadataNamespace(tenant, kafkaConfig);
                         topicsDeletions.forEach(topic -> {
-                            KopTopic kopTopic = new KopTopic(TopicNameUtils.getTopicNameWithUrlDecoded(topic), namespacePrefix);
+                            KopTopic kopTopic = new KopTopic(TopicNameUtils.getTopicNameWithUrlDecoded(topic),
+                                    namespacePrefix);
                             kopTopicsSet.add(kopTopic);
                             topicsFullNameDeletionsSets.add(kopTopic.getFullName());
                         });
