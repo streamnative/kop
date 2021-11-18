@@ -56,12 +56,6 @@ public class KopTopicTest {
         }
 
         try {
-            topic = new KopTopic("my-topic", null);
-            fail();
-        } catch (KopTopic.KoPTopicIllegalArgumentException e) {
-            assertTrue(e.getMessage().contains("Invalid short topic name"));
-        }
-        try {
             topic = new KopTopic("persistent://my-topic", namespacePrefix);
         } catch (KopTopic.KoPTopicIllegalArgumentException e) {
             assertTrue(e.getMessage().contains("Invalid topic name"));
