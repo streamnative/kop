@@ -65,12 +65,15 @@ public class KafkaTopicConsumerManager implements Closeable {
     @Getter
     private final Map<Long, Long> lastAccessTimes;
 
+    private final boolean skipMessagesWithoutIndex;
+
     KafkaTopicConsumerManager(KafkaRequestHandler requestHandler, PersistentTopic topic) {
         this.topic = topic;
         this.cursors = new ConcurrentHashMap<>();
         this.createdCursors = new ConcurrentHashMap<>();
         this.lastAccessTimes = new ConcurrentHashMap<>();
         this.requestHandler = requestHandler;
+        this.skipMessagesWithoutIndex = requestHandler.isSkipMessagesWithoutIndex();
     }
 
     // delete expired cursors, so backlog can be cleared.
@@ -233,7 +236,7 @@ public class KafkaTopicConsumerManager implements Closeable {
             return future;
         }
 
-        return MessageMetadataUtils.asyncFindPosition(ledger, offset).thenApply(position -> {
+        return MessageMetadataUtils.asyncFindPosition(ledger, offset, skipMessagesWithoutIndex).thenApply(position -> {
             final String cursorName = "kop-consumer-cursor-" + topic.getName()
                     + "-" + position.getLedgerId() + "-" + position.getEntryId()
                     + "-" + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 10);
@@ -287,7 +290,7 @@ public class KafkaTopicConsumerManager implements Closeable {
         }
         final ManagedLedger ledger = topic.getManagedLedger();
 
-        return MessageMetadataUtils.asyncFindPosition(ledger, offset).thenApply(position -> {
+        return MessageMetadataUtils.asyncFindPosition(ledger, offset, skipMessagesWithoutIndex).thenApply(position -> {
             PositionImpl lastConfirmedEntry = (PositionImpl) ledger.getLastConfirmedEntry();
             log.info("Found position {} for offset {}, lastConfirmedEntry {}", position, offset, lastConfirmedEntry);
             if (position == null) {
