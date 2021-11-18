@@ -441,6 +441,14 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private String kafkaCompressionType = "none";
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Whether to skip messages without the index (Kafka offset).\n"
+                    + "It should be enabled if KoP is upgraded from version lower than 2.8.0 to 2.8.0 or higher\n"
+                    + "After that, the old messages without index will be skipped."
+    )
+    private boolean skipMessagesWithoutIndex = false;
+
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();
         for (String listener : advertisedListeners.split(EndPoint.END_POINT_SEPARATOR)) {
