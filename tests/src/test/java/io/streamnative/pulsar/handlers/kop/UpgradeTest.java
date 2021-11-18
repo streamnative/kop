@@ -58,6 +58,7 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
     @BeforeClass(timeOut = 30000L)
     @Override
     protected void setup() throws Exception {
+        conf.setSkipMessagesWithoutIndex(true);
         conf.setBrokerEntryMetadataInterceptors(null);
         enableBrokerEntryMetadata = false;
         internalSetup();
