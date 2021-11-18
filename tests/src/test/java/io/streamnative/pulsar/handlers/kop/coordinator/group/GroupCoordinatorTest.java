@@ -133,7 +133,6 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         otherGroupId = "otherGroupId";
         offsetConfig.offsetsTopicNumPartitions(4);
         groupMetadataManager = spy(new GroupMetadataManager(
-                tenant,
                 offsetConfig,
                 producerBuilder,
                 readerBuilder,

@@ -87,7 +87,6 @@ public class GroupCoordinator {
                 .build();
 
         GroupMetadataManager metadataManager = new GroupMetadataManager(
-            tenant,
             offsetConfig,
             client.newProducerBuilder(),
             client.newReaderBuilder(),

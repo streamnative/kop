@@ -167,7 +167,6 @@ public class GroupMetadataManager {
     @Getter
     private final OffsetConfig offsetConfig;
 
-    private final String tenant;
     private final String namespacePrefix;
 
     private final ConcurrentMap<String, GroupMetadata> groupMetadataCache;
@@ -205,15 +204,13 @@ public class GroupMetadataManager {
     private final Time time;
     private final Function<String, Integer> partitioner;
 
-    public GroupMetadataManager(String tenant,
-                                OffsetConfig offsetConfig,
+    public GroupMetadataManager(OffsetConfig offsetConfig,
                                 ProducerBuilder<ByteBuffer> metadataTopicProducerBuilder,
                                 ReaderBuilder<ByteBuffer> metadataTopicReaderBuilder,
                                 ScheduledExecutorService scheduler,
                                 String namespacePrefix,
                                 Time time) {
-        this(tenant,
-            offsetConfig,
+        this(offsetConfig,
             metadataTopicProducerBuilder,
             metadataTopicReaderBuilder,
             scheduler,
@@ -229,15 +226,13 @@ public class GroupMetadataManager {
         return MathUtils.signSafeMod(groupId.hashCode(), offsetsTopicNumPartitions);
     }
 
-    GroupMetadataManager(String tenant,
-                         OffsetConfig offsetConfig,
+    GroupMetadataManager(OffsetConfig offsetConfig,
                          ProducerBuilder<ByteBuffer> metadataTopicProducerBuilder,
                          ReaderBuilder<ByteBuffer> metadataTopicConsumerBuilder,
                          ScheduledExecutorService scheduler,
                          Time time,
                          Function<String, Integer> partitioner,
                          String namespacePrefix) {
-        this.tenant = tenant;
         this.namespacePrefix = namespacePrefix;
         this.offsetConfig = offsetConfig;
         this.compressionType = offsetConfig.offsetsTopicCompressionType();
