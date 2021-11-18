@@ -54,6 +54,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final boolean enableTls;
     @Getter
     private final EndPoint advertisedEndPoint;
+    private final boolean skipMessagesWithoutIndex;
     @Getter
     private final SslContextFactory.Server sslContextFactory;
     @Getter
@@ -68,6 +69,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    DelayedOperationPurgatory<DelayedOperation> fetchPurgatory,
                                    boolean enableTLS,
                                    EndPoint advertisedEndPoint,
+                                   boolean skipMessagesWithoutIndex,
                                    StatsLogger statsLogger) {
         super();
         this.pulsarService = pulsarService;
@@ -79,6 +81,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.fetchPurgatory = fetchPurgatory;
         this.enableTls = enableTLS;
         this.advertisedEndPoint = advertisedEndPoint;
+        this.skipMessagesWithoutIndex = skipMessagesWithoutIndex;
         this.statsLogger = statsLogger;
         if (enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
@@ -109,7 +112,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         return new KafkaRequestHandler(pulsarService, kafkaConfig,
                 tenantContextManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
-                enableTls, advertisedEndPoint, statsLogger);
+                enableTls, advertisedEndPoint, skipMessagesWithoutIndex, statsLogger);
     }
 
     @VisibleForTesting
@@ -118,6 +121,6 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         return new KafkaRequestHandler(pulsarService, kafkaConfig,
                 tenantContextManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
-                enableTls, advertisedEndPoint, statsLogger);
+                enableTls, advertisedEndPoint, skipMessagesWithoutIndex, statsLogger);
     }
 }
