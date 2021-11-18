@@ -652,7 +652,7 @@ public class GroupMetadata {
         ));
     }
 
-    public Optional<OffsetAndMetadata> offset(TopicPartition topicPartition) {
+    public Optional<OffsetAndMetadata> offset(TopicPartition topicPartition, String namespacePrefix) {
         return Optional
                 .ofNullable(offsets.computeIfAbsent(
                         topicPartition,
@@ -662,7 +662,7 @@ public class GroupMetadata {
                             // has chances to be converted when it is missing
                             try {
                                 return offsets.get(new TopicPartition(
-                                        new KopTopic(tp.topic(), null).getFullName(), tp.partition()));
+                                        new KopTopic(tp.topic(), namespacePrefix).getFullName(), tp.partition()));
                             } catch (KoPTopicException e) {
                                 // In theory, this place will not be executed
                                 log.warn("Invalid topic name: {}", tp.topic(), e);

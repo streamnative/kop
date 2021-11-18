@@ -64,7 +64,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     protected final long defaultTestTimeout = 20000;
     public static final long DefaultAbortTimedOutTransactionsIntervalMs = TimeUnit.SECONDS.toMillis(1);
-
+    private final static String NAMESPACE_PREFIX = "public/default";
     private TransactionCoordinator transactionCoordinator;
     private ProducerIdManager producerIdManager;
     private TransactionStateManager transactionManager;
@@ -130,7 +130,8 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 scheduler,
                 producerIdManager,
                 transactionManager,
-                time);
+                time,
+                NAMESPACE_PREFIX);
         result = null;
         error = Errors.NONE;
         capturedTxn = ArgumentCaptor.forClass(TransactionMetadata.class);

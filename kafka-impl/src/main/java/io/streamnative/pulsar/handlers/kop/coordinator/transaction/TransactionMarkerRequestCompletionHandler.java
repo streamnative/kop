@@ -37,6 +37,7 @@ public class TransactionMarkerRequestCompletionHandler {
     private TransactionStateManager txnStateManager;
     private TransactionMarkerChannelManager txnMarkerChannelManager;
     private List<TransactionMarkerChannelManager.TxnIdAndMarkerEntry> txnIdAndMarkerEntries;
+    private final String namespacePrefix;
 
     private static class AbortSendingRetryPartitions {
         private AtomicBoolean abortSending = new AtomicBoolean(false);
@@ -108,7 +109,8 @@ public class TransactionMarkerRequestCompletionHandler {
                     txnMarker.producerEpoch(),
                     txnMarker.transactionResult(),
                     txnMarker.coordinatorEpoch(),
-                    abortSendOrRetryPartitions.retryPartitions);
+                    abortSendOrRetryPartitions.retryPartitions,
+                    namespacePrefix);
         }
     }
 

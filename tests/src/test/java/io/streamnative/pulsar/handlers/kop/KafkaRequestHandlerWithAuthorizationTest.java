@@ -368,11 +368,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         // create partitioned topic.
         admin.topics().createPartitionedTopic(topicName, 1);
-        TopicPartition tp = new TopicPartition(new KopTopic(topicName, null).getFullName(), 0);
+        TopicPartition tp = new TopicPartition(new KopTopic(topicName, handler.currentNamespacePrefix()).getFullName(), 0);
         doReturn(CompletableFuture.completedFuture(true))
                 .when(spyHandler)
                 .authorize(eq(AclOperation.DESCRIBE),
-                        eq(Resource.of(ResourceType.TOPIC, new KopTopic(tp.topic(), null).getFullName()))
+                        eq(Resource.of(ResourceType.TOPIC, new KopTopic(tp.topic(), handler.currentNamespacePrefix()).getFullName()))
                 );
         OffsetFetchRequest.Builder builder =
                 new OffsetFetchRequest.Builder(groupId, Collections.singletonList(tp));
@@ -403,7 +403,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         // create partitioned topic.
         admin.topics().createPartitionedTopic(topicName, 1);
-        TopicPartition tp = new TopicPartition(new KopTopic(topicName, null).getFullName(), 0);
+        TopicPartition tp = new TopicPartition(new KopTopic(topicName, handler.currentNamespacePrefix()).getFullName(), 0);
         OffsetFetchRequest.Builder builder =
                 new OffsetFetchRequest.Builder(groupId, Collections.singletonList(tp));
 
@@ -476,7 +476,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         doReturn(CompletableFuture.completedFuture(true))
                 .when(spyHandler)
                 .authorize(eq(AclOperation.READ),
-                        eq(Resource.of(ResourceType.TOPIC, new KopTopic(topicPartition1.topic(), null).getFullName()))
+                        eq(Resource.of(ResourceType.TOPIC, new KopTopic(topicPartition1.topic(), handler.currentNamespacePrefix()).getFullName()))
                 );
 
         // Handle request
@@ -542,7 +542,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         doReturn(CompletableFuture.completedFuture(true))
                 .when(spyHandler)
                 .authorize(eq(AclOperation.READ),
-                        eq(Resource.of(ResourceType.TOPIC, new KopTopic(topicPartition1.topic(), null).getFullName()))
+                        eq(Resource.of(ResourceType.TOPIC, new KopTopic(topicPartition1.topic(), handler.currentNamespacePrefix()).getFullName()))
                 );
 
         // Handle request
@@ -575,7 +575,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         doReturn(CompletableFuture.completedFuture(true))
                 .when(spyHandler)
                 .authorize(eq(AclOperation.WRITE),
-                        eq(Resource.of(ResourceType.TOPIC, KopTopic.toString(topicPartition1, null)))
+                        eq(Resource.of(ResourceType.TOPIC, KopTopic.toString(topicPartition1, handler.currentNamespacePrefix())))
                 );
         // Handle request
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();

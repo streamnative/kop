@@ -213,12 +213,14 @@ public final class GroupMetadataConstants {
      * @return key for offset commit message
      */
     static byte[] offsetCommitKey(String group,
-                                  TopicPartition topicPartition) {
-        return offsetCommitKey(group, topicPartition, (short) 0);
+                                  TopicPartition topicPartition,
+                                  String namespacePrefix) {
+        return offsetCommitKey(group, topicPartition, namespacePrefix, (short) 0);
     }
 
     static byte[] offsetCommitKey(String group,
                                   TopicPartition topicPartition,
+                                  String namespacePrefix,
                                   short versionId) {
         // Some test cases may use the original topic name to commit the offset
         // directly from this method, so we need to ensure that all the topics
@@ -226,7 +228,7 @@ public final class GroupMetadataConstants {
         if (topicPartition.partition() >= 0 && !KopTopic.isFullTopicName(topicPartition.topic())) {
             try {
                 topicPartition = new TopicPartition(
-                        new KopTopic(topicPartition.topic(), null).getFullName(), topicPartition.partition());
+                        new KopTopic(topicPartition.topic(), namespacePrefix).getFullName(), topicPartition.partition());
             } catch (KoPTopicException e) {
                 // In theory, this place will not be executed
                 log.warn("Invalid topic name: {}", topicPartition.topic(), e);
