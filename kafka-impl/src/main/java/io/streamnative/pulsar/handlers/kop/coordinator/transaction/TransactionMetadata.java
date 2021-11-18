@@ -38,6 +38,7 @@ import org.apache.kafka.common.record.RecordBatch;
 @Slf4j
 @Builder
 @Data
+@AllArgsConstructor
 public class TransactionMetadata {
 
     private static final int DefaultTxnTimeOutMs = 1000 * 60;
@@ -205,7 +206,7 @@ public class TransactionMetadata {
 
         if (!pendingState.isPresent()) {
             throw new IllegalStateException("TransactionalId " + transactionalId
-                    + "completing transaction state transition while it does not have a pending state");
+                    + " completing transaction state transition while it does not have a pending state");
         }
         TransactionState toState = pendingState.get();
 
@@ -363,15 +364,16 @@ public class TransactionMetadata {
                 epochBumpResult = new ErrorsAndData<>(new BumpEpochResult(producerEpoch, lastProducerEpoch));
             } else {
                 // Otherwise, the producer has a fenced epoch and should receive an PRODUCER_FENCED error
-                log.info("Expected producer epoch $expectedEpoch does not match current "
-                        + "producer epoch $producerEpoch or previous producer epoch $lastProducerEpoch");
+                log.info("Expected producer epoch {} does not match current "
+                        + "producer epoch {} or previous producer epoch {}",
+                        expectedProducerEpoch, producerEpoch, lastProducerEpoch);
                 // TODO the error should be Errors.PRODUCER_FENCED
                 epochBumpResult = new ErrorsAndData<>(Errors.UNKNOWN_SERVER_ERROR);
             }
         }
 
         if (epochBumpResult.hasErrors()) {
-            return new ErrorsAndData<TxnTransitMetadata>(epochBumpResult.getErrors());
+            return new ErrorsAndData<>(epochBumpResult.getErrors());
         } else {
             return new ErrorsAndData<>(
                     prepareTransitionTo(
@@ -464,6 +466,11 @@ public class TransactionMetadata {
                 txnTimeoutMs, Collections.emptySet(), txnStartTimestamp, updateTimestamp);
     }
 
+    public TxnTransitMetadata prepareDead() {
+        return prepareTransitionTo(TransactionState.DEAD, producerId, producerEpoch, lastProducerEpoch, txnTimeoutMs,
+                Collections.emptySet(), txnStartTimestamp, txnLastUpdateTimestamp);
+    }
+
     private void throwStateTransitionFailure(TxnTransitMetadata txnTransitMetadata) throws IllegalStateException {
         log.error("{} transition to {} failed: this should not happen.", this, txnTransitMetadata);
         throw new IllegalStateException("TransactionalId " + transactionalId + " failed transition to state "
@@ -490,6 +497,10 @@ public class TransactionMetadata {
 
     public void addPartitions(Set<TopicPartition> partitions) {
         topicPartitions.addAll(partitions);
+    }
+
+    public Boolean pendingTransitionInProgress() {
+        return this.pendingState.isPresent();
     }
 
 }

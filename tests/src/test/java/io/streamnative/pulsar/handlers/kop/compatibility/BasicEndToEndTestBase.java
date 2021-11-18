@@ -117,7 +117,8 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
             keys.add(key);
             values.add(value);
             // Because there is no header in ProducerRecord before 0.11.x.
-            if (!version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
+            if (!(version.equals(KafkaVersion.KAFKA_0_10_0_0)
+                    || version.equals(KafkaVersion.KAFKA_0_9_0_0))) {
                 headers.add(new Header("header-" + key, "header-" + value));
             }
 
@@ -156,7 +157,8 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
             }
 
             // Because there is no header in ProducerRecord before 0.11.x.
-            if (!version.equals(KafkaVersion.KAFKA_0_10_0_0)) {
+            if (!(version.equals(KafkaVersion.KAFKA_0_10_0_0)
+                    || version.equals(KafkaVersion.KAFKA_0_9_0_0))) {
                 Assert.assertEquals(records.stream()
                         .map(ConsumerRecord::getHeaders)
                         .filter(Objects::nonNull)

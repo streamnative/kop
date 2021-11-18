@@ -47,7 +47,7 @@ public class ProduceContext<K, V> {
      * @param <HeaderT> it should be an implementation of org.apache.kafka.common.header.Header, e.g. RecordHeader
      * @return an instance of org.apache.kafka.clients.producer.ProducerRecord
      */
-    public <T, HeaderT> T createProducerRecord(final Class<T> clazz,
+    public <T, HeaderT> T createV2ProducerRecord(final Class<T> clazz,
                                                final BiFunction<String, byte[], HeaderT> headerConstructor) {
         try {
             return clazz.getConstructor(
@@ -69,11 +69,32 @@ public class ProduceContext<K, V> {
      * @param <T> it should be org.apache.kafka.clients.producer.ProducerRecord
      * @return an instance of org.apache.kafka.clients.producer.ProducerRecord
      */
-    public <T> T createProducerRecord(final Class<T> clazz) {
+    public <T> T createV1ProducerRecord(final Class<T> clazz) {
         try {
             return clazz.getConstructor(
                     String.class, Integer.class, Long.class, Object.class, Object.class
             ).newInstance(topic, partition, timestamp, key, value);
+        } catch (InstantiationException
+                | IllegalAccessException
+                | InvocationTargetException
+                | NoSuchMethodException e) {
+            throw new IllegalArgumentException(e);
+        }
+    }
+
+    /**
+     * Create an instance of Kafka's ProducerRecord less than 0.10.x.
+     * Because there is no timestamp in ProducerRecord before 0.10.x.
+     *
+     * @param clazz the class type of Kafka's ProducerRecord
+     * @param <T> it should be org.apache.kafka.clients.producer.ProducerRecord
+     * @return an instance of org.apache.kafka.clients.producer.ProducerRecord
+     */
+    public <T> T createV0ProducerRecord(final Class<T> clazz) {
+        try {
+            return clazz.getConstructor(
+                    String.class, Integer.class, Object.class, Object.class
+            ).newInstance(topic, partition, key, value);
         } catch (InstantiationException
                 | IllegalAccessException
                 | InvocationTargetException

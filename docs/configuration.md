@@ -4,33 +4,29 @@
 
 | Name                     | Description                                                  |
 | ------------------------ | ------------------------------------------------------------ |
-| kafkaListeners           | Comma-separated list of URIs that we will listen on and the listener names.<br>e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093.<br>If the hostname is not set, the default interface is used. |
+| kafkaListeners           | Comma-separated list of URIs that we will listen on and the listener names.<br>e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093.<br>Each URI's scheme represents a listener name if `kafkaProtocolMap` is configured.<br>Otherwise, the scheme must be a valid protocol in [PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL].<br>If the hostname is not set, it will be bound to the default interface. |
 | kafkaProtocolMap         | Comma-separated map of listener name and protocol.<br>e.g. PRIVATE:PLAINTEXT,PRIVATE_SSL:SSL,PUBLIC:PLAINTEXT,PUBLIC_SSL:SSL. |
-| listeners                | Deprecated. `kafkaListeners` is used.                   |
-| kafkaAdvertisedListeners | Deprecated. Use kafkaProtocolMap, kafkaListeners and advertisedAddress instead. |
+| listeners                | Deprecated. `kafkaListeners` is used.                        |
+| kafkaAdvertisedListeners | Listeners to publish to ZooKeeper for clients to use.<br>The format is the same as `kafkaListeners`. |
 
 > **NOTE**
 > 
 > Among all configurations, only `kafkaListeners` or `listeners` (deprecated) is required.
 
-To support multiple listeners, you need to specify different listener names in [`advertisedListeners`](https://pulsar.apache.org/docs/en/concepts-multiple-advertised-listeners/#use-multiple-advertised-listeners). Then map the listener name to the proper protocol in `kafkaProtocolMap`.
+To support multiple listeners, you need to specify different listener names in `kafkaListeners` and `kafkaAdvertisedListeners`. Then, map the listener name to the proper protocol in `kafkaProtocolMap`.
 
 For example, assuming you need to listen on port 9092 and 19092 with the `PLAINTEXT` protocol, the associated names are `kafka_internal` and `kafka_external`. Then you need to add the following configurations:
 
 ```properties
-kafkaListeners=kafka_internal://localhost:9092,kafka_external://localhost:19092
+kafkaListeners=kafka_internal://0.0.0.0:9092,kafka_external://0.0.0.0:19092
 kafkaProtocolMap=kafka_internal:PLAINTEXT,kafka_external:PLAINTEXT
-advertisedListeners=pulsar:pulsar://localhost:6650,kafka_internal:pulsar://localhost:9092,kafka_external:pulsar://localhost:19092
+kafkaAdvertisedListeners=kafka_internal://localhost:9092,kafka_external://localhost:19092
 ```
 
 In the above example,
-- `kafkaListener` is split into multiple tokens by a comma (`,`), the format of each token format is `<listener-name>://<host>:<port>`.
-- `kafkaProtocolMap` is split into multiple tokens by a comma (`,`), the format of each token format is `<listener-name>:<protocol>`.
-- `advertisedListeners` is split into multiple tokens by a comma(`,`), the format of each token format is `<listener-name>:<scheme>://<host>:<port>`.
-
-> **NOTE**
->
-> In Pulsar, the `scheme` part could be `pulsar` or `pulsar+ssl`, but in KoP, the `scheme` part must be `pulsar`.
+- `kafkaListener` is split into multiple tokens by a comma (`,`), the token is in a format of `<listener-name>://<host>:<port>`.
+- `kafkaProtocolMap` is split into multiple tokens by a comma (`,`), the token is in a format of `<listener-name>:<protocol>`.
+- `kafkaAdvertisedListeners` is split into multiple tokens by a comma(`,`), the token is in a format of `<listener-name>:<scheme>://<host>:<port>`.
 
 
 ## Logger
@@ -69,8 +65,14 @@ This section lists configurations that may affect the performance.
 
 | Name              | Description                                                  | Range             | Default |
 | ----------------- | ------------------------------------------------------------ | ----------------- | ------- |
-| entryFormat       | The format of an entry. If it is set to`kafka`, there is no unnecessary encoding and decoding work, which helps improve the performance. However, in this situation, a topic cannot be used by mixed Pulsar clients and Kafka clients. If it is set to `mixed_kafka`, Kafka clients (0.10.x) are supported. <br>- **Note**: Compared with performance for `mixed_kafka`, performance is improved by 2 to 3 times when the parameter is set to `kafka`. | kafka, <br> mixed_kafka,<br> pulsar | pulsar   |
+| entryFormat       | The format of an entry. If it is set to`kafka`, there is no unnecessary encoding and decoding work, which helps improve the performance. However, in this situation, a topic cannot be used by mixed Pulsar clients and Kafka clients. If it is set to `mixed_kafka`, some non-official Kafka clients implementation are supported. <br>- **Note**: Compared with performance for `mixed_kafka`, performance is improved by 2 to 3 times when the parameter is set to `kafka`. | kafka, <br> mixed_kafka,<br> pulsar | pulsar   |
 | maxReadEntriesNum | The maximum number of entries that are read from the cursor once per time.<br>Increasing this value can make FETCH request read more bytes each time.<br>**NOTE**: Currently, KoP does not check the maximum byte limit. Therefore, if the value is too great, the response size may be over the network limit. |                   | 5       |
+
+Here are some additional remarks for how should you choose the `entryFormat`.
+
+Generally, if you don't have Pulsar consumers that consume messages from Kafka producers, `kafka` format is perferred because it has much higher performance when Kafka consumers interact with Kafka producers.
+
+However, some non-official Kafka clients might not work for `kafka` format. For example, old [Golang Sarama](https://github.com/Shopify/sarama) client didn't assign relative offsets in compressed message sets before [Shopify/sarama #1002](https://github.com/Shopify/sarama/pull/1002). In this case, the broker has to assign relative offsets and then do recompression. Since this behavior leads to some performance loss, KoP adds the `mixed_kafka` format to perform the conversion. The `mixed_kafka` format should be chosen when you have such an old Kafka client. Like `kafka` format, in this case, Pulsar consumers still cannot consume messages from Kafka producers.
 
 ## Network
 
@@ -117,6 +119,10 @@ This section lists configurations about the transaction.
 | enableTransactionCoordinator | Whether to enable transaction coordinator.          | false   |
 | brokerId                     | The broker ID that is used to create the producer ID.  | 1       |
 | txnLogTopicNumPartitions     | the number of partitions for the transaction log topic. | 50      |
+| txnAbortTimedOutTransactionCleanupIntervalMs | The interval in milliseconds at which to rollback transactions that have timed out. | 10000 |
+| enableTransactionalIdExpiration | Whether to enable transactional ID expiration. | true |
+| transactionalIdExpirationMs | The time (in ms) that the transaction coordinator waits without receiving any transaction status updates for the current transaction before expiring its transactional ID. | 604800 |
+| transactionsRemoveExpiredTransactionalIdCleanupIntervalMs | The interval (in ms) at which to remove expired transactions. | 3600 |
 
 ## Authentication
 

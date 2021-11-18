@@ -30,9 +30,6 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
-import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -78,7 +75,6 @@ import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -93,7 +89,6 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
     KafkaRequestHandler kafkaRequestHandler;
     SocketAddress serviceAddress;
-    private AdminManager adminManager;
 
     @Override
     protected void resetConfig() {
@@ -123,32 +118,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         log.info("created namespaces, init handler");
 
-        ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
-        GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler)
-                .getGroupCoordinator(conf.getKafkaMetadataTenant());
-        TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler)
-                .getTransactionCoordinator(conf.getKafkaMetadataTenant());
-
-        adminManager = new AdminManager(pulsar.getAdminClient(), conf);
-        kafkaRequestHandler = new KafkaRequestHandler(
-                pulsar,
-                (KafkaServiceConfiguration) conf,
-                new TenantContextManager() {
-                    @Override
-                    public GroupCoordinator getGroupCoordinator(String tenant) {
-                        return groupCoordinator;
-                    }
-
-                    @Override
-                    public TransactionCoordinator getTransactionCoordinator(String tenant) {
-                        return transactionCoordinator;
-                    }
-                },
-                ((KafkaProtocolHandler) handler).getKopBrokerLookupManager(),
-                adminManager,
-                false,
-                getPlainEndPoint(),
-                NullStatsLogger.INSTANCE);
+        kafkaRequestHandler = newRequestHandler();
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
@@ -160,11 +130,15 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     @AfterMethod
     @Override
     protected void cleanup() throws Exception {
-        adminManager.shutdown();
         super.internalCleanup();
     }
 
-    KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
+    private KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
+        return buildRequest(builder, serviceAddress);
+    }
+
+    static KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
+                                              SocketAddress serviceAddress) {
         AbstractRequest request = builder.build();
         builder.apiKey();
 
@@ -186,7 +160,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                                                               String topic,
                                                               int invalidPartitionId) {
         TopicPartition invalidTopicPartition = new TopicPartition(topic, invalidPartitionId);
-        PartitionData partitionOffsetCommitData = new PartitionData(15L, "");
+        PartitionData partitionOffsetCommitData = KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(15L, "");
         Map<TopicPartition, PartitionData> offsetData = Maps.newHashMap();
         offsetData.put(invalidTopicPartition, partitionOffsetCommitData);
         KafkaHeaderAndRequest request = buildRequest(new OffsetCommitRequest.Builder("groupId", offsetData));
@@ -264,12 +238,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         }
 
         // 2. real test, for ListOffset request verify Earliest get earliest
-        Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
-        targetTimes.put(tp, ListOffsetRequest.EARLIEST_TIMESTAMP);
-
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
             .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-            .setTargetTimes(targetTimes);
+            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.EARLIEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
@@ -317,12 +288,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         }
 
         // 2. real test, for ListOffset request verify Earliest get earliest
-        Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
-        targetTimes.put(tp, ListOffsetRequest.LATEST_TIMESTAMP);
-
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
             .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-            .setTargetTimes(targetTimes);
+            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.LATEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
@@ -542,12 +510,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     }
 
     private ListOffsetResponse listOffset(long timestamp, TopicPartition tp) throws Exception {
-        Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
-        targetTimes.put(tp, timestamp);
-
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-                .setTargetTimes(targetTimes);
+                .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, timestamp));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
@@ -610,8 +575,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                                                                                Map<TopicPartition, Long> offsetMap) {
         return topicPartitions.stream()
             .map(topic ->
-                Pair.of(topic,
-                    new FetchRequest.PartitionData(
+                Pair.of(topic, KafkaCommonTestUtils.newFetchRequestPartitionData(
                         offsetMap.getOrDefault(topic, 0L),
                         0L,
                         maxPartitionBytes)))
@@ -868,12 +832,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         String topicName = "kopTestGetOffsetsForUnknownTopic";
 
         TopicPartition tp = new TopicPartition(topicName, 0);
-        Map<TopicPartition, Long> targetTimes = Maps.newHashMap();
-        targetTimes.put(tp, ListOffsetRequest.LATEST_TIMESTAMP);
-
         ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
             .forConsumer(false, IsolationLevel.READ_UNCOMMITTED)
-            .setTargetTimes(targetTimes);
+            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.LATEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();

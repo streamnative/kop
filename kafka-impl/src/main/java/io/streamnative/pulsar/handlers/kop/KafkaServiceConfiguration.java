@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import lombok.Getter;
 import lombok.NonNull;
@@ -57,6 +58,9 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     public static final int DefaultTxnLogTopicNumPartitions = 50;
     public static final int DefaultTxnCoordinatorSchedulerNum = 1;
     public static final int DefaultTxnStateManagerSchedulerNum = 1;
+    public static final long DefaultAbortTimedOutTransactionsIntervalMs = TimeUnit.SECONDS.toMillis(10);
+    public static final long DefaultRemoveExpiredTransactionalIdsIntervalMs = TimeUnit.HOURS.toMillis(1);
+    public static final long DefaultTransactionalIdExpirationMs = TimeUnit.DAYS.toMillis(7);
 
     @Category
     private static final String CATEGORY_KOP = "Kafka on Pulsar";
@@ -184,6 +188,8 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         category = CATEGORY_KOP,
         doc = "Comma-separated list of URIs we will listen on and the listener names.\n"
                 + "e.g. PLAINTEXT://localhost:9092,SSL://localhost:9093.\n"
+                + "Each URI's scheme represents a listener name if `kafkaProtocolMap` is configured.\n"
+                + "Otherwise, the scheme must be a valid protocol in [PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL].\n"
                 + "If hostname is not set, bind to the default interface."
     )
     private String kafkaListeners;
@@ -195,10 +201,10 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private String kafkaProtocolMap;
 
-    @Deprecated
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "Use kafkaProtocolMap, kafkaListeners and advertisedAddress instead."
+            doc = "Listeners to publish to ZooKeeper for clients to use.\n"
+                    + "The format is the same as `kafkaListeners`.\n"
     )
     private String kafkaAdvertisedListeners;
 
@@ -208,6 +214,13 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
                 + "like queued.max.requests in kafka.\n"
     )
     private int maxQueuedRequests = 500;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "The largest record batch size allowed by Kop, \n"
+                    + "like max.message.bytes in kafka.\n"
+    )
+    private int maxMessageSize = 5 * 1024 * 1024;
 
     @FieldContext(
             category = CATEGORY_KOP,
@@ -364,6 +377,32 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             doc = "Number of partitions for the transaction log topic"
     )
     private int txnLogTopicNumPartitions = DefaultTxnLogTopicNumPartitions;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "The interval in milliseconds at which to rollback transactions that have timed out."
+    )
+    private long txnAbortTimedOutTransactionCleanupIntervalMs = DefaultAbortTimedOutTransactionsIntervalMs;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "Whether to enable transactional ID expiration."
+    )
+    private boolean enableTransactionalIdExpiration = true;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "The time (in ms) that the transaction coordinator waits without receiving any transaction status"
+                    + " updates for the current transaction before expiring its transactional ID."
+    )
+    private long transactionalIdExpirationMs = DefaultTransactionalIdExpirationMs;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "The interval (in ms) at which to remove expired transactions."
+    )
+    private long transactionsRemoveExpiredTransactionalIdCleanupIntervalMs =
+            DefaultRemoveExpiredTransactionalIdsIntervalMs;
 
     @FieldContext(
             category = CATEGORY_KOP,

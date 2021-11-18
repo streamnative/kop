@@ -42,10 +42,10 @@ import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
+import org.apache.kafka.common.requests.KopResponseUtils;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.kafka.common.requests.ResponseHeader;
-import org.apache.kafka.common.requests.ResponseUtils;
 
 
 /**
@@ -161,7 +161,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     apiVersion = ApiKeys.API_VERSIONS.oldestVersion();
                 }
             }
-            return ResponseUtils.serializeResponse(
+            return KopResponseUtils.serializeResponse(
                 apiVersion,
                 kafkaHeaderAndResponse.getHeader(),
                 kafkaHeaderAndResponse.getResponse()
@@ -335,8 +335,14 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     case DESCRIBE_CONFIGS:
                         handleDescribeConfigs(kafkaHeaderAndRequest, responseFuture);
                         break;
+                    case ALTER_CONFIGS:
+                        handleAlterConfigs(kafkaHeaderAndRequest, responseFuture);
+                        break;
                     case DELETE_TOPICS:
                         handleDeleteTopics(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case DELETE_RECORDS:
+                        handleDeleteRecords(kafkaHeaderAndRequest, responseFuture);
                         break;
                     case CREATE_PARTITIONS:
                         handleCreatePartitions(kafkaHeaderAndRequest, responseFuture);
@@ -532,6 +538,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     handleDescribeConfigs(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
     protected abstract void
+    handleAlterConfigs(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
     handleInitProducerId(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
     protected abstract void
@@ -551,6 +560,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected abstract void
     handleDeleteTopics(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleDeleteRecords(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
     protected abstract void
     handleCreatePartitions(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);

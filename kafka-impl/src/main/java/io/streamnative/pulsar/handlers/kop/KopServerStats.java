@@ -61,6 +61,7 @@ public interface KopServerStats {
     String BYTES_IN = "BYTES_IN";
     String MESSAGE_IN = "MESSAGE_IN";
     String BATCH_COUNT_PER_MEMORYRECORDS = "BATCH_COUNT_PER_MEMORYRECORDS";
+    String PRODUCE_MESSAGE_CONVERSIONS = "PRODUCE_MESSAGE_CONVERSIONS";
 
     /**
      * FETCH stats.
@@ -81,6 +82,7 @@ public interface KopServerStats {
     String BYTES_OUT = "BYTES_OUT";
     String MESSAGE_OUT = "MESSAGE_OUT";
     String ENTRIES_OUT = "ENTRIES_OUT";
+    String CONSUME_MESSAGE_CONVERSIONS = "CONSUME_MESSAGE_CONVERSIONS";
 
     /**
      * Kop event queue stats.

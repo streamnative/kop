@@ -22,13 +22,12 @@ import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertSame;
 import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
-import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -36,6 +35,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -57,9 +57,9 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.TopicStats;
 import org.awaitility.Awaitility;
 import org.testng.annotations.AfterMethod;
@@ -74,39 +74,14 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
 
     private KafkaTopicManager kafkaTopicManager;
     private KafkaRequestHandler kafkaRequestHandler;
-    private AdminManager adminManager;
 
     @BeforeMethod
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
-
-        ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
-        GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler)
-                .getGroupCoordinator(conf.getKafkaMetadataTenant());
-        TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler)
-                .getTransactionCoordinator(conf.getKafkaMetadataTenant());
-
-        adminManager = new AdminManager(pulsar.getAdminClient(), conf);
-        kafkaRequestHandler = new KafkaRequestHandler(
-                pulsar,
-                conf,
-                new TenantContextManager() {
-                    @Override
-                    public GroupCoordinator getGroupCoordinator(String tenant) {
-                        return groupCoordinator;
-                    }
-
-                    @Override
-                    public TransactionCoordinator getTransactionCoordinator(String tenant) {
-                        return transactionCoordinator;
-                    }
-                },
-                ((KafkaProtocolHandler) handler).getKopBrokerLookupManager(),
-                adminManager,
-                false,
-                getPlainEndPoint(),
-                NullStatsLogger.INSTANCE);
+        this.triggerTopicLookup(MetadataUtils.constructOffsetsTopicBaseName(
+                TopicName.PUBLIC_TENANT, this.conf), this.conf.getOffsetsTopicNumPartitions());
+        kafkaRequestHandler = newRequestHandler();
 
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
@@ -120,7 +95,6 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     @AfterMethod
     @Override
     protected void cleanup() throws Exception {
-        adminManager.shutdown();
         super.internalCleanup();
     }
 
@@ -157,7 +131,6 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     public void testTopicConsumerManagerRemoveAndAdd() throws Exception {
         String topicName = "persistent://public/default/testTopicConsumerManagerRemoveAndAdd";
         registerPartitionedTopic(topicName);
-
         final Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
@@ -486,6 +459,11 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         assertFalse(originalTcmList.get(1).isClosed());
 
         consumers.get(1).close(); // trigger KafkaTopicManager#close, only the partition 1 related cache was removed
+        // Because the KafkaRequestHandler.close() is called by channelInActive, when channelInActive called,
+        // the tcp connect already closed. We need ensure topicManager.close() is called.
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(3))
+                .until(() -> originalTcmList.get(1).getNumCreatedCursors() == 0);
         assertSame(getTcmForPartition.apply(0), originalTcmList.get(0));
         assertFalse(originalTcmList.get(0).isClosed());
         // The tcm of partition 1 was closed and it was removed from cache
@@ -493,9 +471,46 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         assertTrue(originalTcmList.get(1).isClosed());
 
         consumers.get(0).close(); // Now all TCM cache was cleared
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(3))
+                .until(() -> originalTcmList.get(0).getNumCreatedCursors() == 0);
         assertNull(getTcmForPartition.apply(0));
         assertNull(getTcmForPartition.apply(1));
         assertTrue(originalTcmList.get(0).isClosed());
         assertTrue(originalTcmList.get(1).isClosed());
+    }
+
+    @Test(timeOut = 20000)
+    public void testUnloadTopic() throws Exception {
+        final String topic = "test-unload-topic";
+        final String fullTopicName = "persistent://public/default/" + topic + "-partition-0";
+        final int numPartitions = 1;
+        admin.topics().createPartitionedTopic(topic, numPartitions);
+
+        final int totalMessages = 5;
+        @Cleanup
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+        int numMessages = 0;
+        while (numMessages < totalMessages) {
+            producer.send(new ProducerRecord<>(topic, null, "test-value" + numMessages)).get();
+            numMessages++;
+        }
+
+        // We first get KafkaTopicConsumerManager, and then unload topic,
+        // so that KafkaTopicConsumerManager will become invalid
+        CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager.getTopicConsumerManager(fullTopicName);
+        KafkaTopicConsumerManager topicConsumerManager = tcm.get();
+        // unload topic
+        admin.topics().unload(fullTopicName);
+
+        // This proves that ManagedLedger has been closed
+        // and that the newly added code has taken effect.
+        try {
+            topicConsumerManager.removeCursorFuture(totalMessages - 1).get();
+            fail("should have failed");
+        } catch (ExecutionException ex) {
+            assertTrue(ex.getCause().getMessage().contains("Current managedLedger has been closed."));
+        }
+
     }
 }

@@ -16,13 +16,13 @@ package io.streamnative.pulsar.handlers.kop;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
+import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
+import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.Topic.PublishContext;
-import org.apache.pulsar.common.api.proto.BrokerEntryMetadata;
-import org.apache.pulsar.common.protocol.Commands;
 
 /**
  * Implementation for PublishContext.
@@ -30,29 +30,21 @@ import org.apache.pulsar.common.protocol.Commands;
 @Slf4j
 public final class MessagePublishContext implements PublishContext {
 
+    public static final long DEFAULT_OFFSET = -1L;
+
     private CompletableFuture<Long> offsetFuture;
     private Topic topic;
     private long startTimeNs;
-    private long numberOfMessages;
-    private long baseOffset = -1L;
+    private int numberOfMessages;
+    private long baseOffset;
+    private MetadataCorruptedException peekOffsetError;
 
     @Override
     public void setMetadataFromEntryData(ByteBuf entryData) {
         try {
-            final BrokerEntryMetadata brokerEntryMetadata = Commands.peekBrokerEntryMetadataIfExist(entryData);
-            if (brokerEntryMetadata == null) {
-                throw new IllegalStateException("There's no BrokerEntryData, "
-                        + "check if your broker has configured brokerEntryMetadataInterceptors");
-            }
-            if (!brokerEntryMetadata.hasIndex()) {
-                throw new IllegalStateException("The BrokerEntryData has no 'index' field, check if "
-                        + "your broker configured AppendIndexMetadataInterceptor");
-            }
-            baseOffset = brokerEntryMetadata.getIndex() - (numberOfMessages - 1);
-        } catch (IllegalStateException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Failed to set metadata from entry", e);
+            baseOffset = MessageMetadataUtils.peekBaseOffset(entryData, numberOfMessages);
+        } catch (MetadataCorruptedException e) {
+            peekOffsetError = e;
         }
     }
 
@@ -75,8 +67,9 @@ public final class MessagePublishContext implements PublishContext {
 
             topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.MICROSECONDS);
             // setMetadataFromEntryData() was called before completed() is called so that baseOffset could be set
-            if (baseOffset < 0) {
-                log.error("Failed to get offset for ({}, {})", ledgerId, entryId);
+            if (baseOffset == DEFAULT_OFFSET) {
+                log.error("[{}] Failed to get offset for ({}, {}): {}",
+                        topic, ledgerId, entryId, peekOffsetError.getMessage());
             }
             offsetFuture.complete(baseOffset);
         }
@@ -87,13 +80,15 @@ public final class MessagePublishContext implements PublishContext {
     // recycler
     public static MessagePublishContext get(CompletableFuture<Long> offsetFuture,
                                             Topic topic,
-                                            long numberOfMessages,
+                                            int numberOfMessages,
                                             long startTimeNs) {
         MessagePublishContext callback = RECYCLER.get();
         callback.offsetFuture = offsetFuture;
         callback.topic = topic;
         callback.numberOfMessages = numberOfMessages;
         callback.startTimeNs = startTimeNs;
+        callback.baseOffset = DEFAULT_OFFSET;
+        callback.peekOffsetError = null;
         return callback;
     }
 
@@ -119,6 +114,8 @@ public final class MessagePublishContext implements PublishContext {
         topic = null;
         startTimeNs = -1;
         numberOfMessages = 0;
+        baseOffset = DEFAULT_OFFSET;
+        peekOffsetError = null;
         recyclerHandle.recycle(this);
     }
 }

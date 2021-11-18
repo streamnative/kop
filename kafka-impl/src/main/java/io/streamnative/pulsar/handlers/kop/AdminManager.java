@@ -22,6 +22,7 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -35,6 +36,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.config.ConfigResource;
@@ -198,7 +201,14 @@ class AdminManager {
                                         });
                                 break;
                             case BROKER:
-                                throw new RuntimeException("KoP doesn't support resource type: " + resource.type());
+                                List<DescribeConfigsResponse.ConfigEntry> dummyConfig = new ArrayList<>();
+                                dummyConfig.add(buildDummyEntryConfig("num.partitions",
+                                        this.defaultNumPartitions + ""));
+                                // this is useless in KOP, but some tools like KSQL need a value
+                                dummyConfig.add(buildDummyEntryConfig("default.replication.factor", "1"));
+                                dummyConfig.add(buildDummyEntryConfig("delete.topic.enable", "true"));
+                                future.complete(new DescribeConfigsResponse.Config(ApiError.NONE, dummyConfig));
+                                break;
                             default:
                                 throw new InvalidRequestException("Unsupported resource type: " + resource.type());
                         }
@@ -217,6 +227,14 @@ class AdminManager {
         return resultFuture;
     }
 
+    private DescribeConfigsResponse.ConfigEntry buildDummyEntryConfig(String configName, String configValue) {
+        DescribeConfigsResponse.ConfigEntry configEntry = new DescribeConfigsResponse.ConfigEntry(
+                configName, configValue,
+                DescribeConfigsResponse.ConfigSource.DEFAULT_CONFIG, true, true,
+                Collections.emptyList());
+        return configEntry;
+    }
+
     public void deleteTopic(String topicToDelete,
                             Consumer<String> successConsumer,
                             Consumer<String> errorConsumer) {
@@ -229,6 +247,36 @@ class AdminManager {
             errorConsumer.accept(topicToDelete);
         }
     }
+
+    public void truncateTopic(String topicToDelete,
+                              long offset,
+                              Position position,
+                              Consumer<String> successConsumer,
+                              Consumer<String> errorConsumer) {
+        log.info("truncateTopic {} at offset {}, pulsar position {}", topicToDelete, offset, position);
+        if (position == null) {
+            errorConsumer.accept("Cannot find position");
+            return;
+        }
+        if (position.equals(PositionImpl.latest)) {
+            admin.topics()
+                .truncateAsync(topicToDelete)
+                .thenRun(() -> {
+                    log.info("truncated topic {} successfully.", topicToDelete);
+                    successConsumer.accept(topicToDelete);
+                })
+                .exceptionally((e -> {
+                    log.error("truncated topic {} failed, exception: ", topicToDelete, e);
+                    errorConsumer.accept(topicToDelete);
+                    return null;
+                }));
+        } else {
+            errorConsumer.accept("Not implemented truncate topic at position " + position);
+        }
+
+    }
+
+
 
     CompletableFuture<Map<String, ApiError>> createPartitionsAsync(Map<String, NewPartitions> createInfo,
                                                                    int timeoutMs) {

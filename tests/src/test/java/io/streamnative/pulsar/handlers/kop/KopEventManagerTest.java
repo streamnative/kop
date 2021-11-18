@@ -91,7 +91,7 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
 
         final KafkaConsumer<String, String> kafkaConsumer1 = new KafkaConsumer<>(properties);
         kafkaConsumer1.subscribe(Collections.singletonList(topic1));
-        ConsumerRecords<String, String> records = kafkaConsumer1.poll(Duration.ofMillis(500));
+        ConsumerRecords<String, String> records = kafkaConsumer1.poll(Duration.ofSeconds(1));
         assertEquals(records.count(), 1);
 
         // 4. check group state must be Stable

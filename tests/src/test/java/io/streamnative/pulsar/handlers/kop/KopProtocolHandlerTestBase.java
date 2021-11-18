@@ -24,6 +24,8 @@ import io.confluent.kafka.schemaregistry.rest.SchemaRegistryConfig;
 import io.confluent.kafka.schemaregistry.rest.SchemaRegistryRestApplication;
 import io.netty.channel.EventLoopGroup;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.Closeable;
 import java.io.IOException;
@@ -63,13 +65,15 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.BookKeeperClientFactory;
+import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.auth.SameThreadOrderedSafeExecutor;
 import org.apache.pulsar.broker.namespace.NamespaceService;
-import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClient;
+import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
 import org.apache.pulsar.zookeeper.ZooKeeperClientFactory;
@@ -92,7 +96,7 @@ public abstract class KopProtocolHandlerTestBase {
     protected URL brokerUrl;
     protected URL brokerUrlTls;
     protected PulsarClient pulsarClient;
-
+    protected ClusterData clusterData;
     protected int brokerWebservicePort = PortManager.nextFreePort();
     protected int brokerWebservicePortTls = PortManager.nextFreePort();
     @Getter
@@ -120,6 +124,7 @@ public abstract class KopProtocolHandlerTestBase {
     protected SchemaRegistryRestApplication restApp;
     protected Server restServer;
     protected String restConnect;
+    protected boolean enableBrokerEntryMetadata = true;
 
     private String entryFormat;
 
@@ -173,7 +178,7 @@ public abstract class KopProtocolHandlerTestBase {
         // kafka related settings.
         kafkaConfig.setOffsetsTopicNumPartitions(1);
 
-        kafkaConfig.setEnableTransactionCoordinator(true);
+        kafkaConfig.setEnableTransactionCoordinator(false);
         kafkaConfig.setTxnLogTopicNumPartitions(1);
 
         kafkaConfig.setKafkaListeners(
@@ -204,13 +209,43 @@ public abstract class KopProtocolHandlerTestBase {
         this.conf = kafkaConfig;
     }
 
-    protected final void internalSetup() throws Exception {
-        init();
-        pulsarClient = KafkaProtocolHandler.getLookupClient(pulsar).getPulsarClient();
+    /**
+     * Trigger topic to lookup.
+     * It will load namespace bundle into {@link org.apache.pulsar.broker.namespace.OwnershipCache}.
+     *
+     * @param topicName topic to lookup.
+     * @param numPartitions the topic partition nums.
+     */
+    protected void triggerTopicLookup(String topicName, int numPartitions) {
+        for (int i = 0; i < numPartitions; ++i) {
+            String topicToLookup = topicName + TopicName.PARTITIONED_TOPIC_SUFFIX + i;
+            triggerTopicLookup(topicToLookup);
+        }
+    }
+
+    /**
+     * Trigger one topic to lookup.
+     * It will load namespace bundle into {@link org.apache.pulsar.broker.namespace.OwnershipCache}.
+     *
+     * @param topicName topic to lookup
+     */
+    protected void triggerTopicLookup(String topicName) {
+        try {
+            String brokerUrl = pulsar.getAdminClient().lookups().lookupTopic(topicName);
+            if (log.isDebugEnabled()) {
+                log.debug("Topic [{}] brokerUrl: {}", topicName, brokerUrl);
+            }
+        } catch (PulsarAdminException | PulsarServerException e) {
+            log.error("Lookup topic: {} failed.", topicName, e);
+        }
     }
 
     protected void createAdmin() throws Exception {
         this.admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString()).build());
+    }
+
+    protected void createClient() throws Exception {
+        this.pulsarClient = KafkaProtocolHandler.getLookupClient(pulsar).getPulsarClient();
     }
 
     protected String getAdvertisedAddress() {
@@ -221,7 +256,7 @@ public abstract class KopProtocolHandlerTestBase {
         }
     }
 
-    protected final void init() throws Exception {
+    protected final void internalSetup() throws Exception {
         sameThreadOrderedSafeExecutor = new SameThreadOrderedSafeExecutor();
 
         bkExecutor = OrderedScheduler.newSchedulerBuilder().numThreads(2).name("mock-pulsar-bk").build();
@@ -234,7 +269,7 @@ public abstract class KopProtocolHandlerTestBase {
         String brokerServiceUrl = "pulsar://" + getAdvertisedAddress() + ":" + brokerPort;
         String brokerServiceUrlTls = null; // TLS not supported at this time
 
-        final ClusterData clusterData = ClusterData.builder()
+        clusterData = ClusterData.builder()
                 .serviceUrl(serviceUrl)
                 .serviceUrlTls(serviceUrlTls)
                 .brokerServiceUrl(brokerServiceUrl)
@@ -248,6 +283,7 @@ public abstract class KopProtocolHandlerTestBase {
         startBroker();
 
         createAdmin();
+        createClient();
 
         MetadataUtils.createOffsetMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
         if (conf.isEnableTransactionCoordinator()) {
@@ -332,7 +368,9 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     protected PulsarService startBroker(ServiceConfiguration conf) throws Exception {
-        addBrokerEntryMetadataInterceptors(conf);
+        if (enableBrokerEntryMetadata) {
+            addBrokerEntryMetadataInterceptors(conf);
+        }
         PulsarService pulsar = spy(new PulsarService(conf));
         setupBrokerMocks(pulsar);
         pulsar.start();
@@ -373,12 +411,6 @@ public abstract class KopProtocolHandlerTestBase {
                 .getBytes(ZookeeperClientFactoryImpl.ENCODING_SCHEME), dummyAclList, CreateMode.PERSISTENT);
 
         return zk;
-    }
-
-    protected GroupCoordinator createNewGroupCoordinator(String tenant) {
-        ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
-        KafkaProtocolHandler kafkaProtocolHandler = (KafkaProtocolHandler) handler;
-        return kafkaProtocolHandler.startGroupCoordinator(tenant, kafkaProtocolHandler.getOffsetTopicClient());
     }
 
     public static NonClosableMockBookKeeper createMockBookKeeper(OrderedExecutor executor) throws Exception {
@@ -726,4 +758,28 @@ public abstract class KopProtocolHandlerTestBase {
         return adminProps;
     }
 
+    public KafkaChannelInitializer getFirstChannelInitializer() {
+        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
+        return (KafkaChannelInitializer) handler.getChannelInitializerMap().entrySet().iterator().next().getValue();
+    }
+
+    public KafkaRequestHandler newRequestHandler() throws Exception {
+        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
+        final GroupCoordinator groupCoordinator = handler.getGroupCoordinator(conf.getKafkaMetadataTenant());
+        final TransactionCoordinator transactionCoordinator =
+                handler.getTransactionCoordinator(conf.getKafkaMetadataTenant());
+
+        return ((KafkaChannelInitializer) handler.getChannelInitializerMap().entrySet().iterator().next().getValue())
+                .newCnx(new TenantContextManager() {
+                    @Override
+                    public GroupCoordinator getGroupCoordinator(String tenant) {
+                        return groupCoordinator;
+                    }
+
+                    @Override
+                    public TransactionCoordinator getTransactionCoordinator(String tenant) {
+                        return transactionCoordinator;
+                    }
+                }, NullStatsLogger.INSTANCE);
+    }
 }

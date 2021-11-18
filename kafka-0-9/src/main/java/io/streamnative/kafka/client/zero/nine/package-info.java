@@ -11,15 +11,4 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop.exceptions;
-
-/**
- * Exception is thrown when message metadata is not found in KoP.
- */
-public class KoPMessageMetadataNotFoundException extends KoPBaseException {
-    private static final long serialVersionUID = 0L;
-
-    public KoPMessageMetadataNotFoundException(String message) {
-        super(message);
-    }
-}
+package io.streamnative.kafka.client.zero.nine;
