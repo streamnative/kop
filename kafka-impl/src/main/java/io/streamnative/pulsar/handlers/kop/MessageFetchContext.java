@@ -97,13 +97,16 @@ public final class MessageFetchContext {
     private AtomicBoolean hasComplete;
     private AtomicLong bytesReadable;
     private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
+    private String namespacePrefix;
 
     // recycler and get for this object
     public static MessageFetchContext get(KafkaRequestHandler requestHandler,
                                           KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                           CompletableFuture<AbstractResponse> resultFuture,
-                                          DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
+                                          DelayedOperationPurgatory<DelayedOperation> fetchPurgatory,
+                                          String namespacePrefix) {
         MessageFetchContext context = RECYCLER.get();
+        context.namespacePrefix = namespacePrefix;
         context.responseData = new ConcurrentHashMap<>();
         context.decodeResults = new ConcurrentLinkedQueue<>();
         context.requestHandler = requestHandler;
@@ -123,8 +126,10 @@ public final class MessageFetchContext {
 
     //only used for unit test
     public static MessageFetchContext getForTest(FetchRequest fetchRequest,
+                                          String namespacePrefix,
                                           CompletableFuture<AbstractResponse> resultFuture) {
         MessageFetchContext context = RECYCLER.get();
+        context.namespacePrefix = namespacePrefix;
         context.responseData = new ConcurrentHashMap<>();
         context.decodeResults = new ConcurrentLinkedQueue<>();
         context.requestHandler = null;
@@ -258,7 +263,7 @@ public final class MessageFetchContext {
         fetchRequest.fetchData().forEach((topicPartition, partitionData) -> {
             final long startPrepareMetadataNanos = MathUtils.nowInNano();
 
-            final String fullTopicName = KopTopic.toString(topicPartition);
+            final String fullTopicName = KopTopic.toString(topicPartition, namespacePrefix);
 
             // Do authorization
             requestHandler.authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
@@ -563,7 +568,7 @@ public final class MessageFetchContext {
 
             @Override
             public void readEntriesFailed(ManagedLedgerException exception, Object ctx) {
-                log.error("Error read entry for topic: {}", KopTopic.toString(topicPartition));
+                log.error("Error read entry for topic: {}", KopTopic.toString(topicPartition, namespacePrefix));
                 messageReadStats.registerSuccessfulEvent(
                         MathUtils.elapsedNanos(startReadingMessagesNanos), TimeUnit.NANOSECONDS);
                 readFuture.completeExceptionally(exception);

@@ -1446,7 +1446,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                 GroupTopicPartition gtp = ok.key();
                 assertEquals(groupId, gtp.group());
                 assertEquals(new TopicPartition(
-                        new KopTopic(topicPartition.topic()).getFullName(), topicPartition.partition()),
+                        new KopTopic(topicPartition.topic(), null).getFullName(), topicPartition.partition()),
                         gtp.topicPartition());
 
                 OffsetAndMetadata gm = GroupMetadataConstants.readOffsetMessageValue(
@@ -1798,7 +1798,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                 assertTrue(bk instanceof OffsetKey);
                 OffsetKey ok = (OffsetKey) bk;
                 assertEquals(groupId, ok.key().group());
-                assertEquals(new KopTopic("foo").getFullName(), ok.key().topicPartition().topic());
+                assertEquals(new KopTopic("foo", null).getFullName(), ok.key().topicPartition().topic());
             }
         });
         assertEquals(0, verified.get());

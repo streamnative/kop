@@ -662,7 +662,7 @@ public class GroupMetadata {
                             // has chances to be converted when it is missing
                             try {
                                 return offsets.get(new TopicPartition(
-                                        new KopTopic(tp.topic()).getFullName(), tp.partition()));
+                                        new KopTopic(tp.topic(), null).getFullName(), tp.partition()));
                             } catch (KoPTopicException e) {
                                 // In theory, this place will not be executed
                                 log.warn("Invalid topic name: {}", tp.topic(), e);

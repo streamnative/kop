@@ -28,34 +28,41 @@ public class KopTopicTest {
     public void testConstructor() {
         KopTopic topic;
         try {
-            topic = new KopTopic("my-topic");
+            topic = new KopTopic("my-topic", null);
             fail();
         } catch (KopTopic.KoPTopicNotInitializedException e) {
             assertEquals(e.getMessage(), "KopTopic is not initialized");
         }
 
-        KopTopic.initialize("my-tenant/my-ns");
+        String namespacePrefix = "my-tenant/my-ns";
 
-        topic = new KopTopic("my-topic");
+        topic = new KopTopic("my-topic", namespacePrefix);
         assertEquals(topic.getOriginalName(), "my-topic");
         assertEquals(topic.getFullName(), "persistent://my-tenant/my-ns/my-topic");
 
-        topic = new KopTopic("my-tenant-2/my-ns-2/my-topic");
+        topic = new KopTopic("my-tenant-2/my-ns-2/my-topic", namespacePrefix);
         assertEquals(topic.getOriginalName(), "my-tenant-2/my-ns-2/my-topic");
         assertEquals(topic.getFullName(), "persistent://my-tenant-2/my-ns-2/my-topic");
 
-        topic = new KopTopic("persistent://my-tenant-3/my-ns-3/my-topic");
+        topic = new KopTopic("persistent://my-tenant-3/my-ns-3/my-topic", namespacePrefix);
         assertEquals(topic.getOriginalName(), "persistent://my-tenant-3/my-ns-3/my-topic");
         assertEquals(topic.getFullName(), topic.getOriginalName());
 
         try {
-            topic = new KopTopic("my-ns/my-topic");
+            topic = new KopTopic("my-ns/my-topic", namespacePrefix);
+            fail();
+        } catch (KopTopic.KoPTopicIllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("Invalid short topic name"));
+        }
+
+        try {
+            topic = new KopTopic("my-topic", null);
             fail();
         } catch (KopTopic.KoPTopicIllegalArgumentException e) {
             assertTrue(e.getMessage().contains("Invalid short topic name"));
         }
         try {
-            topic = new KopTopic("persistent://my-topic");
+            topic = new KopTopic("persistent://my-topic", namespacePrefix);
         } catch (KopTopic.KoPTopicIllegalArgumentException e) {
             assertTrue(e.getMessage().contains("Invalid topic name"));
         }
@@ -63,8 +70,9 @@ public class KopTopicTest {
 
     @Test
     public void testGetPartitionName() {
-        KopTopic.initialize("my-tenant/my-ns");
-        KopTopic topic = new KopTopic("my-topic");
+        String namespacePrefix = "my-tenant/my-ns";
+
+        KopTopic topic = new KopTopic("my-topic", namespacePrefix);
         assertEquals(topic.getPartitionName(0), "persistent://my-tenant/my-ns/my-topic-partition-0");
         assertEquals(topic.getPartitionName(12), "persistent://my-tenant/my-ns/my-topic-partition-12");
         try {
@@ -77,11 +85,11 @@ public class KopTopicTest {
 
     @Test
     public void testRemoveDefaultNamespacePrefix() {
-        KopTopic.initialize("my-tenant/my-ns");
+        String namespacePrefix = "my-tenant/my-ns";
 
         final String topic1 = "persistent://my-tenant/my-ns/my-topic";
         final String topic2 = "persistent://my-tenant/another-ns/my-topic";
-        assertEquals(KopTopic.removeDefaultNamespacePrefix(topic1), "my-topic");
-        assertEquals(KopTopic.removeDefaultNamespacePrefix(topic2), topic2);
+        assertEquals(KopTopic.removeDefaultNamespacePrefix(topic1, namespacePrefix), "my-topic");
+        assertEquals(KopTopic.removeDefaultNamespacePrefix(topic2, namespacePrefix), topic2);
     }
 }

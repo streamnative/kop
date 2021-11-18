@@ -301,7 +301,7 @@ public class KopEventManager {
                         HashSet<String> topicsFullNameDeletionsSets = Sets.newHashSet();
                         HashSet<KopTopic> kopTopicsSet = Sets.newHashSet();
                         topicsDeletions.forEach(topic -> {
-                            KopTopic kopTopic = new KopTopic(TopicNameUtils.getTopicNameWithUrlDecoded(topic));
+                            KopTopic kopTopic = new KopTopic(TopicNameUtils.getTopicNameWithUrlDecoded(topic), null);
                             kopTopicsSet.add(kopTopic);
                             topicsFullNameDeletionsSets.add(kopTopic.getFullName());
                         });

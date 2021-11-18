@@ -222,7 +222,8 @@ public class TransactionMarkerChannelManager {
 
         List<CompletableFuture<Void>> addressFutureList = new ArrayList<>();
         for (TopicPartition topicPartition : topicPartitions) {
-            String pulsarTopic = new KopTopic(topicPartition.topic()).getPartitionName(topicPartition.partition());
+            String pulsarTopic = new KopTopic(topicPartition.topic(), null)
+                    .getPartitionName(topicPartition.partition());
             CompletableFuture<Optional<InetSocketAddress>> addressFuture =
                     kopBrokerLookupManager.findBroker(pulsarTopic, sslEndPoint);
             CompletableFuture<Void> addFuture = new CompletableFuture<>();

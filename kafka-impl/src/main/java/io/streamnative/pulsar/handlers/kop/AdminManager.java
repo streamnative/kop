@@ -76,7 +76,9 @@ class AdminManager {
         topicPurgatory.shutdown();
     }
 
-    CompletableFuture<Map<String, ApiError>> createTopicsAsync(Map<String, TopicDetails> createInfo, int timeoutMs) {
+    CompletableFuture<Map<String, ApiError>> createTopicsAsync(Map<String, TopicDetails> createInfo,
+                                                               int timeoutMs,
+                                                               String namespacePrefix) {
         final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();
         final AtomicInteger numTopics = new AtomicInteger(createInfo.size());
         final CompletableFuture<Map<String, ApiError>> resultFuture = new CompletableFuture<>();
@@ -102,7 +104,7 @@ class AdminManager {
 
             KopTopic kopTopic;
             try {
-                kopTopic = new KopTopic(topic);
+                kopTopic = new KopTopic(topic, namespacePrefix);
             } catch (KoPTopicException e) {
                 errorFuture.complete(ApiError.fromThrowable(e));
                 if (numTopics.decrementAndGet() == 0) {
@@ -158,7 +160,7 @@ class AdminManager {
     }
 
     CompletableFuture<Map<ConfigResource, DescribeConfigsResponse.Config>> describeConfigsAsync(
-            Map<ConfigResource, Optional<Set<String>>> resourceToConfigNames) {
+            Map<ConfigResource, Optional<Set<String>>> resourceToConfigNames, String namespacePrefix) {
         // Since Kafka's storage and policies are much different from Pulsar, here we just return a default config to
         // avoid some Kafka based systems need to send DescribeConfigs request, like confluent schema registry.
         final DescribeConfigsResponse.Config defaultTopicConfig = new DescribeConfigsResponse.Config(ApiError.NONE,
@@ -175,7 +177,7 @@ class AdminManager {
                         CompletableFuture<DescribeConfigsResponse.Config> future = new CompletableFuture<>();
                         switch (resource.type()) {
                             case TOPIC:
-                                KopTopic kopTopic = new KopTopic(resource.name());
+                                KopTopic kopTopic = new KopTopic(resource.name(), namespacePrefix);
                                 admin.topics().getPartitionedTopicMetadataAsync(kopTopic.getFullName())
                                         .whenComplete((metadata, e) -> {
                                             if (e != null) {
@@ -279,7 +281,8 @@ class AdminManager {
 
 
     CompletableFuture<Map<String, ApiError>> createPartitionsAsync(Map<String, NewPartitions> createInfo,
-                                                                   int timeoutMs) {
+                                                                   int timeoutMs,
+                                                                   String namespacePrefix) {
         final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();
         final AtomicInteger numTopics = new AtomicInteger(createInfo.size());
         final CompletableFuture<Map<String, ApiError>> resultFuture = new CompletableFuture<>();
@@ -304,7 +307,7 @@ class AdminManager {
             futureMap.put(topic, errorFuture);
 
             try {
-                KopTopic kopTopic = new KopTopic(topic);
+                KopTopic kopTopic = new KopTopic(topic, namespacePrefix);
 
                 int numPartitions = newPartitions.totalCount();
                 if (numPartitions < 0) {

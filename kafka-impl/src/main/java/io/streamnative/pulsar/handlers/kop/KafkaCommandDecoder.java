@@ -257,6 +257,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             if (!isActive.get()) {
                 handleInactive(kafkaHeaderAndRequest, responseFuture);
             } else {
+                log.info("process {}", kafkaHeaderAndRequest.getHeader().apiKey());
                 switch (kafkaHeaderAndRequest.getHeader().apiKey()) {
                     case API_VERSIONS:
                         handleApiVersionsRequest(kafkaHeaderAndRequest, responseFuture);

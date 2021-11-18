@@ -226,7 +226,7 @@ public final class GroupMetadataConstants {
         if (topicPartition.partition() >= 0 && !KopTopic.isFullTopicName(topicPartition.topic())) {
             try {
                 topicPartition = new TopicPartition(
-                        new KopTopic(topicPartition.topic()).getFullName(), topicPartition.partition());
+                        new KopTopic(topicPartition.topic(), null).getFullName(), topicPartition.partition());
             } catch (KoPTopicException e) {
                 // In theory, this place will not be executed
                 log.warn("Invalid topic name: {}", topicPartition.topic(), e);
