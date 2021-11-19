@@ -93,6 +93,46 @@ import org.apache.pulsar.common.util.FutureUtil;
 @Slf4j
 public class GroupMetadataManager {
 
+    private final byte magicValue = RecordBatch.CURRENT_MAGIC_VALUE;
+    private final CompressionType compressionType;
+    @Getter
+    private final OffsetConfig offsetConfig;
+    private final String namespacePrefix;
+    private final ConcurrentMap<String, GroupMetadata> groupMetadataCache;
+    /* lock protecting access to loading and owned partition sets */
+    private final ReentrantLock partitionLock = new ReentrantLock();
+    /**
+     * partitions of consumer groups that are being loaded, its lock should
+     * be always called BEFORE the group lock if needed.
+     */
+    private final Set<Integer> loadingPartitions = new HashSet<>();
+    /* partitions of consumer groups that are assigned, using the same loading partition lock */
+    private final Set<Integer> ownedPartitions = new HashSet<>();
+    /* shutting down flag */
+    private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
+    private final int groupMetadataTopicPartitionCount;
+
+    // Map of <PartitionId, Producer>
+    private final ConcurrentMap<Integer, CompletableFuture<Producer<ByteBuffer>>> offsetsProducers =
+            new ConcurrentHashMap<>();
+    private final ConcurrentMap<Integer, CompletableFuture<Reader<ByteBuffer>>> offsetsReaders =
+            new ConcurrentHashMap<>();
+
+    /* single-thread scheduler to handle offset/group metadata cache loading and unloading */
+    private final ScheduledExecutorService scheduler;
+    /**
+     * The groups with open transactional offsets commits per producer. We need this because when the commit or abort
+     * marker comes in for a transaction, it is for a particular partition on the offsets topic and a particular
+     * producerId. We use this structure to quickly find the groups which need to be updated by the commit/abort
+     * marker.
+     */
+    private final Map<Long, Set<String>> openGroupsForProducer = new HashMap<>();
+
+    private final ProducerBuilder<ByteBuffer> metadataTopicProducerBuilder;
+    private final ReaderBuilder<ByteBuffer> metadataTopicReaderBuilder;
+    private final Time time;
+    private final Function<String, Integer> partitioner;
+
     /**
      * The key interface.
      */
@@ -161,48 +201,6 @@ public class GroupMetadataManager {
         }
 
     }
-
-    private final byte magicValue = RecordBatch.CURRENT_MAGIC_VALUE;
-    private final CompressionType compressionType;
-    @Getter
-    private final OffsetConfig offsetConfig;
-
-    private final String namespacePrefix;
-
-    private final ConcurrentMap<String, GroupMetadata> groupMetadataCache;
-    /* lock protecting access to loading and owned partition sets */
-    private final ReentrantLock partitionLock = new ReentrantLock();
-    /**
-     * partitions of consumer groups that are being loaded, its lock should
-     * be always called BEFORE the group lock if needed.
-     */
-    private final Set<Integer> loadingPartitions = new HashSet<>();
-    /* partitions of consumer groups that are assigned, using the same loading partition lock */
-    private final Set<Integer> ownedPartitions = new HashSet<>();
-    /* shutting down flag */
-    private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
-    private final int groupMetadataTopicPartitionCount;
-
-    // Map of <PartitionId, Producer>
-    private final ConcurrentMap<Integer, CompletableFuture<Producer<ByteBuffer>>> offsetsProducers =
-        new ConcurrentHashMap<>();
-    private final ConcurrentMap<Integer, CompletableFuture<Reader<ByteBuffer>>> offsetsReaders =
-        new ConcurrentHashMap<>();
-
-    /* single-thread scheduler to handle offset/group metadata cache loading and unloading */
-    private final ScheduledExecutorService scheduler;
-    /**
-     * The groups with open transactional offsets commits per producer. We need this because when the commit or abort
-     * marker comes in for a transaction, it is for a particular partition on the offsets topic and a particular
-     * producerId. We use this structure to quickly find the groups which need to be updated by the commit/abort
-     * marker.
-     */
-    private final Map<Long, Set<String>> openGroupsForProducer = new HashMap<>();
-
-    private final ProducerBuilder<ByteBuffer> metadataTopicProducerBuilder;
-    private final ReaderBuilder<ByteBuffer> metadataTopicReaderBuilder;
-    private final Time time;
-    private final Function<String, Integer> partitioner;
 
     public GroupMetadataManager(OffsetConfig offsetConfig,
                                 ProducerBuilder<ByteBuffer> metadataTopicProducerBuilder,
