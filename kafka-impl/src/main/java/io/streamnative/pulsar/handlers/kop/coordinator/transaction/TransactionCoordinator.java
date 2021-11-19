@@ -68,6 +68,7 @@ import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 @Slf4j
 public class TransactionCoordinator {
 
+    private final String namespacePrefix;
     private final TransactionConfig transactionConfig;
     private final ProducerIdManager producerIdManager;
     @Getter
@@ -114,7 +115,9 @@ public class TransactionCoordinator {
                                      ScheduledExecutorService scheduler,
                                      ProducerIdManager producerIdManager,
                                      TransactionStateManager txnManager,
-                                     Time time) {
+                                     Time time,
+                                     String namespacePrefix) {
+        this.namespacePrefix = namespacePrefix;
         this.transactionConfig = transactionConfig;
         this.txnManager = txnManager;
         this.producerIdManager = producerIdManager;
@@ -128,16 +131,19 @@ public class TransactionCoordinator {
                                             MetadataStoreExtended metadataStore,
                                             KopBrokerLookupManager kopBrokerLookupManager,
                                             ScheduledExecutorService scheduler,
-                                            Time time) {
+                                            Time time,
+                                            String namespacePrefix) {
         TransactionStateManager transactionStateManager =
                 new TransactionStateManager(transactionConfig, txnTopicClient, scheduler, time);
         return new TransactionCoordinator(
                 transactionConfig,
-                new TransactionMarkerChannelManager(null, transactionStateManager, kopBrokerLookupManager, false),
+                new TransactionMarkerChannelManager(null, transactionStateManager,
+                        kopBrokerLookupManager, false, namespacePrefix),
                 scheduler,
                 new ProducerIdManager(transactionConfig.getBrokerId(), metadataStore),
                 transactionStateManager,
-                time);
+                time,
+                namespacePrefix);
     }
 
     /**
@@ -155,7 +161,8 @@ public class TransactionCoordinator {
         return txnManager.loadTransactionsForTxnTopicPartition(partition,
                 (transactionResult, transactionMetadata, txnTransitMetadata) -> {
                     transactionMarkerChannelManager.addTxnMarkersToSend(
-                            -1, transactionResult, transactionMetadata, txnTransitMetadata);
+                            -1, transactionResult, transactionMetadata, txnTransitMetadata,
+                            namespacePrefix);
                 });
     }
 
@@ -844,7 +851,7 @@ public class TransactionCoordinator {
         callback.accept(Errors.NONE);
         transactionMarkerChannelManager.addTxnMarkersToSend(
                 coordinatorEpoch, txnMarkerResult, epochAndTxnMetadata.getTransactionMetadata(),
-                preSendResult.getData().getTxnTransitMetadata());
+                preSendResult.getData().getTxnTransitMetadata(), namespacePrefix);
     }
 
     private Errors logInvalidStateTransitionAndReturnError(String transactionalId,

@@ -47,6 +47,7 @@ public class GroupMetadataTest {
     private static final String groupId = "test-group-id";
     private static final String clientId = "test-client-id";
     private static final String clientHost = "test-client-host";
+    private static final String NAMESPACE_PREFIX = "public/default";
     private static final int rebalanceTimeoutMs = 60000;
     private static final int sessionTimeoutMs = 10000;
 
@@ -392,13 +393,13 @@ public class GroupMetadataTest {
         offsets.put(partition, offset);
         group.prepareOffsetCommit(offsets);
         assertTrue(group.hasOffsets());
-        assertEquals(Optional.empty(), group.offset(partition));
+        assertEquals(Optional.empty(), group.offset(partition, NAMESPACE_PREFIX));
 
         group.onOffsetCommitAppend(
             partition,
             new CommitRecordMetadataAndOffset(Optional.of(commitRecordOffset), offset));
         assertTrue(group.hasOffsets());
-        assertEquals(Optional.of(offset), group.offset(partition));
+        assertEquals(Optional.of(offset), group.offset(partition, NAMESPACE_PREFIX));
     }
 
     @Test
@@ -410,11 +411,11 @@ public class GroupMetadataTest {
         offsets.put(partition, offset);
         group.prepareOffsetCommit(offsets);
         assertTrue(group.hasOffsets());
-        assertEquals(Optional.empty(), group.offset(partition));
+        assertEquals(Optional.empty(), group.offset(partition, NAMESPACE_PREFIX));
 
         group.failPendingOffsetWrite(partition, offset);
         assertFalse(group.hasOffsets());
-        assertEquals(Optional.empty(), group.offset(partition));
+        assertEquals(Optional.empty(), group.offset(partition, NAMESPACE_PREFIX));
     }
 
     @Test
@@ -427,7 +428,7 @@ public class GroupMetadataTest {
         offsets.put(partition, firstOffset);
         group.prepareOffsetCommit(offsets);
         assertTrue(group.hasOffsets());
-        assertEquals(Optional.empty(), group.offset(partition));
+        assertEquals(Optional.empty(), group.offset(partition, NAMESPACE_PREFIX));
 
         offsets = new HashMap<>();
         offsets.put(partition, secondOffset);
@@ -436,11 +437,11 @@ public class GroupMetadataTest {
 
         group.failPendingOffsetWrite(partition, firstOffset);
         assertTrue(group.hasOffsets());
-        assertEquals(Optional.empty(), group.offset(partition));
+        assertEquals(Optional.empty(), group.offset(partition, NAMESPACE_PREFIX));
 
         group.onOffsetCommitAppend(partition, new CommitRecordMetadataAndOffset(Optional.of(3L), secondOffset));
         assertTrue(group.hasOffsets());
-        assertEquals(Optional.of(secondOffset), group.offset(partition));
+        assertEquals(Optional.of(secondOffset), group.offset(partition, NAMESPACE_PREFIX));
     }
 
     @Test
@@ -453,7 +454,7 @@ public class GroupMetadataTest {
         offsets.put(partition, firstOffset);
         group.prepareOffsetCommit(offsets);
         assertTrue(group.hasOffsets());
-        assertEquals(Optional.empty(), group.offset(partition));
+        assertEquals(Optional.empty(), group.offset(partition, NAMESPACE_PREFIX));
 
         offsets = new HashMap<>();
         offsets.put(partition, secondOffset);
@@ -462,11 +463,11 @@ public class GroupMetadataTest {
 
         group.onOffsetCommitAppend(partition, new CommitRecordMetadataAndOffset(Optional.of(4L), firstOffset));
         assertTrue(group.hasOffsets());
-        assertEquals(Optional.of(firstOffset), group.offset(partition));
+        assertEquals(Optional.of(firstOffset), group.offset(partition, NAMESPACE_PREFIX));
 
         group.onOffsetCommitAppend(partition, new CommitRecordMetadataAndOffset(Optional.of(5L), secondOffset));
         assertTrue(group.hasOffsets());
-        assertEquals(Optional.of(secondOffset), group.offset(partition));
+        assertEquals(Optional.of(secondOffset), group.offset(partition, NAMESPACE_PREFIX));
     }
 
     @Test
@@ -480,7 +481,7 @@ public class GroupMetadataTest {
         offsets.put(partition, txnOffsetCommit);
         group.prepareTxnOffsetCommit(producerId, offsets);
         assertTrue(group.hasOffsets());
-        assertEquals(Optional.empty(), group.offset(partition));
+        assertEquals(Optional.empty(), group.offset(partition, NAMESPACE_PREFIX));
 
         offsets = new HashMap<>();
         offsets.put(partition, consumerOffsetCommit);
@@ -492,13 +493,13 @@ public class GroupMetadataTest {
         group.onOffsetCommitAppend(partition,
             new CommitRecordMetadataAndOffset(Optional.of(4L), consumerOffsetCommit));
         assertTrue(group.hasOffsets());
-        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition));
+        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition, NAMESPACE_PREFIX));
 
         group.completePendingTxnOffsetCommit(producerId, true);
         assertTrue(group.hasOffsets());
         // This is the crucial assertion which validates that we materialize offsets in offset order,
         // not transactional order.
-        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition));
+        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition, NAMESPACE_PREFIX));
     }
 
     @Test
@@ -512,7 +513,7 @@ public class GroupMetadataTest {
         offsets.put(partition, txnOffsetCommit);
         group.prepareTxnOffsetCommit(producerId, offsets);
         assertTrue(group.hasOffsets());
-        assertEquals(Optional.empty(), group.offset(partition));
+        assertEquals(Optional.empty(), group.offset(partition, NAMESPACE_PREFIX));
 
         offsets = new HashMap<>();
         offsets.put(partition, consumerOffsetCommit);
@@ -526,13 +527,13 @@ public class GroupMetadataTest {
         assertTrue(group.hasOffsets());
         // The transactional offset commit hasn't been committed yet, so we should materialize
         // the consumer offset commit.
-        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition));
+        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition, NAMESPACE_PREFIX));
 
         group.completePendingTxnOffsetCommit(producerId, true);
         assertTrue(group.hasOffsets());
         // The transactional offset commit has been materialized and the transactional commit record
         // is later in the log, so it should be materialized.
-        assertEquals(Optional.of(txnOffsetCommit), group.offset(partition));
+        assertEquals(Optional.of(txnOffsetCommit), group.offset(partition, NAMESPACE_PREFIX));
     }
 
     @Test
@@ -546,7 +547,7 @@ public class GroupMetadataTest {
         offsets.put(partition, txnOffsetCommit);
         group.prepareTxnOffsetCommit(producerId, offsets);
         assertTrue(group.hasOffsets());
-        assertEquals(Optional.empty(), group.offset(partition));
+        assertEquals(Optional.empty(), group.offset(partition, NAMESPACE_PREFIX));
 
         offsets = new HashMap<>();
         offsets.put(partition, consumerOffsetCommit);
@@ -560,14 +561,14 @@ public class GroupMetadataTest {
         assertTrue(group.hasOffsets());
         // The transactional offset commit hasn't been committed yet, so we should materialize the consumer
         // offset commit.
-        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition));
+        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition, NAMESPACE_PREFIX));
 
         group.completePendingTxnOffsetCommit(producerId, false);
         assertTrue(group.hasOffsets());
         // The transactional offset commit should be discarded and the consumer offset commit should continue to be
         // materialized.
         assertFalse(group.hasPendingOffsetCommitsFromProducer(producerId));
-        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition));
+        assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition, NAMESPACE_PREFIX));
     }
 
     @Test
@@ -581,7 +582,7 @@ public class GroupMetadataTest {
         group.prepareTxnOffsetCommit(producerId, offsets);
         assertTrue(group.hasPendingOffsetCommitsFromProducer(producerId));
         assertTrue(group.hasOffsets());
-        assertEquals(Optional.empty(), group.offset(partition));
+        assertEquals(Optional.empty(), group.offset(partition, NAMESPACE_PREFIX));
         group.failPendingTxnOffsetCommit(producerId, partition);
         assertFalse(group.hasOffsets());
         assertFalse(group.hasPendingOffsetCommitsFromProducer(producerId));

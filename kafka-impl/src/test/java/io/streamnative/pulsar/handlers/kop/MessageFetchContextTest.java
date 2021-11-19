@@ -50,7 +50,7 @@ public class MessageFetchContextTest {
         fetchData.put(tp1, null);
         fetchData.put(tp2, null);
         resultFuture = new CompletableFuture<>();
-        messageFetchContext = MessageFetchContext.getForTest(fetchRequest, resultFuture);
+        messageFetchContext = MessageFetchContext.getForTest(fetchRequest, "public/default", resultFuture);
     }
 
     private void startThreads() throws Exception {
