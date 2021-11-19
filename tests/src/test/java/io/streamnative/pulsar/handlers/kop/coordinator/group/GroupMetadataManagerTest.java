@@ -920,7 +920,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         committedOffsets.put(
             new TopicPartition("bar", 0), 8992L);
 
-        List<SimpleRecord> offsetCommitRecords = createCommittedOffsetRecords(committedOffsets, groupId, NAMESPACE_PREFIX);
+        List<SimpleRecord> offsetCommitRecords = createCommittedOffsetRecords(committedOffsets, groupId,
+                NAMESPACE_PREFIX);
         SimpleRecord tombstone = new SimpleRecord(
             offsetCommitKey(groupId, tombstonePartition, NAMESPACE_PREFIX),
             null
@@ -979,7 +980,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         committedOffsets.put(
             new TopicPartition("bar", 0), 8992L);
 
-        List<SimpleRecord> offsetCommitRecords = createCommittedOffsetRecords(committedOffsets, groupId, NAMESPACE_PREFIX);
+        List<SimpleRecord> offsetCommitRecords = createCommittedOffsetRecords(committedOffsets, groupId,
+                NAMESPACE_PREFIX);
         String memberId = "98098230493";
         SimpleRecord groupMetadataRecord = buildStableGroupRecordWithMember(
             generation,
@@ -1468,7 +1470,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                 GroupTopicPartition gtp = ok.key();
                 assertEquals(groupId, gtp.group());
                 assertEquals(new TopicPartition(
-                        new KopTopic(topicPartition.topic(), NAMESPACE_PREFIX).getFullName(), topicPartition.partition()),
+                        new KopTopic(topicPartition.topic(), NAMESPACE_PREFIX).getFullName(),
+                                topicPartition.partition()),
                         gtp.topicPartition());
 
                 OffsetAndMetadata gm = GroupMetadataConstants.readOffsetMessageValue(
@@ -1675,7 +1678,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         assertEquals(Optional.of(group), groupMetadataManager.getGroup(groupId));
         assertEquals(Optional.empty(), group.offset(topicPartition1, NAMESPACE_PREFIX));
-        assertEquals(Optional.of(offset), group.offset(topicPartition2, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
+        assertEquals(Optional.of(offset), group.offset(topicPartition2, NAMESPACE_PREFIX)
+                .map(OffsetAndMetadata::offset));
 
         Map<TopicPartition, PartitionData> cachedOffsets = groupMetadataManager.getOffsets(
             groupId,
