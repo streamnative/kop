@@ -30,8 +30,9 @@ public class KopTopicTest {
         try {
             topic = new KopTopic("my-topic", null);
             fail();
-        } catch (KopTopic.KoPTopicNotInitializedException e) {
-            assertEquals(e.getMessage(), "KopTopic is not initialized");
+        } catch (KopTopic.KoPTopicIllegalArgumentException e) {
+            assertEquals(e.getMessage(), "Invalid short topic name 'my-topic', "
+                    + "it should be in the format of <tenant>/<namespace>/<topic> or <topic>");
         }
 
         String namespacePrefix = "my-tenant/my-ns";
