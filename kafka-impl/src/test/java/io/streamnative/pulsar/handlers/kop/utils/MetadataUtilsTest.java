@@ -46,7 +46,7 @@ public class MetadataUtilsTest {
 
     @Test(timeOut = 30000)
     public void testCreateKafkaMetadataIfMissing() throws Exception {
-        KopTopic.initialize("public/default");
+        String namespacePrefix = "public/default";
         KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
         ClusterData clusterData = ClusterData.builder().build();
         conf.setClusterName("test");
@@ -56,9 +56,9 @@ public class MetadataUtilsTest {
         conf.setOffsetsTopicNumPartitions(8);
 
         final KopTopic offsetsTopic = new KopTopic(MetadataUtils
-                .constructOffsetsTopicBaseName(conf.getKafkaMetadataTenant(), conf));
+                .constructOffsetsTopicBaseName(conf.getKafkaMetadataTenant(), conf), namespacePrefix);
         final KopTopic txnTopic = new KopTopic(MetadataUtils
-                .constructTxnLogTopicBaseName(conf.getKafkaMetadataTenant(), conf));
+                .constructTxnLogTopicBaseName(conf.getKafkaMetadataTenant(), conf), namespacePrefix);
 
         List<String> emptyList = Lists.newArrayList();
 

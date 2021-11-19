@@ -326,7 +326,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 20000)
     public void testOnlyOneCursorCreated() throws Exception {
         final String topic = "testOnlyOneCursorCreated";
-        final String partitionName = new KopTopic(topic).getPartitionName(0);
+        final String partitionName = new KopTopic(topic, "public/default").getPartitionName(0);
         admin.topics().createPartitionedTopic(topic, 1);
 
         final int numMessages = 100;
@@ -358,7 +358,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 20000)
     public void testCursorCountForMultiGroups() throws Exception {
         final String topic = "test-cursor-count-for-multi-groups";
-        final String partitionName = new KopTopic(topic).getPartitionName(0);
+        final String partitionName = new KopTopic(topic, "public/default").getPartitionName(0);
         final int numMessages = 100;
         final int numConsumers = 5;
 
@@ -438,7 +438,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         }
 
         final Function<Integer, KafkaTopicConsumerManager> getTcmForPartition = partition -> {
-            final String fullTopicName = new KopTopic(topic).getPartitionName(partition);
+            final String fullTopicName = new KopTopic(topic, "public/default").getPartitionName(partition);
             final List<KafkaTopicConsumerManager> tcmList =
                     KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(fullTopicName);
             return tcmList.isEmpty() ? null : tcmList.get(0);
