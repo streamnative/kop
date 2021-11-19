@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -346,7 +347,7 @@ public class KopEventManager {
                         });
                     }
                 });
-            } catch (Throwable e) {
+            } catch (ExecutionException | InterruptedException e) {
                 log.error("DeleteTopicsEvent process have an error", e);
             } finally {
                 registerEventLatency.accept(name(), startProcessTime);

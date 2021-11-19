@@ -165,6 +165,7 @@ public final class MessageFetchContext {
         hasComplete = null;
         bytesReadable = null;
         fetchPurgatory = null;
+        namespacePrefix = null;
         recyclerHandle.recycle(this);
     }
 
