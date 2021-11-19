@@ -717,7 +717,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         // verify
         GroupMetadataManager groupMetadataManager = handler.getGroupCoordinator().getGroupManager();
         GroupMetadata metadata = groupMetadataManager.getGroup(group).get();
-        OffsetAndMetadata offsetAndMetadata = metadata.offset(topicPartition).get();
+        OffsetAndMetadata offsetAndMetadata = metadata.offset(topicPartition, handler.currentNamespacePrefix()).get();
 
         // offset in cache
         Assert.assertNotNull(offsetAndMetadata);
@@ -731,7 +731,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 "expect no expired offset. but " + removeExpiredOffsets + " expired.");
 
         metadata = groupMetadataManager.getGroup(group).get();
-        offsetAndMetadata = metadata.offset(topicPartition).get();
+        offsetAndMetadata = metadata.offset(topicPartition, handler.currentNamespacePrefix()).get();
 
         // not cleanup
         Assert.assertNotNull(offsetAndMetadata);

@@ -29,7 +29,6 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
-import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
@@ -399,7 +398,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             kafkaConfig.setAdvertisedAddress(conf.getAdvertisedAddress());
             kafkaConfig.setBindAddress(conf.getBindAddress());
         }
-        KopTopic.initialize(kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace());
 
         // Validate the namespaces
         for (String fullNamespace : kafkaConfig.getKopAllowedNamespaces()) {
@@ -466,6 +464,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         kopEventManager = new KopEventManager(adminManager,
                 brokerService.getPulsar().getLocalMetadataStore(),
                 scopeStatsLogger,
+                kafkaConfig,
                 groupCoordinatorsByTenant);
         kopEventManager.start();
 
@@ -489,9 +488,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 .brokerServiceUrlTls(brokerService.getPulsar().getBrokerServiceUrlTls())
                 .build();
 
+        String namespacePrefix = MetadataUtils.constructMetadataNamespace(tenant, kafkaConfig);
         try {
             TransactionCoordinator transactionCoordinator =
-                    initTransactionCoordinator(tenant, brokerService.getPulsar().getAdminClient(), clusterData);
+                    initTransactionCoordinator(tenant, brokerService.getPulsar().getAdminClient(), clusterData,
+                            namespacePrefix);
             // Listening transaction topic load/unload
             brokerService.pulsar()
                     .getNamespaceService()
@@ -645,6 +646,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             throw new IllegalStateException(e);
         }
 
+        String namespacePrefix = MetadataUtils.constructMetadataNamespace(tenant, kafkaConfig);
 
         OffsetConfig offsetConfig = OffsetConfig.builder()
             .offsetsTopicName(topicName)
@@ -656,9 +658,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             .build();
 
         GroupCoordinator groupCoordinator = GroupCoordinator.of(
+            tenant,
             client,
             groupConfig,
             offsetConfig,
+            namespacePrefix,
             SystemTimer.builder()
                 .executorName("group-coordinator-timer")
                 .build(),
@@ -671,7 +675,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     }
 
     public TransactionCoordinator initTransactionCoordinator(String tenant, PulsarAdmin pulsarAdmin,
-                                                             ClusterData clusterData) throws Exception {
+                                                             ClusterData clusterData,
+                                                             String namespacePrefix) throws Exception {
         TransactionConfig transactionConfig = TransactionConfig.builder()
                 .transactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions())
                 .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(tenant, kafkaConfig))
@@ -690,7 +695,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 brokerService.getPulsar().getLocalMetadataStore(),
                 kopBrokerLookupManager,
                 OrderedScheduler.newSchedulerBuilder().name("transaction-log-manager").numThreads(1).build(),
-                Time.SYSTEM);
+                Time.SYSTEM,
+                namespacePrefix);
 
         transactionCoordinator.startup(kafkaConfig.isEnableTransactionalIdExpiration()).get();
 

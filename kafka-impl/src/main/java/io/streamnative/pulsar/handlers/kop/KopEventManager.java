@@ -23,6 +23,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ShutdownableThread;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.nio.charset.StandardCharsets;
@@ -59,6 +60,7 @@ public class KopEventManager {
             new KopEventThread(kopEventThreadName);
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant;
     private final AdminManager adminManager;
+    private final KafkaServiceConfiguration kafkaConfig;
     private final DeletionTopicsHandler deletionTopicsHandler;
     private final BrokersChangeHandler brokersChangeHandler;
     private final MetadataStore metadataStore;
@@ -74,11 +76,13 @@ public class KopEventManager {
     public KopEventManager(AdminManager adminManager,
                            MetadataStore metadataStore,
                            StatsLogger statsLogger,
+                           KafkaServiceConfiguration kafkaConfig,
                            Map<String, GroupCoordinator> groupCoordinatorsByTenant) {
         this.adminManager = adminManager;
         this.deletionTopicsHandler = new DeletionTopicsHandler(this);
         this.brokersChangeHandler = new BrokersChangeHandler(this);
         this.metadataStore = metadataStore;
+        this.kafkaConfig = kafkaConfig;
         this.eventManagerStats = new KopEventManagerStats(statsLogger, queue);
         this.groupCoordinatorsByTenant = groupCoordinatorsByTenant;
     }
@@ -300,8 +304,10 @@ public class KopEventManager {
                     if (groupCoordinator.isActive()) {
                         HashSet<String> topicsFullNameDeletionsSets = Sets.newHashSet();
                         HashSet<KopTopic> kopTopicsSet = Sets.newHashSet();
+                        String namespacePrefix = MetadataUtils.constructMetadataNamespace(tenant, kafkaConfig);
                         topicsDeletions.forEach(topic -> {
-                            KopTopic kopTopic = new KopTopic(TopicNameUtils.getTopicNameWithUrlDecoded(topic));
+                            KopTopic kopTopic = new KopTopic(TopicNameUtils.getTopicNameWithUrlDecoded(topic),
+                                    namespacePrefix);
                             kopTopicsSet.add(kopTopic);
                             topicsFullNameDeletionsSets.add(kopTopic.getFullName());
                         });
