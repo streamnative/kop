@@ -26,13 +26,15 @@ Before 2.8.0, KoP performed a conversion between Pulsar's `MessageId` and Kafka'
 
 Since 2.8.0, based on [PIP 70](https://github.com/apache/pulsar/wiki/PIP-70%3A-Introduce-lightweight-broker-entry-metadata), KoP could implement the continuous offset via `BrokerEntryMetadata` (an extra part of a BookKeeper Entry), which represents a batched message. For messages produced by KoP (< 2.8.0), these entries do not contain a `BrokerEntryMetadata`, so KoP (2.8.0 or higher) cannot recognize these messages. Another problem is that the offset topic (`__consumer_offsets`) stores metadata related to committed offsets. If these offsets were committed by KoP (< 2.8.0), the offsets cannot be recognized by KoP 2.8.0.
 
-Therefore, to upgrade KoP (< 2.8.0) to KoP (2.8.0 or higher), please make sure that all existing messages could be deleted and perform these operations:
+Therefore, before upgrading KoP (< 2.8.0) to KoP (2.8.0 or higher), you need to deal with the existing messages using one of the following ways:
 
-- Delete the `__consumer_offsets` topic.
-- Do not access the topics that are produced from KoP (< 2.8.0), or just delete them.
+- To delete the existing messages, perform these operations:
 
-If you just want to skip the existing messages, you can add following configuration so that you won't need to delete or recreate topics anymore.
+  - Delete the `__consumer_offsets` topic.
+  - Do not access the topics that are produced from KoP (< 2.8.0), or just delete them.
 
-```properties
-skipMessagesWithoutIndex=true
-```
+- To skip the existing messages, add the following configuration:
+
+  ```properties
+  skipMessagesWithoutIndex=true
+  ```
