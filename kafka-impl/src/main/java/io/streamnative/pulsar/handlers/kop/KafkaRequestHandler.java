@@ -959,7 +959,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
 
         final int numPartitions = produceRequest.partitionRecordsOrFail().size();
-
+        if (numPartitions == 0) {
+            resultFuture.complete(new ProduceResponse(Collections.emptyMap()));
+            return;
+        }
         final Map<TopicPartition, PartitionResponse> unauthorizedTopicResponsesMap = new ConcurrentHashMap<>();
         final Map<TopicPartition, MemoryRecords> authorizedRequestInfo = new ConcurrentHashMap<>();
         int timeoutMs = produceRequest.timeout();
@@ -969,6 +972,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             // When complete one authorization or failed, will do the action first.
             action.run();
             if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                if (authorizedRequestInfo.isEmpty()) {
+                    resultFuture.complete(new ProduceResponse(unauthorizedTopicResponsesMap));
+                    return;
+                }
                 CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> responseCallback =
                         new CompletableFuture<>();
                 getReplicaManager().appendRecords(

@@ -130,78 +130,83 @@ public class PartitionLog {
                         final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap
                         ) {
         final long beforeRecordsProcess = MathUtils.nowInNano();
-        final LogAppendInfo appendInfo = analyzeAndValidateRecords(records, version, topicPartition, ignoreRecordSize);
+        try {
+            final LogAppendInfo appendInfo = analyzeAndValidateRecords(records, version, topicPartition, ignoreRecordSize);
 
-        // return if we have no valid messages or if this is a duplicate of the last appended entry
-        if (appendInfo.getShallowCount() == 0) {
-            return;
-        }
-        // trim any invalid bytes or partial messages before appending it to the on-disk log
-        MemoryRecords validRecords = trimInvalidBytes(records, appendInfo);
-        synchronized (lock) {
-            long offset  = -1;
-            appendInfo.setFirstOffset(Optional.of(offset));
-            // TODO: validateMessagesAndAssignOffsets
-
-            // Append Message into pulsar
-            final CompletableFuture<Optional<PersistentTopic>> topicFuture =
-                    topicManager.getTopic(fullPartitionName);
-            if (topicFuture.isCompletedExceptionally()) {
-                topicFuture.exceptionally(e -> {
-                    exceptionConsumer.accept(e);
-                    return Optional.empty();
-                });
+            // return if we have no valid messages or if this is a duplicate of the last appended entry
+            if (appendInfo.getShallowCount() == 0) {
                 return;
             }
-            if (topicFuture.isDone() && !topicFuture.getNow(Optional.empty()).isPresent()) {
-                errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
-                return;
-            }
-            final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
-                if (!persistentTopicOpt.isPresent()) {
+            // trim any invalid bytes or partial messages before appending it to the on-disk log
+            MemoryRecords validRecords = trimInvalidBytes(records, appendInfo);
+            synchronized (lock) {
+                long offset  = -1;
+                appendInfo.setFirstOffset(Optional.of(offset));
+                // TODO: validateMessagesAndAssignOffsets
+
+                // Append Message into pulsar
+                final CompletableFuture<Optional<PersistentTopic>> topicFuture =
+                        topicManager.getTopic(fullPartitionName);
+                if (topicFuture.isCompletedExceptionally()) {
+                    topicFuture.exceptionally(e -> {
+                        exceptionConsumer.accept(e);
+                        return Optional.empty();
+                    });
+                    return;
+                }
+                if (topicFuture.isDone() && !topicFuture.getNow(Optional.empty()).isPresent()) {
                     errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
                     return;
                 }
+                final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
+                    if (!persistentTopicOpt.isPresent()) {
+                        errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
+                        return;
+                    }
 
-                final EncodeRequest encodeRequest = EncodeRequest.get(validRecords);
-                if (entryFormatter instanceof KafkaMixedEntryFormatter) {
-                    final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
-                    final long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
-                    encodeRequest.setBaseOffset(logEndOffset);
+                    final EncodeRequest encodeRequest = EncodeRequest.get(validRecords);
+                    if (entryFormatter instanceof KafkaMixedEntryFormatter) {
+                        final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
+                        final long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
+                        encodeRequest.setBaseOffset(logEndOffset);
+                    }
+
+                    final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
+                    encodeRequest.recycle();
+                    requestStats.getProduceEncodeStats().registerSuccessfulEvent(
+                            MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
+                    startSendOperationForThrottlingConsumer.accept(encodeResult.getEncodedByteBuf().readableBytes());
+                    if (log.isDebugEnabled()) {
+                        log.debug("Produce messages for topic {} partition {}",
+                                topicPartition.topic(), topicPartition.partition());
+                    }
+
+                    publishMessages(persistentTopicOpt,
+                            topicManager,
+                            coordinator,
+                            requestStats,
+                            encodeResult,
+                            topicPartition,
+                            offsetConsumer,
+                            errorsConsumer,
+                            completeSendOperationForThrottlingConsumer);
+                };
+
+                if (topicFuture.isDone()) {
+                    persistentTopicConsumer.accept(topicFuture.getNow(Optional.empty()));
+                } else {
+                    // topic is not available now
+                    pendingTopicFuturesMap
+                            .computeIfAbsent(topicPartition, ignored ->
+                                    new PendingTopicFutures(requestStats))
+                            .addListener(topicFuture, persistentTopicConsumer, exceptionConsumer);
                 }
-
-                final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
-                encodeRequest.recycle();
-                requestStats.getProduceEncodeStats().registerSuccessfulEvent(
-                        MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
-//                startSendOperationForThrottling(encodeResult.getEncodedByteBuf().readableBytes());
-                startSendOperationForThrottlingConsumer.accept(encodeResult.getEncodedByteBuf().readableBytes());
-                if (log.isDebugEnabled()) {
-                    log.debug("Produce messages for topic {} partition {}",
-                            topicPartition.topic(), topicPartition.partition());
-                }
-
-                publishMessages(persistentTopicOpt,
-                        topicManager,
-                        coordinator,
-                        requestStats,
-                        encodeResult,
-                        topicPartition,
-                        offsetConsumer,
-                        errorsConsumer,
-                        completeSendOperationForThrottlingConsumer);
-            };
-
-            if (topicFuture.isDone()) {
-                persistentTopicConsumer.accept(topicFuture.getNow(Optional.empty()));
-            } else {
-                // topic is not available now
-                pendingTopicFuturesMap
-                        .computeIfAbsent(topicPartition, ignored ->
-                                new PendingTopicFutures(requestStats))
-                        .addListener(topicFuture, persistentTopicConsumer, exceptionConsumer);
             }
+        } catch (Exception exception) {
+            log.error("Failed to handle produce request for {}", topicPartition, exception);
+            exceptionConsumer.accept(exception);
         }
+
     }
 
     private void publishMessages(final Optional<PersistentTopic> persistentTopicOpt,
@@ -242,7 +247,6 @@ public class PartitionLog {
                 MessagePublishContext.get(offsetFuture, persistentTopic, numMessages, System.nanoTime()));
         final RecordBatch batch = records.batchIterator().next();
         offsetFuture.whenComplete((offset, e) -> {
-//            completeSendOperationForThrottling(byteBuf.readableBytes());
             completeSendOperationForThrottlingConsumer.accept(byteBuf.readableBytes());
             encodeResult.recycle();
             if (e == null) {
