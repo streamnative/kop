@@ -118,8 +118,16 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public ReplicaManager getReplicaManager(String tenant) {
         return replicaManagerByTenant.computeIfAbsent(tenant, s -> {
+            Optional<TransactionCoordinator> transactionCoordinatorOptional = Optional.empty();
+            if (kafkaConfig.isEnableTransactionCoordinator()) {
+                transactionCoordinatorOptional = Optional.of(getTransactionCoordinator(tenant));
+            }
             try {
-                return new ReplicaManager(kafkaConfig, Time.SYSTEM, producePurgatory, fetchPurgatory);
+                return new ReplicaManager(kafkaConfig,
+                        Time.SYSTEM,
+                        transactionCoordinatorOptional,
+                        producePurgatory,
+                        fetchPurgatory);
             } catch (Exception e) {
                 log.error("Failed to init ReplicaManager for tenant {}", tenant, e);
                 throw new IllegalStateException(e);

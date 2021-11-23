@@ -35,11 +35,8 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.Group
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.AbortedIndexEntry;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
-import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
-import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
-import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -86,9 +83,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
-import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
@@ -103,7 +98,6 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
-import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.ControlRecordType;
@@ -898,60 +892,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
-    private void publishMessages(final Optional<PersistentTopic> persistentTopicOpt,
-                                 final EncodeResult encodeResult,
-                                 final TopicPartition topicPartition,
-                                 final Consumer<Long> offsetConsumer,
-                                 final Consumer<Errors> errorsConsumer) {
-        final MemoryRecords records = encodeResult.getRecords();
-        final int numMessages = encodeResult.getNumMessages();
-        final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
-        if (!persistentTopicOpt.isPresent()) {
-            encodeResult.recycle();
-            // It will trigger a retry send of Kafka client
-            errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
-            return;
-        }
-        PersistentTopic persistentTopic = persistentTopicOpt.get();
-        if (persistentTopic.isSystemTopic()) {
-            encodeResult.recycle();
-            log.error("Not support producing message to system topic: {}", persistentTopic);
-            errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
-            return;
-        }
-        String namespacePrefix = currentNamespacePrefix();
-        final String partitionName = KopTopic.toString(topicPartition, namespacePrefix);
-
-        topicManager.registerProducerInPersistentTopic(partitionName, persistentTopic);
-        // collect metrics
-        encodeResult.updateProducerStats(topicPartition, requestStats, namespacePrefix);
-
-        // publish
-        final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
-        final long beforePublish = MathUtils.nowInNano();
-        persistentTopic.publishMessage(byteBuf,
-                MessagePublishContext.get(offsetFuture, persistentTopic, numMessages, System.nanoTime()));
-        final RecordBatch batch = records.batchIterator().next();
-        offsetFuture.whenComplete((offset, e) -> {
-            completeSendOperationForThrottling(byteBuf.readableBytes());
-            encodeResult.recycle();
-            if (e == null) {
-                if (batch.isTransactional()) {
-                    getTransactionCoordinator().addActivePidOffset(TopicName.get(partitionName), batch.producerId(),
-                                                                    offset);
-                }
-                requestStats.getMessagePublishStats().registerSuccessfulEvent(
-                        MathUtils.elapsedNanos(beforePublish), TimeUnit.NANOSECONDS);
-                offsetConsumer.accept(offset);
-            } else {
-                log.error("publishMessages for topic partition: {} failed when write.", partitionName, e);
-                requestStats.getMessagePublishStats().registerFailedEvent(
-                        MathUtils.elapsedNanos(beforePublish), TimeUnit.NANOSECONDS);
-                errorsConsumer.accept(Errors.KAFKA_STORAGE_ERROR);
-            }
-        });
-    }
-
     @Override
     protected void handleProduceRequest(KafkaHeaderAndRequest produceHar,
                                         CompletableFuture<AbstractResponse> resultFuture) {
@@ -986,7 +926,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         namespacePrefix,
                         authorizedRequestInfo,
                         requestStats,
-                        getTransactionCoordinator(),
                         this::startSendOperationForThrottling,
                         this::completeSendOperationForThrottling,
                         pendingTopicFuturesMap,
@@ -1031,93 +970,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
 
 
-    }
-
-    private void handlePartitionRecords(final KafkaHeaderAndRequest produceHar,
-                                        final TopicPartition topicPartition,
-                                        final MemoryRecords records,
-                                        final int numPartitions,
-                                        final String fullPartitionName,
-                                        final Consumer<Long> offsetConsumer,
-                                        final Consumer<Errors> errorsConsumer,
-                                        final Consumer<Throwable> exceptionConsumer) {
-        // check KOP inner topic
-        if (isInternalTopic(fullPartitionName)) {
-            log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
-                    ctx.channel(), produceHar.getHeader(), topicPartition);
-            errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
-            return;
-        }
-
-        try {
-            final long beforeRecordsProcess = MathUtils.nowInNano();
-            final MemoryRecords validRecords =
-                    validateRecords(produceHar.getHeader().apiVersion(), topicPartition, records);
-
-            validRecords.batches().forEach(batch->{
-                if (batch.sizeInBytes() > kafkaConfig.getMaxMessageSize()) {
-                    throw new RecordTooLargeException(String.format("Message batch size is %s "
-                                    + "in append to partition %s which exceeds the maximum configured size of %s .",
-                            batch.sizeInBytes(), topicPartition, kafkaConfig.getMaxMessageSize()));
-                }
-            });
-
-            final CompletableFuture<Optional<PersistentTopic>> topicFuture =
-                    topicManager.getTopic(fullPartitionName);
-            if (topicFuture.isCompletedExceptionally()) {
-                topicFuture.exceptionally(e -> {
-                    exceptionConsumer.accept(e);
-                    return Optional.empty();
-                });
-                return;
-            }
-            if (topicFuture.isDone() && !topicFuture.getNow(Optional.empty()).isPresent()) {
-                errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
-                return;
-            }
-
-            final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
-                if (!persistentTopicOpt.isPresent()) {
-                    errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
-                    return;
-                }
-
-                final EncodeRequest encodeRequest = EncodeRequest.get(validRecords);
-                if (entryFormatter instanceof KafkaMixedEntryFormatter) {
-                    final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
-                    final long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
-                    encodeRequest.setBaseOffset(logEndOffset);
-                }
-
-                final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
-                encodeRequest.recycle();
-                requestStats.getProduceEncodeStats().registerSuccessfulEvent(
-                        MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
-                startSendOperationForThrottling(encodeResult.getEncodedByteBuf().readableBytes());
-
-                if (log.isDebugEnabled()) {
-                    log.debug("[{}] Request {}: Produce messages for topic {} partition {}, "
-                                    + "request size: {} ", ctx.channel(), produceHar.getHeader(),
-                            topicPartition.topic(), topicPartition.partition(), numPartitions);
-                }
-
-                publishMessages(persistentTopicOpt, encodeResult, topicPartition, offsetConsumer, errorsConsumer);
-            };
-
-            if (topicFuture.isDone()) {
-                persistentTopicConsumer.accept(topicFuture.getNow(Optional.empty()));
-            } else {
-                // topic is not available now
-                pendingTopicFuturesMap
-                        .computeIfAbsent(topicPartition, ignored ->
-                                new PendingTopicFutures(requestStats))
-                        .addListener(topicFuture, persistentTopicConsumer, exceptionConsumer);
-            }
-        } catch (Exception e) {
-            log.error("[{}] Failed to handle produce request for {}",
-                    ctx.channel(), topicPartition, e);
-            exceptionConsumer.accept(e);
-        }
     }
 
     @Override

@@ -25,6 +25,7 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -47,9 +48,10 @@ public class ReplicaManager {
 
     public ReplicaManager(KafkaServiceConfiguration config,
                           Time time,
+                          Optional<TransactionCoordinator> transactionCoordinator,
                           DelayedOperationPurgatory<DelayedOperation> producePurgatory,
                           DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
-        this.logManager = new PartitionLogManager(config, time);
+        this.logManager = new PartitionLogManager(config, transactionCoordinator, time);
         this.producePurgatory = producePurgatory;
         this.fetchPurgatory = fetchPurgatory;
     }
@@ -66,7 +68,6 @@ public class ReplicaManager {
             final String namespacePrefix,
             final Map<TopicPartition, MemoryRecords> entriesPerPartition,
             final RequestStats requestStats,
-            final TransactionCoordinator coordinator,
             final Consumer<Integer> startSendOperationForThrottlingConsumer,
             final Consumer<Integer> completeSendOperationForThrottlingConsumer,
             final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap,
@@ -126,7 +127,6 @@ public class ReplicaManager {
                         version,
                         topicManager,
                         requestStats,
-                        coordinator,
                         offsetConsumer,
                         errorsConsumer,
                         exceptionConsumer,

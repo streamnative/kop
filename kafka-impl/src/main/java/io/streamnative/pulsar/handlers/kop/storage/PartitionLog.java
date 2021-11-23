@@ -35,7 +35,6 @@ import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
@@ -45,6 +44,7 @@ import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.naming.TopicName;
 
@@ -52,10 +52,12 @@ import org.apache.pulsar.common.naming.TopicName;
 @Slf4j
 public class PartitionLog {
     private KafkaServiceConfiguration kafkaConfig;
+    private Time time;
     private TopicPartition topicPartition;
     private String namespacePrefix;
     private String fullPartitionName;
     private EntryFormatter entryFormatter;
+    private Optional<TransactionCoordinator> transactionCoordinator;
 
 
     // A lock that guards all modifications to the log
@@ -85,7 +87,6 @@ public class PartitionLog {
                               final short version,
                               final KafkaTopicManager topicManager,
                               final RequestStats requestStats,
-                              final TransactionCoordinator coordinator,
                               final Consumer<Long> offsetConsumer,
                               final Consumer<Errors> errorsConsumer,
                               final Consumer<Throwable> exceptionConsumer,
@@ -96,7 +97,6 @@ public class PartitionLog {
                 version,
                 topicManager,
                 requestStats,
-                coordinator,
                 false,
                 offsetConsumer,
                 errorsConsumer,
@@ -120,18 +120,17 @@ public class PartitionLog {
                         final short version,
                         final KafkaTopicManager topicManager,
                         final RequestStats requestStats,
-                        final TransactionCoordinator coordinator,
                         final boolean ignoreRecordSize,
                         final Consumer<Long> offsetConsumer,
                         final Consumer<Errors> errorsConsumer,
                         final Consumer<Throwable> exceptionConsumer,
                         final Consumer<Integer> startSendOperationForThrottlingConsumer,
                         final Consumer<Integer> completeSendOperationForThrottlingConsumer,
-                        final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap
-                        ) {
-        final long beforeRecordsProcess = MathUtils.nowInNano();
+                        final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
+        final long beforeRecordsProcess = time.nanoseconds();
         try {
-            final LogAppendInfo appendInfo = analyzeAndValidateRecords(records, version, topicPartition, ignoreRecordSize);
+            final LogAppendInfo appendInfo =
+                    analyzeAndValidateRecords(records, version, topicPartition, ignoreRecordSize);
 
             // return if we have no valid messages or if this is a duplicate of the last appended entry
             if (appendInfo.getShallowCount() == 0) {
@@ -140,10 +139,6 @@ public class PartitionLog {
             // trim any invalid bytes or partial messages before appending it to the on-disk log
             MemoryRecords validRecords = trimInvalidBytes(records, appendInfo);
             synchronized (lock) {
-                long offset  = -1;
-                appendInfo.setFirstOffset(Optional.of(offset));
-                // TODO: validateMessagesAndAssignOffsets
-
                 // Append Message into pulsar
                 final CompletableFuture<Optional<PersistentTopic>> topicFuture =
                         topicManager.getTopic(fullPartitionName);
@@ -163,6 +158,7 @@ public class PartitionLog {
                         errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
                         return;
                     }
+                    // TODO: validateMessagesAndAssignOffsets here.
 
                     final EncodeRequest encodeRequest = EncodeRequest.get(validRecords);
                     if (entryFormatter instanceof KafkaMixedEntryFormatter) {
@@ -174,7 +170,7 @@ public class PartitionLog {
                     final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
                     encodeRequest.recycle();
                     requestStats.getProduceEncodeStats().registerSuccessfulEvent(
-                            MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
+                            time.nanoseconds() - beforeRecordsProcess, TimeUnit.NANOSECONDS);
                     startSendOperationForThrottlingConsumer.accept(encodeResult.getEncodedByteBuf().readableBytes());
                     if (log.isDebugEnabled()) {
                         log.debug("Produce messages for topic {} partition {}",
@@ -183,7 +179,6 @@ public class PartitionLog {
 
                     publishMessages(persistentTopicOpt,
                             topicManager,
-                            coordinator,
                             requestStats,
                             encodeResult,
                             topicPartition,
@@ -211,7 +206,6 @@ public class PartitionLog {
 
     private void publishMessages(final Optional<PersistentTopic> persistentTopicOpt,
                                  final KafkaTopicManager topicManager,
-                                 final TransactionCoordinator coordinator,
                                  final RequestStats requestStats,
                                  final EncodeResult encodeResult,
                                  final TopicPartition topicPartition,
@@ -242,7 +236,7 @@ public class PartitionLog {
 
         // publish
         final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
-        final long beforePublish = MathUtils.nowInNano();
+        final long beforePublish = time.nanoseconds();
         persistentTopic.publishMessage(byteBuf,
                 MessagePublishContext.get(offsetFuture, persistentTopic, numMessages, System.nanoTime()));
         final RecordBatch batch = records.batchIterator().next();
@@ -251,16 +245,16 @@ public class PartitionLog {
             encodeResult.recycle();
             if (e == null) {
                 if (batch.isTransactional()) {
-                    coordinator.addActivePidOffset(TopicName.get(fullPartitionName), batch.producerId(),
-                            offset);
+                    transactionCoordinator.ifPresent(coordinator -> coordinator.addActivePidOffset(
+                            TopicName.get(fullPartitionName), batch.producerId(), offset));
                 }
                 requestStats.getMessagePublishStats().registerSuccessfulEvent(
-                        MathUtils.elapsedNanos(beforePublish), TimeUnit.NANOSECONDS);
+                        time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
                 offsetConsumer.accept(offset);
             } else {
                 log.error("publishMessages for topic partition: {} failed when write.", fullPartitionName, e);
                 requestStats.getMessagePublishStats().registerFailedEvent(
-                        MathUtils.elapsedNanos(beforePublish), TimeUnit.NANOSECONDS);
+                        time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
                 errorsConsumer.accept(Errors.KAFKA_STORAGE_ERROR);
             }
         });
