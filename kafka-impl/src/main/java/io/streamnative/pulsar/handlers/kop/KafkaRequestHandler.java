@@ -49,6 +49,7 @@ import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
+import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaRequestUtils;
@@ -58,7 +59,6 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
-import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -277,6 +277,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     public TransactionCoordinator getTransactionCoordinator() {
         return tenantContextManager.getTransactionCoordinator(getCurrentTenant());
+    }
+
+    public ReplicaManager getReplicaManager() {
+        return tenantContextManager.getReplicaManager(getCurrentTenant());
     }
 
     public KafkaRequestHandler(PulsarService pulsarService,
@@ -956,82 +960,70 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         final int numPartitions = produceRequest.partitionRecordsOrFail().size();
 
-        final Map<TopicPartition, PartitionResponse> responseMap = new ConcurrentHashMap<>();
-        // delay produce
-        final AtomicInteger topicPartitionNum = new AtomicInteger(produceRequest.partitionRecordsOrFail().size());
+        final Map<TopicPartition, PartitionResponse> unauthorizedTopicResponsesMap = new ConcurrentHashMap<>();
+        final Map<TopicPartition, MemoryRecords> authorizedRequestInfo = new ConcurrentHashMap<>();
         int timeoutMs = produceRequest.timeout();
-        Runnable complete = () -> {
-            topicPartitionNum.set(0);
-            if (resultFuture.isDone()) {
-                // It may be triggered again in DelayedProduceAndFetch
-                return;
-            }
-            // add the topicPartition with timeout error if it's not existed in responseMap
-            produceRequest.partitionRecordsOrFail().keySet().forEach(topicPartition -> {
-                if (!responseMap.containsKey(topicPartition)) {
-                    responseMap.put(topicPartition, new PartitionResponse(Errors.REQUEST_TIMED_OUT));
-                }
-            });
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Request {}: Complete handle produce.", ctx.channel(), produceHar.toString());
-            }
-            resultFuture.complete(new ProduceResponse(responseMap));
-        };
-        BiConsumer<TopicPartition, PartitionResponse> addPartitionResponse = (topicPartition, response) -> {
-            responseMap.put(topicPartition, response);
-            // reset topicPartitionNum
-            int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
-            if (restTopicPartitionNum < 0) {
-                return;
-            }
-            if (restTopicPartitionNum == 0) {
-                complete.run();
-            }
-        };
-
         String namespacePrefix = currentNamespacePrefix();
-        produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
-            final Consumer<Long> offsetConsumer = offset -> addPartitionResponse.accept(
-                    topicPartition, new PartitionResponse(Errors.NONE, offset, -1L, -1L));
-            final Consumer<Errors> errorsConsumer =
-                    errors -> addPartitionResponse.accept(topicPartition, new PartitionResponse(errors));
-            final Consumer<Throwable> exceptionConsumer =
-                    e -> addPartitionResponse.accept(topicPartition, new PartitionResponse(Errors.forException(e)));
-            final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
+        final AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(numPartitions);
+        Consumer<Runnable> completeOne = (action) -> {
+            // When complete one authorization or failed, will do the action first.
+            action.run();
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> responseCallback =
+                        new CompletableFuture<>();
+                getReplicaManager().appendRecords(
+                        timeoutMs,
+                        false,
+                        produceHar.getRequest().version(),
+                        topicManager,
+                        namespacePrefix,
+                        authorizedRequestInfo,
+                        requestStats,
+                        getTransactionCoordinator(),
+                        this::startSendOperationForThrottling,
+                        this::completeSendOperationForThrottling,
+                        pendingTopicFuturesMap,
+                        responseCallback
+                );
+                responseCallback.thenAccept(response -> {
+                    Map<TopicPartition, PartitionResponse> mergedResponse = Maps.newHashMap();
+                    mergedResponse.putAll(response);
+                    mergedResponse.putAll(unauthorizedTopicResponsesMap);
+                    resultFuture.complete(new ProduceResponse(mergedResponse));
+                }).exceptionally(ex -> {
+                    resultFuture.completeExceptionally(ex);
+                    return null;
+                });
+            }
+        };
 
+        produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
+            final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
             authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
                     .whenComplete((isAuthorized, ex) -> {
                         if (ex != null) {
                             log.error("Write topic authorize failed, topic - {}. {}",
                                     fullPartitionName, ex.getMessage());
-                            errorsConsumer.accept(Errors.TOPIC_AUTHORIZATION_FAILED);
+                            completeOne.accept(() -> {
+                                unauthorizedTopicResponsesMap.put(topicPartition,
+                                        new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+                            });
                             return;
                         }
                         if (!isAuthorized) {
-                            errorsConsumer.accept(Errors.TOPIC_AUTHORIZATION_FAILED);
+                            completeOne.accept(() -> {
+                                unauthorizedTopicResponsesMap.put(topicPartition,
+                                        new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+                            });
                             return;
                         }
-
-                        handlePartitionRecords(produceHar,
-                                topicPartition,
-                                records,
-                                numPartitions,
-                                fullPartitionName,
-                                offsetConsumer,
-                                errorsConsumer,
-                                exceptionConsumer);
+                        completeOne.accept(() -> {
+                            authorizedRequestInfo.put(topicPartition, records);
+                        });
                     });
         });
-        // delay produce
-        if (timeoutMs <= 0) {
-            complete.run();
-        } else {
-            List<Object> delayedCreateKeys =
-                    produceRequest.partitionRecordsOrFail().keySet().stream()
-                            .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
-            DelayedProduceAndFetch delayedProduce = new DelayedProduceAndFetch(timeoutMs, topicPartitionNum, complete);
-            producePurgatory.tryCompleteElseWatch(delayedProduce, delayedCreateKeys);
-        }
+
+
     }
 
     private void handlePartitionRecords(final KafkaHeaderAndRequest produceHar,

@@ -28,6 +28,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
+import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
@@ -97,6 +98,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
+    private final Map<String, ReplicaManager> replicaManagerByTenant = new ConcurrentHashMap<>();
 
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -111,6 +113,18 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public TransactionCoordinator getTransactionCoordinator(String tenant) {
         return transactionCoordinatorByTenant.computeIfAbsent(tenant, this::createAndBootTransactionCoordinator);
+    }
+
+    @Override
+    public ReplicaManager getReplicaManager(String tenant) {
+        return replicaManagerByTenant.computeIfAbsent(tenant, s -> {
+            try {
+                return new ReplicaManager(kafkaConfig, Time.SYSTEM, producePurgatory, fetchPurgatory);
+            } catch (Exception e) {
+                log.error("Failed to init ReplicaManager for tenant {}", tenant, e);
+                throw new IllegalStateException(e);
+            }
+        });
     }
 
     /**

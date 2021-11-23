@@ -15,11 +15,13 @@ package io.streamnative.pulsar.handlers.kop;
 
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 
 /**
  * Access Tenant level coordinators.
  */
 public interface TenantContextManager {
+
     /**
      * Access the GroupCoordinator for the current Tenant.
      * This method bootstraps a new GroupCoordinator if it is not started
@@ -27,6 +29,7 @@ public interface TenantContextManager {
      * @return the GroupCoordinator
      */
     GroupCoordinator getGroupCoordinator(String tenant);
+
     /**
      * Access the TransactionCoordinator for the current Tenant.
      * This method bootstraps a new TransactionCoordinator if it is not started
@@ -34,4 +37,12 @@ public interface TenantContextManager {
      * @return the TransactionCoordinator
      */
     TransactionCoordinator getTransactionCoordinator(String tenant);
+
+    /**
+     * Access the ReplicaManager for the current Tenant.
+     * This method bootstraps a new ReplicaManager if it is not started
+     * @param tenant
+     * @return the ReplicaManager
+     */
+    ReplicaManager getReplicaManager(String tenant);
 }
