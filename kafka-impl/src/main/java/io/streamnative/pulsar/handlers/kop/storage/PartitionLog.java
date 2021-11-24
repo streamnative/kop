@@ -83,24 +83,18 @@ public class PartitionLog {
         }
     }
 
-    public void appendRecords(final MemoryRecords records,
+    public CompletableFuture<Long> appendRecords(final MemoryRecords records,
                               final short version,
                               final KafkaTopicManager topicManager,
                               final RequestStats requestStats,
-                              final Consumer<Long> offsetConsumer,
-                              final Consumer<Errors> errorsConsumer,
-                              final Consumer<Throwable> exceptionConsumer,
                               final Consumer<Integer> startSendOperationForThrottlingConsumer,
                               final Consumer<Integer> completeSendOperationForThrottlingConsumer,
                               final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
-        append(records,
+        return append(records,
                 version,
                 topicManager,
                 requestStats,
                 false,
-                offsetConsumer,
-                errorsConsumer,
-                exceptionConsumer,
                 startSendOperationForThrottlingConsumer,
                 completeSendOperationForThrottlingConsumer,
                 pendingTopicFuturesMap);
@@ -116,26 +110,20 @@ public class PartitionLog {
      * @param version Inter-broker message protocol version
      * @param ignoreRecordSize true to skip validation of record size.
      */
-    private void append(final MemoryRecords records,
+    private CompletableFuture<Long> append(final MemoryRecords records,
                         final short version,
                         final KafkaTopicManager topicManager,
                         final RequestStats requestStats,
                         final boolean ignoreRecordSize,
-                        final Consumer<Long> offsetConsumer,
-                        final Consumer<Errors> errorsConsumer,
-                        final Consumer<Throwable> exceptionConsumer,
                         final Consumer<Integer> startSendOperationForThrottlingConsumer,
                         final Consumer<Integer> completeSendOperationForThrottlingConsumer,
                         final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
+        CompletableFuture<Long> appendFuture = new CompletableFuture<>();
         final long beforeRecordsProcess = time.nanoseconds();
         try {
             final LogAppendInfo appendInfo =
                     analyzeAndValidateRecords(records, version, topicPartition, ignoreRecordSize);
 
-            // return if we have no valid messages or if this is a duplicate of the last appended entry
-            if (appendInfo.getShallowCount() == 0) {
-                return;
-            }
             // trim any invalid bytes or partial messages before appending it to the on-disk log
             MemoryRecords validRecords = trimInvalidBytes(records, appendInfo);
             synchronized (lock) {
@@ -144,18 +132,18 @@ public class PartitionLog {
                         topicManager.getTopic(fullPartitionName);
                 if (topicFuture.isCompletedExceptionally()) {
                     topicFuture.exceptionally(e -> {
-                        exceptionConsumer.accept(e);
+                        appendFuture.completeExceptionally(e);
                         return Optional.empty();
                     });
-                    return;
+                    return appendFuture;
                 }
                 if (topicFuture.isDone() && !topicFuture.getNow(Optional.empty()).isPresent()) {
-                    errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
-                    return;
+                    appendFuture.completeExceptionally(Errors.NOT_LEADER_FOR_PARTITION.exception());
+                    return appendFuture;
                 }
                 final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
                     if (!persistentTopicOpt.isPresent()) {
-                        errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
+                        appendFuture.completeExceptionally(Errors.NOT_LEADER_FOR_PARTITION.exception());
                         return;
                     }
                     // TODO: validateMessagesAndAssignOffsets here.
@@ -180,10 +168,9 @@ public class PartitionLog {
                     publishMessages(persistentTopicOpt,
                             topicManager,
                             requestStats,
+                            appendFuture,
                             encodeResult,
                             topicPartition,
-                            offsetConsumer,
-                            errorsConsumer,
                             completeSendOperationForThrottlingConsumer);
                 };
 
@@ -194,23 +181,23 @@ public class PartitionLog {
                     pendingTopicFuturesMap
                             .computeIfAbsent(topicPartition, ignored ->
                                     new PendingTopicFutures(requestStats))
-                            .addListener(topicFuture, persistentTopicConsumer, exceptionConsumer);
+                            .addListener(topicFuture, persistentTopicConsumer, appendFuture);
                 }
             }
         } catch (Exception exception) {
             log.error("Failed to handle produce request for {}", topicPartition, exception);
-            exceptionConsumer.accept(exception);
+            appendFuture.completeExceptionally(exception);
         }
 
+        return appendFuture;
     }
 
     private void publishMessages(final Optional<PersistentTopic> persistentTopicOpt,
                                  final KafkaTopicManager topicManager,
                                  final RequestStats requestStats,
+                                 final CompletableFuture<Long> appendFuture,
                                  final EncodeResult encodeResult,
                                  final TopicPartition topicPartition,
-                                 final Consumer<Long> offsetConsumer,
-                                 final Consumer<Errors> errorsConsumer,
                                  final Consumer<Integer> completeSendOperationForThrottlingConsumer) {
         final MemoryRecords records = encodeResult.getRecords();
         final int numMessages = encodeResult.getNumMessages();
@@ -218,14 +205,14 @@ public class PartitionLog {
         if (!persistentTopicOpt.isPresent()) {
             encodeResult.recycle();
             // It will trigger a retry send of Kafka client
-            errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
+            appendFuture.completeExceptionally(Errors.NOT_LEADER_FOR_PARTITION.exception());
             return;
         }
         PersistentTopic persistentTopic = persistentTopicOpt.get();
         if (persistentTopic.isSystemTopic()) {
             encodeResult.recycle();
             log.error("Not support producing message to system topic: {}", persistentTopic);
-            errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
+            appendFuture.completeExceptionally(Errors.INVALID_TOPIC_EXCEPTION.exception());
             return;
         }
 
@@ -250,12 +237,12 @@ public class PartitionLog {
                 }
                 requestStats.getMessagePublishStats().registerSuccessfulEvent(
                         time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
-                offsetConsumer.accept(offset);
+                appendFuture.complete(offset);
             } else {
                 log.error("publishMessages for topic partition: {} failed when write.", fullPartitionName, e);
                 requestStats.getMessagePublishStats().registerFailedEvent(
                         time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
-                errorsConsumer.accept(Errors.KAFKA_STORAGE_ERROR);
+                appendFuture.completeExceptionally(Errors.KAFKA_STORAGE_ERROR.exception());
             }
         });
     }

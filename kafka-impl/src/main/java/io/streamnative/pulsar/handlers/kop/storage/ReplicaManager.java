@@ -103,35 +103,26 @@ public class ReplicaManager {
             }
         };
         entriesPerPartition.forEach((topicPartition, memoryRecords) -> {
-            final Consumer<Long> offsetConsumer = offset -> addPartitionResponse.accept(
-                    topicPartition,
-                    new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L));
-            final Consumer<Errors> errorsConsumer =
-                    errors -> addPartitionResponse
-                            .accept(topicPartition, new ProduceResponse.PartitionResponse(errors));
-            final Consumer<Throwable> exceptionConsumer =
-                    e -> addPartitionResponse
-                            .accept(topicPartition, new ProduceResponse.PartitionResponse(Errors.forException(e)));
-
             String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
             // reject appending to internal topics if it is not allowed
             if (!internalTopicsAllowed && KopTopic.isInternalTopic(fullPartitionName)) {
-                exceptionConsumer.accept(new InvalidTopicException(
-                        String.format("Cannot append to internal topic %s", topicPartition.topic())));
+                addPartitionResponse.accept(topicPartition, new ProduceResponse.PartitionResponse(
+                        Errors.forException(new InvalidTopicException(
+                                String.format("Cannot append to internal topic %s", topicPartition.topic())))));
             } else {
                 PartitionLog partitionLog = getPartitionLog(topicPartition, namespacePrefix);
-                partitionLog.appendRecords(memoryRecords,
-                        version,
-                        topicManager,
-                        requestStats,
-                        offsetConsumer,
-                        errorsConsumer,
-                        exceptionConsumer,
-                        startSendOperationForThrottlingConsumer,
-                        completeSendOperationForThrottlingConsumer,
-                        pendingTopicFuturesMap);
+                partitionLog.appendRecords(memoryRecords, version, topicManager, requestStats,
+                                startSendOperationForThrottlingConsumer,
+                                completeSendOperationForThrottlingConsumer,
+                                pendingTopicFuturesMap)
+                        .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
+                                new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
+                        .exceptionally(ex -> {
+                            addPartitionResponse.accept(topicPartition,
+                                    new ProduceResponse.PartitionResponse(Errors.forException(ex)));
+                            return null;
+                        });
             }
-
         });
         // delay produce
         if (timeout <= 0) {
