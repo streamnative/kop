@@ -46,6 +46,7 @@ import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
+import io.streamnative.pulsar.handlers.kop.storage.AppendRecordsContext;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
@@ -916,27 +917,30 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     resultFuture.complete(new ProduceResponse(unauthorizedTopicResponsesMap));
                     return;
                 }
-                CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> responseCallback =
-                        new CompletableFuture<>();
+                AppendRecordsContext appendRecordsContext = AppendRecordsContext.get(
+                        topicManager,
+                        requestStats,
+                        this::startSendOperationForThrottling,
+                        this::completeSendOperationForThrottling,
+                        pendingTopicFuturesMap);
                 getReplicaManager().appendRecords(
                         timeoutMs,
                         false,
                         produceHar.getRequest().version(),
-                        topicManager,
                         namespacePrefix,
                         authorizedRequestInfo,
-                        requestStats,
-                        this::startSendOperationForThrottling,
-                        this::completeSendOperationForThrottling,
-                        pendingTopicFuturesMap).thenAccept(response -> {
-                            Map<TopicPartition, PartitionResponse> mergedResponse = Maps.newHashMap();
-                            mergedResponse.putAll(response);
-                            mergedResponse.putAll(unauthorizedTopicResponsesMap);
-                            resultFuture.complete(new ProduceResponse(mergedResponse));
-                        }).exceptionally(ex -> {
-                            resultFuture.completeExceptionally(ex.getCause());
-                            return null;
-                        });
+                        appendRecordsContext
+                ).thenAccept(response -> {
+                    appendRecordsContext.recycle();
+                    Map<TopicPartition, PartitionResponse> mergedResponse = new HashMap<>();
+                    mergedResponse.putAll(response);
+                    mergedResponse.putAll(unauthorizedTopicResponsesMap);
+                    resultFuture.complete(new ProduceResponse(mergedResponse));
+                }).exceptionally(ex -> {
+                    appendRecordsContext.recycle();
+                    resultFuture.completeExceptionally(ex.getCause());
+                    return null;
+                });
             }
         };
 

@@ -27,7 +27,6 @@ import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -84,20 +83,9 @@ public class PartitionLog {
     }
 
     public CompletableFuture<Long> appendRecords(final MemoryRecords records,
-                              final short version,
-                              final KafkaTopicManager topicManager,
-                              final RequestStats requestStats,
-                              final Consumer<Integer> startSendOperationForThrottlingConsumer,
-                              final Consumer<Integer> completeSendOperationForThrottlingConsumer,
-                              final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
-        return append(records,
-                version,
-                topicManager,
-                requestStats,
-                false,
-                startSendOperationForThrottlingConsumer,
-                completeSendOperationForThrottlingConsumer,
-                pendingTopicFuturesMap);
+                                                 final short version,
+                                                 final AppendRecordsContext appendRecordsContext) {
+        return append(records, version, false, appendRecordsContext);
     }
 
     /**
@@ -111,14 +99,12 @@ public class PartitionLog {
      * @param ignoreRecordSize true to skip validation of record size.
      */
     private CompletableFuture<Long> append(final MemoryRecords records,
-                        final short version,
-                        final KafkaTopicManager topicManager,
-                        final RequestStats requestStats,
-                        final boolean ignoreRecordSize,
-                        final Consumer<Integer> startSendOperationForThrottlingConsumer,
-                        final Consumer<Integer> completeSendOperationForThrottlingConsumer,
-                        final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
+                                           final short version,
+                                           final boolean ignoreRecordSize,
+                                           final AppendRecordsContext appendRecordsContext) {
         CompletableFuture<Long> appendFuture = new CompletableFuture<>();
+        RequestStats requestStats = appendRecordsContext.getRequestStats();
+        KafkaTopicManager topicManager = appendRecordsContext.getTopicManager();
         final long beforeRecordsProcess = time.nanoseconds();
         try {
             final LogAppendInfo appendInfo =
@@ -159,26 +145,25 @@ public class PartitionLog {
                     encodeRequest.recycle();
                     requestStats.getProduceEncodeStats().registerSuccessfulEvent(
                             time.nanoseconds() - beforeRecordsProcess, TimeUnit.NANOSECONDS);
-                    startSendOperationForThrottlingConsumer.accept(encodeResult.getEncodedByteBuf().readableBytes());
+                    appendRecordsContext.getStartSendOperationForThrottling()
+                            .accept(encodeResult.getEncodedByteBuf().readableBytes());
                     if (log.isDebugEnabled()) {
                         log.debug("Produce messages for topic {} partition {}",
                                 topicPartition.topic(), topicPartition.partition());
                     }
 
                     publishMessages(persistentTopicOpt,
-                            topicManager,
-                            requestStats,
                             appendFuture,
                             encodeResult,
                             topicPartition,
-                            completeSendOperationForThrottlingConsumer);
+                            appendRecordsContext);
                 };
 
                 if (topicFuture.isDone()) {
                     persistentTopicConsumer.accept(topicFuture.getNow(Optional.empty()));
                 } else {
                     // topic is not available now
-                    pendingTopicFuturesMap
+                    appendRecordsContext.getPendingTopicFuturesMap()
                             .computeIfAbsent(topicPartition, ignored ->
                                     new PendingTopicFutures(requestStats))
                             .addListener(topicFuture, persistentTopicConsumer, appendFuture);
@@ -193,15 +178,14 @@ public class PartitionLog {
     }
 
     private void publishMessages(final Optional<PersistentTopic> persistentTopicOpt,
-                                 final KafkaTopicManager topicManager,
-                                 final RequestStats requestStats,
                                  final CompletableFuture<Long> appendFuture,
                                  final EncodeResult encodeResult,
                                  final TopicPartition topicPartition,
-                                 final Consumer<Integer> completeSendOperationForThrottlingConsumer) {
+                                 final AppendRecordsContext appendRecordsContext) {
         final MemoryRecords records = encodeResult.getRecords();
         final int numMessages = encodeResult.getNumMessages();
         final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
+        RequestStats requestStats = appendRecordsContext.getRequestStats();
         if (!persistentTopicOpt.isPresent()) {
             encodeResult.recycle();
             // It will trigger a retry send of Kafka client
@@ -216,7 +200,7 @@ public class PartitionLog {
             return;
         }
 
-        topicManager.registerProducerInPersistentTopic(fullPartitionName, persistentTopic);
+        appendRecordsContext.getTopicManager().registerProducerInPersistentTopic(fullPartitionName, persistentTopic);
 
         // collect metrics
         encodeResult.updateProducerStats(topicPartition, requestStats, namespacePrefix);
@@ -228,7 +212,7 @@ public class PartitionLog {
                 MessagePublishContext.get(offsetFuture, persistentTopic, numMessages, System.nanoTime()));
         final RecordBatch batch = records.batchIterator().next();
         offsetFuture.whenComplete((offset, e) -> {
-            completeSendOperationForThrottlingConsumer.accept(byteBuf.readableBytes());
+            appendRecordsContext.getCompleteSendOperationForThrottling().accept(byteBuf.readableBytes());
             encodeResult.recycle();
             if (e == null) {
                 if (batch.isTransactional()) {

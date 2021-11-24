@@ -15,9 +15,6 @@ package io.streamnative.pulsar.handlers.kop.storage;
 
 import io.streamnative.pulsar.handlers.kop.DelayedProduceAndFetch;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
-import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
-import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
-import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
@@ -30,7 +27,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
@@ -61,13 +57,9 @@ public class ReplicaManager {
             final long timeout,
             final boolean internalTopicsAllowed,
             final short version,
-            final KafkaTopicManager topicManager,
             final String namespacePrefix,
             final Map<TopicPartition, MemoryRecords> entriesPerPartition,
-            final RequestStats requestStats,
-            final Consumer<Integer> startSendOperationForThrottlingConsumer,
-            final Consumer<Integer> completeSendOperationForThrottlingConsumer,
-            final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
+            final AppendRecordsContext appendRecordsContext) {
         CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> completableFuture =
                 new CompletableFuture<>();
         final AtomicInteger topicPartitionNum = new AtomicInteger(entriesPerPartition.size());
@@ -111,10 +103,7 @@ public class ReplicaManager {
                                 String.format("Cannot append to internal topic %s", topicPartition.topic())))));
             } else {
                 PartitionLog partitionLog = getPartitionLog(topicPartition, namespacePrefix);
-                partitionLog.appendRecords(memoryRecords, version, topicManager, requestStats,
-                                startSendOperationForThrottlingConsumer,
-                                completeSendOperationForThrottlingConsumer,
-                                pendingTopicFuturesMap)
+                partitionLog.appendRecords(memoryRecords, version, appendRecordsContext)
                         .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
                                 new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
                         .exceptionally(ex -> {
