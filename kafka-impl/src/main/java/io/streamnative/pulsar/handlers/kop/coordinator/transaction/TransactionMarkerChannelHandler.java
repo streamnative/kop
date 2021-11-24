@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
 import static org.apache.kafka.common.protocol.Errors.REQUEST_TIMED_OUT;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
@@ -119,7 +120,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     public void channelInactive(ChannelHandlerContext channelHandlerContext) throws Exception {
         log.info("[TransactionMarkerChannelHandler] channelInactive, failing {} pending requests",
                 inFlightRequestMap.size());
-        inFlightRequestMap.forEach((k,v) -> {
+        inFlightRequestMap.forEach((k, v) -> {
             v.onError(new Exception("Connection to remote broker closed"));
         });
         inFlightRequestMap.clear();
@@ -144,7 +145,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     @Override
     public void exceptionCaught(ChannelHandlerContext channelHandlerContext, Throwable throwable) throws Exception {
         log.error("Transaction marker channel handler caught exception.", throwable);
-        inFlightRequestMap.forEach((k,v) -> {
+        inFlightRequestMap.forEach((k, v) -> {
             v.onError(new Exception("Transaction marker channel handler caught exception: " + throwable, throwable));
         });
         inFlightRequestMap.clear();
