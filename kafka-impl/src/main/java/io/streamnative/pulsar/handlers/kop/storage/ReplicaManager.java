@@ -44,16 +44,13 @@ import org.apache.kafka.common.utils.Time;
 public class ReplicaManager {
     private final PartitionLogManager logManager;
     private final DelayedOperationPurgatory<DelayedOperation> producePurgatory;
-    private final DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
 
     public ReplicaManager(KafkaServiceConfiguration config,
                           Time time,
                           Optional<TransactionCoordinator> transactionCoordinator,
-                          DelayedOperationPurgatory<DelayedOperation> producePurgatory,
-                          DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
+                          DelayedOperationPurgatory<DelayedOperation> producePurgatory) {
         this.logManager = new PartitionLogManager(config, transactionCoordinator, time);
         this.producePurgatory = producePurgatory;
-        this.fetchPurgatory = fetchPurgatory;
     }
 
     public PartitionLog getPartitionLog(TopicPartition topicPartition, String namespacePrefix) {

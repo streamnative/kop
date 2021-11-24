@@ -126,8 +126,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 return new ReplicaManager(kafkaConfig,
                         Time.SYSTEM,
                         transactionCoordinatorOptional,
-                        producePurgatory,
-                        fetchPurgatory);
+                        producePurgatory);
             } catch (Exception e) {
                 log.error("Failed to init ReplicaManager for tenant {}", tenant, e);
                 throw new IllegalStateException(e);

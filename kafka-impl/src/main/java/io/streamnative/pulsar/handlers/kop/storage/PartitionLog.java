@@ -271,25 +271,7 @@ public class PartitionLog {
         boolean readFirstMessage = false;
         boolean monotonic = true;
 
-        if (version >= 3) {
-            Iterator<MutableRecordBatch> iterator = records.batches().iterator();
-            if (!iterator.hasNext()) {
-                throw new InvalidRecordException("Produce requests with version " + version + " must have at least "
-                        + "one record batch");
-            }
-
-            MutableRecordBatch entry = iterator.next();
-            if (entry.magic() != RecordBatch.MAGIC_VALUE_V2) {
-                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
-                        + "contain record batches with magic version 2");
-            }
-
-            if (iterator.hasNext()) {
-                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
-                        + "contain exactly one record batch");
-            }
-        }
-
+        validateRecords(version, records);
         int validBytesCount = 0;
         for (RecordBatch batch : records.batches()) {
             if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2 && batch.baseOffset() != 0) {
@@ -349,6 +331,27 @@ public class PartitionLog {
             ByteBuffer validByteBuffer = records.buffer().duplicate();
             validByteBuffer.limit(validBytes);
             return MemoryRecords.readableRecords(validByteBuffer);
+        }
+    }
+
+    private static void validateRecords(short version, MemoryRecords records) {
+        if (version >= 3) {
+            Iterator<MutableRecordBatch> iterator = records.batches().iterator();
+            if (!iterator.hasNext()) {
+                throw new InvalidRecordException("Produce requests with version " + version + " must have at least "
+                        + "one record batch");
+            }
+
+            MutableRecordBatch entry = iterator.next();
+            if (entry.magic() != RecordBatch.MAGIC_VALUE_V2) {
+                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
+                        + "contain record batches with magic version 2");
+            }
+
+            if (iterator.hasNext()) {
+                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
+                        + "contain exactly one record batch");
+            }
         }
     }
 }
