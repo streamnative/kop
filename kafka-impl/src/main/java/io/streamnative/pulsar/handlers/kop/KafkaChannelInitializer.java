@@ -59,6 +59,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final SslContextFactory.Server sslContextFactory;
     @Getter
     private final StatsLogger statsLogger;
+    @Getter
+    private final KopEventManager kopEventManager;
 
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
@@ -70,7 +72,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    boolean enableTLS,
                                    EndPoint advertisedEndPoint,
                                    boolean skipMessagesWithoutIndex,
-                                   StatsLogger statsLogger) {
+                                   StatsLogger statsLogger,
+                                   KopEventManager kopEventManager) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -83,6 +86,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.advertisedEndPoint = advertisedEndPoint;
         this.skipMessagesWithoutIndex = skipMessagesWithoutIndex;
         this.statsLogger = statsLogger;
+        this.kopEventManager = kopEventManager;
         if (enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
         } else {
@@ -111,8 +115,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     public KafkaRequestHandler newCnx() throws Exception {
         return new KafkaRequestHandler(pulsarService, kafkaConfig,
                 tenantContextManager, kopBrokerLookupManager, adminManager,
-                producePurgatory, fetchPurgatory,
-                enableTls, advertisedEndPoint, skipMessagesWithoutIndex, statsLogger);
+                producePurgatory, fetchPurgatory, enableTls, advertisedEndPoint,
+                skipMessagesWithoutIndex, statsLogger, kopEventManager);
     }
 
     @VisibleForTesting
@@ -120,7 +124,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                       final StatsLogger statsLogger) throws Exception {
         return new KafkaRequestHandler(pulsarService, kafkaConfig,
                 tenantContextManager, kopBrokerLookupManager, adminManager,
-                producePurgatory, fetchPurgatory,
-                enableTls, advertisedEndPoint, skipMessagesWithoutIndex, statsLogger);
+                producePurgatory, fetchPurgatory, enableTls, advertisedEndPoint,
+                skipMessagesWithoutIndex, statsLogger, kopEventManager);
     }
 }

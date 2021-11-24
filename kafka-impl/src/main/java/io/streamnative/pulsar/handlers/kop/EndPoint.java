@@ -21,6 +21,7 @@ import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -102,13 +103,9 @@ public class EndPoint {
         return listenerArray;
     }
 
-    @VisibleForTesting
-    public static Map<String, EndPoint> parseListeners(final String listeners) {
-        return parseListeners(listeners, "");
-    }
-
-    private static Map<String, EndPoint> parseListeners(final String listeners,
+    private static Map<String, EndPoint> parseListeners(final KafkaServiceConfiguration kafkaConfig,
                                                         final Map<String, SecurityProtocol> protocolMap) {
+        final String listeners = kafkaConfig.getListeners();
         final Map<String, EndPoint> endPointMap = new HashMap<>();
         for (String listener : getListenerArray(listeners)) {
             final EndPoint endPoint = new EndPoint(listener, protocolMap);
@@ -119,12 +116,77 @@ public class EndPoint {
                 endPointMap.put(endPoint.listenerName, endPoint);
             }
         }
+        checkInterListener(kafkaConfig, protocolMap, endPointMap);
         return endPointMap;
     }
 
     @VisibleForTesting
-    public static Map<String, EndPoint> parseListeners(final String listeners, final String protocolMapString) {
-        return parseListeners(listeners, parseProtocolMap(protocolMapString));
+    public static Map<String, EndPoint> parseListeners(final KafkaServiceConfiguration kafkaConfig) {
+        return parseListeners(kafkaConfig, parseProtocolMap(kafkaConfig.getKafkaProtocolMap()));
+    }
+
+    private static void checkInterListener(final KafkaServiceConfiguration kafkaConfig,
+                                           final Map<String, SecurityProtocol> protocolMap,
+                                           final Map<String, EndPoint> endPointMap) {
+        final String interBrokerListenerName = kafkaConfig.getInterBrokerListenerName();
+        final String interBrokerSecurityProtocol =
+                kafkaConfig.getInterBrokerSecurityProtocol().toUpperCase(Locale.ROOT);
+
+        if (interBrokerListenerName != null) {
+            if (protocolMap != null && !protocolMap.isEmpty()
+                    && !protocolMap.containsKey(interBrokerListenerName)) {
+                throw new IllegalStateException("kafkaProtocolMap " + kafkaConfig.getKafkaProtocolMap()
+                        + " has not contained interBrokerListenerName " + interBrokerListenerName);
+            } else {
+                if (!endPointMap.containsKey(interBrokerListenerName)) {
+                    throw new IllegalStateException("kafkaListeners " + kafkaConfig.getKafkaListeners()
+                            + " has not contained interBrokerListenerName " + interBrokerSecurityProtocol);
+                } else {
+                    kafkaConfig.setInterBrokerSecurityProtocol(
+                            endPointMap.get(interBrokerListenerName).getSecurityProtocol().name());
+                }
+            }
+        } else {
+            boolean isMatched = false;
+            if (protocolMap != null && !protocolMap.isEmpty()) {
+                for (Map.Entry<String, SecurityProtocol> entry : protocolMap.entrySet()) {
+                    if (interBrokerSecurityProtocol.equals(entry.getValue().name())) {
+                        isMatched = true;
+                        kafkaConfig.setInterBrokerListenerName(entry.getKey());
+                        break;
+                    }
+                }
+                if (!isMatched) {
+                    throw new IllegalStateException("kafkaProtocolMap " + kafkaConfig.getKafkaProtocolMap()
+                            + " has not contained interBrokerSecurityProtocol " + interBrokerSecurityProtocol);
+                }
+            } else {
+                for (Map.Entry<String, EndPoint> entry : endPointMap.entrySet()) {
+                    if (interBrokerSecurityProtocol.equals(entry.getValue().getSecurityProtocol().name())) {
+                        isMatched = true;
+                        kafkaConfig.setInterBrokerListenerName(entry.getKey());
+                        break;
+                    }
+                }
+                if (!isMatched) {
+                    throw new IllegalStateException("kafkaListeners " + kafkaConfig.getKafkaListeners()
+                            + " has not contained interBrokerSecurityProtocol " + interBrokerListenerName);
+                }
+            }
+        }
+        checkInterMechanism(kafkaConfig);
+    }
+
+    private static void checkInterMechanism(final KafkaServiceConfiguration kafkaConfig) {
+        final String interBrokerSecurityProtocol = kafkaConfig.getInterBrokerSecurityProtocol();
+        if ((interBrokerSecurityProtocol.equals(SecurityProtocol.SASL_PLAINTEXT.name())
+                || interBrokerSecurityProtocol.equals(SecurityProtocol.SASL_SSL.name()))
+                && !kafkaConfig.getSaslAllowedMechanisms().contains(
+                        kafkaConfig.getSaslMechanismInterBrokerProtocol())) {
+            throw new IllegalStateException("saslAllowedMechanisms " + kafkaConfig.getSaslAllowedMechanisms()
+                    + " has not contained saslMechanismInterBrokerProtocol "
+                    + kafkaConfig.getSaslMechanismInterBrokerProtocol());
+        }
     }
 
     public static String findListener(final String listeners, final String name) {

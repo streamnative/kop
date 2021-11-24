@@ -31,6 +31,7 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 import org.apache.kafka.common.record.CompressionType;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.common.configuration.Category;
 import org.apache.pulsar.common.configuration.FieldContext;
@@ -207,6 +208,28 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
                     + "The format is the same as `kafkaListeners`.\n"
     )
     private String kafkaAdvertisedListeners;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Security protocol used to communicate between kop brokers. Valid values are: \n"
+                    + "[PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL], default: PLAINTEXT"
+                    + ". It is an error to set this and interBrokerListenerNameProp properties at the same time.\n"
+    )
+    private String interBrokerSecurityProtocol = SecurityProtocol.PLAINTEXT.toString();
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Name of listener used for communication between kop brokers. \n"
+                    + "If this is unset, the listener name is defined by interBrokerSecurityProtocol. \n"
+                    + "It is an error to set this and interBrokerSecurityProtocol properties at the same time.\n"
+    )
+    private String interBrokerListenerName;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "SASL mechanism used for inter-broker communication. Default is PLAIN.\n"
+    )
+    private String saslMechanismInterBrokerProtocol = "PLAIN";
 
     @FieldContext(
             category = CATEGORY_KOP,

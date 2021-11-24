@@ -557,7 +557,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 endPoint.isTlsEnabled(),
                 endPoint,
                 kafkaConfig.isSkipMessagesWithoutIndex(),
-                scopeStatsLogger);
+                scopeStatsLogger,
+                kopEventManager);
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
@@ -579,8 +580,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
                     ImmutableMap.builder();
 
-            EndPoint.parseListeners(kafkaConfig.getListeners(), kafkaConfig.getKafkaProtocolMap()).
-                    forEach((listener, endPoint) ->
+            EndPoint.parseListeners(kafkaConfig)
+                    .forEach((listener, endPoint) ->
                             builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint))
                     );
             channelInitializerMap = builder.build();

@@ -56,7 +56,6 @@ import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
-import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
@@ -229,6 +228,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final long resumeThresholdPendingBytes;
     private final AtomicLong pendingBytes = new AtomicLong(0);
     private volatile boolean autoReadDisabledPublishBufferLimiting = false;
+    private final KopEventManager kopEventManager;
 
     private String getCurrentTenant() {
         return getCurrentTenant(kafkaConfig.getKafkaMetadataTenant());
@@ -289,7 +289,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
                                boolean skipMessagesWithoutIndex,
-                               StatsLogger statsLogger) throws Exception {
+                               StatsLogger statsLogger,
+                               KopEventManager kopEventManager) throws Exception {
         super(statsLogger, kafkaConfig);
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
@@ -322,6 +323,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
         this.failedAuthenticationDelayMs = kafkaConfig.getFailedAuthenticationDelayMs();
+        this.kopEventManager = kopEventManager;
 
         // update alive channel count stats
         RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
@@ -2383,19 +2385,23 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             resultFuture.complete(KafkaResponseUtils.newDeleteTopics(Maps.newHashMap()));
             return;
         }
+        final boolean isNotFromClient = deleteTopics.getHeader().clientId().equals(AdminManager.INTER_ADMIN_CLIENT_ID);
         Map<String, Errors> deleteTopicsResponse = Maps.newConcurrentMap();
         AtomicInteger topicToDeleteCount = new AtomicInteger(topicsToDelete.size());
+        List<String> topicsSuccessfulDeletions = Lists.newArrayList();
         BiConsumer<String, Errors> completeOne = (topic, errors) -> {
             deleteTopicsResponse.put(topic, errors);
             if (errors == Errors.NONE) {
-                // create topic ZNode to trigger the coordinator DeleteTopicsEvent event
-                metadataStore.put(
-                        KopEventManager.getDeleteTopicsPath()
-                                + "/" + TopicNameUtils.getTopicNameWithUrlEncoded(topic),
-                        new byte[0],
-                        Optional.empty());
+                topicsSuccessfulDeletions.add(topic);
             }
             if (topicToDeleteCount.decrementAndGet() == 0) {
+                if (isNotFromClient) {
+                    kopEventManager.put(kopEventManager.getDeleteTopicEvent(
+                            false, topicsSuccessfulDeletions, advertisedEndPoint));
+                } else {
+                    kopEventManager.put(kopEventManager.getDeleteTopicEvent(
+                            true, topicsSuccessfulDeletions, advertisedEndPoint));
+                }
                 resultFuture.complete(KafkaResponseUtils.newDeleteTopics(deleteTopicsResponse));
             }
         };
@@ -2421,9 +2427,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             completeOne.accept(topic, Errors.TOPIC_AUTHORIZATION_FAILED);
                             return;
                         }
-                        adminManager.deleteTopic(fullTopicName,
-                                __ -> completeOne.accept(topic, Errors.NONE),
-                                __ -> completeOne.accept(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                        if (isNotFromClient) {
+                            completeOne.accept(topic, Errors.NONE);
+                        } else {
+                            adminManager.deleteTopic(fullTopicName,
+                                    __ -> completeOne.accept(topic, Errors.NONE),
+                                    __ -> completeOne.accept(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                        }
                     });
         });
     }

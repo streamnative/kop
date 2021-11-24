@@ -19,24 +19,6 @@ public interface ChildChangeHandler {
     void handleChildChange();
 }
 
-class DeletionTopicsHandler implements ChildChangeHandler {
-    private final KopEventManager kopEventManager;
-
-    public DeletionTopicsHandler(KopEventManager kopEventManager) {
-        this.kopEventManager = kopEventManager;
-    }
-
-    @Override
-    public String path() {
-        return KopEventManager.getBrokersChangePath();
-    }
-
-    @Override
-    public void handleChildChange() {
-        kopEventManager.put(kopEventManager.getDeleteTopicEvent());
-    }
-}
-
 class BrokersChangeHandler implements ChildChangeHandler {
     private final KopEventManager kopEventManager;
 

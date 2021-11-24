@@ -37,7 +37,6 @@ import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRes
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
-import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
@@ -771,39 +770,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         final MetadataResponse response = (MetadataResponse) responseFuture.get();
         assertEquals(response.topicMetadata().size(), 1);
         assertEquals(response.errors().size(), 0);
-    }
-
-    @Test(timeOut = 10000)
-    public void testDeleteTopicsAndCheckChildPath() throws Exception {
-        Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
-
-        @Cleanup
-        AdminClient kafkaAdmin = AdminClient.create(props);
-        Map<String, Integer> topicToNumPartitions = new HashMap<String, Integer>(){{
-            put("testCreateTopics-0", 1);
-            put("testCreateTopics-1", 3);
-            put("my-tenant/my-ns/testCreateTopics-2", 1);
-            put("persistent://my-tenant/my-ns/testCreateTopics-3", 5);
-        }};
-        // create
-        createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
-        verifyTopicsCreatedByPulsarAdmin(topicToNumPartitions);
-        // delete
-        deleteTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions.keySet());
-        verifyTopicsDeletedByPulsarAdmin(topicToNumPartitions);
-        // check deleted topics path
-        Set<String> deletedTopics = handler.getPulsarService()
-                .getBrokerService()
-                .getPulsar()
-                .getLocalMetadataStore()
-                .getChildren(KopEventManager.getDeleteTopicsPath())
-                .join()
-                .stream()
-                .map((TopicNameUtils::getTopicNameWithUrlDecoded))
-                .collect(Collectors.toSet());
-
-        assertEquals(topicToNumPartitions.keySet(), deletedTopics);
     }
 
     @Test

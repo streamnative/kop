@@ -19,6 +19,8 @@ import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
 import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.Collections;
 import java.util.Map;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.testng.annotations.Test;
@@ -71,8 +73,10 @@ public class EndPointTest {
 
     @Test
     public void testValidListeners() throws Exception {
+        final KafkaServiceConfiguration kafkaConfig = new KafkaServiceConfiguration();
+        kafkaConfig.setKafkaListeners("PLAINTEXT://localhost:9092,SSL://:9093");
         final Map<String, EndPoint> endPointMap =
-                EndPoint.parseListeners("PLAINTEXT://localhost:9092,SSL://:9093");
+                EndPoint.parseListeners(kafkaConfig);
         assertEquals(endPointMap.size(), 2);
 
         final EndPoint plainEndPoint = endPointMap.get("PLAINTEXT");
@@ -91,10 +95,13 @@ public class EndPointTest {
 
     @Test
     public void testValidMultiListeners() throws Exception {
+        final KafkaServiceConfiguration kafkaConfig = new KafkaServiceConfiguration();
         final String kafkaProtocolMap = "internal:PLAINTEXT,internal_ssl:SSL,external:PLAINTEXT,external_ssl:SSL";
         final String kafkaListeners = "internal://localhost:9092,internal_ssl://localhost:9093,"
                 + "external://externalhost:9094,external_ssl://externalhost:9095";
-        final Map<String, EndPoint> endPointMap = EndPoint.parseListeners(kafkaListeners, kafkaProtocolMap);
+        kafkaConfig.setKafkaListeners(kafkaListeners);
+        kafkaConfig.setKafkaProtocolMap(kafkaProtocolMap);
+        final Map<String, EndPoint> endPointMap = EndPoint.parseListeners(kafkaConfig);
         assertEquals(endPointMap.size(), 4);
 
         final EndPoint internal = endPointMap.get("internal");
@@ -124,17 +131,20 @@ public class EndPointTest {
 
     @Test
     public void testInvalidMultiListeners() throws Exception {
+        final KafkaServiceConfiguration kafkaConfig = new KafkaServiceConfiguration();
         try {
-            EndPoint.parseListeners("internal://localhost:9092,internal_ssl://localhost:9093",
-                    "internal:PLAINTEXT,internal:SSL,internal_ssl:SSL");
+            kafkaConfig.setKafkaListeners("internal://localhost:9092,internal_ssl://localhost:9093");
+            kafkaConfig.setKafkaProtocolMap("internal:PLAINTEXT,internal:SSL,internal_ssl:SSL");
+            EndPoint.parseListeners(kafkaConfig);
             fail();
         } catch (IllegalStateException e) {
             assertTrue(e.getMessage().contains(" has multiple listeners whose listenerName is internal"));
         }
 
         try {
-            EndPoint.parseListeners("internal://localhost:9092,internal_ssl://localhost:9093",
-                    "internal:PLAINTEXT,external:SSL");
+            kafkaConfig.setKafkaListeners("internal://localhost:9092,internal_ssl://localhost:9093");
+            kafkaConfig.setKafkaProtocolMap("internal:PLAINTEXT,external:SSL");
+            EndPoint.parseListeners(kafkaConfig);
             fail();
         } catch (IllegalStateException e) {
             assertTrue(e.getMessage().contains("internal_ssl is not set in kafkaProtocolMap"));
@@ -143,8 +153,10 @@ public class EndPointTest {
 
     @Test
     public void testRepeatedListeners() throws Exception {
+        final KafkaServiceConfiguration kafkaConfig = new KafkaServiceConfiguration();
         try {
-            EndPoint.parseListeners("PLAINTEXT://localhost:9092,SSL://:9093,SSL://localhost:9094");
+            kafkaConfig.setKafkaListeners("PLAINTEXT://localhost:9092,SSL://:9093,SSL://localhost:9094");
+            EndPoint.parseListeners(kafkaConfig);
             fail();
         } catch (IllegalStateException e) {
             assertTrue(e.getMessage().contains(" has multiple listeners whose listenerName is SSL"));
@@ -179,5 +191,151 @@ public class EndPointTest {
         final EndPoint endPoint = new EndPoint("PLAINTEXT://:9092", null);
         assertEquals(endPoint.getHostname(), InetAddress.getLocalHost().getCanonicalHostName());
         assertEquals(endPoint.getOriginalListener(), "PLAINTEXT://:9092");
+    }
+
+    @Test
+    public void testValidInterListeners() throws Exception {
+        final KafkaServiceConfiguration kafkaConfig1 = new KafkaServiceConfiguration();
+        kafkaConfig1.setKafkaListeners("kafka_internal://localhost:9092,kafka_external://:9093");
+        kafkaConfig1.setKafkaProtocolMap("kafka_internal:SASL_PLAINTEXT,kafka_external:SSL");
+        // check InterBrokerListenerName
+        kafkaConfig1.setInterBrokerListenerName("kafka_internal");
+        kafkaConfig1.setSaslAllowedMechanisms(Collections.singleton("PLAIN"));
+        Map<String, EndPoint> endPointMap =
+                EndPoint.parseListeners(kafkaConfig1);
+        assertEquals(endPointMap.size(), 2);
+
+        EndPoint plainEndPoint = endPointMap.get("kafka_internal");
+        assertNotNull(plainEndPoint);
+        assertEquals(plainEndPoint.getSecurityProtocol(), SecurityProtocol.SASL_PLAINTEXT);
+        assertEquals(plainEndPoint.getHostname(), "localhost");
+        assertEquals(plainEndPoint.getPort(), 9092);
+
+        EndPoint sslEndPoint = endPointMap.get("kafka_external");
+        String localhost = InetAddress.getLocalHost().getCanonicalHostName();
+        assertNotNull(sslEndPoint);
+        assertEquals(sslEndPoint.getSecurityProtocol(), SecurityProtocol.SSL);
+        assertEquals(sslEndPoint.getHostname(), localhost);
+        assertEquals(sslEndPoint.getPort(), 9093);
+
+        assertEquals(kafkaConfig1.getInterBrokerListenerName(), "kafka_internal");
+        assertEquals(kafkaConfig1.getInterBrokerSecurityProtocol(), SecurityProtocol.SASL_PLAINTEXT.name);
+
+        final KafkaServiceConfiguration kafkaConfig2 = new KafkaServiceConfiguration();
+        kafkaConfig2.setKafkaListeners("PLAINTEXT://localhost:9092,SSL://:9093");
+        // check InterBrokerSecurityProtocol
+        kafkaConfig2.setInterBrokerSecurityProtocol("PLAINTEXT");
+        endPointMap = EndPoint.parseListeners(kafkaConfig2);
+        assertEquals(endPointMap.size(), 2);
+
+        plainEndPoint = endPointMap.get("PLAINTEXT");
+        assertNotNull(plainEndPoint);
+        assertEquals(plainEndPoint.getSecurityProtocol(), SecurityProtocol.PLAINTEXT);
+        assertEquals(plainEndPoint.getHostname(), "localhost");
+        assertEquals(plainEndPoint.getPort(), 9092);
+
+        sslEndPoint = endPointMap.get("SSL");
+        localhost = InetAddress.getLocalHost().getCanonicalHostName();
+        assertNotNull(sslEndPoint);
+        assertEquals(sslEndPoint.getSecurityProtocol(), SecurityProtocol.SSL);
+        assertEquals(sslEndPoint.getHostname(), localhost);
+        assertEquals(sslEndPoint.getPort(), 9093);
+
+        assertEquals(kafkaConfig2.getInterBrokerListenerName(), "PLAINTEXT");
+        assertEquals(kafkaConfig2.getInterBrokerSecurityProtocol(), SecurityProtocol.PLAINTEXT.name);
+    }
+
+    @Test
+    public void testInvalidInterListeners() throws Exception {
+        final KafkaServiceConfiguration kafkaConfig1 = new KafkaServiceConfiguration();
+        try {
+            kafkaConfig1.setKafkaListeners("PLAINTEXT://localhost:9092,SSL://:9093");
+            kafkaConfig1.setInterBrokerListenerName("kafka_internal");
+            EndPoint.parseListeners(kafkaConfig1);
+            fail();
+        } catch (IllegalStateException e) {
+            assertTrue(e.getMessage().contains("kafkaListeners "));
+            assertTrue(e.getMessage().contains(" has not contained interBrokerListenerName"));
+        }
+
+        final KafkaServiceConfiguration kafkaConfig2 = new KafkaServiceConfiguration();
+        try {
+            kafkaConfig2.setKafkaListeners("kafka_external://localhost:9092,kafka_ssl://:9093");
+            kafkaConfig2.setKafkaProtocolMap("kafka_external:PLAINTEXT,kafka_ssl:SSL");
+            kafkaConfig2.setInterBrokerListenerName("kafka_internal");
+            EndPoint.parseListeners(kafkaConfig2);
+            fail();
+        } catch (IllegalStateException e) {
+            assertTrue(e.getMessage().contains("kafkaProtocolMap "));
+            assertTrue(e.getMessage().contains(" has not contained interBrokerListenerName"));
+        }
+
+        final KafkaServiceConfiguration kafkaConfig3 = new KafkaServiceConfiguration();
+        try {
+            kafkaConfig3.setKafkaListeners("SASL_PLAINTEXT://localhost:9092,SSL://:9093");
+            EndPoint.parseListeners(kafkaConfig3);
+            fail();
+        } catch (IllegalStateException e) {
+            assertTrue(e.getMessage().contains("kafkaListeners "));
+            assertTrue(e.getMessage().contains(" has not contained interBrokerSecurityProtocol"));
+        }
+
+        final KafkaServiceConfiguration kafkaConfig4 = new KafkaServiceConfiguration();
+        try {
+            kafkaConfig4.setKafkaListeners("kafka_external://localhost:9092,kafka_ssl://:9093");
+            kafkaConfig4.setKafkaProtocolMap("kafka_external:PLAINTEXT,kafka_ssl:SSL");
+            kafkaConfig4.setInterBrokerSecurityProtocol("SASL_PLAINTEXT");
+            EndPoint.parseListeners(kafkaConfig4);
+            fail();
+        } catch (IllegalStateException e) {
+            assertTrue(e.getMessage().contains("kafkaProtocolMap "));
+            assertTrue(e.getMessage().contains(" has not contained interBrokerSecurityProtocol"));
+        }
+    }
+
+    @Test
+    public void testValidMechanism() throws UnknownHostException {
+        final KafkaServiceConfiguration kafkaConfig = new KafkaServiceConfiguration();
+        kafkaConfig.setKafkaListeners("SASL_PLAINTEXT://localhost:9092,SSL://:9093");
+        kafkaConfig.setInterBrokerListenerName("SASL_PLAINTEXT");
+        // check inter broker sasl mechanism
+        kafkaConfig.setSaslAllowedMechanisms(Collections.singleton("PLAIN"));
+        kafkaConfig.setSaslMechanismInterBrokerProtocol("PLAIN");
+        final Map<String, EndPoint> endPointMap =
+                EndPoint.parseListeners(kafkaConfig);
+        assertEquals(endPointMap.size(), 2);
+
+        final EndPoint plainEndPoint = endPointMap.get("SASL_PLAINTEXT");
+        assertNotNull(plainEndPoint);
+        assertEquals(plainEndPoint.getSecurityProtocol(), SecurityProtocol.SASL_PLAINTEXT);
+        assertEquals(plainEndPoint.getHostname(), "localhost");
+        assertEquals(plainEndPoint.getPort(), 9092);
+
+        final EndPoint sslEndPoint = endPointMap.get("SSL");
+        final String localhost = InetAddress.getLocalHost().getCanonicalHostName();
+        assertNotNull(sslEndPoint);
+        assertEquals(sslEndPoint.getSecurityProtocol(), SecurityProtocol.SSL);
+        assertEquals(sslEndPoint.getHostname(), localhost);
+        assertEquals(sslEndPoint.getPort(), 9093);
+
+        assertEquals(kafkaConfig.getInterBrokerListenerName(), "SASL_PLAINTEXT");
+        assertEquals(kafkaConfig.getInterBrokerSecurityProtocol(), SecurityProtocol.SASL_PLAINTEXT.name);
+    }
+
+    @Test
+    public void testInvalidMechanism() {
+        final KafkaServiceConfiguration kafkaConfig = new KafkaServiceConfiguration();
+        try {
+            kafkaConfig.setKafkaListeners("SASL_PLAINTEXT://localhost:9092,SSL://:9093");
+            kafkaConfig.setInterBrokerListenerName("SASL_PLAINTEXT");
+            // check inter broker sasl mechanism
+            kafkaConfig.setSaslAllowedMechanisms(Collections.singleton("PLAIN"));
+            kafkaConfig.setSaslMechanismInterBrokerProtocol("GSSAPI");
+            EndPoint.parseListeners(kafkaConfig);
+            fail();
+        } catch (IllegalStateException e) {
+            assertTrue(e.getMessage().contains("saslAllowedMechanisms "));
+            assertTrue(e.getMessage().contains(" has not contained saslMechanismInterBrokerProtocol"));
+        }
     }
 }

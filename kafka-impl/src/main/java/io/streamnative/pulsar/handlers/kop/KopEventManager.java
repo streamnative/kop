@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.gson.JsonElement;
@@ -27,14 +28,14 @@ import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ShutdownableThread;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -44,8 +45,12 @@ import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.KafkaAdminClient;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.config.SaslConfigs;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.metadata.api.MetadataStore;
@@ -61,7 +66,6 @@ public class KopEventManager {
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant;
     private final AdminManager adminManager;
     private final KafkaServiceConfiguration kafkaConfig;
-    private final DeletionTopicsHandler deletionTopicsHandler;
     private final BrokersChangeHandler brokersChangeHandler;
     private final MetadataStore metadataStore;
     private KopEventManagerStats eventManagerStats;
@@ -79,7 +83,6 @@ public class KopEventManager {
                            KafkaServiceConfiguration kafkaConfig,
                            Map<String, GroupCoordinator> groupCoordinatorsByTenant) {
         this.adminManager = adminManager;
-        this.deletionTopicsHandler = new DeletionTopicsHandler(this);
         this.brokersChangeHandler = new BrokersChangeHandler(this);
         this.metadataStore = metadataStore;
         this.kafkaConfig = kafkaConfig;
@@ -156,8 +159,6 @@ public class KopEventManager {
     private void registerChildChangeHandler() {
         metadataStore.registerListener(this::handleChildChangePathNotification);
 
-        // Really register ChildChange notification.
-        metadataStore.getChildren(getDeleteTopicsPath());
         // init local kop brokers cache
         getBrokers(metadataStore.getChildren(getBrokersChangePath()).join(),
                 null, "", -1);
@@ -166,8 +167,6 @@ public class KopEventManager {
     private void handleChildChangePathNotification(Notification notification) {
         if (notification.getPath().equals(LoadManager.LOADBALANCE_BROKERS_ROOT)) {
             this.brokersChangeHandler.handleChildChange();
-        } else if (notification.getPath().equals(getDeleteTopicsPath())) {
-            this.deletionTopicsHandler.handleChildChange();
         }
     }
 
@@ -284,21 +283,38 @@ public class KopEventManager {
     }
 
     class DeleteTopicsEvent implements KopEvent {
+        private final boolean isFromClient;
+        private final List<String> topicsDeletions;
+        private final EndPoint advertisedEndPoint;
+
+        public DeleteTopicsEvent(boolean isFromClient,
+                                 List<String> topicsDeletions,
+                                 EndPoint advertisedEndPoint) {
+            this.isFromClient = isFromClient;
+            this.topicsDeletions = topicsDeletions;
+            this.advertisedEndPoint = advertisedEndPoint;
+        }
 
         @Override
         public void process(BiConsumer<String, Long> registerEventLatency,
                             long startProcessTime) {
             try {
-                List<String> topicsDeletions = metadataStore.getChildren(getDeleteTopicsPath()).get();
-
                 if (log.isDebugEnabled()) {
                     log.debug("Delete topics listener fired for topics {} to be deleted", topicsDeletions);
                 }
 
+                // send topicsSuccessfulDeletions to other kop brokers which DeleteTopicsRequest from client
+                if (isFromClient) {
+                    log.info("DeleteTopicsRequest from user client, "
+                            + "we need send {} to other kop brokers", topicsDeletions);
+                    sendDeleteTopics(topicsDeletions);
+                } else {
+                    log.info("DeleteTopicsRequest from other broker. Only clean up the information of "
+                            + "the local GroupMetadata for topics {}", topicsDeletions);
+                }
+
                 // Localize groupCoordinatorsByTenant to avoid multi-thread conflicts
                 final Map<String, GroupCoordinator> currentCoordinators = new HashMap<>(groupCoordinatorsByTenant);
-                final Set<String> deletedTopics = Sets.newConcurrentHashSet();
-                final AtomicInteger pendingCoordinators = new AtomicInteger(currentCoordinators.size());
 
                 currentCoordinators.forEach((tenant, groupCoordinator) -> {
                     if (groupCoordinator.isActive()) {
@@ -337,21 +353,41 @@ public class KopEventManager {
                         log.info("Tenant {} GroupMetadata delete topics {}, no matching topics {}",
                                 tenant, curDeletedTopics,
                                 Sets.difference(topicsFullNameDeletionsSets, curDeletedTopics));
-
-                        deletedTopics.addAll(curDeletedTopics);
-                    }
-                    if (pendingCoordinators.decrementAndGet() == 0) {
-                        deletedTopics.forEach(deletedTopic -> {
-                            metadataStore.delete(
-                                    getDeleteTopicsPath() + "/" + deletedTopic, Optional.of((long) -1));
-                        });
                     }
                 });
-            } catch (ExecutionException | InterruptedException e) {
-                log.error("DeleteTopicsEvent process have an error", e);
             } finally {
                 registerEventLatency.accept(name(), startProcessTime);
             }
+        }
+
+        private void sendDeleteTopics(List<String> topicsDeletions) {
+            Collection<? extends Node> interBrokers = adminManager.getBrokers(kafkaConfig.getInterBrokerListenerName());
+            List<AdminClient> adminClients = Lists.newArrayList();
+            try {
+                interBrokers.forEach(broker -> {
+                    if (!advertisedEndPoint.getHostname().equals(broker.host())
+                            || !(advertisedEndPoint.getPort() == broker.port())) {
+                        AdminClient adminClient = getKafkaAdminClient(broker.host(), broker.port());
+                        adminClients.add(adminClient);
+                        adminClient.deleteTopics(topicsDeletions);
+                        log.info("Send deleteTopics {} to kop broker {}:{}",
+                                topicsDeletions, broker.host(), broker.port());
+                    }
+                });
+            } finally {
+                adminClients.forEach(AdminClient::close);
+            }
+        }
+
+        private AdminClient getKafkaAdminClient(final String host, final int port) {
+            final Properties properties = new Properties();
+            properties.put(AdminClientConfig.CLIENT_ID_CONFIG, AdminManager.INTER_ADMIN_CLIENT_ID);
+            properties.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 30000);
+            properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
+            properties.put(AdminClientConfig.SECURITY_PROTOCOL_CONFIG, kafkaConfig.getInterBrokerSecurityProtocol());
+            properties.put(SaslConfigs.SASL_MECHANISM, kafkaConfig.getSaslMechanismInterBrokerProtocol());
+
+            return KafkaAdminClient.create(properties);
         }
 
         @Override
@@ -395,8 +431,10 @@ public class KopEventManager {
         }
     }
 
-    public KopEventWrapper getDeleteTopicEvent() {
-        return new KopEventWrapper(new DeleteTopicsEvent());
+    public KopEventWrapper getDeleteTopicEvent(boolean isFromClient,
+                                               List<String> topicsDeletions,
+                                               EndPoint advertisedEndPoint) {
+        return new KopEventWrapper(new DeleteTopicsEvent(isFromClient, topicsDeletions, advertisedEndPoint));
     }
 
     public KopEventWrapper getBrokersChangeEvent() {
@@ -405,14 +443,6 @@ public class KopEventManager {
 
     public KopEventWrapper getShutdownEventThread() {
         return new KopEventWrapper(new ShutdownEventThread());
-    }
-
-    public static String getKopPath() {
-        return "/kop";
-    }
-
-    public static String getDeleteTopicsPath() {
-        return getKopPath() + "/delete_topics";
     }
 
     public static String getBrokersChangePath() {
