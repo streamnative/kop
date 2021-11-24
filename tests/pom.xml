@@ -32,6 +32,7 @@
 
   <properties>
     <schema.registry.version>5.0.0</schema.registry.version>
+    <testcontainers.version>1.15.1</testcontainers.version>
   </properties>
 
   <!-- include the dependencies -->
