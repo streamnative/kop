@@ -140,7 +140,7 @@ public class EndPoint {
             } else {
                 if (!endPointMap.containsKey(interBrokerListenerName)) {
                     throw new IllegalStateException("kafkaListeners " + kafkaConfig.getKafkaListeners()
-                            + " has not contained interBrokerListenerName " + interBrokerSecurityProtocol);
+                            + " has not contained interBrokerListenerName " + interBrokerListenerName);
                 } else {
                     kafkaConfig.setInterBrokerSecurityProtocol(
                             endPointMap.get(interBrokerListenerName).getSecurityProtocol().name());
@@ -170,7 +170,7 @@ public class EndPoint {
                 }
                 if (!isMatched) {
                     throw new IllegalStateException("kafkaListeners " + kafkaConfig.getKafkaListeners()
-                            + " has not contained interBrokerSecurityProtocol " + interBrokerListenerName);
+                            + " has not contained interBrokerSecurityProtocol " + interBrokerSecurityProtocol);
                 }
             }
         }

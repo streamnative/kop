@@ -32,6 +32,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -366,7 +367,7 @@ public class KopEventManager {
             try {
                 interBrokers.forEach(broker -> {
                     if (!advertisedEndPoint.getHostname().equals(broker.host())
-                            || !(advertisedEndPoint.getPort() == broker.port())) {
+                            || advertisedEndPoint.getPort() != broker.port()) {
                         AdminClient adminClient = getKafkaAdminClient(broker.host(), broker.port());
                         adminClients.add(adminClient);
                         adminClient.deleteTopics(topicsDeletions);
@@ -385,7 +386,34 @@ public class KopEventManager {
             properties.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 30000);
             properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             properties.put(AdminClientConfig.SECURITY_PROTOCOL_CONFIG, kafkaConfig.getInterBrokerSecurityProtocol());
-            properties.put(SaslConfigs.SASL_MECHANISM, kafkaConfig.getSaslMechanismInterBrokerProtocol());
+            final String mechanismInterBrokerProtocol = kafkaConfig.getSaslMechanismInterBrokerProtocol();
+            properties.put(SaslConfigs.SASL_MECHANISM, mechanismInterBrokerProtocol);
+            final String interBrokerSecurityProtocol = kafkaConfig.getInterBrokerSecurityProtocol();
+            final String kafkaUser = kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace();
+            final String brokerClientAuthenticationParameters = kafkaConfig.getBrokerClientAuthenticationParameters();
+            final JsonObject jsonObject = parseJsonObject(brokerClientAuthenticationParameters);
+            final boolean hasSsl = interBrokerSecurityProtocol.toUpperCase(Locale.ROOT).contains("SSL");
+
+            if (hasSsl) {
+                properties.put("ssl.truststore.location", kafkaConfig.getKopSslKeystoreLocation());
+                properties.put("ssl.truststore.password", kafkaConfig.getKopSslKeystorePassword());
+                properties.put("ssl.endpoint.identification.algorithm", "");
+            }
+
+            if ("PLAIN".equals(mechanismInterBrokerProtocol.toUpperCase(Locale.ROOT)) && !hasSsl) {
+                final String plainAuth =
+                        String.format("username=\"%s\" password=\"%s\";", kafkaUser, jsonObject.get("token"));
+                properties.put("sasl.jaas.config",
+                        "org.apache.kafka.common.security.plain.PlainLoginModule required " + plainAuth);
+            } else if ("OAUTHBEARER".equals(mechanismInterBrokerProtocol.toUpperCase(Locale.ROOT))) {
+                properties.put("sasl.login.callback.handler.class",
+                        "io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler");
+                final String oauth =
+                        String.format("oauth.issuer.url=\"%s\" oauth.credentials.url=\"%s\" oauth.audience=\"%s\";",
+                        jsonObject.get("issuerUrl"), jsonObject.get("privateKey"), jsonObject.get("audience"));
+                properties.put("sasl.jaas.config",
+                        "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required " + oauth);
+            }
 
             return KafkaAdminClient.create(properties);
         }
