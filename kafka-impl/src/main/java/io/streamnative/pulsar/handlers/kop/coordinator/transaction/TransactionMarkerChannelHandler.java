@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -39,6 +40,12 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     private final ConcurrentLongHashMap<InFlightRequest> inFlightRequestMap = new ConcurrentLongHashMap<>();
 
     private final AtomicInteger correlationId = new AtomicInteger(0);
+    private final TransactionMarkerChannelManager transactionMarkerChannelManager;
+
+    public TransactionMarkerChannelHandler(
+            TransactionMarkerChannelManager transactionMarkerChannelManager) {
+        this.transactionMarkerChannelManager = transactionMarkerChannelManager;
+    }
 
     public void enqueueRequest(WriteTxnMarkersRequest request,
                                TransactionMarkerRequestCompletionHandler requestCompletionHandler) {
@@ -75,6 +82,12 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
             requestCompletionHandler.onComplete(response);
         }
 
+        public void onError(Throwable error) {
+            WriteTxnMarkersResponse response =
+                    (WriteTxnMarkersResponse) request.getErrorResponse(error);
+            requestCompletionHandler.onComplete(response);
+        }
+
     }
 
     @Override
@@ -88,7 +101,15 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     @Override
     public void channelInactive(ChannelHandlerContext channelHandlerContext) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] channelInactive");
+        log.info("[TransactionMarkerChannelHandler] channelInactive, failing {} pending requests",
+                inFlightRequestMap.size());
+        inFlightRequestMap.forEach( (k,v) ->{
+            v.onError(new Exception("Connection to remote broker closed"));
+        });
+        inFlightRequestMap.clear();
+        transactionMarkerChannelManager.channelFailed((InetSocketAddress) channelHandlerContext
+                .channel()
+                .remoteAddress(), this);
         super.channelInactive(channelHandlerContext);
     }
 
@@ -96,7 +117,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     public void channelRead(ChannelHandlerContext channelHandlerContext, Object o) throws Exception {
         ByteBuffer nio = ((ByteBuf) o).nioBuffer();
         ResponseHeader responseHeader = ResponseHeader.parse(nio);
-        InFlightRequest inFlightRequest = inFlightRequestMap.get(responseHeader.correlationId());
+        InFlightRequest inFlightRequest = inFlightRequestMap.remove(responseHeader.correlationId());
         if (inFlightRequest == null) {
             log.error("Miss the inFlightRequest with correlationId {}.", responseHeader.correlationId());
             return;
@@ -107,7 +128,11 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     @Override
     public void exceptionCaught(ChannelHandlerContext channelHandlerContext, Throwable throwable) throws Exception {
         log.error("Transaction marker channel handler caught exception.", throwable);
-        super.exceptionCaught(channelHandlerContext, throwable);
+        inFlightRequestMap.forEach( (k,v) ->{
+            v.onError(new Exception("Transaction marker channel handler caught exception: " + throwable, throwable));
+        });
+        inFlightRequestMap.clear();
+        channelHandlerContext.close();
     }
 
 }

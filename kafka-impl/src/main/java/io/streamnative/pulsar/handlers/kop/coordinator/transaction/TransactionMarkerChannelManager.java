@@ -147,7 +147,7 @@ public class TransactionMarkerChannelManager {
         bootstrap = new Bootstrap();
         bootstrap.group(eventLoopGroup);
         bootstrap.channel(NioSocketChannel.class);
-        bootstrap.handler(new TransactionMarkerChannelInitializer(kafkaConfig, enableTls));
+        bootstrap.handler(new TransactionMarkerChannelInitializer(kafkaConfig, enableTls, this));
 
         Thread thread = new Thread(() -> {
             while (!closed) {
@@ -175,6 +175,21 @@ public class TransactionMarkerChannelManager {
                         return null;
                     });
             return handlerFuture;
+        });
+    }
+
+    public void channelFailed(InetSocketAddress socketAddress, TransactionMarkerChannelHandler handler) {
+        log.error("channelFailed {} {}", socketAddress, handler);
+        handlerMap.computeIfPresent(socketAddress, (kek, value) -> {
+           if (value.isCompletedExceptionally() || value.isCancelled()) {
+               return null;
+           }
+           final TransactionMarkerChannelHandler currentValue = value.getNow(null);
+           if (currentValue == handler) {
+               // remove the entry only if it is the expected value
+               return null;
+           }
+           return value;
         });
     }
 
