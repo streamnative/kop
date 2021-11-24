@@ -17,11 +17,10 @@ import io.netty.util.Recycler;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
-import lombok.Getter;
-import org.apache.kafka.common.TopicPartition;
-
 import java.util.Map;
 import java.util.function.Consumer;
+import lombok.Getter;
+import org.apache.kafka.common.TopicPartition;
 
 @Getter
 public class AppendRecordsContext {
