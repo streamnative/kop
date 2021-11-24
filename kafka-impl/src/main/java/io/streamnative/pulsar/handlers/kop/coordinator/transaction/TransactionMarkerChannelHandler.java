@@ -13,16 +13,22 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import static org.apache.kafka.common.protocol.Errors.REQUEST_TIMED_OUT;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.KopRequestUtils;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
@@ -83,8 +89,18 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
         }
 
         public void onError(Throwable error) {
-            WriteTxnMarkersResponse response =
-                    (WriteTxnMarkersResponse) request.getErrorResponse(error);
+            final List<WriteTxnMarkersRequest.TxnMarkerEntry> markers = request.markers();
+            Map<Long, Map<TopicPartition, Errors>> errors = new HashMap<>(markers.size());
+            for (WriteTxnMarkersRequest.TxnMarkerEntry entry : markers) {
+                Map<TopicPartition, Errors> errorsPerPartition = new HashMap<>(entry.partitions().size());
+                for (TopicPartition partition : entry.partitions()) {
+                    errorsPerPartition.put(partition, REQUEST_TIMED_OUT);
+                    log.error("Handle error " + error
+                            + " as  REQUEST_TIMED_OUT for " + partition + " producer " + entry.producerId());
+                }
+                errors.put(entry.producerId(), errorsPerPartition);
+            }
+            WriteTxnMarkersResponse response = new WriteTxnMarkersResponse(errors);
             requestCompletionHandler.onComplete(response);
         }
 
@@ -103,7 +119,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     public void channelInactive(ChannelHandlerContext channelHandlerContext) throws Exception {
         log.info("[TransactionMarkerChannelHandler] channelInactive, failing {} pending requests",
                 inFlightRequestMap.size());
-        inFlightRequestMap.forEach( (k,v) ->{
+        inFlightRequestMap.forEach((k,v) -> {
             v.onError(new Exception("Connection to remote broker closed"));
         });
         inFlightRequestMap.clear();
@@ -128,7 +144,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     @Override
     public void exceptionCaught(ChannelHandlerContext channelHandlerContext, Throwable throwable) throws Exception {
         log.error("Transaction marker channel handler caught exception.", throwable);
-        inFlightRequestMap.forEach( (k,v) ->{
+        inFlightRequestMap.forEach((k,v) -> {
             v.onError(new Exception("Transaction marker channel handler caught exception: " + throwable, throwable));
         });
         inFlightRequestMap.clear();
