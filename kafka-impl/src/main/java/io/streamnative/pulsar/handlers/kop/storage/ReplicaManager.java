@@ -57,7 +57,7 @@ public class ReplicaManager {
         return logManager.getLog(topicPartition, namespacePrefix);
     }
 
-    public void appendRecords(
+    public CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> appendRecords(
             final long timeout,
             final boolean internalTopicsAllowed,
             final short version,
@@ -67,15 +67,15 @@ public class ReplicaManager {
             final RequestStats requestStats,
             final Consumer<Integer> startSendOperationForThrottlingConsumer,
             final Consumer<Integer> completeSendOperationForThrottlingConsumer,
-            final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap,
-            final CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> responseCallback) {
-
+            final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
+        CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> completableFuture =
+                new CompletableFuture<>();
         final AtomicInteger topicPartitionNum = new AtomicInteger(entriesPerPartition.size());
         final Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap = new ConcurrentHashMap<>();
 
         Runnable complete = () -> {
             topicPartitionNum.set(0);
-            if (responseCallback.isDone()) {
+            if (completableFuture.isDone()) {
                 // It may be triggered again in DelayedProduceAndFetch
                 return;
             }
@@ -88,7 +88,7 @@ public class ReplicaManager {
             if (log.isDebugEnabled()) {
                 log.debug("Complete handle appendRecords.");
             }
-            responseCallback.complete(responseMap);
+            completableFuture.complete(responseMap);
         };
         BiConsumer<TopicPartition, ProduceResponse.PartitionResponse> addPartitionResponse =
                 (topicPartition, response) -> {
@@ -119,7 +119,7 @@ public class ReplicaManager {
                                 new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
                         .exceptionally(ex -> {
                             addPartitionResponse.accept(topicPartition,
-                                    new ProduceResponse.PartitionResponse(Errors.forException(ex)));
+                                    new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
                             return null;
                         });
             }
@@ -134,7 +134,7 @@ public class ReplicaManager {
             DelayedProduceAndFetch delayedProduce = new DelayedProduceAndFetch(timeout, topicPartitionNum, complete);
             producePurgatory.tryCompleteElseWatch(delayedProduce, delayedCreateKeys);
         }
-
+        return completableFuture;
     }
 
 }

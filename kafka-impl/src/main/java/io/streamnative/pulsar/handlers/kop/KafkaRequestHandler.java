@@ -928,18 +928,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         requestStats,
                         this::startSendOperationForThrottling,
                         this::completeSendOperationForThrottling,
-                        pendingTopicFuturesMap,
-                        responseCallback
-                );
-                responseCallback.thenAccept(response -> {
-                    Map<TopicPartition, PartitionResponse> mergedResponse = Maps.newHashMap();
-                    mergedResponse.putAll(response);
-                    mergedResponse.putAll(unauthorizedTopicResponsesMap);
-                    resultFuture.complete(new ProduceResponse(mergedResponse));
-                }).exceptionally(ex -> {
-                    resultFuture.completeExceptionally(ex);
-                    return null;
-                });
+                        pendingTopicFuturesMap).thenAccept(response -> {
+                            Map<TopicPartition, PartitionResponse> mergedResponse = Maps.newHashMap();
+                            mergedResponse.putAll(response);
+                            mergedResponse.putAll(unauthorizedTopicResponsesMap);
+                            resultFuture.complete(new ProduceResponse(mergedResponse));
+                        }).exceptionally(ex -> {
+                            resultFuture.completeExceptionally(ex.getCause());
+                            return null;
+                        });
             }
         };
 
