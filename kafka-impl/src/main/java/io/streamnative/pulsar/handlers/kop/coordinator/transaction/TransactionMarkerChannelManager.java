@@ -258,13 +258,20 @@ public class TransactionMarkerChannelManager {
             CompletableFuture<Void> addFuture = new CompletableFuture<>();
             addressFutureList.add(addFuture);
             addressFuture.whenComplete((address, throwable) -> {
-                if (throwable != null) {
+                if (throwable != null)  {
                     log.warn("Failed to find broker for topic partition {}", topicPartition, throwable);
                     unknownBrokerTopicList.add(topicPartition);
                     addFuture.completeExceptionally(throwable);
                     return;
                 }
-                addressAndPartitionMap.compute(address.orElse(null), (__, set) -> {
+                if (!address.isPresent()) {
+                    log.warn("No address for broker for topic partition {}", topicPartition);
+                    unknownBrokerTopicList.add(topicPartition);
+                    addFuture.completeExceptionally(new Exception("no address for owner of " + topicPartition));
+                    return;
+                }
+                log.info("Leader for {} is {}", address.get());
+                addressAndPartitionMap.compute(address.get(), (__, set) -> {
                     if (set == null) {
                         set = new ArrayList<>();
                     }

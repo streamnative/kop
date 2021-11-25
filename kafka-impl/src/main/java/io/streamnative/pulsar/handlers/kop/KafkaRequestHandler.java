@@ -2314,13 +2314,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 completableFuture.whenComplete((offset, throwable) -> {
                     if (throwable != null) {
                         log.error("Failed to write txn marker for partition {}", topicPartition, throwable);
-                        partitionErrorsMap.put(topicPartition, Errors.forException(throwable));
+                        partitionErrorsMap.put(topicPartition, Errors.KAFKA_STORAGE_ERROR);
                         resultFuture.complete(null);
                         return;
                     }
                     if (offset == null) {
-                        log.error("Failed to write txn marker for partition {} no offset - LEADER_NOT_AVAILABLE",
-                                topicPartition);
+                        // this case happens when the broker receives a request for
+                        // a topic that is being unloaded
+                        log.error("Failed to write txn marker for partition {} no offset (topic not owned) "
+                                        + "- send LEADER_NOT_AVAILABLE", topicPartition);
                         partitionErrorsMap.put(topicPartition, Errors.LEADER_NOT_AVAILABLE);
                         resultFuture.complete(null);
                         return;
@@ -2583,6 +2585,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String namespacePrefix = currentNamespacePrefix();
         String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
         TopicName topicName = TopicName.get(fullPartitionName);
+        log.info("writeTxnMarker {} {} {} {}", fullPartitionName, transactionResult, producerId, producerEpoch);
         topicManager.getTopic(topicName.toString())
                 .whenComplete((persistentTopicOpt, throwable) -> {
                     if (throwable != null) {
@@ -2590,6 +2593,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         return;
                     }
                     if (!persistentTopicOpt.isPresent()) {
+                        log.info("Topic {} is not owned by this Broker", fullPartitionName);
                         offsetFuture.complete(null);
                         return;
                     }
