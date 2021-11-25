@@ -162,7 +162,7 @@ public class TransactionMarkerChannelManager {
                     log.info("ignore {}", e);
                 }
             }
-        }, "kop-transaction-channel-manager-"+namespacePrefix);
+        }, "kop-transaction-channel-manager-" + namespacePrefix);
         thread.setDaemon(true);
         thread.start();
     }
@@ -249,7 +249,7 @@ public class TransactionMarkerChannelManager {
         Map<InetSocketAddress, List<TopicPartition>> addressAndPartitionMap = new ConcurrentHashMap<>();
         List<TopicPartition> unknownBrokerTopicList = new ArrayList<>();
 
-        List<CompletableFuture<Void>> addressFutureList = new ArrayList<>();
+        List<CompletableFuture<Void>> addressFutureList = new ArrayList<>();TransactionMarkerChannelManager
         for (TopicPartition topicPartition : topicPartitions) {
             String pulsarTopic = new KopTopic(topicPartition.topic(), namespacePrefix)
                     .getPartitionName(topicPartition.partition());
