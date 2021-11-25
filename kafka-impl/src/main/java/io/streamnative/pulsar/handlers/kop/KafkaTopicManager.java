@@ -17,7 +17,6 @@ import java.net.SocketAddress;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -304,10 +303,7 @@ public class KafkaTopicManager {
         }
 
         // 2. Remove Producer from PersistentTopic's internal cache
-        try {
-            // It's safe to wait until the future is completed because it's completed when
-            // `BrokerService#getTopicIfExists` completed and it won't block too long.
-            final Optional<PersistentTopic> persistentTopic = topicFuture.get();
+        topicFuture.thenAccept(persistentTopic -> {
             if (producer != null && persistentTopic.isPresent()) {
                 try {
                     persistentTopic.get().removeProducer(producer);
@@ -316,9 +312,7 @@ public class KafkaTopicManager {
                             topicName, (producer.getTopic() == null) ? "null" : producer.getTopic().getName());
                 }
             }
-        } catch (InterruptedException | ExecutionException e) {
-            log.error("Failed to get topic '{}' in removeTopicAndReferenceProducer", topicName, e);
-        }
+        });
     }
 
     public static void deReference(String topicName) {
