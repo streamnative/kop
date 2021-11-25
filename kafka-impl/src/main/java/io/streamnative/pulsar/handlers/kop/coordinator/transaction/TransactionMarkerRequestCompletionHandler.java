@@ -154,6 +154,8 @@ public class TransactionMarkerRequestCompletionHandler {
                         case NOT_ENOUGH_REPLICAS:
                         case NOT_ENOUGH_REPLICAS_AFTER_APPEND:
                         case REQUEST_TIMED_OUT:
+                        case LEADER_NOT_AVAILABLE:
+                        case NOT_LEADER_FOR_PARTITION:
                         case KAFKA_STORAGE_ERROR: // these are retriable errors
                             log.info("Sending {}'s transaction marker for partition {} has failed with error {}, "
                                     + "retrying with current coordinator epoch {}", transactionalId, topicPartition,
