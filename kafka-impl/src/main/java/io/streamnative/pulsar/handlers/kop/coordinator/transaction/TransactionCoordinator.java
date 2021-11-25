@@ -38,6 +38,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -78,7 +79,7 @@ public class TransactionCoordinator {
     // map from topic to the map from initial offset to producerId
     private final Map<TopicName, NavigableMap<Long, Long>> activeOffsetPidMap = new HashMap<>();
     private final Map<TopicName, ConcurrentHashMap<Long, Long>> activePidOffsetMap = new HashMap<>();
-    private final List<AbortedIndexEntry> abortedIndexList = new ArrayList<>();
+    private final List<AbortedIndexEntry> abortedIndexList = new CopyOnWriteArrayList<>();
 
     private final ScheduledExecutorService scheduler;
 
@@ -152,7 +153,7 @@ public class TransactionCoordinator {
      * @param partition The partition that we are now leading
      */
     public CompletableFuture<Void> handleTxnImmigration(int partition) {
-        log.info("Elected as the txn coordinator for partition {}.", partition);
+        log.info("Elected as the txn coordinator for partition {} for {}.", partition, namespacePrefix);
         // The operations performed during immigration must be resilient to any previous errors we saw or partial state
         // we left off during the unloading phase. Ensure we remove all associated state for this partition before we
         // continue loading it.
@@ -172,7 +173,7 @@ public class TransactionCoordinator {
      * @param partition The partition that we are no longer leading
      */
     public void handleTxnEmigration(int partition) {
-        log.info("Resigned as the txn coordinator for partition {}.", partition);
+        log.info("Resigned as the txn coordinator for partition {} for {}.", partition, namespacePrefix);
         txnManager.removeTransactionsForTxnTopicPartition(partition);
         transactionMarkerChannelManager.removeMarkersForTxnTopicPartition(partition);
     }

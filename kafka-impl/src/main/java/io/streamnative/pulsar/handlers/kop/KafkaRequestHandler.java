@@ -2296,7 +2296,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         WriteTxnMarkersRequest request = (WriteTxnMarkersRequest) kafkaHeaderAndRequest.getRequest();
-        Map<Long, Map<TopicPartition, Errors>> resultMap = new HashMap<>();
+        Map<Long, Map<TopicPartition, Errors>> resultMap = new ConcurrentHashMap<>();
         List<CompletableFuture<Void>> resultFutureList = new ArrayList<>();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         String namespacePrefix = currentNamespacePrefix();
@@ -2315,10 +2315,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     if (throwable != null) {
                         log.error("Failed to write txn marker for partition {}", topicPartition, throwable);
                         partitionErrorsMap.put(topicPartition, Errors.forException(throwable));
+                        resultFuture.complete(null);
                         return;
                     }
                     if (offset == null) {
+                        log.error("Failed to write txn marker for partition {} no offset - LEADER_NOT_AVAILABLE",
+                                topicPartition);
                         partitionErrorsMap.put(topicPartition, Errors.LEADER_NOT_AVAILABLE);
+                        resultFuture.complete(null);
                         return;
                     }
 
@@ -2326,7 +2330,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     if (TopicName.get(topicPartition.topic()).getLocalName().equals(GROUP_METADATA_TOPIC_NAME)) {
                         handleGroupFuture = getGroupCoordinator().scheduleHandleTxnCompletion(
                                 txnMarkerEntry.producerId(),
-                                Lists.newArrayList(topicPartition).stream(),
+                                Collections.singleton(topicPartition.partition()),
                                 txnMarkerEntry.transactionResult());
                     } else {
                         handleGroupFuture = CompletableFuture.completedFuture(null);
@@ -2337,7 +2341,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             log.error("Failed to handle group end txn for partition {}",
                                     topicPartition, handleGroupThrowable);
                             partitionErrorsMap.put(topicPartition, Errors.forException(handleGroupThrowable));
-                            resultFuture.completeExceptionally(handleGroupThrowable);
+                            resultFuture.complete(null);
                             return;
                         }
                         String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
@@ -2365,8 +2369,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         FutureUtil.waitForAll(resultFutureList).whenComplete((ignored, throwable) -> {
             if (throwable != null) {
-                log.error("Write txn mark fail!", throwable);
-                response.complete(new WriteTxnMarkersResponse(resultMap));
+                log.error("Write txn mark fail with internal error!", throwable);
+                response.complete(request.getErrorResponse(throwable));
                 return;
             }
             response.complete(new WriteTxnMarkersResponse(resultMap));

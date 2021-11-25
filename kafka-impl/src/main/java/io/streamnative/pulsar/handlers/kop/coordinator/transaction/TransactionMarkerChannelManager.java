@@ -33,11 +33,13 @@ import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
@@ -76,6 +78,7 @@ public class TransactionMarkerChannelManager {
     private final String namespacePrefix;
 
     @AllArgsConstructor
+    @ToString
     private static class PendingCompleteTxn {
         private final String transactionalId;
         private final Integer coordinatorEpoch;
@@ -88,6 +91,7 @@ public class TransactionMarkerChannelManager {
      */
     @Data
     @AllArgsConstructor
+    @ToString
     protected static class TxnIdAndMarkerEntry {
         private final String transactionalId;
         private final TxnMarkerEntry entry;
@@ -155,15 +159,18 @@ public class TransactionMarkerChannelManager {
                 try {
                     Thread.sleep(1);
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    log.info("ignore {}", e);
                 }
             }
-        }, "kop-transaction-channel-manager");
+        }, "kop-transaction-channel-manager-"+namespacePrefix);
         thread.setDaemon(true);
         thread.start();
     }
 
     public CompletableFuture<TransactionMarkerChannelHandler> getChannel(InetSocketAddress socketAddress) {
+        if (closed) {
+            return FutureUtil.failedFuture(new Exception("This TransactionMarkerChannelManager is closed"));
+        }
         return handlerMap.computeIfAbsent(socketAddress, address -> {
             CompletableFuture<TransactionMarkerChannelHandler> handlerFuture = new CompletableFuture<>();
             ChannelFutures.toCompletableFuture(bootstrap.connect(socketAddress))
@@ -186,6 +193,7 @@ public class TransactionMarkerChannelManager {
            }
            final TransactionMarkerChannelHandler currentValue = value.getNow(null);
            if (currentValue == handler) {
+               log.error("channelFailed removing {} {}", socketAddress, handler);
                // remove the entry only if it is the expected value
                return null;
            }
@@ -363,6 +371,7 @@ public class TransactionMarkerChannelManager {
                     default:
                         String errorMsg = String.format("Unexpected error %s while appending to transaction log for %s",
                                 errors.exceptionName(), txnLogAppend.transactionalId);
+                        log.error(errorMsg);
                         throw new IllegalStateException(errorMsg);
                 }
             }
@@ -400,6 +409,7 @@ public class TransactionMarkerChannelManager {
             if (log.isDebugEnabled()) {
                 log.debug("Retry appending {} transaction log", pendingCompleteTxn);
             }
+            log.info("Retry appending {} transaction log", pendingCompleteTxn);
             tryAppendToLog(pendingCompleteTxn);
         }
     }
@@ -443,6 +453,14 @@ public class TransactionMarkerChannelManager {
 
     public void close() {
         this.closed = true;
+        handlerMap.forEach((address, handler) -> {
+            try {
+                final TransactionMarkerChannelHandler transactionMarkerChannelHandler = handler.get();
+                transactionMarkerChannelHandler.close();
+            } catch (ExecutionException | InterruptedException err) {
+                log.info("Cannot close TransactionMarkerChannelHandler for {}", address, err);
+            }
+        });
     }
 
 }

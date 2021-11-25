@@ -787,14 +787,13 @@ public class GroupCoordinator {
 
     public CompletableFuture<Void> scheduleHandleTxnCompletion(
         long producerId,
-        Stream<TopicPartition> offsetsPartitions,
+        Set<Integer> offsetsPartitions,
         TransactionResult transactionResult
     ) {
         boolean isCommit = TransactionResult.COMMIT == transactionResult;
         return groupManager.scheduleHandleTxnCompletion(
             producerId,
-            offsetsPartitions.map(TopicPartition::partition)
-                .collect(Collectors.toSet()),
+            offsetsPartitions,
             isCommit
         );
     }

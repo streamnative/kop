@@ -56,11 +56,15 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     public void enqueueRequest(WriteTxnMarkersRequest request,
                                TransactionMarkerRequestCompletionHandler requestCompletionHandler) {
+        InFlightRequest inFlightRequest = new InFlightRequest(request, requestCompletionHandler);
         this.cnx.thenAccept(cnxFuture -> {
-            InFlightRequest inFlightRequest = new InFlightRequest(request, requestCompletionHandler);
             inFlightRequestMap.put(inFlightRequest.requestId, inFlightRequest);
             ByteBuf byteBuf = inFlightRequest.getRequestData();
             cnxFuture.writeAndFlush(byteBuf);
+        }).exceptionally(err -> {
+            log.error("Cannot send a WriteTxnMarkersRequest request", err);
+            inFlightRequest.onError(err);
+            return null;
         });
     }
 
@@ -86,10 +90,12 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
         public void onComplete(ByteBuffer nio) {
             WriteTxnMarkersResponse response = WriteTxnMarkersResponse
                     .parse(nio, ApiKeys.WRITE_TXN_MARKERS.latestVersion());
+            log.info("[TransactionMarkerChannelHandler] onComplete {}", response);
             requestCompletionHandler.onComplete(response);
         }
 
         public void onError(Throwable error) {
+            log.info("[TransactionMarkerChannelHandler] onError {}", error);
             final List<WriteTxnMarkersRequest.TxnMarkerEntry> markers = request.markers();
             Map<Long, Map<TopicPartition, Errors>> errors = new HashMap<>(markers.size());
             for (WriteTxnMarkersRequest.TxnMarkerEntry entry : markers) {
@@ -112,6 +118,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
         if (log.isDebugEnabled()) {
             log.debug("channelActive");
         }
+        log.info("[TransactionMarkerChannelHandler] channelActive to {}", channelHandlerContext.channel());
         this.cnx.complete(channelHandlerContext);
         super.channelActive(channelHandlerContext);
     }
@@ -150,6 +157,15 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
         });
         inFlightRequestMap.clear();
         channelHandlerContext.close();
+    }
+
+    public void close() {
+        log.info("[TransactionMarkerChannelHandler] closing");
+        this.cnx.whenComplete( (ctx, err) -> {
+            if (ctx != null) {
+                ctx.close();
+            }
+        });
     }
 
 }
