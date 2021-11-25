@@ -65,7 +65,6 @@ public class PendingTopicFutures {
                 return TopicThrowablePair.withTopic(persistentTopic);
             }).exceptionally(e -> {
                 registerQueueLatency(false);
-//                exceptionConsumer.accept(e.getCause());
                 completableFuture.completeExceptionally(e.getCause());
                 count.decrementAndGet();
                 return TopicThrowablePair.withThrowable(e.getCause());
@@ -79,13 +78,11 @@ public class PendingTopicFutures {
                 } else {
                     registerQueueLatency(false);
                     completableFuture.completeExceptionally(topicThrowablePair.getThrowable());
-//                    exceptionConsumer.accept(topicThrowablePair.getThrowable());
                 }
                 count.decrementAndGet();
                 return topicThrowablePair;
             }).exceptionally(e -> {
                 registerQueueLatency(false);
-//                exceptionConsumer.accept(e.getCause());
                 completableFuture.completeExceptionally(e.getCause());
                 count.decrementAndGet();
                 return TopicThrowablePair.withThrowable(e.getCause());
