@@ -19,10 +19,10 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
+import io.streamnative.pulsar.handlers.kop.utils.AdminClientUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ShutdownableThread;
@@ -32,9 +32,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -47,11 +45,8 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.KafkaAdminClient;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.config.SaslConfigs;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.metadata.api.MetadataStore;
@@ -190,7 +185,7 @@ public class KopEventManager {
                         }
 
                         if (brokerData.isPresent()) {
-                            JsonObject jsonObject = parseJsonObject(
+                            JsonObject jsonObject = AdminClientUtils.parseJsonObject(
                                     new String(brokerData.get().getValue(), StandardCharsets.UTF_8));
                             JsonObject protocols = jsonObject.getAsJsonObject("protocols");
                             JsonElement element = protocols.get("kafka");
@@ -230,10 +225,7 @@ public class KopEventManager {
 
     }
 
-    private JsonObject parseJsonObject(String info) {
-        JsonParser parser = new JsonParser();
-        return parser.parse(info).getAsJsonObject();
-    }
+
 
     @VisibleForTesting
     public static Map<String, Set<Node>> getNodes(String kopBrokerStrs) {
@@ -368,7 +360,8 @@ public class KopEventManager {
                 interBrokers.forEach(broker -> {
                     if (!advertisedEndPoint.getHostname().equals(broker.host())
                             || advertisedEndPoint.getPort() != broker.port()) {
-                        AdminClient adminClient = getKafkaAdminClient(broker.host(), broker.port());
+                        AdminClient adminClient =
+                                AdminClientUtils.getKafkaAdminClient(kafkaConfig, broker.host(), broker.port());
                         adminClients.add(adminClient);
                         adminClient.deleteTopics(topicsDeletions);
                         log.info("Send deleteTopics {} to kop broker {}:{}",
@@ -378,44 +371,6 @@ public class KopEventManager {
             } finally {
                 adminClients.forEach(AdminClient::close);
             }
-        }
-
-        private AdminClient getKafkaAdminClient(final String host, final int port) {
-            final Properties properties = new Properties();
-            properties.put(AdminClientConfig.CLIENT_ID_CONFIG, AdminManager.INTER_ADMIN_CLIENT_ID);
-            properties.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 30000);
-            properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
-            properties.put(AdminClientConfig.SECURITY_PROTOCOL_CONFIG, kafkaConfig.getInterBrokerSecurityProtocol());
-            final String mechanismInterBrokerProtocol = kafkaConfig.getSaslMechanismInterBrokerProtocol();
-            properties.put(SaslConfigs.SASL_MECHANISM, mechanismInterBrokerProtocol);
-            final String interBrokerSecurityProtocol = kafkaConfig.getInterBrokerSecurityProtocol();
-            final String kafkaUser = kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace();
-            final String brokerClientAuthenticationParameters = kafkaConfig.getBrokerClientAuthenticationParameters();
-            final JsonObject jsonObject = parseJsonObject(brokerClientAuthenticationParameters);
-            final boolean hasSsl = interBrokerSecurityProtocol.toUpperCase(Locale.ROOT).contains("SSL");
-
-            if (hasSsl) {
-                properties.put("ssl.truststore.location", kafkaConfig.getKopSslKeystoreLocation());
-                properties.put("ssl.truststore.password", kafkaConfig.getKopSslKeystorePassword());
-                properties.put("ssl.endpoint.identification.algorithm", "");
-            }
-
-            if ("PLAIN".equals(mechanismInterBrokerProtocol.toUpperCase(Locale.ROOT)) && !hasSsl) {
-                final String plainAuth =
-                        String.format("username=\"%s\" password=\"%s\";", kafkaUser, jsonObject.get("token"));
-                properties.put("sasl.jaas.config",
-                        "org.apache.kafka.common.security.plain.PlainLoginModule required " + plainAuth);
-            } else if ("OAUTHBEARER".equals(mechanismInterBrokerProtocol.toUpperCase(Locale.ROOT))) {
-                properties.put("sasl.login.callback.handler.class",
-                        "io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler");
-                final String oauth =
-                        String.format("oauth.issuer.url=\"%s\" oauth.credentials.url=\"%s\" oauth.audience=\"%s\";",
-                        jsonObject.get("issuerUrl"), jsonObject.get("privateKey"), jsonObject.get("audience"));
-                properties.put("sasl.jaas.config",
-                        "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required " + oauth);
-            }
-
-            return KafkaAdminClient.create(properties);
         }
 
         @Override

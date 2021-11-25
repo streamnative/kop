@@ -53,7 +53,7 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 
 @Slf4j
-class AdminManager {
+public class AdminManager {
     public static final String INTER_ADMIN_CLIENT_ID = "kop-broker-internal-admin-client-id";
 
     private final DelayedOperationPurgatory<DelayedOperation> topicPurgatory =
