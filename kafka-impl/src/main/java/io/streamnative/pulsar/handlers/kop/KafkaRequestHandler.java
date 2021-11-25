@@ -930,16 +930,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         namespacePrefix,
                         authorizedRequestInfo,
                         appendRecordsContext
-                ).thenAccept(response -> {
+                ).whenComplete((response, ex) -> {
                     appendRecordsContext.recycle();
+                    if (ex != null) {
+                        resultFuture.completeExceptionally(ex.getCause());
+                        return;
+                    }
                     Map<TopicPartition, PartitionResponse> mergedResponse = new HashMap<>();
                     mergedResponse.putAll(response);
                     mergedResponse.putAll(unauthorizedTopicResponsesMap);
                     resultFuture.complete(new ProduceResponse(mergedResponse));
-                }).exceptionally(ex -> {
-                    appendRecordsContext.recycle();
-                    resultFuture.completeExceptionally(ex.getCause());
-                    return null;
                 });
             }
         };

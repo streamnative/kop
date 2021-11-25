@@ -17,7 +17,6 @@ import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.Map;
 import java.util.Optional;
@@ -38,11 +37,12 @@ public class PartitionLogManager {
     private final Time time;
 
     public PartitionLogManager(KafkaServiceConfiguration config,
+                               EntryFormatter entryFormatter,
                                Optional<TransactionCoordinator> transactionCoordinator,
                                Time time) {
         this.logMap = Maps.newConcurrentMap();
         this.transactionCoordinator = transactionCoordinator;
-        this.formatter = EntryFormatterFactory.create(config);
+        this.formatter = entryFormatter;
         this.config = config;
         this.time = time;
     }

@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.storage;
 import io.streamnative.pulsar.handlers.kop.DelayedProduceAndFetch;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
@@ -46,9 +47,10 @@ public class ReplicaManager {
 
     public ReplicaManager(KafkaServiceConfiguration config,
                           Time time,
+                          EntryFormatter entryFormatter,
                           Optional<TransactionCoordinator> transactionCoordinator,
                           DelayedOperationPurgatory<DelayedOperation> producePurgatory) {
-        this.logManager = new PartitionLogManager(config, transactionCoordinator, time);
+        this.logManager = new PartitionLogManager(config, entryFormatter, transactionCoordinator, time);
         this.producePurgatory = producePurgatory;
     }
 
