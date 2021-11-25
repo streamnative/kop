@@ -312,6 +312,9 @@ public class KafkaTopicManager {
                             topicName, (producer.getTopic() == null) ? "null" : producer.getTopic().getName());
                 }
             }
+        }).exceptionally(e -> {
+            log.error("Failed to get topic '{}' in removeTopicAndReferenceProducer", topicName, e);
+            return null;
         });
     }
 
