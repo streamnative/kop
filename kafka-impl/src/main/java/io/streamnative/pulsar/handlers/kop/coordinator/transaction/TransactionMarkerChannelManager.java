@@ -249,7 +249,7 @@ public class TransactionMarkerChannelManager {
         Map<InetSocketAddress, List<TopicPartition>> addressAndPartitionMap = new ConcurrentHashMap<>();
         List<TopicPartition> unknownBrokerTopicList = new ArrayList<>();
 
-        List<CompletableFuture<Void>> addressFutureList = new ArrayList<>();TransactionMarkerChannelManager
+        List<CompletableFuture<Void>> addressFutureList = new ArrayList<>();
         for (TopicPartition topicPartition : topicPartitions) {
             String pulsarTopic = new KopTopic(topicPartition.topic(), namespacePrefix)
                     .getPartitionName(topicPartition.partition());
