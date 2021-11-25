@@ -47,8 +47,11 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.naming.TopicName;
 
-@AllArgsConstructor
+/**
+ * An append-only log for storing messages. Mapping to Kafka Log.scala.
+ */
 @Slf4j
+@AllArgsConstructor
 public class PartitionLog {
     private KafkaServiceConfiguration kafkaConfig;
     private Time time;
@@ -89,14 +92,15 @@ public class PartitionLog {
     }
 
     /**
-     * Append this message set to the active segment of the log, rolling over to a fresh segment if necessary.
+     * Append this message to pulsar.
      *
      * This method will generally be responsible for assigning offsets to the messages,
      * however if the assignOffsets=false flag is passed we will only check that the existing offsets are valid.
      *
      * @param records The log records to append
      * @param version Inter-broker message protocol version
-     * @param ignoreRecordSize true to skip validation of record size.
+     * @param ignoreRecordSize true to skip validation of record size
+     * @param appendRecordsContext See {@link AppendRecordsContext}
      */
     private CompletableFuture<Long> append(final MemoryRecords records,
                                            final short version,

@@ -25,6 +25,9 @@ import lombok.AllArgsConstructor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
 
+/**
+ * Manage {@link PartitionLog}.
+ */
 @AllArgsConstructor
 public class PartitionLogManager {
 

@@ -36,6 +36,9 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.utils.Time;
 
+/**
+ * Used to append records. Mapping to Kafka ReplicaManager.scala.
+ */
 @Slf4j
 public class ReplicaManager {
     private final PartitionLogManager logManager;

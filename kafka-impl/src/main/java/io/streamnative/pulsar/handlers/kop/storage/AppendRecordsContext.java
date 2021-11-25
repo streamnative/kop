@@ -22,6 +22,9 @@ import java.util.function.Consumer;
 import lombok.Getter;
 import org.apache.kafka.common.TopicPartition;
 
+/**
+ * AppendRecordsContext is use for pass parameters to ReplicaManager, to avoid long parameter lists.
+ */
 @Getter
 public class AppendRecordsContext {
     private static final Recycler<AppendRecordsContext> RECYCLER = new Recycler<AppendRecordsContext>() {
