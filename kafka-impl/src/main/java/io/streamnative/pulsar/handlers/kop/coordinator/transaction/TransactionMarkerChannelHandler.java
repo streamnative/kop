@@ -165,7 +165,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     public void close() {
         log.info("[TransactionMarkerChannelHandler] closing");
-        this.cnx.whenComplete( (ctx, err) -> {
+        this.cnx.whenComplete((ctx, err) -> {
             if (ctx != null) {
                 ctx.close();
             }
