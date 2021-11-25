@@ -168,7 +168,8 @@ public class TransactionMarkerRequestCompletionHandler {
                                             + "retrying with current coordinator epoch {} and invalidating cache",
                                     transactionalId, topicPartition,
                                     error.exceptionName(), epochAndMetadata.getCoordinatorEpoch());
-                            KopBrokerLookupManager.removeTopicManagerCache(KopTopic.toString(topicPartition, namespacePrefix));
+                            KopBrokerLookupManager.removeTopicManagerCache(
+                                    KopTopic.toString(topicPartition, namespacePrefix));
                             abortSendingAndRetryPartitions.retryPartitions.add(topicPartition);
                             break;
                         case INVALID_PRODUCER_EPOCH:
