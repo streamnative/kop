@@ -103,7 +103,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
                 for (TopicPartition partition : entry.partitions()) {
                     errorsPerPartition.put(partition, REQUEST_TIMED_OUT);
                     log.error("Handle error " + error
-                            + " as  REQUEST_TIMED_OUT for " + partition + " producer " + entry.producerId());
+                            + " as REQUEST_TIMED_OUT for " + partition + " producer " + entry.producerId());
                 }
                 errors.put(entry.producerId(), errorsPerPartition);
             }
