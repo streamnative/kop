@@ -52,19 +52,13 @@ import org.apache.pulsar.common.naming.TopicName;
 @Slf4j
 @AllArgsConstructor
 public class PartitionLog {
-    private KafkaServiceConfiguration kafkaConfig;
-    private Time time;
-    private TopicPartition topicPartition;
-    private String namespacePrefix;
-    private String fullPartitionName;
-    private EntryFormatter entryFormatter;
-    private Optional<TransactionCoordinator> transactionCoordinator;
-
-    public CompletableFuture<Long> appendRecords(final MemoryRecords records,
-                                                 final short version,
-                                                 final AppendRecordsContext appendRecordsContext) {
-        return append(records, version, appendRecordsContext);
-    }
+    private final KafkaServiceConfiguration kafkaConfig;
+    private final Time time;
+    private final TopicPartition topicPartition;
+    private final String namespacePrefix;
+    private final String fullPartitionName;
+    private final EntryFormatter entryFormatter;
+    private final Optional<TransactionCoordinator> transactionCoordinator;
 
     /**
      * Append this message to pulsar.
@@ -73,7 +67,7 @@ public class PartitionLog {
      * @param version Inter-broker message protocol version
      * @param appendRecordsContext See {@link AppendRecordsContext}
      */
-    private CompletableFuture<Long> append(final MemoryRecords records,
+    public CompletableFuture<Long> appendRecords(final MemoryRecords records,
                                            final short version,
                                            final AppendRecordsContext appendRecordsContext) {
         CompletableFuture<Long> appendFuture = new CompletableFuture<>();
@@ -123,10 +117,6 @@ public class PartitionLog {
                         time.nanoseconds() - beforeRecordsProcess, TimeUnit.NANOSECONDS);
                 appendRecordsContext.getStartSendOperationForThrottling()
                         .accept(encodeResult.getEncodedByteBuf().readableBytes());
-                if (log.isDebugEnabled()) {
-                    log.debug("Produce messages for topic {} partition {}",
-                            topicPartition.topic(), topicPartition.partition());
-                }
 
                 publishMessages(persistentTopicOpt,
                         appendFuture,
