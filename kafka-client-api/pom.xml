@@ -28,4 +28,17 @@
   <name>StreamNative :: Pulsar Protocol Handler :: Kafka Client API</name>
   <description>The Kafka client API without any Kafka dependency</description>
 
+  <dependencies>
+    <!-- TODO: We should remove this dependency in future -->
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
 </project>
