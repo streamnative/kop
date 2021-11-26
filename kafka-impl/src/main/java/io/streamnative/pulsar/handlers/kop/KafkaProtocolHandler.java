@@ -131,7 +131,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 log.error("Failed to init create enter formatter {}", tenant, e);
                 throw new IllegalStateException(e);
             }
-            return new ReplicaManager(kafkaConfig,
+            return new ReplicaManager(
                     Time.SYSTEM,
                     entryFormatter,
                     transactionCoordinatorOptional,

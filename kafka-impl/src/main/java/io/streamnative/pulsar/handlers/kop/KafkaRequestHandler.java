@@ -19,7 +19,6 @@ import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENA
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
-import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
@@ -65,7 +64,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -97,15 +95,12 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.AuthenticationException;
-import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
-import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
@@ -471,12 +466,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return admin.topics().getPartitionedTopicMetadataAsync(topicName);
     }
 
-    private static boolean isInternalTopic(final String fullTopicName) {
-        String partitionedTopicName = TopicName.get(fullTopicName).getPartitionedTopicName();
-        return partitionedTopicName.endsWith("/" + GROUP_METADATA_TOPIC_NAME)
-                || partitionedTopicName.endsWith("/" + TRANSACTION_STATE_TOPIC_NAME);
-    }
-
     private CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces) {
         String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
         return expandAllowedNamespaces(allowedNamespaces, currentTenant, pulsarService);
@@ -598,7 +587,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                    allTopicMetadata.add(new TopicMetadata(
                                            Errors.TOPIC_AUTHORIZATION_FAILED,
                                            topic,
-                                           isInternalTopic(topicName.toString()),
+                                           KopTopic.isInternalTopic(topicName.toString()),
                                            Collections.emptyList()));
                                    return;
                                }
@@ -643,7 +632,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 allTopicMetadata.add(new TopicMetadata(
                         Errors.TOPIC_AUTHORIZATION_FAILED,
                         topic,
-                        isInternalTopic(fullTopicName),
+                        KopTopic.isInternalTopic(fullTopicName),
                         Collections.emptyList()));
                 completeOneTopic.run();
             };
@@ -698,7 +687,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                         new TopicMetadata(
                                                                 Errors.UNKNOWN_TOPIC_OR_PARTITION,
                                                                 topic,
-                                                                isInternalTopic(fullTopicName),
+                                                                KopTopic.isInternalTopic(fullTopicName),
                                                                 Collections.emptyList()));
                                                 completeOneTopic.run();
                                             }
@@ -708,7 +697,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     new TopicMetadata(
                                                             Errors.UNKNOWN_TOPIC_OR_PARTITION,
                                                             topic,
-                                                            isInternalTopic(fullTopicName),
+                                                            KopTopic.isInternalTopic(fullTopicName),
                                                             Collections.emptyList()));
                                             log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} "
                                                             + "metadata: {}",
@@ -813,7 +802,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     // The topic returned to Kafka clients should be
                                                     // the same with what it sent
                                                     topic,
-                                                    isInternalTopic(new KopTopic(topic, namespacePrefix).getFullName()),
+                                                    KopTopic.isInternalTopic(
+                                                            new KopTopic(topic, namespacePrefix).getFullName()),
                                                     partitionMetadatas));
 
                                     // whether completed all the topics requests.
@@ -909,9 +899,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         int timeoutMs = produceRequest.timeout();
         String namespacePrefix = currentNamespacePrefix();
         final AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(numPartitions);
-        Consumer<Runnable> completeOne = (action) -> {
+        Runnable completeOne = () -> {
             // When complete one authorization or failed, will do the action first.
-            action.run();
             if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
                 if (authorizedRequestInfo.isEmpty()) {
                     resultFuture.complete(new ProduceResponse(unauthorizedTopicResponsesMap));
@@ -951,22 +940,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         if (ex != null) {
                             log.error("Write topic authorize failed, topic - {}. {}",
                                     fullPartitionName, ex.getMessage());
-                            completeOne.accept(() -> {
-                                unauthorizedTopicResponsesMap.put(topicPartition,
-                                        new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
-                            });
+                            unauthorizedTopicResponsesMap.put(topicPartition,
+                                    new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+                            completeOne.run();
                             return;
                         }
                         if (!isAuthorized) {
-                            completeOne.accept(() -> {
-                                unauthorizedTopicResponsesMap.put(topicPartition,
-                                        new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
-                            });
+                            unauthorizedTopicResponsesMap.put(topicPartition,
+                                    new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+                            completeOne.run();
                             return;
                         }
-                        completeOne.accept(() -> {
-                            authorizedRequestInfo.put(topicPartition, records);
-                        });
+                        authorizedRequestInfo.put(topicPartition, records);
+                        completeOne.run();
                     });
         });
 
@@ -2531,55 +2517,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             log.debug("Request {} get failed response ", requestHar.getHeader().apiKey(), e);
         }
         return requestHar.getRequest().getErrorResponse(((Integer) THROTTLE_TIME_MS.defaultValue), e);
-    }
-
-    private static MemoryRecords validateRecords(short version, TopicPartition topicPartition, MemoryRecords records) {
-        if (version >= 3) {
-            Iterator<MutableRecordBatch> iterator = records.batches().iterator();
-            if (!iterator.hasNext()) {
-                throw new InvalidRecordException("Produce requests with version " + version + " must have at least "
-                    + "one record batch");
-            }
-
-            MutableRecordBatch entry = iterator.next();
-            if (entry.magic() != RecordBatch.MAGIC_VALUE_V2) {
-                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
-                    + "contain record batches with magic version 2");
-            }
-
-            if (iterator.hasNext()) {
-                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
-                    + "contain exactly one record batch");
-            }
-        }
-
-        int validBytesCount = 0;
-        for (RecordBatch batch : records.batches()) {
-            if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2 && batch.baseOffset() != 0) {
-                throw new InvalidRecordException("The baseOffset of the record batch in the append to "
-                    + topicPartition + " should be 0, but it is " + batch.baseOffset());
-            }
-
-            batch.ensureValid();
-            validBytesCount += batch.sizeInBytes();
-        }
-
-        if (validBytesCount < 0) {
-            throw new CorruptRecordException("Cannot append record batch with illegal length "
-                + validBytesCount + " to log for " + topicPartition
-                + ". A possible cause is corrupted produce request.");
-        }
-
-        MemoryRecords validRecords;
-        if (validBytesCount == records.sizeInBytes()) {
-            validRecords = records;
-        } else {
-            ByteBuffer validByteBuffer = records.buffer().duplicate();
-            validByteBuffer.limit(validBytesCount);
-            validRecords = MemoryRecords.readableRecords(validByteBuffer);
-        }
-
-        return validRecords;
     }
 
     @VisibleForTesting

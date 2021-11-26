@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.storage;
 
 import io.netty.buffer.ByteBuf;
-import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.MessagePublishContext;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
@@ -37,7 +36,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
-import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -53,7 +51,6 @@ import org.apache.pulsar.common.naming.TopicName;
 @Slf4j
 @AllArgsConstructor
 public class PartitionLog {
-    private KafkaServiceConfiguration kafkaConfig;
     private Time time;
     private TopicPartition topicPartition;
     private String namespacePrefix;
@@ -88,90 +85,79 @@ public class PartitionLog {
     public CompletableFuture<Long> appendRecords(final MemoryRecords records,
                                                  final short version,
                                                  final AppendRecordsContext appendRecordsContext) {
-        return append(records, version, false, appendRecordsContext);
+        return append(records, version, appendRecordsContext);
     }
 
     /**
      * Append this message to pulsar.
      *
-     * This method will generally be responsible for assigning offsets to the messages,
-     * however if the assignOffsets=false flag is passed we will only check that the existing offsets are valid.
-     *
      * @param records The log records to append
      * @param version Inter-broker message protocol version
-     * @param ignoreRecordSize true to skip validation of record size
      * @param appendRecordsContext See {@link AppendRecordsContext}
      */
     private CompletableFuture<Long> append(final MemoryRecords records,
                                            final short version,
-                                           final boolean ignoreRecordSize,
                                            final AppendRecordsContext appendRecordsContext) {
         CompletableFuture<Long> appendFuture = new CompletableFuture<>();
         RequestStats requestStats = appendRecordsContext.getRequestStats();
         KafkaTopicManager topicManager = appendRecordsContext.getTopicManager();
         final long beforeRecordsProcess = time.nanoseconds();
         try {
-            final LogAppendInfo appendInfo =
-                    analyzeAndValidateRecords(records, version, topicPartition, ignoreRecordSize);
-
-            // trim any invalid bytes or partial messages before appending it to the on-disk log
-            MemoryRecords validRecords = trimInvalidBytes(records, appendInfo);
-            synchronized (lock) {
-                // Append Message into pulsar
-                final CompletableFuture<Optional<PersistentTopic>> topicFuture =
-                        topicManager.getTopic(fullPartitionName);
-                if (topicFuture.isCompletedExceptionally()) {
-                    topicFuture.exceptionally(e -> {
-                        appendFuture.completeExceptionally(e);
-                        return Optional.empty();
-                    });
-                    return appendFuture;
-                }
-                if (topicFuture.isDone() && !topicFuture.getNow(Optional.empty()).isPresent()) {
+            MemoryRecords validRecords = validateRecords(version, fullPartitionName, records);
+            // Append Message into pulsar
+            final CompletableFuture<Optional<PersistentTopic>> topicFuture =
+                    topicManager.getTopic(fullPartitionName);
+            if (topicFuture.isCompletedExceptionally()) {
+                topicFuture.exceptionally(e -> {
+                    appendFuture.completeExceptionally(e);
+                    return Optional.empty();
+                });
+                return appendFuture;
+            }
+            if (topicFuture.isDone() && !topicFuture.getNow(Optional.empty()).isPresent()) {
+                appendFuture.completeExceptionally(Errors.NOT_LEADER_FOR_PARTITION.exception());
+                return appendFuture;
+            }
+            final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
+                if (!persistentTopicOpt.isPresent()) {
                     appendFuture.completeExceptionally(Errors.NOT_LEADER_FOR_PARTITION.exception());
-                    return appendFuture;
+                    return;
                 }
-                final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
-                    if (!persistentTopicOpt.isPresent()) {
-                        appendFuture.completeExceptionally(Errors.NOT_LEADER_FOR_PARTITION.exception());
-                        return;
-                    }
-                    // TODO: validateMessagesAndAssignOffsets here.
+                // TODO: validateMessagesAndAssignOffsets here.
 
-                    final EncodeRequest encodeRequest = EncodeRequest.get(validRecords);
-                    if (entryFormatter instanceof KafkaMixedEntryFormatter) {
-                        final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
-                        final long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
-                        encodeRequest.setBaseOffset(logEndOffset);
-                    }
-
-                    final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
-                    encodeRequest.recycle();
-                    requestStats.getProduceEncodeStats().registerSuccessfulEvent(
-                            time.nanoseconds() - beforeRecordsProcess, TimeUnit.NANOSECONDS);
-                    appendRecordsContext.getStartSendOperationForThrottling()
-                            .accept(encodeResult.getEncodedByteBuf().readableBytes());
-                    if (log.isDebugEnabled()) {
-                        log.debug("Produce messages for topic {} partition {}",
-                                topicPartition.topic(), topicPartition.partition());
-                    }
-
-                    publishMessages(persistentTopicOpt,
-                            appendFuture,
-                            encodeResult,
-                            topicPartition,
-                            appendRecordsContext);
-                };
-
-                if (topicFuture.isDone()) {
-                    persistentTopicConsumer.accept(topicFuture.getNow(Optional.empty()));
-                } else {
-                    // topic is not available now
-                    appendRecordsContext.getPendingTopicFuturesMap()
-                            .computeIfAbsent(topicPartition, ignored ->
-                                    new PendingTopicFutures(requestStats))
-                            .addListener(topicFuture, persistentTopicConsumer, appendFuture);
+                final EncodeRequest encodeRequest = EncodeRequest.get(validRecords);
+                if (entryFormatter instanceof KafkaMixedEntryFormatter) {
+                    final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
+                    final long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
+                    encodeRequest.setBaseOffset(logEndOffset);
                 }
+
+                final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
+                encodeRequest.recycle();
+                requestStats.getProduceEncodeStats().registerSuccessfulEvent(
+                        time.nanoseconds() - beforeRecordsProcess, TimeUnit.NANOSECONDS);
+                appendRecordsContext.getStartSendOperationForThrottling()
+                        .accept(encodeResult.getEncodedByteBuf().readableBytes());
+                if (log.isDebugEnabled()) {
+                    log.debug("Produce messages for topic {} partition {}",
+                            topicPartition.topic(), topicPartition.partition());
+                }
+
+                publishMessages(persistentTopicOpt,
+                        appendFuture,
+                        encodeResult,
+                        topicPartition,
+                        appendRecordsContext);
+            };
+
+            if (topicFuture.isDone()) {
+                persistentTopicConsumer.accept(topicFuture.getNow(Optional.empty()));
+            } else {
+                // topic is not available now
+                appendRecordsContext.getPendingTopicFuturesMap()
+                        .computeIfAbsent(topicPartition, ignored ->
+                                new PendingTopicFutures(requestStats))
+                        .addListener(topicFuture, persistentTopicConsumer, appendFuture);
             }
         } catch (Exception exception) {
             log.error("Failed to handle produce request for {}", topicPartition, exception);
@@ -235,81 +221,7 @@ public class PartitionLog {
         });
     }
 
-    private LogAppendInfo analyzeAndValidateRecords(MemoryRecords records,
-                                                    short version,
-                                                    TopicPartition topicPartition,
-                                                    boolean ignoreRecordSize) {
-        int shallowMessageCount = 0;
-        long lastOffset = -1L;
-        Optional<Long> firstOffset = Optional.empty();
-        long lastOffsetOfFirstBatch = -1L;
-        boolean readFirstMessage = false;
-        boolean monotonic = true;
-
-        validateRecords(version, records);
-        int validBytesCount = 0;
-        for (RecordBatch batch : records.batches()) {
-            if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2 && batch.baseOffset() != 0) {
-                throw new InvalidRecordException("The baseOffset of the record batch in the append to "
-                        + topicPartition + " should be 0, but it is " + batch.baseOffset());
-            }
-            if (!readFirstMessage) {
-                if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2) {
-                    firstOffset = Optional.of(batch.baseOffset());
-                }
-                lastOffsetOfFirstBatch = batch.lastOffset();
-                readFirstMessage = true;
-            }
-            // check that offsets are monotonically increasing
-            if (lastOffset >= batch.lastOffset()){
-                monotonic = false;
-            }
-
-            // update the last offset seen
-            lastOffset = batch.lastOffset();
-
-            int batchSize = batch.sizeInBytes();
-            if (!ignoreRecordSize && batchSize > kafkaConfig.getMaxMessageSize()) {
-                throw new RecordTooLargeException(String.format("Message batch size is %s "
-                                + "in append to partition %s which exceeds the maximum configured size of %s .",
-                        batchSize, topicPartition, kafkaConfig.getMaxMessageSize()));
-            }
-
-            batch.ensureValid();
-            shallowMessageCount += 1;
-            validBytesCount += batchSize;
-        }
-
-        if (validBytesCount < 0) {
-            throw new CorruptRecordException("Cannot append record batch with illegal length "
-                    + validBytesCount + " to log for " + topicPartition
-                    + ". A possible cause is corrupted produce request.");
-        }
-
-        return new LogAppendInfo(
-                firstOffset,
-                lastOffset,
-                shallowMessageCount,
-                monotonic,
-                lastOffsetOfFirstBatch,
-                validBytesCount);
-    }
-
-    private MemoryRecords trimInvalidBytes(MemoryRecords records, LogAppendInfo info) {
-        Integer validBytes = info.getValidBytes();
-        if (validBytes < 0){
-            throw new CorruptRecordException(String.format("Cannot append record batch with illegal length %s to "
-                    + "log for %s. A possible cause is a corrupted produce request.", validBytes, topicPartition));
-        } else if (validBytes == records.sizeInBytes()) {
-            return records;
-        } else {
-            ByteBuffer validByteBuffer = records.buffer().duplicate();
-            validByteBuffer.limit(validBytes);
-            return MemoryRecords.readableRecords(validByteBuffer);
-        }
-    }
-
-    private static void validateRecords(short version, MemoryRecords records) {
+    private static MemoryRecords validateRecords(short version, String fullPartitionName, MemoryRecords records) {
         if (version >= 3) {
             Iterator<MutableRecordBatch> iterator = records.batches().iterator();
             if (!iterator.hasNext()) {
@@ -328,5 +240,33 @@ public class PartitionLog {
                         + "contain exactly one record batch");
             }
         }
+
+        int validBytesCount = 0;
+        for (RecordBatch batch : records.batches()) {
+            if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2 && batch.baseOffset() != 0) {
+                throw new InvalidRecordException("The baseOffset of the record batch in the append to "
+                        + fullPartitionName + " should be 0, but it is " + batch.baseOffset());
+            }
+
+            batch.ensureValid();
+            validBytesCount += batch.sizeInBytes();
+        }
+
+        if (validBytesCount < 0) {
+            throw new CorruptRecordException("Cannot append record batch with illegal length "
+                    + validBytesCount + " to log for " + fullPartitionName
+                    + ". A possible cause is corrupted produce request.");
+        }
+
+        MemoryRecords validRecords;
+        if (validBytesCount == records.sizeInBytes()) {
+            validRecords = records;
+        } else {
+            ByteBuffer validByteBuffer = records.buffer().duplicate();
+            validByteBuffer.limit(validBytesCount);
+            validRecords = MemoryRecords.readableRecords(validByteBuffer);
+        }
+
+        return validRecords;
     }
 }

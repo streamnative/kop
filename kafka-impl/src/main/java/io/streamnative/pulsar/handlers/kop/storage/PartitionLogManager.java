@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.storage;
 
 import com.google.common.collect.Maps;
-import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -31,26 +30,23 @@ import org.apache.kafka.common.utils.Time;
 public class PartitionLogManager {
 
     private final Map<String, PartitionLog> logMap;
-    private final KafkaServiceConfiguration config;
     private final Optional<TransactionCoordinator> transactionCoordinator;
     private final EntryFormatter formatter;
     private final Time time;
 
-    public PartitionLogManager(KafkaServiceConfiguration config,
-                               EntryFormatter entryFormatter,
+    public PartitionLogManager(EntryFormatter entryFormatter,
                                Optional<TransactionCoordinator> transactionCoordinator,
                                Time time) {
         this.logMap = Maps.newConcurrentMap();
         this.transactionCoordinator = transactionCoordinator;
         this.formatter = entryFormatter;
-        this.config = config;
         this.time = time;
     }
 
     public PartitionLog getLog(TopicPartition topicPartition, String namespacePrefix) {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
         return logMap.computeIfAbsent(kopTopic, key ->
-                new PartitionLog(config, time, topicPartition, namespacePrefix, kopTopic, formatter,
+                new PartitionLog(time, topicPartition, namespacePrefix, kopTopic, formatter,
                         this.transactionCoordinator)
         );
     }
