@@ -13,7 +13,6 @@
  */
 package io.streamnative.kafka.client.zero.nine;
 
-import com.google.common.collect.Maps;
 import io.streamnative.kafka.client.api.Consumer;
 import io.streamnative.kafka.client.api.ConsumerConfiguration;
 import io.streamnative.kafka.client.api.ConsumerRecord;
@@ -57,7 +56,7 @@ public class Consumer009Impl<K, V> extends KafkaConsumer<K, V> implements Consum
 
     @Override
     public void commitOffsetSync(List<TopicOffsetAndMetadata> offsets, Duration timeout) {
-        HashMap<TopicPartition, OffsetAndMetadata> offsetsMap = Maps.newHashMap();
+        HashMap<TopicPartition, OffsetAndMetadata> offsetsMap = new HashMap<>();
         offsets.forEach(
                 offsetAndMetadata -> offsetsMap.put(
                         offsetAndMetadata.createTopicPartition(TopicPartition.class),
