@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.storage;
 
 import io.netty.buffer.ByteBuf;
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.MessagePublishContext;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
@@ -35,6 +36,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
+import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -50,6 +52,7 @@ import org.apache.pulsar.common.naming.TopicName;
 @Slf4j
 @AllArgsConstructor
 public class PartitionLog {
+    private KafkaServiceConfiguration kafkaConfig;
     private Time time;
     private TopicPartition topicPartition;
     private String namespacePrefix;
@@ -79,6 +82,13 @@ public class PartitionLog {
         final long beforeRecordsProcess = time.nanoseconds();
         try {
             MemoryRecords validRecords = validateRecords(version, fullPartitionName, records);
+            validRecords.batches().forEach(batch->{
+                if (batch.sizeInBytes() > kafkaConfig.getMaxMessageSize()) {
+                    throw new RecordTooLargeException(String.format("Message batch size is %s "
+                                    + "in append to partition %s which exceeds the maximum configured size of %s .",
+                            batch.sizeInBytes(), topicPartition, kafkaConfig.getMaxMessageSize()));
+                }
+            });
             // Append Message into pulsar
             final CompletableFuture<Optional<PersistentTopic>> topicFuture =
                     topicManager.getTopic(fullPartitionName);

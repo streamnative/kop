@@ -132,6 +132,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 throw new IllegalStateException(e);
             }
             return new ReplicaManager(
+                    kafkaConfig,
                     Time.SYSTEM,
                     entryFormatter,
                     transactionCoordinatorOptional,
