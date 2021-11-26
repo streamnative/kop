@@ -258,7 +258,7 @@ public class TransactionMarkerChannelManager {
             CompletableFuture<Void> addFuture = new CompletableFuture<>();
             addressFutureList.add(addFuture);
             addressFuture.whenComplete((address, throwable) -> {
-                if (throwable != null)  {
+                if (throwable != null) {
                     log.warn("Failed to find broker for topic partition {}", topicPartition, throwable);
                     unknownBrokerTopicList.add(topicPartition);
                     addFuture.completeExceptionally(throwable);
