@@ -31,7 +31,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
-import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.kafka.common.TopicPartition;
@@ -57,30 +56,6 @@ public class PartitionLog {
     private String fullPartitionName;
     private EntryFormatter entryFormatter;
     private Optional<TransactionCoordinator> transactionCoordinator;
-
-
-    // A lock that guards all modifications to the log
-    private final Object lock = new Object();
-
-    @Data
-    @AllArgsConstructor
-    public static final class LogAppendInfo {
-        private Optional<Long> firstOffset;
-        private Long lastOffset;
-        private Integer shallowCount;
-        private Boolean offsetsMonotonic;
-        private Long lastOffsetOfFirstBatch;
-        private Integer validBytes;
-
-        public Long numMessages() {
-            return firstOffset.map(firstOffsetVal -> {
-                if (firstOffsetVal >= 0 && lastOffset >= 0) {
-                    return lastOffset - firstOffsetVal + 1;
-                }
-                return 0L;
-            }).orElse(0L);
-        }
-    }
 
     public CompletableFuture<Long> appendRecords(final MemoryRecords records,
                                                  final short version,
