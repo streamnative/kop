@@ -2134,7 +2134,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         WriteTxnMarkersRequest request = (WriteTxnMarkersRequest) kafkaHeaderAndRequest.getRequest();
-        Map<Long, Map<TopicPartition, Errors>> resultMap = new HashMap<>();
+        Map<Long, Map<TopicPartition, Errors>> resultMap = new ConcurrentHashMap<>();
         List<CompletableFuture<Void>> resultFutureList = new ArrayList<>();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         String namespacePrefix = currentNamespacePrefix();
@@ -2152,11 +2152,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 completableFuture.whenComplete((offset, throwable) -> {
                     if (throwable != null) {
                         log.error("Failed to write txn marker for partition {}", topicPartition, throwable);
-                        partitionErrorsMap.put(topicPartition, Errors.forException(throwable));
+                        partitionErrorsMap.put(topicPartition, Errors.KAFKA_STORAGE_ERROR);
+                        resultFuture.complete(null);
                         return;
                     }
                     if (offset == null) {
+                        // this case happens when the broker receives a request for
+                        // a topic that is being unloaded
+                        log.error("Failed to write txn marker for partition {} no offset (topic not owned) "
+                                        + "- send LEADER_NOT_AVAILABLE", topicPartition);
                         partitionErrorsMap.put(topicPartition, Errors.LEADER_NOT_AVAILABLE);
+                        resultFuture.complete(null);
                         return;
                     }
 
@@ -2164,7 +2170,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     if (TopicName.get(topicPartition.topic()).getLocalName().equals(GROUP_METADATA_TOPIC_NAME)) {
                         handleGroupFuture = getGroupCoordinator().scheduleHandleTxnCompletion(
                                 txnMarkerEntry.producerId(),
-                                Lists.newArrayList(topicPartition).stream(),
+                                Collections.singleton(topicPartition.partition()),
                                 txnMarkerEntry.transactionResult());
                     } else {
                         handleGroupFuture = CompletableFuture.completedFuture(null);
@@ -2175,7 +2181,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             log.error("Failed to handle group end txn for partition {}",
                                     topicPartition, handleGroupThrowable);
                             partitionErrorsMap.put(topicPartition, Errors.forException(handleGroupThrowable));
-                            resultFuture.completeExceptionally(handleGroupThrowable);
+                            resultFuture.complete(null);
                             return;
                         }
                         String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
@@ -2203,8 +2209,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         FutureUtil.waitForAll(resultFutureList).whenComplete((ignored, throwable) -> {
             if (throwable != null) {
-                log.error("Write txn mark fail!", throwable);
-                response.complete(new WriteTxnMarkersResponse(resultMap));
+                log.error("Write txn mark fail with internal error!", throwable);
+                response.complete(request.getErrorResponse(throwable));
                 return;
             }
             response.complete(new WriteTxnMarkersResponse(resultMap));
@@ -2417,6 +2423,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String namespacePrefix = currentNamespacePrefix();
         String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
         TopicName topicName = TopicName.get(fullPartitionName);
+        log.info("writeTxnMarker {} {} {} {}", fullPartitionName, transactionResult, producerId, producerEpoch);
         topicManager.getTopic(topicName.toString())
                 .whenComplete((persistentTopicOpt, throwable) -> {
                     if (throwable != null) {
@@ -2424,6 +2431,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         return;
                     }
                     if (!persistentTopicOpt.isPresent()) {
+                        log.info("Topic {} is not owned by this Broker", fullPartitionName);
                         offsetFuture.complete(null);
                         return;
                     }
