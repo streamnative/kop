@@ -33,11 +33,14 @@ public class TransactionMarkerChannelInitializer extends ChannelInitializer<Sock
     private final KafkaServiceConfiguration kafkaConfig;
     private final boolean enableTls;
     private final SslContextFactory.Server sslContextFactory;
+    private final TransactionMarkerChannelManager transactionMarkerChannelManager;
 
     public TransactionMarkerChannelInitializer(KafkaServiceConfiguration kafkaConfig,
-                                               boolean enableTls) {
+                                               boolean enableTls,
+                                               TransactionMarkerChannelManager transactionMarkerChannelManager) {
         this.kafkaConfig = kafkaConfig;
         this.enableTls = enableTls;
+        this.transactionMarkerChannelManager = transactionMarkerChannelManager;
         if (enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
         } else {
@@ -53,6 +56,6 @@ public class TransactionMarkerChannelInitializer extends ChannelInitializer<Sock
         ch.pipeline().addLast(new LengthFieldPrepender(4));
         ch.pipeline().addLast("frameDecoder",
                 new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
-        ch.pipeline().addLast("txnHandler", new TransactionMarkerChannelHandler());
+        ch.pipeline().addLast("txnHandler", new TransactionMarkerChannelHandler(transactionMarkerChannelManager));
     }
 }

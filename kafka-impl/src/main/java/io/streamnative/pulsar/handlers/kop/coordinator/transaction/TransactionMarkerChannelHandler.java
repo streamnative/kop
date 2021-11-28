@@ -13,15 +13,23 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import static org.apache.kafka.common.protocol.Errors.REQUEST_TIMED_OUT;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.KopRequestUtils;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
@@ -39,14 +47,24 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     private final ConcurrentLongHashMap<InFlightRequest> inFlightRequestMap = new ConcurrentLongHashMap<>();
 
     private final AtomicInteger correlationId = new AtomicInteger(0);
+    private final TransactionMarkerChannelManager transactionMarkerChannelManager;
+
+    public TransactionMarkerChannelHandler(
+            TransactionMarkerChannelManager transactionMarkerChannelManager) {
+        this.transactionMarkerChannelManager = transactionMarkerChannelManager;
+    }
 
     public void enqueueRequest(WriteTxnMarkersRequest request,
                                TransactionMarkerRequestCompletionHandler requestCompletionHandler) {
+        InFlightRequest inFlightRequest = new InFlightRequest(request, requestCompletionHandler);
         this.cnx.thenAccept(cnxFuture -> {
-            InFlightRequest inFlightRequest = new InFlightRequest(request, requestCompletionHandler);
             inFlightRequestMap.put(inFlightRequest.requestId, inFlightRequest);
             ByteBuf byteBuf = inFlightRequest.getRequestData();
             cnxFuture.writeAndFlush(byteBuf);
+        }).exceptionally(err -> {
+            log.error("Cannot send a WriteTxnMarkersRequest request", err);
+            inFlightRequest.onError(err);
+            return null;
         });
     }
 
@@ -72,6 +90,28 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
         public void onComplete(ByteBuffer nio) {
             WriteTxnMarkersResponse response = WriteTxnMarkersResponse
                     .parse(nio, ApiKeys.WRITE_TXN_MARKERS.latestVersion());
+            log.info("[TransactionMarkerChannelHandler] onComplete {}", response);
+            try {
+                requestCompletionHandler.onComplete(response);
+            } catch (RuntimeException unhandledError) {
+                onError(unhandledError);
+            }
+        }
+
+        public void onError(Throwable error) {
+            log.info("[TransactionMarkerChannelHandler] onError {}", error);
+            final List<WriteTxnMarkersRequest.TxnMarkerEntry> markers = request.markers();
+            Map<Long, Map<TopicPartition, Errors>> errors = new HashMap<>(markers.size());
+            for (WriteTxnMarkersRequest.TxnMarkerEntry entry : markers) {
+                Map<TopicPartition, Errors> errorsPerPartition = new HashMap<>(entry.partitions().size());
+                for (TopicPartition partition : entry.partitions()) {
+                    errorsPerPartition.put(partition, REQUEST_TIMED_OUT);
+                    log.error("Handle error " + error
+                            + " as REQUEST_TIMED_OUT for " + partition + " producer " + entry.producerId());
+                }
+                errors.put(entry.producerId(), errorsPerPartition);
+            }
+            WriteTxnMarkersResponse response = new WriteTxnMarkersResponse(errors);
             requestCompletionHandler.onComplete(response);
         }
 
@@ -82,13 +122,22 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
         if (log.isDebugEnabled()) {
             log.debug("channelActive");
         }
+        log.info("[TransactionMarkerChannelHandler] channelActive to {}", channelHandlerContext.channel());
         this.cnx.complete(channelHandlerContext);
         super.channelActive(channelHandlerContext);
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext channelHandlerContext) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] channelInactive");
+        log.info("[TransactionMarkerChannelHandler] channelInactive, failing {} pending requests",
+                inFlightRequestMap.size());
+        inFlightRequestMap.forEach((k, v) -> {
+            v.onError(new Exception("Connection to remote broker closed"));
+        });
+        inFlightRequestMap.clear();
+        transactionMarkerChannelManager.channelFailed((InetSocketAddress) channelHandlerContext
+                .channel()
+                .remoteAddress(), this);
         super.channelInactive(channelHandlerContext);
     }
 
@@ -96,7 +145,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     public void channelRead(ChannelHandlerContext channelHandlerContext, Object o) throws Exception {
         ByteBuffer nio = ((ByteBuf) o).nioBuffer();
         ResponseHeader responseHeader = ResponseHeader.parse(nio);
-        InFlightRequest inFlightRequest = inFlightRequestMap.get(responseHeader.correlationId());
+        InFlightRequest inFlightRequest = inFlightRequestMap.remove(responseHeader.correlationId());
         if (inFlightRequest == null) {
             log.error("Miss the inFlightRequest with correlationId {}.", responseHeader.correlationId());
             return;
@@ -107,7 +156,20 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     @Override
     public void exceptionCaught(ChannelHandlerContext channelHandlerContext, Throwable throwable) throws Exception {
         log.error("Transaction marker channel handler caught exception.", throwable);
-        super.exceptionCaught(channelHandlerContext, throwable);
+        inFlightRequestMap.forEach((k, v) -> {
+            v.onError(new Exception("Transaction marker channel handler caught exception: " + throwable, throwable));
+        });
+        inFlightRequestMap.clear();
+        channelHandlerContext.close();
+    }
+
+    public void close() {
+        log.info("[TransactionMarkerChannelHandler] closing");
+        this.cnx.whenComplete((ctx, err) -> {
+            if (ctx != null) {
+                ctx.close();
+            }
+        });
     }
 
 }
