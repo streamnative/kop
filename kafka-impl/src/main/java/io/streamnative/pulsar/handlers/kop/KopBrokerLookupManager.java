@@ -237,5 +237,4 @@ public class KopBrokerLookupManager {
             log.error("Close metadataStoreCacheLoader failed.", e);
         }
     }
-
 }
