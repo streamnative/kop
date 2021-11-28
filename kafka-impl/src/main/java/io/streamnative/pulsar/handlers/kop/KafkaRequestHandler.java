@@ -19,7 +19,6 @@ import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENA
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
-import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
@@ -35,11 +34,8 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.Group
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.AbortedIndexEntry;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
-import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
-import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
-import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -49,6 +45,8 @@ import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
+import io.streamnative.pulsar.handlers.kop.storage.AppendRecordsContext;
+import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaRequestUtils;
@@ -58,7 +56,6 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
-import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -67,7 +64,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -86,9 +82,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
-import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
@@ -101,16 +95,12 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.AuthenticationException;
-import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
-import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
-import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
@@ -277,6 +267,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     public TransactionCoordinator getTransactionCoordinator() {
         return tenantContextManager.getTransactionCoordinator(getCurrentTenant());
+    }
+
+    public ReplicaManager getReplicaManager() {
+        return tenantContextManager.getReplicaManager(getCurrentTenant());
     }
 
     public KafkaRequestHandler(PulsarService pulsarService,
@@ -472,12 +466,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return admin.topics().getPartitionedTopicMetadataAsync(topicName);
     }
 
-    private static boolean isInternalTopic(final String fullTopicName) {
-        String partitionedTopicName = TopicName.get(fullTopicName).getPartitionedTopicName();
-        return partitionedTopicName.endsWith("/" + GROUP_METADATA_TOPIC_NAME)
-                || partitionedTopicName.endsWith("/" + TRANSACTION_STATE_TOPIC_NAME);
-    }
-
     private CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces) {
         String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
         return expandAllowedNamespaces(allowedNamespaces, currentTenant, pulsarService);
@@ -599,7 +587,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                    allTopicMetadata.add(new TopicMetadata(
                                            Errors.TOPIC_AUTHORIZATION_FAILED,
                                            topic,
-                                           isInternalTopic(topicName.toString()),
+                                           KopTopic.isInternalTopic(topicName.toString()),
                                            Collections.emptyList()));
                                    return;
                                }
@@ -644,7 +632,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 allTopicMetadata.add(new TopicMetadata(
                         Errors.TOPIC_AUTHORIZATION_FAILED,
                         topic,
-                        isInternalTopic(fullTopicName),
+                        KopTopic.isInternalTopic(fullTopicName),
                         Collections.emptyList()));
                 completeOneTopic.run();
             };
@@ -699,7 +687,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                         new TopicMetadata(
                                                                 Errors.UNKNOWN_TOPIC_OR_PARTITION,
                                                                 topic,
-                                                                isInternalTopic(fullTopicName),
+                                                                KopTopic.isInternalTopic(fullTopicName),
                                                                 Collections.emptyList()));
                                                 completeOneTopic.run();
                                             }
@@ -709,7 +697,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     new TopicMetadata(
                                                             Errors.UNKNOWN_TOPIC_OR_PARTITION,
                                                             topic,
-                                                            isInternalTopic(fullTopicName),
+                                                            KopTopic.isInternalTopic(fullTopicName),
                                                             Collections.emptyList()));
                                             log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} "
                                                             + "metadata: {}",
@@ -814,7 +802,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     // The topic returned to Kafka clients should be
                                                     // the same with what it sent
                                                     topic,
-                                                    isInternalTopic(new KopTopic(topic, namespacePrefix).getFullName()),
+                                                    KopTopic.isInternalTopic(
+                                                            new KopTopic(topic, namespacePrefix).getFullName()),
                                                     partitionMetadatas));
 
                                     // whether completed all the topics requests.
@@ -894,60 +883,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
-    private void publishMessages(final Optional<PersistentTopic> persistentTopicOpt,
-                                 final EncodeResult encodeResult,
-                                 final TopicPartition topicPartition,
-                                 final Consumer<Long> offsetConsumer,
-                                 final Consumer<Errors> errorsConsumer) {
-        final MemoryRecords records = encodeResult.getRecords();
-        final int numMessages = encodeResult.getNumMessages();
-        final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
-        if (!persistentTopicOpt.isPresent()) {
-            encodeResult.recycle();
-            // It will trigger a retry send of Kafka client
-            errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
-            return;
-        }
-        PersistentTopic persistentTopic = persistentTopicOpt.get();
-        if (persistentTopic.isSystemTopic()) {
-            encodeResult.recycle();
-            log.error("Not support producing message to system topic: {}", persistentTopic);
-            errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
-            return;
-        }
-        String namespacePrefix = currentNamespacePrefix();
-        final String partitionName = KopTopic.toString(topicPartition, namespacePrefix);
-
-        topicManager.registerProducerInPersistentTopic(partitionName, persistentTopic);
-        // collect metrics
-        encodeResult.updateProducerStats(topicPartition, requestStats, namespacePrefix);
-
-        // publish
-        final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
-        final long beforePublish = MathUtils.nowInNano();
-        persistentTopic.publishMessage(byteBuf,
-                MessagePublishContext.get(offsetFuture, persistentTopic, numMessages, System.nanoTime()));
-        final RecordBatch batch = records.batchIterator().next();
-        offsetFuture.whenComplete((offset, e) -> {
-            completeSendOperationForThrottling(byteBuf.readableBytes());
-            encodeResult.recycle();
-            if (e == null) {
-                if (batch.isTransactional()) {
-                    getTransactionCoordinator().addActivePidOffset(TopicName.get(partitionName), batch.producerId(),
-                                                                    offset);
-                }
-                requestStats.getMessagePublishStats().registerSuccessfulEvent(
-                        MathUtils.elapsedNanos(beforePublish), TimeUnit.NANOSECONDS);
-                offsetConsumer.accept(offset);
-            } else {
-                log.error("publishMessages for topic partition: {} failed when write.", partitionName, e);
-                requestStats.getMessagePublishStats().registerFailedEvent(
-                        MathUtils.elapsedNanos(beforePublish), TimeUnit.NANOSECONDS);
-                errorsConsumer.accept(Errors.KAFKA_STORAGE_ERROR);
-            }
-        });
-    }
-
     @Override
     protected void handleProduceRequest(KafkaHeaderAndRequest produceHar,
                                         CompletableFuture<AbstractResponse> resultFuture) {
@@ -955,170 +890,73 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
 
         final int numPartitions = produceRequest.partitionRecordsOrFail().size();
-
-        final Map<TopicPartition, PartitionResponse> responseMap = new ConcurrentHashMap<>();
-        // delay produce
-        final AtomicInteger topicPartitionNum = new AtomicInteger(produceRequest.partitionRecordsOrFail().size());
+        if (numPartitions == 0) {
+            resultFuture.complete(new ProduceResponse(Collections.emptyMap()));
+            return;
+        }
+        final Map<TopicPartition, PartitionResponse> unauthorizedTopicResponsesMap = new ConcurrentHashMap<>();
+        final Map<TopicPartition, MemoryRecords> authorizedRequestInfo = new ConcurrentHashMap<>();
         int timeoutMs = produceRequest.timeout();
-        Runnable complete = () -> {
-            topicPartitionNum.set(0);
-            if (resultFuture.isDone()) {
-                // It may be triggered again in DelayedProduceAndFetch
-                return;
-            }
-            // add the topicPartition with timeout error if it's not existed in responseMap
-            produceRequest.partitionRecordsOrFail().keySet().forEach(topicPartition -> {
-                if (!responseMap.containsKey(topicPartition)) {
-                    responseMap.put(topicPartition, new PartitionResponse(Errors.REQUEST_TIMED_OUT));
-                }
-            });
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Request {}: Complete handle produce.", ctx.channel(), produceHar.toString());
-            }
-            resultFuture.complete(new ProduceResponse(responseMap));
-        };
-        BiConsumer<TopicPartition, PartitionResponse> addPartitionResponse = (topicPartition, response) -> {
-            responseMap.put(topicPartition, response);
-            // reset topicPartitionNum
-            int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
-            if (restTopicPartitionNum < 0) {
-                return;
-            }
-            if (restTopicPartitionNum == 0) {
-                complete.run();
-            }
-        };
-
         String namespacePrefix = currentNamespacePrefix();
-        produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
-            final Consumer<Long> offsetConsumer = offset -> addPartitionResponse.accept(
-                    topicPartition, new PartitionResponse(Errors.NONE, offset, -1L, -1L));
-            final Consumer<Errors> errorsConsumer =
-                    errors -> addPartitionResponse.accept(topicPartition, new PartitionResponse(errors));
-            final Consumer<Throwable> exceptionConsumer =
-                    e -> addPartitionResponse.accept(topicPartition, new PartitionResponse(Errors.forException(e)));
-            final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
+        final AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(numPartitions);
+        Runnable completeOne = () -> {
+            // When complete one authorization or failed, will do the action first.
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                if (authorizedRequestInfo.isEmpty()) {
+                    resultFuture.complete(new ProduceResponse(unauthorizedTopicResponsesMap));
+                    return;
+                }
+                AppendRecordsContext appendRecordsContext = AppendRecordsContext.get(
+                        topicManager,
+                        requestStats,
+                        this::startSendOperationForThrottling,
+                        this::completeSendOperationForThrottling,
+                        pendingTopicFuturesMap);
+                getReplicaManager().appendRecords(
+                        timeoutMs,
+                        false,
+                        produceHar.getRequest().version(),
+                        namespacePrefix,
+                        authorizedRequestInfo,
+                        appendRecordsContext
+                ).whenComplete((response, ex) -> {
+                    appendRecordsContext.recycle();
+                    if (ex != null) {
+                        resultFuture.completeExceptionally(ex.getCause());
+                        return;
+                    }
+                    Map<TopicPartition, PartitionResponse> mergedResponse = new HashMap<>();
+                    mergedResponse.putAll(response);
+                    mergedResponse.putAll(unauthorizedTopicResponsesMap);
+                    resultFuture.complete(new ProduceResponse(mergedResponse));
+                });
+            }
+        };
 
+        produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
+            final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
             authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
                     .whenComplete((isAuthorized, ex) -> {
                         if (ex != null) {
                             log.error("Write topic authorize failed, topic - {}. {}",
                                     fullPartitionName, ex.getMessage());
-                            errorsConsumer.accept(Errors.TOPIC_AUTHORIZATION_FAILED);
+                            unauthorizedTopicResponsesMap.put(topicPartition,
+                                    new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+                            completeOne.run();
                             return;
                         }
                         if (!isAuthorized) {
-                            errorsConsumer.accept(Errors.TOPIC_AUTHORIZATION_FAILED);
+                            unauthorizedTopicResponsesMap.put(topicPartition,
+                                    new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+                            completeOne.run();
                             return;
                         }
-
-                        handlePartitionRecords(produceHar,
-                                topicPartition,
-                                records,
-                                numPartitions,
-                                fullPartitionName,
-                                offsetConsumer,
-                                errorsConsumer,
-                                exceptionConsumer);
+                        authorizedRequestInfo.put(topicPartition, records);
+                        completeOne.run();
                     });
         });
-        // delay produce
-        if (timeoutMs <= 0) {
-            complete.run();
-        } else {
-            List<Object> delayedCreateKeys =
-                    produceRequest.partitionRecordsOrFail().keySet().stream()
-                            .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
-            DelayedProduceAndFetch delayedProduce = new DelayedProduceAndFetch(timeoutMs, topicPartitionNum, complete);
-            producePurgatory.tryCompleteElseWatch(delayedProduce, delayedCreateKeys);
-        }
-    }
 
-    private void handlePartitionRecords(final KafkaHeaderAndRequest produceHar,
-                                        final TopicPartition topicPartition,
-                                        final MemoryRecords records,
-                                        final int numPartitions,
-                                        final String fullPartitionName,
-                                        final Consumer<Long> offsetConsumer,
-                                        final Consumer<Errors> errorsConsumer,
-                                        final Consumer<Throwable> exceptionConsumer) {
-        // check KOP inner topic
-        if (isInternalTopic(fullPartitionName)) {
-            log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
-                    ctx.channel(), produceHar.getHeader(), topicPartition);
-            errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
-            return;
-        }
 
-        try {
-            final long beforeRecordsProcess = MathUtils.nowInNano();
-            final MemoryRecords validRecords =
-                    validateRecords(produceHar.getHeader().apiVersion(), topicPartition, records);
-
-            validRecords.batches().forEach(batch->{
-                if (batch.sizeInBytes() > kafkaConfig.getMaxMessageSize()) {
-                    throw new RecordTooLargeException(String.format("Message batch size is %s "
-                                    + "in append to partition %s which exceeds the maximum configured size of %s .",
-                            batch.sizeInBytes(), topicPartition, kafkaConfig.getMaxMessageSize()));
-                }
-            });
-
-            final CompletableFuture<Optional<PersistentTopic>> topicFuture =
-                    topicManager.getTopic(fullPartitionName);
-            if (topicFuture.isCompletedExceptionally()) {
-                topicFuture.exceptionally(e -> {
-                    exceptionConsumer.accept(e);
-                    return Optional.empty();
-                });
-                return;
-            }
-            if (topicFuture.isDone() && !topicFuture.getNow(Optional.empty()).isPresent()) {
-                errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
-                return;
-            }
-
-            final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
-                if (!persistentTopicOpt.isPresent()) {
-                    errorsConsumer.accept(Errors.NOT_LEADER_FOR_PARTITION);
-                    return;
-                }
-
-                final EncodeRequest encodeRequest = EncodeRequest.get(validRecords);
-                if (entryFormatter instanceof KafkaMixedEntryFormatter) {
-                    final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
-                    final long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
-                    encodeRequest.setBaseOffset(logEndOffset);
-                }
-
-                final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
-                encodeRequest.recycle();
-                requestStats.getProduceEncodeStats().registerSuccessfulEvent(
-                        MathUtils.elapsedNanos(beforeRecordsProcess), TimeUnit.NANOSECONDS);
-                startSendOperationForThrottling(encodeResult.getEncodedByteBuf().readableBytes());
-
-                if (log.isDebugEnabled()) {
-                    log.debug("[{}] Request {}: Produce messages for topic {} partition {}, "
-                                    + "request size: {} ", ctx.channel(), produceHar.getHeader(),
-                            topicPartition.topic(), topicPartition.partition(), numPartitions);
-                }
-
-                publishMessages(persistentTopicOpt, encodeResult, topicPartition, offsetConsumer, errorsConsumer);
-            };
-
-            if (topicFuture.isDone()) {
-                persistentTopicConsumer.accept(topicFuture.getNow(Optional.empty()));
-            } else {
-                // topic is not available now
-                pendingTopicFuturesMap
-                        .computeIfAbsent(topicPartition, ignored ->
-                                new PendingTopicFutures(requestStats))
-                        .addListener(topicFuture, persistentTopicConsumer, exceptionConsumer);
-            }
-        } catch (Exception e) {
-            log.error("[{}] Failed to handle produce request for {}",
-                    ctx.channel(), topicPartition, e);
-            exceptionConsumer.accept(e);
-        }
     }
 
     @Override
@@ -2679,55 +2517,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             log.debug("Request {} get failed response ", requestHar.getHeader().apiKey(), e);
         }
         return requestHar.getRequest().getErrorResponse(((Integer) THROTTLE_TIME_MS.defaultValue), e);
-    }
-
-    private static MemoryRecords validateRecords(short version, TopicPartition topicPartition, MemoryRecords records) {
-        if (version >= 3) {
-            Iterator<MutableRecordBatch> iterator = records.batches().iterator();
-            if (!iterator.hasNext()) {
-                throw new InvalidRecordException("Produce requests with version " + version + " must have at least "
-                    + "one record batch");
-            }
-
-            MutableRecordBatch entry = iterator.next();
-            if (entry.magic() != RecordBatch.MAGIC_VALUE_V2) {
-                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
-                    + "contain record batches with magic version 2");
-            }
-
-            if (iterator.hasNext()) {
-                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
-                    + "contain exactly one record batch");
-            }
-        }
-
-        int validBytesCount = 0;
-        for (RecordBatch batch : records.batches()) {
-            if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2 && batch.baseOffset() != 0) {
-                throw new InvalidRecordException("The baseOffset of the record batch in the append to "
-                    + topicPartition + " should be 0, but it is " + batch.baseOffset());
-            }
-
-            batch.ensureValid();
-            validBytesCount += batch.sizeInBytes();
-        }
-
-        if (validBytesCount < 0) {
-            throw new CorruptRecordException("Cannot append record batch with illegal length "
-                + validBytesCount + " to log for " + topicPartition
-                + ". A possible cause is corrupted produce request.");
-        }
-
-        MemoryRecords validRecords;
-        if (validBytesCount == records.sizeInBytes()) {
-            validRecords = records;
-        } else {
-            ByteBuffer validByteBuffer = records.buffer().duplicate();
-            validByteBuffer.limit(validBytesCount);
-            validRecords = MemoryRecords.readableRecords(validByteBuffer);
-        }
-
-        return validRecords;
     }
 
     @VisibleForTesting
