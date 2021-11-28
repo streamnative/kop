@@ -26,8 +26,11 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
+import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
@@ -97,6 +100,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
+    private final Map<String, ReplicaManager> replicaManagerByTenant = new ConcurrentHashMap<>();
 
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -111,6 +115,29 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public TransactionCoordinator getTransactionCoordinator(String tenant) {
         return transactionCoordinatorByTenant.computeIfAbsent(tenant, this::createAndBootTransactionCoordinator);
+    }
+
+    @Override
+    public ReplicaManager getReplicaManager(String tenant) {
+        return replicaManagerByTenant.computeIfAbsent(tenant, s -> {
+            Optional<TransactionCoordinator> transactionCoordinatorOptional = Optional.empty();
+            if (kafkaConfig.isEnableTransactionCoordinator()) {
+                transactionCoordinatorOptional = Optional.of(getTransactionCoordinator(tenant));
+            }
+            EntryFormatter entryFormatter;
+            try {
+                entryFormatter = EntryFormatterFactory.create(kafkaConfig);
+            } catch (IllegalArgumentException e) {
+                log.error("Failed to init create enter formatter {}", tenant, e);
+                throw new IllegalStateException(e);
+            }
+            return new ReplicaManager(
+                    kafkaConfig,
+                    Time.SYSTEM,
+                    entryFormatter,
+                    transactionCoordinatorOptional,
+                    producePurgatory);
+        });
     }
 
     /**
