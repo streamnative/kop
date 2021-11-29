@@ -153,6 +153,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                 .numThreads(1)
                 .build();
         groupMetadataManager = new GroupMetadataManager(
+                tenant,
                 offsetConfig,
                 producerBuilder,
                 readerBuilder,
