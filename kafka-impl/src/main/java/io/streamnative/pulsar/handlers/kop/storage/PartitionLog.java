@@ -71,7 +71,7 @@ public class PartitionLog {
     private final ProducerStateManager producerStateManager;
     private final ReentrantLock lock = new ReentrantLock();
 
-    private final static KopLogValidator.CompressionCodec DEFAULT_COMPRESSION =
+    private static final KopLogValidator.CompressionCodec DEFAULT_COMPRESSION =
             new KopLogValidator.CompressionCodec(CompressionType.NONE.name, CompressionType.NONE.id);
 
     @Data
@@ -98,7 +98,7 @@ public class PartitionLog {
         }
 
         /**
-         * Get the (maximum) number of messages described by LogAppendInfo
+         * Get the (maximum) number of messages described by LogAppendInfo.
          * @return Maximum possible number of messages described by LogAppendInfo
          */
         public Long numMessages() {

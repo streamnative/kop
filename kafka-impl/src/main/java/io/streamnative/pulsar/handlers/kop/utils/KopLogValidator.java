@@ -15,12 +15,11 @@ package io.streamnative.pulsar.handlers.kop.utils;
 
 import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.format.ValidationAndOffsetAssignResult;
+import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.Locale;
-
-import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import org.apache.kafka.common.errors.InvalidTimestampException;
 import org.apache.kafka.common.errors.UnsupportedForMessageFormatException;
 import org.apache.kafka.common.record.AbstractRecords;

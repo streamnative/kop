@@ -2155,7 +2155,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
           }
         };
 
-        for(WriteTxnMarkersRequest.TxnMarkerEntry marker : markers) {
+        for (WriteTxnMarkersRequest.TxnMarkerEntry marker : markers) {
             long producerId = marker.producerId();
             TransactionResult transactionResult = marker.transactionResult();
             Map<TopicPartition, MemoryRecords> controlRecords = generateTxnMarkerRecords(marker);
@@ -2196,8 +2196,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             successfulOffsetsPartitions
                                     .stream().map(TopicPartition::partition).collect(Collectors.toSet()),
                             transactionResult).whenComplete((__, e) -> {
-                        log.error("Received an exception while trying to update the offsets cache on " +
-                                "transaction marker append", e);
+                        log.error("Received an exception while trying to update the offsets cache on "
+                                + "transaction marker append", e);
                         ConcurrentHashMap<TopicPartition, Errors> updatedErrors = new ConcurrentHashMap<>();
                         successfulOffsetsPartitions.forEach(partition ->
                                 updatedErrors.put(partition, Errors.UNKNOWN_SERVER_ERROR));
@@ -2218,7 +2218,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ? ControlRecordType.COMMIT : ControlRecordType.ABORT;
         EndTransactionMarker endTransactionMarker = new EndTransactionMarker(
                 controlRecordType, marker.coordinatorEpoch());
-        for(TopicPartition topicPartition : marker.partitions()) {
+        for (TopicPartition topicPartition : marker.partitions()) {
             MemoryRecords memoryRecords = MemoryRecords.withEndTransactionMarker(
                     marker.producerId(), marker.producerEpoch(), endTransactionMarker);
             txnMarkerRecordsMap.put(topicPartition, memoryRecords);

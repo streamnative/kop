@@ -13,6 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.junit.Assert.assertEquals;
+
+import java.time.Duration;
+import java.util.Collections;
+import java.util.Properties;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.CommonClientConfigs;
@@ -30,13 +35,6 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
-
-import java.time.Duration;
-import java.util.Collections;
-import java.util.Properties;
-
-import static org.junit.Assert.assertEquals;
-
 
 /**
  * Transaction test.
