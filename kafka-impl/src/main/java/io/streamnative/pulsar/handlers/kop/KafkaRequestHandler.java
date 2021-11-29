@@ -2424,7 +2424,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String namespacePrefix = currentNamespacePrefix();
         String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
         TopicName topicName = TopicName.get(fullPartitionName);
-        log.info("writeTxnMarker {} {} {} {}", fullPartitionName, transactionResult, producerId, producerEpoch);
         topicManager.getTopic(topicName.toString())
                 .whenComplete((persistentTopicOpt, throwable) -> {
                     if (throwable != null) {

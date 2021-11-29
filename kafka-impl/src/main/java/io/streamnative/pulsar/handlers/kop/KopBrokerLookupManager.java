@@ -147,7 +147,6 @@ public class KopBrokerLookupManager {
 
     public static void removeTopicManagerCache(String topicName) {
         LOOKUP_CACHE.remove(topicName);
-        log.info("removeTopicManagerCache {} current LOOKUP_CACHE {}", topicName, LOOKUP_CACHE);
     }
 
     public static void clear() {

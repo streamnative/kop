@@ -157,7 +157,7 @@ public class TransactionMarkerChannelManager {
             while (!closed) {
                 drainQueuedTransactionMarkers();
                 try {
-                    Thread.sleep(1000);
+                    Thread.sleep(1);
                 } catch (InterruptedException e) {
                     log.info("ignore {}", e);
                 }
@@ -270,7 +270,6 @@ public class TransactionMarkerChannelManager {
                     addFuture.completeExceptionally(new Exception("no address for owner of " + topicPartition));
                     return;
                 }
-                log.info("Leader for {} is {}", pulsarTopic, address.get());
                 addressAndPartitionMap.compute(address.get(), (__, set) -> {
                     if (set == null) {
                         set = new ArrayList<>();
@@ -416,7 +415,6 @@ public class TransactionMarkerChannelManager {
             if (log.isDebugEnabled()) {
                 log.debug("Retry appending {} transaction log", pendingCompleteTxn);
             }
-            log.info("Retry appending {} transaction log", pendingCompleteTxn);
             tryAppendToLog(pendingCompleteTxn);
         }
     }

@@ -37,10 +37,6 @@ public class LookupClient extends AbstractPulsarClient {
     }
 
     public CompletableFuture<InetSocketAddress> getBrokerAddress(final TopicName topicName) {
-        CompletableFuture<InetSocketAddress> res =  getPulsarClient().getLookup().getBroker(topicName).thenApply(Pair::getLeft);
-        res.whenComplete((r, t) -> {
-            log.info("getBrokerAddress for {} is {}", topicName, r);
-        });
-        return res;
+        return getPulsarClient().getLookup().getBroker(topicName).thenApply(Pair::getLeft);
     }
 }
