@@ -28,7 +28,6 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
-import io.streamnative.pulsar.handlers.kop.idempotent.LogManager;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
@@ -89,6 +88,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Getter
     private Map<InetSocketAddress, ChannelInitializer<SocketChannel>> channelInitializerMap;
 
+    private SystemTopicClientFactory systemTopicClientFactory;
+
     @Getter
     @VisibleForTesting
     protected SystemTopicClient offsetTopicClient;
@@ -126,10 +127,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public ReplicaManager getReplicaManager(String tenant) {
         return replicaManagerByTenant.computeIfAbsent(tenant, s -> {
-            Optional<TransactionCoordinator> transactionCoordinatorOptional = Optional.empty();
-            if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
-                transactionCoordinatorOptional = Optional.of(getTransactionCoordinator(tenant));
-            }
             EntryFormatter entryFormatter;
             try {
                 entryFormatter = EntryFormatterFactory.create(kafkaConfig);
@@ -141,7 +138,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     kafkaConfig,
                     Time.SYSTEM,
                     entryFormatter,
-                    transactionCoordinatorOptional,
+                    systemTopicClientFactory,
                     producePurgatory);
         });
     }

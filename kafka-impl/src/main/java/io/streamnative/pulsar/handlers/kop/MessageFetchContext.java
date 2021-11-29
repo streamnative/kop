@@ -22,9 +22,9 @@ import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndReq
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
-import io.streamnative.pulsar.handlers.kop.idempotent.Log;
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
+import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
@@ -410,9 +410,10 @@ public final class MessageFetchContext {
         final long highWatermark = MessageMetadataUtils.getHighWatermark(cursor.getManagedLedger());
         // Add new offset back to TCM after entries are read successfully
         tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
-        Log kopLog = requestHandler.getLogManager().getLog(topicPartition, namespacePrefix);
+        PartitionLog partitionLog =
+                requestHandler.getReplicaManager().getPartitionLog(topicPartition, namespacePrefix);
         final long lso = (readCommitted
-                ? kopLog.firstUndecidedOffset().orElse(highWatermark) : highWatermark);
+                ? partitionLog.firstUndecidedOffset().orElse(highWatermark) : highWatermark);
         List<Entry> committedEntries = entries;
         if (readCommitted) {
             committedEntries = getCommittedEntries(entries, lso);
@@ -481,7 +482,7 @@ public final class MessageFetchContext {
                     statsLogger);
             List<FetchResponse.AbortedTransaction> abortedTransactions;
             if (requestHandler.getKafkaConfig().isEnableTransactionCoordinator() && readCommitted && tc != null) {
-                abortedTransactions = kopLog.getAbortedIndexList(partitionData.fetchOffset);
+                abortedTransactions = partitionLog.getAbortedIndexList(partitionData.fetchOffset);
             } else {
                 abortedTransactions = null;
             }

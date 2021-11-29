@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop.idempotent;
+package io.streamnative.pulsar.handlers.kop.storage;
 
 import io.netty.util.Recycler;
 import lombok.Data;
@@ -23,7 +23,7 @@ import lombok.Data;
 public class AppendInfoContext {
 
     private final Recycler.Handle<AppendInfoContext> recyclerHandle;
-    private Log kopLog;
+    private PartitionLog kopLog;
     private ProducerStateManager.ProducerAppendInfo appendInfo;
     private Long producerId;
     private boolean isTransaction;
@@ -39,7 +39,7 @@ public class AppendInfoContext {
         this.recyclerHandle = recyclerHandle;
     }
 
-    public static AppendInfoContext get(Log kopLog,
+    public static AppendInfoContext get(PartitionLog kopLog,
                                         ProducerStateManager.ProducerAppendInfo appendInfo,
                                         Long producerId,
                                         boolean isTransaction) {

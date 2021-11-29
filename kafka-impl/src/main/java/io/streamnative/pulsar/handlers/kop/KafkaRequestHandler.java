@@ -35,10 +35,6 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
-import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
-import io.streamnative.pulsar.handlers.kop.idempotent.AppendInfoContext;
-import io.streamnative.pulsar.handlers.kop.idempotent.Log;
-import io.streamnative.pulsar.handlers.kop.idempotent.LogManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -49,8 +45,8 @@ import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.storage.AppendRecordsContext;
+import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
-import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicClientFactory;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaRequestUtils;
@@ -2147,10 +2143,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     resultMap.computeIfAbsent(txnMarkerEntry.producerId(), pid -> new HashMap<>());
 
             for (TopicPartition topicPartition : txnMarkerEntry.partitions()) {
-                Log kopLog = getLogManager().getLog(topicPartition, namespacePrefix);
-                Log.AnalyzeResult analyzeResult;
+                PartitionLog partitionLog = getReplicaManager().getPartitionLog(topicPartition, namespacePrefix);
+                PartitionLog.AnalyzeResult analyzeResult;
                 try {
-                    analyzeResult = validateTxnMarker(txnMarkerEntry, kopLog);
+                    analyzeResult = validateTxnMarker(txnMarkerEntry, partitionLog);
                 } catch (Throwable t) {
                     partitionErrorsMap.put(topicPartition, Errors.forException(t));
                     continue;
@@ -2187,7 +2183,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 txnMarkerEntry.transactionResult());
                     } else {
                         try {
-                            kopLog.appendTxnMarker(analyzeResult, offset);
+                            partitionLog.appendTxnMarker(analyzeResult, offset);
                             handleGroupFuture = CompletableFuture.completedFuture(null);
                         } catch (Exception e) {
                             handleGroupFuture = FutureUtil.failedFuture(e);
@@ -2203,21 +2199,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             return;
                         }
                         String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
-                        TopicName topicName = TopicName.get(fullPartitionName);
-
-                        long firstOffset = transactionCoordinator.removeActivePidOffset(
-                                topicName, txnMarkerEntry.producerId());
-                        long lastStableOffset = transactionCoordinator.getLastStableOffset(topicName, offset);
-
-                        if (txnMarkerEntry.transactionResult().equals(TransactionResult.ABORT)) {
-                            transactionCoordinator.addAbortedIndex(AbortedIndexEntry.builder()
-                                    .version(request.version())
-                                    .pid(txnMarkerEntry.producerId())
-                                    .firstOffset(firstOffset)
-                                    .lastOffset(offset)
-                                    .lastStableOffset(lastStableOffset)
-                                    .build());
-                        }
                         partitionErrorsMap.put(topicPartition, Errors.NONE);
                         resultFuture.complete(null);
                     });
@@ -2235,15 +2216,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
-    private Log.AnalyzeResult validateTxnMarker(
-            WriteTxnMarkersRequest.TxnMarkerEntry txnMarkerEntry, Log kopLog) {
+    private PartitionLog.AnalyzeResult validateTxnMarker(
+            WriteTxnMarkersRequest.TxnMarkerEntry txnMarkerEntry, PartitionLog partitionLog) {
         ControlRecordType controlRecordType = txnMarkerEntry.transactionResult().equals(TransactionResult.COMMIT)
                 ? ControlRecordType.COMMIT : ControlRecordType.ABORT;
         EndTransactionMarker marker = new EndTransactionMarker(
                 controlRecordType, txnMarkerEntry.coordinatorEpoch());
         MemoryRecords memoryRecords = MemoryRecords.withEndTransactionMarker(
                 txnMarkerEntry.producerId(), txnMarkerEntry.producerEpoch(), marker);
-        return kopLog.analyzeAndValidateProducerState(memoryRecords, Optional.empty(), Log.AppendOrigin.Client);
+        return partitionLog
+                .analyzeAndValidateProducerState(memoryRecords, Optional.empty(), PartitionLog.AppendOrigin.Client);
     }
 
     @Override

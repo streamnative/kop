@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop.idempotent;
+package io.streamnative.pulsar.handlers.kop.storage;
 
 import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
@@ -184,12 +184,13 @@ public class ProducerStateManager {
         // do not have sequence numbers and therefore only producer epoch validation is done.
         // Appends which come through replication are not validated (we assume the validation has already been done)
         // and appends from clients require full validation.
-        private final Log.AppendOrigin origin;
+        private final PartitionLog.AppendOrigin origin;
         private final List<ProducerStateManager.TxnMetadata> transactions = Lists.newArrayList();
         private ProducerStateManager.ProducerStateEntry updatedEntry;
 
         public ProducerAppendInfo(String topicPartition, Long producerId,
-                                  ProducerStateManager.ProducerStateEntry currentEntry, Log.AppendOrigin origin) {
+                                  ProducerStateManager.ProducerStateEntry currentEntry,
+                                  PartitionLog.AppendOrigin origin) {
             this.topicPartition = topicPartition;
             this.producerId = producerId;
             this.currentEntry = currentEntry;
@@ -200,7 +201,7 @@ public class ProducerStateManager {
 
         private void maybeValidateDataBatch(Short producerEpoch, Integer firstSeq) {
             checkProducerEpoch(producerEpoch);
-            if (origin.equals(Log.AppendOrigin.Client)) {
+            if (origin.equals(PartitionLog.AppendOrigin.Client)) {
                 checkSequence(producerEpoch, firstSeq);
             }
         }
@@ -254,7 +255,7 @@ public class ProducerStateManager {
             return nextSeq == lastSeq + 1L || (nextSeq == 0 && lastSeq == Integer.MAX_VALUE);
         }
 
-        public Optional<Log.CompletedTxn> append(RecordBatch batch, Optional<Long> firstOffset) {
+        public Optional<PartitionLog.CompletedTxn> append(RecordBatch batch, Optional<Long> firstOffset) {
             if (batch.isControlBatch()) {
                 Iterator<Record> recordIterator = batch.iterator();
                 if (recordIterator.hasNext()) {
@@ -298,7 +299,7 @@ public class ProducerStateManager {
             }
         }
 
-        public Optional<Log.CompletedTxn> appendEndTxnMarker(
+        public Optional<PartitionLog.CompletedTxn> appendEndTxnMarker(
                 EndTransactionMarker endTxnMarker,
                 Short producerEpoch,
                 Long offset,
@@ -308,8 +309,9 @@ public class ProducerStateManager {
             // Only emit the `CompletedTxn` for non-empty transactions. A transaction marker
             // without any associated data will not have any impact on the last stable offset
             // and would not need to be reflected in the transaction index.
-            Optional<Log.CompletedTxn> completedTxn = updatedEntry.getCurrentTxnFirstOffset().map(firstOffset ->
-                    new Log.CompletedTxn(producerId, firstOffset, offset,
+            Optional<PartitionLog.CompletedTxn> completedTxn =
+                    updatedEntry.getCurrentTxnFirstOffset().map(firstOffset -> new PartitionLog
+                            .CompletedTxn(producerId, firstOffset, offset,
                             endTxnMarker.controlType() == ControlRecordType.ABORT));
             updatedEntry.maybeUpdateProducerEpoch(producerEpoch);
             updatedEntry.setCurrentTxnFirstOffset(Optional.empty());
@@ -583,15 +585,15 @@ public class ProducerStateManager {
         this.state = State.INIT;
     }
 
-    public ProducerStateManager.ProducerAppendInfo prepareUpdate(Long producerId, Log.AppendOrigin origin) {
+    public ProducerStateManager.ProducerAppendInfo prepareUpdate(Long producerId, PartitionLog.AppendOrigin origin) {
         ProducerStateEntry currentEntry = lastEntry(producerId).orElse(ProducerStateEntry.empty(producerId));
         return new ProducerStateManager.ProducerAppendInfo(topicPartition, producerId, currentEntry, origin);
     }
 
-    private Optional<Log.CompletedTxn> updateProducers(RecordBatch batch,
+    private Optional<PartitionLog.CompletedTxn> updateProducers(RecordBatch batch,
                                                        Map<Long, ProducerStateManager.ProducerAppendInfo> producers,
                                                        Optional<Long> firstOffset,
-                                                       Log.AppendOrigin origin) {
+                                                       PartitionLog.AppendOrigin origin) {
         Long producerId = batch.producerId();
         ProducerStateManager.ProducerAppendInfo appendInfo =
                 producers.computeIfAbsent(producerId, pid -> prepareUpdate(producerId, origin));
@@ -604,7 +606,7 @@ public class ProducerStateManager {
      * That will be done in `completeTxn` below. This is used to compute the LSO that will be appended to the
      * transaction index, but the completion must be done only after successfully appending to the index.
      */
-    public long lastStableOffset(Log.CompletedTxn completedTxn) {
+    public long lastStableOffset(PartitionLog.CompletedTxn completedTxn) {
         for (TxnMetadata txnMetadata : ongoingTxns.values()) {
             if (!completedTxn.getProducerId().equals(txnMetadata.producerId)) {
                 return txnMetadata.firstOffset;
@@ -675,14 +677,14 @@ public class ProducerStateManager {
         }
     }
 
-    public void updateTxnIndex(Log.CompletedTxn completedTxn, long lastStableOffset) {
+    public void updateTxnIndex(PartitionLog.CompletedTxn completedTxn, long lastStableOffset) {
         if (completedTxn.getIsAborted()) {
             abortedIndexList.add(new AbortedTxn(completedTxn.getProducerId(), completedTxn.getFirstOffset(),
                     completedTxn.getLastOffset(), lastStableOffset));
         }
     }
 
-    public void completeTxn(Log.CompletedTxn completedTxn) {
+    public void completeTxn(PartitionLog.CompletedTxn completedTxn) {
         TxnMetadata txnMetadata = ongoingTxns.remove(completedTxn.getFirstOffset());
         if (txnMetadata == null) {
             String msg = String.format("Attempted to complete transaction %s on partition "
@@ -951,10 +953,10 @@ public class ProducerStateManager {
                     fillCacheQueue();
                     DecodeResult decodeResult = entryFormatter.decode(entryList, RecordBatch.CURRENT_MAGIC_VALUE);
                     Map<Long, ProducerStateManager.ProducerAppendInfo> appendInfoMap = new HashMap<>();
-                    List<Log.CompletedTxn> completedTxns = new ArrayList<>();
+                    List<PartitionLog.CompletedTxn> completedTxns = new ArrayList<>();
                     decodeResult.getRecords().batches().forEach(batch -> {
-                        Optional<Log.CompletedTxn> completedTxn =
-                                updateProducers(batch, appendInfoMap, Optional.empty(), Log.AppendOrigin.Log);
+                        Optional<PartitionLog.CompletedTxn> completedTxn =
+                                updateProducers(batch, appendInfoMap, Optional.empty(), PartitionLog.AppendOrigin.Log);
                         completedTxn.ifPresent(completedTxns::add);
                     });
                     appendInfoMap.values().forEach(ProducerStateManager.this::update);
