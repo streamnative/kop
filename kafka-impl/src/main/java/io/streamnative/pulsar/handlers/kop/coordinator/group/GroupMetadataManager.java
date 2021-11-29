@@ -405,13 +405,13 @@ public class GroupMetadataManager {
 
         // construct the record
         ByteBuffer buffer = ByteBuffer.allocate(AbstractRecords.estimateSizeInBytes(
-                MAGIC_VALUE,
+            MAGIC_VALUE,
             compressionType,
             Lists.newArrayList(new SimpleRecord(timestamp, key, value))
         ));
         MemoryRecordsBuilder recordsBuilder = MemoryRecords.builder(
             buffer,
-                MAGIC_VALUE,
+            MAGIC_VALUE,
             compressionType,
             timestampType,
             0L
@@ -1153,7 +1153,6 @@ public class GroupMetadataManager {
         TopicPartition topicPartition = new TopicPartition(
             GROUP_METADATA_TOPIC_NAME, offsetsPartition
         );
-        log.info("removeGroupsForPartition {}", topicPartition);
         log.info("Scheduling unloading of offsets and group metadata from {}", topicPartition);
         scheduler.submit(() -> {
             AtomicInteger numOffsetsRemoved = new AtomicInteger();
