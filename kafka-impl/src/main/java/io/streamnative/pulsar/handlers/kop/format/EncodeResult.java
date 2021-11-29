@@ -26,6 +26,7 @@ import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import lombok.Getter;
+import lombok.Setter;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.pulsar.broker.service.Producer;
@@ -39,6 +40,7 @@ public class EncodeResult {
     private MemoryRecords records;
     private ByteBuf encodedByteBuf;
     private int numMessages;
+    @Setter
     private int conversionCount;
 
     private final Recycler.Handle<EncodeResult> recyclerHandle;

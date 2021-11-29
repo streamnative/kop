@@ -20,6 +20,8 @@ import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
 import io.streamnative.pulsar.handlers.kop.utils.LongRef;
 import java.util.List;
 import java.util.Locale;
+
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.CompressionType;
@@ -37,6 +39,8 @@ import org.apache.pulsar.common.protocol.Commands;
 @Slf4j
 public class KafkaMixedEntryFormatter extends AbstractEntryFormatter {
 
+    @Getter
+    @VisibleForTesting
     private final String brokerCompressionType;
 
     public KafkaMixedEntryFormatter(String brokerCompressionType) {
@@ -44,38 +48,16 @@ public class KafkaMixedEntryFormatter extends AbstractEntryFormatter {
     }
 
     @Override
-    public EncodeResult encode(final EncodeRequest encodeRequest) {
-        final MemoryRecords records = encodeRequest.getRecords();
-        final long baseOffset = encodeRequest.getBaseOffset();
-        final LongRef offset = new LongRef(baseOffset);
-
-        final KopLogValidator.CompressionCodec sourceCodec = getSourceCodec(records);
-        final KopLogValidator.CompressionCodec targetCodec = getTargetCodec(sourceCodec);
-
-        final ValidationAndOffsetAssignResult validationAndOffsetAssignResult =
-                KopLogValidator.validateMessagesAndAssignOffsets(records,
-                        offset,
-                        System.currentTimeMillis(),
-                        sourceCodec,
-                        targetCodec,
-                        false,
-                        RecordBatch.MAGIC_VALUE_V2,
-                        TimestampType.CREATE_TIME,
-                        Long.MAX_VALUE);
-
-        MemoryRecords validRecords = validationAndOffsetAssignResult.getRecords();
-        int conversionCount = validationAndOffsetAssignResult.getConversionCount();
-
-        final int numMessages = EntryFormatter.parseNumMessages(validRecords);
-        final ByteBuf recordsWrapper = Unpooled.wrappedBuffer(validRecords.buffer());
+    public EncodeResult encode(final MemoryRecords records) {
+        final int numMessages = EntryFormatter.parseNumMessages(records);
+        final ByteBuf recordsWrapper = Unpooled.wrappedBuffer(records.buffer());
         final ByteBuf buf = Commands.serializeMetadataAndPayload(
                 Commands.ChecksumType.None,
                 getMessageMetadataWithNumberMessages(numMessages),
                 recordsWrapper);
         recordsWrapper.release();
-        validationAndOffsetAssignResult.recycle();
 
-        return EncodeResult.get(validRecords, buf, numMessages, conversionCount);
+        return EncodeResult.get(records, buf, numMessages, 0);
     }
 
     @Override
@@ -93,32 +75,6 @@ public class KafkaMixedEntryFormatter extends AbstractEntryFormatter {
         metadata.setPublishTime(System.currentTimeMillis());
         metadata.setNumMessagesInBatch(numMessages);
         return metadata;
-    }
-
-    @VisibleForTesting
-    public KopLogValidator.CompressionCodec getSourceCodec(MemoryRecords records) {
-        KopLogValidator.CompressionCodec sourceCodec = new KopLogValidator.CompressionCodec(
-                CompressionType.NONE.name, CompressionType.NONE.id);
-        for (RecordBatch batch : records.batches()) {
-            CompressionType compressionType = CompressionType.forId(batch.compressionType().id);
-            KopLogValidator.CompressionCodec messageCodec = new KopLogValidator.CompressionCodec(
-                    compressionType.name, compressionType.id);
-            if (messageCodec.codec() != CompressionType.NONE.id) {
-                sourceCodec = messageCodec;
-            }
-        }
-        return sourceCodec;
-    }
-
-    @VisibleForTesting
-    public KopLogValidator.CompressionCodec getTargetCodec(KopLogValidator.CompressionCodec sourceCodec) {
-        String lowerCaseBrokerCompressionType = brokerCompressionType.toLowerCase(Locale.ROOT);
-        if (lowerCaseBrokerCompressionType.equals(CompressionType.NONE.name)) {
-            return sourceCodec;
-        } else {
-            CompressionType compressionType = CompressionType.forName(lowerCaseBrokerCompressionType);
-            return new KopLogValidator.CompressionCodec(compressionType.name, compressionType.id);
-        }
     }
 
 }

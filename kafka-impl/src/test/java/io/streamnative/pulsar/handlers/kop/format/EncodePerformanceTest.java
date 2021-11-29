@@ -26,7 +26,7 @@ import org.apache.kafka.common.record.TimestampType;
 
 
 /**
- * The performance test for {@link EntryFormatter#encode(EncodeRequest)}.
+ * The performance test for {@link EntryFormatter#encode(MemoryRecords)}.
  */
 public class EncodePerformanceTest {
 
@@ -51,7 +51,6 @@ public class EncodePerformanceTest {
     }
 
     private static void runSingleTest(final MemoryRecords records, final String description, final int repeatTimes) {
-        final EncodeRequest encodeRequest = EncodeRequest.get(records);
         final EntryFormatter pulsarFormatter = EntryFormatterFactory.create(pulsarServiceConfiguration);
         final EntryFormatter kafkaV1Formatter = EntryFormatterFactory.create(KafkaV1ServiceConfiguration);
         final EntryFormatter kafkaMixedFormatter = EntryFormatterFactory.create(kafkaMixedServiceConfiguration);
@@ -63,7 +62,7 @@ public class EncodePerformanceTest {
 
         long t1 = System.currentTimeMillis();
         for (int i = 0; i < repeatTimes; i++) {
-            pulsarFormatter.encode(encodeRequest).recycle();
+            pulsarFormatter.encode(records).recycle();
         }
         long t2 = System.currentTimeMillis();
         System.out.println("PulsarEntryFormatter encode time: " + (t2 - t1) + " ms");
@@ -71,22 +70,21 @@ public class EncodePerformanceTest {
         t1 = System.currentTimeMillis();
         long currentBaseOffset = 0;
         for (int i = 0; i < repeatTimes; i++) {
-            kafkaMixedFormatter.encode(encodeRequest).recycle();
-            encodeRequest.setBaseOffset(currentBaseOffset + NUM_MESSAGES);
+            kafkaMixedFormatter.encode(records).recycle();
         }
         t2 = System.currentTimeMillis();
         System.out.println("KafkaMixedEntryFormatter encode time: " + (t2 - t1) + " ms");
 
         t1 = System.currentTimeMillis();
         for (int i = 0; i < repeatTimes; i++) {
-            kafkaV1Formatter.encode(encodeRequest).recycle();
+            kafkaV1Formatter.encode(records).recycle();
         }
         t2 = System.currentTimeMillis();
         System.out.println("KafkaV1EntryFormatter encode time: " + (t2 - t1) + " ms");
 
         t1 = System.currentTimeMillis();
         for (int i = 0; i < repeatTimes; i++) {
-            noHeaderKafkaFormatter.encode(encodeRequest).recycle();
+            noHeaderKafkaFormatter.encode(records).recycle();
         }
         t2 = System.currentTimeMillis();
         System.out.println("NoHeaderKafkaEntryFormatter encode time: " + (t2 - t1) + " ms");

@@ -692,11 +692,6 @@ public class ProducerStateManager {
             throw new IllegalArgumentException(msg);
         }
         txnMetadata.lastOffset = completedTxn.getLastOffset();
-
-        if (completedTxn.getIsAborted()) {
-            abortedIndexList.add(new AbortedTxn(completedTxn.getProducerId(), completedTxn.getFirstOffset(),
-                    completedTxn.getLastOffset(), lastStableOffset(completedTxn)));
-        }
     }
 
     public void updateMapEndOffset(long offset) {

@@ -109,17 +109,17 @@ public class EntryFormatterTest {
 
         EncodeResult encodeResult;
         // Verify that KafkaV1EntryFormatter cannot fix the wrong relative offset.
-        encodeResult = kafkaV1Formatter.encode(EncodeRequest.get(records));
+        encodeResult = kafkaV1Formatter.encode(records);
         Assert.assertEquals(0, encodeResult.getConversionCount());
         checkWrongOffset(encodeResult.getRecords(), compressionType, magic);
 
         // Verify that PulsarEntryFormatter cannot fix the wrong relative offset.
-        encodeResult = pulsarFormatter.encode(EncodeRequest.get(records));
+        encodeResult = pulsarFormatter.encode(records);
         Assert.assertEquals(NUM_MESSAGES, encodeResult.getConversionCount());
         checkWrongOffset(encodeResult.getRecords(), compressionType, magic);
 
         // Verify that KafkaMixedEntryFormatter can fix incorrect relative offset.
-        encodeResult = kafkaMixedFormatter.encode(EncodeRequest.get(records));
+        encodeResult = kafkaMixedFormatter.encode(records);
         if (magic == RecordBatch.MAGIC_VALUE_V2) {
             // After changing baseOffset to 0,
             // KafkaMixedFormatter will not reconstruct the message with magic=2,

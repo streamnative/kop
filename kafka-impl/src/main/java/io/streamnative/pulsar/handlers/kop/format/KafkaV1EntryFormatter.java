@@ -31,8 +31,7 @@ import org.apache.pulsar.common.protocol.Commands;
 public class KafkaV1EntryFormatter extends AbstractEntryFormatter {
 
     @Override
-    public EncodeResult encode(final EncodeRequest encodeRequest) {
-        final MemoryRecords records = encodeRequest.getRecords();
+    public EncodeResult encode(final MemoryRecords records) {
         final int numMessages = EntryFormatter.parseNumMessages(records);
         final ByteBuf recordsWrapper = Unpooled.wrappedBuffer(records.buffer());
         final ByteBuf buf = Commands.serializeMetadataAndPayload(

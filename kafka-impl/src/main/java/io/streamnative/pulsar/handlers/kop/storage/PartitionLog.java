@@ -20,10 +20,12 @@ import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.MessagePublishContext;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
-import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
 import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
+import io.streamnative.pulsar.handlers.kop.format.ValidationAndOffsetAssignResult;
+import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
+import io.streamnative.pulsar.handlers.kop.utils.LongRef;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
@@ -32,6 +34,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -43,10 +46,12 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
@@ -64,6 +69,47 @@ public class PartitionLog {
     private final String fullPartitionName;
     private final EntryFormatter entryFormatter;
     private final ProducerStateManager producerStateManager;
+    private final ReentrantLock lock = new ReentrantLock();
+
+    private final static KopLogValidator.CompressionCodec DEFAULT_COMPRESSION =
+            new KopLogValidator.CompressionCodec(CompressionType.NONE.name, CompressionType.NONE.id);
+
+    @Data
+    @AllArgsConstructor
+    public static final class LogAppendInfo {
+        private Optional<Long> firstOffset;
+        private Long lastOffset;
+        private Integer shallowCount;
+        private Boolean offsetsMonotonic;
+        private Boolean hasProducerId;
+        private Long lastOffsetOfFirstBatch;
+        private Integer validBytes;
+        private KopLogValidator.CompressionCodec sourceCodec;
+        private KopLogValidator.CompressionCodec targetCodec;
+
+        /**
+         * Get the first offset if it exists, else get the last offset of the first batch
+         * For magic versions 2 and newer, this method will return first offset. For magic versions
+         * older than 2, we use the last offset of the first batch as an approximation of the first
+         * offset to avoid decompressing the data.
+         */
+        public Long firstOrLastOffsetOfFirstBatch() {
+            return firstOffset.orElse(lastOffsetOfFirstBatch);
+        }
+
+        /**
+         * Get the (maximum) number of messages described by LogAppendInfo
+         * @return Maximum possible number of messages described by LogAppendInfo
+         */
+        public Long numMessages() {
+            return firstOffset.map(firstOffsetVal -> {
+                if (firstOffsetVal >= 0 && lastOffset >= 0) {
+                    return lastOffset - firstOffsetVal + 1;
+                }
+                return 0L;
+            }).orElse(0L);
+        }
+    }
 
     /**
      * AppendOrigin is used mark the data origin.
@@ -101,8 +147,8 @@ public class PartitionLog {
 
 
     public AnalyzeResult analyzeAndValidateProducerState(MemoryRecords records,
-                                                             Optional<Long> firstOffset,
-                                                             AppendOrigin origin) {
+                                                         Optional<Long> firstOffset,
+                                                         AppendOrigin origin) {
         Map<Long, ProducerStateManager.ProducerAppendInfo> updatedProducers = Maps.newHashMap();
         List<CompletedTxn> completedTxns = Lists.newArrayList();
 
@@ -132,7 +178,9 @@ public class PartitionLog {
 
     public void append(AnalyzeResult analyzeResult, long lastOffset) {
         analyzeResult.getUpdatedProducers().forEach((pid, appendInfo) -> {
-            log.info("append pid: [{}], appendInfo: [{}], lastOffset: [{}]", pid, appendInfo, lastOffset);
+            if (log.isDebugEnabled()) {
+                log.debug("append pid: [{}], appendInfo: [{}], lastOffset: [{}]", pid, appendInfo, lastOffset);
+            }
             producerStateManager.update(appendInfo);
         });
         analyzeResult.getCompletedTxns().forEach(completedTxn -> {
@@ -189,6 +237,7 @@ public class PartitionLog {
      * @param appendRecordsContext See {@link AppendRecordsContext}
      */
     public CompletableFuture<Long> appendRecords(final MemoryRecords records,
+                                           final AppendOrigin origin,
                                            final short version,
                                            final AppendRecordsContext appendRecordsContext) {
         CompletableFuture<Long> appendFuture = new CompletableFuture<>();
@@ -196,14 +245,15 @@ public class PartitionLog {
         KafkaTopicManager topicManager = appendRecordsContext.getTopicManager();
         final long beforeRecordsProcess = time.nanoseconds();
         try {
-            MemoryRecords validRecords = validateRecords(version, fullPartitionName, records);
-            validRecords.batches().forEach(batch->{
-                if (batch.sizeInBytes() > kafkaConfig.getMaxMessageSize()) {
-                    throw new RecordTooLargeException(String.format("Message batch size is %s "
-                                    + "in append to partition %s which exceeds the maximum configured size of %s .",
-                            batch.sizeInBytes(), topicPartition, kafkaConfig.getMaxMessageSize()));
-                }
-            });
+            final LogAppendInfo appendInfo = analyzeAndValidateRecords(records, version, topicPartition);
+
+            // return if we have no valid messages or if this is a duplicate of the last appended entry
+            if (appendInfo.shallowCount == 0) {
+                appendFuture.complete(appendInfo.firstOffset.orElse(-1L));
+                return appendFuture;
+            }
+            MemoryRecords validRecords = trimInvalidBytes(records, appendInfo);
+
             // Append Message into pulsar
             final CompletableFuture<Optional<PersistentTopic>> topicFuture =
                     topicManager.getTopic(fullPartitionName);
@@ -223,17 +273,46 @@ public class PartitionLog {
                     appendFuture.completeExceptionally(Errors.NOT_LEADER_FOR_PARTITION.exception());
                     return;
                 }
-                // TODO: validateMessagesAndAssignOffsets here.
-
-                final EncodeRequest encodeRequest = EncodeRequest.get(validRecords);
-                if (entryFormatter instanceof KafkaMixedEntryFormatter) {
+                // Validate messages and assign offsets.
+                EncodeResult encodeResult;
+                MemoryRecords validAndOffsetAssignedRecords;
+                if (entryFormatter instanceof KafkaMixedEntryFormatter || appendInfo.getHasProducerId()) {
                     final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
                     final long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
-                    encodeRequest.setBaseOffset(logEndOffset);
+                    // assign offsets to the message set
+                    LongRef offset = new LongRef(logEndOffset);
+                    appendInfo.setFirstOffset(Optional.of(offset.value()));
+                    long now = time.milliseconds();
+                    final ValidationAndOffsetAssignResult validationAndOffsetAssignResult =
+                            KopLogValidator.validateMessagesAndAssignOffsets(validRecords,
+                                    origin,
+                                    offset,
+                                    now,
+                                    appendInfo.sourceCodec,
+                                    appendInfo.targetCodec,
+                                    false,
+                                    RecordBatch.MAGIC_VALUE_V2,
+                                    TimestampType.CREATE_TIME,
+                                    Long.MAX_VALUE);
+                    validAndOffsetAssignedRecords = validationAndOffsetAssignResult.getRecords();
+                    encodeResult = entryFormatter.encode(validAndOffsetAssignedRecords);
+                    encodeResult.setConversionCount(validationAndOffsetAssignResult.getConversionCount());
+                    appendInfo.setLastOffset(offset.value() - 1);
+                    log.info("AppendInfo：：：：： {}", appendInfo);
+                } else {
+                    validAndOffsetAssignedRecords = validRecords;
+                    encodeResult = entryFormatter.encode(validRecords);
+                }
+                AnalyzeResult analyzeResult = analyzeAndValidateProducerState(
+                        validAndOffsetAssignedRecords,
+                        appendInfo.getFirstOffset(),
+                        AppendOrigin.Client);
+                if (analyzeResult.getMaybeDuplicate().isPresent()) {
+                    log.error("Duplicate sequence number. topic: {}", topicPartition);
+                    appendFuture.completeExceptionally(Errors.DUPLICATE_SEQUENCE_NUMBER.exception());
+                    return;
                 }
 
-                final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
-                encodeRequest.recycle();
                 requestStats.getProduceEncodeStats().registerSuccessfulEvent(
                         time.nanoseconds() - beforeRecordsProcess, TimeUnit.NANOSECONDS);
                 appendRecordsContext.getStartSendOperationForThrottling()
@@ -241,8 +320,9 @@ public class PartitionLog {
 
                 publishMessages(persistentTopicOpt,
                         appendFuture,
+                        appendInfo,
+                        analyzeResult,
                         encodeResult,
-                        topicPartition,
                         appendRecordsContext);
             };
 
@@ -265,10 +345,10 @@ public class PartitionLog {
 
     private void publishMessages(final Optional<PersistentTopic> persistentTopicOpt,
                                  final CompletableFuture<Long> appendFuture,
+                                 final LogAppendInfo appendInfo,
+                                 final AnalyzeResult analyzeResult,
                                  final EncodeResult encodeResult,
-                                 final TopicPartition topicPartition,
                                  final AppendRecordsContext appendRecordsContext) {
-        final MemoryRecords records = encodeResult.getRecords();
         final int numMessages = encodeResult.getNumMessages();
         final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
         RequestStats requestStats = appendRecordsContext.getRequestStats();
@@ -296,13 +376,16 @@ public class PartitionLog {
         final long beforePublish = time.nanoseconds();
         persistentTopic.publishMessage(byteBuf,
                 MessagePublishContext.get(offsetFuture, persistentTopic, numMessages, System.nanoTime()));
-        final RecordBatch batch = records.batchIterator().next();
         offsetFuture.whenComplete((offset, e) -> {
             appendRecordsContext.getCompleteSendOperationForThrottling().accept(byteBuf.readableBytes());
             encodeResult.recycle();
             if (e == null) {
                 requestStats.getMessagePublishStats().registerSuccessfulEvent(
                         time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
+                if (log.isDebugEnabled()) {
+                    log.debug("Publish Offset: {} appendInfo offset: {}", offset, appendInfo.getFirstOffset());
+                }
+                this.append(analyzeResult, appendInfo.getLastOffset());
                 appendFuture.complete(offset);
             } else {
                 log.error("publishMessages for topic partition: {} failed when write.", fullPartitionName, e);
@@ -313,7 +396,96 @@ public class PartitionLog {
         });
     }
 
-    private static MemoryRecords validateRecords(short version, String fullPartitionName, MemoryRecords records) {
+    private LogAppendInfo analyzeAndValidateRecords(MemoryRecords records,
+                                                    short version,
+                                                    TopicPartition topicPartition) {
+        int shallowMessageCount = 0;
+        long lastOffset = -1L;
+        Optional<Long> firstOffset = Optional.empty();
+        long lastOffsetOfFirstBatch = -1L;
+        KopLogValidator.CompressionCodec sourceCodec = DEFAULT_COMPRESSION;
+        boolean readFirstMessage = false;
+        boolean monotonic = true;
+        boolean hasProducerId = false;
+
+        validateRecords(version, records);
+        int validBytesCount = 0;
+        for (RecordBatch batch : records.batches()) {
+            if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2 && batch.baseOffset() != 0) {
+                throw new InvalidRecordException("The baseOffset of the record batch in the append to "
+                        + topicPartition + " should be 0, but it is " + batch.baseOffset());
+            }
+            if (!readFirstMessage) {
+                if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2) {
+                    firstOffset = Optional.of(batch.baseOffset());
+                }
+                lastOffsetOfFirstBatch = batch.lastOffset();
+                readFirstMessage = true;
+            }
+            // check that offsets are monotonically increasing
+            if (lastOffset >= batch.lastOffset()){
+                monotonic = false;
+            }
+
+            // update the last offset seen
+            lastOffset = batch.lastOffset();
+
+            int batchSize = batch.sizeInBytes();
+            if (batchSize > kafkaConfig.getMaxMessageSize()) {
+                throw new RecordTooLargeException(String.format("Message batch size is %s "
+                                + "in append to partition %s which exceeds the maximum configured size of %s .",
+                        batchSize, topicPartition, kafkaConfig.getMaxMessageSize()));
+            }
+            if (batch.hasProducerId()) {
+                hasProducerId = true;
+            }
+            batch.ensureValid();
+            shallowMessageCount += 1;
+            validBytesCount += batchSize;
+
+            CompressionType compressionType = CompressionType.forId(batch.compressionType().id);
+            KopLogValidator.CompressionCodec messageCodec = new KopLogValidator.CompressionCodec(
+                    compressionType.name, compressionType.id);
+            if (messageCodec.codec() != CompressionType.NONE.id) {
+                sourceCodec = messageCodec;
+            }
+        }
+
+        if (validBytesCount < 0) {
+            throw new CorruptRecordException("Cannot append record batch with illegal length "
+                    + validBytesCount + " to log for " + topicPartition
+                    + ". A possible cause is corrupted produce request.");
+        }
+        KopLogValidator.CompressionCodec targetCodec =
+                KopLogValidator.getTargetCodec(sourceCodec, kafkaConfig.getKafkaCompressionType());
+
+        return new LogAppendInfo(
+                firstOffset,
+                lastOffset,
+                shallowMessageCount,
+                monotonic,
+                hasProducerId,
+                lastOffsetOfFirstBatch,
+                validBytesCount,
+                sourceCodec,
+                targetCodec);
+    }
+
+    private MemoryRecords trimInvalidBytes(MemoryRecords records, LogAppendInfo info) {
+        Integer validBytes = info.getValidBytes();
+        if (validBytes < 0){
+            throw new CorruptRecordException(String.format("Cannot append record batch with illegal length %s to "
+                    + "log for %s. A possible cause is a corrupted produce request.", validBytes, topicPartition));
+        } else if (validBytes == records.sizeInBytes()) {
+            return records;
+        } else {
+            ByteBuffer validByteBuffer = records.buffer().duplicate();
+            validByteBuffer.limit(validBytes);
+            return MemoryRecords.readableRecords(validByteBuffer);
+        }
+    }
+
+    private static void validateRecords(short version, MemoryRecords records) {
         if (version >= 3) {
             Iterator<MutableRecordBatch> iterator = records.batches().iterator();
             if (!iterator.hasNext()) {
@@ -332,33 +504,5 @@ public class PartitionLog {
                         + "contain exactly one record batch");
             }
         }
-
-        int validBytesCount = 0;
-        for (RecordBatch batch : records.batches()) {
-            if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2 && batch.baseOffset() != 0) {
-                throw new InvalidRecordException("The baseOffset of the record batch in the append to "
-                        + fullPartitionName + " should be 0, but it is " + batch.baseOffset());
-            }
-
-            batch.ensureValid();
-            validBytesCount += batch.sizeInBytes();
-        }
-
-        if (validBytesCount < 0) {
-            throw new CorruptRecordException("Cannot append record batch with illegal length "
-                    + validBytesCount + " to log for " + fullPartitionName
-                    + ". A possible cause is corrupted produce request.");
-        }
-
-        MemoryRecords validRecords;
-        if (validBytesCount == records.sizeInBytes()) {
-            validRecords = records;
-        } else {
-            ByteBuffer validByteBuffer = records.buffer().duplicate();
-            validByteBuffer.limit(validBytesCount);
-            validRecords = MemoryRecords.readableRecords(validByteBuffer);
-        }
-
-        return validRecords;
     }
 }

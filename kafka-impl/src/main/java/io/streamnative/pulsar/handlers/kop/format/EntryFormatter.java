@@ -26,10 +26,10 @@ public interface EntryFormatter {
     /**
      * Encode Kafka records to a ByteBuf.
      *
-     * @param encodeRequest contains messages with Kafka's format
+     * @param records contains messages with Kafka's format
      * @return the EncodeResult contains the ByteBuf of an entry that is to be written to Bookie
      */
-    EncodeResult encode(EncodeRequest encodeRequest);
+    EncodeResult encode(MemoryRecords records);
 
     /**
      * Decode a stream of entries to Kafka records.
@@ -45,7 +45,7 @@ public interface EntryFormatter {
      * Get the number of messages from MemoryRecords.
      * Since MemoryRecords doesn't provide a way to get the number of messages. We need to iterate over the whole
      * MemoryRecords object. So we use a helper method to get the number of messages that can be passed to
-     * {@link EntryFormatter#encode(EncodeRequest)} and metrics related methods as well.
+     * {@link EntryFormatter#encode(MemoryRecords)} and metrics related methods as well.
      *
      * @param records messages with Kafka's format
      * @return the number of messages

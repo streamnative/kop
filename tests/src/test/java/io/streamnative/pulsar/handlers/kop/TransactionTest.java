@@ -55,6 +55,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         this.conf.setKafkaTransactionCoordinatorEnabled(true);
+        this.conf.setEntryFormat("kafka");
         super.internalSetup();
         log.info("success internal setup");
     }
@@ -74,7 +75,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         };
     }
 
-    @Test(timeOut = 1000 * 10, dataProvider = "produceConfigProvider")
+    @Test(dataProvider = "produceConfigProvider")
     public void readCommittedTest(boolean isBatch) throws Exception {
         basicProduceAndConsumeTest("read-committed-test", "txn-11", "read_committed", isBatch);
     }
@@ -96,6 +97,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
         producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
+        producerProps.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);
 
         @Cleanup
         KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
@@ -103,7 +105,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.initTransactions();
 
         int totalTxnCount = 10;
-        int messageCountPerTxn = 10;
+        int messageCountPerTxn = 100;
 
         String lastMessage = "";
         for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
@@ -121,9 +123,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 log.info("send txn message {}", msgContent);
                 lastMessage = msgContent;
                 if (isBatch) {
-                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent));
+                    producer.send(new ProducerRecord<>(topicName, messageIndex + 1000, msgContent));
                 } else {
-                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
+                    producer.send(new ProducerRecord<>(topicName, messageIndex + 1000, msgContent)).get();
                 }
             }
             producer.flush();
