@@ -97,7 +97,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
-        conf.setEnableTransactionCoordinator(false);
+        conf.setKafkaTransactionCoordinatorEnabled(false);
         super.internalSetup();
     }
 

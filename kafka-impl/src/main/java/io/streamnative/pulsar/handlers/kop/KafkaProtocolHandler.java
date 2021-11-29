@@ -121,7 +121,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     public ReplicaManager getReplicaManager(String tenant) {
         return replicaManagerByTenant.computeIfAbsent(tenant, s -> {
             Optional<TransactionCoordinator> transactionCoordinatorOptional = Optional.empty();
-            if (kafkaConfig.isEnableTransactionCoordinator()) {
+            if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
                 transactionCoordinatorOptional = Optional.of(getTransactionCoordinator(tenant));
             }
             EntryFormatter entryFormatter;
@@ -495,7 +495,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 groupCoordinatorsByTenant);
         kopEventManager.start();
 
-        if (kafkaConfig.isEnableTransactionCoordinator()) {
+        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
             getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
         }
 
@@ -705,13 +705,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                                                              ClusterData clusterData,
                                                              String namespacePrefix) throws Exception {
         TransactionConfig transactionConfig = TransactionConfig.builder()
-                .transactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions())
+                .transactionLogNumPartitions(kafkaConfig.getKafkaTxnLogTopicNumPartitions())
                 .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(tenant, kafkaConfig))
-                .abortTimedOutTransactionsIntervalMs(kafkaConfig.getTxnAbortTimedOutTransactionCleanupIntervalMs())
-                .transactionalIdExpirationMs(kafkaConfig.getTransactionalIdExpirationMs())
+                .abortTimedOutTransactionsIntervalMs(kafkaConfig.getKafkaTxnAbortTimedOutTransactionCleanupIntervalMs())
+                .transactionalIdExpirationMs(kafkaConfig.getKafkaTransactionalIdExpirationMs())
                 .removeExpiredTransactionalIdsIntervalMs(
-                        kafkaConfig.getTransactionsRemoveExpiredTransactionalIdCleanupIntervalMs())
-                .brokerId(kafkaConfig.getBrokerId())
+                        kafkaConfig.getKafkaTransactionsRemoveExpiredTransactionalIdCleanupIntervalMs())
+                .brokerId(kafkaConfig.getKafkaBrokerId())
                 .build();
 
         MetadataUtils.createTxnMetadataIfMissing(tenant, pulsarAdmin, clusterData, kafkaConfig);
@@ -725,7 +725,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 Time.SYSTEM,
                 namespacePrefix);
 
-        transactionCoordinator.startup(kafkaConfig.isEnableTransactionalIdExpiration()).get();
+        transactionCoordinator.startup(kafkaConfig.isKafkaTransactionalIdExpirationEnable()).get();
 
         return transactionCoordinator;
     }

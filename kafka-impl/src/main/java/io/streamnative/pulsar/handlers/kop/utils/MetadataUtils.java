@@ -70,7 +70,7 @@ public class MetadataUtils {
         KopTopic kopTopic = new KopTopic(constructTxnLogTopicBaseName(tenant, conf),
                 constructMetadataNamespace(tenant, conf));
         createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
-                conf.getTxnLogTopicNumPartitions());
+                conf.getKafkaTxnLogTopicNumPartitions());
     }
 
     /**
