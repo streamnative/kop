@@ -53,6 +53,7 @@ import io.streamnative.pulsar.handlers.kop.utils.KafkaRequestUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
+import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
@@ -242,7 +243,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     public String currentNamespacePrefix() {
         String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
-        return currentTenant + "/" + kafkaConfig.getKafkaNamespace();
+        return MetadataUtils.constructUserTopicsNamespace(currentTenant, kafkaConfig);
     }
 
     private static String extractTenantFromTenantSpec(String tenantSpec) {

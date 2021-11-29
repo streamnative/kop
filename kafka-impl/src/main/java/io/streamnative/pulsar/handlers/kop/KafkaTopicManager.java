@@ -172,10 +172,13 @@ public class KafkaTopicManager {
                 log.debug("[{}] Return null for getTopic({}) since channel is closing",
                         requestHandler.ctx.channel(), topicName);
             }
+            log.info("[{}] Return null for getTopic({}) since channel is closing",
+                    requestHandler.ctx.channel(), topicName);
             return CompletableFuture.completedFuture(Optional.empty());
         }
         CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture = new CompletableFuture<>();
         brokerService.getTopicIfExists(topicName).whenComplete((t2, throwable) -> {
+            log.info("getTopicIfExists {} result {} {}", topicName, t2, throwable);
             TopicName topicNameObject = TopicName.get(topicName);
             if (throwable != null) {
                 // Failed to getTopic from current broker, remove cache, which added in getTopicBroker.

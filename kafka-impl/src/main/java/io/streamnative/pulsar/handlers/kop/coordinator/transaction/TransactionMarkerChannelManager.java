@@ -75,7 +75,7 @@ public class TransactionMarkerChannelManager {
     private TxnMarkerQueue markersQueueForUnknownBroker = new TxnMarkerQueue(null);
     private BlockingQueue<PendingCompleteTxn> txnLogAppendRetryQueue = new LinkedBlockingQueue<>();
     private volatile boolean closed;
-    private final String namespacePrefix;
+    private final String namespacePrefixForUserTopics;
 
     @AllArgsConstructor
     @ToString
@@ -134,9 +134,9 @@ public class TransactionMarkerChannelManager {
                                            TransactionStateManager txnStateManager,
                                            KopBrokerLookupManager kopBrokerLookupManager,
                                            boolean enableTls,
-                                           String namespacePrefix) {
+                                           String namespacePrefixForUserTopics) {
         this.kafkaConfig = kafkaConfig;
-        this.namespacePrefix = namespacePrefix;
+        this.namespacePrefixForUserTopics = namespacePrefixForUserTopics;
         this.txnStateManager = txnStateManager;
         this.kopBrokerLookupManager = kopBrokerLookupManager;
         this.enableTls = enableTls;
@@ -157,12 +157,12 @@ public class TransactionMarkerChannelManager {
             while (!closed) {
                 drainQueuedTransactionMarkers();
                 try {
-                    Thread.sleep(1);
+                    Thread.sleep(1000);
                 } catch (InterruptedException e) {
                     log.info("ignore {}", e);
                 }
             }
-        }, "kop-transaction-channel-manager-" + namespacePrefix);
+        }, "kop-transaction-channel-manager-" + namespacePrefixForUserTopics);
         thread.setDaemon(true);
         thread.start();
     }
@@ -243,7 +243,7 @@ public class TransactionMarkerChannelManager {
                                            TransactionResult result,
                                            Integer coordinatorEpoch,
                                            Set<TopicPartition> topicPartitions,
-                                           String namespacePrefix) {
+                                           String namespacePrefixForUserTopics) {
         Integer txnTopicPartition = txnStateManager.partitionFor(transactionalId);
 
         Map<InetSocketAddress, List<TopicPartition>> addressAndPartitionMap = new ConcurrentHashMap<>();
@@ -251,7 +251,7 @@ public class TransactionMarkerChannelManager {
 
         List<CompletableFuture<Void>> addressFutureList = new ArrayList<>();
         for (TopicPartition topicPartition : topicPartitions) {
-            String pulsarTopic = new KopTopic(topicPartition.topic(), namespacePrefix)
+            String pulsarTopic = new KopTopic(topicPartition.topic(), namespacePrefixForUserTopics)
                     .getPartitionName(topicPartition.partition());
             CompletableFuture<Optional<InetSocketAddress>> addressFuture =
                     kopBrokerLookupManager.findBroker(pulsarTopic, sslEndPoint);
@@ -270,7 +270,7 @@ public class TransactionMarkerChannelManager {
                     addFuture.completeExceptionally(new Exception("no address for owner of " + topicPartition));
                     return;
                 }
-                log.info("Leader for {} is {}", address.get());
+                log.info("Leader for {} is {}", pulsarTopic, address.get());
                 addressAndPartitionMap.compute(address.get(), (__, set) -> {
                     if (set == null) {
                         set = new ArrayList<>();
@@ -435,7 +435,7 @@ public class TransactionMarkerChannelManager {
             List<TopicPartition> topicPartitions = txnIdAndMarker.getEntry().partitions();
 
             addTxnMarkersToBrokerQueue(transactionalId, producerId, producerEpoch,
-                    txnResult, coordinatorEpoch, new HashSet<>(topicPartitions), namespacePrefix);
+                    txnResult, coordinatorEpoch, new HashSet<>(topicPartitions), namespacePrefixForUserTopics);
         }
 
         for (TxnMarkerQueue txnMarkerQueue : markersQueuePerBroker.values()) {
@@ -452,7 +452,7 @@ public class TransactionMarkerChannelManager {
                             new WriteTxnMarkersRequest.Builder(sendEntries).build(),
                             new TransactionMarkerRequestCompletionHandler(
                                     0, txnStateManager, this, txnIdAndMarkerEntries,
-                                    namespacePrefix));
+                                    namespacePrefixForUserTopics));
                 });
             }
         }

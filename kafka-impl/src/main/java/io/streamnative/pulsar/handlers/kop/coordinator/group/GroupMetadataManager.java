@@ -206,7 +206,7 @@ public class GroupMetadataManager {
                                 ProducerBuilder<ByteBuffer> metadataTopicProducerBuilder,
                                 ReaderBuilder<ByteBuffer> metadataTopicReaderBuilder,
                                 ScheduledExecutorService scheduler,
-                                String namespacePrefix,
+                                String namespacePrefixForMetadata,
                                 Time time) {
         this(offsetConfig,
             metadataTopicProducerBuilder,
@@ -216,7 +216,7 @@ public class GroupMetadataManager {
             // Be same with kafka: abs(groupId.hashCode) % groupMetadataTopicPartitionCount
             // return a partitionId
             groupId -> getPartitionId(groupId, offsetConfig.offsetsTopicNumPartitions()),
-            namespacePrefix
+            namespacePrefixForMetadata
         );
     }
 

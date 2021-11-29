@@ -69,7 +69,8 @@ import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 @Slf4j
 public class TransactionCoordinator {
 
-    private final String namespacePrefix;
+    private final String namespacePrefixForMetadata;
+    private final String namespacePrefixForUserTopics;
     private final TransactionConfig transactionConfig;
     private final ProducerIdManager producerIdManager;
     @Getter
@@ -117,8 +118,10 @@ public class TransactionCoordinator {
                                      ProducerIdManager producerIdManager,
                                      TransactionStateManager txnManager,
                                      Time time,
-                                     String namespacePrefix) {
-        this.namespacePrefix = namespacePrefix;
+                                     String namespacePrefixForMetadata,
+                                     String namespacePrefixForUserTopics) {
+        this.namespacePrefixForMetadata = namespacePrefixForMetadata;
+        this.namespacePrefixForUserTopics = namespacePrefixForUserTopics;
         this.transactionConfig = transactionConfig;
         this.txnManager = txnManager;
         this.producerIdManager = producerIdManager;
@@ -133,18 +136,20 @@ public class TransactionCoordinator {
                                             KopBrokerLookupManager kopBrokerLookupManager,
                                             ScheduledExecutorService scheduler,
                                             Time time,
-                                            String namespacePrefix) {
+                                            String namespacePrefixForMetadata,
+                                            String namespacePrefixForUserTopics) {
         TransactionStateManager transactionStateManager =
                 new TransactionStateManager(transactionConfig, txnTopicClient, scheduler, time);
         return new TransactionCoordinator(
                 transactionConfig,
                 new TransactionMarkerChannelManager(null, transactionStateManager,
-                        kopBrokerLookupManager, false, namespacePrefix),
+                        kopBrokerLookupManager, false, namespacePrefixForUserTopics),
                 scheduler,
                 new ProducerIdManager(transactionConfig.getBrokerId(), metadataStore),
                 transactionStateManager,
                 time,
-                namespacePrefix);
+                namespacePrefixForMetadata,
+                namespacePrefixForUserTopics);
     }
 
     /**
@@ -153,7 +158,7 @@ public class TransactionCoordinator {
      * @param partition The partition that we are now leading
      */
     public CompletableFuture<Void> handleTxnImmigration(int partition) {
-        log.info("Elected as the txn coordinator for partition {} for {}.", partition, namespacePrefix);
+        log.info("Elected as the txn coordinator for partition {} for {}.", partition, namespacePrefixForMetadata);
         // The operations performed during immigration must be resilient to any previous errors we saw or partial state
         // we left off during the unloading phase. Ensure we remove all associated state for this partition before we
         // continue loading it.
@@ -163,7 +168,7 @@ public class TransactionCoordinator {
                 (transactionResult, transactionMetadata, txnTransitMetadata) -> {
                     transactionMarkerChannelManager.addTxnMarkersToSend(
                             -1, transactionResult, transactionMetadata, txnTransitMetadata,
-                            namespacePrefix);
+                            namespacePrefixForUserTopics);
                 });
     }
 
@@ -173,7 +178,7 @@ public class TransactionCoordinator {
      * @param partition The partition that we are no longer leading
      */
     public void handleTxnEmigration(int partition) {
-        log.info("Resigned as the txn coordinator for partition {} for {}.", partition, namespacePrefix);
+        log.info("Resigned as the txn coordinator for partition {} for {}.", partition, namespacePrefixForMetadata);
         txnManager.removeTransactionsForTxnTopicPartition(partition);
         transactionMarkerChannelManager.removeMarkersForTxnTopicPartition(partition);
     }
@@ -852,7 +857,7 @@ public class TransactionCoordinator {
         callback.accept(Errors.NONE);
         transactionMarkerChannelManager.addTxnMarkersToSend(
                 coordinatorEpoch, txnMarkerResult, epochAndTxnMetadata.getTransactionMetadata(),
-                preSendResult.getData().getTxnTransitMetadata(), namespacePrefix);
+                preSendResult.getData().getTxnTransitMetadata(), namespacePrefixForUserTopics);
     }
 
     private Errors logInvalidStateTransitionAndReturnError(String transactionalId,
