@@ -64,6 +64,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     protected final long defaultTestTimeout = 20000;
     public static final long DefaultAbortTimedOutTransactionsIntervalMs = TimeUnit.SECONDS.toMillis(1);
+    private static final String METADATA_NAMESPACE_PREFIX = "public/__kafka";
     private static final String NAMESPACE_PREFIX = "public/default";
     private TransactionCoordinator transactionCoordinator;
     private ProducerIdManager producerIdManager;
@@ -131,6 +132,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 producerIdManager,
                 transactionManager,
                 time,
+                METADATA_NAMESPACE_PREFIX,
                 NAMESPACE_PREFIX);
         result = null;
         error = Errors.NONE;
