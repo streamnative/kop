@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -33,10 +35,11 @@ import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
 @Slf4j
 public class TransactionMarkerRequestCompletionHandler {
 
-    private Integer brokerId;
-    private TransactionStateManager txnStateManager;
-    private TransactionMarkerChannelManager txnMarkerChannelManager;
-    private List<TransactionMarkerChannelManager.TxnIdAndMarkerEntry> txnIdAndMarkerEntries;
+    private final Integer brokerId;
+    private final TransactionStateManager txnStateManager;
+    private final TransactionMarkerChannelManager txnMarkerChannelManager;
+    private final List<TransactionMarkerChannelManager.TxnIdAndMarkerEntry> txnIdAndMarkerEntries;
+    private final String namespacePrefix;
 
     private static class AbortSendingRetryPartitions {
         private AtomicBoolean abortSending = new AtomicBoolean(false);
@@ -108,7 +111,8 @@ public class TransactionMarkerRequestCompletionHandler {
                     txnMarker.producerEpoch(),
                     txnMarker.transactionResult(),
                     txnMarker.coordinatorEpoch(),
-                    abortSendOrRetryPartitions.retryPartitions);
+                    abortSendOrRetryPartitions.retryPartitions,
+                    namespacePrefix);
         }
     }
 
@@ -156,6 +160,16 @@ public class TransactionMarkerRequestCompletionHandler {
                             log.info("Sending {}'s transaction marker for partition {} has failed with error {}, "
                                     + "retrying with current coordinator epoch {}", transactionalId, topicPartition,
                                     error.exceptionName(), epochAndMetadata.getCoordinatorEpoch());
+                            abortSendingAndRetryPartitions.retryPartitions.add(topicPartition);
+                            break;
+                        case LEADER_NOT_AVAILABLE:
+                        case NOT_LEADER_FOR_PARTITION:
+                            log.info("Sending {}'s transaction marker for partition {} has failed with error {}, "
+                                            + "retrying with current coordinator epoch {} and invalidating cache",
+                                    transactionalId, topicPartition,
+                                    error.exceptionName(), epochAndMetadata.getCoordinatorEpoch());
+                            KopBrokerLookupManager.removeTopicManagerCache(
+                                    KopTopic.toString(topicPartition, namespacePrefix));
                             abortSendingAndRetryPartitions.retryPartitions.add(topicPartition);
                             break;
                         case INVALID_PRODUCER_EPOCH:

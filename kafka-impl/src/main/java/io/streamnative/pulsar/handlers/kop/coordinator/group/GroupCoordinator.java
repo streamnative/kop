@@ -50,7 +50,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.TopicPartition;
@@ -101,12 +100,13 @@ public class GroupCoordinator {
 
 
     public static GroupCoordinator of(
-            String tenant,
-            SystemTopicClient client,
-            GroupConfig groupConfig,
-            OffsetConfig offsetConfig,
-            Timer timer,
-            Time time
+        String tenant,
+        SystemTopicClient client,
+        GroupConfig groupConfig,
+        OffsetConfig offsetConfig,
+        String namespacePrefix,
+        Timer timer,
+        Time time
     ) {
         ScheduledExecutorService coordinatorExecutor = OrderedScheduler.newSchedulerBuilder()
                 .name("group-coordinator-executor")
@@ -114,12 +114,13 @@ public class GroupCoordinator {
                 .build();
 
         GroupMetadataManager metadataManager = new GroupMetadataManager(
-                tenant,
-                offsetConfig,
-                client.newProducerBuilder(),
-                client.newReaderBuilder(),
-                coordinatorExecutor,
-                time
+            tenant,
+            offsetConfig,
+            client.newProducerBuilder(),
+            client.newReaderBuilder(),
+            coordinatorExecutor,
+            namespacePrefix,
+            time
         );
 
         DelayedOperationPurgatory<DelayedJoin> joinPurgatory = DelayedOperationPurgatory.<DelayedJoin>builder()
@@ -791,14 +792,13 @@ public class GroupCoordinator {
 
     public CompletableFuture<Void> scheduleHandleTxnCompletion(
         long producerId,
-        Stream<TopicPartition> offsetsPartitions,
+        Set<Integer> offsetsPartitions,
         TransactionResult transactionResult
     ) {
         boolean isCommit = TransactionResult.COMMIT == transactionResult;
         return groupManager.scheduleHandleTxnCompletion(
             producerId,
-            offsetsPartitions.map(TopicPartition::partition)
-                .collect(Collectors.toSet()),
+            offsetsPartitions,
             isCommit
         );
     }

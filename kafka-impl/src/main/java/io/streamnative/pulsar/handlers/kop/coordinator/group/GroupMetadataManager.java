@@ -98,6 +98,8 @@ public class GroupMetadataManager {
     @Getter
     private final OffsetConfig offsetConfig;
     private final String tenant;
+    private final String namespacePrefix;
+
     private final ConcurrentMap<String, GroupMetadata> groupMetadataCache;
     /* lock protecting access to loading and owned partition sets */
     private final ReentrantLock partitionLock = new ReentrantLock();
@@ -132,6 +134,7 @@ public class GroupMetadataManager {
     private final ReaderBuilder<ByteBuffer> metadataTopicReaderBuilder;
     private final Time time;
     private final Function<String, Integer> partitioner;
+
     /**
      * The key interface.
      */
@@ -201,11 +204,13 @@ public class GroupMetadataManager {
 
     }
 
+
     public GroupMetadataManager(String tenant,
                                 OffsetConfig offsetConfig,
                                 ProducerBuilder<ByteBuffer> metadataTopicProducerBuilder,
                                 ReaderBuilder<ByteBuffer> metadataTopicReaderBuilder,
                                 ScheduledExecutorService scheduler,
+                                String namespacePrefix,
                                 Time time) {
         this(tenant,
             offsetConfig,
@@ -215,7 +220,8 @@ public class GroupMetadataManager {
             time,
             // Be same with kafka: abs(groupId.hashCode) % groupMetadataTopicPartitionCount
             // return a partitionId
-            groupId -> getPartitionId(groupId, offsetConfig.offsetsTopicNumPartitions())
+            groupId -> getPartitionId(groupId, offsetConfig.offsetsTopicNumPartitions()),
+            namespacePrefix
         );
     }
 
@@ -229,8 +235,10 @@ public class GroupMetadataManager {
                          ReaderBuilder<ByteBuffer> metadataTopicConsumerBuilder,
                          ScheduledExecutorService scheduler,
                          Time time,
-                         Function<String, Integer> partitioner) {
+                         Function<String, Integer> partitioner,
+                         String namespacePrefix) {
         this.tenant = tenant;
+        this.namespacePrefix = namespacePrefix;
         this.offsetConfig = offsetConfig;
         this.compressionType = offsetConfig.offsetsTopicCompressionType();
         this.groupMetadataCache = new ConcurrentHashMap<>();
@@ -500,7 +508,7 @@ public class GroupMetadataManager {
         long timestamp = time.milliseconds();
         List<SimpleRecord> records = filteredOffsetMetadata.entrySet().stream()
             .map(e -> {
-                byte[] key = offsetCommitKey(group.groupId(), e.getKey());
+                byte[] key = offsetCommitKey(group.groupId(), e.getKey(), namespacePrefix);
                 byte[] value = offsetCommitValue(e.getValue());
                 return new SimpleRecord(timestamp, key, value);
             })
@@ -539,7 +547,7 @@ public class GroupMetadataManager {
         }
 
         // dummy offset commit key
-        byte[] key = offsetCommitKey(group.groupId(), new TopicPartition("", -1));
+        byte[] key = offsetCommitKey(group.groupId(), new TopicPartition("", -1), namespacePrefix);
         return storeOffsetMessage(group.groupId(), key, entries.buffer(), timestamp)
             .thenApplyAsync(messageId -> {
                 if (!group.is(GroupState.Dead)) {
@@ -638,7 +646,7 @@ public class GroupMetadataManager {
                     .collect(Collectors.toMap(
                         tp -> tp,
                         topicPartition ->
-                            group.offset(topicPartition)
+                            group.offset(topicPartition, namespacePrefix)
                                 .map(offsetAndMetadata -> KafkaResponseUtils.newOffsetFetchPartition(
                                     offsetAndMetadata.offset(),
                                     offsetAndMetadata.metadata())
@@ -1232,7 +1240,7 @@ public class GroupMetadataManager {
             List<SimpleRecord> tombstones = new ArrayList<>();
             removedOffsets.forEach((topicPartition, offsetAndMetadata) -> {
                 byte[] commitKey = offsetCommitKey(
-                    groupId, topicPartition
+                    groupId, topicPartition, namespacePrefix
                 );
                 tombstones.add(new SimpleRecord(timestamp, commitKey, null));
             });

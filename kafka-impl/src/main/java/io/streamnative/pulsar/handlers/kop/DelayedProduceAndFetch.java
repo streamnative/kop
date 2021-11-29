@@ -20,12 +20,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * A delayed create topic operation that is stored in the topic purgatory.
  */
-class DelayedProduceAndFetch extends DelayedOperation {
+public class DelayedProduceAndFetch extends DelayedOperation {
 
     private final AtomicInteger topicPartitionNum;
     private final Runnable callback;
 
-    DelayedProduceAndFetch(long delayMs, AtomicInteger topicPartitionNum, Runnable callback) {
+    public DelayedProduceAndFetch(long delayMs, AtomicInteger topicPartitionNum, Runnable callback) {
         super(delayMs, Optional.empty());
         this.topicPartitionNum = topicPartitionNum;
         this.callback = callback;

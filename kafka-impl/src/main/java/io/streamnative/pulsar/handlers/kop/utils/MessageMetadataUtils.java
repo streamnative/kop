@@ -62,7 +62,8 @@ public class MessageMetadataUtils {
     public static CompletableFuture<Long> getOffsetOfPosition(ManagedLedgerImpl managedLedger,
                                                               PositionImpl position,
                                                               boolean needCheckMore,
-                                                              long timestamp) {
+                                                              long timestamp,
+                                                              boolean skipMessagesWithoutIndex) {
         final CompletableFuture<Long> future = new CompletableFuture<>();
         managedLedger.asyncReadEntry(position, new AsyncCallbacks.ReadEntryCallback() {
             @Override
@@ -91,9 +92,13 @@ public class MessageMetadataUtils {
                     } else {
                         future.complete(peekBaseOffsetFromEntry(entry));
                     }
-                } catch (MetadataCorruptedException.NoBrokerEntryMetadata ignored) {
-                    log.warn("The entry {} doesn't have BrokerEntryMetadata, return 0 as the offset", position);
-                    future.complete(0L);
+                } catch (MetadataCorruptedException.NoBrokerEntryMetadata e) {
+                    if (skipMessagesWithoutIndex) {
+                        log.warn("The entry {} doesn't have BrokerEntryMetadata, return 0 as the offset", position);
+                        future.complete(0L);
+                    } else {
+                        future.completeExceptionally(e);
+                    }
                 } catch (MetadataCorruptedException e) {
                     future.completeExceptionally(e);
                 } finally {
@@ -163,7 +168,9 @@ public class MessageMetadataUtils {
         return ledgerId + entryId;
     }
 
-    public static CompletableFuture<Position> asyncFindPosition(final ManagedLedger managedLedger, final long offset) {
+    public static CompletableFuture<Position> asyncFindPosition(final ManagedLedger managedLedger,
+                                                                final long offset,
+                                                                final boolean skipMessagesWithoutIndex) {
         return managedLedger.asyncFindPosition(entry -> {
             if (entry == null) {
                 // `entry` should not be null, add the null check here to fix the spotbugs check
@@ -172,10 +179,11 @@ public class MessageMetadataUtils {
             try {
                 return peekOffsetFromEntry(entry) < offset;
             } catch (MetadataCorruptedException.NoBrokerEntryMetadata ignored) {
-                // Here we assume the messages without BrokerEntryMetadata are produced by KoP < 2.8.0 that doesn't
+                // When skipMessagesWithoutIndex is false, just return false to stop finding the position. Otherwise,
+                // we assume the messages without BrokerEntryMetadata are produced by KoP < 2.8.0 that doesn't
                 // support BrokerEntryMetadata. In this case, these messages should be older than any message produced
                 // by KoP with BrokerEntryMetadata enabled.
-                return true;
+                return skipMessagesWithoutIndex;
             } catch (MetadataCorruptedException e) {
                 log.error("[{}] Entry {} is corrupted: {}",
                         managedLedger.getName(), entry.getPosition(), e.getMessage());

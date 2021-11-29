@@ -133,18 +133,20 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         otherGroupId = "otherGroupId";
         offsetConfig.offsetsTopicNumPartitions(4);
         groupMetadataManager = spy(new GroupMetadataManager(
-            conf.getKafkaMetadataTenant(),
-            offsetConfig,
-            producerBuilder,
-            readerBuilder,
-            scheduler,
-            timer.time(),
-            id -> {
-                if (groupId.equals(id) || id.isEmpty()) {
-                    return groupPartitionId;
-                } else {
-                    return otherGroupPartitionId;
-                }
+                conf.getKafkaMetadataTenant(),
+                offsetConfig,
+                producerBuilder,
+                readerBuilder,
+                scheduler,
+                timer.time(),
+                id -> {
+                    if (groupId.equals(id) || id.isEmpty()) {
+                        return groupPartitionId;
+                    } else {
+                        return otherGroupPartitionId;
+                    }
+                },
+            "public/default"
         ));
 
         assertNotEquals(groupPartitionId, otherGroupPartitionId);
@@ -1202,7 +1204,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         // send commit marker
         groupCoordinator.scheduleHandleTxnCompletion(
             producerId,
-            Lists.newArrayList(offsetsTopic).stream(),
+            Collections.singleton(offsetsTopic.partition()),
             TransactionResult.COMMIT
         ).get();
 
@@ -1245,7 +1247,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         // send commit marker
         groupCoordinator.scheduleHandleTxnCompletion(
             producerId,
-            Lists.newArrayList(offsetsTopic).stream(),
+            Collections.singleton(offsetsTopic.partition()),
             TransactionResult.ABORT
         ).get();
 
@@ -1287,7 +1289,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         // send commit marker
         groupCoordinator.scheduleHandleTxnCompletion(
             producerId,
-            Lists.newArrayList(offsetsTopic).stream(),
+            Collections.singleton(offsetsTopic.partition()),
             TransactionResult.ABORT
         ).get();
 
@@ -1300,7 +1302,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         // ignore spurious commit
         groupCoordinator.scheduleHandleTxnCompletion(
             producerId,
-            Lists.newArrayList(offsetsTopic).stream(),
+            Collections.singleton(offsetsTopic.partition()),
             TransactionResult.COMMIT
         ).get();
 
@@ -1358,7 +1360,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         // We got a commit for only one __consumer_offsets partition. We should only materialize it's group offsets.
         groupCoordinator.scheduleHandleTxnCompletion(
             producerId,
-            Lists.newArrayList(offsetTopicPartitions.get(0)).stream(),
+            Collections.singleton(offsetTopicPartitions.get(0).partition()),
             TransactionResult.COMMIT
         ).get();
 
@@ -1392,7 +1394,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         // Now we receive the other marker
         groupCoordinator.scheduleHandleTxnCompletion(
             producerId,
-            Lists.newArrayList(offsetTopicPartitions.get(1)).stream(),
+            Collections.singleton(offsetTopicPartitions.get(1).partition()),
             TransactionResult.COMMIT
         ).get();
         errors.clear();
@@ -1468,7 +1470,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         // producer0 commits its transaction.
         groupCoordinator.scheduleHandleTxnCompletion(
             producerIds.get(0),
-            Lists.newArrayList(offsetTopicPartition).stream(),
+            Collections.singleton(offsetTopicPartition.partition()),
             TransactionResult.COMMIT
         ).get();
 
@@ -1489,7 +1491,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         // producer 1 now commits its transaction
         groupCoordinator.scheduleHandleTxnCompletion(
             producerIds.get(1),
-            Lists.newArrayList(offsetTopicPartition).stream(),
+            Collections.singleton(offsetTopicPartition.partition()),
             TransactionResult.COMMIT
         ).get();
 

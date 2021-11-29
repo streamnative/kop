@@ -55,7 +55,7 @@ public class PendingTopicFutures {
 
     public void addListener(CompletableFuture<Optional<PersistentTopic>> topicFuture,
                             @NonNull Consumer<Optional<PersistentTopic>> persistentTopicConsumer,
-                            @NonNull Consumer<Throwable> exceptionConsumer) {
+                            @NonNull CompletableFuture<Long> completableFuture) {
         if (count.compareAndSet(0, 1)) {
             // The first pending future comes
             currentTopicFuture = topicFuture.thenApply(persistentTopic -> {
@@ -65,7 +65,7 @@ public class PendingTopicFutures {
                 return TopicThrowablePair.withTopic(persistentTopic);
             }).exceptionally(e -> {
                 registerQueueLatency(false);
-                exceptionConsumer.accept(e.getCause());
+                completableFuture.completeExceptionally(e.getCause());
                 count.decrementAndGet();
                 return TopicThrowablePair.withThrowable(e.getCause());
             });
@@ -77,13 +77,13 @@ public class PendingTopicFutures {
                     persistentTopicConsumer.accept(topicThrowablePair.getPersistentTopicOpt());
                 } else {
                     registerQueueLatency(false);
-                    exceptionConsumer.accept(topicThrowablePair.getThrowable());
+                    completableFuture.completeExceptionally(topicThrowablePair.getThrowable());
                 }
                 count.decrementAndGet();
                 return topicThrowablePair;
             }).exceptionally(e -> {
                 registerQueueLatency(false);
-                exceptionConsumer.accept(e.getCause());
+                completableFuture.completeExceptionally(e.getCause());
                 count.decrementAndGet();
                 return TopicThrowablePair.withThrowable(e.getCause());
             });
