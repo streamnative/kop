@@ -90,7 +90,6 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
         public void onComplete(ByteBuffer nio) {
             WriteTxnMarkersResponse response = WriteTxnMarkersResponse
                     .parse(nio, ApiKeys.WRITE_TXN_MARKERS.latestVersion());
-            log.info("[TransactionMarkerChannelHandler] onComplete {}", response);
             try {
                 requestCompletionHandler.onComplete(response);
             } catch (RuntimeException unhandledError) {

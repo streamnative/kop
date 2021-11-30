@@ -52,6 +52,10 @@ public class MetadataUtils {
         return tenant + "/" + conf.getKafkaMetadataNamespace();
     }
 
+    public static String constructUserTopicsNamespace(String tenant, KafkaServiceConfiguration conf) {
+        return tenant + "/" + conf.getKafkaNamespace();
+    }
+
     public static void createOffsetMetadataIfMissing(String tenant, PulsarAdmin pulsarAdmin,
                                                      ClusterData clusterData,
                                                      KafkaServiceConfiguration conf)
@@ -232,7 +236,7 @@ public class MetadataUtils {
             throws PulsarAdminException {
         String cluster = conf.getClusterName();
         String tenant = conf.getKafkaTenant();
-        String kafkaNamespace = tenant + "/" + conf.getKafkaNamespace();
+        String kafkaNamespace = constructUserTopicsNamespace(tenant, conf);
 
         boolean clusterExists = false;
         boolean tenantExists = false;
