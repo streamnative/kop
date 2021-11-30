@@ -60,7 +60,7 @@ public class PartitionLogManager {
                                 this.formatter,
                                 systemTopicClient,
                                 time
-                                ))
+                        ))
         );
     }
 }

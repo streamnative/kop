@@ -34,7 +34,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -69,8 +68,6 @@ public class PartitionLog {
     private final String fullPartitionName;
     private final EntryFormatter entryFormatter;
     private final ProducerStateManager producerStateManager;
-    private final ReentrantLock lock = new ReentrantLock();
-
     private static final KopLogValidator.CompressionCodec DEFAULT_COMPRESSION =
             new KopLogValidator.CompressionCodec(CompressionType.NONE.name, CompressionType.NONE.id);
 
@@ -191,20 +188,6 @@ public class PartitionLog {
         producerStateManager.updateMapEndOffset(lastOffset + 1);
     }
 
-    public void appendTxnMarker(AnalyzeResult analyzeResult, long lastOffset) {
-        analyzeResult.getUpdatedProducers().forEach((pid, appendInfo) -> {
-            log.info("append pid: [{}], appendInfo: [{}], lastOffset: [{}]", pid, appendInfo, lastOffset);
-            producerStateManager.update(appendInfo);
-        });
-        if (!analyzeResult.getCompletedTxns().isEmpty()) {
-            CompletedTxn completedTxn =
-                    analyzeResult.getCompletedTxns().get(0);
-            completedTxn.setLastOffset(lastOffset);
-            producerStateManager.completeTxn(completedTxn);
-        }
-        producerStateManager.updateMapEndOffset(lastOffset + 1);
-    }
-
     private Optional<CompletedTxn> updateProducers(
             RecordBatch batch,
             Map<Long, ProducerStateManager.ProducerAppendInfo> producers,
@@ -226,20 +209,18 @@ public class PartitionLog {
         return producerStateManager.getAbortedIndexList(fetchOffset);
     }
 
-    public void update(ProducerStateManager.ProducerAppendInfo appendInfo) {
-        producerStateManager.update(appendInfo);
-    }
     /**
      * Append this message to pulsar.
      *
      * @param records The log records to append
+     * @param origin  Declares the origin of to append which affects required validations
      * @param version Inter-broker message protocol version
      * @param appendRecordsContext See {@link AppendRecordsContext}
      */
     public CompletableFuture<Long> appendRecords(final MemoryRecords records,
-                                           final AppendOrigin origin,
-                                           final short version,
-                                           final AppendRecordsContext appendRecordsContext) {
+                                                 final AppendOrigin origin,
+                                                 final short version,
+                                                 final AppendRecordsContext appendRecordsContext) {
         CompletableFuture<Long> appendFuture = new CompletableFuture<>();
         RequestStats requestStats = appendRecordsContext.getRequestStats();
         KafkaTopicManager topicManager = appendRecordsContext.getTopicManager();
@@ -304,9 +285,7 @@ public class PartitionLog {
                     encodeResult = entryFormatter.encode(validRecords);
                 }
                 AnalyzeResult analyzeResult = analyzeAndValidateProducerState(
-                        validAndOffsetAssignedRecords,
-                        appendInfo.getFirstOffset(),
-                        AppendOrigin.Client);
+                        validAndOffsetAssignedRecords, appendInfo.getFirstOffset(), origin);
                 if (analyzeResult.getMaybeDuplicate().isPresent()) {
                     log.error("Duplicate sequence number. topic: {}", topicPartition);
                     appendFuture.completeExceptionally(Errors.DUPLICATE_SEQUENCE_NUMBER.exception());
