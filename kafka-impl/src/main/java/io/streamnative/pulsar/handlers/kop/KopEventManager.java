@@ -304,7 +304,7 @@ public class KopEventManager {
                     if (groupCoordinator.isActive()) {
                         HashSet<String> topicsFullNameDeletionsSets = Sets.newHashSet();
                         HashSet<KopTopic> kopTopicsSet = Sets.newHashSet();
-                        String namespacePrefix = MetadataUtils.constructMetadataNamespace(tenant, kafkaConfig);
+                        String namespacePrefix = MetadataUtils.constructUserTopicsNamespace(tenant, kafkaConfig);
                         topicsDeletions.forEach(topic -> {
                             KopTopic kopTopic = new KopTopic(TopicNameUtils.getTopicNameWithUrlDecoded(topic),
                                     namespacePrefix);
