@@ -27,6 +27,7 @@ import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
+import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -138,9 +139,9 @@ public class TransactionCoordinator {
                                             MetadataStoreExtended metadataStore,
                                             KopBrokerLookupManager kopBrokerLookupManager,
                                             ScheduledExecutorService scheduler,
-                                            Time time,
-                                            String namespacePrefixForMetadata,
-                                            String namespacePrefixForUserTopics) throws Exception {
+                                            Time time) throws Exception {
+        String namespacePrefixForMetadata = MetadataUtils.constructMetadataNamespace(tenant, kafkaConfig);
+        String namespacePrefixForUserTopics = MetadataUtils.constructUserTopicsNamespace(tenant, kafkaConfig);
         TransactionStateManager transactionStateManager =
                 new TransactionStateManager(transactionConfig, txnTopicClient, scheduler, time);
         return new TransactionCoordinator(

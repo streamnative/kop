@@ -45,8 +45,6 @@ import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SaslHandshakeRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
-import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.common.util.FutureUtil;
 
 
 /**
@@ -57,8 +55,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     private final CompletableFuture<ChannelHandlerContext> cnx = new CompletableFuture<>();
     private final ConcurrentLongHashMap<InFlightRequest> inFlightRequestMap = new ConcurrentLongHashMap<>();
-    private final ConcurrentLongHashMap<PendingGenericRequest> genericRequestMap
-            = new ConcurrentLongHashMap<>();
+    private final ConcurrentLongHashMap<PendingGenericRequest> genericRequestMap = new ConcurrentLongHashMap<>();
 
     private final AtomicInteger correlationId = new AtomicInteger(0);
     private final TransactionMarkerChannelManager transactionMarkerChannelManager;
@@ -156,7 +153,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
             v.onError(exception);
         });
         inFlightRequestMap.clear();
-        genericRequestMap.forEach((k,v)-> {
+        genericRequestMap.forEach((k, v)-> {
             v.response.completeExceptionally(exception);
         });
         genericRequestMap.clear();
@@ -194,7 +191,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
             v.onError(exception);
         });
         inFlightRequestMap.clear();
-        genericRequestMap.forEach((k,v)-> {
+        genericRequestMap.forEach((k, v)-> {
             v.response.completeExceptionally(exception);
         });
         genericRequestMap.clear();

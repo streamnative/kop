@@ -33,7 +33,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import javax.crypto.SecretKey;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -228,12 +227,14 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
 
     @Test
     public void transactionsReadCommittedTest() throws Exception {
-        basicProduceAndConsumeTest(TENANT + "/" + NAMESPACE + "/" +  "read-committed-test", "txn-11", "read_committed");
+        basicProduceAndConsumeTest(TENANT + "/" + NAMESPACE + "/" +  "read-committed-test", "txn-11",
+                "read_committed");
     }
 
     @Test(timeOut = 1000 * 10)
     public void transactionsReadUncommittedTest() throws Exception {
-        basicProduceAndConsumeTest(TENANT + "/" + NAMESPACE + "/" +  "read-uncommitted-test", "txn-12", "read_uncommitted");
+        basicProduceAndConsumeTest(TENANT + "/" + NAMESPACE + "/" +  "read-uncommitted-test", "txn-12",
+                "read_uncommitted");
     }
 
     private void basicProduceAndConsumeTest(String topicName,
@@ -320,9 +321,9 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
         log.info("Fetch for receive message finish. isolation: {}, receive count: {}", isolation, receiveCount.get());
 
         if (isolation.equals("read_committed")) {
-            Assert.assertEquals(receiveCount.get(), totalMessageCount / 2);
+            assertEquals(receiveCount.get(), totalMessageCount / 2);
         } else {
-            Assert.assertEquals(receiveCount.get(), totalMessageCount);
+            assertEquals(receiveCount.get(), totalMessageCount);
         }
         log.info("Fetch for finish consume messages. isolation: {}", isolation);
     }

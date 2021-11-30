@@ -47,8 +47,6 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
-import org.apache.pulsar.client.api.Authentication;
-import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.util.FutureUtil;
@@ -497,6 +495,6 @@ public class TransactionMarkerChannelManager {
         if (authenticationToken == null) {
             return "";
         }
-        return "token:"+ authenticationToken;
+        return "token:" + authenticationToken;
     }
 }
