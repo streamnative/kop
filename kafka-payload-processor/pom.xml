@@ -32,5 +32,10 @@
       <artifactId>pulsar-client-original</artifactId>
       <scope>provided</scope>
     </dependency>
+
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+    </dependency>
   </dependencies>
 </project>

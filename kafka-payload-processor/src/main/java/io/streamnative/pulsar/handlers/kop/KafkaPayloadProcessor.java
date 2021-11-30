@@ -13,24 +13,99 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import io.netty.buffer.ByteBuf;
+import java.nio.ByteBuffer;
 import java.util.function.Consumer;
+import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.Record;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessagePayload;
 import org.apache.pulsar.client.api.MessagePayloadContext;
 import org.apache.pulsar.client.api.MessagePayloadProcessor;
 import org.apache.pulsar.client.api.Schema;
+import org.apache.pulsar.client.impl.MessagePayloadImpl;
+import org.apache.pulsar.client.impl.MessagePayloadUtils;
+import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
+import org.apache.pulsar.common.api.proto.SingleMessageMetadata;
 
 /**
  * Process Kafka messages so that Pulsar consumer can recognize.
  */
 public class KafkaPayloadProcessor implements MessagePayloadProcessor {
 
+    private static final StringDeserializer deserializer = new StringDeserializer();
+
     @Override
     public <T> void process(MessagePayload payload,
                             MessagePayloadContext context,
                             Schema<T> schema,
                             Consumer<Message<T>> messageConsumer) throws Exception {
-        // TODO: convert Kafka messages
-        DEFAULT.process(payload, context, schema, messageConsumer);
+        if (!isKafkaFormat(context)) {
+            DEFAULT.process(payload, context, schema, messageConsumer);
+            return;
+        }
+
+        final ByteBuf buf = MessagePayloadUtils.convertToByteBuf(payload);
+        try {
+            final MemoryRecords records = MemoryRecords.readableRecords(buf.nioBuffer());
+            int numMessages = 0;
+            for (Record ignored : records.records()) {
+                numMessages++;
+            }
+            int index = 0;
+            for (Record record : records.records()) {
+                final MessagePayload singlePayload = newByteBufFromRecord(record);
+                try {
+                    messageConsumer.accept(context.getMessageAt(index, numMessages, singlePayload, true, schema));
+                } finally {
+                    index++;
+                    singlePayload.release();
+                }
+            }
+        } finally {
+            buf.release();
+        }
+    }
+
+    private static boolean isKafkaFormat(final MessagePayloadContext context) {
+        final String value = context.getProperty("entry.format");
+        return value != null && value.equalsIgnoreCase("kafka");
+    }
+
+    private static byte[] bufferToBytes(final ByteBuffer buffer) {
+        final byte[] data = new byte[buffer.remaining()];
+        buffer.get(data);
+        return data;
+    }
+
+    private MessagePayload newByteBufFromRecord(final Record record) {
+        // TODO: Use fast thread local
+        final SingleMessageMetadata singleMessageMetadata = new SingleMessageMetadata();
+        if (record.hasKey()) {
+            final byte[] data = bufferToBytes(record.key());
+            // It's okay to pass a null topic because it's not used in StringDeserializer
+            singleMessageMetadata.setPartitionKey(deserializer.deserialize(null, data));
+            singleMessageMetadata.setOrderingKey(data);
+        }
+
+        final ByteBuffer valueBuffer;
+        if (record.hasValue()) {
+            valueBuffer = record.value();
+            singleMessageMetadata.setPayloadSize(record.valueSize());
+        } else {
+            valueBuffer = null;
+            singleMessageMetadata.setNullValue(true);
+            singleMessageMetadata.setPayloadSize(0);
+        }
+
+        final ByteBuf buf = PulsarByteBufAllocator.DEFAULT.buffer(
+                4 + singleMessageMetadata.getSerializedSize() + record.valueSize());
+        buf.writeInt(singleMessageMetadata.getSerializedSize());
+        singleMessageMetadata.writeTo(buf);
+        if (valueBuffer != null) {
+            buf.writeBytes(valueBuffer);
+        }
+        return MessagePayloadImpl.create(buf);
     }
 }
