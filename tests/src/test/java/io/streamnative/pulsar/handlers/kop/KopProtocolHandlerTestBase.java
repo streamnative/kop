@@ -506,13 +506,17 @@ public abstract class KopProtocolHandlerTestBase {
 
         public KProducer(String topic, Boolean isAsync, String host,
                          int port, String username, String password,
-                         Boolean retry, String keySer, String valueSer) {
+                         Boolean retry, String keySer, String valueSer,
+                         String transactionalId) {
             Properties props = new Properties();
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducer");
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, keySer);
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, valueSer);
             props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 10000);
+            if (transactionalId != null) {
+                props.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
+            }
 
             if (retry) {
                 props.put(ProducerConfig.RETRIES_CONFIG, 3);
@@ -531,6 +535,12 @@ public abstract class KopProtocolHandlerTestBase {
             producer = new KafkaProducer<>(props);
             this.topic = topic;
             this.isAsync = isAsync;
+        }
+
+        public KProducer(String topic, Boolean isAsync, String host,
+                         int port, String username, String password,
+                         Boolean retry, String keySer, String valueSer) {
+            this(topic, isAsync, host, port, username, password, retry, keySer, valueSer, null);
         }
 
         public KProducer(String topic, Boolean isAsync, String host,
@@ -614,7 +624,8 @@ public abstract class KopProtocolHandlerTestBase {
         public KConsumer(
             String topic, String host, int port,
             boolean autoCommit, String username, String password,
-            String consumerGroup, String keyDeser, String valueDeser) {
+            String consumerGroup, String keyDeser, String valueDeser,
+            String isolation) {
             Properties props = new Properties();
             props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             props.put(ConsumerConfig.GROUP_ID_CONFIG, consumerGroup);
@@ -625,6 +636,10 @@ public abstract class KopProtocolHandlerTestBase {
             } else {
                 props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
             }
+            if (isolation != null) {
+                props.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, isolation);
+            }
+
 
             if (null != username && null != password) {
                 String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule "
@@ -644,6 +659,14 @@ public abstract class KopProtocolHandlerTestBase {
             this.consumer = new KafkaConsumer<>(props);
             this.topic = topic;
             this.consumerGroup = consumerGroup;
+        }
+
+        public KConsumer(
+                String topic, String host, int port,
+                boolean autoCommit, String username, String password,
+                String consumerGroup, String keyDeser, String valueDeser) {
+            this(topic, host, port, autoCommit, username, password, consumerGroup,
+                    keyDeser, valueDeser, null);
         }
 
         public KConsumer(String topic, String host, int port, boolean autoCommit,

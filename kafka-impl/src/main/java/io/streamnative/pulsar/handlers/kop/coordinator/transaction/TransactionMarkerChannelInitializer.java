@@ -30,7 +30,6 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
  */
 public class TransactionMarkerChannelInitializer extends ChannelInitializer<SocketChannel> {
 
-    private final KafkaServiceConfiguration kafkaConfig;
     private final boolean enableTls;
     private final SslContextFactory.Server sslContextFactory;
     private final TransactionMarkerChannelManager transactionMarkerChannelManager;
@@ -38,7 +37,6 @@ public class TransactionMarkerChannelInitializer extends ChannelInitializer<Sock
     public TransactionMarkerChannelInitializer(KafkaServiceConfiguration kafkaConfig,
                                                boolean enableTls,
                                                TransactionMarkerChannelManager transactionMarkerChannelManager) {
-        this.kafkaConfig = kafkaConfig;
         this.enableTls = enableTls;
         this.transactionMarkerChannelManager = transactionMarkerChannelManager;
         if (enableTls) {

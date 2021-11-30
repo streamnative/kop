@@ -22,6 +22,7 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
@@ -130,19 +131,21 @@ public class TransactionCoordinator {
         this.time = time;
     }
 
-    public static TransactionCoordinator of(TransactionConfig transactionConfig,
+    public static TransactionCoordinator of(String tenant,
+                                            KafkaServiceConfiguration kafkaConfig,
+                                            TransactionConfig transactionConfig,
                                             SystemTopicClient txnTopicClient,
                                             MetadataStoreExtended metadataStore,
                                             KopBrokerLookupManager kopBrokerLookupManager,
                                             ScheduledExecutorService scheduler,
                                             Time time,
                                             String namespacePrefixForMetadata,
-                                            String namespacePrefixForUserTopics) {
+                                            String namespacePrefixForUserTopics) throws Exception {
         TransactionStateManager transactionStateManager =
                 new TransactionStateManager(transactionConfig, txnTopicClient, scheduler, time);
         return new TransactionCoordinator(
                 transactionConfig,
-                new TransactionMarkerChannelManager(null, transactionStateManager,
+                new TransactionMarkerChannelManager(tenant, kafkaConfig, transactionStateManager,
                         kopBrokerLookupManager, false, namespacePrefixForUserTopics),
                 scheduler,
                 new ProducerIdManager(transactionConfig.getBrokerId(), metadataStore),
@@ -991,6 +994,7 @@ public class TransactionCoordinator {
         producerIdManager.shutdown();
         txnManager.shutdown();
         transactionMarkerChannelManager.close();
+        scheduler.shutdown();
         // TODO shutdown txn
         log.info("Shutdown transaction coordinator complete.");
     }
