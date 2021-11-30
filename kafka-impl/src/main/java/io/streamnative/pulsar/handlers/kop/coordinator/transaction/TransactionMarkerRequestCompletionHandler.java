@@ -39,7 +39,7 @@ public class TransactionMarkerRequestCompletionHandler {
     private final TransactionStateManager txnStateManager;
     private final TransactionMarkerChannelManager txnMarkerChannelManager;
     private final List<TransactionMarkerChannelManager.TxnIdAndMarkerEntry> txnIdAndMarkerEntries;
-    private final String namespacePrefix;
+    private final String namespacePrefixForUserTopics;
 
     private static class AbortSendingRetryPartitions {
         private AtomicBoolean abortSending = new AtomicBoolean(false);
@@ -112,7 +112,7 @@ public class TransactionMarkerRequestCompletionHandler {
                     txnMarker.transactionResult(),
                     txnMarker.coordinatorEpoch(),
                     abortSendOrRetryPartitions.retryPartitions,
-                    namespacePrefix);
+                    namespacePrefixForUserTopics);
         }
     }
 
@@ -169,7 +169,7 @@ public class TransactionMarkerRequestCompletionHandler {
                                     transactionalId, topicPartition,
                                     error.exceptionName(), epochAndMetadata.getCoordinatorEpoch());
                             KopBrokerLookupManager.removeTopicManagerCache(
-                                    KopTopic.toString(topicPartition, namespacePrefix));
+                                    KopTopic.toString(topicPartition, namespacePrefixForUserTopics));
                             abortSendingAndRetryPartitions.retryPartitions.add(topicPartition);
                             break;
                         case INVALID_PRODUCER_EPOCH:
