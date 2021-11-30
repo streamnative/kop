@@ -217,7 +217,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
                 .thenApply(cnx::complete)
                 .exceptionally(err -> {
                     cnx.completeExceptionally(err);
-                    return null;
+                    return false;
                 });
     }
 
