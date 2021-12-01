@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.junit.Assert.assertEquals;
 
 import io.streamnative.kafka.client.api.Header;
-
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
