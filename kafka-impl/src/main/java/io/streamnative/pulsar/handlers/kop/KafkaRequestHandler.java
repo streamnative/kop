@@ -2003,7 +2003,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         int partition = getGroupCoordinator().partitionFor(request.consumerGroupId());
         String currentTenant = getCurrentTenant();
         String offsetTopicName = getGroupCoordinator().getGroupManager()
-                .getOffsetConfig().getCurrentOffsetsTopicName(currentTenant);
+                .getOffsetConfig().offsetsTopicName();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         Set<TopicPartition> topicPartitions = Collections.singleton(new TopicPartition(offsetTopicName, partition));
         transactionCoordinator.handleAddPartitionsToTransaction(

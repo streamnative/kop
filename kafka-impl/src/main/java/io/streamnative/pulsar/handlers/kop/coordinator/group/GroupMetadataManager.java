@@ -329,11 +329,11 @@ public class GroupMetadataManager {
     }
 
     public String getTopicPartitionName() {
-        return offsetConfig.getCurrentOffsetsTopicName(tenant);
+        return offsetConfig.offsetsTopicName();
     }
 
     public String getTopicPartitionName(int partitionId) {
-        return getTopicPartitionName(offsetConfig.getCurrentOffsetsTopicName(tenant), partitionId);
+        return getTopicPartitionName(offsetConfig.offsetsTopicName(), partitionId);
     }
 
     public static String getTopicPartitionName(String offsetsTopicName, int partitionId) {
@@ -719,7 +719,7 @@ public class GroupMetadataManager {
 
     public CompletableFuture<Void> scheduleLoadGroupAndOffsets(int offsetsPartition,
                                                                Consumer<GroupMetadata> onGroupLoaded) {
-        String topicPartition = offsetConfig.getCurrentOffsetsTopicName(tenant)
+        String topicPartition = offsetConfig.offsetsTopicName()
                 + PARTITIONED_TOPIC_SUFFIX + offsetsPartition;
         if (addLoadingPartition(offsetsPartition)) {
             log.info("Scheduling loading of offsets and group metadata from {}", topicPartition);
@@ -1273,7 +1273,7 @@ public class GroupMetadataManager {
                         log.error("Failed to append {} tombstones to topic {} for expired/deleted "
                                 + "offsets and/or metadata for group {}",
                             tombstones.size(),
-                                offsetConfig.getCurrentOffsetsTopicName(tenant)
+                                offsetConfig.offsetsTopicName()
                                         + '-' + partitioner.apply(group.groupId()),
                             group.groupId(), cause);
                         // ignore and continue
@@ -1375,11 +1375,11 @@ public class GroupMetadataManager {
             partitionId -> {
                 if (log.isDebugEnabled()) {
                     log.debug("Created Partitioned producer: {} for consumer group: {}",
-                            offsetConfig.getCurrentOffsetsTopicName(tenant) + PARTITIONED_TOPIC_SUFFIX + partitionId,
+                            offsetConfig.offsetsTopicName() + PARTITIONED_TOPIC_SUFFIX + partitionId,
                         groupId);
                 }
                 return metadataTopicProducerBuilder.clone()
-                    .topic(offsetConfig.getCurrentOffsetsTopicName(tenant) + PARTITIONED_TOPIC_SUFFIX + partitionId)
+                    .topic(offsetConfig.offsetsTopicName() + PARTITIONED_TOPIC_SUFFIX + partitionId)
                     .createAsync();
             });
     }
@@ -1389,10 +1389,10 @@ public class GroupMetadataManager {
             id -> {
                 if (log.isDebugEnabled()) {
                     log.debug("Will create Partitioned producer: {}",
-                            offsetConfig.getCurrentOffsetsTopicName(tenant) + PARTITIONED_TOPIC_SUFFIX + id);
+                            offsetConfig.offsetsTopicName() + PARTITIONED_TOPIC_SUFFIX + id);
                 }
                 return metadataTopicProducerBuilder.clone()
-                    .topic(offsetConfig.getCurrentOffsetsTopicName(tenant) + PARTITIONED_TOPIC_SUFFIX + id)
+                    .topic(offsetConfig.offsetsTopicName() + PARTITIONED_TOPIC_SUFFIX + id)
                     .createAsync();
             });
     }
@@ -1402,10 +1402,10 @@ public class GroupMetadataManager {
             id -> {
                 if (log.isDebugEnabled()) {
                     log.debug("Will create Partitioned reader: {}",
-                            offsetConfig.getCurrentOffsetsTopicName(tenant) + PARTITIONED_TOPIC_SUFFIX + id);
+                            offsetConfig.offsetsTopicName() + PARTITIONED_TOPIC_SUFFIX + id);
                 }
                 return metadataTopicReaderBuilder.clone()
-                    .topic(offsetConfig.getCurrentOffsetsTopicName(tenant) + PARTITIONED_TOPIC_SUFFIX + partitionId)
+                    .topic(offsetConfig.offsetsTopicName() + PARTITIONED_TOPIC_SUFFIX + partitionId)
                     .readCompacted(true)
                     .createAsync();
             });
