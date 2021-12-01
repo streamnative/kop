@@ -517,11 +517,12 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 .brokerServiceUrlTls(brokerService.getPulsar().getBrokerServiceUrlTls())
                 .build();
 
-        String namespacePrefix = MetadataUtils.constructMetadataNamespace(tenant, kafkaConfig);
+        String namespacePrefixForMetadata = MetadataUtils.constructMetadataNamespace(tenant, kafkaConfig);
+        String namespacePrefixForUserTopics = MetadataUtils.constructUserTopicsNamespace(tenant, kafkaConfig);
         try {
             TransactionCoordinator transactionCoordinator =
                     initTransactionCoordinator(tenant, brokerService.getPulsar().getAdminClient(), clusterData,
-                            namespacePrefix);
+                            namespacePrefixForMetadata, namespacePrefixForUserTopics);
             // Listening transaction topic load/unload
             brokerService.pulsar()
                     .getNamespaceService()
@@ -675,7 +676,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             throw new IllegalStateException(e);
         }
 
-        String namespacePrefix = MetadataUtils.constructMetadataNamespace(tenant, kafkaConfig);
+        String namespacePrefixForMetadata = MetadataUtils.constructMetadataNamespace(tenant, kafkaConfig);
 
         OffsetConfig offsetConfig = OffsetConfig.builder()
             .offsetsTopicName(topicName)
@@ -691,7 +692,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             client,
             groupConfig,
             offsetConfig,
-            namespacePrefix,
+            namespacePrefixForMetadata,
             SystemTimer.builder()
                 .executorName("group-coordinator-timer")
                 .build(),
@@ -705,7 +706,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     public TransactionCoordinator initTransactionCoordinator(String tenant, PulsarAdmin pulsarAdmin,
                                                              ClusterData clusterData,
-                                                             String namespacePrefix) throws Exception {
+                                                             String namespacePrefixForMetadata,
+                                                             String namespacePrefixForUserTopics) throws Exception {
         TransactionConfig transactionConfig = TransactionConfig.builder()
                 .transactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions())
                 .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(tenant, kafkaConfig))
@@ -725,7 +727,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 kopBrokerLookupManager,
                 OrderedScheduler.newSchedulerBuilder().name("transaction-log-manager").numThreads(1).build(),
                 Time.SYSTEM,
-                namespacePrefix);
+                namespacePrefixForMetadata,
+                namespacePrefixForUserTopics);
 
         transactionCoordinator.startup(kafkaConfig.isEnableTransactionalIdExpiration()).get();
 
