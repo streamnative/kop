@@ -325,6 +325,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
                 topic, "my-sub-" + enableBatching, new KafkaPayloadProcessor());
         final List<Message<byte[]>> messages = receivePulsarMessages(consumer, numMessages);
         assertEquals(messages.size(), numMessages);
+
         for (int i = 0; i < numMessages; i++) {
             final Message<byte[]> message = messages.get(i);
             assertEquals(convertPulsarMessageToString(message), "msg-" + i);
@@ -334,6 +335,31 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
                 assertEquals(message.getKey(), "key-" + i);
                 assertEquals(message.getOrderingKey(), ("key-" + i).getBytes(StandardCharsets.UTF_8));
             }
+        }
+    }
+
+    @Test(timeOut = 20000, dataProvider = "enableBatching")
+    public void testKafkaProducePulsarConsumeWithHeaders(boolean enableBatching) throws Exception {
+        final String topic = "test-kafka-produce-pulsar-consume-with-headers";
+        final KafkaProducer<String, String> producer = newKafkaProducer();
+        final int numMessages = 10;
+        Future<RecordMetadata> sendFuture = null;
+        for (int i = 0; i < numMessages; i++) {
+            final List<Header> headers = Collections.singletonList(new Header("prop-key-" + i, "prop-value-" + i));
+            sendFuture = producer.send(new ProducerRecord<>(
+                    topic, 0, "", "msg", Header.toHeaders(headers, RecordHeader::new)));
+        }
+        sendFuture.get();
+        producer.close();
+
+        @Cleanup
+        final Consumer<byte[]> consumer = newPulsarConsumer(
+                topic, "my-sub-" + enableBatching, new KafkaPayloadProcessor());
+        final List<Message<byte[]>> messages = receivePulsarMessages(consumer, numMessages);
+        assertEquals(messages.size(), numMessages);
+
+        for (int i = 0; i < numMessages; i++) {
+            assertEquals(messages.get(i).getProperty("prop-key-" + i), "prop-value-" + i);
         }
     }
 }

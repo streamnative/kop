@@ -16,7 +16,9 @@ package io.streamnative.pulsar.handlers.kop;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.concurrent.FastThreadLocal;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.function.Consumer;
+import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -105,6 +107,12 @@ public class KafkaPayloadProcessor implements MessagePayloadProcessor {
             valueBuffer = null;
             singleMessageMetadata.setNullValue(true);
             singleMessageMetadata.setPayloadSize(0);
+        }
+
+        for (Header header : record.headers()) {
+            singleMessageMetadata.addProperty()
+                    .setKey(header.key())
+                    .setValue(new String(header.value(), StandardCharsets.UTF_8));
         }
 
         final ByteBuf buf = PulsarByteBufAllocator.DEFAULT.buffer(
