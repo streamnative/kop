@@ -49,7 +49,7 @@ public class KafkaNonPartitionedTopicTest extends KopProtocolHandlerTestBase {
         conf.setKafkaNamespace(NAMESPACE);
         conf.setKafkaMetadataTenant("internal");
         conf.setKafkaMetadataNamespace("__kafka");
-        conf.setEnableTransactionCoordinator(true);
+        conf.setKafkaTransactionCoordinatorEnabled(true);
 
         conf.setClusterName(super.configClusterName);
         super.internalSetup();

@@ -364,44 +364,44 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         category = CATEGORY_KOP,
         doc = "The broker id, default is 1"
     )
-    private int brokerId = 1;
+    private int kafkaBrokerId = 1;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
             doc = "Flag to enable transaction coordinator"
     )
-    private boolean enableTransactionCoordinator = false;
+    private boolean kafkaTransactionCoordinatorEnabled = false;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
             doc = "Number of partitions for the transaction log topic"
     )
-    private int txnLogTopicNumPartitions = DefaultTxnLogTopicNumPartitions;
+    private int kafkaTxnLogTopicNumPartitions = DefaultTxnLogTopicNumPartitions;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
             doc = "The interval in milliseconds at which to rollback transactions that have timed out."
     )
-    private long txnAbortTimedOutTransactionCleanupIntervalMs = DefaultAbortTimedOutTransactionsIntervalMs;
+    private long kafkaTxnAbortTimedOutTransactionCleanupIntervalMs = DefaultAbortTimedOutTransactionsIntervalMs;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
             doc = "Whether to enable transactional ID expiration."
     )
-    private boolean enableTransactionalIdExpiration = true;
+    private boolean kafkaTransactionalIdExpirationEnable = true;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
             doc = "The time (in ms) that the transaction coordinator waits without receiving any transaction status"
                     + " updates for the current transaction before expiring its transactional ID."
     )
-    private long transactionalIdExpirationMs = DefaultTransactionalIdExpirationMs;
+    private long kafkaTransactionalIdExpirationMs = DefaultTransactionalIdExpirationMs;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
             doc = "The interval (in ms) at which to remove expired transactions."
     )
-    private long transactionsRemoveExpiredTransactionalIdCleanupIntervalMs =
+    private long kafkaTransactionsRemoveExpiredTransactionalIdCleanupIntervalMs =
             DefaultRemoveExpiredTransactionalIdsIntervalMs;
 
     @FieldContext(
