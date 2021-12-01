@@ -79,6 +79,7 @@ public class PartitionLog {
         private Integer shallowCount;
         private Boolean offsetsMonotonic;
         private Boolean hasProducerId;
+        private Boolean isTransaction;
         private Long lastOffsetOfFirstBatch;
         private Integer validBytes;
         private KopLogValidator.CompressionCodec sourceCodec;
@@ -173,12 +174,14 @@ public class PartitionLog {
         return new AnalyzeResult(updatedProducers, completedTxns, Optional.empty());
     }
 
-    public void append(AnalyzeResult analyzeResult, long lastOffset) {
-        analyzeResult.getUpdatedProducers().forEach((pid, appendInfo) -> {
+    public void append(AnalyzeResult analyzeResult, long startOffset, LogAppendInfo appendInfo) {
+        Long lastOffset = appendInfo.getLastOffset();
+        analyzeResult.getUpdatedProducers().forEach((pid, producerAppendInfo) -> {
             if (log.isDebugEnabled()) {
-                log.debug("append pid: [{}], appendInfo: [{}], lastOffset: [{}]", pid, appendInfo, lastOffset);
+                log.debug("append pid: [{}], appendInfo: [{}], lastOffset: [{}]", pid, producerAppendInfo, lastOffset);
             }
-            producerStateManager.update(appendInfo);
+            producerAppendInfo.updateCurrentTxnFirstOffset(appendInfo.getIsTransaction(), startOffset);
+            producerStateManager.update(producerAppendInfo);
         });
         analyzeResult.getCompletedTxns().forEach(completedTxn -> {
             long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
@@ -257,7 +260,7 @@ public class PartitionLog {
                 // Validate messages and assign offsets.
                 EncodeResult encodeResult;
                 MemoryRecords validAndOffsetAssignedRecords;
-                if (entryFormatter instanceof KafkaMixedEntryFormatter || appendInfo.getHasProducerId()) {
+                if (entryFormatter instanceof KafkaMixedEntryFormatter) {
                     final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
                     final long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
                     // assign offsets to the message set
@@ -312,7 +315,7 @@ public class PartitionLog {
                 appendRecordsContext.getPendingTopicFuturesMap()
                         .computeIfAbsent(topicPartition, ignored ->
                                 new PendingTopicFutures(requestStats))
-                        .addListener(topicFuture, persistentTopicConsumer, appendFuture);
+                        .addListener(topicFuture, persistentTopicConsumer, appendFuture::completeExceptionally);
             }
         } catch (Exception exception) {
             log.error("Failed to handle produce request for {}", topicPartition, exception);
@@ -364,7 +367,8 @@ public class PartitionLog {
                 if (log.isDebugEnabled()) {
                     log.debug("Publish Offset: {} appendInfo offset: {}", offset, appendInfo.getFirstOffset());
                 }
-                this.append(analyzeResult, appendInfo.getLastOffset());
+                appendInfo.setLastOffset(offset + numMessages);
+                this.append(analyzeResult, offset, appendInfo);
                 appendFuture.complete(offset);
             } else {
                 log.error("publishMessages for topic partition: {} failed when write.", fullPartitionName, e);
@@ -386,10 +390,16 @@ public class PartitionLog {
         boolean readFirstMessage = false;
         boolean monotonic = true;
         boolean hasProducerId = false;
+        boolean isTransaction = false;
 
         validateRecords(version, records);
         int validBytesCount = 0;
+        log.info("-------------");
         for (RecordBatch batch : records.batches()) {
+            if (log.isDebugEnabled()) {
+                log.debug("analyzeAndValidateRecords: pid: {} baseSequence: {} lastSequence: {} baseOffset: {}  lastOffset: {} {}",
+                        batch.producerId(), batch.baseSequence(), batch.lastSequence(), batch.baseOffset(), batch.lastOffset(), batch.isControlBatch());
+            }
             if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2 && batch.baseOffset() != 0) {
                 throw new InvalidRecordException("The baseOffset of the record batch in the append to "
                         + topicPartition + " should be 0, but it is " + batch.baseOffset());
@@ -421,6 +431,7 @@ public class PartitionLog {
             batch.ensureValid();
             shallowMessageCount += 1;
             validBytesCount += batchSize;
+            isTransaction = batch.isTransactional();
 
             CompressionType compressionType = CompressionType.forId(batch.compressionType().id);
             KopLogValidator.CompressionCodec messageCodec = new KopLogValidator.CompressionCodec(
@@ -444,6 +455,7 @@ public class PartitionLog {
                 shallowMessageCount,
                 monotonic,
                 hasProducerId,
+                isTransaction,
                 lastOffsetOfFirstBatch,
                 validBytesCount,
                 sourceCodec,

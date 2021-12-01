@@ -65,7 +65,7 @@ public class PendingTopicFuturesTest {
         for (int i = 0; i < 10; i++) {
             final int index = i;
             pendingTopicFutures.addListener(
-                    topicFuture, ignored -> completedIndexes.add(index), new CompletableFuture<>());
+                    topicFuture, ignored -> completedIndexes.add(index), (ignore) -> {});
             changesOfPendingCount.add(pendingTopicFutures.size());
             sleep(234);
         }
@@ -96,12 +96,9 @@ public class PendingTopicFuturesTest {
         final List<Integer> changesOfPendingCount = new ArrayList<>();
 
         for (int i = 0; i < 10; i++) {
-            CompletableFuture<Long> longCompletableFuture = new CompletableFuture<>();
-            longCompletableFuture.exceptionally(ex -> {
+            pendingTopicFutures.addListener(topicFuture, topic -> {}, (ex) -> {
                 exceptionMessages.add(ex.getMessage());
-                return null;
             });
-            pendingTopicFutures.addListener(topicFuture, topic -> {}, longCompletableFuture);
             changesOfPendingCount.add(pendingTopicFutures.size());
             sleep(200);
         }

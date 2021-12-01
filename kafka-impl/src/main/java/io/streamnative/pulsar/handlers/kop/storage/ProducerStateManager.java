@@ -256,6 +256,10 @@ public class ProducerStateManager {
         }
 
         public Optional<PartitionLog.CompletedTxn> append(RecordBatch batch, Optional<Long> firstOffset) {
+            if (log.isDebugEnabled()) {
+                log.debug("Append batch: pid: {} baseSequence: {} lastSequence: {} baseOffset: {}  lastOffset: {} ",
+                        batch.producerId(), batch.baseSequence(), batch.lastSequence(), batch.baseOffset(), batch.lastOffset());
+            }
             if (batch.isControlBatch()) {
                 Iterator<Record> recordIterator = batch.iterator();
                 if (recordIterator.hasNext()) {
@@ -282,8 +286,10 @@ public class ProducerStateManager {
                         epoch, firstSeq, lastSeq, firstOffset, lastOffset);
             }
             maybeValidateDataBatch(epoch, firstSeq);
-            updatedEntry.addBatch(epoch, lastSeq, lastOffset, (int) (lastOffset - firstOffset), lastTimestamp);
+            updatedEntry.addBatch(epoch, lastSeq, lastOffset, lastSeq - firstSeq, lastTimestamp);
+        }
 
+        public void updateCurrentTxnFirstOffset(Boolean isTransactional, long firstOffset) {
             if (updatedEntry.getCurrentTxnFirstOffset().isPresent()) {
                 if (!isTransactional) {
                     // Received a non-transactional message while a transaction is active
