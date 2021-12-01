@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.testng.AssertJUnit.assertFalse;
+
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -44,8 +46,6 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
-
-import static org.testng.AssertJUnit.assertFalse;
 
 /**
  * Transaction test.

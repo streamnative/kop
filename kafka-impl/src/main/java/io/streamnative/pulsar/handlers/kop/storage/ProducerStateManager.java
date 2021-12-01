@@ -258,7 +258,8 @@ public class ProducerStateManager {
         public Optional<PartitionLog.CompletedTxn> append(RecordBatch batch, Optional<Long> firstOffset) {
             if (log.isDebugEnabled()) {
                 log.debug("Append batch: pid: {} baseSequence: {} lastSequence: {} baseOffset: {}  lastOffset: {} ",
-                        batch.producerId(), batch.baseSequence(), batch.lastSequence(), batch.baseOffset(), batch.lastOffset());
+                        batch.producerId(), batch.baseSequence(), batch.lastSequence(), batch.baseOffset(),
+                        batch.lastOffset());
             }
             if (batch.isControlBatch()) {
                 Iterator<Record> recordIterator = batch.iterator();

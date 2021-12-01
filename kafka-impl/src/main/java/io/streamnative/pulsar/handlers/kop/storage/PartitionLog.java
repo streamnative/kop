@@ -156,7 +156,8 @@ public class PartitionLog {
                     Optional<ProducerStateManager.ProducerStateEntry> maybeLastEntry =
                             producerStateManager.lastEntry(batch.producerId());
 
-                    // if this is a client produce request, there will be up to 5 batches which could have been duplicated.
+                    // if this is a client produce request,
+                    // there will be up to 5 batches which could have been duplicated.
                     // If we find a duplicate, we return the metadata of the appended batch to the client.
                     if (maybeLastEntry.isPresent()) {
                         Optional<ProducerStateManager.BatchMetadata> maybeDuplicate =
