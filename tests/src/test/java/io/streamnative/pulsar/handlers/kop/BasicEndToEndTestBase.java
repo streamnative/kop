@@ -16,6 +16,8 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.junit.Assert.assertEquals;
 
 import io.streamnative.kafka.client.api.Header;
+
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -41,6 +43,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
+import org.apache.pulsar.client.api.MessagePayloadProcessor;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
@@ -121,9 +124,17 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
 
     protected Consumer<byte[]> newPulsarConsumer(final String topic,
                                                  final String subscription) throws PulsarClientException {
+        return newPulsarConsumer(topic, subscription, null);
+    }
+
+    protected Consumer<byte[]> newPulsarConsumer(final String topic,
+                                                 final String subscription,
+                                                 final MessagePayloadProcessor payloadProcessor)
+            throws PulsarClientException {
         return pulsarClient.newConsumer().topic(topic)
                 .subscriptionName(subscription)
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                .messagePayloadProcessor(payloadProcessor)
                 .subscribe();
     }
 
@@ -235,21 +246,32 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
                 .collect(Collectors.toList());
     }
 
-    protected List<String> receiveMessages(final Consumer<byte[]> consumer, int numMessages)
+    protected static String convertPulsarMessageToString(final Message<byte[]> message) {
+        return (message.getValue() != null) ? new String(message.getValue(), StandardCharsets.UTF_8) : null;
+    }
+
+    protected List<Message<byte[]>> receivePulsarMessages(final Consumer<byte[]> consumer, int numMessages)
             throws PulsarClientException {
-        List<String> values = new ArrayList<>();
+        List<Message<byte[]>> messages = new ArrayList<>();
         while (numMessages > 0) {
             Message<byte[]> message = consumer.receive(100, TimeUnit.MILLISECONDS);
             if (message != null) {
-                final byte[] value = message.getValue();
-                values.add((value == null) ? null : new String(value));
+                messages.add(message);
                 if (log.isDebugEnabled()) {
-                    log.debug("Pulsar Consumer receive: {}", values.get(values.size() - 1));
+                    log.debug("Pulsar Consumer receive {} from {}",
+                            convertPulsarMessageToString(message), message.getMessageId());
                 }
             }
             numMessages--;
         }
-        return values;
+        return messages;
+    }
+
+    protected List<String> receiveMessages(final Consumer<byte[]> consumer, int numMessages)
+            throws PulsarClientException {
+        return receivePulsarMessages(consumer, numMessages).stream()
+                .map(BasicEndToEndTestBase::convertPulsarMessageToString)
+                .collect(Collectors.toList());
     }
 
     protected int kafkaPublishMessage(KProducer kProducer, int numMessages, String messageStrPrefix) throws Exception {
