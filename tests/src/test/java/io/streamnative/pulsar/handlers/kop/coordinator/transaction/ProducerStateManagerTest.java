@@ -68,7 +68,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
-        this.conf.setEnableTransactionCoordinator(false);
+        this.conf.setKafkaTransactionCoordinatorEnabled(false);
         super.internalSetup();
 
         admin.topics().createPartitionedTopic("public/default/sys-topic-producer-state", 1);
