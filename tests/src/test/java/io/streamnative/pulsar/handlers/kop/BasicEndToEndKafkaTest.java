@@ -362,4 +362,43 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
             assertEquals(messages.get(i).getProperty("prop-key-" + i), "prop-value-" + i);
         }
     }
+
+    @Test(timeOut = 20000)
+    public void testMixedProducePulsarConsume() throws Exception {
+        final String topic = "test-mixed-produce-pulsar-consume";
+        final int numMessages = 10;
+        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        final Producer<byte[]> pulsarProducer = newPulsarProducer(topic);
+
+        for (int i = 0; i < numMessages; i++) {
+            final String key = "key-" + i;
+            final String value = "value-" + i;
+            final Header header = new Header("prop-key-" + i, "prop-value-" + i);
+
+            if (i % 2 == 0) {
+                pulsarProducer.newMessage()
+                        .orderingKey(key.getBytes(StandardCharsets.UTF_8))
+                        .value(value.getBytes(StandardCharsets.UTF_8))
+                        .property(header.getKey(), header.getValue())
+                        .send();
+            } else {
+                kafkaProducer.send(new ProducerRecord<>(topic, 0, key, value,
+                        Header.toHeaders(Collections.singletonList(header), RecordHeader::new))).get();
+            }
+        }
+        kafkaProducer.close();
+        pulsarProducer.close();
+
+        @Cleanup
+        final Consumer<byte[]> consumer = newPulsarConsumer(topic, SUBSCRIPTION, new KafkaPayloadProcessor());
+        final List<Message<byte[]>> messages = receivePulsarMessages(consumer, numMessages);
+        assertEquals(messages.size(), numMessages);
+
+        for (int i = 0; i < numMessages; i++) {
+            final Message<byte[]> message = messages.get(i);
+            assertEquals(message.getOrderingKey(), ("key-" + i).getBytes(StandardCharsets.UTF_8));
+            assertEquals(message.getValue(), ("value-" + i).getBytes(StandardCharsets.UTF_8));
+            assertEquals(message.getProperty("prop-key-" + i), "prop-value-" + i);
+        }
+    }
 }
