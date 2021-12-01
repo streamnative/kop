@@ -541,6 +541,7 @@ public class ProducerStateManager {
     /**
      * AbortedTxn is used cache the aborted index.
      */
+    @Data
     @AllArgsConstructor
     private static class AbortedTxn {
 

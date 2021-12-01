@@ -45,6 +45,8 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
+import static org.testng.AssertJUnit.assertFalse;
+
 /**
  * Transaction test.
  */
@@ -97,6 +99,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
         producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
+        producerProps.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);
 
         @Cleanup
         KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
@@ -104,7 +107,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.initTransactions();
 
         int totalTxnCount = 10;
-        int messageCountPerTxn = 1000;
+        int messageCountPerTxn = 10;
 
         String lastMessage = "";
         for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
@@ -122,9 +125,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 log.info("send txn message {}", msgContent);
                 lastMessage = msgContent;
                 if (isBatch) {
-                    producer.send(new ProducerRecord<>(topicName, messageIndex + 1000, msgContent));
+                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent));
                 } else {
-                    producer.send(new ProducerRecord<>(topicName, messageIndex + 1000, msgContent)).get();
+                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
                 }
             }
             producer.flush();
@@ -166,6 +169,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
             boolean readFinish = false;
             for (ConsumerRecord<Integer, String> record : consumerRecords) {
+                if (isolation.equals("read_committed")) {
+                    assertFalse(record.value().contains("abort msg txnIndex"));
+                }
                 log.info("Fetch for receive record offset: {}, key: {}, value: {}",
                         record.offset(), record.key(), record.value());
                 receiveCount.incrementAndGet();

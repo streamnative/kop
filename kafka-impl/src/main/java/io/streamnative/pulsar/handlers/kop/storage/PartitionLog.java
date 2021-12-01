@@ -152,16 +152,18 @@ public class PartitionLog {
 
         for (RecordBatch batch : records.batches()) {
             if (batch.hasProducerId()) {
-                Optional<ProducerStateManager.ProducerStateEntry> maybeLastEntry =
-                        producerStateManager.lastEntry(batch.producerId());
+                if (origin.equals(AppendOrigin.Client)) {
+                    Optional<ProducerStateManager.ProducerStateEntry> maybeLastEntry =
+                            producerStateManager.lastEntry(batch.producerId());
 
-                // if this is a client produce request, there will be up to 5 batches which could have been duplicated.
-                // If we find a duplicate, we return the metadata of the appended batch to the client.
-                if (maybeLastEntry.isPresent()) {
-                    Optional<ProducerStateManager.BatchMetadata> maybeDuplicate =
-                            maybeLastEntry.get().findDuplicateBatch(batch);
-                    if (maybeDuplicate.isPresent()) {
-                        return new AnalyzeResult(updatedProducers, completedTxns, maybeDuplicate);
+                    // if this is a client produce request, there will be up to 5 batches which could have been duplicated.
+                    // If we find a duplicate, we return the metadata of the appended batch to the client.
+                    if (maybeLastEntry.isPresent()) {
+                        Optional<ProducerStateManager.BatchMetadata> maybeDuplicate =
+                                maybeLastEntry.get().findDuplicateBatch(batch);
+                        if (maybeDuplicate.isPresent()) {
+                            return new AnalyzeResult(updatedProducers, completedTxns, maybeDuplicate);
+                        }
                     }
                 }
                 // We cache offset metadata for the start of each transaction. This allows us to
@@ -178,12 +180,15 @@ public class PartitionLog {
         Long lastOffset = appendInfo.getLastOffset();
         analyzeResult.getUpdatedProducers().forEach((pid, producerAppendInfo) -> {
             if (log.isDebugEnabled()) {
-                log.debug("append pid: [{}], appendInfo: [{}], lastOffset: [{}]", pid, producerAppendInfo, lastOffset);
+                log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]", pid, producerAppendInfo, lastOffset);
             }
+            // When we have real start offset, update current txn first offset.
             producerAppendInfo.updateCurrentTxnFirstOffset(appendInfo.getIsTransaction(), startOffset);
             producerStateManager.update(producerAppendInfo);
         });
         analyzeResult.getCompletedTxns().forEach(completedTxn -> {
+            // update to real last offset
+            completedTxn.lastOffset = lastOffset;
             long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
             producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
             producerStateManager.completeTxn(completedTxn);
@@ -203,9 +208,7 @@ public class PartitionLog {
     }
 
     public Optional<Long> firstUndecidedOffset() {
-        Optional<Long> aLong = producerStateManager.firstUndecidedOffset();
-        log.info("firstUndecidedOffset: {}", aLong);
-        return aLong;
+        return producerStateManager.firstUndecidedOffset();
     }
 
     public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
@@ -282,17 +285,9 @@ public class PartitionLog {
                     encodeResult = entryFormatter.encode(validAndOffsetAssignedRecords);
                     encodeResult.setConversionCount(validationAndOffsetAssignResult.getConversionCount());
                     appendInfo.setLastOffset(offset.value() - 1);
-                    log.info("AppendInfo：：：：： {}", appendInfo);
                 } else {
                     validAndOffsetAssignedRecords = validRecords;
                     encodeResult = entryFormatter.encode(validRecords);
-                }
-                AnalyzeResult analyzeResult = analyzeAndValidateProducerState(
-                        validAndOffsetAssignedRecords, appendInfo.getFirstOffset(), origin);
-                if (analyzeResult.getMaybeDuplicate().isPresent()) {
-                    log.error("Duplicate sequence number. topic: {}", topicPartition);
-                    appendFuture.completeExceptionally(Errors.DUPLICATE_SEQUENCE_NUMBER.exception());
-                    return;
                 }
 
                 requestStats.getProduceEncodeStats().registerSuccessfulEvent(
@@ -300,6 +295,13 @@ public class PartitionLog {
                 appendRecordsContext.getStartSendOperationForThrottling()
                         .accept(encodeResult.getEncodedByteBuf().readableBytes());
 
+                AnalyzeResult analyzeResult = analyzeAndValidateProducerState(
+                        validAndOffsetAssignedRecords, appendInfo.getFirstOffset(), origin);
+                if (analyzeResult.getMaybeDuplicate().isPresent()) {
+                    log.error("Duplicate sequence number. topic: {}", topicPartition);
+                    appendFuture.completeExceptionally(Errors.DUPLICATE_SEQUENCE_NUMBER.exception());
+                    return;
+                }
                 publishMessages(persistentTopicOpt,
                         appendFuture,
                         appendInfo,
@@ -313,8 +315,7 @@ public class PartitionLog {
             } else {
                 // topic is not available now
                 appendRecordsContext.getPendingTopicFuturesMap()
-                        .computeIfAbsent(topicPartition, ignored ->
-                                new PendingTopicFutures(requestStats))
+                        .computeIfAbsent(topicPartition, ignored -> new PendingTopicFutures(requestStats))
                         .addListener(topicFuture, persistentTopicConsumer, appendFuture::completeExceptionally);
             }
         } catch (Exception exception) {
@@ -364,10 +365,7 @@ public class PartitionLog {
             if (e == null) {
                 requestStats.getMessagePublishStats().registerSuccessfulEvent(
                         time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
-                if (log.isDebugEnabled()) {
-                    log.debug("Publish Offset: {} appendInfo offset: {}", offset, appendInfo.getFirstOffset());
-                }
-                appendInfo.setLastOffset(offset + numMessages);
+                appendInfo.setLastOffset(offset + numMessages - 1);
                 this.append(analyzeResult, offset, appendInfo);
                 appendFuture.complete(offset);
             } else {
@@ -394,12 +392,7 @@ public class PartitionLog {
 
         validateRecords(version, records);
         int validBytesCount = 0;
-        log.info("-------------");
         for (RecordBatch batch : records.batches()) {
-            if (log.isDebugEnabled()) {
-                log.debug("analyzeAndValidateRecords: pid: {} baseSequence: {} lastSequence: {} baseOffset: {}  lastOffset: {} {}",
-                        batch.producerId(), batch.baseSequence(), batch.lastSequence(), batch.baseOffset(), batch.lastOffset(), batch.isControlBatch());
-            }
             if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2 && batch.baseOffset() != 0) {
                 throw new InvalidRecordException("The baseOffset of the record batch in the append to "
                         + topicPartition + " should be 0, but it is " + batch.baseOffset());
