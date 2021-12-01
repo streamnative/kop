@@ -106,7 +106,7 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
-        this.conf.setTxnLogTopicNumPartitions(numPartitions);
+        this.conf.setKafkaTxnLogTopicNumPartitions(numPartitions);
         internalSetup();
         MetadataUtils.createTxnMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
     }
