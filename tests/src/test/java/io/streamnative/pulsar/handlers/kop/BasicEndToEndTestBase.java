@@ -261,8 +261,8 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
                     log.debug("Pulsar Consumer receive {} from {}",
                             convertPulsarMessageToString(message), message.getMessageId());
                 }
+                numMessages--;
             }
-            numMessages--;
         }
         return messages;
     }

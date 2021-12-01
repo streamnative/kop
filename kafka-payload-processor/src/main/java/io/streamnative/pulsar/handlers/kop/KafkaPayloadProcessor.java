@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.util.concurrent.FastThreadLocal;
 import java.nio.ByteBuffer;
 import java.util.function.Consumer;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -35,6 +36,13 @@ import org.apache.pulsar.common.api.proto.SingleMessageMetadata;
 public class KafkaPayloadProcessor implements MessagePayloadProcessor {
 
     private static final StringDeserializer deserializer = new StringDeserializer();
+    private static final FastThreadLocal<SingleMessageMetadata> LOCAL_SINGLE_MESSAGE_METADATA =
+            new FastThreadLocal<SingleMessageMetadata>() {
+        @Override
+        protected SingleMessageMetadata initialValue() throws Exception {
+            return new SingleMessageMetadata();
+        }
+    };
 
     @Override
     public <T> void process(MessagePayload payload,
@@ -80,8 +88,8 @@ public class KafkaPayloadProcessor implements MessagePayloadProcessor {
     }
 
     private MessagePayload newByteBufFromRecord(final Record record) {
-        // TODO: Use fast thread local
-        final SingleMessageMetadata singleMessageMetadata = new SingleMessageMetadata();
+        final SingleMessageMetadata singleMessageMetadata = LOCAL_SINGLE_MESSAGE_METADATA.get();
+        singleMessageMetadata.clear();
         if (record.hasKey()) {
             final byte[] data = bufferToBytes(record.key());
             // It's okay to pass a null topic because it's not used in StringDeserializer
