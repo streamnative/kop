@@ -109,17 +109,17 @@ public class EntryFormatterTest {
 
         EncodeResult encodeResult;
         // Verify that KafkaV1EntryFormatter cannot fix the wrong relative offset.
-        encodeResult = kafkaV1Formatter.encode(records);
+        encodeResult = kafkaV1Formatter.encode(EncodeRequest.get(records));
         Assert.assertEquals(0, encodeResult.getConversionCount());
         checkWrongOffset(encodeResult.getRecords(), compressionType, magic);
 
         // Verify that PulsarEntryFormatter cannot fix the wrong relative offset.
-        encodeResult = pulsarFormatter.encode(records);
+        encodeResult = pulsarFormatter.encode(EncodeRequest.get(records));
         Assert.assertEquals(NUM_MESSAGES, encodeResult.getConversionCount());
         checkWrongOffset(encodeResult.getRecords(), compressionType, magic);
 
         // Verify that KafkaMixedEntryFormatter can fix incorrect relative offset.
-        encodeResult = kafkaMixedFormatter.encode(records);
+        encodeResult = kafkaMixedFormatter.encode(EncodeRequest.get(records));
         if (magic == RecordBatch.MAGIC_VALUE_V2) {
             // After changing baseOffset to 0,
             // KafkaMixedFormatter will not reconstruct the message with magic=2,
@@ -176,7 +176,7 @@ public class EntryFormatterTest {
     }
 
     private static MineMemoryRecordsBuilder newMemoryRecordsBuilder(CompressionType compressionType,
-                                                                byte magic) {
+                                                                    byte magic) {
         return new MineMemoryRecordsBuilder(
                 new ByteBufferOutputStream(ByteBuffer.allocate(1024 * 1024 * 5)),
                 magic,
@@ -437,7 +437,7 @@ public class EntryFormatterTest {
         }
 
         private byte computeAttributes(CompressionType type, TimestampType timestampType,
-                                              boolean isTransactional, boolean isControl) {
+                                       boolean isTransactional, boolean isControl) {
             if (timestampType == TimestampType.NO_TIMESTAMP_TYPE) {
                 throw new IllegalArgumentException(
                         "Timestamp type must be provided to compute attributes for message "

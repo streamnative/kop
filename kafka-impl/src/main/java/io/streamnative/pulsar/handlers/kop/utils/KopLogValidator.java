@@ -13,13 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
-import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.format.ValidationAndOffsetAssignResult;
-import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.Locale;
 import org.apache.kafka.common.errors.InvalidTimestampException;
 import org.apache.kafka.common.errors.UnsupportedForMessageFormatException;
 import org.apache.kafka.common.record.AbstractRecords;
@@ -50,23 +47,20 @@ public class KopLogValidator {
      * the offset of the shallow message with the max timestamp and a boolean indicating
      * whether the message sizes may have changed.
      */
-    public static ValidationAndOffsetAssignResult validateMessagesAndAssignOffsets(
-            MemoryRecords records,
-            PartitionLog.AppendOrigin origin,
-            LongRef offsetCounter,
-            long now,
-            CompressionCodec sourceCodec,
-            CompressionCodec targetCodec,
-            boolean compactedTopic,
-            byte magic,
-            TimestampType timestampType,
-            long timestampDiffMaxMs) {
+    public static ValidationAndOffsetAssignResult validateMessagesAndAssignOffsets(MemoryRecords records,
+                                                                 LongRef offsetCounter,
+                                                                 long now,
+                                                                 CompressionCodec sourceCodec,
+                                                                 CompressionCodec targetCodec,
+                                                                 boolean compactedTopic,
+                                                                 byte magic,
+                                                                 TimestampType timestampType,
+                                                                 long timestampDiffMaxMs) {
         if (sourceCodec.codec() == CompressionType.NONE.id
                 && targetCodec.codec() == CompressionType.NONE.id) {
             // check the magic value
             if (!records.hasMatchingMagic(magic)) {
                 return convertAndAssignOffsetsNonCompressed(records,
-                        origin,
                         offsetCounter,
                         compactedTopic,
                         now,
@@ -76,7 +70,6 @@ public class KopLogValidator {
             } else {
                 // Do in-place validation, offset assignment and maybe set timestamp
                 return assignOffsetsNonCompressed(records,
-                        origin,
                         offsetCounter,
                         now,
                         compactedTopic,
@@ -86,7 +79,6 @@ public class KopLogValidator {
             }
         } else {
             return validateMessagesAndAssignOffsetsCompressed(records,
-                    origin,
                     offsetCounter,
                     now,
                     sourceCodec,
@@ -98,15 +90,13 @@ public class KopLogValidator {
         }
     }
 
-    private static ValidationAndOffsetAssignResult convertAndAssignOffsetsNonCompressed(
-            MemoryRecords records,
-            PartitionLog.AppendOrigin origin,
-            LongRef offsetCounter,
-            boolean compactedTopic,
-            long now,
-            TimestampType timestampType,
-            long timestampDiffMaxMs,
-            byte toMagicValue) {
+    private static ValidationAndOffsetAssignResult convertAndAssignOffsetsNonCompressed(MemoryRecords records,
+                                                                                        LongRef offsetCounter,
+                                                                                        boolean compactedTopic,
+                                                                                        long now,
+                                                                                        TimestampType timestampType,
+                                                                                        long timestampDiffMaxMs,
+                                                                                        byte toMagicValue) {
         int sizeInBytesAfterConversion = AbstractRecords.estimateSizeInBytes(toMagicValue, offsetCounter.value(),
                 CompressionType.NONE, records.records());
 
@@ -133,7 +123,7 @@ public class KopLogValidator {
 
 
         records.batches().forEach(batch -> {
-            validateBatch(batch, origin, toMagicValue);
+            validateBatch(batch, toMagicValue);
 
             for (Record record : batch) {
                 validateRecord(batch, record, now, timestampType, timestampDiffMaxMs, compactedTopic);
@@ -148,7 +138,6 @@ public class KopLogValidator {
     }
 
     private static ValidationAndOffsetAssignResult assignOffsetsNonCompressed(MemoryRecords records,
-                                                                              PartitionLog.AppendOrigin origin,
                                                                               LongRef offsetCounter,
                                                                               long now,
                                                                               boolean compactedTopic,
@@ -156,18 +145,15 @@ public class KopLogValidator {
                                                                               long timestampDiffMaxMs,
                                                                               byte magic) {
         long maxTimestamp = RecordBatch.NO_TIMESTAMP;
-        long offsetOfMaxBatchTimestamp = -1L;
         for (MutableRecordBatch batch : records.batches()) {
-            validateBatch(batch, origin, magic);
+            validateBatch(batch, magic);
 
             long maxBatchTimestamp = RecordBatch.NO_TIMESTAMP;
 
             for (Record record : batch) {
                 validateRecord(batch, record, now, timestampType, timestampDiffMaxMs, compactedTopic);
-                long offset = offsetCounter.getAndIncrement();
                 if (batch.magic() > RecordBatch.MAGIC_VALUE_V0 && record.timestamp() > maxBatchTimestamp) {
                     maxBatchTimestamp = record.timestamp();
-                    offsetOfMaxBatchTimestamp = offset;
                 }
             }
 
@@ -202,7 +188,6 @@ public class KopLogValidator {
      */
     private static ValidationAndOffsetAssignResult validateMessagesAndAssignOffsetsCompressed(
             MemoryRecords records,
-            PartitionLog.AppendOrigin origin,
             LongRef offsetCounter,
             long now,
             CompressionCodec sourceCodec,
@@ -220,7 +205,7 @@ public class KopLogValidator {
         ArrayList<Record> validatedRecords = new ArrayList<>();
 
         for (MutableRecordBatch batch : records.batches()) {
-            validateBatch(batch, origin, toMagic);
+            validateBatch(batch, toMagic);
 
             // Do not compress control records unless they are written compressed
             if (sourceCodec.codec() == CompressionType.NONE.id && batch.isControlBatch()) {
@@ -383,41 +368,41 @@ public class KopLogValidator {
         return ValidationAndOffsetAssignResult.get(memoryRecords, conversionCount);
     }
 
-    private static void validateBatch(RecordBatch batch, PartitionLog.AppendOrigin origin, byte toMagic) {
-        if (origin == PartitionLog.AppendOrigin.Client) {
-            if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2) {
-                long countFromOffsets = batch.lastOffset() - batch.baseOffset() + 1;
-                if (countFromOffsets <= 0) {
-                    final String exceptionMsg = String.format(
-                            "Batch has an invalid offset range: [%d, %d]", batch.baseOffset(), batch.lastOffset());
-                    throw new InvalidRecordException(exceptionMsg);
-                }
-
-                // v2 and above messages always have a non-null count
-                int count = batch.countOrNull();
-                if (count <= 0) {
-                    throw new InvalidRecordException(String.format(
-                            "Invalid reported count for record batch: %d", count));
-                }
-
-                if (countFromOffsets != batch.countOrNull()) {
-                    final String exceptionMsg = String.format("Inconsistent batch offset range [%d, %d] "
-                            + "and count of records %d", batch.baseOffset(), batch.lastOffset(), count);
-                    throw new InvalidRecordException(exceptionMsg);
-                }
-            }
-
-            if (batch.hasProducerId() && batch.baseSequence() < 0) {
-                final String exceptionMsg = String.format("Invalid sequence number %d in record batch "
-                        + "with producerId %d", batch.baseSequence(), batch.producerId());
+    private static void validateBatch(RecordBatch batch, byte toMagic) {
+        if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2) {
+            long countFromOffsets = batch.lastOffset() - batch.baseOffset() + 1;
+            if (countFromOffsets <= 0) {
+                final String exceptionMsg = String.format(
+                        "Batch has an invalid offset range: [%d, %d]", batch.baseOffset(), batch.lastOffset());
                 throw new InvalidRecordException(exceptionMsg);
             }
 
-            if (batch.isControlBatch()) {
-                throw new InvalidRecordException("Clients are not allowed to write control records");
+            // v2 and above messages always have a non-null count
+            int count = batch.countOrNull();
+            if (count <= 0) {
+                throw new InvalidRecordException(String.format(
+                        "Invalid reported count for record batch: %d", count));
+            }
+
+            if (countFromOffsets != batch.countOrNull()) {
+                final String exceptionMsg = String.format("Inconsistent batch offset range [%d, %d] "
+                        + "and count of records %d", batch.baseOffset(), batch.lastOffset(), count);
+                throw new InvalidRecordException(exceptionMsg);
             }
         }
+
+        if (batch.hasProducerId() && batch.baseSequence() < 0) {
+            final String exceptionMsg = String.format("Invalid sequence number %d in record batch "
+                    + "with producerId %d", batch.baseSequence(), batch.producerId());
+            throw new InvalidRecordException(exceptionMsg);
+        }
+
+        if (batch.isControlBatch()) {
+            throw new InvalidRecordException("Clients are not allowed to write control records");
+        }
+
         checkUnsupportedForMessageFormat(batch, toMagic);
+
     }
 
     private static void checkUnsupportedForMessageFormat(RecordBatch batch, byte toMagic) {
@@ -496,33 +481,6 @@ public class KopLogValidator {
 
         public int codec() {
             return codec;
-        }
-    }
-
-    @VisibleForTesting
-    public static KopLogValidator.CompressionCodec getSourceCodec(MemoryRecords records) {
-        KopLogValidator.CompressionCodec sourceCodec = new KopLogValidator.CompressionCodec(
-                CompressionType.NONE.name, CompressionType.NONE.id);
-        for (RecordBatch batch : records.batches()) {
-            CompressionType compressionType = CompressionType.forId(batch.compressionType().id);
-            KopLogValidator.CompressionCodec messageCodec = new KopLogValidator.CompressionCodec(
-                    compressionType.name, compressionType.id);
-            if (messageCodec.codec() != CompressionType.NONE.id) {
-                sourceCodec = messageCodec;
-            }
-        }
-        return sourceCodec;
-    }
-
-    @VisibleForTesting
-    public static KopLogValidator.CompressionCodec getTargetCodec(KopLogValidator.CompressionCodec sourceCodec,
-                                                           String brokerCompressionType) {
-        String lowerCaseBrokerCompressionType = brokerCompressionType.toLowerCase(Locale.ROOT);
-        if (lowerCaseBrokerCompressionType.equals(CompressionType.NONE.name)) {
-            return sourceCodec;
-        } else {
-            CompressionType compressionType = CompressionType.forName(lowerCaseBrokerCompressionType);
-            return new KopLogValidator.CompressionCodec(compressionType.name, compressionType.id);
         }
     }
 

@@ -275,13 +275,13 @@ public class ProducerStateManager {
                 }
             } else {
                 appendDataBatch(batch.producerEpoch(), batch.baseSequence(), batch.lastSequence(), batch.maxTimestamp(),
-                        firstOffset.orElse(batch.baseOffset()), batch.lastOffset(), batch.isTransactional());
+                        firstOffset.orElse(batch.baseOffset()), batch.lastOffset());
                 return Optional.empty();
             }
         }
 
         public void appendDataBatch(Short epoch, Integer firstSeq, Integer lastSeq, Long lastTimestamp,
-                                    Long firstOffset, Long lastOffset, Boolean isTransactional) {
+                                    Long firstOffset, Long lastOffset) {
             if (log.isDebugEnabled()) {
                 log.debug("append data batch epoch: {}, firstSeq: {}, lastSeq: {}, firstOffset: {}, lastOffset: {}",
                         epoch, firstSeq, lastSeq, firstOffset, lastOffset);
@@ -340,22 +340,6 @@ public class ProducerStateManager {
             updatedEntry.setCoordinatorEpoch(currentEntry.getCoordinatorEpoch());
             updatedEntry.setLastTimestamp(currentEntry.getLastTimestamp());
             updatedEntry.setCurrentTxnFirstOffset(currentEntry.getCurrentTxnFirstOffset());
-        }
-
-        public void resetOffset(long baseOffset, boolean isTransactional) {
-            if (log.isDebugEnabled()) {
-                log.debug("append data batch reset offset: {}", baseOffset);
-            }
-            short producerEpoch = updatedEntry.getProducerEpoch();
-            ProducerStateManager.BatchMetadata batchMetadata = updatedEntry.getBatchMetadata().pollFirst();
-            if (batchMetadata == null) {
-                return;
-            }
-            resetUpdatedEntry();
-            transactions.clear();
-            int offsetDelta = batchMetadata.getLastSeq() - batchMetadata.firstSeq();
-            appendDataBatch(producerEpoch, batchMetadata.firstSeq(), batchMetadata.getLastSeq(),
-                    batchMetadata.getTimestamp(), baseOffset, baseOffset + offsetDelta, isTransactional);
         }
 
         @Override

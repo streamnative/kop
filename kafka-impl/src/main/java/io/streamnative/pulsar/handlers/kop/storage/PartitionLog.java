@@ -20,12 +20,10 @@ import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.MessagePublishContext;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
+import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
 import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
-import io.streamnative.pulsar.handlers.kop.format.ValidationAndOffsetAssignResult;
-import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
-import io.streamnative.pulsar.handlers.kop.utils.LongRef;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
@@ -45,12 +43,10 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
@@ -68,8 +64,6 @@ public class PartitionLog {
     private final String fullPartitionName;
     private final EntryFormatter entryFormatter;
     private final ProducerStateManager producerStateManager;
-    private static final KopLogValidator.CompressionCodec DEFAULT_COMPRESSION =
-            new KopLogValidator.CompressionCodec(CompressionType.NONE.name, CompressionType.NONE.id);
 
     @Data
     @AllArgsConstructor
@@ -82,18 +76,6 @@ public class PartitionLog {
         private Boolean isTransaction;
         private Long lastOffsetOfFirstBatch;
         private Integer validBytes;
-        private KopLogValidator.CompressionCodec sourceCodec;
-        private KopLogValidator.CompressionCodec targetCodec;
-
-        /**
-         * Get the first offset if it exists, else get the last offset of the first batch
-         * For magic versions 2 and newer, this method will return first offset. For magic versions
-         * older than 2, we use the last offset of the first batch as an approximation of the first
-         * offset to avoid decompressing the data.
-         */
-        public Long firstOrLastOffsetOfFirstBatch() {
-            return firstOffset.orElse(lastOffsetOfFirstBatch);
-        }
 
         /**
          * Get the (maximum) number of messages described by LogAppendInfo.
@@ -261,35 +243,15 @@ public class PartitionLog {
                     appendFuture.completeExceptionally(Errors.NOT_LEADER_FOR_PARTITION.exception());
                     return;
                 }
-                // Validate messages and assign offsets.
-                EncodeResult encodeResult;
-                MemoryRecords validAndOffsetAssignedRecords;
+                final EncodeRequest encodeRequest = EncodeRequest.get(validRecords);
                 if (entryFormatter instanceof KafkaMixedEntryFormatter) {
                     final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
                     final long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
-                    // assign offsets to the message set
-                    LongRef offset = new LongRef(logEndOffset);
-                    appendInfo.setFirstOffset(Optional.of(offset.value()));
-                    long now = time.milliseconds();
-                    final ValidationAndOffsetAssignResult validationAndOffsetAssignResult =
-                            KopLogValidator.validateMessagesAndAssignOffsets(validRecords,
-                                    origin,
-                                    offset,
-                                    now,
-                                    appendInfo.sourceCodec,
-                                    appendInfo.targetCodec,
-                                    false,
-                                    RecordBatch.MAGIC_VALUE_V2,
-                                    TimestampType.CREATE_TIME,
-                                    Long.MAX_VALUE);
-                    validAndOffsetAssignedRecords = validationAndOffsetAssignResult.getRecords();
-                    encodeResult = entryFormatter.encode(validAndOffsetAssignedRecords);
-                    encodeResult.setConversionCount(validationAndOffsetAssignResult.getConversionCount());
-                    appendInfo.setLastOffset(offset.value() - 1);
-                } else {
-                    validAndOffsetAssignedRecords = validRecords;
-                    encodeResult = entryFormatter.encode(validRecords);
+                    encodeRequest.setBaseOffset(logEndOffset);
                 }
+
+                final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
+                encodeRequest.recycle();
 
                 requestStats.getProduceEncodeStats().registerSuccessfulEvent(
                         time.nanoseconds() - beforeRecordsProcess, TimeUnit.NANOSECONDS);
@@ -297,7 +259,7 @@ public class PartitionLog {
                         .accept(encodeResult.getEncodedByteBuf().readableBytes());
 
                 AnalyzeResult analyzeResult = analyzeAndValidateProducerState(
-                        validAndOffsetAssignedRecords, appendInfo.getFirstOffset(), origin);
+                        validRecords, appendInfo.getFirstOffset(), origin);
                 if (analyzeResult.getMaybeDuplicate().isPresent()) {
                     log.error("Duplicate sequence number. topic: {}", topicPartition);
                     appendFuture.completeExceptionally(Errors.DUPLICATE_SEQUENCE_NUMBER.exception());
@@ -385,7 +347,6 @@ public class PartitionLog {
         long lastOffset = -1L;
         Optional<Long> firstOffset = Optional.empty();
         long lastOffsetOfFirstBatch = -1L;
-        KopLogValidator.CompressionCodec sourceCodec = DEFAULT_COMPRESSION;
         boolean readFirstMessage = false;
         boolean monotonic = true;
         boolean hasProducerId = false;
@@ -426,13 +387,6 @@ public class PartitionLog {
             shallowMessageCount += 1;
             validBytesCount += batchSize;
             isTransaction = batch.isTransactional();
-
-            CompressionType compressionType = CompressionType.forId(batch.compressionType().id);
-            KopLogValidator.CompressionCodec messageCodec = new KopLogValidator.CompressionCodec(
-                    compressionType.name, compressionType.id);
-            if (messageCodec.codec() != CompressionType.NONE.id) {
-                sourceCodec = messageCodec;
-            }
         }
 
         if (validBytesCount < 0) {
@@ -440,9 +394,6 @@ public class PartitionLog {
                     + validBytesCount + " to log for " + topicPartition
                     + ". A possible cause is corrupted produce request.");
         }
-        KopLogValidator.CompressionCodec targetCodec =
-                KopLogValidator.getTargetCodec(sourceCodec, kafkaConfig.getKafkaCompressionType());
-
         return new LogAppendInfo(
                 firstOffset,
                 lastOffset,
@@ -451,9 +402,7 @@ public class PartitionLog {
                 hasProducerId,
                 isTransaction,
                 lastOffsetOfFirstBatch,
-                validBytesCount,
-                sourceCodec,
-                targetCodec);
+                validBytesCount);
     }
 
     private MemoryRecords trimInvalidBytes(MemoryRecords records, LogAppendInfo info) {

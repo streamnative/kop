@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.format;
 
 import io.netty.util.Recycler;
-import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -27,19 +26,19 @@ public class EncodeRequest {
 
     private MemoryRecords records;
     @Setter
-    private PartitionLog.LogAppendInfo appendInfo;
+    private long baseOffset;
 
     private final Recycler.Handle<EncodeRequest> recyclerHandle;
 
     public static EncodeRequest get(MemoryRecords records) {
-        return get(records, null);
+        return get(records, 0L);
     }
 
     public static EncodeRequest get(MemoryRecords records,
-                                    PartitionLog.LogAppendInfo appendInfo) {
+                                    long baseOffset) {
         EncodeRequest encodeRequest = RECYCLER.get();
         encodeRequest.records = records;
-        encodeRequest.appendInfo = appendInfo;
+        encodeRequest.baseOffset = baseOffset;
         return encodeRequest;
     }
 
@@ -56,7 +55,7 @@ public class EncodeRequest {
 
     public void recycle() {
         records = null;
-        appendInfo = null;
+        baseOffset = -1L;
         recyclerHandle.recycle(this);
     }
 

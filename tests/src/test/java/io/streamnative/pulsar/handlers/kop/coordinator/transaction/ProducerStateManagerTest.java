@@ -216,7 +216,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 producerId, PartitionLog.AppendOrigin.Coordinator);
         // Sequence number wrap around
         appendInfo.appendDataBatch(epoch, Integer.MAX_VALUE - 10, 9, time.milliseconds(),
-                2000L, 2020L, false);
+                2000L, 2020L);
         assertEquals(Optional.empty(), stateManager.lastEntry(producerId));
         stateManager.update(appendInfo);
         assertTrue(stateManager.lastEntry(producerId).isPresent());
@@ -289,7 +289,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                         PartitionLog.AppendOrigin.Client);
 
         producerAppendInfo.appendDataBatch(producerEpoch, seq, seq, time.milliseconds(),
-                offset, offset, true);
+                offset, offset);
         stateManager.update(producerAppendInfo);
 
         assertEquals(Optional.of(offset), stateManager.firstUndecidedOffset());
@@ -354,7 +354,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                            short producerEpoch, AtomicInteger seq) {
         int count = (int) (endOffset - startOffset);
         appendInfo.appendDataBatch(producerEpoch, seq.get(), seq.addAndGet(count), time.milliseconds(),
-                startOffset, endOffset, true);
+                startOffset, endOffset);
         seq.incrementAndGet();
     }
 
@@ -404,7 +404,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 PartitionLog.AppendOrigin.Client
         );
         producerAppendInfo.appendDataBatch(producerEpoch, 0, 0, time.milliseconds(),
-                startOffset, startOffset, true);
+                startOffset, startOffset);
         stateManager.update(producerAppendInfo);
     }
 
@@ -415,7 +415,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         ProducerStateManager.ProducerAppendInfo appendInfo = stateManager.prepareUpdate(
                 producerId, PartitionLog.AppendOrigin.Client);
         appendInfo.appendDataBatch(producerEpoch, 0, 5, time.milliseconds(),
-                15L, 20L, false);
+                15L, 20L);
         assertEquals(Optional.empty(), stateManager.lastEntry(producerId));
         stateManager.update(appendInfo);
         assertTrue(stateManager.lastEntry(producerId).isPresent());
@@ -423,7 +423,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         ProducerStateManager.ProducerAppendInfo nextAppendInfo = stateManager.prepareUpdate(
                 producerId, PartitionLog.AppendOrigin.Client);
         nextAppendInfo.appendDataBatch(producerEpoch, 6, 10, time.milliseconds(),
-                26L, 30L, false);
+                26L, 30L);
         assertTrue(stateManager.lastEntry(producerId).isPresent());
 
         ProducerStateManager.ProducerStateEntry lastEntry = stateManager.lastEntry(producerId).get();
@@ -448,7 +448,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         ProducerStateManager.ProducerAppendInfo appendInfo =
                 stateManager.prepareUpdate(producerId, PartitionLog.AppendOrigin.Client);
         appendInfo.appendDataBatch(producerEpoch, 1, 5, time.milliseconds(),
-                16L, 20L, true);
+                16L, 20L);
         ProducerStateManager.ProducerStateEntry lastEntry = appendInfo.toEntry();
         assertEquals(producerEpoch, lastEntry.getProducerEpoch().shortValue());
         assertEquals(1, lastEntry.firstSeq().intValue());
@@ -461,7 +461,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 appendInfo.startedTransactions());
 
         appendInfo.appendDataBatch(producerEpoch, 6, 10, time.milliseconds(),
-                26L, 30L, true);
+                26L, 30L);
         lastEntry = appendInfo.toEntry();
         assertEquals(producerEpoch, lastEntry.getProducerEpoch().shortValue());
         assertEquals(1, lastEntry.firstSeq().intValue());
@@ -721,8 +721,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                         PartitionLog.AppendOrigin origin) {
         ProducerStateManager.ProducerAppendInfo producerAppendInfo = stateManager.prepareUpdate(producerId, origin);
         producerAppendInfo
-                .appendDataBatch(producerEpoch, seq, seq, timestamp, -1L, -1L, isTransactional);
-        producerAppendInfo.resetOffset(offset, isTransactional);
+                .appendDataBatch(producerEpoch, seq, seq, timestamp, -1L, -1L);
         stateManager.update(producerAppendInfo);
         stateManager.updateMapEndOffset(offset + 1);
     }
