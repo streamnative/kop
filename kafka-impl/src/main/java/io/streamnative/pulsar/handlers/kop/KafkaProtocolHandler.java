@@ -444,7 +444,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         scopeStatsLogger = rootStatsLogger.scope(SERVER_SCOPE);
         sendResponseScheduler = OrderedScheduler.newSchedulerBuilder()
                 .name("send-response")
-                .numThreads(kafkaConfig.getSendKafkaResponseThreads())
+                .numThreads(kafkaConfig.getNumSendKafkaResponseThreads())
                 .build();
     }
 
