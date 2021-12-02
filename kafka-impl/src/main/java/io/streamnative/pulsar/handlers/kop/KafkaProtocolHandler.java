@@ -514,13 +514,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 .brokerServiceUrl(brokerService.getPulsar().getBrokerServiceUrl())
                 .brokerServiceUrlTls(brokerService.getPulsar().getBrokerServiceUrlTls())
                 .build();
-
-        String namespacePrefixForMetadata = MetadataUtils.constructMetadataNamespace(tenant, kafkaConfig);
-        String namespacePrefixForUserTopics = MetadataUtils.constructUserTopicsNamespace(tenant, kafkaConfig);
         try {
             TransactionCoordinator transactionCoordinator =
-                    initTransactionCoordinator(tenant, brokerService.getPulsar().getAdminClient(), clusterData,
-                            namespacePrefixForMetadata, namespacePrefixForUserTopics);
+                    initTransactionCoordinator(tenant, brokerService.getPulsar().getAdminClient(), clusterData);
             // Listening transaction topic load/unload
             brokerService.pulsar()
                     .getNamespaceService()
@@ -703,9 +699,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     }
 
     public TransactionCoordinator initTransactionCoordinator(String tenant, PulsarAdmin pulsarAdmin,
-                                                             ClusterData clusterData,
-                                                             String namespacePrefixForMetadata,
-                                                             String namespacePrefixForUserTopics) throws Exception {
+                                                             ClusterData clusterData) throws Exception {
         TransactionConfig transactionConfig = TransactionConfig.builder()
                 .transactionLogNumPartitions(kafkaConfig.getKafkaTxnLogTopicNumPartitions())
                 .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(tenant, kafkaConfig))
@@ -719,14 +713,18 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         MetadataUtils.createTxnMetadataIfMissing(tenant, pulsarAdmin, clusterData, kafkaConfig);
 
         TransactionCoordinator transactionCoordinator = TransactionCoordinator.of(
+                tenant,
+                kafkaConfig,
                 transactionConfig,
                 txnTopicClient,
                 brokerService.getPulsar().getLocalMetadataStore(),
                 kopBrokerLookupManager,
-                OrderedScheduler.newSchedulerBuilder().name("transaction-log-manager").numThreads(1).build(),
-                Time.SYSTEM,
-                namespacePrefixForMetadata,
-                namespacePrefixForUserTopics);
+                OrderedScheduler
+                        .newSchedulerBuilder()
+                        .name("transaction-log-manager-" + tenant)
+                        .numThreads(1)
+                        .build(),
+                Time.SYSTEM);
 
         transactionCoordinator.startup(kafkaConfig.isKafkaTransactionalIdExpirationEnable()).get();
 
