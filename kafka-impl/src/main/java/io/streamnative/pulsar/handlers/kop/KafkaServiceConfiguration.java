@@ -78,7 +78,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             category = CATEGORY_KOP,
             doc = "The number of threads used to respond to the response."
     )
-    private int numSendKafkaResponseThreads = Runtime.getRuntime().availableProcessors();
+    private int numSendKafkaResponseThreads = 4;
 
     @FieldContext(
         category = CATEGORY_KOP,
