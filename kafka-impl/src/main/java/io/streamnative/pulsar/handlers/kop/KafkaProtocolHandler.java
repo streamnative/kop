@@ -97,6 +97,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private BrokerService brokerService;
     @Getter
     private KopEventManager kopEventManager;
+    private OrderedScheduler sendResponseScheduler;
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
@@ -441,6 +442,10 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         statsProvider = new PrometheusMetricsProvider();
         rootStatsLogger = statsProvider.getStatsLogger("");
         scopeStatsLogger = rootStatsLogger.scope(SERVER_SCOPE);
+        sendResponseScheduler = OrderedScheduler.newSchedulerBuilder()
+                .name("send-response")
+                .numThreads(kafkaConfig.getSendKafkaResponseThreads())
+                .build();
     }
 
     // This method is called after initialize
@@ -585,7 +590,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 endPoint.isTlsEnabled(),
                 endPoint,
                 kafkaConfig.isSkipMessagesWithoutIndex(),
-                scopeStatsLogger);
+                scopeStatsLogger,
+                sendResponseScheduler);
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
@@ -647,6 +653,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         KafkaTopicManager.getTopics().clear();
         kopBrokerLookupManager.close();
         statsProvider.stop();
+        sendResponseScheduler.shutdown();
     }
 
     @VisibleForTesting

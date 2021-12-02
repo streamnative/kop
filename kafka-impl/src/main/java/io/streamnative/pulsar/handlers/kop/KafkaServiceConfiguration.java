@@ -74,6 +74,11 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     //
     // --- Kafka on Pulsar Broker configuration ---
     //
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "The number of threads used to respond to the response."
+    )
+    private int sendKafkaResponseThreads = Runtime.getRuntime().availableProcessors();
 
     @FieldContext(
         category = CATEGORY_KOP,
