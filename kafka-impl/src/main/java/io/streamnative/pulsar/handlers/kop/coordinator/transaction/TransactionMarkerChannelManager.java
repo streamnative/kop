@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.Getter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
@@ -46,6 +47,8 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
+import org.apache.pulsar.client.impl.AuthenticationUtil;
+import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.ChannelFutures;
 import org.eclipse.jetty.util.BlockingArrayQueue;
@@ -58,7 +61,10 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 @Slf4j
 public class TransactionMarkerChannelManager {
 
+    private final String tenant;
+    @Getter
     private final KafkaServiceConfiguration kafkaConfig;
+    private final String authenticationToken;
     private final EventLoopGroup eventLoopGroup;
     private final boolean enableTls;
     private final SslContextFactory sslContextFactory;
@@ -130,11 +136,13 @@ public class TransactionMarkerChannelManager {
         }
     }
 
-    public TransactionMarkerChannelManager(KafkaServiceConfiguration kafkaConfig,
+    public TransactionMarkerChannelManager(String tenant,
+                                           KafkaServiceConfiguration kafkaConfig,
                                            TransactionStateManager txnStateManager,
                                            KopBrokerLookupManager kopBrokerLookupManager,
                                            boolean enableTls,
-                                           String namespacePrefixForUserTopics) {
+                                           String namespacePrefixForUserTopics) throws Exception {
+        this.tenant = tenant;
         this.kafkaConfig = kafkaConfig;
         this.namespacePrefixForUserTopics = namespacePrefixForUserTopics;
         this.txnStateManager = txnStateManager;
@@ -146,6 +154,17 @@ public class TransactionMarkerChannelManager {
         } else {
             sslContextFactory = null;
             sslEndPoint = null;
+        }
+        if (kafkaConfig.isAuthenticationEnabled()
+                && AuthenticationToken.class.getName().equals(kafkaConfig.getBrokerClientAuthenticationPlugin())) {
+            // this currently works only for JWT authentication
+            String auth = kafkaConfig.getBrokerClientAuthenticationPlugin();
+            String authParams = kafkaConfig.getBrokerClientAuthenticationParameters();
+            authenticationToken = AuthenticationUtil.create(auth, authParams)
+                    .getAuthData()
+                    .getCommandData();
+        } else {
+            authenticationToken = null;
         }
         eventLoopGroup = new NioEventLoopGroup();
         bootstrap = new Bootstrap();
@@ -468,4 +487,14 @@ public class TransactionMarkerChannelManager {
         });
     }
 
+    public String getAuthenticationUsername() {
+        return tenant;
+    }
+
+    public String getAuthenticationPassword() {
+        if (authenticationToken == null) {
+            return "";
+        }
+        return "token:" + authenticationToken;
+    }
 }
