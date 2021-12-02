@@ -57,7 +57,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         this.conf.setKafkaTransactionCoordinatorEnabled(true);
-        this.conf.setEntryFormat("kafka");
         super.internalSetup();
         log.info("success internal setup");
     }

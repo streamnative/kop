@@ -2177,6 +2177,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 appendRecordsContext.recycle();
                 if (ex != null) {
                     log.error("Append txn marker failed.", ex);
+                    Map<TopicPartition, Errors> currentErrors = new HashMap<>();
+                    controlRecords.forEach(((topicPartition, partitionResponse) -> {
+                        currentErrors.put(topicPartition, Errors.KAFKA_STORAGE_ERROR);
+                    }));
+                    updateErrors.accept(producerId, currentErrors);
+                    completeOne.run();
                     return;
                 }
                 Map<TopicPartition, Errors> currentErrors = new HashMap<>();
@@ -2196,17 +2202,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             successfulOffsetsPartitions
                                     .stream().map(TopicPartition::partition).collect(Collectors.toSet()),
                             transactionResult).whenComplete((__, e) -> {
-                        log.error("Received an exception while trying to update the offsets cache on "
-                                + "transaction marker append", e);
-                        ConcurrentHashMap<TopicPartition, Errors> updatedErrors = new ConcurrentHashMap<>();
-                        successfulOffsetsPartitions.forEach(partition ->
-                                updatedErrors.put(partition, Errors.UNKNOWN_SERVER_ERROR));
-                        updateErrors.accept(producerId, updatedErrors);
+                                if (e != null) {
+                                    log.error("Received an exception while trying to update the offsets cache on "
+                                            + "transaction marker append", e);
+                                    ConcurrentHashMap<TopicPartition, Errors> updatedErrors = new ConcurrentHashMap<>();
+                                    successfulOffsetsPartitions.forEach(partition ->
+                                            updatedErrors.put(partition, Errors.forException(e.getCause())));
+                                    updateErrors.accept(producerId, updatedErrors);
+                                }
                         completeOne.run();
                     });
-                } else {
-                    completeOne.run();
+                    return;
                 }
+                completeOne.run();
             });
         }
     }
