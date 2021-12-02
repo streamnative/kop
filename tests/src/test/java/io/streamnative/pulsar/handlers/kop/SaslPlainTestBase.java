@@ -99,6 +99,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
         ((KafkaServiceConfiguration) conf).setKafkaMetadataTenant("internal");
         ((KafkaServiceConfiguration) conf).setKafkaMetadataNamespace("__kafka");
 
+        conf.setKafkaTransactionCoordinatorEnabled(true);
         conf.setClusterName(super.configClusterName);
         conf.setAuthorizationEnabled(true);
         conf.setAuthenticationEnabled(true);
