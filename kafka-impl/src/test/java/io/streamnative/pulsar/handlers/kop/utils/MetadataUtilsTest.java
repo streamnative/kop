@@ -110,7 +110,7 @@ public class MetadataUtilsTest {
         verify(mockTopics, times(1)).createPartitionedTopic(
                 eq(offsetsTopic.getFullName()), eq(conf.getOffsetsTopicNumPartitions()));
         verify(mockTopics, times(1)).createPartitionedTopic(
-                eq(txnTopic.getFullName()), eq(conf.getTxnLogTopicNumPartitions()));
+                eq(txnTopic.getFullName()), eq(conf.getKafkaTxnLogTopicNumPartitions()));
 
         // Test that cluster is added to existing Tenant if missing
         // Test that the cluster is added to the namespace replication cluster list if it is missing
@@ -135,7 +135,7 @@ public class MetadataUtilsTest {
         for (int i = 0; i < conf.getOffsetsTopicNumPartitions() - 2; i++) {
             incompletePartitionList.add(offsetsTopic.getPartitionName(i));
         }
-        for (int i = 0; i < conf.getTxnLogTopicNumPartitions() - 2; i++) {
+        for (int i = 0; i < conf.getKafkaTxnLogTopicNumPartitions() - 2; i++) {
             incompletePartitionList.add(txnTopic.getPartitionName(i));
         }
 

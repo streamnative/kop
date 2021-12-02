@@ -179,8 +179,8 @@ public abstract class KopProtocolHandlerTestBase {
         // kafka related settings.
         kafkaConfig.setOffsetsTopicNumPartitions(1);
 
-        kafkaConfig.setEnableTransactionCoordinator(false);
-        kafkaConfig.setTxnLogTopicNumPartitions(1);
+        kafkaConfig.setKafkaTransactionCoordinatorEnabled(false);
+        kafkaConfig.setKafkaTxnLogTopicNumPartitions(1);
 
         kafkaConfig.setKafkaListeners(
                 PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort + ","
@@ -287,7 +287,7 @@ public abstract class KopProtocolHandlerTestBase {
         createClient();
 
         MetadataUtils.createOffsetMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
-        if (conf.isEnableTransactionCoordinator()) {
+        if (conf.isKafkaTransactionCoordinatorEnabled()) {
             MetadataUtils.createTxnMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
         }
 
