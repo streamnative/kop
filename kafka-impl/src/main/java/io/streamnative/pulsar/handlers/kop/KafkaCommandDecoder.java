@@ -567,7 +567,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected abstract void
     handleCreatePartitions(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
-    static class KafkaHeaderAndRequest implements Closeable {
+    public static class KafkaHeaderAndRequest implements Closeable {
 
         private static final String DEFAULT_CLIENT_HOST = "";
 
@@ -576,7 +576,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         private final ByteBuf buffer;
         private final SocketAddress remoteAddress;
 
-        KafkaHeaderAndRequest(RequestHeader header,
+        public KafkaHeaderAndRequest(RequestHeader header,
                               AbstractRequest request,
                               ByteBuf buffer,
                               SocketAddress remoteAddress) {
@@ -630,7 +630,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         return header.apiKey() == API_VERSIONS && !API_VERSIONS.isVersionSupported(header.apiVersion());
     }
 
-    static class KafkaHeaderAndResponse implements Closeable {
+    public static class KafkaHeaderAndResponse implements Closeable {
         private final short apiVersion;
         private final ResponseHeader header;
         private final AbstractResponse response;

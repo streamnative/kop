@@ -21,22 +21,29 @@ import static org.testng.Assert.fail;
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.crypto.SecretKey;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.serialization.IntegerDeserializer;
+import org.apache.kafka.common.serialization.IntegerSerializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
@@ -92,6 +99,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
         ((KafkaServiceConfiguration) conf).setKafkaMetadataTenant("internal");
         ((KafkaServiceConfiguration) conf).setKafkaMetadataNamespace("__kafka");
 
+        conf.setKafkaTransactionCoordinatorEnabled(true);
         conf.setClusterName(super.configClusterName);
         conf.setAuthorizationEnabled(true);
         conf.setAuthenticationEnabled(true);
@@ -215,5 +223,108 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
             assertTrue(e.getCause() instanceof TimeoutException);
             assertTrue(e.getMessage().contains("Failed to update metadata"));
         }
+    }
+
+    @Test
+    public void transactionsReadCommittedTest() throws Exception {
+        basicProduceAndConsumeTest(TENANT + "/" + NAMESPACE + "/" +  "read-committed-test", "txn-11",
+                "read_committed");
+    }
+
+    @Test(timeOut = 1000 * 10)
+    public void transactionsReadUncommittedTest() throws Exception {
+        basicProduceAndConsumeTest(TENANT + "/" + NAMESPACE + "/" +  "read-uncommitted-test", "txn-12",
+                "read_uncommitted");
+    }
+
+    private void basicProduceAndConsumeTest(String topicName,
+                                           String transactionalId,
+                                           String isolation) throws Exception {
+
+        @Cleanup
+        KProducer kProducer = new KProducer(topicName, false, "localhost", getKafkaBrokerPort(),
+                TENANT + "/" + NAMESPACE, "token:" + userToken, false, IntegerSerializer.class.getName(),
+                StringSerializer.class.getName(), transactionalId);
+
+        KafkaProducer<Integer, String> producer = kProducer.getProducer();
+
+        producer.initTransactions();
+
+        int totalTxnCount = 10;
+        int messageCountPerTxn = 10;
+
+        String lastMessage = "";
+        for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
+            producer.beginTransaction();
+
+            String contentBase;
+            if (txnIndex % 2 != 0) {
+                contentBase = "commit msg txnIndex %s messageIndex %s";
+            } else {
+                contentBase = "abort msg txnIndex %s messageIndex %s";
+            }
+
+            for (int messageIndex = 0; messageIndex < messageCountPerTxn; messageIndex++) {
+                String msgContent = String.format(contentBase, txnIndex, messageIndex);
+                log.info("send txn message {}", msgContent);
+                lastMessage = msgContent;
+                producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
+            }
+
+            if (txnIndex % 2 != 0) {
+                producer.commitTransaction();
+            } else {
+                producer.abortTransaction();
+            }
+        }
+
+        consumeTxnMessage(topicName, totalTxnCount * messageCountPerTxn, lastMessage, isolation);
+    }
+
+
+    private void consumeTxnMessage(String topicName,
+                                   int totalMessageCount,
+                                   String lastMessage,
+                                   String isolation) throws InterruptedException {
+
+        @Cleanup
+        KConsumer kConsumer = new KConsumer(topicName , "localhost", getKafkaBrokerPort(), false,
+                TENANT + "/" + NAMESPACE, "token:" + userToken, "consumeTxnMessage-" + UUID.randomUUID(),
+                IntegerDeserializer.class.getName(),
+                StringDeserializer.class.getName(), isolation);
+
+        KafkaConsumer<Integer, String> consumer = kConsumer.getConsumer();
+        consumer.subscribe(Collections.singleton(topicName));
+
+        log.info("the last message is: {}", lastMessage);
+        AtomicInteger receiveCount = new AtomicInteger(0);
+        while (true) {
+            ConsumerRecords<Integer, String> consumerRecords =
+                    consumer.poll(Duration.of(100, ChronoUnit.MILLIS));
+
+            boolean readFinish = false;
+            for (ConsumerRecord<Integer, String> record : consumerRecords) {
+                log.info("Fetch for receive record offset: {}, key: {}, value: {}",
+                        record.offset(), record.key(), record.value());
+                receiveCount.incrementAndGet();
+                if (lastMessage.equalsIgnoreCase(record.value())) {
+                    log.info("receive the last message");
+                    readFinish = true;
+                }
+            }
+
+            if (readFinish) {
+                log.info("Fetch for read finish.");
+                break;
+            }
+        }
+        log.info("Fetch for receive message finish. isolation: {}, receive count: {}", isolation, receiveCount.get());
+
+        if (isolation.equals("read_committed")) {
+            assertEquals(receiveCount.get(), totalMessageCount / 2);
+        } else {
+            assertEquals(receiveCount.get(), totalMessageCount);
+        }
+        log.info("Fetch for finish consume messages. isolation: {}", isolation);
     }
 }
