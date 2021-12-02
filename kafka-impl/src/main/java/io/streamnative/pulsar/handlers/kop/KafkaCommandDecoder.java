@@ -21,14 +21,12 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.timeout.IdleStateEvent;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.io.Closeable;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import lombok.Getter;
@@ -65,11 +63,14 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     @Getter
     protected final KafkaServiceConfiguration kafkaConfig;
 
+    private final ScheduledExecutorService executor;
+
     public KafkaCommandDecoder(StatsLogger statsLogger,
                                KafkaServiceConfiguration kafkaConfig) {
         this.requestStats = new RequestStats(statsLogger);
         this.kafkaConfig = kafkaConfig;
         this.requestQueue = new LinkedBlockingQueue<>(kafkaConfig.getMaxQueuedRequests());
+        this.executor = Executors.newScheduledThreadPool(1, new DefaultThreadFactory("send-response"));
     }
 
     @Override
@@ -117,6 +118,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             // update request queue size stat
             RequestStats.REQUEST_QUEUE_SIZE_INSTANCE.decrementAndGet();
         }
+        executor.shutdown();
         ctx.close();
     }
 
@@ -246,7 +248,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 registerRequestLatency.accept(kafkaHeaderAndRequest.getHeader().apiKey().name,
                         startProcessRequestTimestamp);
 
-                ctx.channel().eventLoop().execute(() -> {
+                executor.execute(() -> {
                     writeAndFlushResponseToClient(channel);
                 });
             });
