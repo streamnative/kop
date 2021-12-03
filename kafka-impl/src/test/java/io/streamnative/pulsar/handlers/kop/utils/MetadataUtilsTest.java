@@ -21,6 +21,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
@@ -48,6 +49,7 @@ public class MetadataUtilsTest {
     public void testCreateKafkaMetadataIfMissing() throws Exception {
         String namespacePrefix = "public/default";
         KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
+        assertTrue(conf.isKafkaManageSystemNamespaces());
         ClusterData clusterData = ClusterData.builder().build();
         conf.setClusterName("test");
         conf.setKafkaMetadataTenant("public");
@@ -154,5 +156,25 @@ public class MetadataUtilsTest {
             + "/" + conf.getKafkaMetadataNamespace()), any(Set.class));
         verify(mockTopics, times(1)).createMissedPartitions(contains(offsetsTopic.getOriginalName()));
         verify(mockTopics, times(1)).createMissedPartitions(contains(txnTopic.getOriginalName()));
+    }
+
+    @Test(timeOut = 30000)
+    public void testDisableCreateKafkaMetadata() throws Exception {
+        String namespacePrefix = "public/default";
+        KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
+        conf.setKafkaManageSystemNamespaces(false);
+        Clusters mockClusters = mock(Clusters.class);
+        Tenants mockTenants = mock(Tenants.class);
+        Namespaces mockNamespaces = mock(Namespaces.class);
+        Topics mockTopics = mock(Topics.class);
+        PulsarAdmin mockPulsarAdmin = mock(PulsarAdmin.class);
+        doReturn(mockClusters).when(mockPulsarAdmin).clusters();
+        doReturn(mockTenants).when(mockPulsarAdmin).tenants();
+        doReturn(mockNamespaces).when(mockPulsarAdmin).namespaces();
+        doReturn(mockTopics).when(mockPulsarAdmin).topics();
+        MetadataUtils.createOffsetMetadataIfMissing(conf.getKafkaMetadataTenant(), mockPulsarAdmin, ClusterData.builder().build(), conf);
+
+        verify(mockTenants, times(0)).createTenant(any(), any());
+        verify(mockNamespaces, times(0)).createNamespace(any(), any(Set.class));
     }
 }
