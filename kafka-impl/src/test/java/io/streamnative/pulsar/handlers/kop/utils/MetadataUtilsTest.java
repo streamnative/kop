@@ -172,7 +172,8 @@ public class MetadataUtilsTest {
         doReturn(mockTenants).when(mockPulsarAdmin).tenants();
         doReturn(mockNamespaces).when(mockPulsarAdmin).namespaces();
         doReturn(mockTopics).when(mockPulsarAdmin).topics();
-        MetadataUtils.createOffsetMetadataIfMissing(conf.getKafkaMetadataTenant(), mockPulsarAdmin, ClusterData.builder().build(), conf);
+        MetadataUtils.createOffsetMetadataIfMissing(conf.getKafkaMetadataTenant(), mockPulsarAdmin,
+                                                                     ClusterData.builder().build(), conf);
 
         verify(mockTenants, times(0)).createTenant(any(), any());
         verify(mockNamespaces, times(0)).createNamespace(any(), any(Set.class));
