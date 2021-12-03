@@ -75,7 +75,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
                         case COMMIT:
                             msgMetadata.setMarkerType(MarkerType.TXN_COMMIT_VALUE);
                             break;
-                        case UNKNOWN:
+                        default:
                             msgMetadata.setMarkerType(MarkerType.UNKNOWN_MARKER_VALUE);
                             break;
                     }
