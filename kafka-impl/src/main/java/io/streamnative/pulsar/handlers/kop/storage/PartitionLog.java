@@ -52,7 +52,7 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 
 /**
- * An append-only log for storing messages. Mapping to Kafka scala.
+ * An append-only log for storing messages. Mapping to Kafka Log.scala.
  */
 @Slf4j
 @AllArgsConstructor
