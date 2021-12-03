@@ -35,6 +35,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
+import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -65,11 +66,15 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     @Getter
     protected final KafkaServiceConfiguration kafkaConfig;
 
+    private final OrderedScheduler sendResponseScheduler;
+
     public KafkaCommandDecoder(StatsLogger statsLogger,
-                               KafkaServiceConfiguration kafkaConfig) {
+                               KafkaServiceConfiguration kafkaConfig,
+                               OrderedScheduler sendResponseScheduler) {
         this.requestStats = new RequestStats(statsLogger);
         this.kafkaConfig = kafkaConfig;
         this.requestQueue = new LinkedBlockingQueue<>(kafkaConfig.getMaxQueuedRequests());
+        this.sendResponseScheduler = sendResponseScheduler;
     }
 
     @Override
@@ -246,7 +251,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 registerRequestLatency.accept(kafkaHeaderAndRequest.getHeader().apiKey().name,
                         startProcessRequestTimestamp);
 
-                ctx.channel().eventLoop().execute(() -> {
+                sendResponseScheduler.executeOrdered(channel.remoteAddress().hashCode(), () -> {
                     writeAndFlushResponseToClient(channel);
                 });
             });
