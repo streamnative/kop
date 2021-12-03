@@ -160,7 +160,6 @@ public class MetadataUtilsTest {
 
     @Test(timeOut = 30000)
     public void testDisableCreateKafkaMetadata() throws Exception {
-        String namespacePrefix = "public/default";
         KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
         conf.setKafkaManageSystemNamespaces(false);
         Clusters mockClusters = mock(Clusters.class);
