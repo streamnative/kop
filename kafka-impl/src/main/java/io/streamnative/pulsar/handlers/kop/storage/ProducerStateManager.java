@@ -244,7 +244,6 @@ public class ProducerStateManager {
                             currentEntry.getProducerId(), topicPartition, appendFirstSeq, currentLastSeq);
                     throw new OutOfOrderSequenceException(msg);
                 }
-
             }
         }
 
@@ -287,9 +286,17 @@ public class ProducerStateManager {
                         epoch, firstSeq, lastSeq, firstOffset, lastOffset);
             }
             maybeValidateDataBatch(epoch, firstSeq);
+            // We use lastSeq - firstSeq instead of lastOffset - firstOffset, because current offset is wrong,
+            // the offset is set when message published to storage.
             updatedEntry.addBatch(epoch, lastSeq, lastOffset, lastSeq - firstSeq, lastTimestamp);
         }
 
+        /**
+         * When message publish success, we should save the current txn first offset.
+         *
+         * @param isTransactional is transaction or not
+         * @param firstOffset transaction first offset
+         */
         public void updateCurrentTxnFirstOffset(Boolean isTransactional, long firstOffset) {
             if (updatedEntry.getCurrentTxnFirstOffset().isPresent()) {
                 if (!isTransactional) {
@@ -365,6 +372,8 @@ public class ProducerStateManager {
 
         private final Integer lastSeq;
         private final Long lastOffset;
+        // Should be seq delta, we use offsetDelta here because in future might change back.
+        // When we preset the correct offset before message publish.
         private final Integer offsetDelta;
         private final Long timestamp;
 
@@ -404,7 +413,7 @@ public class ProducerStateManager {
     @Data
     public static class ProducerStateEntry {
 
-        private static final Integer NumBatchesToRetain = 5;
+        private static final Integer NumBatchesToRetain = 1;
 
         private Long producerId;
         private Deque<BatchMetadata> batchMetadata;
@@ -582,10 +591,11 @@ public class ProducerStateManager {
         return new ProducerStateManager.ProducerAppendInfo(topicPartition, producerId, currentEntry, origin);
     }
 
-    private Optional<PartitionLog.CompletedTxn> updateProducers(RecordBatch batch,
-                                                       Map<Long, ProducerStateManager.ProducerAppendInfo> producers,
-                                                       Optional<Long> firstOffset,
-                                                       PartitionLog.AppendOrigin origin) {
+    private Optional<PartitionLog.CompletedTxn> updateProducers(
+            RecordBatch batch,
+            Map<Long, ProducerStateManager.ProducerAppendInfo> producers,
+            Optional<Long> firstOffset,
+            PartitionLog.AppendOrigin origin) {
         Long producerId = batch.producerId();
         ProducerStateManager.ProducerAppendInfo appendInfo =
                 producers.computeIfAbsent(producerId, pid -> prepareUpdate(producerId, origin));

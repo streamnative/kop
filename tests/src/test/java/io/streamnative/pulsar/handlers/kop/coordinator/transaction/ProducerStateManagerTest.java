@@ -189,45 +189,6 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(0, secondEntry.lastSeq().intValue());
     }
 
-    @Test(timeOut = defaultTestTimeout)
-    public void testProducerSequenceWrapAround() {
-        short epoch = 15;
-        Integer sequence = Integer.MAX_VALUE;
-        long offset = 735L;
-        append(stateManager, producerId, epoch, sequence, offset);
-
-        append(stateManager, producerId, epoch, 0, offset + 500);
-
-        Optional<ProducerStateManager.ProducerStateEntry> maybeLastEntry = stateManager.lastEntry(producerId);
-        assertTrue(maybeLastEntry.isPresent());
-
-        ProducerStateManager.ProducerStateEntry lastEntry = maybeLastEntry.get();
-        assertEquals(epoch, lastEntry.getProducerEpoch().shortValue());
-
-        assertEquals(Integer.MAX_VALUE, lastEntry.firstSeq().intValue());
-        assertEquals(0, lastEntry.lastSeq().intValue());
-    }
-
-    @Test(timeOut = defaultTestTimeout)
-    public void testProducerSequenceWithWrapAroundBatchRecord() {
-        short epoch = 15;
-
-        ProducerStateManager.ProducerAppendInfo appendInfo = stateManager.prepareUpdate(
-                producerId, PartitionLog.AppendOrigin.Coordinator);
-        // Sequence number wrap around
-        appendInfo.appendDataBatch(epoch, Integer.MAX_VALUE - 10, 9, time.milliseconds(),
-                2000L, 2020L);
-        assertEquals(Optional.empty(), stateManager.lastEntry(producerId));
-        stateManager.update(appendInfo);
-        assertTrue(stateManager.lastEntry(producerId).isPresent());
-
-        ProducerStateManager.ProducerStateEntry lastEntry = stateManager.lastEntry(producerId).get();
-        assertEquals(Integer.MAX_VALUE - 10, lastEntry.firstSeq().intValue());
-        assertEquals(9, lastEntry.lastSeq().intValue());
-        assertEquals(2000L, lastEntry.firstDataOffset().longValue());
-        assertEquals(2020L, lastEntry.lastDataOffset().longValue());
-    }
-
     @Test(timeOut = defaultTestTimeout, expectedExceptions = OutOfOrderSequenceException.class)
     public void testProducerSequenceInvalidWrapAround() {
         short epoch = 15;
@@ -251,8 +212,6 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(epoch, lastEntry.getProducerEpoch().shortValue());
         assertEquals(sequence, lastEntry.firstSeq());
         assertEquals(sequence, lastEntry.lastSeq());
-        assertEquals(offset, lastEntry.lastDataOffset().longValue());
-        assertEquals(offset, lastEntry.firstDataOffset().longValue());
     }
 
     @Test(timeOut = defaultTestTimeout)
@@ -290,9 +249,11 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
         producerAppendInfo.appendDataBatch(producerEpoch, seq, seq, time.milliseconds(),
                 offset, offset);
+        // Update to real offset
+        producerAppendInfo.updateCurrentTxnFirstOffset(true, offset);
         stateManager.update(producerAppendInfo);
 
-        assertEquals(Optional.of(offset), stateManager.firstUndecidedOffset());
+        assertEquals(stateManager.firstUndecidedOffset(), Optional.of(offset));
     }
 
     @Test(timeOut = defaultTestTimeout)
@@ -355,6 +316,8 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         int count = (int) (endOffset - startOffset);
         appendInfo.appendDataBatch(producerEpoch, seq.get(), seq.addAndGet(count), time.milliseconds(),
                 startOffset, endOffset);
+        // Update to real offset
+        appendInfo.updateCurrentTxnFirstOffset(true, startOffset);
         seq.incrementAndGet();
     }
 
@@ -405,6 +368,8 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         );
         producerAppendInfo.appendDataBatch(producerEpoch, 0, 0, time.milliseconds(),
                 startOffset, startOffset);
+        // Update to real offset
+        producerAppendInfo.updateCurrentTxnFirstOffset(true, startOffset);
         stateManager.update(producerAppendInfo);
     }
 
@@ -433,7 +398,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
         stateManager.update(nextAppendInfo);
         lastEntry = stateManager.lastEntry(producerId).get();
-        assertEquals(0, lastEntry.firstSeq().intValue());
+        assertEquals(6, lastEntry.firstSeq().intValue());
         assertEquals(10, lastEntry.lastSeq().intValue());
         assertEquals(30L, lastEntry.lastDataOffset().longValue());
     }
@@ -449,6 +414,8 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 stateManager.prepareUpdate(producerId, PartitionLog.AppendOrigin.Client);
         appendInfo.appendDataBatch(producerEpoch, 1, 5, time.milliseconds(),
                 16L, 20L);
+        // Update to real offset
+        appendInfo.updateCurrentTxnFirstOffset(true, 16L);
         ProducerStateManager.ProducerStateEntry lastEntry = appendInfo.toEntry();
         assertEquals(producerEpoch, lastEntry.getProducerEpoch().shortValue());
         assertEquals(1, lastEntry.firstSeq().intValue());
@@ -462,12 +429,12 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
         appendInfo.appendDataBatch(producerEpoch, 6, 10, time.milliseconds(),
                 26L, 30L);
+        // Update to real offset
+        appendInfo.updateCurrentTxnFirstOffset(true, 26L);
         lastEntry = appendInfo.toEntry();
         assertEquals(producerEpoch, lastEntry.getProducerEpoch().shortValue());
-        assertEquals(1, lastEntry.firstSeq().intValue());
+        assertEquals(6, lastEntry.firstSeq().intValue());
         assertEquals(10, lastEntry.lastSeq().intValue());
-        assertEquals(16L, lastEntry.firstDataOffset().longValue());
-        assertEquals(30L, lastEntry.lastDataOffset().longValue());
         assertEquals(Optional.of(16L), lastEntry.getCurrentTxnFirstOffset());
         assertEquals(
                 Lists.newArrayList(new ProducerStateManager.TxnMetadata(producerId, 16L)),
@@ -487,10 +454,8 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         lastEntry = appendInfo.toEntry();
         assertEquals(producerEpoch, lastEntry.getProducerEpoch().shortValue());
         // verify that appending the transaction marker doesn't affect the metadata of the cached record batches.
-        assertEquals(1, lastEntry.firstSeq().intValue());
+        assertEquals(6, lastEntry.firstSeq().intValue());
         assertEquals(10, lastEntry.lastSeq().intValue());
-        assertEquals(16L, lastEntry.firstDataOffset().longValue());
-        assertEquals(30L, lastEntry.lastDataOffset().longValue());
         assertEquals(Optional.empty(), lastEntry.getCurrentTxnFirstOffset());
         assertEquals(
                 Lists.newArrayList(new ProducerStateManager.TxnMetadata(producerId, 16L)),
@@ -722,6 +687,8 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         ProducerStateManager.ProducerAppendInfo producerAppendInfo = stateManager.prepareUpdate(producerId, origin);
         producerAppendInfo
                 .appendDataBatch(producerEpoch, seq, seq, timestamp, -1L, -1L);
+        // Update to real offset
+        producerAppendInfo.updateCurrentTxnFirstOffset(isTransactional, offset);
         stateManager.update(producerAppendInfo);
         stateManager.updateMapEndOffset(offset + 1);
     }
