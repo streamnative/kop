@@ -21,6 +21,7 @@ import java.util.function.Consumer;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.Record;
+import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessagePayload;
@@ -64,13 +65,21 @@ public class KafkaPayloadProcessor implements MessagePayloadProcessor {
                 numMessages++;
             }
             int index = 0;
-            for (Record record : records.records()) {
-                final MessagePayload singlePayload = newByteBufFromRecord(record);
-                try {
-                    messageConsumer.accept(context.getMessageAt(index, numMessages, singlePayload, true, schema));
-                } finally {
-                    index++;
-                    singlePayload.release();
+            for (RecordBatch batch : records.batches()) {
+                if (batch.isControlBatch() || batch.isTransactional()) {
+                    continue;
+                }
+                // TODO: Currently KoP doesn't support multi batches in an entry so it works well at this moment. After
+                //  we supported multi batches in future, the following code should be changed. See
+                //  https://github.com/streamnative/kop/issues/537 for details.
+                for (Record record : records.records()) {
+                    final MessagePayload singlePayload = newByteBufFromRecord(record);
+                    try {
+                        messageConsumer.accept(context.getMessageAt(index, numMessages, singlePayload, true, schema));
+                    } finally {
+                        index++;
+                        singlePayload.release();
+                    }
                 }
             }
         } finally {
