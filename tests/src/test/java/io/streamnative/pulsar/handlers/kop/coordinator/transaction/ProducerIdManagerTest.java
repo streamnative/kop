@@ -17,8 +17,9 @@ import static org.testng.AssertJUnit.assertEquals;
 import static org.testng.AssertJUnit.fail;
 
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.zookeeper.data.Stat;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -30,6 +31,8 @@ import org.testng.annotations.Test;
  */
 @Slf4j
 public class ProducerIdManagerTest extends KopProtocolHandlerTestBase {
+
+    private static final long DEFAULT_TEST_TIMEOUT = 20 * 1000;
 
     @BeforeClass
     @Override
@@ -43,15 +46,13 @@ public class ProducerIdManagerTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    @BeforeMethod
+    @BeforeMethod(timeOut = DEFAULT_TEST_TIMEOUT)
     protected void cleanZNode() throws Exception {
-        Stat stat = mockZooKeeper.exists(ProducerIdManager.KOP_PID_BLOCK_ZNODE, null);
-        if (stat != null) {
-            mockZooKeeper.delete(ProducerIdManager.KOP_PID_BLOCK_ZNODE, -1);
-        }
+        pulsar.getLocalMetadataStore()
+                .deleteRecursive(ProducerIdManager.KOP_PID_BLOCK_ZNODE).get(10, TimeUnit.SECONDS);
     }
 
-    @Test
+    @Test(timeOut = DEFAULT_TEST_TIMEOUT)
     public void testGetProducerId() throws Exception {
         ProducerIdManager manager1 = new ProducerIdManager(0, pulsar.getLocalMetadataStore());
         manager1.initialize().get();
@@ -76,13 +77,14 @@ public class ProducerIdManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(pid2 + ProducerIdManager.PID_BLOCK_SIZE * 2, manager2.generateProducerId().get().longValue());
     }
 
-    @Test
+    @Test(timeOut = DEFAULT_TEST_TIMEOUT)
     public void testExceedProducerIdLimit() throws Exception {
-        mockZooKeeper.create(ProducerIdManager.KOP_PID_BLOCK_ZNODE, null, null, null);
-        mockZooKeeper.setData(ProducerIdManager.KOP_PID_BLOCK_ZNODE,
-                ProducerIdManager.generateProducerIdBlockJson(
-                        new ProducerIdManager.ProducerIdBlock(
-                                1, Long.MAX_VALUE - ProducerIdManager.PID_BLOCK_SIZE, Long.MAX_VALUE)), -1);
+        pulsar.getLocalMetadataStore()
+                .put(ProducerIdManager.KOP_PID_BLOCK_ZNODE,
+                        ProducerIdManager.generateProducerIdBlockJson(
+                                new ProducerIdManager.ProducerIdBlock(
+                                        1, Long.MAX_VALUE - ProducerIdManager.PID_BLOCK_SIZE, Long.MAX_VALUE)),
+                        Optional.empty()).get(10, TimeUnit.SECONDS);
 
         ProducerIdManager producerIdManager = new ProducerIdManager(0, pulsar.getLocalMetadataStore());
         try {
