@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
@@ -24,6 +25,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
@@ -37,6 +39,8 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.Consumer;
+import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.TypedMessageBuilder;
@@ -73,6 +77,11 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
         List<String> kafkaReceives = receiveMessages(kafkaConsumer, expectedMessages.size());
         assertEquals(kafkaReceives, expectedMessages);
+
+        @Cleanup
+        final Consumer<byte[]> pulsarConsumer = newPulsarConsumer(topic, SUBSCRIPTION, new KafkaPayloadProcessor());
+        List<String> pulsarReceives = receiveMessages(pulsarConsumer, expectedMessages.size());
+        assertEquals(pulsarReceives, expectedMessages);
     }
 
     @Test(timeOut = 20000)
@@ -288,5 +297,108 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         assertEquals(getValuesFromRecords(receivedRecords), values);
         assertEquals(getKeysFromRecords(receivedRecords), keys);
         assertEquals(getFirstHeadersFromRecords(receivedRecords), headers);
+    }
+
+
+    @Test(timeOut = 20000, dataProvider = "enableBatching")
+    public void testKafkaProducePulsarConsume(boolean enableBatching) throws Exception {
+        final String topic = "test-kafka-produce-pulsar-consume";
+        final KafkaProducer<String, String> producer = newKafkaProducer();
+        final int numMessages = 10;
+
+        Future<RecordMetadata> sendFuture = null;
+        for (int i = 0; i < numMessages; i++) {
+            if (i % 2 == 0) {
+                sendFuture = producer.send(new ProducerRecord<>(topic, "msg-" + i));
+            } else {
+                sendFuture = producer.send(new ProducerRecord<>(topic, "key-" + i, "msg-" + i));
+            }
+            if (!enableBatching) {
+                sendFuture.get();
+            }
+        }
+        sendFuture.get();
+        producer.close();
+
+        @Cleanup
+        final Consumer<byte[]> consumer = newPulsarConsumer(
+                topic, "my-sub-" + enableBatching, new KafkaPayloadProcessor());
+        final List<Message<byte[]>> messages = receivePulsarMessages(consumer, numMessages);
+        assertEquals(messages.size(), numMessages);
+
+        for (int i = 0; i < numMessages; i++) {
+            final Message<byte[]> message = messages.get(i);
+            assertEquals(convertPulsarMessageToString(message), "msg-" + i);
+            if (i % 2 == 0) {
+                assertNull(message.getKey());
+            } else {
+                assertEquals(message.getKey(), "key-" + i);
+                assertEquals(message.getOrderingKey(), ("key-" + i).getBytes(StandardCharsets.UTF_8));
+            }
+        }
+    }
+
+    @Test(timeOut = 20000, dataProvider = "enableBatching")
+    public void testKafkaProducePulsarConsumeWithHeaders(boolean enableBatching) throws Exception {
+        final String topic = "test-kafka-produce-pulsar-consume-with-headers";
+        final KafkaProducer<String, String> producer = newKafkaProducer();
+        final int numMessages = 10;
+        Future<RecordMetadata> sendFuture = null;
+        for (int i = 0; i < numMessages; i++) {
+            final List<Header> headers = Collections.singletonList(new Header("prop-key-" + i, "prop-value-" + i));
+            sendFuture = producer.send(new ProducerRecord<>(
+                    topic, 0, "", "msg", Header.toHeaders(headers, RecordHeader::new)));
+        }
+        sendFuture.get();
+        producer.close();
+
+        @Cleanup
+        final Consumer<byte[]> consumer = newPulsarConsumer(
+                topic, "my-sub-" + enableBatching, new KafkaPayloadProcessor());
+        final List<Message<byte[]>> messages = receivePulsarMessages(consumer, numMessages);
+        assertEquals(messages.size(), numMessages);
+
+        for (int i = 0; i < numMessages; i++) {
+            assertEquals(messages.get(i).getProperty("prop-key-" + i), "prop-value-" + i);
+        }
+    }
+
+    @Test(timeOut = 20000)
+    public void testMixedProducePulsarConsume() throws Exception {
+        final String topic = "test-mixed-produce-pulsar-consume";
+        final int numMessages = 10;
+        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        final Producer<byte[]> pulsarProducer = newPulsarProducer(topic);
+
+        for (int i = 0; i < numMessages; i++) {
+            final String key = "key-" + i;
+            final String value = "value-" + i;
+            final Header header = new Header("prop-key-" + i, "prop-value-" + i);
+
+            if (i % 2 == 0) {
+                pulsarProducer.newMessage()
+                        .orderingKey(key.getBytes(StandardCharsets.UTF_8))
+                        .value(value.getBytes(StandardCharsets.UTF_8))
+                        .property(header.getKey(), header.getValue())
+                        .send();
+            } else {
+                kafkaProducer.send(new ProducerRecord<>(topic, 0, key, value,
+                        Header.toHeaders(Collections.singletonList(header), RecordHeader::new))).get();
+            }
+        }
+        kafkaProducer.close();
+        pulsarProducer.close();
+
+        @Cleanup
+        final Consumer<byte[]> consumer = newPulsarConsumer(topic, SUBSCRIPTION, new KafkaPayloadProcessor());
+        final List<Message<byte[]>> messages = receivePulsarMessages(consumer, numMessages);
+        assertEquals(messages.size(), numMessages);
+
+        for (int i = 0; i < numMessages; i++) {
+            final Message<byte[]> message = messages.get(i);
+            assertEquals(message.getOrderingKey(), ("key-" + i).getBytes(StandardCharsets.UTF_8));
+            assertEquals(message.getValue(), ("value-" + i).getBytes(StandardCharsets.UTF_8));
+            assertEquals(message.getProperty("prop-key-" + i), "prop-value-" + i);
+        }
     }
 }
