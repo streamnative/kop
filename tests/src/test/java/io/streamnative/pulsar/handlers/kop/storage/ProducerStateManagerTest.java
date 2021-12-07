@@ -18,7 +18,6 @@ import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
-import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.util.Collections;
@@ -49,7 +48,6 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     protected final long defaultTestTimeout = 20000;
     private final TopicPartition partition = new TopicPartition("test", 0);
     private final Long producerId = 1L;
-    private final Long maxPidExpirationMs = 10 * 1000L;
     private final MockTime time = new MockTime();
     private ProducerStateManager stateManager;
 
@@ -61,14 +59,11 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
         admin.topics().createPartitionedTopic("public/default/sys-topic-producer-state", 1);
         log.info("success internal setup");
-        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
     }
 
     @BeforeMethod
     protected void setUp() {
-        stateManager = new ProducerStateManager(
-                partition.toString(),
-                maxPidExpirationMs.intValue());
+        stateManager = new ProducerStateManager(partition.toString());
     }
 
     @AfterMethod
@@ -480,59 +475,9 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = defaultTestTimeout)
-    public void testProducerStateAfterFencingAbortMarker() {
-        short epoch = 0;
-        append(stateManager, producerId, epoch, 0, 0L, time.milliseconds(), true);
-        appendEndTxnMarker(stateManager, producerId, (short) (epoch + 1), ControlRecordType.ABORT,
-                1L, -1, time.milliseconds());
-
-        ProducerStateEntry lastEntry = stateManager.lastEntry(producerId).get();
-        assertEquals(Optional.empty(), lastEntry.currentTxnFirstOffset());
-        assertEquals(-1, lastEntry.lastDataOffset().longValue());
-        assertEquals(-1, lastEntry.firstDataOffset().longValue());
-
-        // The producer should not be expired because we want to preserve fencing epochs
-        stateManager.removeExpiredProducers(time.milliseconds());
-        assertTrue(stateManager.lastEntry(producerId).isPresent());
-    }
-
-    @Test(timeOut = defaultTestTimeout)
-    public void testPidExpirationTimeout() throws InterruptedException {
-        short epoch = 5;
-        int sequence = 37;
-        append(stateManager, producerId, epoch, sequence, 1L);
-        time.sleep(maxPidExpirationMs + 1);
-        stateManager.removeExpiredProducers(time.milliseconds());
-        append(stateManager, producerId, epoch, sequence + 1, 2L);
-        assertEquals(1, stateManager.activeProducers().size());
-        assertEquals(sequence + 1, stateManager.activeProducers().get(producerId).lastSeq().shortValue());
-        assertEquals(3L, stateManager.mapEndOffset().longValue());
-    }
-
-    @Test(timeOut = defaultTestTimeout)
-    public void testProducersWithOngoingTransactionsDontExpire() throws InterruptedException {
-        short epoch = 5;
-        int sequence = 0;
-
-        append(stateManager, producerId, epoch, sequence, 99L, time.milliseconds(), true);
-        assertEquals(Optional.of(99L), stateManager.firstUndecidedOffset());
-
-        time.sleep(maxPidExpirationMs + 1);
-        stateManager.removeExpiredProducers(time.milliseconds());
-
-        assertTrue(stateManager.lastEntry(producerId).isPresent());
-        assertEquals(Optional.of(99L), stateManager.firstUndecidedOffset());
-
-        stateManager.removeExpiredProducers(time.milliseconds());
-        assertTrue(stateManager.lastEntry(producerId).isPresent());
-    }
-
-    @Test(timeOut = defaultTestTimeout)
     public void testSequenceNotValidatedForGroupMetadataTopic() {
         TopicPartition partition = new TopicPartition(Topic.GROUP_METADATA_TOPIC_NAME, 0);
-        stateManager = new ProducerStateManager(
-                partition.toString(),
-                maxPidExpirationMs.intValue());
+        stateManager = new ProducerStateManager(partition.toString());
         short epoch = 0;
         append(stateManager, producerId, epoch, RecordBatch.NO_SEQUENCE, 99L, time.milliseconds(),
                 true, PartitionLog.AppendOrigin.Coordinator);

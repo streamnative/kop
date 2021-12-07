@@ -139,16 +139,14 @@ class BatchMetadata {
 public class ProducerStateManager {
 
     private final String topicPartition;
-    private final int maxProducerIdExpirationMs;
     private final Map<Long, ProducerStateEntry> producers = Maps.newConcurrentMap();
     private Long lastMapOffset = 0L;
     // ongoing transactions sorted by the first offset of the transaction
     private final TreeMap<Long, TxnMetadata> ongoingTxns = Maps.newTreeMap();
     private final List<AbortedTxn> abortedIndexList = new ArrayList<>();
 
-    public ProducerStateManager(String topicPartition, int maxProducerIdExpirationMs) {
+    public ProducerStateManager(String topicPartition) {
         this.topicPartition = topicPartition;
-        this.maxProducerIdExpirationMs = maxProducerIdExpirationMs;
     }
 
     public ProducerAppendInfo prepareUpdate(Long producerId, PartitionLog.AppendOrigin origin) {
@@ -176,22 +174,6 @@ public class ProducerStateManager {
             return Optional.empty();
         }
         return Optional.of(entry.getValue().firstOffset());
-    }
-
-    private Boolean isProducerExpired(Long currentTimeMs, ProducerStateEntry producerState) {
-        return !producerState.currentTxnFirstOffset().isPresent()
-                && currentTimeMs - producerState.lastTimestamp() >= maxProducerIdExpirationMs;
-    }
-
-    /**
-     * Expire any producer ids which have been idle longer than the configured maximum expiration timeout.
-     */
-    public void removeExpiredProducers(Long currentTimeMs) {
-        for (Map.Entry<Long, ProducerStateEntry> entry : producers.entrySet()) {
-            if (isProducerExpired(currentTimeMs, entry.getValue())) {
-                producers.remove(entry.getKey());
-            }
-        }
     }
 
     /**
@@ -262,13 +244,6 @@ public class ProducerStateManager {
             }
         }
         return abortedTransactions;
-    }
-
-    /**
-     * Returns the last offset of this map.
-     */
-    public Long mapEndOffset() {
-        return lastMapOffset;
     }
 
     /**

@@ -406,12 +406,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "Max producer id expiration millisecond."
-    )
-    private int maxProducerIdExpirationMs = 60 * 60 * 1000;
-
-    @FieldContext(
-            category = CATEGORY_KOP,
             doc = "The fully qualified name of a SASL server callback handler class that implements the "
                     + "AuthenticateCallbackHandler interface, which is used for OAuth2 authentication. "
                     + "If it's not set, the class will be Kafka's default server callback handler for "

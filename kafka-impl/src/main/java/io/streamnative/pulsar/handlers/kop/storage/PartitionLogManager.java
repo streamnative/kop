@@ -47,10 +47,7 @@ public class PartitionLogManager {
 
         return logMap.computeIfAbsent(kopTopic, key ->
                 new PartitionLog(kafkaConfig, time, topicPartition, namespacePrefix, kopTopic, formatter,
-                        new ProducerStateManager(
-                                kopTopic,
-                                this.kafkaConfig.getMaxProducerIdExpirationMs()
-                        ))
+                        new ProducerStateManager(kopTopic))
         );
     }
 }
