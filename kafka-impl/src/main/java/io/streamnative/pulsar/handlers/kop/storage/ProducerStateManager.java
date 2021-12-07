@@ -246,20 +246,4 @@ public class ProducerStateManager {
         return abortedTransactions;
     }
 
-    /**
-     * Get a copy of the active producers.
-     */
-    public Map<Long, ProducerStateEntry> activeProducers() {
-        return producers;
-    }
-
-    /**
-     * Truncate the producer id mapping and remove all snapshots. This resets the state of the mapping.
-     */
-    public void truncate() {
-        producers.clear();
-        ongoingTxns.clear();
-        lastMapOffset = 0L;
-    }
-
 }
