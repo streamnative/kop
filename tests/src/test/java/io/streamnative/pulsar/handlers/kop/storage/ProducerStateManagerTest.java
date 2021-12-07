@@ -20,16 +20,9 @@ import static org.testng.Assert.fail;
 
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
-import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
-import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicClientFactory;
-import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicProducerStateClient;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.util.Collections;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
@@ -59,9 +52,6 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     private final Long maxPidExpirationMs = 10 * 1000L;
     private final MockTime time = new MockTime();
     private ProducerStateManager stateManager;
-    private SystemTopicClientFactory systemTopicClientFactory;
-    private SystemTopicProducerStateClient producerStateClient;
-    private SystemTopicClient systemTopicClient;
 
     @BeforeClass
     @Override
@@ -72,27 +62,17 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         admin.topics().createPartitionedTopic("public/default/sys-topic-producer-state", 1);
         log.info("success internal setup");
         final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
-        systemTopicClient = handler.getProducerStateTopicClient();
     }
 
     @BeforeMethod
     protected void setUp() {
-        systemTopicClientFactory = new SystemTopicClientFactory(systemTopicClient);
-        producerStateClient =
-                systemTopicClientFactory.getProducerStateClient(partition.topic());
-        EntryFormatter formatter = EntryFormatterFactory.create(conf);
         stateManager = new ProducerStateManager(
                 partition.toString(),
-                maxPidExpirationMs.intValue(),
-                formatter,
-                producerStateClient,
-                time);
+                maxPidExpirationMs.intValue());
     }
 
     @AfterMethod
     protected void tearDown() {
-        systemTopicClient.close();
-        systemTopicClientFactory.shutdown();
     }
 
     @AfterClass
@@ -550,13 +530,9 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = defaultTestTimeout)
     public void testSequenceNotValidatedForGroupMetadataTopic() {
         TopicPartition partition = new TopicPartition(Topic.GROUP_METADATA_TOPIC_NAME, 0);
-        EntryFormatter formatter = EntryFormatterFactory.create(conf);
         stateManager = new ProducerStateManager(
                 partition.toString(),
-                maxPidExpirationMs.intValue(),
-                formatter,
-                producerStateClient,
-                time);
+                maxPidExpirationMs.intValue());
         short epoch = 0;
         append(stateManager, producerId, epoch, RecordBatch.NO_SEQUENCE, 99L, time.milliseconds(),
                 true, PartitionLog.AppendOrigin.Coordinator);
@@ -594,46 +570,6 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         // Appending the empty control batch should not throw and a new transaction shouldn't be started
         append(stateManager, producerId, baseOffset, batch, PartitionLog.AppendOrigin.Client);
         assertEquals(Optional.empty(), stateManager.lastEntry(producerId).get().currentTxnFirstOffset());
-    }
-
-    @Test(timeOut = defaultTestTimeout)
-    public void testTruncateAndReloadRemovesOutOfRangeSnapshots() throws InterruptedException {
-        short epoch = 0;
-        append(stateManager, producerId, epoch, 0, 0L);
-        takeSnapshotAndWait(stateManager);
-        append(stateManager, producerId, epoch, 1, 1L);
-        takeSnapshotAndWait(stateManager);
-        append(stateManager, producerId, epoch, 2, 2L);
-        takeSnapshotAndWait(stateManager);
-        append(stateManager, producerId, epoch, 3, 3L);
-        takeSnapshotAndWait(stateManager);
-        append(stateManager, producerId, epoch, 4, 4L);
-        takeSnapshotAndWait(stateManager);
-
-        stateManager.truncate();
-        CountDownLatch countDownLatch = new CountDownLatch(1);
-        CompletableFuture<Void> future = stateManager.loadFromSnapshot();
-        future.whenComplete((ignored, throwable) -> {
-            if (throwable != null) {
-                log.error("Failed to load from snapshot.", throwable);
-            }
-            countDownLatch.countDown();
-        });
-        countDownLatch.await();
-        stateManager.getAbortedIndexList(0);
-    }
-
-    private void takeSnapshotAndWait(ProducerStateManager stateManager) throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(1);
-        stateManager.takeSnapshot().whenComplete((messageId, throwable) -> {
-            if (throwable != null) {
-                log.error("Failed to take snapshot.", throwable);
-            } else {
-                log.info("take snapshot messageId {}", messageId);
-            }
-            latch.countDown();
-        });
-        latch.await();
     }
 
     private Optional<CompletedTxn> appendEndTxnMarker(ProducerStateManager mapping,
