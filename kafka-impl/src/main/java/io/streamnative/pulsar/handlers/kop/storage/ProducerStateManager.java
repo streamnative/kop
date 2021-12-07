@@ -23,28 +23,19 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.atomic.AtomicInteger;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
-import org.apache.commons.compress.utils.Lists;
-import org.apache.kafka.common.errors.InvalidTxnStateException;
-import org.apache.kafka.common.errors.OutOfOrderSequenceException;
 import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.protocol.types.ArrayOf;
 import org.apache.kafka.common.protocol.types.Field;
@@ -52,9 +43,6 @@ import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.SchemaException;
 import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.protocol.types.Type;
-import org.apache.kafka.common.record.ControlRecordType;
-import org.apache.kafka.common.record.EndTransactionMarker;
-import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.utils.ByteUtils;
@@ -137,440 +125,6 @@ public class ProducerStateManager {
         RECOVER_ERROR // failed to recover
     }
 
-    /**
-     * TxnMetadata represents the ongoing transaction.
-     */
-    @EqualsAndHashCode
-    public static class TxnMetadata {
-        private final long producerId;
-        private final long firstOffset;
-        private long lastOffset;
-
-        public TxnMetadata(long producerId, long firstOffset) {
-            this.producerId = producerId;
-            this.firstOffset = firstOffset;
-        }
-
-        public TxnMetadata(long producerId, long firstOffset, long lastOffset) {
-            this.producerId = producerId;
-            this.firstOffset = firstOffset;
-            this.lastOffset = lastOffset;
-        }
-
-    }
-
-    /**
-     * This class is used to validate the records appended by a given producer before they are written to the log.
-     * It is initialized with the producer's state after the last successful append, and transitively validates the
-     * sequence numbers and epochs of each new record. Additionally, this class accumulates transaction metadata
-     * as the incoming records are validated.
-     */
-    @Data
-    public static class ProducerAppendInfo {
-
-        private final String topicPartition;
-
-        // The id of the producer appending to the log
-        private final Long producerId;
-
-        // The current entry associated with the producer id which contains metadata for a fixed number of
-        // the most recent appends made by the producer. Validation of the first incoming append will
-        // be made against the latest append in the current entry. New appends will replace older appends
-        // in the current entry so that the space overhead is constant.
-        private final ProducerStateManager.ProducerStateEntry currentEntry;
-
-        // Indicates the origin of to append which implies the extent of validation.
-        // For example, offset commits, which originate from the group coordinator,
-        // do not have sequence numbers and therefore only producer epoch validation is done.
-        // Appends which come through replication are not validated (we assume the validation has already been done)
-        // and appends from clients require full validation.
-        private final PartitionLog.AppendOrigin origin;
-        private final List<ProducerStateManager.TxnMetadata> transactions = Lists.newArrayList();
-        private ProducerStateManager.ProducerStateEntry updatedEntry;
-
-        public ProducerAppendInfo(String topicPartition, Long producerId,
-                                  ProducerStateManager.ProducerStateEntry currentEntry,
-                                  PartitionLog.AppendOrigin origin) {
-            this.topicPartition = topicPartition;
-            this.producerId = producerId;
-            this.currentEntry = currentEntry;
-            this.origin = origin;
-
-            resetUpdatedEntry();
-        }
-
-        private void maybeValidateDataBatch(Short producerEpoch, Integer firstSeq) {
-            checkProducerEpoch(producerEpoch);
-            if (origin.equals(PartitionLog.AppendOrigin.Client)) {
-                checkSequence(producerEpoch, firstSeq);
-            }
-        }
-
-        private void checkProducerEpoch(Short producerEpoch) {
-            if (producerEpoch < updatedEntry.getProducerEpoch()) {
-                String message = String.format("Producer's epoch in %s is %s, which is smaller than the last seen "
-                        + "epoch %s", topicPartition, producerEpoch, currentEntry.getProducerEpoch());
-                throw new IllegalArgumentException(message);
-            }
-        }
-
-        private void checkSequence(Short producerEpoch, Integer appendFirstSeq) {
-            if (log.isDebugEnabled()) {
-                log.debug("append data batch checkSequence producerEpoch: {}, appendFirstSeq: {}",
-                        producerEpoch, appendFirstSeq);
-            }
-            if (!producerEpoch.equals(updatedEntry.getProducerEpoch())) {
-                if (appendFirstSeq != 0 && updatedEntry.getProducerEpoch() != RecordBatch.NO_PRODUCER_EPOCH) {
-                    String msg = String.format("Invalid sequence number for new epoch in partition %s: %s "
-                            + "(request epoch), %s (seq. number)", topicPartition, producerEpoch, appendFirstSeq);
-                    throw new OutOfOrderSequenceException(msg);
-                }
-            } else {
-                int currentLastSeq;
-                if (!updatedEntry.isEmpty()) {
-                    currentLastSeq = updatedEntry.lastSeq();
-                } else if (producerEpoch.equals(currentEntry.getProducerEpoch())) {
-                    currentLastSeq = currentEntry.lastSeq();
-                } else {
-                    currentLastSeq = RecordBatch.NO_SEQUENCE;
-                }
-
-                // If there is no current producer epoch (possibly because all producer records have been deleted due to
-                // retention or the DeleteRecords API) accept writes with any sequence number
-                if (!(currentEntry.getProducerEpoch() == RecordBatch.NO_PRODUCER_EPOCH
-                        || inSequence(currentLastSeq, appendFirstSeq))) {
-                    String msg = String.format("Out of order sequence number for producerId %s in partition %s: %s "
-                                    + "(incoming seq. number), %s (current end sequence number)",
-                            currentEntry.getProducerId(), topicPartition, appendFirstSeq, currentLastSeq);
-                    throw new OutOfOrderSequenceException(msg);
-                }
-            }
-        }
-
-        private Boolean inSequence(Integer lastSeq, Integer nextSeq) {
-            if (log.isDebugEnabled()) {
-                log.debug("check sequence lastSeq: {}, nextSeq: {}.", lastSeq, nextSeq);
-            }
-            return nextSeq == lastSeq + 1L || (nextSeq == 0 && lastSeq == Integer.MAX_VALUE);
-        }
-
-        public Optional<PartitionLog.CompletedTxn> append(RecordBatch batch, Optional<Long> firstOffset) {
-            if (log.isDebugEnabled()) {
-                log.debug("Append batch: pid: {} baseSequence: {} lastSequence: {} baseOffset: {}  lastOffset: {} ",
-                        batch.producerId(), batch.baseSequence(), batch.lastSequence(), batch.baseOffset(),
-                        batch.lastOffset());
-            }
-            if (batch.isControlBatch()) {
-                Iterator<Record> recordIterator = batch.iterator();
-                if (recordIterator.hasNext()) {
-                    Record record = recordIterator.next();
-                    EndTransactionMarker endTxnMarker = EndTransactionMarker.deserialize(record);
-                    return appendEndTxnMarker(
-                            endTxnMarker, batch.producerEpoch(), batch.baseOffset(), record.timestamp());
-                } else {
-                    // An empty control batch means the entire transaction has been cleaned from the log,
-                    // so no need to append
-                    return Optional.empty();
-                }
-            } else {
-                appendDataBatch(batch.producerEpoch(), batch.baseSequence(), batch.lastSequence(), batch.maxTimestamp(),
-                        firstOffset.orElse(batch.baseOffset()), batch.lastOffset());
-                return Optional.empty();
-            }
-        }
-
-        public void appendDataBatch(Short epoch, Integer firstSeq, Integer lastSeq, Long lastTimestamp,
-                                    Long firstOffset, Long lastOffset) {
-            if (log.isDebugEnabled()) {
-                log.debug("append data batch epoch: {}, firstSeq: {}, lastSeq: {}, firstOffset: {}, lastOffset: {}",
-                        epoch, firstSeq, lastSeq, firstOffset, lastOffset);
-            }
-            maybeValidateDataBatch(epoch, firstSeq);
-            // We use lastSeq - firstSeq instead of lastOffset - firstOffset, because current offset is wrong,
-            // the offset is set when message published to storage.
-            updatedEntry.addBatch(epoch, lastSeq, lastOffset, lastSeq - firstSeq, lastTimestamp);
-        }
-
-        /**
-         * When message publish success, we should save the current txn first offset.
-         *
-         * @param isTransactional is transaction or not
-         * @param firstOffset transaction first offset
-         */
-        public void updateCurrentTxnFirstOffset(Boolean isTransactional, long firstOffset) {
-            if (updatedEntry.getCurrentTxnFirstOffset().isPresent()) {
-                if (!isTransactional) {
-                    // Received a non-transactional message while a transaction is active
-                    String msg = String.format("Expected transactional write from producer %s at offset %s in "
-                            + "partition %s", producerId, firstOffset, topicPartition);
-                    throw new InvalidTxnStateException(msg);
-                }
-            } else {
-                if (isTransactional) {
-                    updatedEntry.setCurrentTxnFirstOffset(Optional.of(firstOffset));
-                    transactions.add(new ProducerStateManager.TxnMetadata(producerId, firstOffset));
-                }
-            }
-        }
-
-        public Optional<PartitionLog.CompletedTxn> appendEndTxnMarker(
-                EndTransactionMarker endTxnMarker,
-                Short producerEpoch,
-                Long offset,
-                Long timestamp) {
-            checkProducerEpoch(producerEpoch);
-
-            // Only emit the `CompletedTxn` for non-empty transactions. A transaction marker
-            // without any associated data will not have any impact on the last stable offset
-            // and would not need to be reflected in the transaction index.
-            Optional<PartitionLog.CompletedTxn> completedTxn =
-                    updatedEntry.getCurrentTxnFirstOffset().map(firstOffset -> new PartitionLog
-                            .CompletedTxn(producerId, firstOffset, offset,
-                            endTxnMarker.controlType() == ControlRecordType.ABORT));
-            updatedEntry.maybeUpdateProducerEpoch(producerEpoch);
-            updatedEntry.setCurrentTxnFirstOffset(Optional.empty());
-            updatedEntry.setLastTimestamp(timestamp);
-            return completedTxn;
-        }
-
-        public ProducerStateManager.ProducerStateEntry toEntry() {
-            return updatedEntry;
-        }
-
-        public List<ProducerStateManager.TxnMetadata> startedTransactions() {
-            return transactions;
-        }
-
-        private void resetUpdatedEntry() {
-            updatedEntry = ProducerStateManager.ProducerStateEntry.empty(producerId);
-            updatedEntry.setProducerEpoch(currentEntry.getProducerEpoch());
-            updatedEntry.setCoordinatorEpoch(currentEntry.getCoordinatorEpoch());
-            updatedEntry.setLastTimestamp(currentEntry.getLastTimestamp());
-            updatedEntry.setCurrentTxnFirstOffset(currentEntry.getCurrentTxnFirstOffset());
-        }
-
-        @Override
-        public String toString() {
-            return "ProducerAppendInfo("
-                    + "producerId=" + producerId + ", "
-                    + "producerEpoch=" + updatedEntry.getProducerEpoch() + ", "
-                    + "firstSequence=" + updatedEntry.firstSeq() + ", "
-                    + "lastSequence=" + updatedEntry.lastSeq() + ", "
-                    + "currentTxnFirstOffset=" + updatedEntry.getCurrentTxnFirstOffset() + ", "
-                    + "coordinatorEpoch=" + updatedEntry.getCoordinatorEpoch() + ", "
-                    + "lastTimestamp=" + updatedEntry.getLastTimestamp() + ", "
-                    + "startedTransactions=" + transactions + ")";
-        }
-    }
-
-    /**
-     * BatchMetadata is used to check the message duplicate.
-     */
-    @Getter
-    @AllArgsConstructor
-    public static class BatchMetadata {
-
-        private final Integer lastSeq;
-        private final Long lastOffset;
-        // Should be seq delta, we use offsetDelta here because in future might change back.
-        // When we preset the correct offset before message publish.
-        private final Integer offsetDelta;
-        private final Long timestamp;
-
-        public int firstSeq() {
-            return decrementSequence(lastSeq, offsetDelta);
-        }
-
-        public Long firstOffset() {
-            return lastOffset - offsetDelta;
-        }
-
-        private int decrementSequence(int sequence, int decrement) {
-            if (sequence < decrement) {
-                return Integer.MAX_VALUE - (decrement - sequence) + 1;
-            }
-            return sequence - decrement;
-        }
-
-        @Override
-        public String toString() {
-            return "BatchMetadata("
-                    + "firstSeq=" + firstSeq() + ", "
-                    + "lastSeq=" + lastSeq + ", "
-                    + "firstOffset=" + firstOffset() + ", "
-                    + "lastOffset=" + lastOffset + ", "
-                    + "timestamp=" + timestamp + ")";
-        }
-    }
-
-    /**
-     * the batchMetadata is ordered such that the batch with the lowest sequence is at the head of the queue while the
-     * batch with the highest sequence is at the tail of the queue. We will retain at most ProducerStateEntry.
-     * NumBatchesToRetain elements in the queue. When the queue is at capacity, we remove the first element to make
-     * space for the incoming batch.
-     */
-    @AllArgsConstructor
-    @Data
-    public static class ProducerStateEntry {
-
-        private static final Integer NumBatchesToRetain = 1;
-
-        private Long producerId;
-        private Deque<BatchMetadata> batchMetadata;
-        private Short producerEpoch;
-        private Integer coordinatorEpoch;
-        private Long lastTimestamp;
-        private Optional<Long> currentTxnFirstOffset;
-
-        protected boolean isEmpty() {
-            return batchMetadata.isEmpty();
-        }
-
-        public Integer firstSeq() {
-            if (isEmpty()) {
-                return RecordBatch.NO_SEQUENCE;
-            } else {
-                return batchMetadata.getFirst().firstSeq();
-            }
-        }
-
-        public Long firstDataOffset() {
-            if (isEmpty()) {
-                return -1L;
-            } else {
-                return batchMetadata.getFirst().firstOffset();
-            }
-        }
-
-        public Integer lastSeq() {
-            if (isEmpty()) {
-                return RecordBatch.NO_SEQUENCE;
-            } else {
-                return batchMetadata.getLast().getLastSeq();
-            }
-        }
-
-        public Long lastDataOffset() {
-            if (isEmpty()) {
-                return -1L;
-            } else {
-                return batchMetadata.getLast().getLastOffset();
-            }
-        }
-
-        public Integer lastOffsetDelta() {
-            if (isEmpty()) {
-                return 0;
-            } else {
-                return batchMetadata.getLast().getOffsetDelta();
-            }
-        }
-
-        public void addBatch(Short producerEpoch, Integer lastSeq, Long lastOffset,
-                             Integer offsetDelta, Long timestamp) {
-            maybeUpdateProducerEpoch(producerEpoch);
-            addBatchMetadata(new BatchMetadata(lastSeq, lastOffset, offsetDelta, timestamp));
-            this.lastTimestamp = timestamp;
-        }
-
-        public boolean maybeUpdateProducerEpoch(Short producerEpoch) {
-            if (!this.producerEpoch.equals(producerEpoch)) {
-                batchMetadata.clear();
-                this.producerEpoch = producerEpoch;
-                return true;
-            } else {
-                return false;
-            }
-        }
-
-        public void addBatchMetadata(BatchMetadata batch) {
-            if (batchMetadata.size() == ProducerStateEntry.NumBatchesToRetain) {
-                batchMetadata.removeFirst();
-            }
-            batchMetadata.addLast(batch);
-        }
-
-        public void update(ProducerStateEntry nextEntry) {
-            maybeUpdateProducerEpoch(nextEntry.producerEpoch);
-            while (!nextEntry.batchMetadata.isEmpty()) {
-                addBatchMetadata(nextEntry.batchMetadata.pollFirst());
-            }
-            this.setCurrentTxnFirstOffset(nextEntry.currentTxnFirstOffset);
-            this.setLastTimestamp(nextEntry.lastTimestamp);
-        }
-
-        public Optional<BatchMetadata> findDuplicateBatch(RecordBatch batch) {
-            if (batch.producerEpoch() != producerEpoch) {
-                return Optional.empty();
-            } else {
-                return batchWithSequenceRange(batch.baseSequence(), batch.lastSequence());
-            }
-        }
-
-        // Return the batch metadata of the cached batch having the exact sequence range, if any.
-        private Optional<BatchMetadata> batchWithSequenceRange(Integer firstSeq, Integer lastSeq) {
-            return batchMetadata.stream().filter(batchMetadata ->
-                    firstSeq.equals(batchMetadata.firstSeq())
-                            && lastSeq.equals(batchMetadata.getLastSeq())).findFirst();
-        }
-
-        public static ProducerStateEntry empty(Long producerId){
-            return new ProducerStateEntry(producerId, new LinkedBlockingDeque<>(),
-                    RecordBatch.NO_PRODUCER_EPOCH, -1, RecordBatch.NO_TIMESTAMP, Optional.empty());
-        }
-
-        @Override
-        public String toString() {
-            return "ProducerStateEntry{"
-                    + "producerId=" + producerId
-                    + ", producerEpoch=" + producerEpoch
-                    + ", currentTxnFirstOffset=" + currentTxnFirstOffset
-                    + ", coordinatorEpoch=" + coordinatorEpoch
-                    + ", lastTimestamp=" + lastTimestamp
-                    + ", batchMetadata=" + batchMetadata
-                    + '}';
-        }
-    }
-
-    /**
-     * AbortedTxn is used cache the aborted index.
-     */
-    @Data
-    @AllArgsConstructor
-    private static class AbortedTxn {
-
-        private static final int VersionOffset = 0;
-        private static final int VersionSize = 2;
-        private static final int ProducerIdOffset = VersionOffset + VersionSize;
-        private static final int ProducerIdSize = 8;
-        private static final int FirstOffsetOffset = ProducerIdOffset + ProducerIdSize;
-        private static final int FirstOffsetSize = 8;
-        private static final int LastOffsetOffset = FirstOffsetOffset + FirstOffsetSize;
-        private static final int LastOffsetSize = 8;
-        private static final int LastStableOffsetOffset = LastOffsetOffset + LastOffsetSize;
-        private static final int LastStableOffsetSize = 8;
-        private static final int TotalSize = LastStableOffsetOffset + LastStableOffsetSize;
-
-        private static final Short CurrentVersion = 0;
-
-        private final Long producerId;
-        private final Long firstOffset;
-        private final Long lastOffset;
-        private final Long lastStableOffset;
-
-        public ByteBuffer toByteBuffer() {
-            ByteBuffer buffer = ByteBuffer.allocate(AbortedTxn.TotalSize);
-            buffer.putShort(CurrentVersion);
-            buffer.putLong(producerId);
-            buffer.putLong(firstOffset);
-            buffer.putLong(lastOffset);
-            buffer.putLong(lastStableOffset);
-            buffer.flip();
-            return buffer;
-        }
-    }
-
-
     public ProducerStateManager(
             String topicPartition,
             int maxProducerIdExpirationMs,
@@ -586,18 +140,18 @@ public class ProducerStateManager {
         this.state = State.INIT;
     }
 
-    public ProducerStateManager.ProducerAppendInfo prepareUpdate(Long producerId, PartitionLog.AppendOrigin origin) {
+    public ProducerAppendInfo prepareUpdate(Long producerId, PartitionLog.AppendOrigin origin) {
         ProducerStateEntry currentEntry = lastEntry(producerId).orElse(ProducerStateEntry.empty(producerId));
-        return new ProducerStateManager.ProducerAppendInfo(topicPartition, producerId, currentEntry, origin);
+        return new ProducerAppendInfo(topicPartition, producerId, currentEntry, origin);
     }
 
-    private Optional<PartitionLog.CompletedTxn> updateProducers(
+    private Optional<CompletedTxn> updateProducers(
             RecordBatch batch,
-            Map<Long, ProducerStateManager.ProducerAppendInfo> producers,
+            Map<Long, ProducerAppendInfo> producers,
             Optional<Long> firstOffset,
             PartitionLog.AppendOrigin origin) {
         Long producerId = batch.producerId();
-        ProducerStateManager.ProducerAppendInfo appendInfo =
+        ProducerAppendInfo appendInfo =
                 producers.computeIfAbsent(producerId, pid -> prepareUpdate(producerId, origin));
         return appendInfo.append(batch, firstOffset);
     }
@@ -608,13 +162,13 @@ public class ProducerStateManager {
      * That will be done in `completeTxn` below. This is used to compute the LSO that will be appended to the
      * transaction index, but the completion must be done only after successfully appending to the index.
      */
-    public long lastStableOffset(PartitionLog.CompletedTxn completedTxn) {
+    public long lastStableOffset(CompletedTxn completedTxn) {
         for (TxnMetadata txnMetadata : ongoingTxns.values()) {
-            if (!completedTxn.getProducerId().equals(txnMetadata.producerId)) {
-                return txnMetadata.firstOffset;
+            if (!completedTxn.producerId().equals(txnMetadata.producerId())) {
+                return txnMetadata.firstOffset();
             }
         }
-        return completedTxn.getLastOffset() + 1;
+        return completedTxn.lastOffset() + 1;
     }
 
     public Optional<Long> firstUndecidedOffset() {
@@ -622,12 +176,12 @@ public class ProducerStateManager {
         if (entry == null) {
             return Optional.empty();
         }
-        return Optional.of(entry.getValue().firstOffset);
+        return Optional.of(entry.getValue().firstOffset());
     }
 
     private Boolean isProducerExpired(Long currentTimeMs, ProducerStateEntry producerState) {
-        return !producerState.currentTxnFirstOffset.isPresent()
-                && currentTimeMs - producerState.lastTimestamp >= maxProducerIdExpirationMs;
+        return !producerState.currentTxnFirstOffset().isPresent()
+                && currentTimeMs - producerState.lastTimestamp() >= maxProducerIdExpirationMs;
     }
 
     /**
@@ -654,18 +208,18 @@ public class ProducerStateManager {
     /**
      * Update the mapping with the given append information.
      */
-    public void update(ProducerStateManager.ProducerAppendInfo appendInfo) {
+    public void update(ProducerAppendInfo appendInfo) {
         if (log.isDebugEnabled()) {
-            log.debug("Updated producer {} state to {}", appendInfo.getProducerId(), appendInfo);
+            log.debug("Updated producer {} state to {}", appendInfo.producerId(), appendInfo);
         }
-        if (appendInfo.getProducerId() == RecordBatch.NO_PRODUCER_ID) {
+        if (appendInfo.producerId() == RecordBatch.NO_PRODUCER_ID) {
             throw new IllegalArgumentException(String.format("Invalid producer id %s passed to update for %s",
-                    appendInfo.getProducerId(), topicPartition));
+                    appendInfo.producerId(), topicPartition));
         }
 
         ProducerStateEntry updatedEntry = appendInfo.toEntry();
 
-        producers.compute(appendInfo.getProducerId(), (pid, stateEntry) -> {
+        producers.compute(appendInfo.producerId(), (pid, stateEntry) -> {
             if (stateEntry == null) {
                 stateEntry = updatedEntry;
             } else {
@@ -675,25 +229,25 @@ public class ProducerStateManager {
         });
 
         for (TxnMetadata txn : appendInfo.startedTransactions()) {
-            ongoingTxns.put(txn.firstOffset, txn);
+            ongoingTxns.put(txn.firstOffset(), txn);
         }
     }
 
-    public void updateTxnIndex(PartitionLog.CompletedTxn completedTxn, long lastStableOffset) {
-        if (completedTxn.getIsAborted()) {
-            abortedIndexList.add(new AbortedTxn(completedTxn.getProducerId(), completedTxn.getFirstOffset(),
-                    completedTxn.getLastOffset(), lastStableOffset));
+    public void updateTxnIndex(CompletedTxn completedTxn, long lastStableOffset) {
+        if (completedTxn.isAborted()) {
+            abortedIndexList.add(new AbortedTxn(completedTxn.producerId(), completedTxn.firstOffset(),
+                    completedTxn.lastOffset(), lastStableOffset));
         }
     }
 
-    public void completeTxn(PartitionLog.CompletedTxn completedTxn) {
-        TxnMetadata txnMetadata = ongoingTxns.remove(completedTxn.getFirstOffset());
+    public void completeTxn(CompletedTxn completedTxn) {
+        TxnMetadata txnMetadata = ongoingTxns.remove(completedTxn.firstOffset());
         if (txnMetadata == null) {
             String msg = String.format("Attempted to complete transaction %s on partition "
                     + "%s which was not started.", completedTxn, topicPartition);
             throw new IllegalArgumentException(msg);
         }
-        txnMetadata.lastOffset = completedTxn.getLastOffset();
+        txnMetadata.lastOffset(completedTxn.lastOffset());
     }
 
     public void updateMapEndOffset(long offset) {
@@ -703,9 +257,9 @@ public class ProducerStateManager {
     public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
         List<FetchResponse.AbortedTransaction> abortedTransactions = new ArrayList<>();
         for (AbortedTxn abortedTxn : abortedIndexList) {
-            if (abortedTxn.lastOffset >= fetchOffset) {
+            if (abortedTxn.lastOffset() >= fetchOffset) {
                 abortedTransactions.add(
-                        new FetchResponse.AbortedTransaction(abortedTxn.producerId, abortedTxn.firstOffset));
+                        new FetchResponse.AbortedTransaction(abortedTxn.producerId(), abortedTxn.firstOffset()));
             }
         }
         return abortedTransactions;
@@ -745,13 +299,13 @@ public class ProducerStateManager {
             Struct producerEntryStruct = struct.instance(ProducerEntriesField);
             producerEntryStruct
                     .set(ProducerIdField, pid)
-                    .set(ProducerEpochField, entry.producerEpoch)
+                    .set(ProducerEpochField, entry.producerEpoch())
                     .set(LastSequenceField, entry.lastSeq())
                     .set(LastOffsetField, entry.lastDataOffset())
                     .set(OffsetDeltaField, entry.lastOffsetDelta())
-                    .set(TimestampField, entry.lastTimestamp)
-                    .set(CoordinatorEpochField, entry.coordinatorEpoch)
-                    .set(CurrentTxnFirstOffsetField, entry.currentTxnFirstOffset.orElse(-1L));
+                    .set(TimestampField, entry.lastTimestamp())
+                    .set(CoordinatorEpochField, entry.coordinatorEpoch())
+                    .set(CurrentTxnFirstOffsetField, entry.currentTxnFirstOffset().orElse(-1L));
             entriesArray[entryIndex.getAndIncrement()] = producerEntryStruct;
         });
         struct.set(ProducerEntriesField, entriesArray);
@@ -852,9 +406,9 @@ public class ProducerStateManager {
     }
 
     private void loadProducerEntry(ProducerStateEntry entry) {
-        Long producerId = entry.producerId;
+        Long producerId = entry.producerId();
         producers.put(producerId, entry);
-        entry.currentTxnFirstOffset.ifPresent(offset -> ongoingTxns.put(offset, new TxnMetadata(producerId, offset)));
+        entry.currentTxnFirstOffset().ifPresent(offset -> ongoingTxns.put(offset, new TxnMetadata(producerId, offset)));
     }
 
     public CompletableFuture<Void> recover(ManagedLedger managedLedger) {
@@ -949,10 +503,10 @@ public class ProducerStateManager {
                     readEntryList.clear();
                     fillCacheQueue();
                     DecodeResult decodeResult = entryFormatter.decode(entryList, RecordBatch.CURRENT_MAGIC_VALUE);
-                    Map<Long, ProducerStateManager.ProducerAppendInfo> appendInfoMap = new HashMap<>();
-                    List<PartitionLog.CompletedTxn> completedTxns = new ArrayList<>();
+                    Map<Long, ProducerAppendInfo> appendInfoMap = new HashMap<>();
+                    List<CompletedTxn> completedTxns = new ArrayList<>();
                     decodeResult.getRecords().batches().forEach(batch -> {
-                        Optional<PartitionLog.CompletedTxn> completedTxn =
+                        Optional<CompletedTxn> completedTxn =
                                 updateProducers(batch, appendInfoMap, Optional.empty(), PartitionLog.AppendOrigin.Log);
                         completedTxn.ifPresent(completedTxns::add);
                     });

@@ -34,8 +34,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.commons.compress.utils.Lists;
@@ -57,6 +55,7 @@ import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 @Slf4j
 @AllArgsConstructor
 public class PartitionLog {
+
     private final KafkaServiceConfiguration kafkaConfig;
     private final Time time;
     private final TopicPartition topicPartition;
@@ -64,32 +63,6 @@ public class PartitionLog {
     private final String fullPartitionName;
     private final EntryFormatter entryFormatter;
     private final ProducerStateManager producerStateManager;
-
-    @Data
-    @AllArgsConstructor
-    public static final class LogAppendInfo {
-        private Optional<Long> firstOffset;
-        private Long lastOffset;
-        private Integer shallowCount;
-        private Boolean offsetsMonotonic;
-        private Boolean hasProducerId;
-        private Boolean isTransaction;
-        private Long lastOffsetOfFirstBatch;
-        private Integer validBytes;
-
-        /**
-         * Get the (maximum) number of messages described by LogAppendInfo.
-         * @return Maximum possible number of messages described by LogAppendInfo
-         */
-        public Long numMessages() {
-            return firstOffset.map(firstOffsetVal -> {
-                if (firstOffsetVal >= 0 && lastOffset >= 0) {
-                    return lastOffset - firstOffsetVal + 1;
-                }
-                return 0L;
-            }).orElse(0L);
-        }
-    }
 
     /**
      * AppendOrigin is used mark the data origin.
@@ -100,49 +73,23 @@ public class PartitionLog {
         Log
     }
 
-    /**
-     * CompletedTxn.
-     */
-    @ToString
-    @AllArgsConstructor
-    @Data
-    public static class CompletedTxn {
-        private Long producerId;
-        private Long firstOffset;
-        private Long lastOffset;
-        private Boolean isAborted;
-    }
-
-    /**
-     * Analyze result.
-     */
-    @Data
-    @AllArgsConstructor
-    public static class AnalyzeResult {
-        private Map<Long, ProducerStateManager.ProducerAppendInfo> updatedProducers;
-        private List<CompletedTxn> completedTxns;
-        private Optional<ProducerStateManager.BatchMetadata> maybeDuplicate;
-
-    }
-
-
     public AnalyzeResult analyzeAndValidateProducerState(MemoryRecords records,
                                                          Optional<Long> firstOffset,
                                                          AppendOrigin origin) {
-        Map<Long, ProducerStateManager.ProducerAppendInfo> updatedProducers = Maps.newHashMap();
+        Map<Long, ProducerAppendInfo> updatedProducers = Maps.newHashMap();
         List<CompletedTxn> completedTxns = Lists.newArrayList();
 
         for (RecordBatch batch : records.batches()) {
             if (batch.hasProducerId()) {
                 if (origin.equals(AppendOrigin.Client)) {
-                    Optional<ProducerStateManager.ProducerStateEntry> maybeLastEntry =
+                    Optional<ProducerStateEntry> maybeLastEntry =
                             producerStateManager.lastEntry(batch.producerId());
 
                     // if this is a client produce request,
                     // there will be up to 5 batches which could have been duplicated.
                     // If we find a duplicate, we return the metadata of the appended batch to the client.
                     if (maybeLastEntry.isPresent()) {
-                        Optional<ProducerStateManager.BatchMetadata> maybeDuplicate =
+                        Optional<BatchMetadata> maybeDuplicate =
                                 maybeLastEntry.get().findDuplicateBatch(batch);
                         if (maybeDuplicate.isPresent()) {
                             return new AnalyzeResult(updatedProducers, completedTxns, maybeDuplicate);
@@ -160,18 +107,18 @@ public class PartitionLog {
     }
 
     public void append(AnalyzeResult analyzeResult, long startOffset, LogAppendInfo appendInfo) {
-        Long lastOffset = appendInfo.getLastOffset();
-        analyzeResult.getUpdatedProducers().forEach((pid, producerAppendInfo) -> {
+        Long lastOffset = appendInfo.lastOffset();
+        analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
             if (log.isDebugEnabled()) {
                 log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]", pid, producerAppendInfo, lastOffset);
             }
             // When we have real start offset, update current txn first offset.
-            producerAppendInfo.updateCurrentTxnFirstOffset(appendInfo.getIsTransaction(), startOffset);
+            producerAppendInfo.updateCurrentTxnFirstOffset(appendInfo.isTransaction(), startOffset);
             producerStateManager.update(producerAppendInfo);
         });
-        analyzeResult.getCompletedTxns().forEach(completedTxn -> {
+        analyzeResult.completedTxns().forEach(completedTxn -> {
             // update to real last offset
-            completedTxn.lastOffset = lastOffset;
+            completedTxn.lastOffset(lastOffset);
             long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
             producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
             producerStateManager.completeTxn(completedTxn);
@@ -181,11 +128,11 @@ public class PartitionLog {
 
     private Optional<CompletedTxn> updateProducers(
             RecordBatch batch,
-            Map<Long, ProducerStateManager.ProducerAppendInfo> producers,
+            Map<Long, ProducerAppendInfo> producers,
             Optional<Long> firstOffset,
             AppendOrigin origin) {
         Long producerId = batch.producerId();
-        ProducerStateManager.ProducerAppendInfo appendInfo =
+        ProducerAppendInfo appendInfo =
                 producers.computeIfAbsent(producerId, pid -> producerStateManager.prepareUpdate(producerId, origin));
         return appendInfo.append(batch, firstOffset);
     }
@@ -218,8 +165,8 @@ public class PartitionLog {
             final LogAppendInfo appendInfo = analyzeAndValidateRecords(records, version, topicPartition);
 
             // return if we have no valid messages or if this is a duplicate of the last appended entry
-            if (appendInfo.shallowCount == 0) {
-                appendFuture.complete(appendInfo.firstOffset.orElse(-1L));
+            if (appendInfo.shallowCount() == 0) {
+                appendFuture.complete(appendInfo.firstOffset().orElse(-1L));
                 return appendFuture;
             }
             MemoryRecords validRecords = trimInvalidBytes(records, appendInfo);
@@ -259,8 +206,8 @@ public class PartitionLog {
                         .accept(encodeResult.getEncodedByteBuf().readableBytes());
 
                 AnalyzeResult analyzeResult = analyzeAndValidateProducerState(
-                        validRecords, appendInfo.getFirstOffset(), origin);
-                if (analyzeResult.getMaybeDuplicate().isPresent()) {
+                        validRecords, appendInfo.firstOffset(), origin);
+                if (analyzeResult.maybeDuplicate().isPresent()) {
                     log.error("Duplicate sequence number. topic: {}", topicPartition);
                     appendFuture.completeExceptionally(Errors.DUPLICATE_SEQUENCE_NUMBER.exception());
                     return;
@@ -328,7 +275,7 @@ public class PartitionLog {
             if (e == null) {
                 requestStats.getMessagePublishStats().registerSuccessfulEvent(
                         time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
-                appendInfo.setLastOffset(offset + numMessages - 1);
+                appendInfo.lastOffset(offset + numMessages - 1);
                 this.append(analyzeResult, offset, appendInfo);
                 appendFuture.complete(offset);
             } else {
@@ -406,7 +353,7 @@ public class PartitionLog {
     }
 
     private MemoryRecords trimInvalidBytes(MemoryRecords records, LogAppendInfo info) {
-        Integer validBytes = info.getValidBytes();
+        Integer validBytes = info.validBytes();
         if (validBytes < 0){
             throw new CorruptRecordException(String.format("Cannot append record batch with illegal length %s to "
                     + "log for %s. A possible cause is a corrupted produce request.", validBytes, topicPartition));
