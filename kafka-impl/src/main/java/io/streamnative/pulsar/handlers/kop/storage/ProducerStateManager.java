@@ -140,7 +140,7 @@ public class ProducerStateManager {
 
     private final String topicPartition;
     private final Map<Long, ProducerStateEntry> producers = Maps.newConcurrentMap();
-    private Long lastMapOffset = 0L;
+
     // ongoing transactions sorted by the first offset of the transaction
     private final TreeMap<Long, TxnMetadata> ongoingTxns = Maps.newTreeMap();
     private final List<AbortedTxn> abortedIndexList = new ArrayList<>();
@@ -229,10 +229,6 @@ public class ProducerStateManager {
             throw new IllegalArgumentException(msg);
         }
         txnMetadata.lastOffset(completedTxn.lastOffset());
-    }
-
-    public void updateMapEndOffset(long offset) {
-        lastMapOffset = offset;
     }
 
     public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {

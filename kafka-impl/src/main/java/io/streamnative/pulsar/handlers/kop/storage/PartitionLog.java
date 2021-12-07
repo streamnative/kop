@@ -151,7 +151,6 @@ public class PartitionLog {
             producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
             producerStateManager.completeTxn(completedTxn);
         });
-        producerStateManager.updateMapEndOffset(lastOffset + 1);
     }
 
     private Optional<CompletedTxn> updateProducers(

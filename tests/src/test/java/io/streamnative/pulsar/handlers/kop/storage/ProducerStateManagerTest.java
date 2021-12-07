@@ -68,6 +68,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
     @AfterMethod
     protected void tearDown() {
+        // no-op
     }
 
     @AfterClass
@@ -531,7 +532,6 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 producerAppendInfo.appendEndTxnMarker(endTxnMarker, producerEpoch, offset, timestamp);
         mapping.update(producerAppendInfo);
         completedTxnOpt.ifPresent(mapping::completeTxn);
-        mapping.updateMapEndOffset(offset + 1);
         return completedTxnOpt;
     }
 
@@ -569,7 +569,6 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         // Update to real offset
         producerAppendInfo.updateCurrentTxnFirstOffset(isTransactional, offset);
         stateManager.update(producerAppendInfo);
-        stateManager.updateMapEndOffset(offset + 1);
     }
 
     private void append(ProducerStateManager stateManager,
@@ -580,7 +579,6 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         ProducerAppendInfo producerAppendInfo = stateManager.prepareUpdate(producerId, origin);
         producerAppendInfo.append(batch, Optional.empty());
         stateManager.update(producerAppendInfo);
-        stateManager.updateMapEndOffset(offset + 1);
     }
 
 }
