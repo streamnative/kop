@@ -66,7 +66,7 @@ public class KafkaPayloadProcessor implements MessagePayloadProcessor {
             }
             int index = 0;
             for (RecordBatch batch : records.batches()) {
-                if (batch.isControlBatch() || batch.isTransactional()) {
+                if (batch.isControlBatch()) {
                     continue;
                 }
                 // TODO: Currently KoP doesn't support multi batches in an entry so it works well at this moment. After
