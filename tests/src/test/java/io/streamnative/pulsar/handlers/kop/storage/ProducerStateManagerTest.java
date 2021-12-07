@@ -507,14 +507,13 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = defaultTestTimeout)
     public void testAppendEmptyControlBatch() {
         long producerId = 23423L;
-        long baseOffset = 15;
 
         RecordBatch batch = Mockito.mock(RecordBatch.class);
         Mockito.when(batch.isControlBatch()).thenReturn(true);
         Mockito.when(batch.iterator()).thenReturn(Collections.emptyIterator());
 
         // Appending the empty control batch should not throw and a new transaction shouldn't be started
-        append(stateManager, producerId, baseOffset, batch, PartitionLog.AppendOrigin.Client);
+        append(stateManager, producerId, batch, PartitionLog.AppendOrigin.Client);
         assertEquals(Optional.empty(), stateManager.lastEntry(producerId).get().currentTxnFirstOffset());
     }
 
@@ -573,7 +572,6 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
     private void append(ProducerStateManager stateManager,
                         Long producerId,
-                        Long offset,
                         RecordBatch batch,
                         PartitionLog.AppendOrigin origin) {
         ProducerAppendInfo producerAppendInfo = stateManager.prepareUpdate(producerId, origin);
