@@ -34,6 +34,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.commons.compress.utils.Lists;
@@ -48,6 +50,32 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
+
+/**
+ * Analyze result.
+ */
+@Data
+@Accessors(fluent = true)
+@AllArgsConstructor
+class AnalyzeResult {
+    private Map<Long, ProducerAppendInfo> updatedProducers;
+    private List<CompletedTxn> completedTxns;
+    private Optional<BatchMetadata> maybeDuplicate;
+}
+
+@Data
+@Accessors(fluent = true)
+@AllArgsConstructor
+class LogAppendInfo {
+    private Optional<Long> firstOffset;
+    private Long lastOffset;
+    private Integer shallowCount;
+    private Boolean offsetsMonotonic;
+    private Boolean hasProducerId;
+    private Boolean isTransaction;
+    private Long lastOffsetOfFirstBatch;
+    private Integer validBytes;
+}
 
 /**
  * An append-only log for storing messages. Mapping to Kafka Log.scala.
