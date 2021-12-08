@@ -26,7 +26,6 @@ import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.nio.ByteBuffer;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -45,7 +44,6 @@ import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.utils.Time;
@@ -71,7 +69,6 @@ class LogAppendInfo {
     private Long lastOffset;
     private Integer shallowCount;
     private Boolean offsetsMonotonic;
-    private Boolean hasProducerId;
     private Boolean isTransaction;
     private Long lastOffsetOfFirstBatch;
     private Integer validBytes;
@@ -134,25 +131,6 @@ public class PartitionLog {
         return new AnalyzeResult(updatedProducers, completedTxns, Optional.empty());
     }
 
-    public void append(AnalyzeResult analyzeResult, long startOffset, LogAppendInfo appendInfo) {
-        Long lastOffset = appendInfo.lastOffset();
-        analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
-            if (log.isDebugEnabled()) {
-                log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]", pid, producerAppendInfo, lastOffset);
-            }
-            // When we have real start offset, update current txn first offset.
-            producerAppendInfo.updateCurrentTxnFirstOffset(appendInfo.isTransaction(), startOffset);
-            producerStateManager.update(producerAppendInfo);
-        });
-        analyzeResult.completedTxns().forEach(completedTxn -> {
-            // update to real last offset
-            completedTxn.lastOffset(lastOffset);
-            long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
-            producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
-            producerStateManager.completeTxn(completedTxn);
-        });
-    }
-
     private Optional<CompletedTxn> updateProducers(
             RecordBatch batch,
             Map<Long, ProducerAppendInfo> producers,
@@ -177,19 +155,17 @@ public class PartitionLog {
      *
      * @param records The log records to append
      * @param origin  Declares the origin of to append which affects required validations
-     * @param version Inter-broker message protocol version
      * @param appendRecordsContext See {@link AppendRecordsContext}
      */
     public CompletableFuture<Long> appendRecords(final MemoryRecords records,
                                                  final AppendOrigin origin,
-                                                 final short version,
                                                  final AppendRecordsContext appendRecordsContext) {
         CompletableFuture<Long> appendFuture = new CompletableFuture<>();
         RequestStats requestStats = appendRecordsContext.getRequestStats();
         KafkaTopicManager topicManager = appendRecordsContext.getTopicManager();
         final long beforeRecordsProcess = time.nanoseconds();
         try {
-            final LogAppendInfo appendInfo = analyzeAndValidateRecords(records, version, topicPartition);
+            final LogAppendInfo appendInfo = analyzeAndValidateRecords(records, topicPartition);
 
             // return if we have no valid messages or if this is a duplicate of the last appended entry
             if (appendInfo.shallowCount() == 0) {
@@ -302,8 +278,23 @@ public class PartitionLog {
             if (e == null) {
                 requestStats.getMessagePublishStats().registerSuccessfulEvent(
                         time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
-                appendInfo.lastOffset(offset + numMessages - 1);
-                this.append(analyzeResult, offset, appendInfo);
+                Long lastOffset = offset + numMessages - 1;
+                analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]",
+                                pid, producerAppendInfo, lastOffset);
+                    }
+                    // When we have real start offset, update current txn first offset.
+                    producerAppendInfo.updateCurrentTxnFirstOffset(appendInfo.isTransaction(), offset);
+                    producerStateManager.update(producerAppendInfo);
+                });
+                analyzeResult.completedTxns().forEach(completedTxn -> {
+                    // update to real last offset
+                    completedTxn.lastOffset(lastOffset);
+                    long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
+                    producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
+                    producerStateManager.completeTxn(completedTxn);
+                });
                 appendFuture.complete(offset);
             } else {
                 log.error("publishMessages for topic partition: {} failed when write.", fullPartitionName, e);
@@ -315,7 +306,6 @@ public class PartitionLog {
     }
 
     private LogAppendInfo analyzeAndValidateRecords(MemoryRecords records,
-                                                    short version,
                                                     TopicPartition topicPartition) {
         int shallowMessageCount = 0;
         long lastOffset = -1L;
@@ -323,10 +313,8 @@ public class PartitionLog {
         long lastOffsetOfFirstBatch = -1L;
         boolean readFirstMessage = false;
         boolean monotonic = true;
-        boolean hasProducerId = false;
         boolean isTransaction = false;
 
-        validateRecords(version, records);
         int validBytesCount = 0;
         for (RecordBatch batch : records.batches()) {
             if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2 && batch.baseOffset() != 0) {
@@ -354,9 +342,6 @@ public class PartitionLog {
                                 + "in append to partition %s which exceeds the maximum configured size of %s .",
                         batchSize, topicPartition, kafkaConfig.getMaxMessageSize()));
             }
-            if (batch.hasProducerId()) {
-                hasProducerId = true;
-            }
             batch.ensureValid();
             shallowMessageCount += 1;
             validBytesCount += batchSize;
@@ -373,7 +358,6 @@ public class PartitionLog {
                 lastOffset,
                 shallowMessageCount,
                 monotonic,
-                hasProducerId,
                 isTransaction,
                 lastOffsetOfFirstBatch,
                 validBytesCount);
@@ -390,27 +374,6 @@ public class PartitionLog {
             ByteBuffer validByteBuffer = records.buffer().duplicate();
             validByteBuffer.limit(validBytes);
             return MemoryRecords.readableRecords(validByteBuffer);
-        }
-    }
-
-    private static void validateRecords(short version, MemoryRecords records) {
-        if (version >= 3) {
-            Iterator<MutableRecordBatch> iterator = records.batches().iterator();
-            if (!iterator.hasNext()) {
-                throw new InvalidRecordException("Produce requests with version " + version + " must have at least "
-                        + "one record batch");
-            }
-
-            MutableRecordBatch entry = iterator.next();
-            if (entry.magic() != RecordBatch.MAGIC_VALUE_V2) {
-                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
-                        + "contain record batches with magic version 2");
-            }
-
-            if (iterator.hasNext()) {
-                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
-                        + "contain exactly one record batch");
-            }
         }
     }
 }

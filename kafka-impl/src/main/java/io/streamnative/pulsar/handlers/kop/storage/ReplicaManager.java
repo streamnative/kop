@@ -58,7 +58,6 @@ public class ReplicaManager {
     public CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> appendRecords(
             final long timeout,
             final boolean internalTopicsAllowed,
-            final short version,
             final String namespacePrefix,
             final Map<TopicPartition, MemoryRecords> entriesPerPartition,
             final PartitionLog.AppendOrigin origin,
@@ -106,7 +105,7 @@ public class ReplicaManager {
                                 String.format("Cannot append to internal topic %s", topicPartition.topic())))));
             } else {
                 PartitionLog partitionLog = getPartitionLog(topicPartition, namespacePrefix);
-                partitionLog.appendRecords(memoryRecords, origin, version, appendRecordsContext)
+                partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
                         .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
                                 new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
                         .exceptionally(ex -> {

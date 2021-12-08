@@ -65,6 +65,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -95,13 +96,16 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
+import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
@@ -896,6 +900,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             return;
         }
         final Map<TopicPartition, PartitionResponse> unauthorizedTopicResponsesMap = new ConcurrentHashMap<>();
+        final Map<TopicPartition, PartitionResponse> invalidRequestResponses = new HashMap<>();
         final Map<TopicPartition, MemoryRecords> authorizedRequestInfo = new ConcurrentHashMap<>();
         int timeoutMs = produceRequest.timeout();
         String namespacePrefix = currentNamespacePrefix();
@@ -916,7 +921,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 getReplicaManager().appendRecords(
                         timeoutMs,
                         false,
-                        produceHar.getRequest().version(),
                         namespacePrefix,
                         authorizedRequestInfo,
                         PartitionLog.AppendOrigin.Client,
@@ -930,12 +934,21 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     Map<TopicPartition, PartitionResponse> mergedResponse = new HashMap<>();
                     mergedResponse.putAll(response);
                     mergedResponse.putAll(unauthorizedTopicResponsesMap);
+                    mergedResponse.putAll(invalidRequestResponses);
                     resultFuture.complete(new ProduceResponse(mergedResponse));
                 });
             }
         };
 
         produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
+            try {
+                validateRecords(produceHar.getRequest().version(), records);
+            } catch (ApiException ex) {
+                invalidRequestResponses.put(topicPartition,
+                        new ProduceResponse.PartitionResponse(Errors.forException(ex)));
+                completeOne.run();
+                return;
+            }
             final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
             authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
                     .whenComplete((isAuthorized, ex) -> {
@@ -959,6 +972,27 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
 
 
+    }
+
+    private void validateRecords(short version, MemoryRecords records) {
+        if (version >= 3) {
+            Iterator<MutableRecordBatch> iterator = records.batches().iterator();
+            if (!iterator.hasNext()) {
+                throw new InvalidRecordException("Produce requests with version " + version + " must have at least "
+                        + "one record batch");
+            }
+
+            MutableRecordBatch entry = iterator.next();
+            if (entry.magic() != RecordBatch.MAGIC_VALUE_V2) {
+                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
+                        + "contain record batches with magic version 2");
+            }
+
+            if (iterator.hasNext()) {
+                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
+                        + "contain exactly one record batch");
+            }
+        }
     }
 
     @Override
@@ -2168,7 +2202,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             getReplicaManager().appendRecords(
                     kafkaConfig.getRequestTimeoutMs(),
                     true,
-                    request.version(),
                     currentNamespacePrefix(),
                     controlRecords,
                     PartitionLog.AppendOrigin.Coordinator,
