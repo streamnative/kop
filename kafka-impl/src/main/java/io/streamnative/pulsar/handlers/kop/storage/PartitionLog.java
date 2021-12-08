@@ -278,7 +278,7 @@ public class PartitionLog {
             if (e == null) {
                 requestStats.getMessagePublishStats().registerSuccessfulEvent(
                         time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
-                Long lastOffset = offset + numMessages - 1;
+                final long lastOffset = offset + numMessages - 1;
                 analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
                     if (log.isDebugEnabled()) {
                         log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]",
