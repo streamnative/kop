@@ -99,17 +99,27 @@ public class ByteBufUtils {
                                                                final ByteBuf payload,
                                                                final long baseOffset,
                                                                final byte magic) throws IOException {
-        if (metadata.hasMarkerType()
-                && (metadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
-                || metadata.getMarkerType() == MarkerType.TXN_ABORT_VALUE)) {
+        if (metadata.hasMarkerType()) {
+            ControlRecordType controlRecordType;
+            switch (metadata.getMarkerType()) {
+                case MarkerType.TXN_COMMIT_VALUE:
+                    controlRecordType = ControlRecordType.COMMIT;
+                    break;
+                case MarkerType.TXN_ABORT_VALUE:
+                    controlRecordType = ControlRecordType.ABORT;
+                    break;
+                default:
+                    controlRecordType = ControlRecordType.UNKNOWN;
+                    break;
+            }
             return DecodeResult.get(MemoryRecords.withEndTransactionMarker(
                     baseOffset,
                     metadata.getPublishTime(),
                     0,
                     metadata.getTxnidMostBits(),
                     (short) metadata.getTxnidLeastBits(),
-                    new EndTransactionMarker(metadata.getMarkerType() == MarkerType.TXN_COMMIT_VALUE
-                            ? ControlRecordType.COMMIT : ControlRecordType.ABORT, 0)));
+                    new EndTransactionMarker(controlRecordType, 0)
+                    ));
         }
         final int uncompressedSize = metadata.getUncompressedSize();
         final CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(metadata.getCompression());

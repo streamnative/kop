@@ -176,7 +176,7 @@ public class EntryFormatterTest {
     }
 
     private static MineMemoryRecordsBuilder newMemoryRecordsBuilder(CompressionType compressionType,
-                                                                byte magic) {
+                                                                    byte magic) {
         return new MineMemoryRecordsBuilder(
                 new ByteBufferOutputStream(ByteBuffer.allocate(1024 * 1024 * 5)),
                 magic,
@@ -437,7 +437,7 @@ public class EntryFormatterTest {
         }
 
         private byte computeAttributes(CompressionType type, TimestampType timestampType,
-                                              boolean isTransactional, boolean isControl) {
+                                       boolean isTransactional, boolean isControl) {
             if (timestampType == TimestampType.NO_TIMESTAMP_TYPE) {
                 throw new IllegalArgumentException(
                         "Timestamp type must be provided to compute attributes for message "

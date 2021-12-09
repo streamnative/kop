@@ -23,10 +23,12 @@ import java.util.stream.StreamSupport;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.header.Header;
+import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.Record;
 import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
+import org.apache.pulsar.common.api.proto.MarkerType;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.protocol.Commands.ChecksumType;
@@ -56,12 +58,27 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
         final MessageMetadata msgMetadata = new MessageMetadata();
 
         records.batches().forEach(recordBatch -> {
+            boolean controlBatch = recordBatch.isControlBatch();
             StreamSupport.stream(recordBatch.spliterator(), true).forEachOrdered(record -> {
                 MessageImpl<byte[]> message = recordToEntry(record);
                 messages.add(message);
                 if (recordBatch.isTransactional()) {
                     msgMetadata.setTxnidMostBits(recordBatch.producerId());
                     msgMetadata.setTxnidLeastBits(recordBatch.producerEpoch());
+                }
+                if (controlBatch) {
+                    ControlRecordType controlRecordType = ControlRecordType.parse(record.key());
+                    switch (controlRecordType) {
+                        case ABORT:
+                            msgMetadata.setMarkerType(MarkerType.TXN_ABORT_VALUE);
+                            break;
+                        case COMMIT:
+                            msgMetadata.setMarkerType(MarkerType.TXN_COMMIT_VALUE);
+                            break;
+                        default:
+                            msgMetadata.setMarkerType(MarkerType.UNKNOWN_MARKER_VALUE);
+                            break;
+                    }
                 }
             });
         });

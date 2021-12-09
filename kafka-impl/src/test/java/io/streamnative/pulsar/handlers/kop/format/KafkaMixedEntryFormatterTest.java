@@ -80,7 +80,7 @@ public class KafkaMixedEntryFormatterTest {
     }
 
     private static KopLogValidator.CompressionCodec checkRecordsCodec(final KafkaMixedEntryFormatter entryFormatter,
-                                          final MemoryRecords records) {
+                                                                      final MemoryRecords records) {
         final KopLogValidator.CompressionCodec sourceCodec = entryFormatter.getSourceCodec(records);
         return entryFormatter.getTargetCodec(sourceCodec);
     }

@@ -112,4 +112,9 @@ public class KopTopic {
                 || partitionedTopicName.endsWith("/" + TRANSACTION_STATE_TOPIC_NAME);
     }
 
+    public static boolean isGroupMetadataTopicName(final String fullTopicName) {
+        String partitionedTopicName = TopicName.get(fullTopicName).getPartitionedTopicName();
+        return partitionedTopicName.endsWith("/" + GROUP_METADATA_TOPIC_NAME);
+    }
+
 }
