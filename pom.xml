@@ -79,6 +79,7 @@
     <module>oauth-client</module>
     <module>tests</module>
     <module>kafka-payload-processor</module>
+    <module>kafka-payload-processor-shaded</module>
   </modules>
 
   <!-- dependency definitions -->
