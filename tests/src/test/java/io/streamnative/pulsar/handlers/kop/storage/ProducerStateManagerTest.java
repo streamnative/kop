@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.storage;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertThrows;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
@@ -88,20 +89,12 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         append(stateManager, producerId, epoch, 1, 0L, 1L, false);
 
         // Duplicates are checked separately and should result in OutOfOrderSequence if appended
-        try {
-            append(stateManager, producerId, epoch, 1, 0L, 1L, false);
-            fail("Duplicates are checked separately and should result in OutOfOrderSequence if appended.");
-        } catch (OutOfOrderSequenceException e) {
-            log.info("Expected behavior.");
-        }
+        assertThrows(OutOfOrderSequenceException.class,
+                () -> append(stateManager, producerId, epoch, 1, 0L, 1L, false));
 
         // Invalid sequence number (greater than next expected sequence number)
-        try {
-            append(stateManager, producerId, epoch, 5, 0L, 2L, false);
-            fail("Invalid sequence number (greater than next expected sequence number).");
-        } catch (OutOfOrderSequenceException e) {
-            log.info("Expected behavior.");
-        }
+        assertThrows(OutOfOrderSequenceException.class,
+                () -> append(stateManager, producerId, epoch, 5, 0L, 2L, false));
 
         // Change epoch
         append(stateManager, producerId, (short) (epoch + 1), 0, 0L, 3L, false);
@@ -113,7 +106,6 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
             fail("Incorrect epoch.");
         } catch (IllegalArgumentException e) {
             assertTrue(e.getMessage().contains("which is smaller than the last seen"));
-            log.info("Expected behavior.");
         }
     }
 
@@ -135,22 +127,14 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         // Fencing should continue to work even if the marker is the only thing left
         try {
             append(stateManager, producerId, (short) 0, 0, 0L, 4L, false);
-            fail("Fencing should continue to work even if the marker is the only thing left.");
         } catch (IllegalArgumentException e) {
             assertTrue(e.getMessage().contains("which is smaller than the last seen"));
-            log.info("Expected behavior.");
         }
 
         // If the transaction marker is the only thing left in the log, then an attempt to write using a non-zero
         // sequence number should cause an OutOfOrderSequenceException, so that the producer can reset its state
-        try {
-            append(stateManager, producerId, producerEpoch, 17, 0L, 4L, false);
-            fail("If the transaction marker is the only thing left in the log, then an attempt to write"
-                    + "using a non-zero sequence number should cause an OutOfOrderSequenceException, so that the "
-                    + "producer can reset its state.");
-        } catch (OutOfOrderSequenceException e) {
-            log.info("Expected behavior.");
-        }
+        assertThrows(OutOfOrderSequenceException.class,
+                () -> append(stateManager, producerId, producerEpoch, 17, 0L, 4L, false));
 
         // The broker should accept the request if the sequence number is reset to 0
         append(stateManager, producerId, producerEpoch, 0, 39L, 4L, false);
@@ -163,13 +147,14 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(0, secondEntry.lastSeq().intValue());
     }
 
-    @Test(timeOut = defaultTestTimeout, expectedExceptions = OutOfOrderSequenceException.class)
+    @Test(timeOut = defaultTestTimeout)
     public void testProducerSequenceInvalidWrapAround() {
         short epoch = 15;
         Integer sequence = Integer.MAX_VALUE;
         long offset = 735L;
         append(stateManager, producerId, epoch, sequence, offset);
-        append(stateManager, producerId, epoch, 1, offset + 500);
+        assertThrows(OutOfOrderSequenceException.class,
+                () -> append(stateManager, producerId, epoch, 1, offset + 500));
     }
 
     @Test(timeOut = defaultTestTimeout)
@@ -447,20 +432,12 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 -1, time.milliseconds());
 
         // next append is invalid since we expect the sequence to be reset
-        try {
-            append(stateManager, producerId, bumpedEpoch, 2, 2L, time.milliseconds(), true);
-            fail("Next append is invalid since we expect the sequence to be reset.");
-        } catch (OutOfOrderSequenceException e) {
-            log.info("Expected behavior.");
-        }
+        assertThrows(OutOfOrderSequenceException.class,
+                () -> append(stateManager, producerId, bumpedEpoch, 2, 2L, time.milliseconds(), true));
 
-        try {
-            append(stateManager, producerId, (short) (bumpedEpoch + 1), 2, 2L,
-                    time.milliseconds(), true);
-            fail("[2] Next append is invalid since we expect the sequence to be reset.");
-        } catch (OutOfOrderSequenceException e) {
-            log.info("Expected behavior.");
-        }
+        // [2] Next append is invalid since we expect the sequence to be reset.
+        assertThrows(OutOfOrderSequenceException.class,
+                () -> append(stateManager, producerId, (short) (bumpedEpoch + 1), 2, 2L, time.milliseconds(), true));
 
         // Append with the bumped epoch should be fine if starting from sequence 0
         append(stateManager, producerId, bumpedEpoch, 0, 0L, time.milliseconds(), true);
@@ -500,7 +477,6 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
             fail("The control record with old epoch.");
         } catch (IllegalArgumentException e) {
             assertTrue(e.getMessage().contains("which is smaller than the last seen"));
-            log.info("Expected behavior.");
         }
     }
 

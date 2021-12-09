@@ -18,7 +18,6 @@ import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_ALLNAMESPACES_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
@@ -2209,7 +2208,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             ).whenComplete((result, ex) -> {
                 appendRecordsContext.recycle();
                 if (ex != null) {
-                    log.error("Append txn marker failed.", ex);
+                    log.error("[{}] Append txn marker ({}) failed.", ctx.channel(), marker, ex);
                     Map<TopicPartition, Errors> currentErrors = new HashMap<>();
                     controlRecords.forEach(((topicPartition, partitionResponse) -> {
                         currentErrors.put(topicPartition, Errors.KAFKA_STORAGE_ERROR);
@@ -2220,16 +2219,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
                 Map<TopicPartition, Errors> currentErrors = new HashMap<>();
                 result.forEach(((topicPartition, partitionResponse) -> {
+                    if (log.isDebugEnabled()) {
+                        log.debug("[{}] Append txn marker to topic : [{}], response: [{}].",
+                                ctx.channel(), topicPartition, partitionResponse);
+                    }
                     currentErrors.put(topicPartition, partitionResponse.error);
                 }));
                 updateErrors.accept(producerId, currentErrors);
 
                 Set<TopicPartition> successfulOffsetsPartitions = result.keySet()
                         .stream()
-                        .filter(topicPartition ->
-                                TopicName.get(topicPartition.topic()).getLocalName().equals(GROUP_METADATA_TOPIC_NAME))
+                        .filter(topicPartition -> KopTopic.isGroupMetadataTopicName(topicPartition.topic()))
                         .collect(Collectors.toSet());
-                if (successfulOffsetsPartitions.size() > 0) {
+                if (!successfulOffsetsPartitions.isEmpty()) {
                     getGroupCoordinator().scheduleHandleTxnCompletion(
                             producerId,
                             successfulOffsetsPartitions

@@ -228,7 +228,6 @@ public class ProducerStateManager {
                     + "%s which was not started.", completedTxn, topicPartition);
             throw new IllegalArgumentException(msg);
         }
-        txnMetadata.lastOffset(completedTxn.lastOffset());
     }
 
     public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {

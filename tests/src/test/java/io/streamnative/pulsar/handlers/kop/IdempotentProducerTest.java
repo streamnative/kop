@@ -20,16 +20,12 @@ import java.util.Collections;
 import java.util.Properties;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.CommonClientConfigs;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -67,24 +63,15 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testIdempotentProducer() throws PulsarAdminException {
-        String topic = "test";
+        String topic = "testIdempotentProducer";
         admin.topics().createPartitionedTopic(topic, 1);
         int maxMessageNum = 1000;
-        Properties props = new Properties();
-        props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
-        props.put(ProducerConfig.ACKS_CONFIG, "all");
-        props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);
-        props.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + kafkaBrokerPort);
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        props.put(ConsumerConfig.GROUP_ID_CONFIG, "test_group");
-
+        Properties producerProperties = newKafkaProducerProperties();
+        producerProperties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+        producerProperties.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);
 
         @Cleanup
-        KafkaProducer<String, String> producer = new KafkaProducer<>(props);
+        KafkaProducer<String, String> producer = new KafkaProducer<>(producerProperties);
 
         for (int i = 0; i < maxMessageNum; i++) {
             producer.send(new ProducerRecord<>(topic, "test" + i));
@@ -92,7 +79,7 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
         producer.flush();
 
         @Cleanup
-        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
+        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties());
         consumer.subscribe(Collections.singleton(topic));
         int i = 0;
         while (i < maxMessageNum) {
