@@ -19,7 +19,6 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.Transa
 import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState.PREPARE_EPOCH_FENCE;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
-
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
@@ -29,18 +28,10 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMe
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -58,10 +49,8 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
-import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 
 
@@ -78,11 +67,6 @@ public class TransactionCoordinator {
     @Getter
     private final TransactionStateManager txnManager;
     private final TransactionMarkerChannelManager transactionMarkerChannelManager;
-
-    // map from topic to the map from initial offset to producerId
-    private final Map<TopicName, NavigableMap<Long, Long>> activeOffsetPidMap = new HashMap<>();
-    private final Map<TopicName, ConcurrentHashMap<Long, Long>> activePidOffsetMap = new HashMap<>();
-    private final List<AbortedIndexEntry> abortedIndexList = new CopyOnWriteArrayList<>();
 
     private final ScheduledExecutorService scheduler;
 
@@ -872,53 +856,6 @@ public class TransactionCoordinator {
         return Errors.INVALID_TXN_STATE;
     }
 
-    public void addActivePidOffset(TopicName topicName, long pid, long offset) {
-        ConcurrentHashMap<Long, Long> pidOffsetMap =
-                activePidOffsetMap.computeIfAbsent(topicName, topicKey -> new ConcurrentHashMap<>());
-
-        NavigableMap<Long, Long> offsetPidMap =
-                activeOffsetPidMap.computeIfAbsent(topicName, topicKey -> new ConcurrentSkipListMap<>());
-
-        pidOffsetMap.computeIfAbsent(pid, pidKey -> {
-            offsetPidMap.computeIfAbsent(offset, offsetKey -> {
-                return pid;
-            });
-            return offset;
-        });
-    }
-
-    public long removeActivePidOffset(TopicName topicName, long pid) {
-        ConcurrentHashMap<Long, Long> pidOffsetMap = activePidOffsetMap.getOrDefault(topicName, null);
-        if (pidOffsetMap == null) {
-            return -1;
-        }
-
-        NavigableMap<Long, Long> offsetPidMap = activeOffsetPidMap.getOrDefault(topicName, null);
-        if (offsetPidMap == null) {
-            log.warn("[removeActivePidOffset] offsetPidMap is null");
-            return -1;
-        }
-
-        Long offset = pidOffsetMap.remove(pid);
-        if (offset == null) {
-            log.warn("[removeActivePidOffset] pidOffsetMap is not contains pid {}.", pid);
-            return -1;
-        }
-
-        if (offsetPidMap.containsKey(offset)) {
-            offsetPidMap.remove(offset);
-        }
-        return offset;
-    }
-
-    public long getLastStableOffset(TopicName topicName, long highWaterMark) {
-        NavigableMap<Long, Long> map = activeOffsetPidMap.getOrDefault(topicName, null);
-        if (map == null || map.isEmpty()) {
-            return highWaterMark;
-        }
-        return map.firstKey();
-    }
-
     @VisibleForTesting
     protected void abortTimedOutTransactions(
             BiConsumer<TransactionStateManager.TransactionalIdAndProducerIdEpoch, Errors> onComplete) {
@@ -1000,20 +937,4 @@ public class TransactionCoordinator {
         log.info("Shutdown transaction coordinator complete.");
     }
 
-    public void addAbortedIndex(AbortedIndexEntry abortedIndexEntry) {
-        abortedIndexList.add(abortedIndexEntry);
-    }
-
-    public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
-        List<FetchResponse.AbortedTransaction> abortedTransactions = new ArrayList<>(abortedIndexList.size());
-        for (AbortedIndexEntry abortedIndexEntry : abortedIndexList) {
-            if (abortedIndexEntry.getLastOffset() >= fetchOffset) {
-                abortedTransactions.add(
-                        new FetchResponse.AbortedTransaction(
-                                abortedIndexEntry.getPid(),
-                                abortedIndexEntry.getFirstOffset()));
-            }
-        }
-        return abortedTransactions;
-    }
 }
