@@ -202,8 +202,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
         // ensure that we can list the topic
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
-        assertTrue(result.containsKey(SHORT_TOPIC),
-                "list of topics " + result.keySet() + "  does not contains " + SHORT_TOPIC);
+        assertEquals(result.size(), 2);
         assertTrue(result.containsKey(topic),
                 "list of topics " + result.keySet() + "  does not contains " + topic);
 
@@ -247,8 +246,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
         // ensure that we can list the topic
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
-        assertTrue(result.containsKey(SHORT_TOPIC),
-                "list of topics " + result.keySet() + "  does not contains " + SHORT_TOPIC);
+        assertEquals(result.size(), 2);
         assertTrue(result.containsKey(topic),
                 "list of topics " + result.keySet() + "  does not contains " + topic);
 
@@ -323,10 +321,8 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getKafkaBrokerPort(), false,
                 TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
-        assertTrue(result.containsKey(SHORT_TOPIC),
-                "list of topics " + result.keySet() + "  does not contains " + SHORT_TOPIC);
-        assertFalse(result.containsKey(newTopic),
-                "list of topics " + result.keySet() + "  shouldn't contains " + newTopic);
+        assertEquals(result.size(), 1);
+        assertFalse(result.containsKey(newTopic));
 
         // Create newTopic
         admin.topics().createPartitionedTopic(fullNewTopicName, 1);
@@ -338,10 +334,8 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
         // Use consumer to list topic
         result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
-        assertTrue(result.containsKey(SHORT_TOPIC),
-                "list of topics " + result.keySet() + "  does not contains " + SHORT_TOPIC);
-        assertTrue(result.containsKey(newTopic),
-                "list of topics " + result.keySet() + "  does not contains " + newTopic);
+        assertEquals(result.size(), 2);
+        assertTrue(result.containsKey(newTopic));
 
         // Check AdminClient use specific user to list topic
         AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, anotherToken);
