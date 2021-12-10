@@ -14,15 +14,20 @@
 package io.streamnative.pulsar.handlers.kop.format;
 
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
+import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.Random;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.record.TimestampType;
+import org.apache.kafka.common.utils.Time;
 
 
 /**
@@ -35,6 +40,15 @@ public class EncodePerformanceTest {
     private static final KafkaServiceConfiguration pulsarServiceConfiguration = new KafkaServiceConfiguration();
     private static final KafkaServiceConfiguration KafkaV1ServiceConfiguration = new KafkaServiceConfiguration();
     private static final KafkaServiceConfiguration kafkaMixedServiceConfiguration = new KafkaServiceConfiguration();
+
+    private static final PartitionLog PARTITION_LOG = new PartitionLog(
+            pulsarServiceConfiguration,
+            Time.SYSTEM,
+            new TopicPartition("test", 1),
+            "test",
+            "test",
+            null,
+            new ProducerStateManager("test"));
 
     public static void main(String[] args) {
         pulsarServiceConfiguration.setEntryFormat("pulsar");
@@ -51,7 +65,8 @@ public class EncodePerformanceTest {
     }
 
     private static void runSingleTest(final MemoryRecords records, final String description, final int repeatTimes) {
-        final EncodeRequest encodeRequest = EncodeRequest.get(records);
+        PartitionLog.LogAppendInfo appendInfo = PARTITION_LOG.analyzeAndValidateRecords(records);
+        final EncodeRequest encodeRequest = EncodeRequest.get(records, appendInfo);
         final EntryFormatter pulsarFormatter = EntryFormatterFactory.create(pulsarServiceConfiguration);
         final EntryFormatter kafkaV1Formatter = EntryFormatterFactory.create(KafkaV1ServiceConfiguration);
         final EntryFormatter kafkaMixedFormatter = EntryFormatterFactory.create(kafkaMixedServiceConfiguration);
@@ -72,7 +87,7 @@ public class EncodePerformanceTest {
         long currentBaseOffset = 0;
         for (int i = 0; i < repeatTimes; i++) {
             kafkaMixedFormatter.encode(encodeRequest).recycle();
-            encodeRequest.setBaseOffset(currentBaseOffset + NUM_MESSAGES);
+            appendInfo.firstOffset(Optional.of(currentBaseOffset + NUM_MESSAGES));
         }
         t2 = System.currentTimeMillis();
         System.out.println("KafkaMixedEntryFormatter encode time: " + (t2 - t1) + " ms");

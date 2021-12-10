@@ -38,7 +38,7 @@ public class EntryFormatterFactory {
                 case KAFKA:
                     return new KafkaV1EntryFormatter();
                 case MIXED_KAFKA:
-                    return new KafkaMixedEntryFormatter(kafkaConfig.getKafkaCompressionType());
+                    return new KafkaMixedEntryFormatter();
                 default:
                     throw new Exception("No EntryFormatter for " + entryFormat);
             }

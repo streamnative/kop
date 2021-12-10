@@ -55,34 +55,27 @@ public class KafkaMixedEntryFormatterTest {
         final MemoryRecords records = newMemoryRecordsBuilder(compressionType, magic);
 
         // test brokerCompressionType=producer
-        final KafkaMixedEntryFormatter producerEntryFormatter =
-                new KafkaMixedEntryFormatter("none");
         Assert.assertEquals(compressionType.name,
-                checkRecordsCodec(producerEntryFormatter, records).name());
+                checkRecordsCodec("none", records).name());
 
         // test brokerCompressionType=gzip
-        final KafkaMixedEntryFormatter gzipEntryFormatter =
-                new KafkaMixedEntryFormatter("gzip");
         Assert.assertEquals(CompressionType.GZIP.name,
-                checkRecordsCodec(gzipEntryFormatter, records).name());
+                checkRecordsCodec("gzip", records).name());
 
         // test brokerCompressionType=snappy
-        final KafkaMixedEntryFormatter snappyEntryFormatter =
-                new KafkaMixedEntryFormatter("snappy");
         Assert.assertEquals(CompressionType.SNAPPY.name,
-                checkRecordsCodec(snappyEntryFormatter, records).name());
+                checkRecordsCodec("snappy", records).name());
 
         // test brokerCompressionType=lz4
-        final KafkaMixedEntryFormatter lz4EntryFormatter =
-                new KafkaMixedEntryFormatter("lz4");
         Assert.assertEquals(CompressionType.LZ4.name,
-                checkRecordsCodec(lz4EntryFormatter, records).name());
+                checkRecordsCodec("lz4", records).name());
     }
 
-    private static KopLogValidator.CompressionCodec checkRecordsCodec(final KafkaMixedEntryFormatter entryFormatter,
-                                                                      final MemoryRecords records) {
-        final KopLogValidator.CompressionCodec sourceCodec = entryFormatter.getSourceCodec(records);
-        return entryFormatter.getTargetCodec(sourceCodec);
+    private KopLogValidator.CompressionCodec checkRecordsCodec(
+            final String brokerCompressionType,
+            final MemoryRecords records) {
+        final KopLogValidator.CompressionCodec sourceCodec = KopLogValidator.getSourceCodec(records);
+        return KopLogValidator.getTargetCodec(sourceCodec, brokerCompressionType);
     }
 
     private static MemoryRecords newMemoryRecordsBuilder(final CompressionType type, byte magic) {
