@@ -99,7 +99,7 @@ public class ReplicaManager {
         entriesPerPartition.forEach((topicPartition, memoryRecords) -> {
             String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
             // reject appending to internal topics if it is not allowed
-            if (!internalTopicsAllowed && KopTopic.isInternalTopic(fullPartitionName)) {
+            if (!internalTopicsAllowed && KopTopic.isInternalTopic(fullPartitionName, logManager.getKafkaConfig())) {
                 addPartitionResponse.accept(topicPartition, new ProduceResponse.PartitionResponse(
                         Errors.forException(new InvalidTopicException(
                                 String.format("Cannot append to internal topic %s", topicPartition.topic())))));

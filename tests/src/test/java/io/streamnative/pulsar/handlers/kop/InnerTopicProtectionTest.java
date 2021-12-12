@@ -64,6 +64,7 @@ public class InnerTopicProtectionTest extends KopProtocolHandlerTestBase {
         kConfig.setTopicLevelPoliciesEnabled(true);
         kConfig.setGroupInitialRebalanceDelayMs(0);
         kConfig.setBrokerShutdownTimeoutMs(0);
+        kConfig.setKafkaTransactionCoordinatorEnabled(true);
 
         // set protocol related config
         URL testHandlerUrl = this.getClass().getClassLoader().getResource("test-protocol-handler.nar");
@@ -124,13 +125,17 @@ public class InnerTopicProtectionTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 30000)
-    public void testInnerTopicProduce() throws PulsarAdminException {
+    public void testInnerTopicProduce() throws PulsarAdminException, InterruptedException {
         final String offsetTopic = "public/__kafka/__consumer_offsets";
         final String transactionTopic = "public/__kafka/__transaction_state";
         final String systemTopic = "__change_events";
         final String commonTopic = "normal-topic";
+        final String userNamespaceOffsetTopic = "__consumer_offsets";
+        final String userNamespaceTransactionTopic = "__transaction_state";
 
         admin.topics().createPartitionedTopic(commonTopic, 3);
+        admin.topics().createPartitionedTopic(userNamespaceOffsetTopic, 3);
+        admin.topics().createPartitionedTopic(userNamespaceTransactionTopic, 3);
         // test inner topic produce
         @Cleanup
         final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
@@ -139,6 +144,8 @@ public class InnerTopicProtectionTest extends KopProtocolHandlerTestBase {
         assertProduceMessage(kafkaProducer, transactionTopic, msg, true);
         assertProduceMessage(kafkaProducer, systemTopic, msg, true);
         assertProduceMessage(kafkaProducer, commonTopic, msg, false);
+        assertProduceMessage(kafkaProducer, userNamespaceOffsetTopic, msg, false);
+        assertProduceMessage(kafkaProducer, userNamespaceTransactionTopic, msg, false);
     }
 
     private void assertProduceMessage(KafkaProducer producer, final String topic, final String value,

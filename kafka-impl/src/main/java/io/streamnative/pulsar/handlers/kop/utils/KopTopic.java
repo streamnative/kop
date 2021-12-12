@@ -17,6 +17,7 @@ import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import lombok.Getter;
 import org.apache.kafka.common.TopicPartition;
@@ -106,15 +107,20 @@ public class KopTopic {
         return (new KopTopic(topic, namespacePrefix)).getPartitionName(partition);
     }
 
-    public static boolean isInternalTopic(final String fullTopicName) {
+    public static boolean isInternalTopic(final String fullTopicName, KafkaServiceConfiguration conf) {
         String partitionedTopicName = TopicName.get(fullTopicName).getPartitionedTopicName();
-        return partitionedTopicName.endsWith("/" + GROUP_METADATA_TOPIC_NAME)
-                || partitionedTopicName.endsWith("/" + TRANSACTION_STATE_TOPIC_NAME);
+        return partitionedTopicName.endsWith(conf.getKafkaMetadataNamespace() + "/" + GROUP_METADATA_TOPIC_NAME)
+                || partitionedTopicName.endsWith(conf.getKafkaMetadataNamespace() + "/" + TRANSACTION_STATE_TOPIC_NAME);
     }
 
-    public static boolean isGroupMetadataTopicName(final String fullTopicName) {
+    public static boolean isGroupMetadataTopicName(final String fullTopicName, KafkaServiceConfiguration conf) {
         String partitionedTopicName = TopicName.get(fullTopicName).getPartitionedTopicName();
-        return partitionedTopicName.endsWith("/" + GROUP_METADATA_TOPIC_NAME);
+        return partitionedTopicName.endsWith(conf.getKafkaMetadataNamespace() + "/" + GROUP_METADATA_TOPIC_NAME);
+    }
+
+    public static boolean isTransactionMetadataTopicName(final String fullTopicName, KafkaServiceConfiguration conf) {
+        String partitionedTopicName = TopicName.get(fullTopicName).getPartitionedTopicName();
+        return partitionedTopicName.endsWith(conf.getKafkaMetadataNamespace() + "/" + TRANSACTION_STATE_TOPIC_NAME);
     }
 
 }

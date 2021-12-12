@@ -593,7 +593,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                    allTopicMetadata.add(new TopicMetadata(
                                            Errors.TOPIC_AUTHORIZATION_FAILED,
                                            topic,
-                                           KopTopic.isInternalTopic(topicName.toString()),
+                                           KopTopic.isInternalTopic(topicName.toString(), kafkaConfig),
                                            Collections.emptyList()));
                                    return;
                                }
@@ -638,7 +638,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 allTopicMetadata.add(new TopicMetadata(
                         Errors.TOPIC_AUTHORIZATION_FAILED,
                         topic,
-                        KopTopic.isInternalTopic(fullTopicName),
+                        KopTopic.isInternalTopic(fullTopicName, kafkaConfig),
                         Collections.emptyList()));
                 completeOneTopic.run();
             };
@@ -693,7 +693,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                         new TopicMetadata(
                                                                 Errors.UNKNOWN_TOPIC_OR_PARTITION,
                                                                 topic,
-                                                                KopTopic.isInternalTopic(fullTopicName),
+                                                                KopTopic.isInternalTopic(fullTopicName, kafkaConfig),
                                                                 Collections.emptyList()));
                                                 completeOneTopic.run();
                                             }
@@ -703,7 +703,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     new TopicMetadata(
                                                             Errors.UNKNOWN_TOPIC_OR_PARTITION,
                                                             topic,
-                                                            KopTopic.isInternalTopic(fullTopicName),
+                                                            KopTopic.isInternalTopic(fullTopicName, kafkaConfig),
                                                             Collections.emptyList()));
                                             log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} "
                                                             + "metadata: {}",
@@ -809,7 +809,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     // the same with what it sent
                                                     topic,
                                                     KopTopic.isInternalTopic(
-                                                            new KopTopic(topic, namespacePrefix).getFullName()),
+                                                            new KopTopic(topic, namespacePrefix).getFullName(),
+                                                            kafkaConfig),
                                                     partitionMetadatas));
 
                                     // whether completed all the topics requests.
@@ -2231,7 +2232,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                 Set<TopicPartition> successfulOffsetsPartitions = result.keySet()
                         .stream()
-                        .filter(topicPartition -> KopTopic.isGroupMetadataTopicName(topicPartition.topic()))
+                        .filter(topicPartition ->
+                                KopTopic.isGroupMetadataTopicName(topicPartition.topic(), kafkaConfig))
                         .collect(Collectors.toSet());
                 if (!successfulOffsetsPartitions.isEmpty()) {
                     getGroupCoordinator().scheduleHandleTxnCompletion(
