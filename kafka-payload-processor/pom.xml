@@ -25,7 +25,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <artifactId>kafka-payload-processor-original</artifactId>
-  <name>Kafka Payload Processor</name>
+  <name>Kafka Payload Processor (Original)</name>
 
   <dependencies>
     <dependency>
