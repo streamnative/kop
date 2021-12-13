@@ -12,7 +12,7 @@ public class KafkaPayloadProcessorTest {
 
     @Test
     public void test() throws Exception {
-        final List<String> values = Arrays.asList("1", "hello", "");
+        final List<String> values = Arrays.asList("1", "hello", "", null);
         final MockedMessagePayloadContext context = new MockedMessagePayloadContext(
                 values.size(),
                 new MessageIdImpl(0L, 0L, -1));

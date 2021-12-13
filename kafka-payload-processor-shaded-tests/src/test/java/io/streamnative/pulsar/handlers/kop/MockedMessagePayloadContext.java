@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import java.io.IOException;
 import java.util.Optional;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessagePayload;
@@ -24,16 +25,17 @@ import org.apache.pulsar.client.impl.BatchMessageIdImpl;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
+import org.apache.pulsar.common.api.proto.SingleMessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 
 public class MockedMessagePayloadContext implements MessagePayloadContext {
 
-    private final int numMessages;
+    private final MessageMetadata messageMetadata = new MessageMetadata();
     private final MessageIdImpl messageId;
 
     public MockedMessagePayloadContext(final int numMessages,
                                        final MessageIdImpl messageId) {
-        this.numMessages = numMessages;
+        this.messageMetadata.setNumMessagesInBatch(numMessages);
         this.messageId = messageId;
     }
 
@@ -44,7 +46,7 @@ public class MockedMessagePayloadContext implements MessagePayloadContext {
 
     @Override
     public int getNumMessages() {
-        return numMessages;
+        return messageMetadata.getNumMessagesInBatch();
     }
 
     @Override
@@ -59,11 +61,16 @@ public class MockedMessagePayloadContext implements MessagePayloadContext {
                                        boolean containMetadata,
                                        Schema<T> schema) {
         final ByteBuf payloadBuffer = Unpooled.wrappedBuffer(payload.copiedBuffer());
-
-        final MessageMetadata messageMetadata = new MessageMetadata();
-        messageMetadata.setNumMessagesInBatch(numMessages);
-
-        Commands.skipMessageMetadata(payloadBuffer);
+        final SingleMessageMetadata singleMessageMetadata = new SingleMessageMetadata();
+        ByteBuf singleMessagePayload = null;
+        if (containMetadata) {
+            try {
+                singleMessagePayload = Commands.deSerializeSingleMessageInBatch(
+                        payloadBuffer, singleMessageMetadata, index, numMessages);
+            } catch (IOException e) {
+                throw new IllegalStateException(e);
+            }
+        }
 
         final BatchMessageIdImpl batchMessageId = new BatchMessageIdImpl(
                 messageId.getLedgerId(), messageId.getEntryId(), messageId.getPartitionIndex(), index);
@@ -71,7 +78,8 @@ public class MockedMessagePayloadContext implements MessagePayloadContext {
             return MessageImpl.create("",
                     batchMessageId,
                     messageMetadata,
-                    payloadBuffer,
+                    singleMessageMetadata,
+                    (singleMessagePayload != null) ? singleMessagePayload : payloadBuffer,
                     Optional.empty(),
                     null,
                     schema,
