@@ -66,6 +66,7 @@ public class InternalServerCnx extends ServerCnx {
     // called after channel active
     public void updateCtx() {
         this.remoteAddress = kafkaRequestHandler.getRemoteAddress();
+        this.ctx = kafkaRequestHandler.ctx;
     }
 
     @Override
@@ -115,4 +116,13 @@ public class InternalServerCnx extends ServerCnx {
         this.kopMessagePublishBufferSize = size;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        return super.equals(o);
+    }
+
+    @Override
+    public int hashCode() {
+        return super.hashCode();
+    }
 }
