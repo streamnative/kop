@@ -80,6 +80,7 @@
     <module>tests</module>
     <module>kafka-payload-processor</module>
     <module>kafka-payload-processor-shaded</module>
+    <module>kafka-payload-processor-shaded-tests</module>
   </modules>
 
   <!-- dependency definitions -->

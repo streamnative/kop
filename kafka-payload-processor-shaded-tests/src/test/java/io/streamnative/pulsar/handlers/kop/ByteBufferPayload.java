@@ -46,7 +46,8 @@ public class ByteBufferPayload implements MessagePayload {
                 TimestampType.CREATE_TIME,
                 0L);
         for (String value : values) {
-            builder.append(System.currentTimeMillis(), null, value.getBytes(StandardCharsets.UTF_8));
+            builder.append(System.currentTimeMillis(), null,
+                    (value != null) ? value.getBytes(StandardCharsets.UTF_8) : null);
         }
         return new ByteBufferPayload(builder.build().buffer());
     }
