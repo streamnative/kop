@@ -115,4 +115,13 @@ public class InternalServerCnx extends ServerCnx {
         this.kopMessagePublishBufferSize = size;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        return super.equals(o);
+    }
+
+    @Override
+    public int hashCode() {
+        return super.hashCode();
+    }
 }
