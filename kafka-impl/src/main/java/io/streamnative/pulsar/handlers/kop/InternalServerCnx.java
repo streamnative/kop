@@ -66,6 +66,7 @@ public class InternalServerCnx extends ServerCnx {
     // called after channel active
     public void updateCtx() {
         this.remoteAddress = kafkaRequestHandler.getRemoteAddress();
+        this.ctx = kafkaRequestHandler.ctx;
     }
 
     @Override
