@@ -19,10 +19,19 @@ import static org.testng.Assert.assertThrows;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
+import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicClientFactory;
+import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicProducerStateClient;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.util.Collections;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
@@ -32,6 +41,7 @@ import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.RecordBatch;
+import org.apache.pulsar.common.naming.TopicName;
 import org.mockito.Mockito;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
@@ -49,8 +59,12 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     protected final long defaultTestTimeout = 20000;
     private final TopicPartition partition = new TopicPartition("test", 0);
     private final Long producerId = 1L;
+    private final Long maxPidExpirationMs = 10 * 1000L;
     private final MockTime time = new MockTime();
     private ProducerStateManager stateManager;
+    private SystemTopicClientFactory systemTopicClientFactory;
+    private SystemTopicProducerStateClient producerStateClient;
+    private SystemTopicClient systemTopicClient;
 
     @BeforeClass
     @Override
@@ -59,17 +73,29 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         super.internalSetup();
 
         admin.topics().createPartitionedTopic("public/default/sys-topic-producer-state", 1);
+        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
+        systemTopicClient = handler.getProducerStateTopicClient();
         log.info("success internal setup");
     }
 
     @BeforeMethod
     protected void setUp() {
-        stateManager = new ProducerStateManager(partition.toString());
+        systemTopicClientFactory = new SystemTopicClientFactory(systemTopicClient);
+        producerStateClient =
+                systemTopicClientFactory.getProducerStateClient(TopicName.get("test").toString());
+        EntryFormatter formatter = EntryFormatterFactory.create(conf);
+        stateManager = new ProducerStateManager(
+                partition.toString(),
+                maxPidExpirationMs.intValue(),
+                formatter,
+                producerStateClient,
+                time);
     }
 
     @AfterMethod
     protected void tearDown() {
-        // no-op
+        systemTopicClient.close();
+        systemTopicClientFactory.shutdown();
     }
 
     @AfterClass
@@ -453,9 +479,63 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = defaultTestTimeout)
+    public void testProducerStateAfterFencingAbortMarker() {
+        short epoch = 0;
+        append(stateManager, producerId, epoch, 0, 0L, time.milliseconds(), true);
+        appendEndTxnMarker(stateManager, producerId, (short) (epoch + 1), ControlRecordType.ABORT,
+                1L, -1, time.milliseconds());
+
+        ProducerStateEntry lastEntry = stateManager.lastEntry(producerId).get();
+        assertEquals(Optional.empty(), lastEntry.currentTxnFirstOffset());
+        assertEquals(-1, lastEntry.lastDataOffset().longValue());
+        assertEquals(-1, lastEntry.firstDataOffset().longValue());
+
+        // The producer should not be expired because we want to preserve fencing epochs
+        stateManager.removeExpiredProducers(time.milliseconds());
+        assertTrue(stateManager.lastEntry(producerId).isPresent());
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void testPidExpirationTimeout() {
+        short epoch = 5;
+        int sequence = 37;
+        append(stateManager, producerId, epoch, sequence, 1L);
+        time.sleep(maxPidExpirationMs + 1);
+        stateManager.removeExpiredProducers(time.milliseconds());
+        append(stateManager, producerId, epoch, sequence + 1, 2L);
+        assertEquals(1, stateManager.activeProducers().size());
+        assertEquals(sequence + 1, stateManager.activeProducers().get(producerId).lastSeq().shortValue());
+        assertEquals(3L, stateManager.mapEndOffset().longValue());
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void testProducersWithOngoingTransactionsDontExpire() {
+        short epoch = 5;
+        int sequence = 0;
+
+        append(stateManager, producerId, epoch, sequence, 99L, time.milliseconds(), true);
+        assertEquals(Optional.of(99L), stateManager.firstUndecidedOffset());
+
+        time.sleep(maxPidExpirationMs + 1);
+        stateManager.removeExpiredProducers(time.milliseconds());
+
+        assertTrue(stateManager.lastEntry(producerId).isPresent());
+        assertEquals(Optional.of(99L), stateManager.firstUndecidedOffset());
+
+        stateManager.removeExpiredProducers(time.milliseconds());
+        assertTrue(stateManager.lastEntry(producerId).isPresent());
+    }
+
+    @Test(timeOut = defaultTestTimeout)
     public void testSequenceNotValidatedForGroupMetadataTopic() {
         TopicPartition partition = new TopicPartition(Topic.GROUP_METADATA_TOPIC_NAME, 0);
-        stateManager = new ProducerStateManager(partition.toString());
+        EntryFormatter formatter = EntryFormatterFactory.create(conf);
+        stateManager = new ProducerStateManager(
+                partition.toString(),
+                maxPidExpirationMs.intValue(),
+                formatter,
+                producerStateClient,
+                time);
         short epoch = 0;
         append(stateManager, producerId, epoch, RecordBatch.NO_SEQUENCE, 99L, time.milliseconds(),
                 true, PartitionLog.AppendOrigin.Coordinator);
@@ -483,14 +563,55 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = defaultTestTimeout)
     public void testAppendEmptyControlBatch() {
         long producerId = 23423L;
+        long baseOffset = 15;
 
         RecordBatch batch = Mockito.mock(RecordBatch.class);
         Mockito.when(batch.isControlBatch()).thenReturn(true);
         Mockito.when(batch.iterator()).thenReturn(Collections.emptyIterator());
 
         // Appending the empty control batch should not throw and a new transaction shouldn't be started
-        append(stateManager, producerId, batch, PartitionLog.AppendOrigin.Client);
+        append(stateManager, producerId, baseOffset, batch, PartitionLog.AppendOrigin.Client);
         assertEquals(Optional.empty(), stateManager.lastEntry(producerId).get().currentTxnFirstOffset());
+    }
+
+    @Test()
+    public void testTruncateAndReloadRemovesOutOfRangeSnapshots() throws InterruptedException {
+        short epoch = 0;
+        append(stateManager, producerId, epoch, 0, 0L);
+        takeSnapshotAndWait(stateManager);
+        append(stateManager, producerId, epoch, 1, 1L);
+        takeSnapshotAndWait(stateManager);
+        append(stateManager, producerId, epoch, 2, 2L);
+        takeSnapshotAndWait(stateManager);
+        append(stateManager, producerId, epoch, 3, 3L);
+        takeSnapshotAndWait(stateManager);
+        append(stateManager, producerId, epoch, 4, 4L);
+        takeSnapshotAndWait(stateManager);
+
+        stateManager.truncate();
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        CompletableFuture<Void> future = stateManager.loadFromSnapshot();
+        future.whenComplete((ignored, throwable) -> {
+            if (throwable != null) {
+                log.error("Failed to load from snapshot.", throwable);
+            }
+            countDownLatch.countDown();
+        });
+        countDownLatch.await();
+        stateManager.getAbortedIndexList(0);
+    }
+
+    private void takeSnapshotAndWait(ProducerStateManager stateManager) throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+        stateManager.takeSnapshot().whenComplete((messageId, throwable) -> {
+            if (throwable != null) {
+                log.error("Failed to take snapshot.", throwable);
+            } else {
+                log.info("take snapshot messageId {}", messageId);
+            }
+            latch.countDown();
+        });
+        latch.await();
     }
 
     private Optional<CompletedTxn> appendEndTxnMarker(ProducerStateManager mapping,
@@ -507,6 +628,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 producerAppendInfo.appendEndTxnMarker(endTxnMarker, producerEpoch, offset, timestamp);
         mapping.update(producerAppendInfo);
         completedTxnOpt.ifPresent(mapping::completeTxn);
+        mapping.updateMapEndOffset(offset + 1);
         return completedTxnOpt;
     }
 
@@ -544,15 +666,18 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         // Update to real offset
         producerAppendInfo.updateCurrentTxnFirstOffset(isTransactional, offset);
         stateManager.update(producerAppendInfo);
+        stateManager.updateMapEndOffset(offset + 1);
     }
 
     private void append(ProducerStateManager stateManager,
                         Long producerId,
+                        Long offset,
                         RecordBatch batch,
                         PartitionLog.AppendOrigin origin) {
         ProducerAppendInfo producerAppendInfo = stateManager.prepareUpdate(producerId, origin);
         producerAppendInfo.append(batch, Optional.empty());
         stateManager.update(producerAppendInfo);
+        stateManager.updateMapEndOffset(offset + 1);
     }
 
 }

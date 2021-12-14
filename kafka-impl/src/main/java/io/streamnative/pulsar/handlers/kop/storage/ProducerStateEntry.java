@@ -77,6 +77,14 @@ public class ProducerStateEntry {
         }
     }
 
+    public int lastOffsetDelta() {
+        if (isEmpty()) {
+            return 0;
+        } else {
+            return batchMetadata.getLast().getOffsetDelta();
+        }
+    }
+
     public void addBatch(Short producerEpoch, Integer lastSeq, Long lastOffset,
                          Integer offsetDelta, Long timestamp) {
         maybeUpdateProducerEpoch(producerEpoch);

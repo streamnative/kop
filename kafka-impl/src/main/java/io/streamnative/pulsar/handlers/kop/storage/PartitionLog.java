@@ -303,6 +303,7 @@ public class PartitionLog {
                     producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
                     producerStateManager.completeTxn(completedTxn);
                 });
+                producerStateManager.updateMapEndOffset(lastOffset + 1);
                 appendFuture.complete(offset);
             } else {
                 log.error("publishMessages for topic partition: {} failed when write.", fullPartitionName, e);
