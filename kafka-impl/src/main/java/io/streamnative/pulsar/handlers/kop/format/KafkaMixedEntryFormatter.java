@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
-import com.google.common.annotations.VisibleForTesting;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
@@ -22,7 +21,6 @@ import io.streamnative.pulsar.handlers.kop.utils.LongRef;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
-import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.TimestampType;
@@ -88,21 +86,6 @@ public class KafkaMixedEntryFormatter extends AbstractEntryFormatter {
         metadata.setPublishTime(System.currentTimeMillis());
         metadata.setNumMessagesInBatch(numMessages);
         return metadata;
-    }
-
-    @VisibleForTesting
-    public KopLogValidator.CompressionCodec getSourceCodec(MemoryRecords records) {
-        KopLogValidator.CompressionCodec sourceCodec = new KopLogValidator.CompressionCodec(
-                CompressionType.NONE.name, CompressionType.NONE.id);
-        for (RecordBatch batch : records.batches()) {
-            CompressionType compressionType = CompressionType.forId(batch.compressionType().id);
-            KopLogValidator.CompressionCodec messageCodec = new KopLogValidator.CompressionCodec(
-                    compressionType.name, compressionType.id);
-            if (messageCodec.codec() != CompressionType.NONE.id) {
-                sourceCodec = messageCodec;
-            }
-        }
-        return sourceCodec;
     }
 
 }
