@@ -198,7 +198,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         final NamespaceName kafkaTopicNs;
         final GroupCoordinator groupCoordinator;
         final String brokerUrl;
-        final KafkaServiceConfiguration kafkaConfig;
+        final String metadataNamespace;
 
         public OffsetAndTopicListener(BrokerService service,
                                       String tenant,
@@ -211,7 +211,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             this.kafkaTopicNs = NamespaceName
                     .get(tenant, kafkaConfig.getKafkaNamespace());
             this.brokerUrl = service.pulsar().getBrokerServiceUrl();
-            this.kafkaConfig = kafkaConfig;
+            this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
         }
 
         @Override
@@ -229,7 +229,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                             TopicName name = TopicName.get(topic);
 
                             // already filtered namespace, check the local name without partition
-                            if (KopTopic.isGroupMetadataTopicName(topic, kafkaConfig)) {
+                            if (KopTopic.isGroupMetadataTopicName(topic, metadataNamespace)) {
                                 checkState(name.isPartitioned(),
                                         "OffsetTopic should be partitioned in onLoad, but get " + name);
 
@@ -263,7 +263,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                             TopicName name = TopicName.get(topic);
 
                             // already filtered namespace, check the local name without partition
-                            if (KopTopic.isGroupMetadataTopicName(topic, kafkaConfig)) {
+                            if (KopTopic.isGroupMetadataTopicName(topic, metadataNamespace)) {
                                 checkState(name.isPartitioned(),
                                         "OffsetTopic should be partitioned in unLoad, but get " + name);
 
@@ -301,7 +301,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         private final NamespaceName kafkaTopicNs;
         private final String brokerUrl;
         private final TransactionCoordinator txnCoordinator;
-        private final KafkaServiceConfiguration kafkaConfig;
+        private final String metadataNamespace;
 
         public TransactionStateRecover(
                 BrokerService service,
@@ -315,7 +315,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     .get(tenant, kafkaConfig.getKafkaNamespace());
             this.brokerUrl = service.pulsar().getBrokerServiceUrl();
             this.txnCoordinator = txnCoordinator;
-            this.kafkaConfig = kafkaConfig;
+            this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
         }
 
         @Override
@@ -333,7 +333,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                             for (String topic : topics) {
                                 TopicName name = TopicName.get(topic);
 
-                                if (KopTopic.isTransactionMetadataTopicName(topic, kafkaConfig)) {
+                                if (KopTopic.isTransactionMetadataTopicName(topic, metadataNamespace)) {
                                     checkState(name.isPartitioned(),
                                             "TxnTopic should be partitioned in onLoad, but get " + name);
 
@@ -367,7 +367,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                             for (String topic : topics) {
                                 TopicName name = TopicName.get(topic);
 
-                                if (KopTopic.isTransactionMetadataTopicName(topic, kafkaConfig)
+                                if (KopTopic.isTransactionMetadataTopicName(topic, metadataNamespace)
                                         && txnCoordinator != null) {
                                     checkState(name.isPartitioned(),
                                             "TxnTopic should be partitioned in unLoad, but get " + name);

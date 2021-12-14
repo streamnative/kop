@@ -17,8 +17,8 @@ import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
-import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
+import java.util.function.Function;
 import lombok.Getter;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.common.naming.TopicName;
@@ -46,13 +46,6 @@ public class KopTopic {
     private final String originalName;
     @Getter
     private final String fullName;
-
-    public static class KoPTopicNotInitializedException extends KoPTopicException {
-
-        public KoPTopicNotInitializedException(String message) {
-            super(message);
-        }
-    }
 
     public static class KoPTopicIllegalArgumentException extends KoPTopicException {
 
@@ -107,20 +100,31 @@ public class KopTopic {
         return (new KopTopic(topic, namespacePrefix)).getPartitionName(partition);
     }
 
-    public static boolean isInternalTopic(final String fullTopicName, KafkaServiceConfiguration conf) {
-        String partitionedTopicName = TopicName.get(fullTopicName).getPartitionedTopicName();
-        return partitionedTopicName.endsWith(conf.getKafkaMetadataNamespace() + "/" + GROUP_METADATA_TOPIC_NAME)
-                || partitionedTopicName.endsWith(conf.getKafkaMetadataNamespace() + "/" + TRANSACTION_STATE_TOPIC_NAME);
+    private static boolean validateTopic(final String fullTopicName,
+                                         final String namespace,
+                                         final Function<String, Boolean> topicValidation) {
+        final TopicName topicName = TopicName.get(fullTopicName);
+        if (!topicName.getNamespace().equals(namespace)) {
+            return false;
+        }
+
+        final String localName = topicName.getLocalName();
+        return topicValidation.apply(topicName.isPartitioned()
+                ? localName.substring(0, localName.lastIndexOf(TopicName.PARTITIONED_TOPIC_SUFFIX))
+                : localName);
     }
 
-    public static boolean isGroupMetadataTopicName(final String fullTopicName, KafkaServiceConfiguration conf) {
-        String partitionedTopicName = TopicName.get(fullTopicName).getPartitionedTopicName();
-        return partitionedTopicName.endsWith(conf.getKafkaMetadataNamespace() + "/" + GROUP_METADATA_TOPIC_NAME);
+    public static boolean isInternalTopic(final String fullTopicName, final String metadataNamespace) {
+        return validateTopic(fullTopicName, metadataNamespace,
+                topic -> topic.equals(GROUP_METADATA_TOPIC_NAME) || topic.equals(TRANSACTION_STATE_TOPIC_NAME));
     }
 
-    public static boolean isTransactionMetadataTopicName(final String fullTopicName, KafkaServiceConfiguration conf) {
-        String partitionedTopicName = TopicName.get(fullTopicName).getPartitionedTopicName();
-        return partitionedTopicName.endsWith(conf.getKafkaMetadataNamespace() + "/" + TRANSACTION_STATE_TOPIC_NAME);
+    public static boolean isGroupMetadataTopicName(final String fullTopicName, final String metadataNamespace) {
+        return validateTopic(fullTopicName, metadataNamespace, topic -> topic.equals(GROUP_METADATA_TOPIC_NAME));
+    }
+
+    public static boolean isTransactionMetadataTopicName(final String fullTopicName, final String metadataNamespace) {
+        return validateTopic(fullTopicName, metadataNamespace, topic -> topic.equals(TRANSACTION_STATE_TOPIC_NAME));
     }
 
 }

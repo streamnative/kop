@@ -19,7 +19,6 @@ import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.Map;
 import lombok.AllArgsConstructor;
-import lombok.Getter;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
 
@@ -29,7 +28,6 @@ import org.apache.kafka.common.utils.Time;
 @AllArgsConstructor
 public class PartitionLogManager {
 
-    @Getter
     private final KafkaServiceConfiguration kafkaConfig;
     private final Map<String, PartitionLog> logMap;
     private final EntryFormatter formatter;
