@@ -110,7 +110,7 @@ public class KopTopic {
 
         final String localName = topicName.getLocalName();
         return topicValidation.apply(topicName.isPartitioned()
-                ? localName.substring(0, localName.lastIndexOf(TopicName.PARTITIONED_TOPIC_SUFFIX))
+                ? localName.substring(0, localName.lastIndexOf(PARTITIONED_TOPIC_SUFFIX))
                 : localName);
     }
 
