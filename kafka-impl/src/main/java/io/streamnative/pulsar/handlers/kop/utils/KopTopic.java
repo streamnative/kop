@@ -104,7 +104,7 @@ public class KopTopic {
                                          final String namespace,
                                          final Function<String, Boolean> topicValidation) {
         final TopicName topicName = TopicName.get(fullTopicName);
-        if (!topicName.getNamespace().equals(namespace)) {
+        if (!topicName.getNamespacePortion().equals(namespace)) {
             return false;
         }
 
