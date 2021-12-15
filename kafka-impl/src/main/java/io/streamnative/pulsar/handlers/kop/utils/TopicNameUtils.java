@@ -72,14 +72,6 @@ public class TopicNameUtils {
         }
     }
 
-    // get local name without partition part
-    public static String getKafkaTopicNameFromPulsarTopicName(TopicName topicName) {
-        // remove partition part
-        String localName = topicName.getPartitionedTopicName();
-        // remove persistent://tenant/ns
-        return TopicName.get(localName).getLocalName();
-    }
-
     /**
      * Get an url encoded topic name.
      */

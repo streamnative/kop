@@ -31,7 +31,7 @@ public class OffsetConfig {
     public static final int DefaultMaxMetadataSize = 4096;
     public static final long DefaultOffsetsRetentionMs = 24 * 60 * 60 * 1000L;
     public static final long DefaultOffsetsRetentionCheckIntervalMs = 600000L;
-    public static final String DefaultOffsetsTopicName = "public/default/__consumer_offsets";
+    public static final String DefaultOffsetsTopicName = "public/__kafka/__consumer_offsets";
     public static final int DefaultOffsetsNumPartitions = KafkaServiceConfiguration.DefaultOffsetsTopicNumPartitions;
 
     @Default
