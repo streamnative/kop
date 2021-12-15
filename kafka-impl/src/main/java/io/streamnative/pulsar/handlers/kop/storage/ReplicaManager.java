@@ -42,6 +42,7 @@ import org.apache.kafka.common.utils.Time;
 public class ReplicaManager {
     private final PartitionLogManager logManager;
     private final DelayedOperationPurgatory<DelayedOperation> producePurgatory;
+    private final String metadataNamespace;
 
     public ReplicaManager(KafkaServiceConfiguration kafkaConfig,
                           Time time,
@@ -49,6 +50,7 @@ public class ReplicaManager {
                           DelayedOperationPurgatory<DelayedOperation> producePurgatory) {
         this.logManager = new PartitionLogManager(kafkaConfig, entryFormatter, time);
         this.producePurgatory = producePurgatory;
+        this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
     }
 
     public PartitionLog getPartitionLog(TopicPartition topicPartition, String namespacePrefix) {
@@ -99,7 +101,7 @@ public class ReplicaManager {
         entriesPerPartition.forEach((topicPartition, memoryRecords) -> {
             String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
             // reject appending to internal topics if it is not allowed
-            if (!internalTopicsAllowed && KopTopic.isInternalTopic(fullPartitionName)) {
+            if (!internalTopicsAllowed && KopTopic.isInternalTopic(fullPartitionName, metadataNamespace)) {
                 addPartitionResponse.accept(topicPartition, new ProduceResponse.PartitionResponse(
                         Errors.forException(new InvalidTopicException(
                                 String.format("Cannot append to internal topic %s", topicPartition.topic())))));
