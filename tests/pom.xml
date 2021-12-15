@@ -49,7 +49,7 @@
     </dependency>
     <dependency>
       <groupId>io.streamnative.pulsar.handlers</groupId>
-      <artifactId>kafka-payload-processor</artifactId>
+      <artifactId>kafka-payload-processor-original</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>

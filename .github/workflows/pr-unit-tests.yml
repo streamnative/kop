@@ -1,4 +1,4 @@
-name: kop mvn build check and kafka-impl test
+name: kop mvn build check and unit tests
 
 on:
   pull_request:
@@ -37,10 +37,8 @@ jobs:
     - name: kafka-impl test after build
       run: mvn test -ntp -B -DfailIfNoTests=false -pl kafka-impl
 
-    # The DistributedClusterTest is hard to pass in CI tests environment, we disable it first
-    # the track issue: https://github.com/streamnative/kop/issues/184
-#    - name: DistributedClusterTest
-#      run: mvn test -ntp -B '-Dtest=DistributedClusterTest' -pl tests
+    - name: kafka-payload-processor test after build
+      run: mvn test -ntp -B -DfailIfNoTests=false -pl kafka-payload-processor-shaded-tests
 
     - name: package surefire artifacts
       if: failure()
