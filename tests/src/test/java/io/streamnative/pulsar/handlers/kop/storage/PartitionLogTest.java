@@ -62,6 +62,9 @@ public class PartitionLogTest {
         Assert.assertEquals(appendInfo.numMessages(), 10);
         Assert.assertEquals(appendInfo.validBytes(), memoryRecords.validBytes());
         Assert.assertEquals(appendInfo.sourceCodec().codec(), compressionType.id);
+        Assert.assertEquals(appendInfo.targetCodec().codec(), compressionType.id);
+        Assert.assertTrue(appendInfo.firstOffset().isPresent());
+        Assert.assertEquals(appendInfo.firstOffset().get().longValue(), 0);
         Assert.assertFalse(appendInfo.isTransaction());
     }
 
@@ -73,6 +76,9 @@ public class PartitionLogTest {
         Assert.assertEquals(appendInfo.shallowCount(), 0);
         Assert.assertEquals(appendInfo.numMessages(), 0);
         Assert.assertEquals(appendInfo.validBytes(), memoryRecords.validBytes());
+        Assert.assertEquals(appendInfo.sourceCodec().codec(), CompressionType.NONE.id);
+        Assert.assertEquals(appendInfo.targetCodec().codec(), CompressionType.NONE.id);
+        Assert.assertFalse(appendInfo.firstOffset().isPresent());
         Assert.assertFalse(appendInfo.isTransaction());
     }
 
@@ -92,6 +98,10 @@ public class PartitionLogTest {
         Assert.assertEquals(appendInfo.shallowCount(), 1);
         Assert.assertEquals(appendInfo.numMessages(), 1);
         Assert.assertEquals(appendInfo.validBytes(), memoryRecords.validBytes());
+        Assert.assertEquals(appendInfo.sourceCodec().codec(), CompressionType.NONE.id);
+        Assert.assertEquals(appendInfo.targetCodec().codec(), CompressionType.NONE.id);
+        Assert.assertTrue(appendInfo.firstOffset().isPresent());
+        Assert.assertEquals(appendInfo.firstOffset().get().longValue(), 0);
         Assert.assertTrue(appendInfo.isTransaction());
     }
 
@@ -103,6 +113,10 @@ public class PartitionLogTest {
         Assert.assertEquals(appendInfo.shallowCount(), 3);
         Assert.assertEquals(appendInfo.numMessages(), 10);
         Assert.assertEquals(appendInfo.validBytes(), memoryRecords.validBytes());
+        Assert.assertEquals(appendInfo.sourceCodec().codec(), CompressionType.NONE.id);
+        Assert.assertEquals(appendInfo.targetCodec().codec(), CompressionType.NONE.id);
+        Assert.assertTrue(appendInfo.firstOffset().isPresent());
+        Assert.assertEquals(appendInfo.firstOffset().get().longValue(), 0);
         Assert.assertFalse(appendInfo.isTransaction());
     }
 

@@ -88,10 +88,8 @@ public class PartitionLog {
     @AllArgsConstructor
     public static class LogAppendInfo {
         private Optional<Long> firstOffset;
-        private long lastOffset;
         private int numMessages;
         private int shallowCount;
-        private boolean offsetsMonotonic;
         private boolean isTransaction;
         private long lastOffsetOfFirstBatch;
         private int validBytes;
@@ -320,11 +318,9 @@ public class PartitionLog {
     public LogAppendInfo analyzeAndValidateRecords(MemoryRecords records) {
         int numMessages = 0;
         int shallowMessageCount = 0;
-        long lastOffset = -1L;
         Optional<Long> firstOffset = Optional.empty();
         long lastOffsetOfFirstBatch = -1L;
         boolean readFirstMessage = false;
-        boolean monotonic = true;
         boolean isTransaction = false;
         int validBytesCount = 0;
 
@@ -342,13 +338,6 @@ public class PartitionLog {
                 lastOffsetOfFirstBatch = batch.lastOffset();
                 readFirstMessage = true;
             }
-            // check that offsets are monotonically increasing
-            if (lastOffset >= batch.lastOffset()){
-                monotonic = false;
-            }
-
-            // update the last offset seen
-            lastOffset = batch.lastOffset();
 
             int batchSize = batch.sizeInBytes();
             if (batchSize > kafkaConfig.getMaxMessageSize()) {
@@ -377,7 +366,7 @@ public class PartitionLog {
 
         KopLogValidator.CompressionCodec targetCodec =
                 KopLogValidator.getTargetCodec(sourceCodec, kafkaConfig.getKafkaCompressionType());
-        return new LogAppendInfo(firstOffset, lastOffset, numMessages, shallowMessageCount, monotonic, isTransaction,
+        return new LogAppendInfo(firstOffset, numMessages, shallowMessageCount, isTransaction,
                 lastOffsetOfFirstBatch, validBytesCount, sourceCodec, targetCodec);
     }
 
