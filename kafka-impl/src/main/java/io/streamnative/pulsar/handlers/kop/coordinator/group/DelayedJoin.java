@@ -50,7 +50,7 @@ class DelayedJoin extends DelayedOperation {
     }
 
     @Override
-    public boolean tryComplete() {
+    public boolean tryComplete(boolean notify) {
         return coordinator.tryCompleteJoin(group, () -> forceComplete());
     }
 

@@ -96,7 +96,7 @@ public abstract class DelayedOperation extends TimerTask {
      *
      * <p>This function needs to be defined in subclasses.
      */
-    public abstract boolean tryComplete();
+    public abstract boolean tryComplete(boolean notify);
 
     /**
      * Thread-safe variant of tryComplete() that attempts completion only if the lock can be acquired
@@ -110,14 +110,14 @@ public abstract class DelayedOperation extends TimerTask {
      * every invocation of `maybeTryComplete` is followed by at least one invocation of `tryComplete` until
      * the operation is actually completed.
      */
-    boolean maybeTryComplete() {
+    boolean maybeTryComplete(boolean notify) {
         boolean retry = false;
         boolean done = false;
         do {
             if (lock.tryLock()) {
                 try {
                     tryCompletePending.set(false);
-                    done = tryComplete();
+                    done = tryComplete(notify);
                 } finally {
                     lock.unlock();
                 }

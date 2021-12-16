@@ -74,7 +74,7 @@ class InitialDelayedJoin extends DelayedJoin {
     }
 
     @Override
-    public boolean tryComplete() {
+    public boolean tryComplete(boolean notify) {
         return false;
     }
 

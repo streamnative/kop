@@ -42,7 +42,7 @@ public class DelayedProduceAndFetch extends DelayedOperation {
     }
 
     @Override
-    public boolean tryComplete() {
+    public boolean tryComplete(boolean notify) {
         if (topicPartitionNum.get() <= 0) {
             forceComplete();
             return true;

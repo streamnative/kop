@@ -175,7 +175,7 @@ public class DelayedOperationPurgatory<T extends DelayedOperation> {
 
         // At this point the only thread that can attempt this operation is this current thread
         // Hence it is safe to tryComplete() without a lock
-        boolean isCompletedByMe = operation.tryComplete();
+        boolean isCompletedByMe = operation.tryComplete(false);
         if (isCompletedByMe) {
             return true;
         }
@@ -194,7 +194,7 @@ public class DelayedOperationPurgatory<T extends DelayedOperation> {
             }
         }
 
-        isCompletedByMe = operation.maybeTryComplete();
+        isCompletedByMe = operation.maybeTryComplete(false);
         if (isCompletedByMe) {
             return true;
         }
@@ -349,7 +349,7 @@ public class DelayedOperationPurgatory<T extends DelayedOperation> {
                 if (curr.isCompleted()) {
                     // another thread has completed this operation, just remove it
                     iter.remove();
-                } else if (curr.maybeTryComplete()) {
+                } else if (curr.maybeTryComplete(true)) {
                     iter.remove();
                     completed += 1;
                 }

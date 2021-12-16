@@ -42,7 +42,7 @@ class DelayedCreateTopics extends DelayedOperation {
     }
 
     @Override
-    public boolean tryComplete() {
+    public boolean tryComplete(boolean notify) {
         if (numTopics.get() <= 0) {
             forceComplete();
             return true;

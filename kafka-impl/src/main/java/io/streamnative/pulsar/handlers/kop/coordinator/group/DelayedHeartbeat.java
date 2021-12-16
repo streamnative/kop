@@ -51,7 +51,7 @@ class DelayedHeartbeat extends DelayedOperation {
     }
 
     @Override
-    public boolean tryComplete() {
+    public boolean tryComplete(boolean notify) {
         return coordinator.tryCompleteHeartbeat(group, member, heartbeatDeadline, () -> forceComplete());
     }
 

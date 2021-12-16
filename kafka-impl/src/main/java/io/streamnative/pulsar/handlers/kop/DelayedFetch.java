@@ -15,32 +15,53 @@ package io.streamnative.pulsar.handlers.kop;
 
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 public class DelayedFetch extends DelayedOperation {
     private final Runnable callback;
     private final AtomicLong bytesReadable;
     private final int minBytes;
+    private final MessageFetchContext messageFetchContext;
+    private AtomicBoolean restarted = new AtomicBoolean();
 
-    protected DelayedFetch(long delayMs, AtomicLong bytesReadable, int minBytes, Runnable callback) {
+    protected DelayedFetch(long delayMs, AtomicLong bytesReadable, int minBytes,
+                           MessageFetchContext messageFetchContext) {
         super(delayMs, Optional.empty());
-        this.callback = callback;
         this.bytesReadable = bytesReadable;
         this.minBytes = minBytes;
+        this.messageFetchContext = messageFetchContext;
+        this.callback = messageFetchContext::complete;
     }
 
     @Override
     public void onExpiration() {
+        if (restarted.get()) {
+            return;
+        }
         callback.run();
     }
 
     @Override
     public void onComplete() {
+        if (restarted.get()) {
+            return;
+        }
         callback.run();
     }
 
     @Override
-    public boolean tryComplete() {
+    public boolean tryComplete(boolean notify) {
+        if (notify) {
+            // if we are here then we were waiting for the condition
+            // someone wrote some messages to one of the topics
+            // trigger the Fetch from scratch
+            restarted.set(true);
+            messageFetchContext.onDataWrittenToSomePartition();
+            return true;
+        }
         if (bytesReadable.get() < minBytes){
             return false;
         }
