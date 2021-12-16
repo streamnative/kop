@@ -214,7 +214,8 @@ class AdminManager {
                                 future.complete(new DescribeConfigsResponse.Config(ApiError.NONE, dummyConfig));
                                 break;
                             default:
-                                return FutureUtil.failedFuture(new InvalidRequestException("Unsupported resource type: " + resource.type()));
+                                return FutureUtil.failedFuture(
+                                        new InvalidRequestException("Unsupported resource type: " + resource.type()));
                         }
                         return future;
                     } catch (Exception e) {
