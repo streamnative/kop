@@ -30,7 +30,6 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
-
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;

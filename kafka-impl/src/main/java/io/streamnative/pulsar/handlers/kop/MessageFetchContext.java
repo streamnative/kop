@@ -36,14 +36,12 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
@@ -71,7 +69,6 @@ import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.kafka.common.utils.SystemTime;
-import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.metadata.api.GetResult;
 
 /**
@@ -126,7 +123,7 @@ public final class MessageFetchContext {
         context.hasComplete = new AtomicBoolean(false);
         context.bytesRead = new AtomicLong(0);
         context.fetchPurgatory = fetchPurgatory;
-        context.startTime = SystemTime.SYSTEM.hiResClockMs();;
+        context.startTime = SystemTime.SYSTEM.hiResClockMs();
         return context;
     }
 
@@ -148,7 +145,7 @@ public final class MessageFetchContext {
         context.header = null;
         context.resultFuture = resultFuture;
         context.hasComplete = new AtomicBoolean(false);
-        context.startTime = SystemTime.SYSTEM.hiResClockMs();;
+        context.startTime = SystemTime.SYSTEM.hiResClockMs();
         return context;
     }
 

@@ -986,7 +986,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private void notifyPendingFetches(TopicPartition topicPartition) {
-       ctx.executor().execute( () -> {
+       ctx.executor().execute(() -> {
            DelayedOperationKey.TopicPartitionOperationKey key =
                    new DelayedOperationKey.TopicPartitionOperationKey(topicPartition);
            int matches = fetchPurgatory.checkAndComplete(key);
