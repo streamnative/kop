@@ -51,6 +51,7 @@ import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.common.util.FutureUtil;
 
 @Slf4j
 class AdminManager {
@@ -63,6 +64,7 @@ class AdminManager {
 
     private final PulsarAdmin admin;
     private final int defaultNumPartitions;
+
     private volatile Map<String, Set<Node>> brokersCache = Maps.newHashMap();
     private final ReentrantReadWriteLock brokersCacheLock = new ReentrantReadWriteLock();
 
@@ -212,7 +214,7 @@ class AdminManager {
                                 future.complete(new DescribeConfigsResponse.Config(ApiError.NONE, dummyConfig));
                                 break;
                             default:
-                                throw new InvalidRequestException("Unsupported resource type: " + resource.type());
+                                return FutureUtil.failedFuture(new InvalidRequestException("Unsupported resource type: " + resource.type()));
                         }
                         return future;
                     } catch (Exception e) {
@@ -222,6 +224,10 @@ class AdminManager {
                 }));
         CompletableFuture<Map<ConfigResource, DescribeConfigsResponse.Config>> resultFuture = new CompletableFuture<>();
         CompletableFuture.allOf(futureMap.values().toArray(new CompletableFuture[0])).whenComplete((ignored, e) -> {
+            if (e != null) {
+                resultFuture.completeExceptionally(e);
+                return;
+            }
             resultFuture.complete(futureMap.entrySet().stream().collect(
                     Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getNow(null))
             ));
@@ -240,14 +246,17 @@ class AdminManager {
     public void deleteTopic(String topicToDelete,
                             Consumer<String> successConsumer,
                             Consumer<String> errorConsumer) {
-        try {
-            admin.topics().deletePartitionedTopic(topicToDelete);
-            successConsumer.accept(topicToDelete);
-            log.info("delete topic {} successfully.", topicToDelete);
-        } catch (PulsarAdminException e) {
-            log.error("delete topic {} failed, exception: ", topicToDelete, e);
-            errorConsumer.accept(topicToDelete);
-        }
+        admin.topics()
+                .deletePartitionedTopicAsync(topicToDelete)
+                .thenRun(() -> {
+                    log.info("delete topic {} successfully.", topicToDelete);
+                    successConsumer.accept(topicToDelete);
+                })
+                .exceptionally((e -> {
+                    log.error("delete topic {} failed, exception: ", topicToDelete, e);
+                    errorConsumer.accept(topicToDelete);
+                    return null;
+                }));
     }
 
     public void truncateTopic(String topicToDelete,
@@ -277,8 +286,6 @@ class AdminManager {
         }
 
     }
-
-
 
     CompletableFuture<Map<String, ApiError>> createPartitionsAsync(Map<String, NewPartitions> createInfo,
                                                                    int timeoutMs,
@@ -434,4 +441,5 @@ class AdminManager {
             brokersCacheLock.writeLock().unlock();
         }
     }
+
 }
