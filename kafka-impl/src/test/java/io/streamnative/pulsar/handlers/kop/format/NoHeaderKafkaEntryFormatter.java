@@ -26,7 +26,7 @@ public class NoHeaderKafkaEntryFormatter implements EntryFormatter {
     @Override
     public EncodeResult encode(final EncodeRequest encodeRequest) {
         final MemoryRecords records = encodeRequest.getRecords();
-        final int numMessages = EntryFormatter.parseNumMessages(records);
+        final int numMessages = encodeRequest.getAppendInfo().numMessages();
         // The difference from KafkaEntryFormatter is here we don't add the header
         return EncodeResult.get(records, Unpooled.wrappedBuffer(records.buffer()), numMessages, 0);
     }
