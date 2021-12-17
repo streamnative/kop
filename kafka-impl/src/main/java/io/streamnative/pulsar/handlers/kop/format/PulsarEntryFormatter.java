@@ -46,7 +46,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
     @Override
     public EncodeResult encode(final EncodeRequest encodeRequest) {
         final MemoryRecords records = encodeRequest.getRecords();
-        final int numMessages = EntryFormatter.parseNumMessages(records);
+        final int numMessages = encodeRequest.getAppendInfo().numMessages();
         long currentBatchSizeBytes = 0;
         int numMessagesInBatch = 0;
 

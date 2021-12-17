@@ -13,10 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.format.ValidationAndOffsetAssignResult;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.Locale;
 import org.apache.kafka.common.errors.InvalidTimestampException;
 import org.apache.kafka.common.errors.UnsupportedForMessageFormatException;
 import org.apache.kafka.common.record.AbstractRecords;
@@ -481,6 +483,33 @@ public class KopLogValidator {
 
         public int codec() {
             return codec;
+        }
+    }
+
+    @VisibleForTesting
+    public static KopLogValidator.CompressionCodec getSourceCodec(MemoryRecords records) {
+        KopLogValidator.CompressionCodec sourceCodec = new KopLogValidator.CompressionCodec(
+                CompressionType.NONE.name, CompressionType.NONE.id);
+        for (RecordBatch batch : records.batches()) {
+            CompressionType compressionType = CompressionType.forId(batch.compressionType().id);
+            KopLogValidator.CompressionCodec messageCodec = new KopLogValidator.CompressionCodec(
+                    compressionType.name, compressionType.id);
+            if (messageCodec.codec() != CompressionType.NONE.id) {
+                sourceCodec = messageCodec;
+            }
+        }
+        return sourceCodec;
+    }
+
+    @VisibleForTesting
+    public static KopLogValidator.CompressionCodec getTargetCodec(KopLogValidator.CompressionCodec sourceCodec,
+                                                                  String brokerCompressionType) {
+        String lowerCaseBrokerCompressionType = brokerCompressionType.toLowerCase(Locale.ROOT);
+        if (lowerCaseBrokerCompressionType.equals(CompressionType.NONE.name)) {
+            return sourceCodec;
+        } else {
+            CompressionType compressionType = CompressionType.forName(lowerCaseBrokerCompressionType);
+            return new KopLogValidator.CompressionCodec(compressionType.name, compressionType.id);
         }
     }
 
