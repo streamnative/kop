@@ -91,7 +91,6 @@ public class PartitionLog {
         private int numMessages;
         private int shallowCount;
         private boolean isTransaction;
-        private long lastOffsetOfFirstBatch;
         private int validBytes;
         private KopLogValidator.CompressionCodec sourceCodec;
         private KopLogValidator.CompressionCodec targetCodec;
@@ -319,7 +318,6 @@ public class PartitionLog {
         int numMessages = 0;
         int shallowMessageCount = 0;
         Optional<Long> firstOffset = Optional.empty();
-        long lastOffsetOfFirstBatch = -1L;
         boolean readFirstMessage = false;
         boolean isTransaction = false;
         int validBytesCount = 0;
@@ -335,7 +333,6 @@ public class PartitionLog {
                 if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2) {
                     firstOffset = Optional.of(batch.baseOffset());
                 }
-                lastOffsetOfFirstBatch = batch.lastOffset();
                 readFirstMessage = true;
             }
 
@@ -367,7 +364,7 @@ public class PartitionLog {
         KopLogValidator.CompressionCodec targetCodec =
                 KopLogValidator.getTargetCodec(sourceCodec, kafkaConfig.getKafkaCompressionType());
         return new LogAppendInfo(firstOffset, numMessages, shallowMessageCount, isTransaction,
-                lastOffsetOfFirstBatch, validBytesCount, sourceCodec, targetCodec);
+                validBytesCount, sourceCodec, targetCodec);
     }
 
     private MemoryRecords trimInvalidBytes(MemoryRecords records, LogAppendInfo info) {
