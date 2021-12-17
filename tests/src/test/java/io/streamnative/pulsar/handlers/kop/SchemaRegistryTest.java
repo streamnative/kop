@@ -38,12 +38,14 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Factory;
+import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 /**
  * Test for KoP with Confluent Schema Registry.
  */
 @Slf4j
+@Ignore
 public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
 
     private String bootstrapServers;
