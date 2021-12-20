@@ -997,7 +997,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                }
            }
        });
-    };
+    }
 
     private void validateRecords(short version, MemoryRecords records) {
         if (version >= 3) {

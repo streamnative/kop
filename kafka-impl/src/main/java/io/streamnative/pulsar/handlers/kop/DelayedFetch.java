@@ -26,6 +26,7 @@ public class DelayedFetch extends DelayedOperation {
     private final int minBytes;
     private final MessageFetchContext messageFetchContext;
     private AtomicBoolean restarted = new AtomicBoolean();
+    private final AtomicBoolean someMessageProduced = new AtomicBoolean();
 
     protected DelayedFetch(long delayMs, AtomicLong bytesReadable, int minBytes,
                            MessageFetchContext messageFetchContext) {
@@ -53,8 +54,8 @@ public class DelayedFetch extends DelayedOperation {
     }
 
     @Override
-    public boolean tryComplete(boolean notify) {
-        if (notify) {
+    public boolean tryComplete() {
+        if (someMessageProduced.get()) {
             // if we are here then we were waiting for the condition
             // someone wrote some messages to one of the topics
             // trigger the Fetch from scratch
@@ -66,6 +67,15 @@ public class DelayedFetch extends DelayedOperation {
             return false;
         }
         callback.run();
+        return true;
+    }
+
+    @Override
+    public boolean wakeup(Object topicPartition) {
+        // In the future we could notify the MessageFetchContext that the
+        // new data is only on this partition and not
+        // on other partitions
+        someMessageProduced.set(true);
         return true;
     }
 }

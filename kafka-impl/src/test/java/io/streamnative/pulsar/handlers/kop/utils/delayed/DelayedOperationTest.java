@@ -92,7 +92,7 @@ public class DelayedOperationTest {
         }
 
         @Override
-        public boolean tryComplete(boolean notify) {
+        public boolean tryComplete() {
             if (completable) {
                 return forceComplete();
             } else {
@@ -120,7 +120,7 @@ public class DelayedOperationTest {
 
         @SneakyThrows
         @Override
-        public boolean tryComplete(boolean notify) {
+        public boolean tryComplete() {
             boolean shouldComplete = completable;
             Thread.sleep(ThreadLocalRandom.current().nextInt(maxDelayMs));
             if (shouldComplete) {
@@ -225,13 +225,13 @@ public class DelayedOperationTest {
 
         // complete the operations, it should immediately be purged from the delayed operation
         r2.completable = true;
-        r2.tryComplete(false);
+        r2.tryComplete();
         assertEquals(
             "Purgatory should have 2 total delayed operations instead of " + purgatory.delayed(),
             2, purgatory.delayed());
 
         r3.completable = true;
-        r3.tryComplete(false);
+        r3.tryComplete();
         assertEquals(
             "Purgatory should have 1 total delayed operations instead of " + purgatory.delayed(),
             1, purgatory.delayed());
@@ -285,7 +285,7 @@ public class DelayedOperationTest {
         MockDelayedOperation op = new MockDelayedOperation(100000L) {
             @SneakyThrows
             @Override
-            public boolean tryComplete(boolean notify) {
+            public boolean tryComplete() {
                 boolean shouldComplete = completionAttemptsRemaining.decrementAndGet() <= 0;
                 tryCompleteSemaphore.acquire();
                 try {
