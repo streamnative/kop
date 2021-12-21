@@ -48,7 +48,7 @@ public class EncodePerformanceTest {
             "test",
             "test",
             null,
-            new ProducerStateManager("test"));
+            null);
 
     public static void main(String[] args) {
         pulsarServiceConfiguration.setEntryFormat("pulsar");

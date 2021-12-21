@@ -73,7 +73,7 @@ public class EntryFormatterTest {
             "test",
             "test",
             null,
-            new ProducerStateManager("test"));
+            null);
 
     private void init() {
         pulsarServiceConfiguration.setEntryFormat("pulsar");

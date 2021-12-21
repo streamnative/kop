@@ -46,7 +46,7 @@ public class PartitionLogTest {
             "test",
             "test",
             null,
-            new ProducerStateManager("test"));
+            null);
 
     @DataProvider(name = "compressionTypes")
     Object[] allCompressionTypes() {
