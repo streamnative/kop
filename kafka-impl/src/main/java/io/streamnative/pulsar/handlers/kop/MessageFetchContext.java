@@ -235,7 +235,6 @@ public final class MessageFetchContext {
         decodeResults.clear();
         bytesRead.set(0);
         hasComplete.set(false);
-        log.info("onDataWrittenToSomePartition current resposnses {}", responseData);
         responseData.clear();
         handleFetch();
     }
