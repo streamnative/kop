@@ -25,7 +25,7 @@ public class DelayedFetch extends DelayedOperation {
     private final AtomicLong bytesReadable;
     private final int minBytes;
     private final MessageFetchContext messageFetchContext;
-    private AtomicBoolean restarted = new AtomicBoolean();
+    private final AtomicBoolean restarted = new AtomicBoolean();
     private final AtomicBoolean someMessageProduced = new AtomicBoolean();
 
     protected DelayedFetch(long delayMs, AtomicLong bytesReadable, int minBytes,
