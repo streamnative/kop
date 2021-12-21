@@ -51,7 +51,6 @@ import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.common.util.FutureUtil;
 
 @Slf4j
 class AdminManager {
@@ -214,8 +213,11 @@ class AdminManager {
                                 future.complete(new DescribeConfigsResponse.Config(ApiError.NONE, dummyConfig));
                                 break;
                             default:
-                                return FutureUtil.failedFuture(
-                                        new InvalidRequestException("Unsupported resource type: " + resource.type()));
+                                return CompletableFuture.completedFuture(new DescribeConfigsResponse.Config(
+                                        ApiError.fromThrowable(
+                                            new InvalidRequestException("Unsupported resource type: "
+                                                    + resource.type())),
+                                            Collections.emptyList()));
                         }
                         return future;
                     } catch (Exception e) {
