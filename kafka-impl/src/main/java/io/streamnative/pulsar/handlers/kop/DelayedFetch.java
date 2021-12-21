@@ -71,7 +71,7 @@ public class DelayedFetch extends DelayedOperation {
     }
 
     @Override
-    public boolean wakeup(Object topicPartition) {
+    public boolean wakeup() {
         // In the future we could notify the MessageFetchContext that the
         // new data is only on this partition and not
         // on other partitions

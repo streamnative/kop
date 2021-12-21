@@ -349,7 +349,7 @@ public class DelayedOperationPurgatory<T extends DelayedOperation> {
                 if (curr.isCompleted()) {
                     // another thread has completed this operation, just remove it
                     iter.remove();
-                } else if (curr.wakeup(key) && curr.maybeTryComplete()) {
+                } else if (curr.wakeup() && curr.maybeTryComplete()) {
                     iter.remove();
                     completed += 1;
                 }

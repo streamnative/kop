@@ -101,7 +101,7 @@ public abstract class DelayedOperation extends TimerTask {
     /**
      * Try to wake up the operation.
      */
-    public boolean wakeup(Object eventKey) {
+    public boolean wakeup() {
         return true;
     }
 
