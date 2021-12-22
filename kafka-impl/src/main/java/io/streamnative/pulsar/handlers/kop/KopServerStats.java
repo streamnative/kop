@@ -75,6 +75,7 @@ public interface KopServerStats {
     String PREPARE_METADATA = "PREPARE_METADATA";
     String MESSAGE_READ = "MESSAGE_READ";
     String FETCH_DECODE = "FETCH_DECODE";
+    String WAITING_FETCHES_TRIGGERED = "WAITING_FETCHES_TRIGGERED";
 
     /**
      * Consumer stats.

@@ -68,6 +68,7 @@ import org.apache.kafka.common.requests.FetchResponse.PartitionData;
 import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
+import org.apache.kafka.common.utils.SystemTime;
 import org.apache.pulsar.metadata.api.GetResult;
 
 /**
@@ -83,6 +84,7 @@ public final class MessageFetchContext {
     };
 
     private final Handle<MessageFetchContext> recyclerHandle;
+    private long startTime;
     private Map<TopicPartition, PartitionData<MemoryRecords>> responseData;
     private ConcurrentLinkedQueue<DecodeResult> decodeResults;
     private KafkaRequestHandler requestHandler;
@@ -95,7 +97,7 @@ public final class MessageFetchContext {
     private RequestHeader header;
     private volatile CompletableFuture<AbstractResponse> resultFuture;
     private AtomicBoolean hasComplete;
-    private AtomicLong bytesReadable;
+    private AtomicLong bytesRead;
     private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
     private String namespacePrefix;
 
@@ -119,8 +121,9 @@ public final class MessageFetchContext {
         context.header = kafkaHeaderAndRequest.getHeader();
         context.resultFuture = resultFuture;
         context.hasComplete = new AtomicBoolean(false);
-        context.bytesReadable = new AtomicLong(0);
+        context.bytesRead = new AtomicLong(0);
         context.fetchPurgatory = fetchPurgatory;
+        context.startTime = SystemTime.SYSTEM.hiResClockMs();
         return context;
     }
 
@@ -142,6 +145,7 @@ public final class MessageFetchContext {
         context.header = null;
         context.resultFuture = resultFuture;
         context.hasComplete = new AtomicBoolean(false);
+        context.startTime = SystemTime.SYSTEM.hiResClockMs();
         return context;
     }
 
@@ -163,7 +167,7 @@ public final class MessageFetchContext {
         header = null;
         resultFuture = null;
         hasComplete = null;
-        bytesReadable = null;
+        bytesRead = null;
         fetchPurgatory = null;
         namespacePrefix = null;
         recyclerHandle.recycle(this);
@@ -195,14 +199,46 @@ public final class MessageFetchContext {
     private void tryComplete() {
         if (resultFuture != null && responseData.size() >= fetchRequest.fetchData().size()
                 && hasComplete.compareAndSet(false, true)) {
-            DelayedFetch delayedFetch = new DelayedFetch(fetchRequest.maxWait(), bytesReadable,
-                    fetchRequest.minBytes(), this::complete);
-            List<Object> delayedFetchKeys =
-                    fetchRequest.fetchData().keySet().stream()
-                            .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
-            fetchPurgatory.tryCompleteElseWatch(delayedFetch, delayedFetchKeys);
+            boolean errorsOccurred = false;
+            if (responseData
+                    .values()
+                    .stream()
+                    .anyMatch(p->p.error != Errors.NONE)) {
+                // if there is an error no need to wait, the fetch must fail
+                // as soon as possible
+                errorsOccurred = true;
+            }
+            long now = SystemTime.SYSTEM.hiResClockMs();
+            long currentWait = now - this.startTime;
+            long remainingMaxWait = fetchRequest.maxWait() - currentWait;
+            long maxWait = Math.min(remainingMaxWait, fetchRequest.maxWait());
+            if (bytesRead.get() < fetchRequest.minBytes() && !errorsOccurred && maxWait > 0) {
+                // we haven't read enough data, need to wait
+                DelayedFetch delayedFetch = new DelayedFetch(maxWait, bytesRead,
+                        fetchRequest.minBytes(), this);
+                List<Object> delayedFetchKeys =
+                        fetchRequest.fetchData().keySet().stream()
+                                .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
+                fetchPurgatory.tryCompleteElseWatch(delayedFetch, delayedFetchKeys);
+            } else {
+                this.complete();
+            }
         }
     }
+
+    /**
+     * Restart this Fetch, we were waiting for some data (minBytes)
+     * and someone wrote something on any of the watched partitions.
+     */
+    public void onDataWrittenToSomePartition() {
+        decodeResults.forEach(DecodeResult::recycle);
+        decodeResults.clear();
+        bytesRead.set(0);
+        hasComplete.set(false);
+        responseData.clear();
+        handleFetch();
+    }
+
 
     public void complete() {
         if (resultFuture == null) {
@@ -329,6 +365,9 @@ public final class MessageFetchContext {
         // the future that is returned by getTopicConsumerManager is always completed normally
         topicManager.getTopicConsumerManager(fullTopicName).thenAccept(tcm -> {
             if (tcm == null) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Fetch for {}: failed, topic not owned .", topicPartition);
+                }
                 registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
                 // remove null future cache
                 KafkaTopicConsumerManagerCache.getInstance().removeAndCloseByTopic(fullTopicName);
@@ -491,7 +530,7 @@ public final class MessageFetchContext {
                     highWatermark, // TODO: should it be changed to the logStartOffset?
                     abortedTransactions,
                     kafkaRecords));
-            bytesReadable.getAndAdd(kafkaRecords.sizeInBytes());
+            bytesRead.getAndAdd(kafkaRecords.sizeInBytes());
             tryComplete();
         });
     }

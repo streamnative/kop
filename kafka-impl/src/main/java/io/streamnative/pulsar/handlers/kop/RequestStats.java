@@ -28,6 +28,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_QUEUE_S
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_TIMES;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.WAITING_FETCHES_TRIGGERED;
 
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -112,6 +113,12 @@ public class RequestStats {
     )
     private final OpStatsLogger fetchDecodeStats;
 
+    @StatsDoc(
+            name = WAITING_FETCHES_TRIGGERED,
+            help = "number of pending fetches that woke up due to some data produced"
+    )
+    private final Counter waitingFetchesTriggered;
+
     public RequestStats(StatsLogger statsLogger) {
         this.statsLogger = statsLogger;
 
@@ -127,6 +134,7 @@ public class RequestStats {
         this.prepareMetadataStats = statsLogger.getOpStatsLogger(PREPARE_METADATA);
         this.messageReadStats = statsLogger.getOpStatsLogger(MESSAGE_READ);
         this.fetchDecodeStats  = statsLogger.getOpStatsLogger(FETCH_DECODE);
+        this.waitingFetchesTriggered = statsLogger.getCounter(WAITING_FETCHES_TRIGGERED);
 
         statsLogger.registerGauge(REQUEST_QUEUE_SIZE, new Gauge<Number>() {
             @Override
