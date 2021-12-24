@@ -580,36 +580,47 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final Map<String, TopicName> nonPartitionedTopicMap = Maps.newConcurrentMap();
 
         final String metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
+        pulsarTopicsFuture = new CompletableFuture<>();
 
         if (topics == null || topics.isEmpty()) {
             // clean all cache when get all metadata for librdkafka(<1.0.0).
             KopBrokerLookupManager.clear();
             // get all topics, filter by permissions.
-            pulsarTopicsFuture = getAllTopicsAsync().thenApply((allTopicMap) -> {
-                final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
-                allTopicMap.forEach((topic, list) -> {
-                   list.forEach((topicName ->
-                           authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, topicName.toString()))
-                           .whenComplete((authorized, ex) -> {
-                               if (ex != null || !authorized) {
-                                   allTopicMetadata.add(new TopicMetadata(
-                                           Errors.TOPIC_AUTHORIZATION_FAILED,
-                                           topic,
-                                           KopTopic.isInternalTopic(topicName.toString(), metadataNamespace),
-                                           Collections.emptyList()));
-                                   return;
-                               }
-                               topicMap.computeIfAbsent(
-                                       topic,
-                                       ignored -> Collections.synchronizedList(new ArrayList<>())
-                               ).add(topicName);
-                           })));
-                });
+            final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
+            getAllTopicsAsync().thenAccept((allTopicMap) -> {
+                if (allTopicMap.isEmpty()) {
+                    pulsarTopicsFuture.complete(allTopicMap);
+                    return;
+                }
+                AtomicInteger allTopicCount = new AtomicInteger(allTopicMap.size());
+                final Runnable completeOne = () -> {
+                    if (allTopicCount.decrementAndGet() == 0) {
+                        pulsarTopicsFuture.complete(topicMap);
+                    }
+                };
 
-                return topicMap;
+                allTopicMap.forEach((topic, list) -> {
+                    list.forEach((topicName ->
+                            authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, topicName.toString()))
+                                    .whenComplete((authorized, ex) -> {
+                                        if (ex != null || !authorized) {
+                                            allTopicMetadata.add(new TopicMetadata(
+                                                    Errors.TOPIC_AUTHORIZATION_FAILED,
+                                                    topic,
+                                                    KopTopic.isInternalTopic(topicName.toString(), metadataNamespace),
+                                                    Collections.emptyList()));
+                                            completeOne.run();
+                                            return;
+                                        }
+                                        topicMap.computeIfAbsent(
+                                                topic,
+                                                ignored -> Collections.synchronizedList(new ArrayList<>())
+                                        ).add(topicName);
+                                        completeOne.run();
+                                    })));
+                });
             });
         } else {
-            pulsarTopicsFuture = new CompletableFuture<>();
             // get only the provided topics
             final Map<String, List<TopicName>> pulsarTopics = Maps.newConcurrentMap();
 
@@ -1322,6 +1333,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
         Map<TopicPartition, CompletableFuture<Pair<Errors, Long>>> responseData =
                 Maps.newConcurrentMap();
+        if (request.partitionTimestamps().size() == 0) {
+            resultFuture.complete(new ListOffsetResponse(Collections.emptyMap()));
+            return;
+        }
+        AtomicInteger partitions = new AtomicInteger(request.partitionTimestamps().size());
+        Runnable completeOne = () -> {
+            if (partitions.decrementAndGet() == 0) {
+                waitResponseDataComplete(resultFuture, responseData, false);
+            }
+        };
         String namespacePrefix = currentNamespacePrefix();
         KafkaRequestUtils.forEachListOffsetRequest(request, (topic, times) -> {
             String fullPartitionName = KopTopic.toString(topic, namespacePrefix);
@@ -1333,20 +1354,23 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     responseData.put(topic, CompletableFuture.completedFuture(
                                             Pair.of(Errors.TOPIC_AUTHORIZATION_FAILED, null)
                                     ));
+                                    completeOne.run();
                                     return;
                                 }
                                 if (!isAuthorized) {
                                     responseData.put(topic, CompletableFuture.completedFuture(
                                             Pair.of(Errors.TOPIC_AUTHORIZATION_FAILED, null)
                                     ));
+                                    completeOne.run();
                                     return;
                                 }
                                 responseData.put(topic, fetchOffset(fullPartitionName, times));
+                                completeOne.run();
                             }
-                        );
+                    );
 
         });
-        waitResponseDataComplete(resultFuture, responseData, false);
+
     }
 
     // Some info can be found here
@@ -1357,7 +1381,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         Map<TopicPartition, CompletableFuture<Pair<Errors, Long>>> responseData =
                 Maps.newConcurrentMap();
-
+        if (request.offsetData().size() == 0) {
+            resultFuture.complete(new ListOffsetResponse(Collections.emptyMap()));
+            return;
+        }
+        AtomicInteger partitions = new AtomicInteger(request.offsetData().size());
+        Runnable completeOne = () -> {
+            if (partitions.decrementAndGet() == 0) {
+                waitResponseDataComplete(resultFuture, responseData, true);
+            }
+        };
         // in v0, the iterator is offsetData,
         // in v1, the iterator is partitionTimestamps,
         if (log.isDebugEnabled()) {
@@ -1374,11 +1407,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     fullPartitionName, ex.getMessage());
                             responseData.put(topic, CompletableFuture.completedFuture(
                                     Pair.of(Errors.TOPIC_AUTHORIZATION_FAILED, null)));
+                            completeOne.run();
                             return;
                         }
                         if (!isAuthorized) {
                             responseData.put(topic, CompletableFuture.completedFuture(
                                     Pair.of(Errors.TOPIC_AUTHORIZATION_FAILED, null)));
+                            completeOne.run();
                             return;
                         }
 
@@ -1393,11 +1428,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                         partitionData = fetchOffset(fullPartitionName, times);
                         responseData.put(topic, partitionData);
+                        completeOne.run();
                     });
 
         });
-
-        waitResponseDataComplete(resultFuture, responseData, true);
     }
 
     // get offset from underline managedLedger
