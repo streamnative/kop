@@ -15,7 +15,10 @@ package io.streamnative.pulsar.handlers.kop.systopic;
 
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
+
+import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.pulsar.broker.systopic.SystemTopicClientBase;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.common.naming.TopicName;
@@ -30,18 +33,24 @@ public class SystemTopicProducerStateClient extends SystemTopicClientBase<ByteBu
 
     private final TopicName sysTopicName;
 
-    public SystemTopicProducerStateClient(io.streamnative.pulsar.handlers.kop.SystemTopicClient systemTopicClient,
+    private final int kafkaProducerStateTopicNumPartitions;
+
+    public SystemTopicProducerStateClient(SystemTopicClient systemTopicClient,
                                           TopicName userTopicName,
-                                          TopicName sysTopicName) {
+                                          TopicName sysTopicName, int kafkaProducerStateTopicNumPartitions) {
         super(null, userTopicName);
         this.sysTopicName = sysTopicName;
         this.systemTopicClient = systemTopicClient;
+        this.kafkaProducerStateTopicNumPartitions = kafkaProducerStateTopicNumPartitions;
     }
 
     @Override
     protected CompletableFuture<Writer<ByteBuffer>> newWriterAsyncInternal() {
+        String partitionTopic = sysTopicName.getPartition(
+                MathUtils.signSafeMod(this.topicName.hashCode(), kafkaProducerStateTopicNumPartitions)).toString();
         return systemTopicClient.newProducerBuilder()
-                .topic(sysTopicName.toString()).createAsync()
+                .topic(partitionTopic)
+                .createAsync()
                 .thenCompose(producer -> {
                     if (log.isDebugEnabled()) {
                         log.debug("New system topic writer for topic {}", topicName);
@@ -53,8 +62,10 @@ public class SystemTopicProducerStateClient extends SystemTopicClientBase<ByteBu
 
     @Override
     protected CompletableFuture<Reader<ByteBuffer>> newReaderAsyncInternal() {
+        String partitionTopic = sysTopicName.getPartition(
+                MathUtils.signSafeMod(this.topicName.hashCode(), kafkaProducerStateTopicNumPartitions)).toString();
         return systemTopicClient.newReaderBuilder()
-                .topic(sysTopicName.toString())
+                .topic(partitionTopic)
                 .readCompacted(true)
                 .startMessageId(MessageId.earliest)
                 .createAsync()

@@ -62,6 +62,9 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     public static final long DefaultRemoveExpiredTransactionalIdsIntervalMs = TimeUnit.HOURS.toMillis(1);
     public static final long DefaultTransactionalIdExpirationMs = TimeUnit.DAYS.toMillis(7);
 
+    // producer state configuration
+    public static final int DefaultProducerStateTopicNumPartitions = 50;
+
     @Category
     private static final String CATEGORY_KOP = "Kafka on Pulsar";
 
@@ -420,6 +423,13 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             doc = "Max producer id expiration millisecond."
     )
     private int maxProducerIdExpirationMs = 60 * 60 * 1000;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Number of partitions for the producer state topic"
+    )
+    private int kafkaProducerStateTopicNumPartitions = DefaultProducerStateTopicNumPartitions;
+
 
     @FieldContext(
             category = CATEGORY_KOP,

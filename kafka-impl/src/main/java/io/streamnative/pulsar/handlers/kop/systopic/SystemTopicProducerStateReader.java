@@ -17,6 +17,8 @@ import static io.streamnative.pulsar.handlers.kop.systopic.SystemTopicProducerSt
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -25,40 +27,46 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.systopic.SystemTopicClient;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.api.Reader;
 
 @Slf4j
 @AllArgsConstructor
 public class SystemTopicProducerStateReader implements SystemTopicClient.Reader<ByteBuffer> {
 
     private final SystemTopicClient<ByteBuffer> systemTopicClient;
-    private final org.apache.pulsar.client.api.Reader<ByteBuffer> reader;
+    private final Reader<ByteBuffer> reader;
 
     private void readLoop(CompletableFuture<Message<ByteBuffer>> result,
-                          Queue<Message<ByteBuffer>> internalMsgQueue) {
+                          Deque<Message<ByteBuffer>> internalMsgQueue) {
         hasMoreEventsAsync()
-                .thenComposeAsync(hasMore -> {
+                .thenAccept(hasMore -> {
+                    log.info("HasMore: {}", hasMore);
                     if (hasMore) {
-                        return reader.readNextAsync();
+                        reader.readNextAsync().thenAccept(message -> {
+                            log.info("HasMore2: {}", hasMore);
+                            if (message == null) {
+                                if (internalMsgQueue.size() > 0) {
+                                    result.complete(internalMsgQueue.pollLast());
+                                } else {
+                                    result.complete(null);
+                                }
+                                return;
+                            }
+                            if (belongToThisTopic(message)) {
+                                internalMsgQueue.add(message);
+                                if (internalMsgQueue.size() > 1) {
+                                    internalMsgQueue.pollFirst();
+                                }
+                            }
+                            readLoop(result, internalMsgQueue);
+                        });
                     } else {
-                        return CompletableFuture.completedFuture(null);
-                    }
-                }).thenComposeAsync(message -> {
-                    if (message == null) {
                         if (internalMsgQueue.size() > 0) {
-                            result.complete(internalMsgQueue.poll());
+                            result.complete(internalMsgQueue.pollLast());
                         } else {
                             result.complete(null);
                         }
-                        return null;
                     }
-                    if (belongToThisTopic(message)) {
-                        internalMsgQueue.add(message);
-                        if (internalMsgQueue.size() > 1) {
-                            internalMsgQueue.poll();
-                        }
-                    }
-                    readLoop(result, internalMsgQueue);
-                    return null;
                 }).exceptionally(throwable -> {
                     log.error("Failed to read message form system topic {}.",
                             systemTopicClient.getTopicName(), throwable);
@@ -68,6 +76,7 @@ public class SystemTopicProducerStateReader implements SystemTopicClient.Reader<
     }
 
     private boolean belongToThisTopic(Message<ByteBuffer> message) {
+        log.info("WK {} {}", message, message.getProperties());
         return message.getProperty(TOPIC_NAME_PROP).equals(systemTopicClient.getTopicName().toString());
     }
 
@@ -79,7 +88,7 @@ public class SystemTopicProducerStateReader implements SystemTopicClient.Reader<
     @Override
     public CompletableFuture<Message<ByteBuffer>> readNextAsync() {
         CompletableFuture<Message<ByteBuffer>> lastMsg = new CompletableFuture<>();
-        readLoop(lastMsg, new LinkedBlockingQueue<>());
+        readLoop(lastMsg, new ArrayDeque<>());
         return lastMsg;
     }
 

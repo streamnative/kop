@@ -26,7 +26,6 @@ import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicClientFactory;
 import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicProducerStateClient;
-import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.util.Collections;
 import java.util.Optional;
@@ -80,7 +79,8 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
     @BeforeMethod
     protected void setUp() {
-        systemTopicClientFactory = new SystemTopicClientFactory(systemTopicClient);
+        systemTopicClientFactory =
+                new SystemTopicClientFactory(systemTopicClient, conf.getKafkaProducerStateTopicNumPartitions());
         producerStateClient =
                 systemTopicClientFactory.getProducerStateClient(TopicName.get("test").toString());
         EntryFormatter formatter = EntryFormatterFactory.create(conf);
@@ -612,6 +612,10 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
             latch.countDown();
         });
         latch.await();
+    }
+
+    public void testRecoverFromSnapshotUnfinishedTransaction() {
+
     }
 
     private Optional<CompletedTxn> appendEndTxnMarker(ProducerStateManager mapping,

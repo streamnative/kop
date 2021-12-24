@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.storage;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
+import io.streamnative.pulsar.handlers.kop.KafkaPositionImpl;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.MessagePublishContext;
@@ -82,6 +83,17 @@ public class PartitionLog {
 
     private static final KopLogValidator.CompressionCodec DEFAULT_COMPRESSION =
             new KopLogValidator.CompressionCodec(CompressionType.NONE.name, CompressionType.NONE.id);
+
+    // TODO: give some args
+    public void init() {
+        // Any segment loading or recovery code must not use producerStateManager,
+        // so that we can build the full state here from scratch.
+        if (!producerStateManager.isEmpty()) {
+            throw new IllegalStateException("Producer state must be empty during log initialization");
+        }
+
+        this.rebuildProducerState();
+    }
 
     @Data
     @Accessors(fluent = true)
@@ -276,16 +288,17 @@ public class PartitionLog {
         encodeResult.updateProducerStats(topicPartition, requestStats, namespacePrefix);
 
         // publish
-        final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
+        final CompletableFuture<KafkaPositionImpl> offsetFuture = new CompletableFuture<>();
         final long beforePublish = time.nanoseconds();
         persistentTopic.publishMessage(byteBuf,
                 MessagePublishContext.get(offsetFuture, persistentTopic, numMessages, System.nanoTime()));
-        offsetFuture.whenComplete((offset, e) -> {
+        offsetFuture.whenComplete((kafkaPosition, e) -> {
             appendRecordsContext.getCompleteSendOperationForThrottling().accept(byteBuf.readableBytes());
             encodeResult.recycle();
             if (e == null) {
                 requestStats.getMessagePublishStats().registerSuccessfulEvent(
                         time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
+                final long offset = kafkaPosition.getOffset();
                 final long lastOffset = offset + numMessages - 1;
                 analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
                     if (log.isDebugEnabled()) {
@@ -380,5 +393,9 @@ public class PartitionLog {
             validByteBuffer.limit(validBytes);
             return MemoryRecords.readableRecords(validByteBuffer);
         }
+    }
+
+    public synchronized void rebuildProducerState() {
+
     }
 }

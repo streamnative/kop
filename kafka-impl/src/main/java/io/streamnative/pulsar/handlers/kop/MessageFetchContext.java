@@ -449,6 +449,7 @@ public final class MessageFetchContext {
         tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
         PartitionLog partitionLog =
                 requestHandler.getReplicaManager().getPartitionLog(topicPartition, namespacePrefix);
+        // TODO : might fence here
         final long lso = (readCommitted
                 ? partitionLog.firstUndecidedOffset().orElse(highWatermark) : highWatermark);
         List<Entry> committedEntries = entries;

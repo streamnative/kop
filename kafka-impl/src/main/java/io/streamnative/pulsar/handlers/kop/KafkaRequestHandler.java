@@ -2524,38 +2524,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
-    /**
-     * Write the txn marker to the topic partition.
-     *
-     * @param topicPartition
-     */
-    private CompletableFuture<Long> writeTxnMarker(TopicPartition topicPartition,
-                                TransactionResult transactionResult,
-                                long producerId,
-                                short producerEpoch) {
-        CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
-        String namespacePrefix = currentNamespacePrefix();
-        String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
-        TopicName topicName = TopicName.get(fullPartitionName);
-        topicManager.getTopic(topicName.toString())
-                .whenComplete((persistentTopicOpt, throwable) -> {
-                    if (throwable != null) {
-                        offsetFuture.completeExceptionally(throwable);
-                        return;
-                    }
-                    if (!persistentTopicOpt.isPresent()) {
-                        log.info("Topic {} is not owned by this Broker", fullPartitionName);
-                        offsetFuture.complete(null);
-                        return;
-                    }
-                    PersistentTopic persistentTopic = persistentTopicOpt.get();
-                    persistentTopic.publishMessage(generateTxnMarker(transactionResult, producerId, producerEpoch),
-                            MessagePublishContext.get(offsetFuture, persistentTopic,
-                                    1, SystemTime.SYSTEM.milliseconds()));
-                });
-        return offsetFuture;
-    }
-
     private ByteBuf generateTxnMarker(TransactionResult transactionResult, long producerId, short producerEpoch) {
         ControlRecordType controlRecordType;
         MarkerType markerType;

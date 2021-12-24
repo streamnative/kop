@@ -44,6 +44,7 @@ public class SystemTopicProducerStateWriter implements SystemTopicClient.Writer<
     @Override
     public CompletableFuture<MessageId> writeAsync(ByteBuffer buffer) {
         return producer.newMessage()
+                .property(TOPIC_NAME_PROP, systemTopicClient.getTopicName().toString())
                 .key(systemTopicClient.getTopicName().toString())
                 .value(buffer)
                 .sendAsync().whenComplete(((messageId, throwable) -> {

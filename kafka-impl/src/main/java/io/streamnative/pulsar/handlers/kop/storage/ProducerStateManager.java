@@ -256,6 +256,10 @@ public class ProducerStateManager {
         this.state = State.INIT;
     }
 
+    public boolean isEmpty() {
+        return this.producers.isEmpty();
+    }
+
     public ProducerAppendInfo prepareUpdate(Long producerId, PartitionLog.AppendOrigin origin) {
         ProducerStateEntry currentEntry = lastEntry(producerId).orElse(ProducerStateEntry.empty(producerId));
         return new ProducerAppendInfo(topicPartition, producerId, currentEntry, origin);
@@ -465,14 +469,15 @@ public class ProducerStateManager {
     private List<ProducerStateEntry> readSnapshot(ByteBuffer buffer) {
         try {
             Struct struct = pidSnapshotMapSchema.read(buffer);
-
             Short version = struct.getShort(VersionField);
+
             if (version != producerSnapshotVersion) {
                 throw new UnknownServerException("Snapshot contained an unknown file version " + version);
             }
 
             this.lastMapOffset = struct.getLong(SnapshotOffset);
             long crc = struct.getUnsignedInt(CrcField);
+            buffer.position(0);
             long computedCrc = Crc32C.compute(buffer, ProducerEntriesOffset, buffer.limit() - ProducerEntriesOffset);
             if (crc != computedCrc) {
                 throw new UnknownServerException("Snapshot is corrupt (CRC is no longer valid). Stored crc: "

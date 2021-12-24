@@ -128,6 +128,20 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public ReplicaManager getReplicaManager(String tenant) {
         return replicaManagerByTenant.computeIfAbsent(tenant, s -> {
+            final ClusterData clusterData = ClusterData.builder()
+                    .serviceUrl(brokerService.getPulsar().getWebServiceAddress())
+                    .serviceUrlTls(brokerService.getPulsar().getWebServiceAddressTls())
+                    .brokerServiceUrl(brokerService.getPulsar().getBrokerServiceUrl())
+                    .brokerServiceUrlTls(brokerService.getPulsar().getBrokerServiceUrlTls())
+                    .build();
+            try {
+                MetadataUtils.createProducerStateTopicIfMissing(
+                        tenant, brokerService.getPulsar().getAdminClient(), clusterData, kafkaConfig);
+            } catch (PulsarAdminException | PulsarServerException e) {
+                log.error("Failed to create producer state topic {}", tenant, e);
+                throw new IllegalStateException(e);
+            }
+
             EntryFormatter entryFormatter;
             try {
                 entryFormatter = EntryFormatterFactory.create(kafkaConfig);
@@ -507,7 +521,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
             getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
         }
-        systemTopicClientFactory = new SystemTopicClientFactory(getProducerStateTopicClient());
+        systemTopicClientFactory = new SystemTopicClientFactory(getProducerStateTopicClient(),
+                kafkaConfig.getKafkaProducerStateTopicNumPartitions());
 
         Configuration conf = new PropertiesConfiguration();
         conf.addProperty("prometheusStatsLatencyRolloverSeconds",

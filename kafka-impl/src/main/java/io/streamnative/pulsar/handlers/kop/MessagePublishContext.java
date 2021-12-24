@@ -32,7 +32,7 @@ public final class MessagePublishContext implements PublishContext {
 
     public static final long DEFAULT_OFFSET = -1L;
 
-    private CompletableFuture<Long> offsetFuture;
+    private CompletableFuture<KafkaPositionImpl> offsetFuture;
     private Topic topic;
     private long startTimeNs;
     private int numberOfMessages;
@@ -71,14 +71,14 @@ public final class MessagePublishContext implements PublishContext {
                 log.error("[{}] Failed to get offset for ({}, {}): {}",
                         topic, ledgerId, entryId, peekOffsetError.getMessage());
             }
-            offsetFuture.complete(baseOffset);
+            offsetFuture.complete(KafkaPositionImpl.get(baseOffset, ledgerId, entryId));
         }
 
         recycle();
     }
 
     // recycler
-    public static MessagePublishContext get(CompletableFuture<Long> offsetFuture,
+    public static MessagePublishContext get(CompletableFuture<KafkaPositionImpl> offsetFuture,
                                             Topic topic,
                                             int numberOfMessages,
                                             long startTimeNs) {

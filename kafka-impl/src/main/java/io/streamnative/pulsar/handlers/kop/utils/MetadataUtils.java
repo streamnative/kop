@@ -18,6 +18,8 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+
+import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicClientFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.pulsar.client.admin.Clusters;
@@ -48,6 +50,11 @@ public class MetadataUtils {
                 + "/" + Topic.TRANSACTION_STATE_TOPIC_NAME;
     }
 
+    public static String constructProducerStateTopicBaseName(String tenant, KafkaServiceConfiguration conf) {
+        return tenant + "/" + conf.getKafkaMetadataNamespace()
+                + "/" + SystemTopicClientFactory.SYS_TOPIC_PRODUCER_STATE;
+    }
+
     public static String constructMetadataNamespace(String tenant, KafkaServiceConfiguration conf) {
         return tenant + "/" + conf.getKafkaMetadataNamespace();
     }
@@ -75,6 +82,17 @@ public class MetadataUtils {
                 constructMetadataNamespace(tenant, conf));
         createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
                 conf.getKafkaTxnLogTopicNumPartitions());
+    }
+
+    public static void createProducerStateTopicIfMissing(String tenant,
+                                                  PulsarAdmin pulsarAdmin,
+                                                  ClusterData clusterData,
+                                                  KafkaServiceConfiguration conf)
+            throws PulsarAdminException {
+        KopTopic kopTopic = new KopTopic(constructProducerStateTopicBaseName(tenant, conf),
+                constructMetadataNamespace(tenant, conf));
+        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
+                conf.getKafkaProducerStateTopicNumPartitions());
     }
 
     /**
