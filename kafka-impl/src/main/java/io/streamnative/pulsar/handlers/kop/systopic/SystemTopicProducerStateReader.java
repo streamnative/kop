@@ -22,6 +22,8 @@ import java.util.Deque;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
+
+import io.streamnative.pulsar.handlers.kop.storage.snapshot.PidSnapshotMap;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.systopic.SystemTopicClient;
@@ -31,13 +33,13 @@ import org.apache.pulsar.client.api.Reader;
 
 @Slf4j
 @AllArgsConstructor
-public class SystemTopicProducerStateReader implements SystemTopicClient.Reader<ByteBuffer> {
+public class SystemTopicProducerStateReader implements SystemTopicClient.Reader<PidSnapshotMap> {
 
-    private final SystemTopicClient<ByteBuffer> systemTopicClient;
-    private final Reader<ByteBuffer> reader;
+    private final SystemTopicClient<PidSnapshotMap> systemTopicClient;
+    private final Reader<PidSnapshotMap> reader;
 
-    private void readLoop(CompletableFuture<Message<ByteBuffer>> result,
-                          Deque<Message<ByteBuffer>> internalMsgQueue) {
+    private void readLoop(CompletableFuture<Message<PidSnapshotMap>> result,
+                          Deque<Message<PidSnapshotMap>> internalMsgQueue) {
         hasMoreEventsAsync()
                 .thenAccept(hasMore -> {
                     log.info("HasMore: {}", hasMore);
@@ -75,19 +77,19 @@ public class SystemTopicProducerStateReader implements SystemTopicClient.Reader<
                 });
     }
 
-    private boolean belongToThisTopic(Message<ByteBuffer> message) {
+    private boolean belongToThisTopic(Message<PidSnapshotMap> message) {
         log.info("WK {} {}", message, message.getProperties());
         return message.getProperty(TOPIC_NAME_PROP).equals(systemTopicClient.getTopicName().toString());
     }
 
     @Override
-    public Message<ByteBuffer> readNext() throws PulsarClientException {
+    public Message<PidSnapshotMap> readNext() throws PulsarClientException {
         return reader.readNext();
     }
 
     @Override
-    public CompletableFuture<Message<ByteBuffer>> readNextAsync() {
-        CompletableFuture<Message<ByteBuffer>> lastMsg = new CompletableFuture<>();
+    public CompletableFuture<Message<PidSnapshotMap>> readNextAsync() {
+        CompletableFuture<Message<PidSnapshotMap>> lastMsg = new CompletableFuture<>();
         readLoop(lastMsg, new ArrayDeque<>());
         return lastMsg;
     }
@@ -113,7 +115,7 @@ public class SystemTopicProducerStateReader implements SystemTopicClient.Reader<
     }
 
     @Override
-    public SystemTopicClient<ByteBuffer> getSystemTopic() {
+    public SystemTopicClient<PidSnapshotMap> getSystemTopic() {
         return systemTopicClient;
     }
 }

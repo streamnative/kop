@@ -13,52 +13,37 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
+import io.streamnative.pulsar.handlers.kop.KafkaPositionImpl;
+import io.streamnative.pulsar.handlers.kop.storage.snapshot.AbortedTxnEntry;
+import io.streamnative.pulsar.handlers.kop.storage.snapshot.PidSnapshotMap;
+import io.streamnative.pulsar.handlers.kop.storage.snapshot.ProducerSnapshotEntry;
 import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicProducerStateClient;
-import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.AsyncCallbacks;
-import org.apache.bookkeeper.mledger.Entry;
-import org.apache.bookkeeper.mledger.ManagedCursor;
-import org.apache.bookkeeper.mledger.ManagedLedger;
-import org.apache.bookkeeper.mledger.ManagedLedgerException;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.UnknownServerException;
-import org.apache.kafka.common.protocol.types.ArrayOf;
-import org.apache.kafka.common.protocol.types.Field;
-import org.apache.kafka.common.protocol.types.Schema;
-import org.apache.kafka.common.protocol.types.SchemaException;
-import org.apache.kafka.common.protocol.types.Struct;
-import org.apache.kafka.common.protocol.types.Type;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.FetchResponse;
-import org.apache.kafka.common.utils.ByteUtils;
-import org.apache.kafka.common.utils.Crc32C;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.systopic.SystemTopicClient;
 import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.util.MessageIdUtils;
-import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * AbortedTxn is used cache the aborted index.
@@ -164,22 +149,36 @@ class BatchMetadata {
 }
 
 /**
+ * ProducerStateManage state.
+ */
+enum State {
+    INIT, // init
+    RECOVERING, // start recover
+    READY, // finish recover
+    RECOVER_ERROR // failed to recover
+}
+
+/**
  * Producer state manager.
  */
 @Slf4j
 public class ProducerStateManager {
 
+    private State state;
+
     private final String topicPartition;
 
-    private Long lastMapOffset = 0L;
+    @Getter
+    @VisibleForTesting
+    protected KafkaPositionImpl lastPosition;
 
     private final int maxProducerIdExpirationMs;
 
     private final Time time;
 
     // snapshot and recover
-    private final CompletableFuture<SystemTopicClient.Writer<ByteBuffer>> snapshotWriter;
-    private final CompletableFuture<SystemTopicClient.Reader<ByteBuffer>> snapshotReader;
+    private final CompletableFuture<SystemTopicClient.Writer<PidSnapshotMap>> snapshotWriter;
+    private final CompletableFuture<SystemTopicClient.Reader<PidSnapshotMap>> snapshotReader;
 
     private final Map<Long, ProducerStateEntry> producers = Maps.newConcurrentMap();
 
@@ -187,69 +186,12 @@ public class ProducerStateManager {
     private final TreeMap<Long, TxnMetadata> ongoingTxns = Maps.newTreeMap();
     private final List<AbortedTxn> abortedIndexList = new ArrayList<>();
 
-    private State state;
-
-    /**
-     * ProducerStateManage state.
-     */
-    private enum State {
-        INIT, // init
-        RECOVERING, // start recover
-        READY, // finish recover
-        RECOVER_ERROR // failed to recover
-    }
-
-    private final EntryFormatter entryFormatter;
-
-    private final short producerSnapshotVersion = 1;
-
-    private static final String VersionField = "version";
-    private static final String CrcField = "crc";
-    private static final String ProducerEntriesField = "producer_entries";
-    private static final String SnapshotOffset = "snapshot_offset";
-
-    private static final String ProducerIdField = "producer_id";
-    private static final String LastSequenceField = "last_sequence";
-    private static final String ProducerEpochField = "epoch";
-    private static final String LastOffsetField = "last_offset";
-    private static final String OffsetDeltaField = "offset_delta";
-    private static final String TimestampField = "timestamp";
-    private static final String CoordinatorEpochField = "coordinator_epoch";
-    private static final String CurrentTxnFirstOffsetField = "current_txn_first_offset";
-
-    private static final int VersionOffset = 0;
-    private static final int CrcOffset = VersionOffset + 2;
-    private static final int ProducerEntriesOffset = CrcOffset + 4;
-
-    // snapshot and recover
-    private final Schema producerSnapshotEntrySchema = new Schema(
-            new Field(ProducerIdField, Type.INT64, "The producer ID"),
-            new Field(ProducerEpochField, Type.INT16, "Current epoch of the producer"),
-            new Field(LastSequenceField, Type.INT32, "Last written sequence of the producer"),
-            new Field(LastOffsetField, Type.INT64, "Last written offset of the producer"),
-            new Field(OffsetDeltaField, Type.INT32,
-                    "The difference of the last sequence and first sequence in the last written batch"),
-            new Field(TimestampField, Type.INT64, "Max timestamp from the last written entry"),
-            new Field(CoordinatorEpochField, Type.INT32,
-                    "The epoch of the last transaction coordinator to send an end transaction marker"),
-            new Field(CurrentTxnFirstOffsetField, Type.INT64,
-                    "The first offset of the on-going transaction (-1 if there is none)"));
-
-    private final Schema pidSnapshotMapSchema = new Schema(
-            new Field(VersionField, Type.INT16, "Version of the snapshot file"),
-            new Field(CrcField, Type.UNSIGNED_INT32, "CRC of the snapshot data"),
-            new Field(SnapshotOffset, Type.INT64, "The snapshot offset"),
-            new Field(ProducerEntriesField, new ArrayOf(producerSnapshotEntrySchema),
-                    "The entries in the producer table"));
-
     public ProducerStateManager(String topicPartition,
                                 int maxProducerIdExpirationMs,
-                                EntryFormatter entryFormatter,
                                 SystemTopicProducerStateClient systemTopicProducerStateClient,
                                 Time time) {
         this.topicPartition = topicPartition;
         this.time = time;
-        this.entryFormatter = entryFormatter;
         this.maxProducerIdExpirationMs = maxProducerIdExpirationMs;
         this.snapshotWriter = systemTopicProducerStateClient.newWriterAsync();
         this.snapshotReader = systemTopicProducerStateClient.newReaderAsync();
@@ -259,6 +201,15 @@ public class ProducerStateManager {
     public boolean isEmpty() {
         return this.producers.isEmpty();
     }
+
+    public State state() {
+        return this.state;
+    }
+
+    public void translate(State state) {
+        this.state = state;
+    }
+
 
     public ProducerAppendInfo prepareUpdate(Long producerId, PartitionLog.AppendOrigin origin) {
         ProducerStateEntry currentEntry = lastEntry(producerId).orElse(ProducerStateEntry.empty(producerId));
@@ -341,15 +292,15 @@ public class ProducerStateManager {
         }
     }
 
-    public void updateMapEndOffset(long offset) {
-        lastMapOffset = offset;
+    public void updateEndPosition(KafkaPositionImpl position) {
+        this.lastPosition = position;
     }
 
     /**
      * Returns the last offset of this map.
      */
     public Long mapEndOffset() {
-        return lastMapOffset;
+        return lastPosition.getOffset();
     }
 
     public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
@@ -392,47 +343,49 @@ public class ProducerStateManager {
     public void truncate() {
         producers.clear();
         ongoingTxns.clear();
-        lastMapOffset = 0L;
+        this.lastPosition = KafkaPositionImpl.earliest;
     }
 
-    private ByteBuffer writeSnapshot(Map<Long, ProducerStateEntry> entries, long snapshotOffset) {
-        Struct struct = new Struct(pidSnapshotMapSchema);
-        struct.set(VersionField, producerSnapshotVersion);
-        struct.set(CrcField, 0L); // we'll fill this after writing the entries
-
-        Object[] entriesArray = new Object[entries.size()];
+    private PidSnapshotMap getSnapshot(Map<Long, ProducerStateEntry> entries,
+                                         KafkaPositionImpl lastPosition) {
+        PidSnapshotMap pidSnapshotMap = new PidSnapshotMap();
+        ProducerSnapshotEntry[] producerEntries = new ProducerSnapshotEntry[entries.size()];
         AtomicInteger entryIndex = new AtomicInteger(0);
         entries.forEach((pid, entry) -> {
-            Struct producerEntryStruct = struct.instance(ProducerEntriesField);
-            producerEntryStruct
-                    .set(ProducerIdField, pid)
-                    .set(ProducerEpochField, entry.producerEpoch())
-                    .set(LastSequenceField, entry.lastSeq())
-                    .set(LastOffsetField, entry.lastDataOffset())
-                    .set(OffsetDeltaField, entry.lastOffsetDelta())
-                    .set(TimestampField, entry.lastTimestamp())
-                    .set(CoordinatorEpochField, entry.coordinatorEpoch())
-                    .set(CurrentTxnFirstOffsetField, entry.currentTxnFirstOffset().orElse(-1L));
-            entriesArray[entryIndex.getAndIncrement()] = producerEntryStruct;
+            ProducerSnapshotEntry.ProducerSnapshotEntryBuilder builder = ProducerSnapshotEntry.builder();
+            builder.producerId(pid)
+                    .producerEpoch(entry.producerEpoch())
+                    .lastSequence(entry.lastSeq())
+                    .lastOffset(entry.lastDataOffset())
+                    .offsetDelta(entry.lastOffsetDelta())
+                    .timestamp(entry.lastTimestamp())
+                    .coordinatorEpoch(entry.coordinatorEpoch())
+                    .currentTxnFirstOffset(entry.currentTxnFirstOffset().orElse(-1L));
+            producerEntries[entryIndex.getAndIncrement()] = builder.build();
         });
-        struct.set(ProducerEntriesField, entriesArray);
-        struct.set(SnapshotOffset, snapshotOffset);
-
-        ByteBuffer buffer = ByteBuffer.allocate(struct.sizeOf());
-        struct.writeTo(buffer);
-        buffer.flip();
-
-        // now fill in the CRC
-        long crc = Crc32C.compute(buffer, ProducerEntriesOffset, buffer.limit() - ProducerEntriesOffset);
-        ByteUtils.writeUnsignedInt(buffer, CrcOffset, crc);
-        return buffer;
+        List<AbortedTxnEntry> abortedTxnEntries = new ArrayList<>();
+        for (AbortedTxn abortedTxn : abortedIndexList) {
+            AbortedTxnEntry abortedTxnEntry = new AbortedTxnEntry(
+                    abortedTxn.producerId(),
+                    abortedTxn.firstOffset(),
+                    abortedTxn.lastOffset(),
+                    abortedTxn.lastStableOffset());
+            abortedTxnEntries.add(abortedTxnEntry);
+        }
+        pidSnapshotMap.setAbortedTxnEntries(abortedTxnEntries);
+        pidSnapshotMap.setProducerEntries(Arrays.asList(producerEntries));
+        pidSnapshotMap.setSnapshotOffset(lastPosition.getOffset());
+        pidSnapshotMap.setEntryId(lastPosition.getEntryId());
+        pidSnapshotMap.setLedgerId(lastPosition.getLedgerId());
+        return pidSnapshotMap;
     }
 
     public CompletableFuture<MessageId> takeSnapshot() {
-        return snapshotWriter.thenComposeAsync(writer -> writer.writeAsync(writeSnapshot(producers, lastMapOffset)));
+        return snapshotWriter.thenComposeAsync(writer -> writer.writeAsync(getSnapshot(producers, lastPosition)));
     }
 
     public CompletableFuture<Void> loadFromSnapshot() {
+        this.translate(State.RECOVERING);
         return snapshotReader.thenComposeAsync(reader -> {
             CompletableFuture<Void> completableFuture = new CompletableFuture<>();
             reader.readNextAsync()
@@ -444,13 +397,17 @@ public class ProducerStateManager {
                         }
                         if (message != null) {
                             try {
-                                List<ProducerStateEntry> stateEntryList = readSnapshot(message.getValue());
+                                PidSnapshotMap pidSnapshotMap = message.getValue();
+                                List<ProducerStateEntry> stateEntryList =
+                                        readProducerStateEntryListFromSnapshot(pidSnapshotMap);
                                 Long currentTime = time.milliseconds();
                                 for (ProducerStateEntry entry : stateEntryList) {
                                     if (!isProducerExpired(currentTime, entry)) {
                                         loadProducerEntry(entry);
                                     }
                                 }
+                                List<AbortedTxn> abortedTxns = readAbortedTxnListFromSnapshot(pidSnapshotMap);
+                                this.abortedIndexList.addAll(abortedTxns);
                             } catch (Exception e) {
                                 log.error("Failed to decode snapshot log.", e);
                                 completableFuture.completeExceptionally(e);
@@ -466,50 +423,46 @@ public class ProducerStateManager {
         });
     }
 
-    private List<ProducerStateEntry> readSnapshot(ByteBuffer buffer) {
-        try {
-            Struct struct = pidSnapshotMapSchema.read(buffer);
-            Short version = struct.getShort(VersionField);
-
-            if (version != producerSnapshotVersion) {
-                throw new UnknownServerException("Snapshot contained an unknown file version " + version);
-            }
-
-            this.lastMapOffset = struct.getLong(SnapshotOffset);
-            long crc = struct.getUnsignedInt(CrcField);
-            buffer.position(0);
-            long computedCrc = Crc32C.compute(buffer, ProducerEntriesOffset, buffer.limit() - ProducerEntriesOffset);
-            if (crc != computedCrc) {
-                throw new UnknownServerException("Snapshot is corrupt (CRC is no longer valid). Stored crc: "
-                        + crc + ". Computed crc: " + computedCrc);
-            }
-
-            List<ProducerStateEntry> producerStateEntryList = new ArrayList<>();
-            for (Object producerEntryObj : struct.getArray(ProducerEntriesField)) {
-                Struct producerEntryStruct = (Struct) producerEntryObj;
-                Long producerId = producerEntryStruct.getLong(ProducerIdField);
-                Short producerEpoch = producerEntryStruct.getShort(ProducerEpochField);
-                Integer seq = producerEntryStruct.getInt(LastSequenceField);
-                Long offset = producerEntryStruct.getLong(LastOffsetField);
-                Long timestamp = producerEntryStruct.getLong(TimestampField);
-                Integer offsetDelta = producerEntryStruct.getInt(OffsetDeltaField);
-                Integer coordinatorEpoch = producerEntryStruct.getInt(CoordinatorEpochField);
-                Long currentTxnFirstOffset = producerEntryStruct.getLong(CurrentTxnFirstOffsetField);
-                Deque<BatchMetadata> lastAppendedDataBatches = new ArrayDeque<>();
-                if (offset >= 0) {
-                    lastAppendedDataBatches.add(new BatchMetadata(seq, offset, offsetDelta, timestamp));
-                }
-
-                Optional<Long> currentFirstOffset = currentTxnFirstOffset >= 0
-                        ? Optional.of(currentTxnFirstOffset) : Optional.empty();
-                ProducerStateEntry entry = new ProducerStateEntry(producerId, lastAppendedDataBatches, producerEpoch,
-                        coordinatorEpoch, timestamp, currentFirstOffset);
-                producerStateEntryList.add(entry);
-            }
-            return producerStateEntryList;
-        } catch (SchemaException e) {
-            throw new UnknownServerException("Snapshot failed schema validation: " + e.getMessage());
+    private List<ProducerStateEntry> readProducerStateEntryListFromSnapshot(PidSnapshotMap pidSnapshotMap) {
+        if (pidSnapshotMap == null) {
+            throw new UnknownServerException("Snapshot cannot be null.");
         }
+
+        List<ProducerStateEntry> producerStateEntryList = new ArrayList<>();
+        for (ProducerSnapshotEntry producerSnapshotEntry : pidSnapshotMap.getProducerEntries()) {
+            Long producerId = producerSnapshotEntry.getProducerId();
+            Short producerEpoch = producerSnapshotEntry.getProducerEpoch();
+            Integer seq = producerSnapshotEntry.getLastSequence();
+            long offset = producerSnapshotEntry.getLastOffset();
+            Long timestamp = producerSnapshotEntry.getTimestamp();
+            Integer offsetDelta = producerSnapshotEntry.getOffsetDelta();
+            Integer coordinatorEpoch = producerSnapshotEntry.getCoordinatorEpoch();
+            long currentTxnFirstOffset = producerSnapshotEntry.getCurrentTxnFirstOffset();
+            Deque<BatchMetadata> lastAppendedDataBatches = new ArrayDeque<>();
+//            if (offset >= 0) {
+//                lastAppendedDataBatches.add(new BatchMetadata(seq, offset, offsetDelta, timestamp));
+//            }
+            lastAppendedDataBatches.add(new BatchMetadata(seq, offset, offsetDelta, timestamp));
+            Optional<Long> currentFirstOffset = currentTxnFirstOffset >= 0
+                    ? Optional.of(currentTxnFirstOffset) : Optional.empty();
+            ProducerStateEntry entry = new ProducerStateEntry(producerId, lastAppendedDataBatches, producerEpoch,
+                    coordinatorEpoch, timestamp, currentFirstOffset);
+            producerStateEntryList.add(entry);
+        }
+        return producerStateEntryList;
+    }
+
+    private List<AbortedTxn> readAbortedTxnListFromSnapshot(PidSnapshotMap pidSnapshotMap) {
+        List<AbortedTxn> abortedTxns = new ArrayList<>();
+        for (AbortedTxnEntry abortedTxnEntry : pidSnapshotMap.getAbortedTxnEntries()) {
+            AbortedTxn abortedTxn = new AbortedTxn(
+                    abortedTxnEntry.producerId(),
+                    abortedTxnEntry.firstOffset(),
+                    abortedTxnEntry.lastOffset(),
+                    abortedTxnEntry.lastStableOffset());
+            abortedTxns.add(abortedTxn);
+        }
+        return abortedTxns;
     }
 
     private void loadProducerEntry(ProducerStateEntry entry) {
@@ -517,40 +470,4 @@ public class ProducerStateManager {
         producers.put(producerId, entry);
         entry.currentTxnFirstOffset().ifPresent(offset -> ongoingTxns.put(offset, new TxnMetadata(producerId, offset)));
     }
-
-//    public CompletableFuture<Void> recover(ManagedLedger managedLedger) {
-//        log.info("Start recover fo topic {}", topicPartition);
-//        if (state.equals(State.READY)) {
-//            return CompletableFuture.completedFuture(null);
-//        }
-//        if (state.equals(State.RECOVER_ERROR)) {
-//            return FutureUtil.failedFuture(new Exception("Failed to recover for topic partition " + topicPartition));
-//        }
-//        CompletableFuture<Void> completableFuture = new CompletableFuture<>();
-//        loadFromSnapshot().thenAccept(ignored -> {
-//            MessageMetadataUtils.asyncFindPosition(managedLedger, this.lastMapOffset, false).thenAccept(pos -> {
-//                try {
-//                    ManagedCursor cursor =
-//                            managedLedger.newNonDurableCursor(pos, "producer-state-recover");
-//                    ProducerStateLogRecovery recovery = new ProducerStateLogRecovery(cursor, 100);
-//                    recovery.recover();
-//                    state = State.READY;
-//                    completableFuture.complete(null);
-//                    log.info("Finish recover fo topic {}", topicPartition);
-//                } catch (ManagedLedgerException e) {
-//                    state = State.RECOVER_ERROR;
-//                    log.error("Failed to open non durable cursor for topic {}.", topicPartition, e);
-//                    completableFuture.completeExceptionally(e);
-//                }
-//            }).exceptionally(findSnapshotPosThrowable -> {
-//                completableFuture.completeExceptionally(findSnapshotPosThrowable);
-//                return null;
-//            });
-//        }).exceptionally(loadSnapshotThrowable -> {
-//            completableFuture.completeExceptionally(loadSnapshotThrowable);
-//            return null;
-//        });
-//        return completableFuture;
-//    }
-
 }

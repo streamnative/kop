@@ -19,11 +19,12 @@ import static org.testng.Assert.assertThrows;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
+import io.streamnative.pulsar.handlers.kop.KafkaPositionImpl;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
-import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.systopic.ProducerStateSystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicClientFactory;
 import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicProducerStateClient;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
@@ -63,7 +64,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     private ProducerStateManager stateManager;
     private SystemTopicClientFactory systemTopicClientFactory;
     private SystemTopicProducerStateClient producerStateClient;
-    private SystemTopicClient systemTopicClient;
+    private ProducerStateSystemTopicClient systemTopicClient;
 
     @BeforeClass
     @Override
@@ -83,11 +84,9 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 new SystemTopicClientFactory(systemTopicClient, conf.getKafkaProducerStateTopicNumPartitions());
         producerStateClient =
                 systemTopicClientFactory.getProducerStateClient(TopicName.get("test").toString());
-        EntryFormatter formatter = EntryFormatterFactory.create(conf);
         stateManager = new ProducerStateManager(
                 partition.toString(),
                 maxPidExpirationMs.intValue(),
-                formatter,
                 producerStateClient,
                 time);
     }
@@ -529,11 +528,9 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = defaultTestTimeout)
     public void testSequenceNotValidatedForGroupMetadataTopic() {
         TopicPartition partition = new TopicPartition(Topic.GROUP_METADATA_TOPIC_NAME, 0);
-        EntryFormatter formatter = EntryFormatterFactory.create(conf);
         stateManager = new ProducerStateManager(
                 partition.toString(),
                 maxPidExpirationMs.intValue(),
-                formatter,
                 producerStateClient,
                 time);
         short epoch = 0;
@@ -598,7 +595,42 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
             countDownLatch.countDown();
         });
         countDownLatch.await();
-        stateManager.getAbortedIndexList(0);
+        KafkaPositionImpl lastPosition = stateManager.getLastPosition();
+        assertEquals(5, lastPosition.getOffset());
+    }
+
+    @Test
+    public void testRecoverFromSnapshotUnfinishedTransaction() throws InterruptedException {
+        short epoch = 0;
+        append(stateManager, producerId, epoch, 0, 0L, time.milliseconds(), true);
+        append(stateManager, producerId, epoch, 1, 1L, time.milliseconds(), true);
+
+        takeSnapshotAndWait(stateManager);
+        ProducerStateManager recoveredMapping = new ProducerStateManager(
+                partition.toString(),
+                maxPidExpirationMs.intValue(),
+                producerStateClient,
+                time);
+
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        CompletableFuture<Void> future = recoveredMapping.loadFromSnapshot();
+        future.whenComplete((ignored, throwable) -> {
+            if (throwable != null) {
+                log.error("Failed to load from snapshot.", throwable);
+            }
+            countDownLatch.countDown();
+        });
+        countDownLatch.await();
+
+        // The snapshot only persists the last appended batch metadata
+        Optional<ProducerStateEntry> loadedEntry = recoveredMapping.lastEntry(producerId);
+        assertTrue(loadedEntry.isPresent());
+        assertEquals(1L, (long) loadedEntry.get().firstSeq());
+        assertEquals(1L, (long) loadedEntry.get().lastSeq());
+        assertEquals(0L, (long) loadedEntry.get().currentTxnFirstOffset().orElse(-1L));
+
+        // entry added after recovery
+        append(recoveredMapping, producerId, epoch, 2, 2L, time.milliseconds(), true);
     }
 
     private void takeSnapshotAndWait(ProducerStateManager stateManager) throws InterruptedException {
@@ -612,10 +644,6 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
             latch.countDown();
         });
         latch.await();
-    }
-
-    public void testRecoverFromSnapshotUnfinishedTransaction() {
-
     }
 
     private Optional<CompletedTxn> appendEndTxnMarker(ProducerStateManager mapping,
@@ -632,7 +660,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 producerAppendInfo.appendEndTxnMarker(endTxnMarker, producerEpoch, offset, timestamp);
         mapping.update(producerAppendInfo);
         completedTxnOpt.ifPresent(mapping::completeTxn);
-        mapping.updateMapEndOffset(offset + 1);
+        mapping.updateEndPosition(KafkaPositionImpl.get(offset + 1, -1, -1));
         return completedTxnOpt;
     }
 
@@ -670,7 +698,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         // Update to real offset
         producerAppendInfo.updateCurrentTxnFirstOffset(isTransactional, offset);
         stateManager.update(producerAppendInfo);
-        stateManager.updateMapEndOffset(offset + 1);
+        stateManager.updateEndPosition(KafkaPositionImpl.get(offset + 1, -1, -1));
     }
 
     private void append(ProducerStateManager stateManager,
@@ -681,7 +709,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         ProducerAppendInfo producerAppendInfo = stateManager.prepareUpdate(producerId, origin);
         producerAppendInfo.append(batch, Optional.empty());
         stateManager.update(producerAppendInfo);
-        stateManager.updateMapEndOffset(offset + 1);
+        stateManager.updateEndPosition(KafkaPositionImpl.get(offset + 1, -1, -1));
     }
 
 }

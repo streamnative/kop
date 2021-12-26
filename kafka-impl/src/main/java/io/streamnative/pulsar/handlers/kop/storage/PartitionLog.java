@@ -39,7 +39,10 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedger;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.compress.utils.Lists;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
@@ -52,6 +55,7 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
+import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Analyze result.
@@ -84,15 +88,8 @@ public class PartitionLog {
     private static final KopLogValidator.CompressionCodec DEFAULT_COMPRESSION =
             new KopLogValidator.CompressionCodec(CompressionType.NONE.name, CompressionType.NONE.id);
 
-    // TODO: give some args
-    public void init() {
-        // Any segment loading or recovery code must not use producerStateManager,
-        // so that we can build the full state here from scratch.
-        if (!producerStateManager.isEmpty()) {
-            throw new IllegalStateException("Producer state must be empty during log initialization");
-        }
-
-        this.rebuildProducerState();
+    public CompletableFuture<PartitionLog> initialize(ManagedLedger managedLedger) {
+        return this.rebuildProducerState(managedLedger);
     }
 
     @Data
@@ -150,7 +147,7 @@ public class PartitionLog {
         return new AnalyzeResult(updatedProducers, completedTxns, Optional.empty());
     }
 
-    private Optional<CompletedTxn> updateProducers(
+    protected Optional<CompletedTxn> updateProducers(
             RecordBatch batch,
             Map<Long, ProducerAppendInfo> producers,
             Optional<Long> firstOffset,
@@ -159,6 +156,14 @@ public class PartitionLog {
         ProducerAppendInfo appendInfo =
                 producers.computeIfAbsent(producerId, pid -> producerStateManager.prepareUpdate(producerId, origin));
         return appendInfo.append(batch, firstOffset);
+    }
+
+    protected void updateProducerAppendInfo(ProducerAppendInfo appendInfo) {
+        producerStateManager.update(appendInfo);
+    }
+
+    protected void completeTxn(CompletedTxn completedTxn) {
+        producerStateManager.completeTxn(completedTxn);
     }
 
     public Optional<Long> firstUndecidedOffset() {
@@ -316,7 +321,7 @@ public class PartitionLog {
                     producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
                     producerStateManager.completeTxn(completedTxn);
                 });
-                producerStateManager.updateMapEndOffset(lastOffset + 1);
+                producerStateManager.updateEndPosition(kafkaPosition);
                 appendFuture.complete(offset);
             } else {
                 log.error("publishMessages for topic partition: {} failed when write.", fullPartitionName, e);
@@ -395,7 +400,39 @@ public class PartitionLog {
         }
     }
 
-    public synchronized void rebuildProducerState() {
+    public CompletableFuture<PartitionLog> rebuildProducerState(ManagedLedger managedLedger) {
+        log.info("Start recover fo topic {}", topicPartition);
+        State state = producerStateManager.state();
+        if (state.equals(State.READY)) {
+            return CompletableFuture.completedFuture(null);
+        }
+        if (state.equals(State.RECOVER_ERROR)) {
+            return FutureUtil.failedFuture(new Exception("Failed to recover for topic partition " + topicPartition));
+        }
+        CompletableFuture<PartitionLog> completableFuture = new CompletableFuture<>();
+        producerStateManager.loadFromSnapshot().thenAccept(ignored -> {
+            try {
+                KafkaPositionImpl lastPosition = producerStateManager.getLastPosition();
+                PositionImpl pos =
+                        PositionImpl.get(lastPosition.getLedgerId(), lastPosition.getEntryId());
 
+                ManagedCursor cursor =
+                        managedLedger.newNonDurableCursor(pos, "producer-state-recover");
+                ProducerStateLogRecovery recovery =
+                        new ProducerStateLogRecovery(this, this.entryFormatter, cursor, 100);
+                recovery.recover();
+                producerStateManager.translate(State.READY);
+                completableFuture.complete(this);
+                log.info("Finish recover fo topic {}", topicPartition);
+            } catch (ManagedLedgerException e) {
+                producerStateManager.translate(State.RECOVER_ERROR);
+                log.error("Failed to open non durable cursor for topic {}.", topicPartition, e);
+                completableFuture.completeExceptionally(e);
+            }
+        }).exceptionally(loadSnapshotThrowable -> {
+            completableFuture.completeExceptionally(loadSnapshotThrowable);
+            return null;
+        });
+        return completableFuture;
     }
 }

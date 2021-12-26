@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop.systopic;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -33,13 +32,13 @@ public class SystemTopicClientFactory {
 
     public static final String SYS_TOPIC_PRODUCER_STATE = "__producer_state";
 
-    private final SystemTopicClient systemTopicClient;
+    private final ProducerStateSystemTopicClient systemTopicClient;
 
     private final Map<TopicName, SystemTopicProducerStateClient> producerStateClientMap = Maps.newConcurrentMap();
 
     private final int kafkaProducerStateTopicNumPartitions;
 
-    public SystemTopicClientFactory(SystemTopicClient systemTopicClient, int kafkaProducerStateTopicNumPartitions) {
+    public SystemTopicClientFactory(ProducerStateSystemTopicClient systemTopicClient, int kafkaProducerStateTopicNumPartitions) {
         this.systemTopicClient = systemTopicClient;
         this.kafkaProducerStateTopicNumPartitions = kafkaProducerStateTopicNumPartitions;
     }

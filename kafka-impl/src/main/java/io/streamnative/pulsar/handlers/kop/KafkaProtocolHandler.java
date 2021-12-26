@@ -30,6 +30,7 @@ import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
+import io.streamnative.pulsar.handlers.kop.systopic.ProducerStateSystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicClientFactory;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -94,7 +95,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Getter
     @VisibleForTesting
-    protected SystemTopicClient producerStateTopicClient;
+    protected ProducerStateSystemTopicClient producerStateTopicClient;
 
     private SystemTopicClientFactory systemTopicClientFactory;
 
@@ -493,7 +494,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         LOOKUP_CLIENT_MAP.put(brokerService.pulsar(), new LookupClient(brokerService.pulsar(), kafkaConfig));
         offsetTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
         txnTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
-        producerStateTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
+        producerStateTopicClient = new ProducerStateSystemTopicClient(brokerService.pulsar(), kafkaConfig);
 
         try {
             kopBrokerLookupManager = new KopBrokerLookupManager(kafkaConfig, brokerService.getPulsar());

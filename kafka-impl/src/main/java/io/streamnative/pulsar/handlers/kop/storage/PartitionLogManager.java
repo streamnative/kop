@@ -53,7 +53,6 @@ public class PartitionLogManager {
                 new PartitionLog(kafkaConfig, time, topicPartition, namespacePrefix, kopTopic, formatter,
                         new ProducerStateManager(kopTopic,
                                 kafkaConfig.getMaxProducerIdExpirationMs(),
-                                formatter,
                                 systemTopicClientFactory.getProducerStateClient(kopTopic),
                                 time))
         );

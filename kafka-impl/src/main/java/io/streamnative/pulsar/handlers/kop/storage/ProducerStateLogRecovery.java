@@ -8,7 +8,6 @@ import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.kafka.common.record.RecordBatch;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -24,7 +23,7 @@ public class ProducerStateLogRecovery {
     private final PartitionLog partitionLog;
     private final EntryFormatter entryFormatter;
     private final ManagedCursor cursor;
-    private int cacheQueueSize = 100;
+    private int cacheQueueSize;
     private final List<Entry> readEntryList = new ArrayList<>();
     private int maxErrorCount = 10;
     private int errorCount = 0;
@@ -33,7 +32,7 @@ public class ProducerStateLogRecovery {
     private boolean recoverComplete = false;
     private boolean recoverError = false;
 
-    private ProducerStateLogRecovery(PartitionLog partitionLog,
+    public ProducerStateLogRecovery(PartitionLog partitionLog,
                                      EntryFormatter entryFormatter,
                                      ManagedCursor cursor,
                                      int cacheQueueSize) {
@@ -70,7 +69,7 @@ public class ProducerStateLogRecovery {
         }, null, null);
     }
 
-    private void recover() {
+    protected void recover() {
         while (!recoverComplete && !recoverError && readEntryList.size() > 0) {
             if (!havePendingRead && !readComplete) {
                 fillCacheQueue();
@@ -81,14 +80,17 @@ public class ProducerStateLogRecovery {
                 fillCacheQueue();
                 DecodeResult decodeResult = entryFormatter.decode(entryList, RecordBatch.CURRENT_MAGIC_VALUE);
                 Map<Long, ProducerAppendInfo> appendInfoMap = new HashMap<>();
-//                List<CompletedTxn> completedTxns = new ArrayList<>();
-//                decodeResult.getRecords().batches().forEach(batch -> {
-//                    Optional<CompletedTxn> completedTxn =
-//                            partitionLog.updateProducers(batch, appendInfoMap, Optional.empty(), PartitionLog.AppendOrigin.Log);
-//                    completedTxn.ifPresent(completedTxns::add);
-//                });
-//                appendInfoMap.values().forEach(partitionLog::update);
-//                completedTxns.forEach(partitionLog::completeTxn);
+                List<CompletedTxn> completedTxns = new ArrayList<>();
+                decodeResult.getRecords().batches().forEach(batch -> {
+                    Optional<CompletedTxn> completedTxn =
+                            partitionLog.updateProducers(batch,
+                                    appendInfoMap,
+                                    Optional.empty(),
+                                    PartitionLog.AppendOrigin.Log);
+                    completedTxn.ifPresent(completedTxns::add);
+                });
+                appendInfoMap.values().forEach(partitionLog::updateProducerAppendInfo);
+                completedTxns.forEach(partitionLog::completeTxn);
                 if (readComplete) {
                     recoverComplete = true;
                 }

@@ -13,10 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.systopic;
 
-import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
-
-import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
+import io.streamnative.pulsar.handlers.kop.storage.snapshot.PidSnapshotMap;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.pulsar.broker.systopic.SystemTopicClientBase;
@@ -25,17 +23,17 @@ import org.apache.pulsar.common.naming.TopicName;
 
 
 @Slf4j
-public class SystemTopicProducerStateClient extends SystemTopicClientBase<ByteBuffer> {
+public class SystemTopicProducerStateClient extends SystemTopicClientBase<PidSnapshotMap> {
 
     public static final String TOPIC_NAME_PROP = "topic_name";
 
-    private final io.streamnative.pulsar.handlers.kop.SystemTopicClient systemTopicClient;
+    private final ProducerStateSystemTopicClient systemTopicClient;
 
     private final TopicName sysTopicName;
 
     private final int kafkaProducerStateTopicNumPartitions;
 
-    public SystemTopicProducerStateClient(SystemTopicClient systemTopicClient,
+    public SystemTopicProducerStateClient(ProducerStateSystemTopicClient systemTopicClient,
                                           TopicName userTopicName,
                                           TopicName sysTopicName, int kafkaProducerStateTopicNumPartitions) {
         super(null, userTopicName);
@@ -45,7 +43,7 @@ public class SystemTopicProducerStateClient extends SystemTopicClientBase<ByteBu
     }
 
     @Override
-    protected CompletableFuture<Writer<ByteBuffer>> newWriterAsyncInternal() {
+    protected CompletableFuture<Writer<PidSnapshotMap>> newWriterAsyncInternal() {
         String partitionTopic = sysTopicName.getPartition(
                 MathUtils.signSafeMod(this.topicName.hashCode(), kafkaProducerStateTopicNumPartitions)).toString();
         return systemTopicClient.newProducerBuilder()
@@ -61,7 +59,7 @@ public class SystemTopicProducerStateClient extends SystemTopicClientBase<ByteBu
     }
 
     @Override
-    protected CompletableFuture<Reader<ByteBuffer>> newReaderAsyncInternal() {
+    protected CompletableFuture<Reader<PidSnapshotMap>> newReaderAsyncInternal() {
         String partitionTopic = sysTopicName.getPartition(
                 MathUtils.signSafeMod(this.topicName.hashCode(), kafkaProducerStateTopicNumPartitions)).toString();
         return systemTopicClient.newReaderBuilder()

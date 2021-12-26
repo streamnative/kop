@@ -18,6 +18,8 @@ import static io.streamnative.pulsar.handlers.kop.systopic.SystemTopicProducerSt
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
+
+import io.streamnative.pulsar.handlers.kop.storage.snapshot.PidSnapshotMap;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.systopic.SystemTopicClient;
@@ -27,26 +29,26 @@ import org.apache.pulsar.client.api.PulsarClientException;
 
 @Slf4j
 @AllArgsConstructor
-public class SystemTopicProducerStateWriter implements SystemTopicClient.Writer<ByteBuffer> {
+public class SystemTopicProducerStateWriter implements SystemTopicClient.Writer<PidSnapshotMap> {
 
-    private final SystemTopicClient<ByteBuffer> systemTopicClient;
-    private final Producer<ByteBuffer> producer;
+    private final SystemTopicClient<PidSnapshotMap> systemTopicClient;
+    private final Producer<PidSnapshotMap> producer;
 
     @Override
-    public MessageId write(ByteBuffer bytes) throws PulsarClientException {
+    public MessageId write(PidSnapshotMap pidSnapshotMap) throws PulsarClientException {
         return producer.newMessage()
                 .property(TOPIC_NAME_PROP, systemTopicClient.getTopicName().toString())
                 .key(systemTopicClient.getTopicName().toString())
-                .value(bytes)
+                .value(pidSnapshotMap)
                 .send();
     }
 
     @Override
-    public CompletableFuture<MessageId> writeAsync(ByteBuffer buffer) {
+    public CompletableFuture<MessageId> writeAsync(PidSnapshotMap pidSnapshotMap) {
         return producer.newMessage()
                 .property(TOPIC_NAME_PROP, systemTopicClient.getTopicName().toString())
                 .key(systemTopicClient.getTopicName().toString())
-                .value(buffer)
+                .value(pidSnapshotMap)
                 .sendAsync().whenComplete(((messageId, throwable) -> {
                     if (throwable != null) {
                         log.error("Failed to write msg for system topic {}", systemTopicClient.getTopicName(), throwable);
@@ -67,7 +69,7 @@ public class SystemTopicProducerStateWriter implements SystemTopicClient.Writer<
     }
 
     @Override
-    public SystemTopicClient<ByteBuffer> getSystemTopicClient() {
+    public SystemTopicClient<PidSnapshotMap> getSystemTopicClient() {
         return systemTopicClient;
     }
 }
