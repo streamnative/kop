@@ -200,7 +200,7 @@ public class PartitionLog {
 
             // Append Message into pulsar
             final CompletableFuture<Optional<PersistentTopic>> topicFuture =
-                    topicManager.getTopic(fullPartitionName);
+                    topicManager.getTopicAndInitLog(fullPartitionName);
             if (topicFuture.isCompletedExceptionally()) {
                 topicFuture.exceptionally(e -> {
                     appendFuture.completeExceptionally(e);
@@ -421,11 +421,11 @@ public class PartitionLog {
                 ProducerStateLogRecovery recovery =
                         new ProducerStateLogRecovery(this, this.entryFormatter, cursor, 100);
                 recovery.recover();
-                producerStateManager.translate(State.READY);
+                producerStateManager.transitionTo(State.READY);
                 completableFuture.complete(this);
                 log.info("Finish recover fo topic {}", topicPartition);
             } catch (ManagedLedgerException e) {
-                producerStateManager.translate(State.RECOVER_ERROR);
+                producerStateManager.transitionTo(State.RECOVER_ERROR);
                 log.error("Failed to open non durable cursor for topic {}.", topicPartition, e);
                 completableFuture.completeExceptionally(e);
             }

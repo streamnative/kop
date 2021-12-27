@@ -24,42 +24,42 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class ProducerSnapshotEntry {
     /**
-     * The producer ID
+     * The producer ID.
      */
     private long producerId;
 
     /**
-     * Current epoch of the producer
+     * Current epoch of the producer.
      */
     private short producerEpoch;
 
     /**
-     * Last written sequence of the producer
+     * Last written sequence of the producer.
      */
     private int lastSequence;
 
     /**
-     * Last written offset of the producer
+     * Last written offset of the producer.
      */
     private long lastOffset;
 
     /**
-     * The difference of the last sequence and first sequence in the last written batch
+     * The difference of the last sequence and first sequence in the last written batch.
      */
     private int offsetDelta;
 
     /**
-     * Max timestamp from the last written entry
+     * Max timestamp from the last written entry.
      */
     private long timestamp;
 
     /**
-     * The epoch of the last transaction coordinator to send an end transaction marker
+     * The epoch of the last transaction coordinator to send an end transaction marker.
      */
     private int coordinatorEpoch;
 
     /**
-     * The first offset of the on-going transaction (-1 if there is none)
+     * The first offset of the on-going transaction (-1 if there is none).
      */
     private long currentTxnFirstOffset;
 }

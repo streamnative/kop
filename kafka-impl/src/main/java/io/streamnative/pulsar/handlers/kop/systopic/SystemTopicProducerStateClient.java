@@ -13,8 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.systopic;
 
-import java.util.concurrent.CompletableFuture;
 import io.streamnative.pulsar.handlers.kop.storage.snapshot.PidSnapshotMap;
+import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.pulsar.broker.systopic.SystemTopicClientBase;

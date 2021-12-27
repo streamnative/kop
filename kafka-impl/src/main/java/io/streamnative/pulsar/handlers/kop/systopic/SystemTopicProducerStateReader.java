@@ -15,15 +15,11 @@ package io.streamnative.pulsar.handlers.kop.systopic;
 
 import static io.streamnative.pulsar.handlers.kop.systopic.SystemTopicProducerStateClient.TOPIC_NAME_PROP;
 
+import io.streamnative.pulsar.handlers.kop.storage.snapshot.PidSnapshotMap;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.LinkedBlockingQueue;
-
-import io.streamnative.pulsar.handlers.kop.storage.snapshot.PidSnapshotMap;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.systopic.SystemTopicClient;

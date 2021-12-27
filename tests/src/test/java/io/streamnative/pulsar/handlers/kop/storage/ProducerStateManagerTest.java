@@ -22,8 +22,6 @@ import static org.testng.Assert.fail;
 import io.streamnative.pulsar.handlers.kop.KafkaPositionImpl;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.systopic.ProducerStateSystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicClientFactory;
 import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicProducerStateClient;
@@ -73,13 +71,13 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         super.internalSetup();
 
         admin.topics().createPartitionedTopic("public/default/sys-topic-producer-state", 1);
-        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
-        systemTopicClient = handler.getProducerStateTopicClient();
         log.info("success internal setup");
     }
 
     @BeforeMethod
     protected void setUp() {
+        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
+        systemTopicClient = handler.getProducerStateTopicClient();
         systemTopicClientFactory =
                 new SystemTopicClientFactory(systemTopicClient, conf.getKafkaProducerStateTopicNumPartitions());
         producerStateClient =
@@ -93,13 +91,13 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
     @AfterMethod
     protected void tearDown() {
-        systemTopicClient.close();
         systemTopicClientFactory.shutdown();
     }
 
     @AfterClass
     @Override
     protected void cleanup() throws Exception {
+        systemTopicClient.close();
         super.internalCleanup();
     }
 
@@ -571,7 +569,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(Optional.empty(), stateManager.lastEntry(producerId).get().currentTxnFirstOffset());
     }
 
-    @Test()
+    @Test(timeOut = defaultTestTimeout)
     public void testTruncateAndReloadRemovesOutOfRangeSnapshots() throws InterruptedException {
         short epoch = 0;
         append(stateManager, producerId, epoch, 0, 0L);
@@ -586,20 +584,12 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         takeSnapshotAndWait(stateManager);
 
         stateManager.truncate();
-        CountDownLatch countDownLatch = new CountDownLatch(1);
-        CompletableFuture<Void> future = stateManager.loadFromSnapshot();
-        future.whenComplete((ignored, throwable) -> {
-            if (throwable != null) {
-                log.error("Failed to load from snapshot.", throwable);
-            }
-            countDownLatch.countDown();
-        });
-        countDownLatch.await();
+        loadFromSnapshot(stateManager);
         KafkaPositionImpl lastPosition = stateManager.getLastPosition();
         assertEquals(5, lastPosition.getOffset());
     }
 
-    @Test
+    @Test(timeOut = defaultTestTimeout)
     public void testRecoverFromSnapshotUnfinishedTransaction() throws InterruptedException {
         short epoch = 0;
         append(stateManager, producerId, epoch, 0, 0L, time.milliseconds(), true);
@@ -612,25 +602,74 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 producerStateClient,
                 time);
 
-        CountDownLatch countDownLatch = new CountDownLatch(1);
-        CompletableFuture<Void> future = recoveredMapping.loadFromSnapshot();
-        future.whenComplete((ignored, throwable) -> {
-            if (throwable != null) {
-                log.error("Failed to load from snapshot.", throwable);
-            }
-            countDownLatch.countDown();
-        });
-        countDownLatch.await();
+        loadFromSnapshot(recoveredMapping);
 
         // The snapshot only persists the last appended batch metadata
         Optional<ProducerStateEntry> loadedEntry = recoveredMapping.lastEntry(producerId);
         assertTrue(loadedEntry.isPresent());
         assertEquals(1L, (long) loadedEntry.get().firstSeq());
         assertEquals(1L, (long) loadedEntry.get().lastSeq());
-        assertEquals(0L, (long) loadedEntry.get().currentTxnFirstOffset().orElse(-1L));
+        assertTrue(loadedEntry.get().currentTxnFirstOffset().isPresent());
+        assertEquals(0L, (long) loadedEntry.get().currentTxnFirstOffset().get());
 
         // entry added after recovery
         append(recoveredMapping, producerId, epoch, 2, 2L, time.milliseconds(), true);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void testRecoverFromSnapshotFinishedTransaction() throws InterruptedException {
+        short epoch = 0;
+        append(stateManager, producerId, epoch, 0, 0L, time.milliseconds(), true);
+        append(stateManager, producerId, epoch, 1, 1L, time.milliseconds(), true);
+        appendEndTxnMarker(stateManager, producerId, epoch, ControlRecordType.ABORT, 2L, 0, time.milliseconds());
+
+        takeSnapshotAndWait(stateManager);
+        ProducerStateManager recoveredMapping = new ProducerStateManager(
+                partition.toString(),
+                maxPidExpirationMs.intValue(),
+                producerStateClient,
+                time);
+        loadFromSnapshot(recoveredMapping);
+
+        // The snapshot only persists the last appended batch metadata
+        Optional<ProducerStateEntry> loadedEntry = recoveredMapping.lastEntry(producerId);
+        assertTrue(loadedEntry.isPresent());
+        assertEquals(1L, (long) loadedEntry.get().firstSeq());
+        assertEquals(1L, (long) loadedEntry.get().lastSeq());
+        assertFalse(loadedEntry.get().currentTxnFirstOffset().isPresent());
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void testRecoverFromSnapshotEmptyTransaction() throws InterruptedException {
+        short epoch = 0;
+        long appendTimestamp = time.milliseconds();
+        appendEndTxnMarker(stateManager, producerId, epoch, ControlRecordType.ABORT, 0L, 0, time.milliseconds());
+        takeSnapshotAndWait(stateManager);
+        ProducerStateManager recoveredMapping = new ProducerStateManager(
+                partition.toString(),
+                maxPidExpirationMs.intValue(),
+                producerStateClient,
+                time);
+        loadFromSnapshot(recoveredMapping);
+
+        Optional<ProducerStateEntry> loadedEntry = recoveredMapping.lastEntry(producerId);
+        assertTrue(loadedEntry.isPresent());
+        assertEquals(appendTimestamp, (long) loadedEntry.get().lastTimestamp());
+        assertFalse(loadedEntry.get().currentTxnFirstOffset().isPresent());
+    }
+
+    private void loadFromSnapshot(ProducerStateManager recoveredMapping) throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+        CompletableFuture<Void> future = recoveredMapping.loadFromSnapshot();
+        future.whenComplete((ignored, throwable) -> {
+            if (throwable != null) {
+                log.error("Failed to load from snapshot.", throwable);
+            } else {
+                log.info("Success load snapshot.");
+            }
+            latch.countDown();
+        });
+        latch.await();
     }
 
     private void takeSnapshotAndWait(ProducerStateManager stateManager) throws InterruptedException {

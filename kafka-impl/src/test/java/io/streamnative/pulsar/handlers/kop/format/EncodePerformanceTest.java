@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop.format;
 
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
-import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Optional;

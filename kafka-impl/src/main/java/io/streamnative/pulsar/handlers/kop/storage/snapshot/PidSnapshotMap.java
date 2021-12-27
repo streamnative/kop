@@ -13,33 +13,33 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage.snapshot;
 
-import lombok.Data;
 import java.util.List;
+import lombok.Data;
 
 @Data
 public class PidSnapshotMap {
     /**
-     * The snapshot offset
+     * The snapshot offset.
      */
     private long snapshotOffset;
 
     /**
-     * The snapshot ledgerId
+     * The snapshot ledgerId.
      */
     private long ledgerId;
 
     /**
-     * The snapshot entryId
+     * The snapshot entryId.
      */
     private long entryId;
 
     /**
-     * The entries in the producer table
+     * The entries in the producer table.
      */
     private List<ProducerSnapshotEntry> producerEntries;
 
     /**
-     * AbortedTxn is used cache the aborted index
+     * AbortedTxn is used cache the aborted index.
      */
     private List<AbortedTxnEntry> abortedTxnEntries;
 

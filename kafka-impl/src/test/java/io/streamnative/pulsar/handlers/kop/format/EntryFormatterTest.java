@@ -19,7 +19,6 @@ import static org.apache.kafka.common.record.Records.LOG_OVERHEAD;
 
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
-import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;

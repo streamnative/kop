@@ -15,11 +15,9 @@ package io.streamnative.pulsar.handlers.kop.systopic;
 
 import static io.streamnative.pulsar.handlers.kop.systopic.SystemTopicProducerStateClient.TOPIC_NAME_PROP;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.concurrent.CompletableFuture;
-
 import io.streamnative.pulsar.handlers.kop.storage.snapshot.PidSnapshotMap;
+import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.systopic.SystemTopicClient;
@@ -51,7 +49,8 @@ public class SystemTopicProducerStateWriter implements SystemTopicClient.Writer<
                 .value(pidSnapshotMap)
                 .sendAsync().whenComplete(((messageId, throwable) -> {
                     if (throwable != null) {
-                        log.error("Failed to write msg for system topic {}", systemTopicClient.getTopicName(), throwable);
+                        log.error("Failed to write msg for system topic {}",
+                                systemTopicClient.getTopicName(), throwable);
                         return;
                     }
                     log.info("Success to write msg for system topic {}", systemTopicClient.getTopicName());

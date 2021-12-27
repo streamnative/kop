@@ -38,7 +38,8 @@ public class SystemTopicClientFactory {
 
     private final int kafkaProducerStateTopicNumPartitions;
 
-    public SystemTopicClientFactory(ProducerStateSystemTopicClient systemTopicClient, int kafkaProducerStateTopicNumPartitions) {
+    public SystemTopicClientFactory(ProducerStateSystemTopicClient systemTopicClient,
+                                    int kafkaProducerStateTopicNumPartitions) {
         this.systemTopicClient = systemTopicClient;
         this.kafkaProducerStateTopicNumPartitions = kafkaProducerStateTopicNumPartitions;
     }
@@ -55,7 +56,8 @@ public class SystemTopicClientFactory {
     public SystemTopicProducerStateClient getProducerStateClient(String topic) {
         TopicName sysTopicName = getProducerStateTopicName(topic);
         return producerStateClientMap.computeIfAbsent(sysTopicName, key ->
-                new SystemTopicProducerStateClient(systemTopicClient, TopicName.get(topic), sysTopicName, kafkaProducerStateTopicNumPartitions));
+                new SystemTopicProducerStateClient(
+                        systemTopicClient, TopicName.get(topic), sysTopicName, kafkaProducerStateTopicNumPartitions));
     }
 
     public void shutdown() {

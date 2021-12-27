@@ -15,6 +15,11 @@ package io.streamnative.pulsar.handlers.kop.storage;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
+import io.streamnative.pulsar.handlers.kop.KafkaPositionImpl;
+import io.streamnative.pulsar.handlers.kop.storage.snapshot.AbortedTxnEntry;
+import io.streamnative.pulsar.handlers.kop.storage.snapshot.PidSnapshotMap;
+import io.streamnative.pulsar.handlers.kop.storage.snapshot.ProducerSnapshotEntry;
+import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicProducerStateClient;
 import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -26,12 +31,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import io.streamnative.pulsar.handlers.kop.KafkaPositionImpl;
-import io.streamnative.pulsar.handlers.kop.storage.snapshot.AbortedTxnEntry;
-import io.streamnative.pulsar.handlers.kop.storage.snapshot.PidSnapshotMap;
-import io.streamnative.pulsar.handlers.kop.storage.snapshot.ProducerSnapshotEntry;
-import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicProducerStateClient;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -164,7 +164,7 @@ enum State {
 @Slf4j
 public class ProducerStateManager {
 
-    private State state;
+    private volatile State state;
 
     private final String topicPartition;
 
@@ -186,6 +186,10 @@ public class ProducerStateManager {
     private final TreeMap<Long, TxnMetadata> ongoingTxns = Maps.newTreeMap();
     private final List<AbortedTxn> abortedIndexList = new ArrayList<>();
 
+    private static final AtomicReferenceFieldUpdater<ProducerStateManager, State> STATE_UPDATER =
+            AtomicReferenceFieldUpdater.newUpdater(ProducerStateManager.class, State.class, "state");
+
+
     public ProducerStateManager(String topicPartition,
                                 int maxProducerIdExpirationMs,
                                 SystemTopicProducerStateClient systemTopicProducerStateClient,
@@ -206,8 +210,8 @@ public class ProducerStateManager {
         return this.state;
     }
 
-    public void translate(State state) {
-        this.state = state;
+    public void transitionTo(State state) {
+        STATE_UPDATER.set(this, state);
     }
 
 
@@ -343,7 +347,7 @@ public class ProducerStateManager {
     public void truncate() {
         producers.clear();
         ongoingTxns.clear();
-        this.lastPosition = KafkaPositionImpl.earliest;
+        this.lastPosition = KafkaPositionImpl.EARLIEST;
     }
 
     private PidSnapshotMap getSnapshot(Map<Long, ProducerStateEntry> entries,
@@ -385,7 +389,6 @@ public class ProducerStateManager {
     }
 
     public CompletableFuture<Void> loadFromSnapshot() {
-        this.translate(State.RECOVERING);
         return snapshotReader.thenComposeAsync(reader -> {
             CompletableFuture<Void> completableFuture = new CompletableFuture<>();
             reader.readNextAsync()
@@ -398,6 +401,10 @@ public class ProducerStateManager {
                         if (message != null) {
                             try {
                                 PidSnapshotMap pidSnapshotMap = message.getValue();
+                                this.lastPosition = new KafkaPositionImpl(
+                                        pidSnapshotMap.getSnapshotOffset(),
+                                        pidSnapshotMap.getLedgerId(),
+                                        pidSnapshotMap.getEntryId());
                                 List<ProducerStateEntry> stateEntryList =
                                         readProducerStateEntryListFromSnapshot(pidSnapshotMap);
                                 Long currentTime = time.milliseconds();
@@ -430,13 +437,13 @@ public class ProducerStateManager {
 
         List<ProducerStateEntry> producerStateEntryList = new ArrayList<>();
         for (ProducerSnapshotEntry producerSnapshotEntry : pidSnapshotMap.getProducerEntries()) {
-            Long producerId = producerSnapshotEntry.getProducerId();
-            Short producerEpoch = producerSnapshotEntry.getProducerEpoch();
-            Integer seq = producerSnapshotEntry.getLastSequence();
+            long producerId = producerSnapshotEntry.getProducerId();
+            short producerEpoch = producerSnapshotEntry.getProducerEpoch();
+            int seq = producerSnapshotEntry.getLastSequence();
             long offset = producerSnapshotEntry.getLastOffset();
-            Long timestamp = producerSnapshotEntry.getTimestamp();
-            Integer offsetDelta = producerSnapshotEntry.getOffsetDelta();
-            Integer coordinatorEpoch = producerSnapshotEntry.getCoordinatorEpoch();
+            long timestamp = producerSnapshotEntry.getTimestamp();
+            int offsetDelta = producerSnapshotEntry.getOffsetDelta();
+            int coordinatorEpoch = producerSnapshotEntry.getCoordinatorEpoch();
             long currentTxnFirstOffset = producerSnapshotEntry.getCurrentTxnFirstOffset();
             Deque<BatchMetadata> lastAppendedDataBatches = new ArrayDeque<>();
 //            if (offset >= 0) {
