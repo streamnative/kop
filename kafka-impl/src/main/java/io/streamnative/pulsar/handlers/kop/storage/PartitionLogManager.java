@@ -24,12 +24,14 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
 
 /**
  * Manage {@link PartitionLog}.
  */
+@Slf4j
 @AllArgsConstructor
 public class PartitionLogManager {
 
@@ -69,6 +71,13 @@ public class PartitionLogManager {
                                 timer,
                                 kafkaConfig.getKafkaProducerStateSnapshotMinTimeInMillis()),
                         recoveryExecutor));
+    }
+
+    public void removeLog(String fullTopicName) {
+        if (log.isDebugEnabled()) {
+            log.debug("WWWW Remove partition log [{}]", fullTopicName);
+        }
+        logMap.remove(fullTopicName);
     }
 }
 

@@ -61,7 +61,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     private final Long producerId = 1L;
     private final Long maxPidExpirationMs = 10 * 1000L;
     private final MockTime time = new MockTime();
-    private final SystemTimer timer = SystemTimer.builder().build();
+    private final SystemTimer timer = SystemTimer.builder().executorName("test-timer").build();
     private ProducerStateManager stateManager;
     private SystemTopicClientFactory systemTopicClientFactory;
     private SystemTopicProducerStateClient producerStateClient;
@@ -79,8 +79,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
     @BeforeMethod
     protected void setUp() {
-        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
-        systemTopicClient = handler.getProducerStateTopicClient();
+        systemTopicClient = new ProducerStateSystemTopicClient(pulsar, conf);
         systemTopicClientFactory =
                 new SystemTopicClientFactory(systemTopicClient, conf.getKafkaProducerStateTopicNumPartitions());
         producerStateClient =
@@ -95,8 +94,11 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     }
 
     @AfterMethod
-    protected void tearDown() {
+    protected void tearDown() throws Exception {
+        producerStateClient.close();
         systemTopicClientFactory.shutdown();
+        systemTopicClient.close();
+
     }
 
     @AfterClass

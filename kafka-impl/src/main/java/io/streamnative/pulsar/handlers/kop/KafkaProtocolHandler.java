@@ -165,6 +165,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @AllArgsConstructor
     public static class CacheInvalidator implements NamespaceBundleOwnershipListener {
         final BrokerService service;
+        final KafkaProtocolHandler handler;
 
         @Override
         public boolean test(NamespaceBundle namespaceBundle) {
@@ -192,6 +193,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                                     String partitionedZeroTopicName = name.getPartition(0).toString();
                                     KafkaTopicManager.deReference(partitionedZeroTopicName);
                                 }
+
+                                // Remove log for rebuild producer state.
+                                handler.getReplicaManager(name.getTenant())
+                                        .getLogManager()
+                                        .removeLog(topic);
                             }
                         } else {
                             log.error("Failed to get owned topic list for "
@@ -506,7 +512,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         brokerService.pulsar()
                 .getNamespaceService()
                 .addNamespaceBundleOwnershipListener(
-                        new CacheInvalidator(brokerService));
+                        new CacheInvalidator(brokerService, this));
 
         // initialize default Group Coordinator
         getGroupCoordinator(kafkaConfig.getKafkaMetadataTenant());

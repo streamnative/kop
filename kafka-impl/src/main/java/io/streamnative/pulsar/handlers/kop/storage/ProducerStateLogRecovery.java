@@ -126,11 +126,11 @@ public class ProducerStateLogRecovery {
             this.recover = recover;
         }
         boolean fillQueue() {
-            if (entryQueue.size() < entryQueue.capacity() && outstandingReadsRequests.get() == 0) {
-                if (cursor.hasMoreEntries()) {
-                    outstandingReadsRequests.incrementAndGet();
-                    cursor.asyncReadEntries(100, this, System.nanoTime(), PositionImpl.latest);
-                }
+            if (entryQueue.size() < entryQueue.capacity()
+                    && outstandingReadsRequests.get() == 0
+                    && cursor.hasMoreEntries()) {
+                outstandingReadsRequests.incrementAndGet();
+                cursor.asyncReadEntries(100, this, System.nanoTime(), PositionImpl.latest);
             }
             return isReadable;
         }
