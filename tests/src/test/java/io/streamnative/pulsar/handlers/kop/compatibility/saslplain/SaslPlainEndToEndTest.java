@@ -265,7 +265,7 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
 
             // ensure that we can list the topic
             Map<String, List<PartitionInfo>> result = consumer.listTopics(1000);
-            assertEquals(result.size(), 1);
+            assertEquals(result.size(), 2);
             assertTrue(result.containsKey(KAFKA_TOPIC),
                     "list of topics " + result.keySet().toString() + "  does not contains " + KAFKA_TOPIC);
             consumer.close();
