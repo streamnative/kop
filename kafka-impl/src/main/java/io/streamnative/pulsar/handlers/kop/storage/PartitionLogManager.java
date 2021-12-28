@@ -14,11 +14,15 @@
 package io.streamnative.pulsar.handlers.kop.storage;
 
 import com.google.common.collect.Maps;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicClientFactory;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import lombok.AllArgsConstructor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
@@ -34,6 +38,7 @@ public class PartitionLogManager {
     private final Map<String, PartitionLog> logMap;
     private final EntryFormatter formatter;
     private final Time time;
+    private ScheduledExecutorService recoveryExecutor;
 
     public PartitionLogManager(KafkaServiceConfiguration kafkaConfig,
                                EntryFormatter entryFormatter,
@@ -43,10 +48,16 @@ public class PartitionLogManager {
         this.systemTopicClientFactory = systemTopicClientFactory;
         this.logMap = Maps.newConcurrentMap();
         this.formatter = entryFormatter;
+        // TODO: move out
+        this.recoveryExecutor = Executors.newScheduledThreadPool(
+                Runtime.getRuntime().availableProcessors(),
+                new DefaultThreadFactory("producer-state-recovery"));
         this.time = time;
     }
 
-    public PartitionLog getLog(TopicPartition topicPartition, String namespacePrefix) {
+    public PartitionLog getLog(TopicPartition topicPartition,
+                               String namespacePrefix,
+                               SystemTimer timer) {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
 
         return logMap.computeIfAbsent(kopTopic, key ->
@@ -54,8 +65,10 @@ public class PartitionLogManager {
                         new ProducerStateManager(kopTopic,
                                 kafkaConfig.getMaxProducerIdExpirationMs(),
                                 systemTopicClientFactory.getProducerStateClient(kopTopic),
-                                time))
-        );
+                                time,
+                                timer,
+                                kafkaConfig.getKafkaProducerStateSnapshotMinTimeInMillis()),
+                        recoveryExecutor));
     }
 }
 

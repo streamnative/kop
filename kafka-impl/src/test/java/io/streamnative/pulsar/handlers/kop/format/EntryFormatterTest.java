@@ -72,6 +72,7 @@ public class EntryFormatterTest {
             "test",
             "test",
             null,
+            null,
             null);
 
     private void init() {

@@ -22,6 +22,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.MessagePublishContext;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
+import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
 import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
@@ -29,20 +30,22 @@ import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.ManagedCursor;
+import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedLedger;
-import org.apache.bookkeeper.mledger.ManagedLedgerException;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.compress.utils.Lists;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
@@ -55,7 +58,6 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Analyze result.
@@ -84,13 +86,11 @@ public class PartitionLog {
     private final String fullPartitionName;
     private final EntryFormatter entryFormatter;
     private final ProducerStateManager producerStateManager;
+    private final ScheduledExecutorService recoveryExecutor;
+    private final CompletableFuture<Void> producerStateRecoveryFuture = new CompletableFuture<>();
 
     private static final KopLogValidator.CompressionCodec DEFAULT_COMPRESSION =
             new KopLogValidator.CompressionCodec(CompressionType.NONE.name, CompressionType.NONE.id);
-
-    public CompletableFuture<PartitionLog> initialize(ManagedLedger managedLedger) {
-        return this.rebuildProducerState(managedLedger);
-    }
 
     @Data
     @Accessors(fluent = true)
@@ -112,6 +112,10 @@ public class PartitionLog {
         Coordinator,
         Client,
         Log
+    }
+
+    public void init(PersistentTopic topic) {
+        recoveryExecutor.execute(() -> this.rebuildProducerState(topic));
     }
 
     public AnalyzeResult analyzeAndValidateProducerState(MemoryRecords records,
@@ -158,16 +162,14 @@ public class PartitionLog {
         return appendInfo.append(batch, firstOffset);
     }
 
-    protected void updateProducerAppendInfo(ProducerAppendInfo appendInfo) {
-        producerStateManager.update(appendInfo);
-    }
-
-    protected void completeTxn(CompletedTxn completedTxn) {
-        producerStateManager.completeTxn(completedTxn);
-    }
-
     public Optional<Long> firstUndecidedOffset() {
-        return producerStateManager.firstUndecidedOffset();
+        if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+            return Optional.empty();
+        }
+        if (producerStateManager.state().equals(State.READY)) {
+            return producerStateManager.firstUndecidedOffset();
+        }
+        return Optional.of(-1L);
     }
 
     public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
@@ -200,7 +202,7 @@ public class PartitionLog {
 
             // Append Message into pulsar
             final CompletableFuture<Optional<PersistentTopic>> topicFuture =
-                    topicManager.getTopicAndInitLog(fullPartitionName);
+                    topicManager.getTopic(fullPartitionName);
             if (topicFuture.isCompletedExceptionally()) {
                 topicFuture.exceptionally(e -> {
                     appendFuture.completeExceptionally(e);
@@ -211,6 +213,11 @@ public class PartitionLog {
             if (topicFuture.isDone() && !topicFuture.getNow(Optional.empty()).isPresent()) {
                 appendFuture.completeExceptionally(Errors.NOT_LEADER_FOR_PARTITION.exception());
                 return appendFuture;
+            }
+            if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+                topicFuture.thenAccept(topic -> {
+                    topic.ifPresent(this::init);
+                });
             }
             final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
                 if (!persistentTopicOpt.isPresent()) {
@@ -286,50 +293,58 @@ public class PartitionLog {
             appendFuture.completeExceptionally(Errors.INVALID_TOPIC_EXCEPTION.exception());
             return;
         }
+        checkIfProducerStateRecoverCompletely(appendInfo.isTransaction()).thenAccept(ignore -> {
+            appendRecordsContext.getTopicManager()
+                    .registerProducerInPersistentTopic(fullPartitionName, persistentTopic);
 
-        appendRecordsContext.getTopicManager().registerProducerInPersistentTopic(fullPartitionName, persistentTopic);
+            // collect metrics
+            encodeResult.updateProducerStats(topicPartition, requestStats, namespacePrefix);
 
-        // collect metrics
-        encodeResult.updateProducerStats(topicPartition, requestStats, namespacePrefix);
-
-        // publish
-        final CompletableFuture<KafkaPositionImpl> offsetFuture = new CompletableFuture<>();
-        final long beforePublish = time.nanoseconds();
-        persistentTopic.publishMessage(byteBuf,
-                MessagePublishContext.get(offsetFuture, persistentTopic, numMessages, System.nanoTime()));
-        offsetFuture.whenComplete((kafkaPosition, e) -> {
-            appendRecordsContext.getCompleteSendOperationForThrottling().accept(byteBuf.readableBytes());
-            encodeResult.recycle();
-            if (e == null) {
-                requestStats.getMessagePublishStats().registerSuccessfulEvent(
-                        time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
-                final long offset = kafkaPosition.getOffset();
-                final long lastOffset = offset + numMessages - 1;
-                analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]",
-                                pid, producerAppendInfo, lastOffset);
-                    }
-                    // When we have real start offset, update current txn first offset.
-                    producerAppendInfo.updateCurrentTxnFirstOffset(appendInfo.isTransaction(), offset);
-                    producerStateManager.update(producerAppendInfo);
-                });
-                analyzeResult.completedTxns().forEach(completedTxn -> {
-                    // update to real last offset
-                    completedTxn.lastOffset(lastOffset);
-                    long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
-                    producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
-                    producerStateManager.completeTxn(completedTxn);
-                });
-                producerStateManager.updateEndPosition(kafkaPosition);
-                appendFuture.complete(offset);
-            } else {
-                log.error("publishMessages for topic partition: {} failed when write.", fullPartitionName, e);
-                requestStats.getMessagePublishStats().registerFailedEvent(
-                        time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
-                appendFuture.completeExceptionally(Errors.KAFKA_STORAGE_ERROR.exception());
-            }
+            // publish
+            final CompletableFuture<KafkaPositionImpl> offsetFuture = new CompletableFuture<>();
+            final long beforePublish = time.nanoseconds();
+            persistentTopic.publishMessage(byteBuf,
+                    MessagePublishContext.get(offsetFuture, persistentTopic, numMessages, System.nanoTime()));
+            offsetFuture.whenComplete((kafkaPosition, e) -> {
+                appendRecordsContext.getCompleteSendOperationForThrottling().accept(byteBuf.readableBytes());
+                encodeResult.recycle();
+                if (e == null) {
+                    requestStats.getMessagePublishStats().registerSuccessfulEvent(
+                            time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
+                    final long offset = kafkaPosition.getOffset();
+                    final long lastOffset = offset + numMessages - 1;
+                    analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
+                        if (log.isDebugEnabled()) {
+                            log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]",
+                                    pid, producerAppendInfo, lastOffset);
+                        }
+                        // When we have real start offset, update current txn first offset.
+                        producerAppendInfo.updateCurrentTxnFirstOffset(appendInfo.isTransaction(), offset);
+                        producerStateManager.update(producerAppendInfo);
+                    });
+                    analyzeResult.completedTxns().forEach(completedTxn -> {
+                        // update to real last offset
+                        completedTxn.lastOffset(lastOffset);
+                        long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
+                        producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
+                        producerStateManager.completeTxn(completedTxn);
+                    });
+                    producerStateManager.updateEndPosition(kafkaPosition);
+                    appendFuture.complete(offset);
+                } else {
+                    log.error("publishMessages for topic partition: {} failed when write.", fullPartitionName, e);
+                    requestStats.getMessagePublishStats().registerFailedEvent(
+                            time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
+                    appendFuture.completeExceptionally(Errors.KAFKA_STORAGE_ERROR.exception());
+                }
+            });
+        }).exceptionally(exception -> {
+            Throwable cause = exception.getCause();
+            log.error("Producer state recover failed.", exception);
+            appendFuture.completeExceptionally(cause);
+            return null;
         });
+
     }
 
     @VisibleForTesting
@@ -400,39 +415,76 @@ public class PartitionLog {
         }
     }
 
-    public CompletableFuture<PartitionLog> rebuildProducerState(ManagedLedger managedLedger) {
-        log.info("Start recover fo topic {}", topicPartition);
-        State state = producerStateManager.state();
-        if (state.equals(State.READY)) {
+    public CompletableFuture<Void> checkIfProducerStateRecoverCompletely(boolean isTxnEnabled) {
+        return this.checkIfRecoverCompletely(isTxnEnabled);
+    }
+
+    public CompletableFuture<Void> checkIfRecoverCompletely(boolean isTxnEnabled) {
+        if (!isTxnEnabled) {
             return CompletableFuture.completedFuture(null);
         }
-        if (state.equals(State.RECOVER_ERROR)) {
-            return FutureUtil.failedFuture(new Exception("Failed to recover for topic partition " + topicPartition));
-        }
-        CompletableFuture<PartitionLog> completableFuture = new CompletableFuture<>();
-        producerStateManager.loadFromSnapshot().thenAccept(ignored -> {
-            try {
-                KafkaPositionImpl lastPosition = producerStateManager.getLastPosition();
-                PositionImpl pos =
-                        PositionImpl.get(lastPosition.getLedgerId(), lastPosition.getEntryId());
-
-                ManagedCursor cursor =
-                        managedLedger.newNonDurableCursor(pos, "producer-state-recover");
-                ProducerStateLogRecovery recovery =
-                        new ProducerStateLogRecovery(this, this.entryFormatter, cursor, 100);
-                recovery.recover();
-                producerStateManager.transitionTo(State.READY);
-                completableFuture.complete(this);
-                log.info("Finish recover fo topic {}", topicPartition);
-            } catch (ManagedLedgerException e) {
-                producerStateManager.transitionTo(State.RECOVER_ERROR);
-                log.error("Failed to open non durable cursor for topic {}.", topicPartition, e);
-                completableFuture.completeExceptionally(e);
-            }
-        }).exceptionally(loadSnapshotThrowable -> {
-            completableFuture.completeExceptionally(loadSnapshotThrowable);
+        CompletableFuture<Void> completableFuture = new CompletableFuture<>();
+        this.producerStateRecoveryFuture.thenRun(() -> {
+            producerStateManager.takeSnapshot().thenRun(() -> {
+                producerStateManager.newTimeout();
+                completableFuture.complete(null);
+            }).exceptionally(exception -> {
+                log.error("Topic {} failed to take snapshot", this.fullPartitionName);
+                completableFuture.completeExceptionally(exception);
+                return null;
+            });
+        }).exceptionally(exception -> {
+            log.error("Topic {}: Producer state recover failed", this.fullPartitionName, exception);
+            completableFuture.completeExceptionally(exception);
             return null;
         });
         return completableFuture;
+    }
+
+    public void rebuildProducerState(PersistentTopic topic) {
+        if (!producerStateManager.transitionToRecovering()) {
+            return;
+        }
+        log.info("Start recover fo topic {}", topicPartition);
+        producerStateManager.truncate();
+        producerStateManager.loadFromSnapshot().thenAccept(ignored -> {
+            ProducerStateLogRecovery recovery =
+                    new ProducerStateLogRecovery(topic, new ProducerStateRecoverCallBack() {
+
+                        @Override
+                        public void recoverComplete() {
+                            producerStateManager.transitionTo(State.READY);
+                            producerStateRecoveryFuture.complete(null);
+                        }
+
+                        @Override
+                        public void handleTxnEntry(Entry entry) {
+                            DecodeResult decodeResult = entryFormatter.decode(
+                                    Collections.singletonList(entry), RecordBatch.CURRENT_MAGIC_VALUE);
+                            Map<Long, ProducerAppendInfo> appendInfoMap = new HashMap<>();
+                            List<CompletedTxn> completedTxns = new ArrayList<>();
+                            decodeResult.getRecords().batches().forEach(batch -> {
+                                Optional<CompletedTxn> completedTxn =
+                                        updateProducers(batch,
+                                                appendInfoMap,
+                                                Optional.empty(),
+                                                PartitionLog.AppendOrigin.Log);
+                                completedTxn.ifPresent(completedTxns::add);
+                            });
+                            appendInfoMap.values().forEach(producerStateManager::update);
+                            completedTxns.forEach(producerStateManager::completeTxn);
+                        }
+
+                        @Override
+                        public void recoverExceptionally(Exception ex) {
+                            producerStateManager.transitionTo(State.RECOVER_ERROR);
+                            producerStateRecoveryFuture.completeExceptionally(ex);
+                        }}, 100);
+            recovery.recover();
+            log.info("Finish recover fo topic {}", topicPartition);
+        }).exceptionally(loadSnapshotThrowable -> {
+            producerStateRecoveryFuture.completeExceptionally(loadSnapshotThrowable);
+            return null;
+        });
     }
 }

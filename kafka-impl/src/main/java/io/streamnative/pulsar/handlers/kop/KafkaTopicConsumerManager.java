@@ -47,6 +47,7 @@ import org.apache.pulsar.common.util.FutureUtil;
 @Slf4j
 public class KafkaTopicConsumerManager implements Closeable {
 
+    @Getter
     private final PersistentTopic topic;
     private final KafkaRequestHandler requestHandler;
 

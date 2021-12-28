@@ -21,6 +21,7 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
+import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -44,6 +45,7 @@ public class ReplicaManager {
     private final PartitionLogManager logManager;
     private final DelayedOperationPurgatory<DelayedOperation> producePurgatory;
     private final String metadataNamespace;
+    private final SystemTimer timer;
 
     public ReplicaManager(KafkaServiceConfiguration kafkaConfig,
                           Time time,
@@ -53,10 +55,12 @@ public class ReplicaManager {
         this.logManager = new PartitionLogManager(kafkaConfig, entryFormatter, systemTopicClientFactory, time);
         this.producePurgatory = producePurgatory;
         this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
+        this.timer = SystemTimer.builder().executorName("producer-state-timer").build();
     }
 
-    public PartitionLog getPartitionLog(TopicPartition topicPartition, String namespacePrefix) {
-        return logManager.getLog(topicPartition, namespacePrefix);
+    public PartitionLog getPartitionLog(TopicPartition topicPartition,
+                                        String namespacePrefix) {
+        return logManager.getLog(topicPartition, namespacePrefix, timer);
     }
 
     public CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> appendRecords(

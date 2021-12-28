@@ -26,6 +26,7 @@ import io.streamnative.pulsar.handlers.kop.systopic.ProducerStateSystemTopicClie
 import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicClientFactory;
 import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicProducerStateClient;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
+import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -55,10 +56,12 @@ import org.testng.collections.Lists;
 public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
     protected final long defaultTestTimeout = 20000;
+    protected final int defaultSnapshotIntervalTime = 5000;
     private final TopicPartition partition = new TopicPartition("test", 0);
     private final Long producerId = 1L;
     private final Long maxPidExpirationMs = 10 * 1000L;
     private final MockTime time = new MockTime();
+    private final SystemTimer timer = SystemTimer.builder().build();
     private ProducerStateManager stateManager;
     private SystemTopicClientFactory systemTopicClientFactory;
     private SystemTopicProducerStateClient producerStateClient;
@@ -86,7 +89,9 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 partition.toString(),
                 maxPidExpirationMs.intValue(),
                 producerStateClient,
-                time);
+                time,
+                timer,
+                defaultSnapshotIntervalTime);
     }
 
     @AfterMethod
@@ -530,7 +535,9 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 partition.toString(),
                 maxPidExpirationMs.intValue(),
                 producerStateClient,
-                time);
+                time,
+                timer,
+                defaultSnapshotIntervalTime);
         short epoch = 0;
         append(stateManager, producerId, epoch, RecordBatch.NO_SEQUENCE, 99L, time.milliseconds(),
                 true, PartitionLog.AppendOrigin.Coordinator);
@@ -600,7 +607,9 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 partition.toString(),
                 maxPidExpirationMs.intValue(),
                 producerStateClient,
-                time);
+                time,
+                timer,
+                defaultSnapshotIntervalTime);
 
         loadFromSnapshot(recoveredMapping);
 
@@ -628,7 +637,9 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 partition.toString(),
                 maxPidExpirationMs.intValue(),
                 producerStateClient,
-                time);
+                time,
+                timer,
+                defaultSnapshotIntervalTime);
         loadFromSnapshot(recoveredMapping);
 
         // The snapshot only persists the last appended batch metadata
@@ -649,7 +660,9 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 partition.toString(),
                 maxPidExpirationMs.intValue(),
                 producerStateClient,
-                time);
+                time,
+                timer,
+                defaultSnapshotIntervalTime);
         loadFromSnapshot(recoveredMapping);
 
         Optional<ProducerStateEntry> loadedEntry = recoveredMapping.lastEntry(producerId);

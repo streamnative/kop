@@ -36,45 +36,41 @@ public class SystemTopicProducerStateReader implements SystemTopicClient.Reader<
 
     private void readLoop(CompletableFuture<Message<PidSnapshotMap>> result,
                           Deque<Message<PidSnapshotMap>> internalMsgQueue) {
-        hasMoreEventsAsync()
-                .thenAccept(hasMore -> {
-                    log.info("HasMore: {}", hasMore);
-                    if (hasMore) {
-                        reader.readNextAsync().thenAccept(message -> {
-                            log.info("HasMore2: {}", hasMore);
-                            if (message == null) {
-                                if (internalMsgQueue.size() > 0) {
-                                    result.complete(internalMsgQueue.pollLast());
-                                } else {
-                                    result.complete(null);
-                                }
-                                return;
-                            }
-                            if (belongToThisTopic(message)) {
-                                internalMsgQueue.add(message);
-                                if (internalMsgQueue.size() > 1) {
-                                    internalMsgQueue.pollFirst();
-                                }
-                            }
-                            readLoop(result, internalMsgQueue);
-                        });
-                    } else {
+        hasMoreEventsAsync().thenAccept(hasMore -> {
+            if (hasMore) {
+                reader.readNextAsync().thenAccept(message -> {
+                    if (message == null) {
                         if (internalMsgQueue.size() > 0) {
                             result.complete(internalMsgQueue.pollLast());
                         } else {
                             result.complete(null);
                         }
+                        return;
                     }
-                }).exceptionally(throwable -> {
-                    log.error("Failed to read message form system topic {}.",
-                            systemTopicClient.getTopicName(), throwable);
-                    result.completeExceptionally(throwable.getCause());
-                    return null;
+                    if (belongToThisTopic(message)) {
+                        internalMsgQueue.add(message);
+                        if (internalMsgQueue.size() > 1) {
+                            internalMsgQueue.pollFirst();
+                        }
+                    }
+                    readLoop(result, internalMsgQueue);
                 });
+            } else {
+                if (internalMsgQueue.size() > 0) {
+                    result.complete(internalMsgQueue.pollLast());
+                } else {
+                    result.complete(null);
+                }
+            }
+        }).exceptionally(throwable -> {
+            log.error("Failed to read message form system topic {}.",
+                    systemTopicClient.getTopicName(), throwable);
+            result.completeExceptionally(throwable.getCause());
+            return null;
+        });
     }
 
     private boolean belongToThisTopic(Message<PidSnapshotMap> message) {
-        log.info("WK {} {}", message, message.getProperties());
         return message.getProperty(TOPIC_NAME_PROP).equals(systemTopicClient.getTopicName().toString());
     }
 

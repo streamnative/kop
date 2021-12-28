@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import java.net.SocketAddress;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -25,7 +24,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.BrokerServiceException;
@@ -56,10 +54,6 @@ public class KafkaTopicManager {
     @Getter
     private static final ConcurrentHashMap<String, Producer>
         references = new ConcurrentHashMap<>();
-
-    @Getter
-    private static final ConcurrentHashMap<String, CompletableFuture<PartitionLog>>
-            partitionLogs = new ConcurrentHashMap<>();
 
     private final InternalServerCnx internalServerCnx;
 
@@ -133,7 +127,7 @@ public class KafkaTopicManager {
             remoteAddress,
             () -> {
                 final CompletableFuture<KafkaTopicConsumerManager> tcmFuture = new CompletableFuture<>();
-                getTopicAndInitLog(topicName).whenComplete((persistentTopic, throwable) -> {
+                getTopic(topicName).whenComplete((persistentTopic, throwable) -> {
                     if (persistentTopic.isPresent() && throwable == null) {
                         if (log.isDebugEnabled()) {
                             log.debug("[{}] Call getTopicConsumerManager for {}, and create TCM for {}.",
@@ -171,36 +165,6 @@ public class KafkaTopicManager {
         return producer;
     }
 
-    public CompletableFuture<Optional<PersistentTopic>> getTopicAndInitLog(String topicName) {
-        CompletableFuture<Optional<PersistentTopic>> future = new CompletableFuture<>();
-        getTopic(topicName).thenApply(persistentTopic -> {
-            if (!persistentTopic.isPresent()) {
-                future.complete(persistentTopic);
-                return persistentTopic;
-            }
-            CompletableFuture<PartitionLog> partitionLogCompletableFuture =
-                    partitionLogs.computeIfAbsent(topicName, (__) -> {
-                        TopicName topicNameObj = TopicName.get(topicName);
-                        PartitionLog partitionLog =
-                                requestHandler.getReplicaManager().getPartitionLog(
-                                        new TopicPartition(
-                                                topicNameObj.getPartitionedTopicName(),
-                                                topicNameObj.getPartitionIndex()),
-                                        topicNameObj.getNamespace());
-                        return partitionLog.initialize(persistentTopic.get().getManagedLedger());
-            });
-            partitionLogCompletableFuture.thenAccept(__ -> {
-                future.complete(persistentTopic);
-            }).exceptionally(ex -> {
-                log.error("Failed to init partition log.", ex);
-                future.completeExceptionally(ex);
-                return null;
-            });
-            return persistentTopic;
-        });
-        return future;
-    }
-
     // A wrapper of `BrokerService#getTopic` that is to find the topic's associated `PersistentTopic` instance
     public CompletableFuture<Optional<PersistentTopic>> getTopic(String topicName) {
         if (closed.get()) {
@@ -225,6 +189,7 @@ public class KafkaTopicManager {
             }
             if (t2 != null && t2.isPresent()) {
                 topicCompletableFuture.complete(Optional.of((PersistentTopic) t2.get()));
+
                 return;
             }
             // Fallback try use non-partitioned topic

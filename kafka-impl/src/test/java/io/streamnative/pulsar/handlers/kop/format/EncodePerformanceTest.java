@@ -47,6 +47,7 @@ public class EncodePerformanceTest {
             "test",
             "test",
             null,
+            null,
             null);
 
     public static void main(String[] args) {

@@ -20,7 +20,8 @@ import io.streamnative.pulsar.handlers.kop.storage.snapshot.AbortedTxnEntry;
 import io.streamnative.pulsar.handlers.kop.storage.snapshot.PidSnapshotMap;
 import io.streamnative.pulsar.handlers.kop.storage.snapshot.ProducerSnapshotEntry;
 import io.streamnative.pulsar.handlers.kop.systopic.SystemTopicProducerStateClient;
-import java.nio.ByteBuffer;
+import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
+import io.streamnative.pulsar.handlers.kop.utils.timer.TimerTask;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -52,36 +53,10 @@ import org.apache.pulsar.client.api.MessageId;
 @Accessors(fluent = true)
 @AllArgsConstructor
 class AbortedTxn {
-
-    private static final int VersionOffset = 0;
-    private static final int VersionSize = 2;
-    private static final int ProducerIdOffset = VersionOffset + VersionSize;
-    private static final int ProducerIdSize = 8;
-    private static final int FirstOffsetOffset = ProducerIdOffset + ProducerIdSize;
-    private static final int FirstOffsetSize = 8;
-    private static final int LastOffsetOffset = FirstOffsetOffset + FirstOffsetSize;
-    private static final int LastOffsetSize = 8;
-    private static final int LastStableOffsetOffset = LastOffsetOffset + LastOffsetSize;
-    private static final int LastStableOffsetSize = 8;
-    private static final int TotalSize = LastStableOffsetOffset + LastStableOffsetSize;
-
-    private static final Short CurrentVersion = 0;
-
     private final Long producerId;
     private final Long firstOffset;
     private final Long lastOffset;
     private final Long lastStableOffset;
-
-    protected ByteBuffer toByteBuffer() {
-        ByteBuffer buffer = ByteBuffer.allocate(AbortedTxn.TotalSize);
-        buffer.putShort(CurrentVersion);
-        buffer.putLong(producerId);
-        buffer.putLong(firstOffset);
-        buffer.putLong(lastOffset);
-        buffer.putLong(lastStableOffset);
-        buffer.flip();
-        return buffer;
-    }
 }
 
 @Data
@@ -162,7 +137,7 @@ enum State {
  * Producer state manager.
  */
 @Slf4j
-public class ProducerStateManager {
+public class ProducerStateManager extends TimerTask {
 
     private volatile State state;
 
@@ -175,6 +150,8 @@ public class ProducerStateManager {
     private final int maxProducerIdExpirationMs;
 
     private final Time time;
+
+    private final SystemTimer timer;
 
     // snapshot and recover
     private final CompletableFuture<SystemTopicClient.Writer<PidSnapshotMap>> snapshotWriter;
@@ -193,9 +170,13 @@ public class ProducerStateManager {
     public ProducerStateManager(String topicPartition,
                                 int maxProducerIdExpirationMs,
                                 SystemTopicProducerStateClient systemTopicProducerStateClient,
-                                Time time) {
+                                Time time,
+                                SystemTimer timer,
+                                int takeSnapshotIntervalTime) {
+        super(takeSnapshotIntervalTime);
         this.topicPartition = topicPartition;
         this.time = time;
+        this.timer = timer;
         this.maxProducerIdExpirationMs = maxProducerIdExpirationMs;
         this.snapshotWriter = systemTopicProducerStateClient.newWriterAsync();
         this.snapshotReader = systemTopicProducerStateClient.newReaderAsync();
@@ -212,6 +193,10 @@ public class ProducerStateManager {
 
     public void transitionTo(State state) {
         STATE_UPDATER.set(this, state);
+    }
+
+    public boolean transitionToRecovering() {
+        return STATE_UPDATER.compareAndSet(this, State.INIT, State.RECOVERING);
     }
 
 
@@ -476,5 +461,21 @@ public class ProducerStateManager {
         Long producerId = entry.producerId();
         producers.put(producerId, entry);
         entry.currentTxnFirstOffset().ifPresent(offset -> ongoingTxns.put(offset, new TxnMetadata(producerId, offset)));
+    }
+
+    @Override
+    public void run() {
+        if (this.state().equals(State.READY)) {
+            takeSnapshotByTimeout();
+        }
+    }
+
+    private void takeSnapshotByTimeout() {
+        takeSnapshot();
+        newTimeout();
+    }
+
+    protected void newTimeout() {
+        this.timer.add(this);
     }
 }

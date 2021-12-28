@@ -46,6 +46,7 @@ public class PartitionLogTest {
             "test",
             "test",
             null,
+            null,
             null);
 
     @DataProvider(name = "compressionTypes")

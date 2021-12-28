@@ -430,6 +430,11 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private int kafkaProducerStateTopicNumPartitions = DefaultProducerStateTopicNumPartitions;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Producer state take snapshot min interval time"
+    )
+    private int kafkaProducerStateSnapshotMinTimeInMillis = 5000;
 
     @FieldContext(
             category = CATEGORY_KOP,
