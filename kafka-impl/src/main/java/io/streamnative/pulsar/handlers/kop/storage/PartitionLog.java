@@ -28,6 +28,7 @@ import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -76,7 +77,6 @@ class AnalyzeResult {
  * An append-only log for storing messages. Mapping to Kafka Log.scala.
  */
 @Slf4j
-@AllArgsConstructor
 public class PartitionLog {
 
     private final KafkaServiceConfiguration kafkaConfig;
@@ -87,10 +87,30 @@ public class PartitionLog {
     private final EntryFormatter entryFormatter;
     private final ProducerStateManager producerStateManager;
     private final ScheduledExecutorService recoveryExecutor;
+    private final boolean isInternalTopic;
     private final CompletableFuture<Void> producerStateRecoveryFuture = new CompletableFuture<>();
 
     private static final KopLogValidator.CompressionCodec DEFAULT_COMPRESSION =
             new KopLogValidator.CompressionCodec(CompressionType.NONE.name, CompressionType.NONE.id);
+
+    public PartitionLog(KafkaServiceConfiguration kafkaConfig,
+                        Time time,
+                        TopicPartition topicPartition,
+                        String namespacePrefix,
+                        String fullPartitionName,
+                        EntryFormatter entryFormatter,
+                        ProducerStateManager producerStateManager,
+                        ScheduledExecutorService recoveryExecutor) {
+        this.kafkaConfig = kafkaConfig;
+        this.time = time;
+        this.topicPartition = topicPartition;
+        this.namespacePrefix = namespacePrefix;
+        this.fullPartitionName = fullPartitionName;
+        this.entryFormatter = entryFormatter;
+        this.producerStateManager = producerStateManager;
+        this.recoveryExecutor = recoveryExecutor;
+        this.isInternalTopic = KopTopic.isInternalTopic(this.fullPartitionName, kafkaConfig.getKafkaMetadataNamespace());
+    }
 
     @Data
     @Accessors(fluent = true)
@@ -214,7 +234,7 @@ public class PartitionLog {
                 appendFuture.completeExceptionally(Errors.NOT_LEADER_FOR_PARTITION.exception());
                 return appendFuture;
             }
-            if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+            if (kafkaConfig.isKafkaTransactionCoordinatorEnabled() && !isInternalTopic) {
                 topicFuture.thenAccept(topic -> {
                     topic.ifPresent(this::init);
                 });
@@ -293,7 +313,9 @@ public class PartitionLog {
             appendFuture.completeExceptionally(Errors.INVALID_TOPIC_EXCEPTION.exception());
             return;
         }
-        checkIfProducerStateRecoverCompletely(appendInfo.isTransaction()).thenAccept(ignore -> {
+        checkIfProducerStateRecoverCompletely(
+                appendInfo.isTransaction()
+                        && !isInternalTopic).thenAccept(ignore -> {
             appendRecordsContext.getTopicManager()
                     .registerProducerInPersistentTopic(fullPartitionName, persistentTopic);
 
