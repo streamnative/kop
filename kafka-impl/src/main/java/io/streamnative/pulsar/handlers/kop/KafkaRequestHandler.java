@@ -600,24 +600,24 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 };
 
                 allTopicMap.forEach((topic, list) -> {
-                    list.forEach((topicName ->
-                            authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, topicName.toString()))
-                                    .whenComplete((authorized, ex) -> {
-                                        if (ex != null || !authorized) {
-                                            allTopicMetadata.add(new TopicMetadata(
-                                                    Errors.TOPIC_AUTHORIZATION_FAILED,
-                                                    topic,
-                                                    KopTopic.isInternalTopic(topicName.toString(), metadataNamespace),
-                                                    Collections.emptyList()));
-                                            completeOne.run();
-                                            return;
-                                        }
-                                        topicMap.computeIfAbsent(
-                                                topic,
-                                                ignored -> Collections.synchronizedList(new ArrayList<>())
-                                        ).add(topicName);
-                                        completeOne.run();
-                                    })));
+                   list.forEach((topicName ->
+                           authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, topicName.toString()))
+                           .whenComplete((authorized, ex) -> {
+                               if (ex != null || !authorized) {
+                                   allTopicMetadata.add(new TopicMetadata(
+                                           Errors.TOPIC_AUTHORIZATION_FAILED,
+                                           topic,
+                                           KopTopic.isInternalTopic(topicName.toString(), metadataNamespace),
+                                           Collections.emptyList()));
+                                   completeOne.run();
+                                   return;
+                               }
+                               topicMap.computeIfAbsent(
+                                       topic,
+                                       ignored -> Collections.synchronizedList(new ArrayList<>())
+                               ).add(topicName);
+                               completeOne.run();
+                           })));
                 });
             });
         } else {
