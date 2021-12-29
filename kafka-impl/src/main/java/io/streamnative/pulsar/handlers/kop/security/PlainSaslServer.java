@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.security;
 
+import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.AUTH_DATA_SOURCE_PROP;
 import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.USER_NAME_PROP;
 
 import io.streamnative.pulsar.handlers.kop.SaslAuth;
@@ -26,6 +27,7 @@ import javax.security.sasl.SaslException;
 import javax.security.sasl.SaslServer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authentication.AuthenticationState;
@@ -46,6 +48,7 @@ public class PlainSaslServer implements SaslServer {
     private boolean complete;
     private String authorizationId;
     private String username;
+    private AuthenticationDataSource authDataSource;
     private Set<String> proxyRoles;
 
     public PlainSaslServer(AuthenticationService authenticationService, PulsarAdmin admin, Set<String> proxyRoles) {
@@ -85,6 +88,7 @@ public class PlainSaslServer implements SaslServer {
             if (proxyRoles != null && proxyRoles.contains(authState.getAuthRole())) {
                 // the Proxy passes the OriginalPrincipal as "username"
                 authorizationId = saslAuth.getUsername();
+                authDataSource = authState.getAuthDataSource();
                 username = null; // PULSAR TENANT
                 if (authorizationId.contains("/")) {
                     // the proxy uses username/originalPrincipal as "username"
@@ -100,7 +104,8 @@ public class PlainSaslServer implements SaslServer {
                 }
             } else {
                 authorizationId = authState.getAuthRole();
-                log.info("Authenticated User {}", authorizationId);
+                authDataSource = authState.getAuthDataSource();
+                log.info("Authenticated User {}, AuthDataSource {}", authorizationId, authDataSource);
             }
             complete = true;
             return new byte[0];
@@ -141,6 +146,9 @@ public class PlainSaslServer implements SaslServer {
         }
         if (USER_NAME_PROP.equals(propName)) {
             return username;
+        }
+        if (AUTH_DATA_SOURCE_PROP.equals(propName)) {
+            return authDataSource;
         }
         return null;
     }
