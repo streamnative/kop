@@ -187,6 +187,7 @@ public class PartitionLog {
             return Optional.empty();
         }
         if (producerStateManager.state().equals(State.READY)) {
+            log.info("Ready!!!!!!");
             return producerStateManager.firstUndecidedOffset();
         }
         return Optional.of(-1L);
@@ -486,6 +487,8 @@ public class PartitionLog {
                             Map<Long, ProducerAppendInfo> appendInfoMap = new HashMap<>();
                             List<CompletedTxn> completedTxns = new ArrayList<>();
                             decodeResult.getRecords().batches().forEach(batch -> {
+                                log.info("WK Records: {} {}", batch.baseSequence(), batch.lastSequence());
+                                log.info("WK Records2: {} {}", batch.baseOffset(), batch.lastOffset());
                                 Optional<CompletedTxn> completedTxn =
                                         updateProducers(batch,
                                                 appendInfoMap,

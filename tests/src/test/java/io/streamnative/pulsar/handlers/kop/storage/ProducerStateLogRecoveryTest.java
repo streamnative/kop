@@ -140,7 +140,7 @@ public class ProducerStateLogRecoveryTest extends KopProtocolHandlerTestBase {
         TopicName topic = TopicName.get(topicName);
         PartitionLog oldPartitionLog = replicaManager.getPartitionLog(new TopicPartition(topicName, 0),
                 topic.getNamespace());
-        admin.topics().unload(fullTopicName);
+        replicaManager.getLogManager().removeLog(fullTopicName);
         Awaitility.await().until(() -> {
             PartitionLog newPartitionLog = replicaManager.getPartitionLog(new TopicPartition(topicName, 0),
                     topic.getNamespace());
@@ -176,11 +176,11 @@ public class ProducerStateLogRecoveryTest extends KopProtocolHandlerTestBase {
 
             boolean readFinish = false;
             for (ConsumerRecord<Integer, String> record : consumerRecords) {
+                log.info("Fetch for receive record offset: {}, key: {}, value: {}",
+                        record.offset(), record.key(), record.value());
                 if (isolation.equals("read_committed")) {
                     assertFalse(record.value().contains("abort msg txnIndex"));
                 }
-                log.info("Fetch for receive record offset: {}, key: {}, value: {}",
-                        record.offset(), record.key(), record.value());
                 receiveCount.incrementAndGet();
                 if (lastMessage.equalsIgnoreCase(record.value())) {
                     log.info("receive the last message");

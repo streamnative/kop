@@ -455,6 +455,7 @@ public final class MessageFetchContext {
         // TODO : might fence here
         final long lso = (readCommitted
                 ? partitionLog.firstUndecidedOffset().orElse(highWatermark) : highWatermark);
+        log.info("WKKKK: {}, {}", lso, highWatermark);
         List<Entry> committedEntries = entries;
         if (readCommitted) {
             committedEntries = getCommittedEntries(entries, lso);

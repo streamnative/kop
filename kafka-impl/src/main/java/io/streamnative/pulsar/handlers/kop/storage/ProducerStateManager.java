@@ -386,6 +386,9 @@ public class ProducerStateManager extends TimerTask {
                         if (message != null) {
                             try {
                                 PidSnapshotMap pidSnapshotMap = message.getValue();
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Load snapshot [{}]", pidSnapshotMap);
+                                }
                                 this.lastPosition = new KafkaPositionImpl(
                                         pidSnapshotMap.getSnapshotOffset(),
                                         pidSnapshotMap.getLedgerId(),

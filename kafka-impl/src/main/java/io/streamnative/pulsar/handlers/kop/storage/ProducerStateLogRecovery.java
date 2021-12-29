@@ -68,12 +68,8 @@ public class ProducerStateLogRecovery {
                     && fillEntryQueueCallback.fillQueue()) {
                 Entry entry = entryQueue.poll();
                 if (entry != null) {
-                    try {
-                        currentLoadPosition = PositionImpl.get(entry.getLedgerId(), entry.getEntryId());
-                        callBack.handleTxnEntry(entry);
-                    } finally {
-                        entry.release();
-                    }
+                    currentLoadPosition = PositionImpl.get(entry.getLedgerId(), entry.getEntryId());
+                    callBack.handleTxnEntry(entry);
                 } else {
                     try {
                         Thread.sleep(1);
