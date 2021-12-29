@@ -99,7 +99,7 @@ To import the `KafkaPayloadProcessor`, you should add the additional dependency.
     </dependency>
 ```
 
-The `pulsar.version` should be the same with the version of your `pulsar-client` dependency.
+The `pulsar.version` should be same with the version of your `pulsar-client` dependency.
 
 ## Network
 
