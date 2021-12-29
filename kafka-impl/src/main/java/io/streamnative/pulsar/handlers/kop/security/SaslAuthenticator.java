@@ -57,7 +57,7 @@ import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBea
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
+import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 
@@ -68,6 +68,7 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 public class SaslAuthenticator {
 
     public static final String USER_NAME_PROP = "username";
+    public static final String AUTH_DATA_SOURCE_PROP = "authDataSource";
 
     private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
 
@@ -422,7 +423,7 @@ public class SaslAuthenticator {
                     final Session newSession = new Session(
                             new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID(),
                                     (String) saslServer.getNegotiatedProperty(USER_NAME_PROP),
-                                    new AuthenticationDataCommand(saslServer.getAuthorizationID())),
+                                    (AuthenticationDataSource) saslServer.getNegotiatedProperty(AUTH_DATA_SOURCE_PROP)),
                             "old-clientId");
                     if (!tenantAccessValidationFunction.apply(newSession)) {
                         throw new AuthenticationException("User is not allowed to access this tenant");
@@ -479,7 +480,7 @@ public class SaslAuthenticator {
                 this.session = new Session(
                         new KafkaPrincipal(KafkaPrincipal.USER_TYPE, pulsarRole,
                                 (String) saslServer.getNegotiatedProperty(USER_NAME_PROP),
-                                new AuthenticationDataCommand(pulsarRole)),
+                                (AuthenticationDataSource) saslServer.getNegotiatedProperty(AUTH_DATA_SOURCE_PROP)),
                         header.clientId());
                 registerRequestLatency.accept(apiKey.name, startProcessTime);
                 if (!tenantAccessValidationFunction.apply(session)) {
@@ -495,9 +496,11 @@ public class SaslAuthenticator {
                         KafkaResponseUtils.newSaslAuthenticate(responseBuf),
                         null);
                 if (log.isDebugEnabled()) {
-                    log.debug("Authenticate successfully for client, header {}, request {}, session {} username {}",
+                    log.debug("Authenticate successfully for client, header {}, request {}, session {} username {}," +
+                                    " authDataSource {}",
                             header, saslAuthenticateRequest, session,
-                            saslServer.getNegotiatedProperty(USER_NAME_PROP));
+                            saslServer.getNegotiatedProperty(USER_NAME_PROP),
+                            saslServer.getNegotiatedProperty(AUTH_DATA_SOURCE_PROP));
                 }
             } catch (SaslException e) {
                 registerRequestLatency.accept(apiKey.name, startProcessTime);
