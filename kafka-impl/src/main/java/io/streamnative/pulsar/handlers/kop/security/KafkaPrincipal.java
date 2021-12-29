@@ -18,6 +18,7 @@ import java.security.Principal;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.ToString;
+import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 
 
 /**
@@ -42,4 +43,6 @@ public class KafkaPrincipal implements Principal {
      * It can be "tenant" or "tenant/namespace"
      */
     private final String tenantSpec;
+
+    private final AuthenticationDataSource authenticationData;
 }
