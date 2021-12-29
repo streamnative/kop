@@ -51,15 +51,13 @@ public class KafkaAuthorizationMockTest extends KopProtocolHandlerTestBase {
 
     protected static final String ADMIN_USER = "pass.pass";
 
-    private String adminToken;
-
     @BeforeClass
     @Override
     protected void setup() throws Exception {
         Properties properties = new Properties();
         properties.setProperty("tokenSecretKey", AuthTokenUtils.encodeKeyBase64(secretKey));
 
-        adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
+        String adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
 
         conf.setSaslAllowedMechanisms(Sets.newHashSet("PLAIN"));
         conf.setKafkaMetadataTenant("internal");
