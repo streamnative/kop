@@ -496,8 +496,8 @@ public class SaslAuthenticator {
                         KafkaResponseUtils.newSaslAuthenticate(responseBuf),
                         null);
                 if (log.isDebugEnabled()) {
-                    log.debug("Authenticate successfully for client, header {}, request {}, session {} username {}," +
-                                    " authDataSource {}",
+                    log.debug("Authenticate successfully for client, header {}, request {}, session {} username {},"
+                                    + " authDataSource {}",
                             header, saslAuthenticateRequest, session,
                             saslServer.getNegotiatedProperty(USER_NAME_PROP),
                             saslServer.getNegotiatedProperty(AUTH_DATA_SOURCE_PROP));

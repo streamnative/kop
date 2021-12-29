@@ -13,14 +13,24 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.mockito.Mockito.spy;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
+
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.streamnative.pulsar.handlers.kop.security.auth.KafkaMockAuthorizationProvider;
+import java.time.Duration;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Properties;
+import javax.crypto.SecretKey;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
-import org.apache.pulsar.broker.auth.MockAuthorizationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -30,18 +40,6 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
-import javax.crypto.SecretKey;
-import java.time.Duration;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
-
-import static org.mockito.Mockito.spy;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
-
 /**
  * Unit test for Authorization with `entryFormat=pulsar`.
  */
@@ -49,7 +47,6 @@ public class KafkaAuthorizationMockTest extends KopProtocolHandlerTestBase {
 
     protected static final String TENANT = "KafkaAuthorizationTest";
     protected static final String NAMESPACE = "ns1";
-    private static final String SHORT_TOPIC = "topic1";
     private static final SecretKey secretKey = AuthTokenUtils.createSecretKey(SignatureAlgorithm.HS256);
 
     protected static final String ADMIN_USER = "pass.pass";
@@ -92,6 +89,13 @@ public class KafkaAuthorizationMockTest extends KopProtocolHandlerTestBase {
                         this.conf.getBrokerClientAuthenticationParameters()).build());
     }
 
+    @Override
+    protected void createAdmin() throws Exception {
+        super.admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString())
+                .authentication(this.conf.getBrokerClientAuthenticationPlugin(),
+                        this.conf.getBrokerClientAuthenticationParameters()).build());
+    }
+
 
     @Test(timeOut = 30 * 1000)
     public void testSuperUserProduceAndConsume() throws PulsarAdminException {
@@ -128,7 +132,7 @@ public class KafkaAuthorizationMockTest extends KopProtocolHandlerTestBase {
 
         // ensure that we can list the topic
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
-        assertEquals(result.size(), 2);
+        assertEquals(result.size(), 1);
         assertTrue(result.containsKey(topic),
                 "list of topics " + result.keySet() + "  does not contains " + topic);
 
