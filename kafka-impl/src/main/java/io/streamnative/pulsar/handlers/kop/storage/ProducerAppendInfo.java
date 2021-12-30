@@ -145,13 +145,14 @@ public class ProducerAppendInfo {
             }
         } else {
             appendDataBatch(batch.producerEpoch(), batch.baseSequence(), batch.lastSequence(), batch.maxTimestamp(),
-                    firstOffset.orElse(batch.baseOffset()), batch.lastOffset());
+                    firstOffset.orElse(batch.baseOffset()), batch.lastOffset(), batch.isTransactional(), origin);
             return Optional.empty();
         }
     }
 
     public void appendDataBatch(Short epoch, Integer firstSeq, Integer lastSeq, Long lastTimestamp,
-                                Long firstOffset, Long lastOffset) {
+                                Long firstOffset, Long lastOffset, boolean isTransaction,
+                                PartitionLog.AppendOrigin origin) {
         if (log.isDebugEnabled()) {
             log.debug("append data batch epoch: {}, firstSeq: {}, lastSeq: {}, firstOffset: {}, lastOffset: {}",
                     epoch, firstSeq, lastSeq, firstOffset, lastOffset);
@@ -160,6 +161,11 @@ public class ProducerAppendInfo {
         // We use lastSeq - firstSeq instead of lastOffset - firstOffset, because current offset is wrong,
         // the offset is set when message published to storage.
         updatedEntry.addBatch(epoch, lastSeq, lastOffset, lastSeq - firstSeq, lastTimestamp);
+
+        // For recovery
+        if (origin.equals(PartitionLog.AppendOrigin.Log)) {
+            updateCurrentTxnFirstOffset(isTransaction, firstOffset);
+        }
     }
 
     /**

@@ -109,7 +109,8 @@ public class PartitionLog {
         this.entryFormatter = entryFormatter;
         this.producerStateManager = producerStateManager;
         this.recoveryExecutor = recoveryExecutor;
-        this.isInternalTopic = KopTopic.isInternalTopic(this.fullPartitionName, kafkaConfig.getKafkaMetadataNamespace());
+        this.isInternalTopic =
+                KopTopic.isInternalTopic(this.fullPartitionName, kafkaConfig.getKafkaMetadataNamespace());
     }
 
     @Data
@@ -187,7 +188,6 @@ public class PartitionLog {
             return Optional.empty();
         }
         if (producerStateManager.state().equals(State.READY)) {
-            log.info("Ready!!!!!!");
             return producerStateManager.firstUndecidedOffset();
         }
         return Optional.of(-1L);
@@ -484,20 +484,30 @@ public class PartitionLog {
                         public void handleTxnEntry(Entry entry) {
                             DecodeResult decodeResult = entryFormatter.decode(
                                     Collections.singletonList(entry), RecordBatch.CURRENT_MAGIC_VALUE);
-                            Map<Long, ProducerAppendInfo> appendInfoMap = new HashMap<>();
-                            List<CompletedTxn> completedTxns = new ArrayList<>();
+
                             decodeResult.getRecords().batches().forEach(batch -> {
-                                log.info("WK Records: {} {}", batch.baseSequence(), batch.lastSequence());
-                                log.info("WK Records2: {} {}", batch.baseOffset(), batch.lastOffset());
-                                Optional<CompletedTxn> completedTxn =
-                                        updateProducers(batch,
-                                                appendInfoMap,
-                                                Optional.empty(),
-                                                PartitionLog.AppendOrigin.Log);
-                                completedTxn.ifPresent(completedTxns::add);
+                                Map<Long, ProducerAppendInfo> appendInfoMap = new HashMap<>();
+                                List<CompletedTxn> completedTxns = new ArrayList<>();
+                                if (batch.hasProducerId()) {
+                                    Optional<CompletedTxn> completedTxn =
+                                            updateProducers(batch,
+                                                    appendInfoMap,
+                                                    Optional.empty(),
+                                                    PartitionLog.AppendOrigin.Log);
+                                    completedTxn.ifPresent(completedTxns::add);
+                                }
+                                appendInfoMap.values().forEach(producerStateManager::update);
+                                completedTxns.forEach(completedTxn -> {
+                                    long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
+                                    producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
+                                    producerStateManager.completeTxn(completedTxn);
+                                });
+                                producerStateManager.updateEndPosition(KafkaPositionImpl.get(
+                                        batch.lastOffset() + 1,
+                                        entry.getLedgerId(),
+                                        entry.getLedgerId()));
                             });
-                            appendInfoMap.values().forEach(producerStateManager::update);
-                            completedTxns.forEach(producerStateManager::completeTxn);
+
                         }
 
                         @Override

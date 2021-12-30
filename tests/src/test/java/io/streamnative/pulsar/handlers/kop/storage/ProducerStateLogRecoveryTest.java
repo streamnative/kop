@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.storage;
 
 import static org.testng.AssertJUnit.assertFalse;
-import static org.testng.AssertJUnit.assertNotSame;
 
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
@@ -22,7 +21,6 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
@@ -49,11 +47,13 @@ import org.testng.annotations.Test;
 @Slf4j
 public class ProducerStateLogRecoveryTest extends KopProtocolHandlerTestBase {
 
-    ReplicaManager replicaManager;
+    private ReplicaManager replicaManager;
+
     @BeforeClass
     @Override
     protected void setup() throws Exception {
         this.conf.setKafkaTransactionCoordinatorEnabled(true);
+        this.conf.setEntryFormat("kafka");
         super.internalSetup();
         log.info("success internal setup");
         final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
@@ -75,13 +75,13 @@ public class ProducerStateLogRecoveryTest extends KopProtocolHandlerTestBase {
         };
     }
 
-    @Test( dataProvider = "produceConfigProvider")
-    public void readCommittedTest(boolean isBatch) throws Exception {
+    @Test(timeOut = 30 * 1000, dataProvider = "produceConfigProvider")
+    public void readCommittedFromRecoveryTest(boolean isBatch) throws Exception {
         basicProduceAndConsumeTest("read-committed-test", "txn-11", "read_committed", isBatch);
     }
 
-    @Test(timeOut = 1000 * 10, dataProvider = "produceConfigProvider")
-    public void readUncommittedTest(boolean isBatch) throws Exception {
+    @Test(timeOut = 30 * 1000, dataProvider = "produceConfigProvider")
+    public void readUncommittedFromRecoveryTest(boolean isBatch) throws Exception {
         basicProduceAndConsumeTest("read-uncommitted-test", "txn-12", "read_uncommitted", isBatch);
     }
 
@@ -98,18 +98,17 @@ public class ProducerStateLogRecoveryTest extends KopProtocolHandlerTestBase {
         producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
         producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
         producerProps.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);
-//        admin.topics().createPartitionedTopic(topicName, 1);
-
-        @Cleanup
-        KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
-
-        producer.initTransactions();
 
         int totalTxnCount = 10;
         int messageCountPerTxn = 10;
 
         String lastMessage = "";
         for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
+            producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId + "-" + txnIndex);
+            @Cleanup
+            KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
+
+            producer.initTransactions();
             producer.beginTransaction();
 
             String contentBase;
@@ -140,6 +139,7 @@ public class ProducerStateLogRecoveryTest extends KopProtocolHandlerTestBase {
         TopicName topic = TopicName.get(topicName);
         PartitionLog oldPartitionLog = replicaManager.getPartitionLog(new TopicPartition(topicName, 0),
                 topic.getNamespace());
+        // Remove it, will it will rebuild
         replicaManager.getLogManager().removeLog(fullTopicName);
         Awaitility.await().until(() -> {
             PartitionLog newPartitionLog = replicaManager.getPartitionLog(new TopicPartition(topicName, 0),
