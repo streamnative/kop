@@ -194,10 +194,10 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                                     KafkaTopicManager.deReference(partitionedZeroTopicName);
                                 }
 
-                                // Remove log for rebuild producer state.
-                                handler.getReplicaManager(name.getTenant())
-                                        .getLogManager()
-                                        .removeLog(topic);
+//                                // Remove log for rebuild producer state.
+//                                handler.getReplicaManager(name.getTenant())
+//                                        .getLogManager()
+//                                        .removeLog(topic);
                             }
                         } else {
                             log.error("Failed to get owned topic list for "
@@ -528,8 +528,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
             getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
         }
-        systemTopicClientFactory = new SystemTopicClientFactory(getProducerStateTopicClient(),
-                kafkaConfig.getKafkaProducerStateTopicNumPartitions());
+        systemTopicClientFactory = new SystemTopicClientFactory(getProducerStateTopicClient(), kafkaConfig);
 
         Configuration conf = new PropertiesConfiguration();
         conf.addProperty("prometheusStatsLatencyRolloverSeconds",

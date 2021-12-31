@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.systopic;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -38,10 +39,13 @@ public class SystemTopicClientFactory {
 
     private final int kafkaProducerStateTopicNumPartitions;
 
+    private final KafkaServiceConfiguration kafkaConfig;
+
     public SystemTopicClientFactory(ProducerStateSystemTopicClient systemTopicClient,
-                                    int kafkaProducerStateTopicNumPartitions) {
+                                    KafkaServiceConfiguration kafkaConfig) {
         this.systemTopicClient = systemTopicClient;
-        this.kafkaProducerStateTopicNumPartitions = kafkaProducerStateTopicNumPartitions;
+        this.kafkaProducerStateTopicNumPartitions = kafkaConfig.getKafkaProducerStateTopicNumPartitions();
+        this.kafkaConfig = kafkaConfig;
     }
 
     public TopicName getProducerStateTopicName(String topic) {
@@ -49,7 +53,7 @@ public class SystemTopicClientFactory {
         return TopicName.get(
                 TopicDomain.persistent.value(),
                 topicName.getTenant(),
-                topicName.getNamespacePortion(),
+                kafkaConfig.getKafkaMetadataNamespace(),
                 SYS_TOPIC_PRODUCER_STATE);
     }
 

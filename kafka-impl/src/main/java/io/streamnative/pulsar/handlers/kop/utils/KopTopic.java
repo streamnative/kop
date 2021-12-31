@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import static io.streamnative.pulsar.handlers.kop.systopic.SystemTopicClientFactory.SYS_TOPIC_PRODUCER_STATE;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
@@ -116,7 +117,10 @@ public class KopTopic {
 
     public static boolean isInternalTopic(final String fullTopicName, final String metadataNamespace) {
         return validateTopic(fullTopicName, metadataNamespace,
-                topic -> topic.equals(GROUP_METADATA_TOPIC_NAME) || topic.equals(TRANSACTION_STATE_TOPIC_NAME));
+                topic -> topic.equals(GROUP_METADATA_TOPIC_NAME)
+                        || topic.equals(TRANSACTION_STATE_TOPIC_NAME)
+                        || topic.equals(SYS_TOPIC_PRODUCER_STATE)
+        );
     }
 
     public static boolean isGroupMetadataTopicName(final String fullTopicName, final String metadataNamespace) {

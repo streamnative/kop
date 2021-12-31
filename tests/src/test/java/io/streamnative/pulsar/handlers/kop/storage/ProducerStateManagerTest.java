@@ -80,7 +80,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     protected void setUp() {
         systemTopicClient = new ProducerStateSystemTopicClient(pulsar, conf);
         systemTopicClientFactory =
-                new SystemTopicClientFactory(systemTopicClient, conf.getKafkaProducerStateTopicNumPartitions());
+                new SystemTopicClientFactory(systemTopicClient, conf);
         producerStateClient =
                 systemTopicClientFactory.getProducerStateClient(TopicName.get("test").toString());
         stateManager = new ProducerStateManager(
@@ -396,8 +396,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         short producerEpoch = 0;
         short coordinatorEpoch = 15;
         long offset = 9L;
-        append(stateManager, producerId, producerEpoch, 0, offset);
-
+        appendAndDontUpdateCurrentTxnFirstOffset(stateManager, producerId, producerEpoch, 0, offset);
         ProducerAppendInfo appendInfo =
                 stateManager.prepareUpdate(producerId, PartitionLog.AppendOrigin.Client);
         appendInfo.appendDataBatch(producerEpoch, 1, 5, time.milliseconds(),
@@ -726,6 +725,19 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 true, PartitionLog.AppendOrigin.Client);
     }
 
+    private void appendAndDontUpdateCurrentTxnFirstOffset(ProducerStateManager stateManager,
+                        Long producerId,
+                        Short producerEpoch,
+                        Integer seq,
+                        Long offset) {
+        ProducerAppendInfo producerAppendInfo =
+                stateManager.prepareUpdate(producerId, PartitionLog.AppendOrigin.Client);
+        producerAppendInfo.appendDataBatch(
+                        producerEpoch, seq, seq, time.milliseconds(), -1L, -1L, true, PartitionLog.AppendOrigin.Client);
+        stateManager.update(producerAppendInfo);
+        stateManager.updateEndPosition(KafkaPositionImpl.get(offset + 1, -1, -1));
+    }
+
     private void append(ProducerStateManager stateManager,
                         Long producerId,
                         Short producerEpoch,
@@ -747,7 +759,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                         PartitionLog.AppendOrigin origin) {
         ProducerAppendInfo producerAppendInfo = stateManager.prepareUpdate(producerId, origin);
         producerAppendInfo
-                .appendDataBatch(producerEpoch, seq, seq, timestamp, -1L, -1L, true, PartitionLog.AppendOrigin.Client);
+                .appendDataBatch(producerEpoch, seq, seq, timestamp, -1L, -1L, isTransactional, origin);
         // Update to real offset
         producerAppendInfo.updateCurrentTxnFirstOffset(isTransactional, offset);
         stateManager.update(producerAppendInfo);

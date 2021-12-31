@@ -449,7 +449,7 @@ public final class MessageFetchContext {
         tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
         PartitionLog partitionLog =
                 requestHandler.getReplicaManager().getPartitionLog(topicPartition, namespacePrefix);
-        if (requestHandler.getKafkaConfig().isKafkaTransactionCoordinatorEnabled()) {
+        if (requestHandler.getKafkaConfig().isKafkaTransactionCoordinatorEnabled() && readCommitted) {
             partitionLog.init(tcm.getTopic());
         }
         // TODO : might fence here
