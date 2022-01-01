@@ -34,6 +34,7 @@ public class AppendRecordsContext {
     };
 
     private final Recycler.Handle<AppendRecordsContext> recyclerHandle;
+    private String clientId;
     private KafkaTopicManager topicManager;
     private RequestStats requestStats;
     private Consumer<Integer> startSendOperationForThrottling;
@@ -45,12 +46,15 @@ public class AppendRecordsContext {
     }
 
     // recycler and get for this object
-    public static AppendRecordsContext get(final KafkaTopicManager topicManager,
-                                           final RequestStats requestStats,
-                                           final Consumer<Integer> startSendOperationForThrottling,
-                                           final Consumer<Integer> completeSendOperationForThrottling,
-                                           final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
+    public static AppendRecordsContext get(
+            String clientId,
+            final KafkaTopicManager topicManager,
+            final RequestStats requestStats,
+            final Consumer<Integer> startSendOperationForThrottling,
+            final Consumer<Integer> completeSendOperationForThrottling,
+            final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
         AppendRecordsContext context = RECYCLER.get();
+        context.clientId = clientId;
         context.topicManager = topicManager;
         context.requestStats = requestStats;
         context.startSendOperationForThrottling = startSendOperationForThrottling;
@@ -61,6 +65,7 @@ public class AppendRecordsContext {
     }
 
     public void recycle() {
+        this.clientId = null;
         topicManager = null;
         requestStats = null;
         startSendOperationForThrottling = null;

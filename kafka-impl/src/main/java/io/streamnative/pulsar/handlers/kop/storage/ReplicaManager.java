@@ -111,8 +111,12 @@ public class ReplicaManager {
                         .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
                                 new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
                         .exceptionally(ex -> {
+                            Errors errors = Errors.forException(ex.getCause());
+                            if (errors == Errors.UNKNOWN_SERVER_ERROR) {
+                                errors = Errors.KAFKA_STORAGE_ERROR;
+                            }
                             addPartitionResponse.accept(topicPartition,
-                                    new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
+                                    new ProduceResponse.PartitionResponse(errors));
                             return null;
                         });
             }

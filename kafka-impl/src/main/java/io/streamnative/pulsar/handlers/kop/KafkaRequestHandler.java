@@ -914,7 +914,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
-
+        String clientId = produceHar.getHeader().clientId();
         final int numPartitions = produceRequest.partitionRecordsOrFail().size();
         if (numPartitions == 0) {
             resultFuture.complete(new ProduceResponse(Collections.emptyMap()));
@@ -934,6 +934,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     return;
                 }
                 AppendRecordsContext appendRecordsContext = AppendRecordsContext.get(
+                        clientId,
                         topicManager,
                         requestStats,
                         this::startSendOperationForThrottling,
@@ -2213,6 +2214,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         WriteTxnMarkersRequest request = (WriteTxnMarkersRequest) kafkaHeaderAndRequest.getRequest();
+        String clientId = kafkaHeaderAndRequest.getHeader().clientId();
         Map<Long, Map<TopicPartition, Errors>> errors = new ConcurrentHashMap<>();
         List<WriteTxnMarkersRequest.TxnMarkerEntry> markers = request.markers();
         AtomicInteger numAppends = new AtomicInteger(markers.size());
@@ -2238,6 +2240,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             TransactionResult transactionResult = marker.transactionResult();
             Map<TopicPartition, MemoryRecords> controlRecords = generateTxnMarkerRecords(marker);
             AppendRecordsContext appendRecordsContext = AppendRecordsContext.get(
+                    clientId,
                     topicManager,
                     requestStats,
                     this::startSendOperationForThrottling,
@@ -2507,62 +2510,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 completeOneErrorTopic.accept(topic, ApiError.fromThrowable(e));
             }
         });
-    }
-
-    /**
-     * Write the txn marker to the topic partition.
-     *
-     * @param topicPartition
-     */
-    private CompletableFuture<Long> writeTxnMarker(TopicPartition topicPartition,
-                                TransactionResult transactionResult,
-                                long producerId,
-                                short producerEpoch) {
-        CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
-        String namespacePrefix = currentNamespacePrefix();
-        String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
-        TopicName topicName = TopicName.get(fullPartitionName);
-        topicManager.getTopic(topicName.toString())
-                .whenComplete((persistentTopicOpt, throwable) -> {
-                    if (throwable != null) {
-                        offsetFuture.completeExceptionally(throwable);
-                        return;
-                    }
-                    if (!persistentTopicOpt.isPresent()) {
-                        log.info("Topic {} is not owned by this Broker", fullPartitionName);
-                        offsetFuture.complete(null);
-                        return;
-                    }
-                    PersistentTopic persistentTopic = persistentTopicOpt.get();
-                    persistentTopic.publishMessage(generateTxnMarker(transactionResult, producerId, producerEpoch),
-                            MessagePublishContext.get(offsetFuture, persistentTopic,
-                                    1, SystemTime.SYSTEM.milliseconds()));
-                });
-        return offsetFuture;
-    }
-
-    private ByteBuf generateTxnMarker(TransactionResult transactionResult, long producerId, short producerEpoch) {
-        ControlRecordType controlRecordType;
-        MarkerType markerType;
-        if (transactionResult.equals(TransactionResult.COMMIT)) {
-            markerType = MarkerType.TXN_COMMIT;
-            controlRecordType = ControlRecordType.COMMIT;
-        } else {
-            markerType = MarkerType.TXN_ABORT;
-            controlRecordType = ControlRecordType.ABORT;
-        }
-        EndTransactionMarker marker = new EndTransactionMarker(controlRecordType, 0);
-        MemoryRecords memoryRecords = MemoryRecords.withEndTransactionMarker(producerId, producerEpoch, marker);
-
-        ByteBuf byteBuf = Unpooled.wrappedBuffer(memoryRecords.buffer());
-        MessageMetadata messageMetadata = new MessageMetadata()
-                .setTxnidMostBits(producerId)
-                .setTxnidLeastBits(producerEpoch)
-                .setMarkerType(markerType.getValue())
-                .setPublishTime(SystemTime.SYSTEM.milliseconds())
-                .setProducerName("")
-                .setSequenceId(0L);
-        return Commands.serializeMetadataAndPayload(Commands.ChecksumType.None, messageMetadata, byteBuf);
     }
 
     @Override

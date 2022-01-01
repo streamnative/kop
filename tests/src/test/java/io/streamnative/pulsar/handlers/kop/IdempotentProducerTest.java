@@ -14,10 +14,12 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Properties;
+import java.util.concurrent.ExecutionException;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -42,6 +44,7 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         this.conf.setKafkaTransactionCoordinatorEnabled(true);
+//        this.conf.setBrokerDeduplicationEnabled(true);
         super.internalSetup();
         log.info("success internal setup");
     }
@@ -62,13 +65,14 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test
-    public void testIdempotentProducer() throws PulsarAdminException {
+    public void testIdempotentProducer() throws PulsarAdminException, ExecutionException, InterruptedException {
         String topic = "testIdempotentProducer";
         admin.topics().createPartitionedTopic(topic, 1);
+        admin.namespaces().setDeduplicationStatusAsync("public/default", true);
         int maxMessageNum = 1000;
         Properties producerProperties = newKafkaProducerProperties();
+        producerProperties.put(ProducerConfig.CLIENT_ID_CONFIG, "test-Client");
         producerProperties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
-        producerProperties.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);
 
         @Cleanup
         KafkaProducer<String, String> producer = new KafkaProducer<>(producerProperties);
@@ -77,6 +81,11 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
             producer.send(new ProducerRecord<>(topic, "test" + i));
         }
         producer.flush();
+
+        // Send a deduplicated message.
+        @Cleanup
+        KafkaProducer<String, String> producer2 = new KafkaProducer<>(producerProperties);
+        producer2.send(new ProducerRecord<>(topic, "test")).get();
 
         @Cleanup
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties());
@@ -90,6 +99,9 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
             }
         }
         assertEquals(maxMessageNum, i);
+        // Should be empty
+        ConsumerRecords<String, String> msg = consumer.poll(Duration.ofSeconds(2));
+        assertTrue(msg.isEmpty());
     }
 
 }

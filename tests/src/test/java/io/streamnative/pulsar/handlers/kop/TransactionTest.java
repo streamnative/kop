@@ -41,6 +41,7 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -57,6 +58,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         this.conf.setKafkaTransactionCoordinatorEnabled(true);
+        this.conf.setBrokerDeduplicationEnabled(true);
         super.internalSetup();
         log.info("success internal setup");
     }
@@ -76,12 +78,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         };
     }
 
-    @Test(timeOut = 1000 * 10, dataProvider = "produceConfigProvider")
+    @Test(timeOut = 1000 * 100, dataProvider = "produceConfigProvider")
     public void readCommittedTest(boolean isBatch) throws Exception {
         basicProduceAndConsumeTest("read-committed-test", "txn-11", "read_committed", isBatch);
     }
 
-    @Test(timeOut = 1000 * 10, dataProvider = "produceConfigProvider")
+    @Test(timeOut = 1000 * 100, dataProvider = "produceConfigProvider")
     public void readUncommittedTest(boolean isBatch) throws Exception {
         basicProduceAndConsumeTest("read-uncommitted-test", "txn-12", "read_uncommitted", isBatch);
     }
@@ -98,7 +100,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
         producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
-        producerProps.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);
+//        producerProps.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);
 
         @Cleanup
         KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
@@ -106,7 +108,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.initTransactions();
 
         int totalTxnCount = 10;
-        int messageCountPerTxn = 10;
+        int messageCountPerTxn = 100;
 
         String lastMessage = "";
         for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
@@ -195,12 +197,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         log.info("Fetch for finish consume messages. isolation: {}", isolation);
     }
 
-    @Test(timeOut = 1000 * 15)
+    @Test(timeOut = 1000 * 150)
     public void offsetCommitTest() throws Exception {
         txnOffsetTest("txn-offset-commit-test", 10, true);
     }
 
-    @Test(timeOut = 1000 * 10)
+    @Test(timeOut = 1000 * 100)
     public void offsetAbortTest() throws Exception {
         txnOffsetTest("txn-offset-abort-test", 10, false);
     }
@@ -290,6 +292,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
+        producerProps.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
 
         KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
 
