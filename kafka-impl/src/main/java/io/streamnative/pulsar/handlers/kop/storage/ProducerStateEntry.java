@@ -13,9 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
-import java.util.Deque;
 import java.util.Optional;
-import java.util.concurrent.LinkedBlockingDeque;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.experimental.Accessors;

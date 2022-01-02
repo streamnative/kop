@@ -21,6 +21,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.MessagePublishContext;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
+import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
 import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
@@ -38,7 +39,10 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.ManagedLedger;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.Position;
 import org.apache.commons.compress.utils.Lists;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
@@ -232,9 +236,8 @@ public class PartitionLog {
                                  final LogAppendInfo appendInfo,
                                  final EncodeResult encodeResult,
                                  final AppendRecordsContext appendRecordsContext) {
-        final int numMessages = encodeResult.getNumMessages();
-        final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
         RequestStats requestStats = appendRecordsContext.getRequestStats();
+
         if (!persistentTopicOpt.isPresent()) {
             encodeResult.recycle();
             // It will trigger a retry send of Kafka client
@@ -254,13 +257,18 @@ public class PartitionLog {
         // collect metrics
         encodeResult.updateProducerStats(topicPartition, requestStats, namespacePrefix);
 
-        // publish
-        final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
+        final int numMessages = encodeResult.getNumMessages();
+        final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
         final long beforePublish = time.nanoseconds();
-        persistentTopic.publishMessage(byteBuf,
-                MessagePublishContext.get(offsetFuture, persistentTopic, appendRecordsContext.getClientId(),
-                        appendInfo.firstSequence(), appendInfo.lastSequence(), numMessages, appendInfo.isControlBatch(),
-                        System.nanoTime()));
+
+        CompletableFuture<Long> offsetFuture;
+        if (appendInfo.isControlBatch()) {
+            offsetFuture = publishControlMessage(persistentTopic, byteBuf, numMessages);
+        } else {
+            offsetFuture = publishNormalMessage(
+                    persistentTopic, byteBuf, numMessages, appendInfo, appendRecordsContext);
+        }
+
         offsetFuture.whenComplete((offset, e) -> {
             appendRecordsContext.getCompleteSendOperationForThrottling().accept(byteBuf.readableBytes());
 
@@ -295,6 +303,47 @@ public class PartitionLog {
             }
             encodeResult.recycle();
         });
+    }
+
+    private CompletableFuture<Long> publishNormalMessage(final PersistentTopic persistentTopic,
+                                                         final ByteBuf byteBuf,
+                                                         final int numMessages,
+                                                         final LogAppendInfo appendInfo,
+                                                         final AppendRecordsContext appendRecordsContext) {
+        final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
+
+        persistentTopic.publishMessage(byteBuf,
+                MessagePublishContext.get(offsetFuture, persistentTopic, appendRecordsContext.getClientId(),
+                        appendInfo.firstSequence(), appendInfo.lastSequence(), numMessages, appendInfo.isControlBatch(),
+                        time.nanoseconds()));
+        return offsetFuture;
+    }
+
+    private CompletableFuture<Long> publishControlMessage(final PersistentTopic persistentTopic,
+                                                          final ByteBuf byteBuf,
+                                                          final int numMessages) {
+        final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
+
+        persistentTopic.getManagedLedger().asyncAddEntry(byteBuf, numMessages, new AsyncCallbacks.AddEntryCallback() {
+            @Override
+            public void addComplete(Position position, ByteBuf entryData, Object ctx) {
+                long baseOffset;
+                try {
+                    baseOffset = MessageMetadataUtils.peekBaseOffset(entryData, numMessages);
+                } catch (MetadataCorruptedException e) {
+                    offsetFuture.completeExceptionally(e);
+                    return;
+                }
+                offsetFuture.complete(baseOffset);
+            }
+
+            @Override
+            public void addFailed(ManagedLedgerException exception, Object ctx) {
+                log.error("Failed to abort control message: ", exception);
+                offsetFuture.completeExceptionally(exception);
+            }
+        }, null);
+        return offsetFuture;
     }
 
     @VisibleForTesting
