@@ -910,7 +910,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
-        String clientId = produceHar.getHeader().clientId();
+
         final int numPartitions = produceRequest.partitionRecordsOrFail().size();
         if (numPartitions == 0) {
             resultFuture.complete(new ProduceResponse(Collections.emptyMap()));
@@ -930,7 +930,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     return;
                 }
                 AppendRecordsContext appendRecordsContext = AppendRecordsContext.get(
-                        clientId,
                         topicManager,
                         requestStats,
                         this::startSendOperationForThrottling,
@@ -2210,7 +2209,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         WriteTxnMarkersRequest request = (WriteTxnMarkersRequest) kafkaHeaderAndRequest.getRequest();
-        String clientId = kafkaHeaderAndRequest.getHeader().clientId();
+
         Map<Long, Map<TopicPartition, Errors>> errors = new ConcurrentHashMap<>();
         List<WriteTxnMarkersRequest.TxnMarkerEntry> markers = request.markers();
         AtomicInteger numAppends = new AtomicInteger(markers.size());
@@ -2236,7 +2235,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             TransactionResult transactionResult = marker.transactionResult();
             Map<TopicPartition, MemoryRecords> controlRecords = generateTxnMarkerRecords(marker);
             AppendRecordsContext appendRecordsContext = AppendRecordsContext.get(
-                    clientId,
                     topicManager,
                     requestStats,
                     this::startSendOperationForThrottling,

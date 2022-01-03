@@ -386,7 +386,8 @@ public class PartitionLog {
             numMessages += (batch.lastOffset() - batch.baseOffset() + 1);
             isTransaction = batch.isTransactional();
             isControlBatch = batch.isControlBatch();
-            log.info("Batch pid: {} {}", batch.producerId(), batch.producerEpoch());
+
+            // We assume batches producerId are same.
             if (batch.hasProducerId()) {
                 producerId = Optional.of(batch.producerId());
             }
