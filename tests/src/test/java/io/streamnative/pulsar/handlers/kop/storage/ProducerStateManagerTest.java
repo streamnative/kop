@@ -15,12 +15,12 @@ package io.streamnative.pulsar.handlers.kop.storage;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
+import static org.testng.AssertJUnit.fail;
 
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.util.Collections;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTxnStateException;
@@ -75,16 +75,12 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void testTxnFirstOffsetMetadataCached() {
-        short producerEpoch = 0;
         long offset = 992342L;
-        int seq = 0;
         ProducerAppendInfo producerAppendInfo =
                 new ProducerAppendInfo(
                         partition.toString(), producerId, ProducerStateEntry.empty(producerId),
                         PartitionLog.AppendOrigin.Client);
 
-//        producerAppendInfo.appendDataBatch(producerEpoch, seq, seq, time.milliseconds(),
-//                offset, offset);
         // Update to real offset
         producerAppendInfo.updateCurrentTxnFirstOffset(true, offset);
         stateManager.update(producerAppendInfo);
@@ -96,12 +92,11 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     public void testSkipEmptyTransactions() {
         short producerEpoch = 0;
         short coordinatorEpoch = 27;
-        AtomicInteger seq = new AtomicInteger(0);
 
         // Start one transaction in a separate append
         ProducerAppendInfo firstAppend = stateManager.prepareUpdate(
                 producerId, PartitionLog.AppendOrigin.Client);
-        appendData(16L, 20L, firstAppend, producerEpoch, seq);
+        appendData(16L, 20L, firstAppend, producerEpoch);
         assertEquals(new TxnMetadata(producerId, 16L), firstAppend.startedTransactions().get(0));
         stateManager.update(firstAppend);
         assertEquals(16, stateManager.firstUndecidedOffset().get().longValue());
@@ -120,13 +115,13 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 appendEndTxn(ControlRecordType.COMMIT, 22L, secondAppend, coordinatorEpoch, producerEpoch));
         assertEquals(Optional.empty(),
                 appendEndTxn(ControlRecordType.ABORT, 23L, secondAppend, coordinatorEpoch, producerEpoch));
-        appendData(24L, 27L, secondAppend, producerEpoch, seq);
+        appendData(24L, 27L, secondAppend, producerEpoch);
         Optional<CompletedTxn> secondCompletedTxn = appendEndTxn(
                 ControlRecordType.ABORT, 28L, secondAppend, coordinatorEpoch, producerEpoch);
         assertTrue(secondCompletedTxn.isPresent());
         assertEquals(Optional.empty(),
                 appendEndTxn(ControlRecordType.ABORT, 29L, secondAppend, coordinatorEpoch, producerEpoch));
-        appendData(30L, 31L, secondAppend, producerEpoch, seq);
+        appendData(30L, 31L, secondAppend, producerEpoch);
 
         assertEquals(2, secondAppend.startedTransactions().size());
         assertEquals(new TxnMetadata(producerId, 24L),
@@ -148,13 +143,9 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
     public void appendData(Long startOffset, Long endOffset,
                            ProducerAppendInfo appendInfo,
-                           short producerEpoch, AtomicInteger seq) {
-        int count = (int) (endOffset - startOffset);
-//        appendInfo.appendDataBatch(producerEpoch, seq.get(), seq.addAndGet(count), time.milliseconds(),
-//                startOffset, endOffset);
+                           short producerEpoch) {
         // Update to real offset
         appendInfo.updateCurrentTxnFirstOffset(true, startOffset);
-        seq.incrementAndGet();
     }
 
     @Test(timeOut = defaultTestTimeout)
@@ -202,76 +193,16 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
                 ProducerStateEntry.empty(producerId),
                 PartitionLog.AppendOrigin.Client
         );
-//        producerAppendInfo.appendDataBatch(producerEpoch, 0, 0, time.milliseconds(),
-//                startOffset, startOffset);
-        // Update to real offset
+        producerAppendInfo.updatedEntry().producerEpoch(producerEpoch);
         producerAppendInfo.updateCurrentTxnFirstOffset(true, startOffset);
         stateManager.update(producerAppendInfo);
-    }
-
-    @Test(timeOut = defaultTestTimeout)
-    public void updateProducerTransactionState() {
-//        short producerEpoch = 0;
-//        short coordinatorEpoch = 15;
-//        long offset = 9L;
-//        append(stateManager, producerId, producerEpoch, 0, offset);
-//
-//        ProducerAppendInfo appendInfo =
-//                stateManager.prepareUpdate(producerId, PartitionLog.AppendOrigin.Client);
-//        appendInfo.appendDataBatch(producerEpoch, 1, 5, time.milliseconds(),
-//                16L, 20L);
-//        // Update to real offset
-//        appendInfo.updateCurrentTxnFirstOffset(true, 16L);
-//        ProducerStateEntry lastEntry = appendInfo.toEntry();
-//        assertEquals(producerEpoch, lastEntry.producerEpoch().shortValue());
-//        assertEquals(1, lastEntry.firstSeq().intValue());
-//        assertEquals(5, lastEntry.lastSeq().intValue());
-//        assertEquals(16L, lastEntry.firstDataOffset().longValue());
-//        assertEquals(20L, lastEntry.lastDataOffset().longValue());
-//        assertEquals(Optional.of(16L), lastEntry.currentTxnFirstOffset());
-//        assertEquals(
-//                Lists.newArrayList(new TxnMetadata(producerId, 16L)),
-//                appendInfo.startedTransactions());
-//
-//        appendInfo.appendDataBatch(producerEpoch, 6, 10, time.milliseconds(),
-//                26L, 30L);
-//        // Update to real offset
-//        appendInfo.updateCurrentTxnFirstOffset(true, 26L);
-//        lastEntry = appendInfo.toEntry();
-//        assertEquals(producerEpoch, lastEntry.producerEpoch().shortValue());
-//        assertEquals(6, lastEntry.firstSeq().intValue());
-//        assertEquals(10, lastEntry.lastSeq().intValue());
-//        assertEquals(Optional.of(16L), lastEntry.currentTxnFirstOffset());
-//        assertEquals(
-//                Lists.newArrayList(new TxnMetadata(producerId, 16L)),
-//                appendInfo.startedTransactions());
-//
-//        EndTransactionMarker endTxnMarker = new EndTransactionMarker(ControlRecordType.COMMIT, coordinatorEpoch);
-//        Optional<CompletedTxn> completedTxnOpt =
-//                appendInfo.appendEndTxnMarker(endTxnMarker, producerEpoch, 40L, time.milliseconds());
-//        assertTrue(completedTxnOpt.isPresent());
-//
-//        CompletedTxn completedTxn = completedTxnOpt.get();
-//        assertEquals(producerId, completedTxn.producerId());
-//        assertEquals(16L, completedTxn.firstOffset().longValue());
-//        assertEquals(40L, completedTxn.lastOffset().longValue());
-//        assertFalse(completedTxn.isAborted());
-//
-//        lastEntry = appendInfo.toEntry();
-//        assertEquals(producerEpoch, lastEntry.producerEpoch().shortValue());
-//        // verify that appending the transaction marker doesn't affect the metadata of the cached record batches.
-//        assertEquals(6, lastEntry.firstSeq().intValue());
-//        assertEquals(10, lastEntry.lastSeq().intValue());
-//        assertEquals(Optional.empty(), lastEntry.currentTxnFirstOffset());
-//        assertEquals(Lists.newArrayList(new TxnMetadata(producerId, 16L)),
-//                appendInfo.startedTransactions());
     }
 
     @Test(timeOut = defaultTestTimeout, expectedExceptions = InvalidTxnStateException.class)
     public void testNonTransactionalAppendWithOngoingTransaction() {
         short epoch = 0;
-        append(stateManager, producerId, epoch, 0, 0L, time.milliseconds(), true);
-        append(stateManager, producerId, epoch, 1, 1L, time.milliseconds(), false);
+        append(stateManager, producerId, epoch, 0L, time.milliseconds(), true);
+        append(stateManager, producerId, epoch, 1L, time.milliseconds(), false);
     }
 
     @Test(timeOut = defaultTestTimeout)
@@ -279,27 +210,26 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         TopicPartition partition = new TopicPartition(Topic.GROUP_METADATA_TOPIC_NAME, 0);
         stateManager = new ProducerStateManager(partition.toString());
         short epoch = 0;
-        append(stateManager, producerId, epoch, RecordBatch.NO_SEQUENCE, 99L, time.milliseconds(),
+        append(stateManager, producerId, epoch, 99L, time.milliseconds(),
                 true, PartitionLog.AppendOrigin.Coordinator);
-        append(stateManager, producerId, epoch, RecordBatch.NO_SEQUENCE, 100L, time.milliseconds(),
+        append(stateManager, producerId, epoch, 100L, time.milliseconds(),
                 true, PartitionLog.AppendOrigin.Coordinator);
     }
 
     @Test(timeOut = defaultTestTimeout)
     public void testOldEpochForControlRecord() {
-//        short epoch = 5;
-//        int sequence = 0;
-//
-//        assertEquals(Optional.empty(), stateManager.firstUndecidedOffset());
-//
-//        append(stateManager, producerId, epoch, sequence, 99L, time.milliseconds(), true);
-//        try {
-//            appendEndTxnMarker(stateManager, producerId, (short) 3, ControlRecordType.COMMIT, 100L,
-//                    -1, time.milliseconds());
-//            fail("The control record with old epoch.");
-//        } catch (IllegalArgumentException e) {
-//            assertTrue(e.getMessage().contains("which is smaller than the last seen"));
-//        }
+        short epoch = 5;
+
+        assertEquals(Optional.empty(), stateManager.firstUndecidedOffset());
+
+        append(stateManager, producerId, epoch, 99L, time.milliseconds(), true);
+        try {
+            appendEndTxnMarker(stateManager, producerId, (short) 3, ControlRecordType.COMMIT, 100L,
+                    -1, time.milliseconds());
+            fail("The control record with old epoch.");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("which is smaller than the last seen"));
+        }
     }
 
     @Test(timeOut = defaultTestTimeout)
@@ -332,37 +262,27 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
         return completedTxnOpt;
     }
 
-    private void append(ProducerStateManager stateManager,
-                        Long producerId,
-                        Short producerEpoch,
-                        Integer seq,
-                        Long offset) {
-        append(stateManager, producerId, producerEpoch, seq, offset, time.milliseconds(),
-                false, PartitionLog.AppendOrigin.Client);
-    }
 
     private void append(ProducerStateManager stateManager,
                         Long producerId,
                         Short producerEpoch,
-                        Integer seq,
                         Long offset,
                         Long timestamp,
                         Boolean isTransactional) {
-        append(stateManager, producerId, producerEpoch, seq, offset, timestamp, isTransactional,
+        append(stateManager, producerId, producerEpoch, offset, timestamp, isTransactional,
                 PartitionLog.AppendOrigin.Client);
     }
 
     private void append(ProducerStateManager stateManager,
                         Long producerId,
                         Short producerEpoch,
-                        Integer seq,
                         Long offset,
                         Long timestamp,
                         Boolean isTransactional,
                         PartitionLog.AppendOrigin origin) {
         ProducerAppendInfo producerAppendInfo = stateManager.prepareUpdate(producerId, origin);
-//        producerAppendInfo
-//                .appendDataBatch(producerEpoch, seq, seq, timestamp, -1L, -1L);
+        producerAppendInfo.updatedEntry().producerEpoch(producerEpoch);
+        producerAppendInfo.updatedEntry().lastTimestamp(timestamp);
         // Update to real offset
         producerAppendInfo.updateCurrentTxnFirstOffset(isTransactional, offset);
         stateManager.update(producerAppendInfo);

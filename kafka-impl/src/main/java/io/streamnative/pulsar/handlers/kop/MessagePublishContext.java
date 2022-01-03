@@ -40,7 +40,7 @@ public final class MessagePublishContext implements PublishContext {
     private long baseOffset;
     private long sequenceId;
     private long highestSequenceId;
-    private String clientId;
+    private String producerName;
     private boolean isControlBatch;
 
     @Override
@@ -108,7 +108,7 @@ public final class MessagePublishContext implements PublishContext {
     // recycler
     public static MessagePublishContext get(CompletableFuture<Long> offsetFuture,
                                             Topic topic,
-                                            String clientId,
+                                            String producerName,
                                             long sequenceId,
                                             long highestSequenceId,
                                             int numberOfMessages,
@@ -117,7 +117,7 @@ public final class MessagePublishContext implements PublishContext {
         MessagePublishContext callback = RECYCLER.get();
         callback.offsetFuture = offsetFuture;
         callback.topic = topic;
-        callback.clientId = clientId;
+        callback.producerName = producerName;
         callback.numberOfMessages = numberOfMessages;
         callback.startTimeNs = startTimeNs;
         callback.baseOffset = DEFAULT_OFFSET;
@@ -142,7 +142,7 @@ public final class MessagePublishContext implements PublishContext {
 
     @Override
     public String getProducerName() {
-        return this.clientId;
+        return this.producerName;
     }
 
     @Override
@@ -152,6 +152,7 @@ public final class MessagePublishContext implements PublishContext {
 
     public void recycle() {
         offsetFuture = null;
+        producerName = null;
         topic = null;
         startTimeNs = -1;
         numberOfMessages = 0;

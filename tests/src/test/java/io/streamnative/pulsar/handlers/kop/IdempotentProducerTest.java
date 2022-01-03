@@ -14,7 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -82,7 +82,7 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
         }
         producer.flush();
 
-        // Send a deduplicated message.
+        // Send a message with new producerId.
         @Cleanup
         KafkaProducer<String, String> producer2 = new KafkaProducer<>(producerProperties);
         producer2.send(new ProducerRecord<>(topic, "test")).get();
@@ -99,9 +99,10 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
             }
         }
         assertEquals(maxMessageNum, i);
-        // Should be empty
+
+        // Should have one message left.
         ConsumerRecords<String, String> msg = consumer.poll(Duration.ofSeconds(2));
-        assertTrue(msg.isEmpty());
+        assertFalse(msg.isEmpty());
     }
 
 }

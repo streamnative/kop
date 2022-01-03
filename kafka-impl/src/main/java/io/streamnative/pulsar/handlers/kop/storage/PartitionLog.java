@@ -75,6 +75,8 @@ class AnalyzeResult {
 @AllArgsConstructor
 public class PartitionLog {
 
+    private static final String PID_PREFIX = "KoP-PID-Prefix-";
+
     private final KafkaServiceConfiguration kafkaConfig;
     private final Time time;
     private final TopicPartition topicPartition;
@@ -91,6 +93,7 @@ public class PartitionLog {
     @AllArgsConstructor
     public static class LogAppendInfo {
         private Optional<Long> firstOffset;
+        private Optional<Long> producerId;
         private int numMessages;
         private int shallowCount;
         private boolean isTransaction;
@@ -265,8 +268,7 @@ public class PartitionLog {
         if (appendInfo.isControlBatch()) {
             offsetFuture = publishControlMessage(persistentTopic, byteBuf, numMessages);
         } else {
-            offsetFuture = publishNormalMessage(
-                    persistentTopic, byteBuf, numMessages, appendInfo, appendRecordsContext);
+            offsetFuture = publishNormalMessage(persistentTopic, byteBuf, numMessages, appendInfo);
         }
 
         offsetFuture.whenComplete((offset, e) -> {
@@ -308,12 +310,12 @@ public class PartitionLog {
     private CompletableFuture<Long> publishNormalMessage(final PersistentTopic persistentTopic,
                                                          final ByteBuf byteBuf,
                                                          final int numMessages,
-                                                         final LogAppendInfo appendInfo,
-                                                         final AppendRecordsContext appendRecordsContext) {
+                                                         final LogAppendInfo appendInfo) {
         final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
 
         persistentTopic.publishMessage(byteBuf,
-                MessagePublishContext.get(offsetFuture, persistentTopic, appendRecordsContext.getClientId(),
+                MessagePublishContext.get(
+                        offsetFuture, persistentTopic, PID_PREFIX + appendInfo.producerId().orElse(-1L),
                         appendInfo.firstSequence(), appendInfo.lastSequence(), numMessages, appendInfo.isControlBatch(),
                         time.nanoseconds()));
         return offsetFuture;
@@ -357,6 +359,7 @@ public class PartitionLog {
         int validBytesCount = 0;
         int firstSequence = Integer.MAX_VALUE;
         int lastSequence = -1;
+        Optional<Long> producerId = Optional.empty();
         KopLogValidator.CompressionCodec sourceCodec = DEFAULT_COMPRESSION;
 
         for (RecordBatch batch : records.batches()) {
@@ -383,6 +386,10 @@ public class PartitionLog {
             numMessages += (batch.lastOffset() - batch.baseOffset() + 1);
             isTransaction = batch.isTransactional();
             isControlBatch = batch.isControlBatch();
+            log.info("Batch pid: {} {}", batch.producerId(), batch.producerEpoch());
+            if (batch.hasProducerId()) {
+                producerId = Optional.of(batch.producerId());
+            }
 
             if (batch.compressionType().id != CompressionType.NONE.id) {
                 CompressionType compressionType = CompressionType.forId(batch.compressionType().id);
@@ -405,8 +412,8 @@ public class PartitionLog {
 
         KopLogValidator.CompressionCodec targetCodec =
                 KopLogValidator.getTargetCodec(sourceCodec, kafkaConfig.getKafkaCompressionType());
-        return new LogAppendInfo(firstOffset, numMessages, shallowMessageCount, isTransaction, isControlBatch,
-                validBytesCount, firstSequence, lastSequence, sourceCodec, targetCodec);
+        return new LogAppendInfo(firstOffset, producerId, numMessages, shallowMessageCount, isTransaction,
+                isControlBatch, validBytesCount, firstSequence, lastSequence, sourceCodec, targetCodec);
     }
 
     private MemoryRecords trimInvalidBytes(MemoryRecords records, LogAppendInfo info) {

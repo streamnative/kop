@@ -66,7 +66,7 @@ public class ProducerAppendInfo {
         this.currentEntry = currentEntry;
         this.origin = origin;
 
-        resetUpdatedEntry();
+        initUpdatedEntry();
     }
 
     private void checkProducerEpoch(Short producerEpoch) {
@@ -79,9 +79,10 @@ public class ProducerAppendInfo {
 
     public Optional<CompletedTxn> append(RecordBatch batch, Optional<Long> firstOffset) {
         if (log.isDebugEnabled()) {
-            log.debug("Append batch: pid: {} baseSequence: {} lastSequence: {} baseOffset: {}  lastOffset: {} ",
-                    batch.producerId(), batch.baseSequence(), batch.lastSequence(), batch.baseOffset(),
-                    batch.lastOffset());
+            log.debug("Append batch: pid: {} firstOffset {} baseSequence: {} lastSequence: {} "
+                            + "baseOffset: {}  lastOffset: {} ",
+                    batch.producerId(), firstOffset, batch.baseSequence(),
+                    batch.lastSequence(), batch.baseOffset(), batch.lastOffset());
         }
         if (batch.isControlBatch()) {
             Iterator<Record> recordIterator = batch.iterator();
@@ -151,7 +152,7 @@ public class ProducerAppendInfo {
         return transactions;
     }
 
-    private void resetUpdatedEntry() {
+    private void initUpdatedEntry() {
         updatedEntry = ProducerStateEntry.empty(producerId);
         updatedEntry.producerEpoch(currentEntry.producerEpoch());
         updatedEntry.coordinatorEpoch(currentEntry.coordinatorEpoch());
