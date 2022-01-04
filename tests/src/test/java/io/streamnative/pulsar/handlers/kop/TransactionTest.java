@@ -106,7 +106,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.initTransactions();
 
         int totalTxnCount = 10;
-        int messageCountPerTxn = 100;
+        int messageCountPerTxn = 10;
 
         String lastMessage = "";
         for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {

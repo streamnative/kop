@@ -81,15 +81,20 @@ public final class MessagePublishContext implements PublishContext {
             offsetFuture.completeExceptionally(exception);
         } else {
             if (log.isDebugEnabled()) {
-                log.debug("Success write topic: {}, ledgerId: {}, entryId: {}"
+                log.debug("Success write topic: {}, producerName {} ledgerId: {}, entryId: {}"
                         + " And triggered send callback.",
-                    topic.getName(), ledgerId, entryId);
+                    topic.getName(), this.producerName, ledgerId, entryId);
             }
 
             topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.MICROSECONDS);
 
             // duplicated message
             if (ledgerId == -1 && entryId == -1) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Failed to write topic: {}, producerName {}, ledgerId: {}, entryId: {}"
+                                    + " with duplicated message.",
+                            topic.getName(), this.producerName, ledgerId, entryId);
+                }
                 offsetFuture.completeExceptionally(Errors.DUPLICATE_SEQUENCE_NUMBER.exception());
                 return;
             }

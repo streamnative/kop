@@ -32,6 +32,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -75,7 +76,7 @@ class AnalyzeResult {
 @AllArgsConstructor
 public class PartitionLog {
 
-    private static final String PID_PREFIX = "KoP-PID-Prefix-";
+    private static final String PID_PREFIX = "KOP-PID-PREFIX";
 
     private final KafkaServiceConfiguration kafkaConfig;
     private final Time time;
@@ -94,6 +95,7 @@ public class PartitionLog {
     public static class LogAppendInfo {
         private Optional<Long> firstOffset;
         private Optional<Long> producerId;
+        private short producerEpoch;
         private int numMessages;
         private int shallowCount;
         private boolean isTransaction;
@@ -313,9 +315,17 @@ public class PartitionLog {
                                                          final LogAppendInfo appendInfo) {
         final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
 
+        // This producerName is only used to check the message deduplication.
+        // Kafka will reuse pid when transactionId is the same but will increase the producerEpoch.
+        // So we need to ensure the producerName is not the same.
+        String producerName = new StringJoiner("-")
+                .add(PID_PREFIX)
+                .add(String.valueOf(appendInfo.producerId().orElse(-1L)))
+                .add(String.valueOf(appendInfo.producerEpoch())).toString();
+
         persistentTopic.publishMessage(byteBuf,
                 MessagePublishContext.get(
-                        offsetFuture, persistentTopic, PID_PREFIX + appendInfo.producerId().orElse(-1L),
+                        offsetFuture, persistentTopic, producerName,
                         appendInfo.firstSequence(), appendInfo.lastSequence(), numMessages, appendInfo.isControlBatch(),
                         time.nanoseconds()));
         return offsetFuture;
@@ -360,6 +370,7 @@ public class PartitionLog {
         int firstSequence = Integer.MAX_VALUE;
         int lastSequence = -1;
         Optional<Long> producerId = Optional.empty();
+        short producerEpoch = -1;
         KopLogValidator.CompressionCodec sourceCodec = DEFAULT_COMPRESSION;
 
         for (RecordBatch batch : records.batches()) {
@@ -390,6 +401,7 @@ public class PartitionLog {
             // We assume batches producerId are same.
             if (batch.hasProducerId()) {
                 producerId = Optional.of(batch.producerId());
+                producerEpoch = batch.producerEpoch();
             }
 
             if (batch.compressionType().id != CompressionType.NONE.id) {
@@ -413,8 +425,8 @@ public class PartitionLog {
 
         KopLogValidator.CompressionCodec targetCodec =
                 KopLogValidator.getTargetCodec(sourceCodec, kafkaConfig.getKafkaCompressionType());
-        return new LogAppendInfo(firstOffset, producerId, numMessages, shallowMessageCount, isTransaction,
-                isControlBatch, validBytesCount, firstSequence, lastSequence, sourceCodec, targetCodec);
+        return new LogAppendInfo(firstOffset, producerId, producerEpoch, numMessages, shallowMessageCount,
+                isTransaction, isControlBatch, validBytesCount, firstSequence, lastSequence, sourceCodec, targetCodec);
     }
 
     private MemoryRecords trimInvalidBytes(MemoryRecords records, LogAppendInfo info) {
