@@ -593,7 +593,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     pulsarTopicsFuture.complete(allTopicMap);
                     return;
                 }
-                AtomicInteger allTopicCount = new AtomicInteger(allTopicMap.size());
+                AtomicInteger allTopicCount =
+                        new AtomicInteger(allTopicMap.values().stream().mapToInt(List::size).sum());
+                if (allTopicCount.get() == 0) {
+                    pulsarTopicsFuture.complete(topicMap);
+                    return;
+                }
                 final Runnable completeOne = () -> {
                     if (allTopicCount.decrementAndGet() == 0) {
                         pulsarTopicsFuture.complete(topicMap);
