@@ -88,6 +88,28 @@ public class KafkaServiceConfigurationTest {
     }
 
     @Test
+    public void testKafkaListenersWithAdvertisedListener() throws UnknownHostException {
+        KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
+        configuration.setAdvertisedAddress("advertise-me");
+        configuration.setKafkaListeners("PLAINTEXT://0.0.0.0:9092");
+        configuration.setKafkaAdvertisedListeners("PLAINTEXT://advertisedAddress:9092");
+        assertEquals(configuration.getListeners(), "PLAINTEXT://0.0.0.0:9092");
+        String expectAdvertisedListeners = "PLAINTEXT://advertise-me:9092";
+        assertEquals(configuration.getKafkaAdvertisedListeners(), expectAdvertisedListeners);
+    }
+
+    @Test
+    public void testKafkaListenersWithAdvertisedListenerSASL() throws UnknownHostException {
+        KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
+        configuration.setAdvertisedAddress("advertise-me");
+        configuration.setKafkaListeners("SASL_PLAINTEXT://0.0.0.0:9092");
+        configuration.setKafkaAdvertisedListeners("SASL_PLAINTEXT://advertisedAddress:9092");
+        assertEquals(configuration.getListeners(), "SASL_PLAINTEXT://0.0.0.0:9092");
+        String expectAdvertisedListeners = "SASL_PLAINTEXT://advertise-me:9092";
+        assertEquals(configuration.getKafkaAdvertisedListeners(), expectAdvertisedListeners);
+    }
+
+    @Test
     public void testGroupIdZooKeeperPath() {
         String zkPathForKop = "/consumer_group_test";
         KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();

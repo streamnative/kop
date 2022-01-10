@@ -446,7 +446,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     // This method is called after initialize
     @Override
     public String getProtocolDataToAdvertise() {
-        return kafkaConfig.getKafkaAdvertisedListeners();
+        String result =  kafkaConfig.getKafkaAdvertisedListeners();
+        log.info("Advertised addresses for the 'kafka' endpoint: {}", result);
+        return result;
     }
 
     @Override

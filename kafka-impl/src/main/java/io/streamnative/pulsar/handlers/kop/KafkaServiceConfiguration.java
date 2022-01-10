@@ -477,6 +477,13 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
                 } catch (UnknownHostException e) {
                     throw new IllegalStateException("hostname is empty and localhost is unknown: " + e.getMessage());
                 }
+            } else if (hostname.equalsIgnoreCase("advertisedAddress")) {
+                hostname = getAdvertisedAddress();
+                listenersReBuilder.append(matcher.group(1))
+                        .append("://")
+                        .append(hostname)
+                        .append(":")
+                        .append(matcher.group(3));
             } else {
                 listenersReBuilder.append(listener);
             }
