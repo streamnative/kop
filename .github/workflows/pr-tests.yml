@@ -29,6 +29,9 @@ jobs:
       run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test' -pl tests
       timeout-minutes: 60
 
+    - name: upload codecov report
+      run: bash <(curl -s https://codecov.io/bash)
+
     - name: package surefire artifacts
       if: failure()
       run: |

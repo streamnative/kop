@@ -57,6 +57,7 @@
     <puppycrawl.checkstyle.version>8.37</puppycrawl.checkstyle.version>
     <spotbugs-maven-plugin.version>4.2.2</spotbugs-maven-plugin.version>
     <nexus-staging-maven-plugin.version>1.6.8</nexus-staging-maven-plugin.version>
+    <maven-jacoco-plugin.version>0.8.7</maven-jacoco-plugin.version>
   </properties>
 
   <licenses>
@@ -424,6 +425,30 @@
               <nexusUrl>https://s01.oss.sonatype.org/</nexusUrl>
               <autoReleaseAfterClose>true</autoReleaseAfterClose>
             </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.jacoco</groupId>
+            <artifactId>jacoco-maven-plugin</artifactId>
+            <version>${maven-jacoco-plugin.version}</version>
+            <configuration>
+              <includes>
+                <include>**/pulsar/**</include>
+              </includes>
+            </configuration>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>prepare-agent</goal>
+                </goals>
+              </execution>
+              <execution>
+                <id>report</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>report</goal>
+                </goals>
+              </execution>
+            </executions>
           </plugin>
         </plugins>
       </build>
