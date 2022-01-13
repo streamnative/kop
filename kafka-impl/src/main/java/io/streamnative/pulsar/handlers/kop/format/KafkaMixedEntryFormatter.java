@@ -58,6 +58,7 @@ public class KafkaMixedEntryFormatter extends AbstractEntryFormatter {
 
         MemoryRecords validRecords = validationAndOffsetAssignResult.getRecords();
         int conversionCount = validationAndOffsetAssignResult.getConversionCount();
+        long conversionTimeNanos = validationAndOffsetAssignResult.getConversionTimeNanos();
 
         final int numMessages = appendInfo.numMessages();
         final ByteBuf recordsWrapper = Unpooled.wrappedBuffer(validRecords.buffer());
@@ -68,7 +69,7 @@ public class KafkaMixedEntryFormatter extends AbstractEntryFormatter {
         recordsWrapper.release();
         validationAndOffsetAssignResult.recycle();
 
-        return EncodeResult.get(validRecords, buf, numMessages, conversionCount);
+        return EncodeResult.get(validRecords, buf, numMessages, conversionCount, conversionTimeNanos);
     }
 
     @Override
