@@ -86,7 +86,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                                           final String operationName,
                                           final boolean success) {
         final OpStatsLogger opStatsLogger = apiKeysToStatsLogger.computeIfAbsent(apiKey, __ ->
-                requestStats.getStatsLogger().scopeLabel(KopServerStats.REQUEST_SCOPE, apiKey.name())
+                requestStats.getStatsLogger().scopeLabel(KopServerStats.REQUEST_SCOPE, apiKey.name)
         ).getOpStatsLogger(operationName);
         if (success) {
             opStatsLogger.registerSuccessfulEvent(MathUtils.elapsedNanos(startProcessTimeNs), TimeUnit.NANOSECONDS);
