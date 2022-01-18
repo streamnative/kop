@@ -193,6 +193,8 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
                 + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 1130"));
         Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT"));
         Assert.assertTrue(sb.toString().contains("kop_server_CONSUME_MESSAGE_CONVERSIONS"));
+        Assert.assertTrue(sb.toString().contains("kop_server_CONSUME_MESSAGE_CONVERSIONS{partition=\"0\","
+                + "topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
         Assert.assertTrue(sb.toString().contains("kop_server_CONSUME_MESSAGE_CONVERSIONS_TIME_NANOS"));
 
         // producer stats
@@ -202,6 +204,8 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         Assert.assertTrue(sb.toString().contains("kop_server_BYTES_IN{partition=\"0\","
                 + "topic=\"kopKafkaProducePulsarMetrics1\"} 1170"));
         Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_MESSAGE_CONVERSIONS"));
+        Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_MESSAGE_CONVERSIONS{partition=\"0\","
+                + "topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
         Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_MESSAGE_CONVERSIONS_TIME_NANOS"));
     }
 
