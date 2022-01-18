@@ -41,7 +41,7 @@ public class KafkaV1EntryFormatter extends AbstractEntryFormatter {
                 recordsWrapper);
         recordsWrapper.release();
 
-        return EncodeResult.get(records, buf, numMessages, 0);
+        return EncodeResult.get(records, buf, numMessages, 0, 0L);
     }
 
     @Override

@@ -21,6 +21,7 @@ import io.streamnative.pulsar.handlers.kop.utils.PulsarMessageBuilder;
 import java.util.List;
 import java.util.stream.StreamSupport;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.record.ControlRecordType;
@@ -49,6 +50,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
         final int numMessages = encodeRequest.getAppendInfo().numMessages();
         long currentBatchSizeBytes = 0;
         int numMessagesInBatch = 0;
+        long startConversionNanos = MathUtils.nowInNano();
 
         long sequenceId = -1;
 
@@ -107,7 +109,8 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
 
         batchedMessageMetadataAndPayload.release();
 
-        return EncodeResult.get(records, buf, numMessages, numMessagesInBatch);
+        return EncodeResult.get(records, buf, numMessages, numMessagesInBatch,
+                MathUtils.elapsedNanos(startConversionNanos));
     }
 
     @Override
