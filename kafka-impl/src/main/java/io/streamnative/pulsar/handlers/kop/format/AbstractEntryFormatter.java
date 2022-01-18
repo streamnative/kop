@@ -24,6 +24,7 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.io.IOException;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.record.ConvertedRecords;
@@ -45,6 +46,7 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
     public DecodeResult decode(List<Entry> entries, byte magic) {
         int totalSize = 0;
         int conversionCount = 0;
+        long conversionTimeNanos = 0L;
         // batched ByteBuf should be released after sending to client
         ByteBuf batchedByteBuf = PulsarByteBufAllocator.DEFAULT.directBuffer(totalSize);
         for (Entry entry : entries) {
@@ -59,11 +61,13 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                     // batch magic greater than the magic corresponding to the version requested by the client
                     // need down converted
                     if (batchMagic > magic) {
+                        long startConversionNanos = MathUtils.nowInNano();
                         MemoryRecords memoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
                         // down converted, batch magic will be set to client magic
                         ConvertedRecords<MemoryRecords> convertedRecords =
                                 memoryRecords.downConvert(magic, startOffset, time);
                         conversionCount += convertedRecords.recordConversionStats().numRecordsConverted();
+                        conversionTimeNanos += MathUtils.elapsedNanos(startConversionNanos);
 
                         final ByteBuf kafkaBuffer = Unpooled.wrappedBuffer(convertedRecords.records().buffer());
                         totalSize += kafkaBuffer.readableBytes();
@@ -85,6 +89,7 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                     final DecodeResult decodeResult =
                             ByteBufUtils.decodePulsarEntryToKafkaRecords(metadata, byteBuf, startOffset, magic);
                     conversionCount += decodeResult.getConversionCount();
+                    conversionTimeNanos += decodeResult.getConversionTimeNanos();
                     final ByteBuf kafkaBuffer = decodeResult.getOrCreateByteBuf();
                     totalSize += kafkaBuffer.readableBytes();
                     batchedByteBuf.writeBytes(kafkaBuffer);
@@ -105,7 +110,8 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
         return DecodeResult.get(
                 MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(batchedByteBuf)),
                 batchedByteBuf,
-                conversionCount);
+                conversionCount,
+                conversionTimeNanos);
     }
 
     protected static boolean isKafkaEntryFormat(final MessageMetadata messageMetadata) {

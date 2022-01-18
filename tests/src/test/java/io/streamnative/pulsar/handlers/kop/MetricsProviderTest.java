@@ -46,7 +46,7 @@ import org.testng.annotations.Test;
  * test for kop prometheus metrics.
  */
 @Slf4j
-public class MetricsProviderTest extends KopProtocolHandlerTestBase{
+public class MetricsProviderTest extends KopProtocolHandlerTestBase {
 
     @BeforeMethod
     @Override
@@ -76,7 +76,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
 
         int totalMsgs = 10;
 
-        String messageStrPrefix = "Message_Kop_KafkaProducePulsarConsume_"  + partitionNumber + "_";
+        String messageStrPrefix = "Message_Kop_KafkaProducePulsarConsume_" + partitionNumber + "_";
 
         for (int i = 0; i < totalMsgs; i++) {
             String messageStr = messageStrPrefix + i;
@@ -192,6 +192,10 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
         Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT{group=\"DemoKafkaOnPulsarConsumer\","
                 + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 1130"));
         Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT"));
+        Assert.assertTrue(sb.toString().contains("kop_server_CONSUME_MESSAGE_CONVERSIONS"));
+        Assert.assertTrue(sb.toString().contains("kop_server_CONSUME_MESSAGE_CONVERSIONS{partition=\"0\","
+                + "topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
+        Assert.assertTrue(sb.toString().contains("kop_server_CONSUME_MESSAGE_CONVERSIONS_TIME_NANOS"));
 
         // producer stats
         Assert.assertTrue(sb.toString().contains("kop_server_BATCH_COUNT_PER_MEMORYRECORDS"));
@@ -199,6 +203,10 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase{
                 + "topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
         Assert.assertTrue(sb.toString().contains("kop_server_BYTES_IN{partition=\"0\","
                 + "topic=\"kopKafkaProducePulsarMetrics1\"} 1170"));
+        Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_MESSAGE_CONVERSIONS"));
+        Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_MESSAGE_CONVERSIONS{partition=\"0\","
+                + "topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
+        Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_MESSAGE_CONVERSIONS_TIME_NANOS"));
     }
 
     @Test(timeOut = 20000)

@@ -19,6 +19,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.Locale;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.common.errors.InvalidTimestampException;
 import org.apache.kafka.common.errors.UnsupportedForMessageFormatException;
 import org.apache.kafka.common.record.AbstractRecords;
@@ -99,6 +100,7 @@ public class KopLogValidator {
                                                                                         TimestampType timestampType,
                                                                                         long timestampDiffMaxMs,
                                                                                         byte toMagicValue) {
+        long startConversionNanos = MathUtils.nowInNano();
         int sizeInBytesAfterConversion = AbstractRecords.estimateSizeInBytes(toMagicValue, offsetCounter.value(),
                 CompressionType.NONE, records.records());
 
@@ -136,7 +138,8 @@ public class KopLogValidator {
         MemoryRecords memoryRecords = builder.build();
         int conversionCount = builder.numRecords();
 
-        return ValidationAndOffsetAssignResult.get(memoryRecords, conversionCount);
+        return ValidationAndOffsetAssignResult.get(memoryRecords,
+                conversionCount, MathUtils.elapsedNanos(startConversionNanos));
     }
 
     private static ValidationAndOffsetAssignResult assignOffsetsNonCompressed(MemoryRecords records,
@@ -178,7 +181,7 @@ public class KopLogValidator {
             }
         }
 
-        return ValidationAndOffsetAssignResult.get(records, 0);
+        return ValidationAndOffsetAssignResult.get(records, 0, 0L);
     }
 
     /**
@@ -330,7 +333,7 @@ public class KopLogValidator {
             batch.setPartitionLeaderEpoch(RecordBatch.NO_PARTITION_LEADER_EPOCH);
         }
 
-        return ValidationAndOffsetAssignResult.get(records, 0);
+        return ValidationAndOffsetAssignResult.get(records, 0, 0L);
     }
 
     private static ValidationAndOffsetAssignResult buildRecordsAndAssignOffsets(byte magic,
@@ -340,6 +343,7 @@ public class KopLogValidator {
                                                                                 long logAppendTime,
                                                                                 ArrayList<Record> validatedRecords,
                                                                                 MutableRecordBatch first) {
+        long startConversionNanos = MathUtils.nowInNano();
         long producerId = first.producerId();
         short producerEpoch = first.producerEpoch();
         int baseSequence = first.baseSequence();
@@ -367,7 +371,8 @@ public class KopLogValidator {
         MemoryRecords memoryRecords = builder.build();
         int conversionCount = builder.numRecords();
 
-        return ValidationAndOffsetAssignResult.get(memoryRecords, conversionCount);
+        return ValidationAndOffsetAssignResult.get(memoryRecords,
+                conversionCount, MathUtils.elapsedNanos(startConversionNanos));
     }
 
     private static void validateBatch(RecordBatch batch, byte toMagic) {
