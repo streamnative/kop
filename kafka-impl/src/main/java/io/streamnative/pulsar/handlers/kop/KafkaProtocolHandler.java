@@ -74,6 +74,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     public static final String TLS_HANDLER = "tls";
     private static final Map<PulsarService, LookupClient> LOOKUP_CLIENT_MAP = new ConcurrentHashMap<>();
 
+    @Getter
     private RequestStats requestStats;
     private PrometheusMetricsProvider statsProvider;
     @Getter

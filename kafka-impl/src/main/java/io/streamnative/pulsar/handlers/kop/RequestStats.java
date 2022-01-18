@@ -30,9 +30,12 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKE
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.WAITING_FETCHES_TRIGGERED;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Getter;
@@ -204,5 +207,10 @@ public class RequestStats {
         return apiKeysToStatsLogger.computeIfAbsent(apiKey,
                 __ -> statsLogger.scopeLabel(KopServerStats.REQUEST_SCOPE, apiKey.name)
         ).getOpStatsLogger(statsName);
+    }
+
+    @VisibleForTesting
+    public Set<ApiKeys> getApiKeysSet() {
+        return new TreeSet<>(apiKeysToStatsLogger.keySet());
     }
 }
