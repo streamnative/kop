@@ -21,14 +21,11 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.timeout.IdleStateEvent;
-import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.io.Closeable;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
-import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -38,7 +35,6 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
-import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -62,7 +58,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected SocketAddress remoteAddress;
     @Getter
     protected AtomicBoolean isActive = new AtomicBoolean(false);
-    private final Map<ApiKeys, StatsLogger> apiKeysToStatsLogger = new ConcurrentHashMap<>();
     // Queue to make response get responseFuture in order and limit the max request size
     private final LinkedBlockingQueue<ResponseAndRequest> requestQueue;
 
@@ -79,20 +74,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         this.kafkaConfig = kafkaConfig;
         this.requestQueue = new LinkedBlockingQueue<>(kafkaConfig.getMaxQueuedRequests());
         this.sendResponseScheduler = sendResponseScheduler;
-    }
-
-    private void registerOperationLatency(final ApiKeys apiKey,
-                                          final long startProcessTimeNs,
-                                          final String operationName,
-                                          final boolean success) {
-        final OpStatsLogger opStatsLogger = apiKeysToStatsLogger.computeIfAbsent(apiKey, __ ->
-                requestStats.getStatsLogger().scopeLabel(KopServerStats.REQUEST_SCOPE, apiKey.name)
-        ).getOpStatsLogger(operationName);
-        if (success) {
-            opStatsLogger.registerSuccessfulEvent(MathUtils.elapsedNanos(startProcessTimeNs), TimeUnit.NANOSECONDS);
-        } else {
-            opStatsLogger.registerFailedEvent(MathUtils.elapsedNanos(startProcessTimeNs), TimeUnit.NANOSECONDS);
-        }
     }
 
     @Override
@@ -212,7 +193,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
         // Update handle request latency metrics
         final BiConsumer<ApiKeys, Long> registerRequestLatency = (apiKey, startProcessTime) -> {
-            registerOperationLatency(apiKey, startProcessTime, KopServerStats.REQUEST_LATENCY, true);
+            requestStats.getRequestStatsLogger(apiKey, KopServerStats.REQUEST_LATENCY)
+                    .registerSuccessfulEvent(MathUtils.elapsedNanos(startProcessTime), TimeUnit.NANOSECONDS);
         };
 
         // If kop is enabled for authentication and the client
@@ -391,6 +373,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             }
 
             final CompletableFuture<AbstractResponse> responseFuture = responseAndRequest.getResponseFuture();
+            final ApiKeys apiKey = responseAndRequest.getApiKey();
             final long nanoSecondsSinceCreated = responseAndRequest.nanoSecondsSinceCreated();
             final boolean expired =
                     (nanoSecondsSinceCreated > TimeUnit.MILLISECONDS.toNanos(kafkaConfig.getRequestTimeoutMs()));
@@ -405,10 +388,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             } else {
                 if (requestQueue.remove(responseAndRequest)) {
                     RequestStats.REQUEST_QUEUE_SIZE_INSTANCE.decrementAndGet();
-                    registerOperationLatency(responseAndRequest.getApiKey(),
-                            responseAndRequest.getCreatedTimestamp(),
-                            KopServerStats.REQUEST_QUEUED_LATENCY,
-                            true);
                 } else { // it has been removed by another thread, skip this element
                     continue;
                 }
@@ -427,10 +406,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     log.error("[{}] request {} completed exceptionally", channel, request.getHeader(), e);
                     channel.writeAndFlush(request.createErrorResponse(e));
 
-                    registerOperationLatency(responseAndRequest.getApiKey(),
-                            responseAndRequest.getCreatedTimestamp(),
-                            KopServerStats.REQUEST_QUEUED_LATENCY,
-                            false);
+                    requestStats.getRequestStatsLogger(apiKey, KopServerStats.REQUEST_QUEUED_LATENCY)
+                            .registerFailedEvent(nanoSecondsSinceCreated, TimeUnit.NANOSECONDS);
                     return null;
                 }); // send exception to client?
                 continue;
@@ -462,6 +439,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                             log.error("[{}] Failed to write {}", channel, request.getHeader(), future.cause());
                         }
                     });
+                    requestStats.getRequestStatsLogger(apiKey, KopServerStats.REQUEST_QUEUED_LATENCY)
+                            .registerSuccessfulEvent(nanoSecondsSinceCreated, TimeUnit.NANOSECONDS);
                 });
                 continue;
             }
@@ -473,11 +452,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 responseFuture.cancel(true);
                 channel.writeAndFlush(
                         request.createErrorResponse(new ApiException("request is expired from server side")));
-
-                registerOperationLatency(responseAndRequest.getApiKey(),
-                        responseAndRequest.getCreatedTimestamp(),
-                        KopServerStats.REQUEST_QUEUED_LATENCY,
-                        false);
+                requestStats.getRequestStatsLogger(apiKey, KopServerStats.REQUEST_QUEUED_LATENCY)
+                        .registerFailedEvent(nanoSecondsSinceCreated, TimeUnit.NANOSECONDS);
             }
         }
     }

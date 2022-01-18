@@ -32,6 +32,8 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.WAITING_FETCHES
 
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +41,7 @@ import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.Gauge;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.bookkeeper.stats.annotations.StatsDoc;
+import org.apache.kafka.common.protocol.ApiKeys;
 
 /**
  * Kop request stats metric for prometheus metrics.
@@ -122,6 +125,8 @@ public class RequestStats {
     )
     private final Counter waitingFetchesTriggered;
 
+    private final Map<ApiKeys, StatsLogger> apiKeysToStatsLogger = new ConcurrentHashMap<>();
+
     public RequestStats(StatsLogger statsLogger) {
         this.statsLogger = statsLogger;
 
@@ -186,5 +191,18 @@ public class RequestStats {
                 return ACTIVE_CHANNEL_COUNT_INSTANCE;
             }
         });
+    }
+
+    /**
+     * Get the stats logger for Kafka requests.
+     *
+     * @param apiKey the {@link ApiKeys} object that represents the Kafka request's type
+     * @param statsName the stats name
+     * @return
+     */
+    public OpStatsLogger getRequestStatsLogger(final ApiKeys apiKey, final String statsName) {
+        return apiKeysToStatsLogger.computeIfAbsent(apiKey,
+                __ -> statsLogger.scopeLabel(KopServerStats.REQUEST_SCOPE, apiKey.name)
+        ).getOpStatsLogger(statsName);
     }
 }
