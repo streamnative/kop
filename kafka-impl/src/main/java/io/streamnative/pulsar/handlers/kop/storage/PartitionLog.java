@@ -267,10 +267,12 @@ public class PartitionLog {
         final long beforePublish = time.nanoseconds();
 
         CompletableFuture<Long> offsetFuture;
+
+        // For control message we don't need to check deduplication.
         if (appendInfo.isControlBatch()) {
             offsetFuture = publishControlMessage(persistentTopic, byteBuf, numMessages);
         } else {
-            offsetFuture = publishNormalMessage(persistentTopic, byteBuf, numMessages, appendInfo);
+            offsetFuture = publishNormalMessage(persistentTopic, byteBuf, appendInfo);
         }
 
         offsetFuture.whenComplete((offset, e) -> {
@@ -309,9 +311,16 @@ public class PartitionLog {
         });
     }
 
+    /**
+     * publish a non-control message, it will check the message deduplication.
+     *
+     * @param persistentTopic The persistentTopic, use to publish message and check message deduplication.
+     * @param byteBuf Message byteBuf
+     * @param appendInfo Pre-analyzed recode info, we can get sequence, message num ...
+     * @return offset
+     */
     private CompletableFuture<Long> publishNormalMessage(final PersistentTopic persistentTopic,
                                                          final ByteBuf byteBuf,
-                                                         final int numMessages,
                                                          final LogAppendInfo appendInfo) {
         final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
 
@@ -326,11 +335,23 @@ public class PartitionLog {
         persistentTopic.publishMessage(byteBuf,
                 MessagePublishContext.get(
                         offsetFuture, persistentTopic, producerName,
-                        appendInfo.firstSequence(), appendInfo.lastSequence(), numMessages, appendInfo.isControlBatch(),
+                        appendInfo.firstSequence(),
+                        appendInfo.lastSequence(),
+                        appendInfo.numMessages(),
+                        appendInfo.isControlBatch(),
                         time.nanoseconds()));
         return offsetFuture;
     }
 
+    /**
+     * Publish a control message, this method will not check message deduplication.
+     * Because control messages don't have a sequence number.
+     *
+     * @param persistentTopic Use to get managed ledger.
+     * @param byteBuf Message byteBuf.
+     * @param numMessages message number.
+     * @return offset
+     */
     private CompletableFuture<Long> publishControlMessage(final PersistentTopic persistentTopic,
                                                           final ByteBuf byteBuf,
                                                           final int numMessages) {
