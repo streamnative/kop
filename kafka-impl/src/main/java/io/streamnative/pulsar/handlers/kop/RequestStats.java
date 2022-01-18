@@ -30,6 +30,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKE
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.WAITING_FETCHES_TRIGGERED;
 
+import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Getter;
@@ -56,6 +57,8 @@ public class RequestStats {
     public static final AtomicInteger BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE = new AtomicInteger(0);
     public static final AtomicInteger ALIVE_CHANNEL_COUNT_INSTANCE = new AtomicInteger(0);
     public static final AtomicInteger ACTIVE_CHANNEL_COUNT_INSTANCE = new AtomicInteger(0);
+
+    public static final RequestStats NULL_INSTANCE = new RequestStats(NullStatsLogger.INSTANCE);
 
     private final StatsLogger statsLogger;
 

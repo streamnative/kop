@@ -72,10 +72,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     private final OrderedScheduler sendResponseScheduler;
 
-    public KafkaCommandDecoder(StatsLogger statsLogger,
+    public KafkaCommandDecoder(RequestStats requestStats,
                                KafkaServiceConfiguration kafkaConfig,
                                OrderedScheduler sendResponseScheduler) {
-        this.requestStats = new RequestStats(statsLogger);
+        this.requestStats = requestStats;
         this.kafkaConfig = kafkaConfig;
         this.requestQueue = new LinkedBlockingQueue<>(kafkaConfig.getMaxQueuedRequests());
         this.sendResponseScheduler = sendResponseScheduler;
