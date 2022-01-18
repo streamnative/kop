@@ -24,6 +24,7 @@ import java.util.Base64;
 import java.util.List;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.record.CompressionType;
@@ -121,6 +122,7 @@ public class ByteBufUtils {
                     new EndTransactionMarker(controlRecordType, 0)
                     ));
         }
+        long startConversionNanos = MathUtils.nowInNano();
         final int uncompressedSize = metadata.getUncompressedSize();
         final CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(metadata.getCompression());
         final ByteBuf uncompressedPayload = codec.decode(payload, uncompressedSize);
@@ -196,7 +198,10 @@ public class ByteBufUtils {
 
         final MemoryRecords records = builder.build();
         uncompressedPayload.release();
-        return DecodeResult.get(records, directBufferOutputStream.getByteBuf(), conversionCount);
+        return DecodeResult.get(records,
+                directBufferOutputStream.getByteBuf(),
+                conversionCount,
+                MathUtils.elapsedNanos(startConversionNanos));
     }
 
     @NonNull

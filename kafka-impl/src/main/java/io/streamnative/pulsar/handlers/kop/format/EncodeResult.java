@@ -17,6 +17,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_IN;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_IN;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_MESSAGE_CONVERSIONS;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_MESSAGE_CONVERSIONS_TIME_NANOS;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 
 import io.netty.buffer.ByteBuf;
@@ -25,6 +26,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import java.util.concurrent.TimeUnit;
 import lombok.Getter;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -40,18 +42,21 @@ public class EncodeResult {
     private ByteBuf encodedByteBuf;
     private int numMessages;
     private int conversionCount;
+    private long conversionTimeNanos;
 
     private final Recycler.Handle<EncodeResult> recyclerHandle;
 
     public static EncodeResult get(MemoryRecords records,
                                    ByteBuf encodedByteBuf,
                                    int numMessages,
-                                   int conversionCount) {
+                                   int conversionCount,
+                                   long conversionTimeNanos) {
         EncodeResult encodeResult = RECYCLER.get();
         encodeResult.records = records;
         encodeResult.encodedByteBuf = encodedByteBuf;
         encodeResult.numMessages = numMessages;
         encodeResult.conversionCount = conversionCount;
+        encodeResult.conversionTimeNanos = conversionTimeNanos;
         return encodeResult;
     }
 
@@ -74,6 +79,7 @@ public class EncodeResult {
         }
         numMessages = -1;
         conversionCount = -1;
+        conversionTimeNanos = -1L;
         recyclerHandle.recycle(this);
     }
 
@@ -94,6 +100,8 @@ public class EncodeResult {
         statsLoggerForThisPartition.getCounter(BYTES_IN).add(numBytes);
         statsLoggerForThisPartition.getCounter(MESSAGE_IN).add(numMessages);
         statsLoggerForThisPartition.getCounter(PRODUCE_MESSAGE_CONVERSIONS).add(conversionCount);
+        statsLoggerForThisPartition.getOpStatsLogger(PRODUCE_MESSAGE_CONVERSIONS_TIME_NANOS)
+                .registerSuccessfulEvent(conversionTimeNanos, TimeUnit.NANOSECONDS);
 
         RequestStats.BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE.set(numMessages);
     }

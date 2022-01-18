@@ -25,14 +25,17 @@ public class ValidationAndOffsetAssignResult {
 
     private MemoryRecords records;
     private int conversionCount;
+    private long conversionTimeNanos;
 
     private final Recycler.Handle<ValidationAndOffsetAssignResult> recyclerHandle;
 
     public static ValidationAndOffsetAssignResult get(MemoryRecords records,
-                                                      int conversionCount) {
+                                                      int conversionCount,
+                                                      long conversionTimeNanos) {
         ValidationAndOffsetAssignResult validationAndOffsetAssignResult = RECYCLER.get();
         validationAndOffsetAssignResult.records = records;
         validationAndOffsetAssignResult.conversionCount = conversionCount;
+        validationAndOffsetAssignResult.conversionTimeNanos = conversionTimeNanos;
         return validationAndOffsetAssignResult;
     }
 
@@ -52,6 +55,7 @@ public class ValidationAndOffsetAssignResult {
     public void recycle() {
         records = null;
         conversionCount = -1;
+        conversionTimeNanos = -1L;
         recyclerHandle.recycle(this);
     }
 
