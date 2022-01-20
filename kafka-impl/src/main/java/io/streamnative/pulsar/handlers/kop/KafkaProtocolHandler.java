@@ -74,8 +74,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     public static final String TLS_HANDLER = "tls";
     private static final Map<PulsarService, LookupClient> LOOKUP_CLIENT_MAP = new ConcurrentHashMap<>();
 
-    private StatsLogger rootStatsLogger;
-    private StatsLogger scopeStatsLogger;
+    @Getter
+    private RequestStats requestStats;
     private PrometheusMetricsProvider statsProvider;
     @Getter
     private KopBrokerLookupManager kopBrokerLookupManager;
@@ -435,8 +435,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         }
 
         statsProvider = new PrometheusMetricsProvider();
-        rootStatsLogger = statsProvider.getStatsLogger("");
-        scopeStatsLogger = rootStatsLogger.scope(SERVER_SCOPE);
+        StatsLogger rootStatsLogger = statsProvider.getStatsLogger("");
+        requestStats = new RequestStats(rootStatsLogger.scope(SERVER_SCOPE));
         sendResponseScheduler = OrderedScheduler.newSchedulerBuilder()
                 .name("send-response")
                 .numThreads(kafkaConfig.getNumSendKafkaResponseThreads())
@@ -492,7 +492,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         // init KopEventManager
         kopEventManager = new KopEventManager(adminManager,
                 brokerService.getPulsar().getLocalMetadataStore(),
-                scopeStatsLogger,
+                requestStats.getStatsLogger(),
                 kafkaConfig,
                 groupCoordinatorsByTenant);
         kopEventManager.start();
@@ -583,7 +583,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 endPoint.isTlsEnabled(),
                 endPoint,
                 kafkaConfig.isSkipMessagesWithoutIndex(),
-                scopeStatsLogger,
+                requestStats,
                 sendResponseScheduler);
     }
 

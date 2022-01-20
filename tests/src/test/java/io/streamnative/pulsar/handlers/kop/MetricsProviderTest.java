@@ -18,9 +18,12 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -37,6 +40,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -61,6 +65,10 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
+    private Set<ApiKeys> getApiKeysSet() {
+        return ((KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka"))
+                .getRequestStats().getApiKeysSet();
+    }
 
     @Test(timeOut = 30000)
     public void testMetricsProvider() throws Exception {
@@ -92,6 +100,9 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
             }
         }
 
+        Assert.assertEquals(getApiKeysSet(), new TreeSet<>(
+                Arrays.asList(ApiKeys.API_VERSIONS, ApiKeys.METADATA, ApiKeys.PRODUCE)));
+
         // 2. consume messages with Kafka consumer
         @Cleanup
         KConsumer kConsumer = new KConsumer(kafkaTopicName, getKafkaBrokerPort());
@@ -115,8 +126,17 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         }
         Assert.assertEquals(msgs, totalMsgs);
 
+        Assert.assertEquals(getApiKeysSet(), new TreeSet<>(Arrays.asList(
+                ApiKeys.API_VERSIONS, ApiKeys.METADATA, ApiKeys.PRODUCE, ApiKeys.FIND_COORDINATOR, ApiKeys.LIST_OFFSETS,
+                ApiKeys.OFFSET_FETCH, ApiKeys.FETCH
+        )));
+
         // commit offsets
         kConsumer.getConsumer().commitSync(Duration.ofSeconds(5));
+        Assert.assertEquals(getApiKeysSet(), new TreeSet<>(Arrays.asList(
+                ApiKeys.API_VERSIONS, ApiKeys.METADATA, ApiKeys.PRODUCE, ApiKeys.FIND_COORDINATOR, ApiKeys.LIST_OFFSETS,
+                ApiKeys.OFFSET_FETCH, ApiKeys.FETCH, ApiKeys.OFFSET_COMMIT
+        )));
 
         try {
             Thread.sleep(1000);
