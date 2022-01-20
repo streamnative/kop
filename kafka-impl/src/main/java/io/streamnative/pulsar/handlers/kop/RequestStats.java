@@ -30,7 +30,13 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKE
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.WAITING_FETCHES_TRIGGERED;
 
+import com.google.common.annotations.VisibleForTesting;
+import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +44,7 @@ import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.Gauge;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.bookkeeper.stats.annotations.StatsDoc;
+import org.apache.kafka.common.protocol.ApiKeys;
 
 /**
  * Kop request stats metric for prometheus metrics.
@@ -56,6 +63,8 @@ public class RequestStats {
     public static final AtomicInteger BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE = new AtomicInteger(0);
     public static final AtomicInteger ALIVE_CHANNEL_COUNT_INSTANCE = new AtomicInteger(0);
     public static final AtomicInteger ACTIVE_CHANNEL_COUNT_INSTANCE = new AtomicInteger(0);
+
+    public static final RequestStats NULL_INSTANCE = new RequestStats(NullStatsLogger.INSTANCE);
 
     private final StatsLogger statsLogger;
 
@@ -118,6 +127,8 @@ public class RequestStats {
             help = "number of pending fetches that woke up due to some data produced"
     )
     private final Counter waitingFetchesTriggered;
+
+    private final Map<ApiKeys, StatsLogger> apiKeysToStatsLogger = new ConcurrentHashMap<>();
 
     public RequestStats(StatsLogger statsLogger) {
         this.statsLogger = statsLogger;
@@ -183,5 +194,23 @@ public class RequestStats {
                 return ACTIVE_CHANNEL_COUNT_INSTANCE;
             }
         });
+    }
+
+    /**
+     * Get the stats logger for Kafka requests.
+     *
+     * @param apiKey the {@link ApiKeys} object that represents the Kafka request's type
+     * @param statsName the stats name
+     * @return
+     */
+    public OpStatsLogger getRequestStatsLogger(final ApiKeys apiKey, final String statsName) {
+        return apiKeysToStatsLogger.computeIfAbsent(apiKey,
+                __ -> statsLogger.scopeLabel(KopServerStats.REQUEST_SCOPE, apiKey.name)
+        ).getOpStatsLogger(statsName);
+    }
+
+    @VisibleForTesting
+    public Set<ApiKeys> getApiKeysSet() {
+        return new TreeSet<>(apiKeysToStatsLogger.keySet());
     }
 }

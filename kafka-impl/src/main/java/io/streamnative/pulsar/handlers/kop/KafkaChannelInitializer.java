@@ -22,7 +22,6 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateHandler;
-import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
@@ -59,7 +58,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     @Getter
     private final SslContextFactory.Server sslContextFactory;
     @Getter
-    private final StatsLogger statsLogger;
+    private final RequestStats requestStats;
     private final OrderedScheduler sendResponseScheduler;
 
     public KafkaChannelInitializer(PulsarService pulsarService,
@@ -72,7 +71,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    boolean enableTLS,
                                    EndPoint advertisedEndPoint,
                                    boolean skipMessagesWithoutIndex,
-                                   StatsLogger statsLogger,
+                                   RequestStats requestStats,
                                    OrderedScheduler sendResponseScheduler) {
         super();
         this.pulsarService = pulsarService;
@@ -85,7 +84,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.enableTls = enableTLS;
         this.advertisedEndPoint = advertisedEndPoint;
         this.skipMessagesWithoutIndex = skipMessagesWithoutIndex;
-        this.statsLogger = statsLogger;
+        this.requestStats = requestStats;
         if (enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
         } else {
@@ -116,15 +115,15 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         return new KafkaRequestHandler(pulsarService, kafkaConfig,
                 tenantContextManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
-                enableTls, advertisedEndPoint, skipMessagesWithoutIndex, statsLogger, sendResponseScheduler);
+                enableTls, advertisedEndPoint, skipMessagesWithoutIndex, requestStats, sendResponseScheduler);
     }
 
     @VisibleForTesting
-    public KafkaRequestHandler newCnx(final TenantContextManager tenantContextManager,
-                                      final StatsLogger statsLogger) throws Exception {
+    public KafkaRequestHandler newCnxWithoutStats(final TenantContextManager tenantContextManager) throws Exception {
         return new KafkaRequestHandler(pulsarService, kafkaConfig,
                 tenantContextManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
-                enableTls, advertisedEndPoint, skipMessagesWithoutIndex, statsLogger, sendResponseScheduler);
+                enableTls, advertisedEndPoint, skipMessagesWithoutIndex, RequestStats.NULL_INSTANCE,
+                sendResponseScheduler);
     }
 }
