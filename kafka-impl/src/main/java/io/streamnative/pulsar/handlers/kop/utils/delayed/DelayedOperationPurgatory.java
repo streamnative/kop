@@ -259,6 +259,17 @@ public class DelayedOperationPurgatory<T extends DelayedOperation> {
             }
         });
     }
+
+    public void removeOperation(Object key, Object operation) {
+        inReadLock(removeWatchersLock, () -> {
+            Watchers watchers = watchersForKey.get(key);
+            if (watchers != null) {
+                watchers.cancelOperation(operation);
+            }
+            return null;
+        });
+    }
+
     /*
      * Return all the current watcher lists,
      * note that the returned watchers may be removed from the list by other threads
@@ -372,6 +383,13 @@ public class DelayedOperationPurgatory<T extends DelayedOperation> {
                 cancelled.add(curr);
             }
             return cancelled;
+        }
+
+        public void cancelOperation(Object operation) {
+            operations.removeIf(e -> e == operation);
+            if (operation instanceof DelayedOperation) {
+                ((DelayedOperation) operation).cancel();
+            }
         }
 
         // traverse the list and purge elements that are already completed by others

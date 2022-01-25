@@ -33,6 +33,7 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -100,6 +101,8 @@ public final class MessageFetchContext {
     private AtomicLong bytesRead;
     private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
     private String namespacePrefix;
+    private List<Object> delayedFetchKeys;
+    private List<DelayedFetch> delayedFetches;
 
     // recycler and get for this object
     public static MessageFetchContext get(KafkaRequestHandler requestHandler,
@@ -124,6 +127,10 @@ public final class MessageFetchContext {
         context.bytesRead = new AtomicLong(0);
         context.fetchPurgatory = fetchPurgatory;
         context.startTime = SystemTime.SYSTEM.hiResClockMs();
+        context.delayedFetchKeys = context.fetchRequest.fetchData().keySet().stream()
+                .map(DelayedOperationKey.TopicPartitionOperationKey::new)
+                .collect(Collectors.toList());
+        context.delayedFetches = Collections.synchronizedList(new ArrayList<>());
         return context;
     }
 
@@ -146,6 +153,8 @@ public final class MessageFetchContext {
         context.resultFuture = resultFuture;
         context.hasComplete = new AtomicBoolean(false);
         context.startTime = SystemTime.SYSTEM.hiResClockMs();
+        context.delayedFetchKeys = null;
+        context.delayedFetches = null;
         return context;
     }
 
@@ -155,6 +164,13 @@ public final class MessageFetchContext {
 
 
     private void recycle() {
+        if (fetchPurgatory != null) {
+            for (Object key : delayedFetchKeys) {
+                for (DelayedFetch delayedFetch : delayedFetches) {
+                    fetchPurgatory.removeOperation(key, delayedFetch);
+                }
+            }
+        }
         responseData = null;
         decodeResults = null;
         requestHandler = null;
@@ -170,6 +186,8 @@ public final class MessageFetchContext {
         bytesRead = null;
         fetchPurgatory = null;
         namespacePrefix = null;
+        delayedFetchKeys = null;
+        delayedFetches = null;
         recyclerHandle.recycle(this);
     }
 
@@ -216,9 +234,7 @@ public final class MessageFetchContext {
                 // we haven't read enough data, need to wait
                 DelayedFetch delayedFetch = new DelayedFetch(maxWait, bytesRead,
                         fetchRequest.minBytes(), this);
-                List<Object> delayedFetchKeys =
-                        fetchRequest.fetchData().keySet().stream()
-                                .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
+                delayedFetches.add(delayedFetch);
                 fetchPurgatory.tryCompleteElseWatch(delayedFetch, delayedFetchKeys);
             } else {
                 this.complete();

@@ -22,14 +22,23 @@ import io.streamnative.kafka.client.api.Header;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Properties;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -400,5 +409,64 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
             assertEquals(message.getValue(), ("value-" + i).getBytes(StandardCharsets.UTF_8));
             assertEquals(message.getProperty("prop-key-" + i), "prop-value-" + i);
         }
+    }
+
+    @Test(timeOut = 20000)
+    public void testProduceConsumeAtTheSameTime() throws Exception {
+        final String topic = "test-produce-consume-at-the-same-time";
+        admin.topics().createPartitionedTopic(topic, 5);
+
+        final Properties propsWithLargeMaxWait = newKafkaConsumerProperties();
+        propsWithLargeMaxWait.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG, 3000);
+
+        @Cleanup
+        final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(propsWithLargeMaxWait);
+        final AtomicBoolean rebalanced = new AtomicBoolean(false);
+        consumer.subscribe(Collections.singleton(topic), new ConsumerRebalanceListener() {
+            @Override
+            public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+                rebalanced.set(true);
+            }
+
+            @Override
+            public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+                // No ops
+            }
+        });
+        consumer.poll(Duration.ofSeconds(3));
+        assertTrue(rebalanced.get());
+
+        final int numMessages = 20;
+        final ExecutorService executor = Executors.newFixedThreadPool(1);
+        final Set<String> receivedMessages = new TreeSet<>();
+        final Future<?> consumeFuture = executor.submit(() -> {
+            while (true) {
+                for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofMillis(100))) {
+                    synchronized (receivedMessages) {
+                        receivedMessages.add(record.value());
+                    }
+                }
+                synchronized (receivedMessages) {
+                    if (receivedMessages.size() >= numMessages) {
+                        break;
+                    }
+                }
+            }
+        });
+
+        @Cleanup
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+        for (int i = 0; i < numMessages; i++) {
+            producer.send(new ProducerRecord<>(topic, "msg-" + i)).get();
+        }
+        consumeFuture.get();
+        final Set<String> expectedMessages = new TreeSet<>();
+        for (int i = 0; i < numMessages; i++) {
+            expectedMessages.add("msg-" + i);
+        }
+        synchronized (receivedMessages) {
+            assertEquals(receivedMessages, expectedMessages);
+        }
+        executor.shutdown();
     }
 }
