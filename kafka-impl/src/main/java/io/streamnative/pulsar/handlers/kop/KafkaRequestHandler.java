@@ -1172,7 +1172,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
-    private CompletableFuture<Pair<Errors, Long>> fetchOffset(String topicName, Long timestamp) {
+    private CompletableFuture<Pair<Errors, Long>> fetchOffset(String topicName, ListOffsetRequest.PartitionData pd) {
+        Long timestamp = pd.timestamp;
         CompletableFuture<Pair<Errors, Long>> partitionData = new CompletableFuture<>();
 
         topicManager.getTopic(topicName).whenComplete((perTopicOpt, t) -> {
@@ -1366,61 +1367,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     // https://cfchou.github.io/blog/2015/04/23/a-closer-look-at-kafka-offsetrequest/ through web.archive.org
     private void handleListOffsetRequestV0(KafkaHeaderAndRequest listOffset,
                                            CompletableFuture<AbstractResponse> resultFuture) {
-        ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
-
-        Map<TopicPartition, CompletableFuture<Pair<Errors, Long>>> responseData =
-                Maps.newConcurrentMap();
-        if (request.offsetData().size() == 0) {
-            resultFuture.complete(new ListOffsetResponse(Collections.emptyMap()));
-            return;
-        }
-        AtomicInteger partitions = new AtomicInteger(request.offsetData().size());
-        Runnable completeOne = () -> {
-            if (partitions.decrementAndGet() == 0) {
-                waitResponseDataComplete(resultFuture, responseData, true);
-            }
-        };
-        // in v0, the iterator is offsetData,
-        // in v1, the iterator is partitionTimestamps,
-        if (log.isDebugEnabled()) {
-            log.debug("received a v0 listOffset: {}", request.toString(true));
-        }
-        String namespacePrefix = currentNamespacePrefix();
-        KafkaRequestUtils.LegacyUtils.forEachListOffsetRequest(request, topic -> times -> maxNumOffsets -> {
-            String fullPartitionName = KopTopic.toString(topic, namespacePrefix);
-
-            authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullPartitionName))
-                    .whenComplete((isAuthorized, ex) -> {
-                        if (ex != null) {
-                            log.error("Describe topic authorize failed, topic - {}. {}",
-                                    fullPartitionName, ex.getMessage());
-                            responseData.put(topic, CompletableFuture.completedFuture(
-                                    Pair.of(Errors.TOPIC_AUTHORIZATION_FAILED, null)));
-                            completeOne.run();
-                            return;
-                        }
-                        if (!isAuthorized) {
-                            responseData.put(topic, CompletableFuture.completedFuture(
-                                    Pair.of(Errors.TOPIC_AUTHORIZATION_FAILED, null)));
-                            completeOne.run();
-                            return;
-                        }
-
-                        CompletableFuture<Pair<Errors, Long>> partitionData;
-                        // num_num_offsets > 1 is not handled for now, returning an error
-                        if (maxNumOffsets > 1) {
-                            log.warn("request is asking for multiples offsets for {}, not supported for now",
-                                    fullPartitionName);
-                            partitionData = new CompletableFuture<>();
-                            partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, null));
-                        }
-
-                        partitionData = fetchOffset(fullPartitionName, times);
-                        responseData.put(topic, partitionData);
-                        completeOne.run();
-                    });
-
-        });
+        log.error("{} ListOffset v0 is not supported", this);
+        resultFuture.complete(listOffset
+                .getRequest()
+                .getErrorResponse(new Exception("V0 not supported")));
     }
 
     // get offset from underline managedLedger
@@ -2424,7 +2374,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CreatePartitionsRequest request = (CreatePartitionsRequest) createPartitions.getRequest();
 
         final Map<String, ApiError> result = Maps.newConcurrentMap();
-        final Map<String, NewPartitions> validTopics = Maps.newHashMap();
+        final Map<String, CreatePartitionsRequest.PartitionDetails> validTopics = Maps.newHashMap();
         final Set<String> duplicateTopics = request.duplicates();
 
         KafkaRequestUtils.forEachCreatePartitionsRequest(request, (topic, newPartition) -> {
@@ -2445,7 +2395,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         String namespacePrefix = currentNamespacePrefix();
         final AtomicInteger validTopicsCount = new AtomicInteger(validTopics.size());
-        final Map<String, NewPartitions> authorizedTopics = Maps.newConcurrentMap();
+        final Map<String, CreatePartitionsRequest.PartitionDetails> authorizedTopics = Maps.newConcurrentMap();
         Runnable createPartitionsAsync = () -> {
             if (authorizedTopics.isEmpty()) {
                 resultFuture.complete(KafkaResponseUtils.newCreatePartitions(result));
@@ -2459,7 +2409,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         };
 
-        BiConsumer<String, NewPartitions> completeOneTopic = (topic, newPartitions) -> {
+        BiConsumer<String, CreatePartitionsRequest.PartitionDetails> completeOneTopic = (topic, newPartitions) -> {
             authorizedTopics.put(topic, newPartitions);
             if (validTopicsCount.decrementAndGet() == 0) {
                 createPartitionsAsync.run();

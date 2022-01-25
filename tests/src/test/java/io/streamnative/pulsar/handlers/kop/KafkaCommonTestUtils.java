@@ -16,19 +16,22 @@ package io.streamnative.pulsar.handlers.kop;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.FetchRequest;
+import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 
 public class KafkaCommonTestUtils {
 
-    public static Map<TopicPartition, Long> newListOffsetTargetTimes(
+    public static Map<TopicPartition, ListOffsetRequest.PartitionData> newListOffsetTargetTimes(
             TopicPartition topicPartition,
             long timestamp) {
-        return Collections.singletonMap(topicPartition, timestamp);
+        return Collections.singletonMap(topicPartition, new ListOffsetRequest.PartitionData(timestamp, 100));
     }
 
     public static FetchRequest.PartitionData newFetchRequestPartitionData(long fetchOffset,
@@ -36,7 +39,8 @@ public class KafkaCommonTestUtils {
                                                                           int maxBytes) {
         return new FetchRequest.PartitionData(fetchOffset,
                 logStartOffset,
-                maxBytes
+                maxBytes,
+                Optional.empty()
         );
     }
 
@@ -44,23 +48,25 @@ public class KafkaCommonTestUtils {
             long offset,
             String metadata) {
         return new TxnOffsetCommitRequest.CommittedOffset(offset,
-                metadata
+                metadata,
+                Optional.empty()
         );
     }
 
     public static OffsetCommitRequest.PartitionData newOffsetCommitRequestPartitionData(long offset,
                                                                                         String metadata) {
         return new OffsetCommitRequest.PartitionData(offset,
+                Optional.empty(),
                 metadata
         );
     }
 
 
-    public static Map<String, NewPartitions> newPartitionsMap(List<String> topics, int totalCount) {
-        return topics.stream().collect(Collectors.toMap(topic -> topic, __ -> NewPartitions.increaseTo(totalCount)));
+    public static Map<String, CreatePartitionsRequest.PartitionDetails> newPartitionsMap(List<String> topics, int totalCount) {
+        return topics.stream().collect(Collectors.toMap(topic -> topic, __ -> new CreatePartitionsRequest.PartitionDetails(totalCount)));
     }
 
-    public static Map<String, NewPartitions> newPartitionsMap(String topic, int totalCount) {
+    public static Map<String, CreatePartitionsRequest.PartitionDetails> newPartitionsMap(String topic, int totalCount) {
         return newPartitionsMap(Collections.singletonList(topic), totalCount);
     }
 }

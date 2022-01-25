@@ -161,7 +161,10 @@ public class KafkaResponseUtils {
                     pair -> new ListOffsetResponse.PartitionData(
                             pair.getLeft(), // error
                             0L, // timestamp
-                            Optional.ofNullable(pair.getRight()).orElse(0L) // offset
+                            Optional.ofNullable(
+                                    pair.getRight() != null ? pair.getRight().intValue() : null)
+                                    .orElse(0) // offset
+                            , Optional.empty()
                     )
             ));
         }
@@ -179,6 +182,7 @@ public class KafkaResponseUtils {
         return new MetadataResponse.PartitionMetadata(Errors.NONE,
                 partition,
                 node, // leader
+                Optional.empty(), // leaderEpoch is unknown in Pulsar
                 Collections.singletonList(node), // replicas
                 Collections.singletonList(node), // isr
                 Collections.emptyList() // offline replicas
@@ -190,6 +194,7 @@ public class KafkaResponseUtils {
         return new MetadataResponse.PartitionMetadata(errors,
                 partition,
                 Node.noNode(), // leader
+                Optional.empty(), // leaderEpoch is unknown in Pulsar
                 Collections.singletonList(Node.noNode()), // replicas
                 Collections.singletonList(Node.noNode()), // isr
                 Collections.emptyList() // offline replicas
@@ -203,12 +208,14 @@ public class KafkaResponseUtils {
     public static OffsetFetchResponse.PartitionData newOffsetFetchPartition(long offset,
                                                                             String metadata) {
         return new OffsetFetchResponse.PartitionData(offset,
+                Optional.empty(), // leaderEpoch is unknown in Pulsar
                 metadata,
                 Errors.NONE);
     }
 
     public static OffsetFetchResponse.PartitionData newOffsetFetchPartition() {
         return new OffsetFetchResponse.PartitionData(OffsetFetchResponse.INVALID_OFFSET,
+                Optional.empty(), // leaderEpoch is unknown in Pulsar
                 "", // metadata
                 Errors.NONE
         );
