@@ -412,7 +412,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
     }
 
     @Test(timeOut = 20000)
-    public void testProduceConsumeAtTheSameTime() throws Exception {
+    public void testEmptyPollWhenProduceAndConsumeConcurrently() throws Exception {
         final String topic = "test-produce-consume-at-the-same-time";
         admin.topics().createPartitionedTopic(topic, 5);
 
@@ -438,18 +438,11 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
         final int numMessages = 20;
         final ExecutorService executor = Executors.newFixedThreadPool(1);
-        final Set<String> receivedMessages = new TreeSet<>();
+        final Set<String> receivedMessages = Collections.synchronizedSet(new TreeSet<>());
         final Future<?> consumeFuture = executor.submit(() -> {
-            while (true) {
+            while (receivedMessages.size() < numMessages) {
                 for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofMillis(100))) {
-                    synchronized (receivedMessages) {
-                        receivedMessages.add(record.value());
-                    }
-                }
-                synchronized (receivedMessages) {
-                    if (receivedMessages.size() >= numMessages) {
-                        break;
-                    }
+                    receivedMessages.add(record.value());
                 }
             }
         });
@@ -464,9 +457,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         for (int i = 0; i < numMessages; i++) {
             expectedMessages.add("msg-" + i);
         }
-        synchronized (receivedMessages) {
-            assertEquals(receivedMessages, expectedMessages);
-        }
+        assertEquals(receivedMessages, expectedMessages);
         executor.shutdown();
     }
 }
