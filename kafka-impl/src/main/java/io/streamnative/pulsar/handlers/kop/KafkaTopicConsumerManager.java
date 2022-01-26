@@ -124,8 +124,9 @@ public class KafkaTopicConsumerManager implements Closeable {
 
                 @Override
                 public void deleteCursorFailed(ManagedLedgerException exception, Object ctx) {
-                    log.warn("[{}] Error deleting cursor {} for topic {} for reason: {}.",
-                        requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason, exception);
+                    log.warn("[{}] Error deleting cursor {} for topic {} for reason: {}. {}",
+                        requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason,
+                            exception.getMessage());
                 }
             }, null);
             createdCursors.remove(cursor.getName());

@@ -164,12 +164,9 @@ public final class MessageFetchContext {
 
 
     private void recycle() {
-        if (fetchPurgatory != null) {
-            for (Object key : delayedFetchKeys) {
-                for (DelayedFetch delayedFetch : delayedFetches) {
-                    fetchPurgatory.removeOperation(key, delayedFetch);
-                }
-            }
+        if (delayedFetches != null) {
+            // Prevent DelayedFetch from operating on the recycled MessageFetchContext object
+            delayedFetches.forEach(DelayedFetch::close);
         }
         responseData = null;
         decodeResults = null;

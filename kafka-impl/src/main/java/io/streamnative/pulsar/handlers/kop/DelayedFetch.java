@@ -17,14 +17,18 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class DelayedFetch extends DelayedOperation {
-    private final Runnable callback;
     private final AtomicLong bytesReadable;
     private final int minBytes;
     private final MessageFetchContext messageFetchContext;
+    private final Lock lock = new ReentrantLock();
+    private boolean closed = false;
     private final AtomicBoolean restarted = new AtomicBoolean();
     private final AtomicBoolean someMessageProduced = new AtomicBoolean();
 
@@ -34,7 +38,6 @@ public class DelayedFetch extends DelayedOperation {
         this.bytesReadable = bytesReadable;
         this.minBytes = minBytes;
         this.messageFetchContext = messageFetchContext;
-        this.callback = messageFetchContext::complete;
     }
 
     @Override
@@ -42,7 +45,7 @@ public class DelayedFetch extends DelayedOperation {
         if (restarted.get()) {
             return;
         }
-        callback.run();
+        complete();
     }
 
     @Override
@@ -50,7 +53,7 @@ public class DelayedFetch extends DelayedOperation {
         if (restarted.get()) {
             return;
         }
-        callback.run();
+        complete();
     }
 
     @Override
@@ -60,13 +63,20 @@ public class DelayedFetch extends DelayedOperation {
             // someone wrote some messages to one of the topics
             // trigger the Fetch from scratch
             restarted.set(true);
-            messageFetchContext.onDataWrittenToSomePartition();
+            lock.lock();
+            try {
+                if (!closed) {
+                    messageFetchContext.onDataWrittenToSomePartition();
+                }
+            } finally {
+                lock.unlock();
+            }
             return true;
         }
         if (bytesReadable.get() < minBytes){
             return false;
         }
-        callback.run();
+        complete();
         return true;
     }
 
@@ -77,5 +87,22 @@ public class DelayedFetch extends DelayedOperation {
         // on other partitions
         someMessageProduced.set(true);
         return true;
+    }
+
+    public void close() {
+        lock.lock();
+        closed = true;
+        lock.unlock();
+    }
+
+    private void complete() {
+        lock.lock();
+        try {
+            if (!closed) {
+                messageFetchContext.complete();
+            }
+        } finally {
+            lock.unlock();
+        }
     }
 }
