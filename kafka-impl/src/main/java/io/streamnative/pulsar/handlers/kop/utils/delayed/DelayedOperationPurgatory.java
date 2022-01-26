@@ -226,7 +226,7 @@ public class DelayedOperationPurgatory<T extends DelayedOperation> {
         if (null == watchers) {
             return 0;
         } else {
-            return watchers.tryCompleteWatched(key);
+            return watchers.tryCompleteWatched();
         }
     }
 
@@ -340,7 +340,7 @@ public class DelayedOperationPurgatory<T extends DelayedOperation> {
         }
 
         // traverse the list and try to complete some watched elements
-        public int tryCompleteWatched(Object key) {
+        public int tryCompleteWatched() {
             int completed = 0;
 
             Iterator<T> iter = operations.iterator();
@@ -349,7 +349,7 @@ public class DelayedOperationPurgatory<T extends DelayedOperation> {
                 if (curr.isCompleted()) {
                     // another thread has completed this operation, just remove it
                     iter.remove();
-                } else if (curr.wakeup() && curr.maybeTryComplete()) {
+                } else if (curr.maybeTryComplete()) {
                     iter.remove();
                     completed += 1;
                 }
