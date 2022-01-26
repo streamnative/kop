@@ -99,13 +99,6 @@ public abstract class DelayedOperation extends TimerTask {
     public abstract boolean tryComplete();
 
     /**
-     * Try to wake up the operation.
-     */
-    public boolean wakeup() {
-        return true;
-    }
-
-    /**
      * Thread-safe variant of tryComplete() that attempts completion only if the lock can be acquired
      * without blocking.
      *
