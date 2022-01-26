@@ -56,7 +56,6 @@ import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
-import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -971,11 +970,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     mergedResponse.putAll(unauthorizedTopicResponsesMap);
                     mergedResponse.putAll(invalidRequestResponses);
                     resultFuture.complete(new ProduceResponse(mergedResponse));
-                    mergedResponse.forEach((_topicPartition, _response) -> {
-                        if (_response.error == Errors.NONE) {
-                            notifyPendingFetches(_topicPartition);
-                        }
-                    });
                 });
             }
         };
@@ -1012,20 +1006,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
 
 
-    }
-
-    private void notifyPendingFetches(TopicPartition topicPartition) {
-       ctx.executor().execute(() -> {
-           DelayedOperationKey.TopicPartitionOperationKey key =
-                   new DelayedOperationKey.TopicPartitionOperationKey(topicPartition);
-           int matches = fetchPurgatory.checkAndComplete(key);
-           if (matches > 0) {
-               requestStats.getWaitingFetchesTriggered().add(matches);
-               if (log.isDebugEnabled()) {
-                   log.debug("{} DelayedFetch woke up for {}", matches, topicPartition);
-               }
-           }
-       });
     }
 
     private void validateRecords(short version, MemoryRecords records) {

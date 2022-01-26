@@ -30,11 +30,9 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
-import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -48,12 +46,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -382,21 +375,17 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         int maxWaitMs = 3000;
         int minBytes = 1;
         // case1: consuming an empty topic.
-        @Cleanup
         KafkaConsumer<String, String> consumer1 = createKafkaConsumer(maxWaitMs, minBytes);
         consumer1.assign(topicPartitions);
         Long startTime1 = System.currentTimeMillis();
-        ConsumerRecords<String, String> emptyResult = consumer1.poll(Duration.ofMillis(maxWaitMs));
+        consumer1.poll(Duration.ofMillis(maxWaitMs));
         Long endTime1 = System.currentTimeMillis();
         log.info("cost time1:" + (endTime1 - startTime1));
-        assertEquals(0, emptyResult.count());
 
         // case2: consuming an topic after producing data.
-        @Cleanup
         KafkaProducer<String, String> kProducer = createKafkaProducer();
         produceData(kProducer, topicPartitions, 10);
 
-        @Cleanup
         KafkaConsumer<String, String> consumer2 = createKafkaConsumer(maxWaitMs, minBytes);
         consumer2.assign(topicPartitions);
         consumer2.seekToBeginning(topicPartitions);
@@ -411,57 +400,6 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         // When the amount of readable data is not less than minBytes,
         // the time-consuming is usually less than maxWait time.
         assertTrue(endTime2 - startTime2 < maxWaitMs);
-    }
-
-    /**
-     * Test the sending speed of fetch request when the readable data is less than fetch.minBytes.
-     */
-    @Test(timeOut = 60000)
-    public void testFetchMinBytesSingleConsumer() throws Exception {
-        String topicName = "testMinBytesTopic";
-        TopicPartition tp = new TopicPartition(topicName, 0);
-
-        // create partitioned topic.
-        admin.topics().createPartitionedTopic(topicName, 1);
-        List<TopicPartition> topicPartitions = new ArrayList<>();
-        topicPartitions.add(tp);
-
-        int maxWaitMs = 3000; // very long time
-        int minBytes = 1;
-        // case1: consuming an empty topic.
-        @Cleanup
-        KafkaConsumer<String, String> consumer1 = createKafkaConsumer(maxWaitMs, minBytes);
-        consumer1.assign(topicPartitions);
-        ConsumerRecords<String, String> emptyResult = consumer1.poll(Duration.ofMillis(maxWaitMs));
-        assertEquals(0, emptyResult.count());
-
-        // case2: consuming an topic after producing data.
-        @Cleanup
-        KafkaProducer<String, String> kProducer = createKafkaProducer();
-        produceData(kProducer, topicPartitions, 10);
-
-        int totalRead = 0;
-        do {
-            // Consumer1 is able to eventually read the data
-            // please note that we are passing 100 as max pool time
-            ConsumerRecords<String, String> goodResultFrom1 = consumer1.poll(Duration.ofMillis(100));
-            totalRead += goodResultFrom1.count();
-            log.info("read {} records totalRead {}", goodResultFrom1.count(), totalRead);
-            // we require that every pool returns at least one record
-            // that is that we NEVER hit the maxWait timeout and also the pool timeout
-            assertTrue(goodResultFrom1.count() > 0);
-        } while (totalRead < 10);
-        assertEquals(10, totalRead);
-
-
-        HttpClient httpClient = HttpClientBuilder.create().build();
-        final String metricsEndPoint = pulsar.getWebServiceAddress() + "/metrics";
-        HttpResponse response = httpClient.execute(new HttpGet(metricsEndPoint));
-        InputStream inputStream = response.getEntity().getContent();
-        String metrics = IOUtils.toString(inputStream, StandardCharsets.UTF_8);
-        log.info("metrics {}", metrics);
-
-        assertTrue(metrics.contains("kop_server_WAITING_FETCHES_TRIGGERED 1"));
     }
 
     @Test(timeOut = 80000)
