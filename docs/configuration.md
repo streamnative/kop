@@ -18,7 +18,7 @@ To support multiple listeners, you need to specify different listener names in `
 For example, assuming you need to listen on port 9092 and 19092 with the `PLAINTEXT` protocol, the associated names are `kafka_internal` and `kafka_external`. Then you need to add the following configurations:
 
 ```properties
-kafkaListeners=kafka_internal://0.0.0.0:9092,kafka_external://0.0.0.0:19092
+kafkaListeners=kafka_internal://localhost:9092,kafka_external://localhost:19092
 kafkaProtocolMap=kafka_internal:PLAINTEXT,kafka_external:PLAINTEXT
 kafkaAdvertisedListeners=kafka_internal://localhost:9092,kafka_external://localhost:19092
 ```

@@ -73,7 +73,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
                 InetSocketAddress.createUnresolved("192.168.0.2", PortManager.nextFreePort()));
 
         super.resetConfig();
-        conf.setKafkaListeners("PLAINTEXT://0.0.0.0:" + kafkaBrokerPort + ",GW://0.0.0.0:" + anotherKafkaPort);
+        conf.setKafkaListeners("PLAINTEXT://localhost:" + kafkaBrokerPort + ",GW://localhost:" + anotherKafkaPort);
         conf.setKafkaProtocolMap("PLAINTEXT:PLAINTEXT,GW:PLAINTEXT");
 
         conf.setKafkaAdvertisedListeners(String.format("PLAINTEXT://%s,GW://%s",
@@ -156,8 +156,8 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         final String kafkaProtocolMap = "kafka:PLAINTEXT,kafka_external:PLAINTEXT";
         conf.setKafkaProtocolMap(kafkaProtocolMap);
         int externalPort = PortManager.nextFreePort();
-        final String kafkaListeners = "kafka://0.0.0.0:" + kafkaBrokerPort
-                + ",kafka_external://0.0.0.0:" + externalPort;
+        final String kafkaListeners = "kafka://localhost:" + kafkaBrokerPort
+                + ",kafka_external://localhost:" + externalPort;
         conf.setKafkaListeners(kafkaListeners);
         final String advertisedListeners =
                 "pulsar:pulsar://" + localAddress + ":" + brokerPort
@@ -178,7 +178,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         final int externalPort = PortManager.nextFreePort();
         super.resetConfig();
         conf.setAdvertisedAddress(null);
-        conf.setKafkaListeners("kafka://0.0.0.0:" + kafkaBrokerPort + ",kafka_external://0.0.0.0:" + externalPort);
+        conf.setKafkaListeners("kafka://localhost:" + kafkaBrokerPort + ",kafka_external://localhost:" + externalPort);
         conf.setKafkaProtocolMap("kafka:PLAINTEXT,kafka_external:PLAINTEXT");
         conf.setAdvertisedListeners("pulsar:pulsar://localhost:" + brokerPort
                 + ",kafka:pulsar://localhost:" + kafkaBrokerPort

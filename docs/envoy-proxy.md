@@ -27,7 +27,7 @@ This example assumes that you have installed Pulsar 2.8.0, KoP 2.8.0, [Envoy 1.1
       - address:
           socket_address:
             # See KoP config item `kafkaAdvertisedListeners`
-            address: 0.0.0.0
+            address: localhost
             port_value: 19092
         filter_chains:
         - filters:
@@ -76,7 +76,7 @@ This example assumes that you have installed Pulsar 2.8.0, KoP 2.8.0, [Envoy 1.1
     # KoP listens at port 9092 in host "pulsar-broker-0"
     kafkaListeners=PLAINTEXT://pulsar-broker-0:9092
     # Expose the port 19092 as the external port that Kafka client connects to
-    kafkaAdvertisedListeners=PLAINTEXT://0.0.0.0:19092
+    kafkaAdvertisedListeners=PLAINTEXT://localhost:19092
     # Other necessary configs
     messagingProtocols=kafka
     allowAutoTopicCreationType=partitioned
@@ -89,12 +89,12 @@ This example assumes that you have installed Pulsar 2.8.0, KoP 2.8.0, [Envoy 1.1
 
 4. Run KoP.
 
-5. Now the Kafka client can use the exposed address (0.0.0.0:19092) to access KoP. 
+5. Now the Kafka client can use the exposed address (localhost:19092) to access KoP. 
 
     ```java
     final Properties props = new Properties();
     // See KoP config item `kafkaAdvertisedListeners`
-    props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "0.0.0.0:19092");
+    props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:19092");
     props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
     props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
     final KafkaProducer<String, String> producer = new KafkaProducer<>(props);
