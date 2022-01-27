@@ -152,7 +152,7 @@ public class KafkaServiceConfigurationTest {
             ConfigurationUtils.create(stream, KafkaServiceConfiguration.class);
 
         assertNotNull(kafkaServiceConfig);
-        assertEquals(kafkaServiceConfig.getZookeeperServers(), zkServer);
+        assertEquals(kafkaServiceConfig.getMetadataStoreUrl(), zkServer);
         assertEquals(kafkaServiceConfig.isBrokerDeleteInactiveTopicsEnabled(), true);
         assertEquals(kafkaServiceConfig.getBacklogQuotaDefaultLimitGB(), 18.0);
         assertEquals(kafkaServiceConfig.getClusterName(), "usc");
