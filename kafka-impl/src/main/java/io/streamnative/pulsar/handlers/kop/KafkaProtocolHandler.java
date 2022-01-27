@@ -606,7 +606,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
                     ImmutableMap.builder();
 
-            EndPoint.parseListeners(kafkaConfig.getListeners(), kafkaConfig.getKafkaProtocolMap()).
+            EndPoint.parseListeners(kafkaConfig.getKafkaAdvertisedListeners(), kafkaConfig.getKafkaProtocolMap()).
                     forEach((listener, endPoint) ->
                             builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint))
                     );

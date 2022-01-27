@@ -484,6 +484,9 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
                         .append(hostname)
                         .append(":")
                         .append(matcher.group(3));
+            } else if (hostname.equals("0.0.0.0")) {
+                throw new IllegalStateException(advertisedListeners
+                        + " cannot use the nonroutable meta-address 0.0.0.0. Use a routable IP address.");
             } else {
                 listenersReBuilder.append(listener);
             }
