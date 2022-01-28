@@ -108,6 +108,10 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
                 Assert.assertEquals(brokers.get(0).host(), expectedAddress.getHostName());
                 Assert.assertEquals(brokers.get(0).port(), expectedAddress.getPort());
 
+                Node controller = metadataResponse.controller();
+                Assert.assertEquals(controller.host(), expectedAddress.getHostName());
+                Assert.assertEquals(controller.port(), expectedAddress.getPort());
+
                 final List<MetadataResponse.TopicMetadata> topicMetadataList =
                         new ArrayList<>(metadataResponse.topicMetadata());
                 Assert.assertEquals(topicMetadataList.size(), 1);
