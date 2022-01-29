@@ -139,7 +139,7 @@ KoP is a built-in component in StreamNative's `sn-pulsar` image, whose tag match
 docker compose up
 ```
 
-in the KoP project directory to start a Pulsar standalone with KoP enabled. The KoP has one advertised listener `127.0.0.1:19092`. So you can use Kafka's CLI tool to verify it like
+in the KoP project directory to start a Pulsar standalone with KoP enabled. The KoP has a single advertised listener `127.0.0.1:19092`, so you should use Kafka's CLI tool to connect KoP like
 
 ```bash
 $ ./bin/kafka-console-producer.sh --bootstrap-server localhost:19092 --topic my-topic                 
