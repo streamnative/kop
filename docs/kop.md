@@ -153,7 +153,7 @@ world
 
 See [docker-compose.yml](../docker-compose.yml) for more details.
 
-It's similar to configure KoP in a cluster started in Docker. You only need to add the environment varialble whose prefix is `PULSAR_PREFIX_` and ensure `bin/apply-config-from-env.py conf/broker.conf` is executed before `bin/pulsar broker`.
+It's similar to configure KoP in a cluster started in Docker. You only need to add the environment varialbles according to your customized configuration and ensure `bin/apply-config-from-env.py conf/broker.conf` is executed before `bin/pulsar broker`. The environment variable should be a property's key if it already exists in the configuration file. Otherwise it should have the prefix `PULSAR_PREFIX_`.
 
 # How to use KoP
 
