@@ -14,12 +14,10 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Properties;
-import java.util.concurrent.ExecutionException;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -74,7 +72,7 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test
-    public void testIdempotentProducer() throws PulsarAdminException, ExecutionException, InterruptedException {
+    public void testIdempotentProducer() throws PulsarAdminException {
         String topic = "testIdempotentProducer";
         String fullTopicName = "persistent://" + NAMESPACE + "/" + topic;
         admin.topics().createPartitionedTopic(fullTopicName, 1);
@@ -92,11 +90,6 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
         }
         producer.flush();
 
-        // Send a message with new producerId.
-        @Cleanup
-        KafkaProducer<String, String> producer2 = new KafkaProducer<>(producerProperties);
-        producer2.send(new ProducerRecord<>(fullTopicName, "test")).get();
-
         @Cleanup
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties());
         consumer.subscribe(Collections.singleton(fullTopicName));
@@ -109,10 +102,6 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
             }
         }
         assertEquals(maxMessageNum, i);
-
-        // Should have one message left.
-        ConsumerRecords<String, String> msg = consumer.poll(Duration.ofSeconds(2));
-        assertFalse(msg.isEmpty());
     }
 
 }
