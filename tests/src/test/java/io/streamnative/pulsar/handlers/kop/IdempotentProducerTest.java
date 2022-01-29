@@ -18,7 +18,7 @@ import static org.junit.Assert.assertEquals;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Properties;
-import lombok.Cleanup;
+import java.util.concurrent.ExecutionException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -71,9 +71,14 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
         };
     }
 
-    @Test
-    public void testIdempotentProducer() throws PulsarAdminException {
+    @Test(timeOut = 20 * 1000, dataProvider = "produceConfigProvider")
+    public void testIdempotentProducer(boolean isBatch)
+            throws PulsarAdminException, ExecutionException, InterruptedException {
         String topic = "testIdempotentProducer";
+        if (isBatch) {
+            topic += "-batch";
+        }
+
         String fullTopicName = "persistent://" + NAMESPACE + "/" + topic;
         admin.topics().createPartitionedTopic(fullTopicName, 1);
         int maxMessageNum = 1000;
@@ -82,26 +87,32 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
         producerProperties.put(ProducerConfig.CLIENT_ID_CONFIG, "test-client");
         producerProperties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
 
-        @Cleanup
-        KafkaProducer<String, String> producer = new KafkaProducer<>(producerProperties);
-
-        for (int i = 0; i < maxMessageNum; i++) {
-            producer.send(new ProducerRecord<>(fullTopicName, "test" + i));
-        }
-        producer.flush();
-
-        @Cleanup
-        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties());
-        consumer.subscribe(Collections.singleton(fullTopicName));
-        int i = 0;
-        while (i < maxMessageNum) {
-            ConsumerRecords<String, String> messages = consumer.poll(Duration.ofSeconds(2));
-            for (ConsumerRecord<String, String> message : messages) {
-                assertEquals("test" + i, message.value());
-                i++;
+       try (KafkaProducer<String, String> producer = new KafkaProducer<>(producerProperties)) {
+           for (int i = 0; i < maxMessageNum; i++) {
+               if (isBatch) {
+                   producer.send(new ProducerRecord<>(fullTopicName, "test" + i));
+               } else {
+                   producer.send(new ProducerRecord<>(fullTopicName, "test" + i)).get();
+               }
+           }
+           if (isBatch) {
+               producer.flush();
+           }
+       }
+       try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties())) {
+            consumer.subscribe(Collections.singleton(fullTopicName));
+            int i = 0;
+            while (i < maxMessageNum) {
+                ConsumerRecords<String, String> messages = consumer.poll(Duration.ofSeconds(2));
+                for (ConsumerRecord<String, String> message : messages) {
+                    assertEquals("test" + i, message.value());
+                    i++;
+                }
             }
-        }
-        assertEquals(maxMessageNum, i);
+            assertEquals(maxMessageNum, i);
+       }
+
+       admin.topics().deletePartitionedTopic(fullTopicName);
     }
 
 }
