@@ -195,12 +195,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         log.info("Fetch for finish consume messages. isolation: {}", isolation);
     }
 
-    @Test(timeOut = 1000 * 150)
+    @Test(timeOut = 1000 * 15)
     public void offsetCommitTest() throws Exception {
         txnOffsetTest("txn-offset-commit-test", 10, true);
     }
 
-    @Test(timeOut = 1000 * 100)
+    @Test(timeOut = 1000 * 10)
     public void offsetAbortTest() throws Exception {
         txnOffsetTest("txn-offset-abort-test", 10, false);
     }
