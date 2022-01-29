@@ -131,8 +131,32 @@ After you have installed the KoP protocol handler to Pulsar broker, you can rest
         This is another message
         ```
 
+### Run KoP in Docker
+
+KoP is a built-in component in StreamNative's `sn-pulsar` image, whose tag matches KoP's version. Take KoP 2.9.1.1 for example, you can execute `docker compose up` command in the KoP project directory to start a Pulsar standalone with KoP being enabled. KoP has a single advertised listener `127.0.0.1:19092`, so you should use Kafka's CLI tool to connect KoP, as shown below:
+
+```bash
+$ ./bin/kafka-console-producer.sh --bootstrap-server localhost:19092 --topic my-topic                 
+>hello
+>world
+>^C                                                                                                                                                                                                                                                        $ ./bin/kafka-console-consumer.sh --bootstrap-server localhost:19092 --topic my-topic --from-beginning
+hello
+world
+^CProcessed a total of 2 messages
+```
+
+See [docker-compose.yml](../docker-compose.yml) for more details.
+
+Similar to configuring KoP in a cluster that is started in Docker, you only need to add the environment varialble according to your customized configuration and ensure to execute `bin/apply-config-from-env.py conf/broker.conf` before executing `bin/pulsar broker`. The environment variable should be a property's key if it already exists in the configuration file. Otherwise it should have the prefix `PULSAR_PREFIX_`.
+
 # How to use KoP
+
 You can configure and manage KoP based on your requirements. Check the following guides for more details.
+
+> **NOTE**
+>
+> The following links are invalid when you check this document in the `master` branch from GitHub. You can go to the same chapter of the [README](../README.md) for the correct links.
+
 -   [Configure KoP](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/configuration.md)
 -   [Monitor KoP](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/reference-metrics.md)
 -   [Upgrade](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/upgrade.md)
