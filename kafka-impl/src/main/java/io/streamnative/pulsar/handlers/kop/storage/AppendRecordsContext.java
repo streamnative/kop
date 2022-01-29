@@ -45,12 +45,11 @@ public class AppendRecordsContext {
     }
 
     // recycler and get for this object
-    public static AppendRecordsContext get(
-            final KafkaTopicManager topicManager,
-            final RequestStats requestStats,
-            final Consumer<Integer> startSendOperationForThrottling,
-            final Consumer<Integer> completeSendOperationForThrottling,
-            final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
+    public static AppendRecordsContext get(final KafkaTopicManager topicManager,
+                                           final RequestStats requestStats,
+                                           final Consumer<Integer> startSendOperationForThrottling,
+                                           final Consumer<Integer> completeSendOperationForThrottling,
+                                           final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
         AppendRecordsContext context = RECYCLER.get();
         context.topicManager = topicManager;
         context.requestStats = requestStats;

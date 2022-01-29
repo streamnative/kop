@@ -83,7 +83,7 @@ public final class MessagePublishContext implements PublishContext {
             if (log.isDebugEnabled()) {
                 log.debug("Success write topic: {}, producerName {} ledgerId: {}, entryId: {}"
                         + " And triggered send callback.",
-                    topic.getName(), this.producerName, ledgerId, entryId);
+                    topic.getName(), producerName, ledgerId, entryId);
             }
 
             topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.MICROSECONDS);
@@ -93,7 +93,7 @@ public final class MessagePublishContext implements PublishContext {
                 if (log.isDebugEnabled()) {
                     log.debug("Failed to write topic: {}, producerName {}, ledgerId: {}, entryId: {}"
                                     + " with duplicated message.",
-                            topic.getName(), this.producerName, ledgerId, entryId);
+                            topic.getName(), producerName, ledgerId, entryId);
                 }
                 offsetFuture.completeExceptionally(Errors.DUPLICATE_SEQUENCE_NUMBER.exception());
                 return;

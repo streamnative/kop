@@ -77,12 +77,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         };
     }
 
-    @Test(timeOut = 1000 * 100, dataProvider = "produceConfigProvider")
+    @Test(timeOut = 1000 * 10, dataProvider = "produceConfigProvider")
     public void readCommittedTest(boolean isBatch) throws Exception {
         basicProduceAndConsumeTest("read-committed-test", "txn-11", "read_committed", isBatch);
     }
 
-    @Test(timeOut = 1000 * 100, dataProvider = "produceConfigProvider")
+    @Test(timeOut = 1000 * 10, dataProvider = "produceConfigProvider")
     public void readUncommittedTest(boolean isBatch) throws Exception {
         basicProduceAndConsumeTest("read-uncommitted-test", "txn-12", "read_uncommitted", isBatch);
     }

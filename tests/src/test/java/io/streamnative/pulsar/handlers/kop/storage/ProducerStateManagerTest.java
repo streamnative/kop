@@ -15,7 +15,7 @@ package io.streamnative.pulsar.handlers.kop.storage;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
-import static org.testng.AssertJUnit.fail;
+import static org.testng.Assert.fail;
 
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
