@@ -1,0 +1,35 @@
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+version: "3.4"
+
+services:
+  standalone:
+    container_name: standalone
+    hostname: localhost
+    image: streamnative/sn-pulsar:2.9.1.1
+    command: >
+      bash -c "bin/apply-config-from-env.py conf/standalone.conf &&
+      exec bin/pulsar standalone -nss -nfw" # disable stream storage and functions worker
+    environment:
+      allowAutoTopicCreationType: partitioned
+      brokerDeleteInactiveTopicsEnabled: "false"
+      PULSAR_PREFIX_messagingProtocols: kafka
+      PULSAR_PREFIX_kafkaListeners: PLAINTEXT://0.0.0.0:9092
+      PULSAR_PREFIX_kafkaAdvertisedListeners: PLAINTEXT://127.0.0.1:19092
+      PULSAR_PREFIX_brokerEntryMetadataInterceptors: org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor
+    ports:
+      - 6650:6650
+      - 8080:8080
+      - 19092:9092

@@ -131,8 +131,38 @@ After you have installed the KoP protocol handler to Pulsar broker, you can rest
         This is another message
         ```
 
+### Run KoP in Docker
+
+KoP is a built-in component in StreamNative's `sn-pulsar` image, whose tag matches KoP's version. Take KoP 2.9.1.1 for example, you can run
+
+```bash
+docker compose up
+```
+
+in the KoP project directory to start a Pulsar standalone with KoP enabled. The KoP has one advertised listener `127.0.0.1:19092`. So you can use Kafka's CLI tool to verify it like
+
+```bash
+$ ./bin/kafka-console-producer.sh --bootstrap-server localhost:19092 --topic my-topic                 
+>hello
+>world
+>^C                                                                                                                                                                                                                                                        $ ./bin/kafka-console-consumer.sh --bootstrap-server localhost:19092 --topic my-topic --from-beginning
+hello
+world
+^CProcessed a total of 2 messages
+```
+
+See [docker-compose.yml](../docker-compose.yml) for more details.
+
+It's similar to configure KoP in a cluster started in Docker. You only need to add the environment varialble whose prefix is `PULSAR_PREFIX_` and ensure `bin/apply-config-from-env.py conf/broker.conf` is executed before `bin/pulsar broker`.
+
 # How to use KoP
+
 You can configure and manage KoP based on your requirements. Check the following guides for more details.
+
+> **NOTE**
+>
+> Following links are invalid when you're reading this document in master branch from Github. You can go to the same chapter of [README.md](../README.md) for the correct links.
+
 -   [Configure KoP](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/configuration.md)
 -   [Monitor KoP](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/reference-metrics.md)
 -   [Upgrade](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/upgrade.md)
