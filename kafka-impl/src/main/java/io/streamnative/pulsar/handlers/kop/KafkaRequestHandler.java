@@ -27,7 +27,6 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
@@ -166,12 +165,9 @@ import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.common.api.proto.MarkerType;
-import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
-import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
@@ -2226,6 +2222,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         WriteTxnMarkersRequest request = (WriteTxnMarkersRequest) kafkaHeaderAndRequest.getRequest();
+
         Map<Long, Map<TopicPartition, Errors>> errors = new ConcurrentHashMap<>();
         List<WriteTxnMarkersRequest.TxnMarkerEntry> markers = request.markers();
         AtomicInteger numAppends = new AtomicInteger(markers.size());
@@ -2520,62 +2517,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 completeOneErrorTopic.accept(topic, ApiError.fromThrowable(e));
             }
         });
-    }
-
-    /**
-     * Write the txn marker to the topic partition.
-     *
-     * @param topicPartition
-     */
-    private CompletableFuture<Long> writeTxnMarker(TopicPartition topicPartition,
-                                TransactionResult transactionResult,
-                                long producerId,
-                                short producerEpoch) {
-        CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
-        String namespacePrefix = currentNamespacePrefix();
-        String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
-        TopicName topicName = TopicName.get(fullPartitionName);
-        topicManager.getTopic(topicName.toString())
-                .whenComplete((persistentTopicOpt, throwable) -> {
-                    if (throwable != null) {
-                        offsetFuture.completeExceptionally(throwable);
-                        return;
-                    }
-                    if (!persistentTopicOpt.isPresent()) {
-                        log.info("Topic {} is not owned by this Broker", fullPartitionName);
-                        offsetFuture.complete(null);
-                        return;
-                    }
-                    PersistentTopic persistentTopic = persistentTopicOpt.get();
-                    persistentTopic.publishMessage(generateTxnMarker(transactionResult, producerId, producerEpoch),
-                            MessagePublishContext.get(offsetFuture, persistentTopic,
-                                    1, SystemTime.SYSTEM.milliseconds()));
-                });
-        return offsetFuture;
-    }
-
-    private ByteBuf generateTxnMarker(TransactionResult transactionResult, long producerId, short producerEpoch) {
-        ControlRecordType controlRecordType;
-        MarkerType markerType;
-        if (transactionResult.equals(TransactionResult.COMMIT)) {
-            markerType = MarkerType.TXN_COMMIT;
-            controlRecordType = ControlRecordType.COMMIT;
-        } else {
-            markerType = MarkerType.TXN_ABORT;
-            controlRecordType = ControlRecordType.ABORT;
-        }
-        EndTransactionMarker marker = new EndTransactionMarker(controlRecordType, 0);
-        MemoryRecords memoryRecords = MemoryRecords.withEndTransactionMarker(producerId, producerEpoch, marker);
-
-        ByteBuf byteBuf = Unpooled.wrappedBuffer(memoryRecords.buffer());
-        MessageMetadata messageMetadata = new MessageMetadata()
-                .setTxnidMostBits(producerId)
-                .setTxnidLeastBits(producerEpoch)
-                .setMarkerType(markerType.getValue())
-                .setPublishTime(SystemTime.SYSTEM.milliseconds())
-                .setProducerName("")
-                .setSequenceId(0L);
-        return Commands.serializeMetadataAndPayload(Commands.ChecksumType.None, messageMetadata, byteBuf);
     }
 
     @Override
