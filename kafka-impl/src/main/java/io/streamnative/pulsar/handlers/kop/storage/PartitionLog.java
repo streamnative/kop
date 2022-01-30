@@ -21,6 +21,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.MessagePublishContext;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
+import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
 import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
@@ -31,6 +32,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -38,7 +40,10 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.ManagedLedger;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.Position;
 import org.apache.commons.compress.utils.Lists;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
@@ -61,7 +66,6 @@ import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 class AnalyzeResult {
     private Map<Long, ProducerAppendInfo> updatedProducers;
     private List<CompletedTxn> completedTxns;
-    private Optional<BatchMetadata> maybeDuplicate;
 }
 
 
@@ -71,6 +75,8 @@ class AnalyzeResult {
 @Slf4j
 @AllArgsConstructor
 public class PartitionLog {
+
+    private static final String PID_PREFIX = "KOP-PID-PREFIX";
 
     private final KafkaServiceConfiguration kafkaConfig;
     private final Time time;
@@ -88,10 +94,15 @@ public class PartitionLog {
     @AllArgsConstructor
     public static class LogAppendInfo {
         private Optional<Long> firstOffset;
+        private Optional<Long> producerId;
+        private short producerEpoch;
         private int numMessages;
         private int shallowCount;
         private boolean isTransaction;
+        private boolean isControlBatch;
         private int validBytes;
+        private int firstSequence;
+        private int lastSequence;
         private KopLogValidator.CompressionCodec sourceCodec;
         private KopLogValidator.CompressionCodec targetCodec;
     }
@@ -113,21 +124,6 @@ public class PartitionLog {
 
         for (RecordBatch batch : records.batches()) {
             if (batch.hasProducerId()) {
-                if (origin.equals(AppendOrigin.Client)) {
-                    Optional<ProducerStateEntry> maybeLastEntry =
-                            producerStateManager.lastEntry(batch.producerId());
-
-                    // if this is a client produce request,
-                    // there will be up to 5 batches which could have been duplicated.
-                    // If we find a duplicate, we return the metadata of the appended batch to the client.
-                    if (maybeLastEntry.isPresent()) {
-                        Optional<BatchMetadata> maybeDuplicate =
-                                maybeLastEntry.get().findDuplicateBatch(batch);
-                        if (maybeDuplicate.isPresent()) {
-                            return new AnalyzeResult(updatedProducers, completedTxns, maybeDuplicate);
-                        }
-                    }
-                }
                 // We cache offset metadata for the start of each transaction. This allows us to
                 // compute the last stable offset without relying on additional index lookups.
                 Optional<CompletedTxn> maybeCompletedTxn =
@@ -135,7 +131,8 @@ public class PartitionLog {
                 maybeCompletedTxn.ifPresent(completedTxns::add);
             }
         }
-        return new AnalyzeResult(updatedProducers, completedTxns, Optional.empty());
+
+        return new AnalyzeResult(updatedProducers, completedTxns);
     }
 
     private Optional<CompletedTxn> updateProducers(
@@ -216,17 +213,9 @@ public class PartitionLog {
                 appendRecordsContext.getStartSendOperationForThrottling()
                         .accept(encodeResult.getEncodedByteBuf().readableBytes());
 
-                AnalyzeResult analyzeResult = analyzeAndValidateProducerState(
-                        validRecords, appendInfo.firstOffset(), origin);
-                if (analyzeResult.maybeDuplicate().isPresent()) {
-                    log.error("Duplicate sequence number. topic: {}", topicPartition);
-                    appendFuture.completeExceptionally(Errors.DUPLICATE_SEQUENCE_NUMBER.exception());
-                    return;
-                }
                 publishMessages(persistentTopicOpt,
                         appendFuture,
                         appendInfo,
-                        analyzeResult,
                         encodeResult,
                         appendRecordsContext);
             };
@@ -250,12 +239,10 @@ public class PartitionLog {
     private void publishMessages(final Optional<PersistentTopic> persistentTopicOpt,
                                  final CompletableFuture<Long> appendFuture,
                                  final LogAppendInfo appendInfo,
-                                 final AnalyzeResult analyzeResult,
                                  final EncodeResult encodeResult,
                                  final AppendRecordsContext appendRecordsContext) {
-        final int numMessages = encodeResult.getNumMessages();
-        final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
         RequestStats requestStats = appendRecordsContext.getRequestStats();
+
         if (!persistentTopicOpt.isPresent()) {
             encodeResult.recycle();
             // It will trigger a retry send of Kafka client
@@ -275,42 +262,121 @@ public class PartitionLog {
         // collect metrics
         encodeResult.updateProducerStats(topicPartition, requestStats, namespacePrefix);
 
-        // publish
-        final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
+        final int numMessages = encodeResult.getNumMessages();
+        final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
         final long beforePublish = time.nanoseconds();
-        persistentTopic.publishMessage(byteBuf,
-                MessagePublishContext.get(offsetFuture, persistentTopic, numMessages, System.nanoTime()));
+
+        CompletableFuture<Long> offsetFuture;
+
+        // For control message we don't need to check deduplication.
+        if (appendInfo.isControlBatch()) {
+            offsetFuture = publishControlMessage(persistentTopic, byteBuf, numMessages);
+        } else {
+            offsetFuture = publishNormalMessage(persistentTopic, byteBuf, appendInfo);
+        }
+
         offsetFuture.whenComplete((offset, e) -> {
             appendRecordsContext.getCompleteSendOperationForThrottling().accept(byteBuf.readableBytes());
-            encodeResult.recycle();
+
             if (e == null) {
                 requestStats.getMessagePublishStats().registerSuccessfulEvent(
                         time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
                 final long lastOffset = offset + numMessages - 1;
+
+                AnalyzeResult analyzeResult = analyzeAndValidateProducerState(
+                        encodeResult.getRecords(), Optional.of(offset), AppendOrigin.Client);
                 analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
                     if (log.isDebugEnabled()) {
                         log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]",
                                 pid, producerAppendInfo, lastOffset);
                     }
-                    // When we have real start offset, update current txn first offset.
-                    producerAppendInfo.updateCurrentTxnFirstOffset(appendInfo.isTransaction(), offset);
                     producerStateManager.update(producerAppendInfo);
                 });
                 analyzeResult.completedTxns().forEach(completedTxn -> {
                     // update to real last offset
-                    completedTxn.lastOffset(lastOffset);
+                    completedTxn.lastOffset(lastOffset - 1);
                     long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
                     producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
                     producerStateManager.completeTxn(completedTxn);
                 });
+
                 appendFuture.complete(offset);
             } else {
                 log.error("publishMessages for topic partition: {} failed when write.", fullPartitionName, e);
                 requestStats.getMessagePublishStats().registerFailedEvent(
                         time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
-                appendFuture.completeExceptionally(Errors.KAFKA_STORAGE_ERROR.exception());
+                appendFuture.completeExceptionally(e);
             }
+            encodeResult.recycle();
         });
+    }
+
+    /**
+     * publish a non-control message, it will check the message deduplication.
+     *
+     * @param persistentTopic The persistentTopic, use to publish message and check message deduplication.
+     * @param byteBuf Message byteBuf
+     * @param appendInfo Pre-analyzed recode info, we can get sequence, message num ...
+     * @return offset
+     */
+    private CompletableFuture<Long> publishNormalMessage(final PersistentTopic persistentTopic,
+                                                         final ByteBuf byteBuf,
+                                                         final LogAppendInfo appendInfo) {
+        final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
+
+        // This producerName is only used to check the message deduplication.
+        // Kafka will reuse pid when transactionId is the same but will increase the producerEpoch.
+        // So we need to ensure the producerName is not the same.
+        String producerName = new StringJoiner("-")
+                .add(PID_PREFIX)
+                .add(String.valueOf(appendInfo.producerId().orElse(-1L)))
+                .add(String.valueOf(appendInfo.producerEpoch())).toString();
+
+        persistentTopic.publishMessage(byteBuf,
+                MessagePublishContext.get(
+                        offsetFuture, persistentTopic, producerName,
+                        appendInfo.firstSequence(),
+                        appendInfo.lastSequence(),
+                        appendInfo.numMessages(),
+                        appendInfo.isControlBatch(),
+                        time.nanoseconds()));
+        return offsetFuture;
+    }
+
+    /**
+     * Publish a control message, this method will not check message deduplication.
+     * Because control messages don't have a sequence number.
+     *
+     * @param persistentTopic Use to get managed ledger.
+     * @param byteBuf Message byteBuf.
+     * @param numMessages message number.
+     * @return offset
+     */
+    private CompletableFuture<Long> publishControlMessage(final PersistentTopic persistentTopic,
+                                                          final ByteBuf byteBuf,
+                                                          final int numMessages) {
+        final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
+
+        persistentTopic.getManagedLedger().asyncAddEntry(byteBuf, numMessages, new AsyncCallbacks.AddEntryCallback() {
+            @Override
+            public void addComplete(Position position, ByteBuf entryData, Object ctx) {
+                long baseOffset;
+                try {
+                    baseOffset = MessageMetadataUtils.peekBaseOffset(entryData, numMessages);
+                } catch (MetadataCorruptedException e) {
+                    offsetFuture.completeExceptionally(e);
+                    return;
+                }
+                offsetFuture.complete(baseOffset);
+            }
+
+            @Override
+            public void addFailed(ManagedLedgerException exception, Object ctx) {
+                log.error("Failed to abort control message: ", exception);
+                offsetFuture.completeExceptionally(exception);
+            }
+        }, null);
+        return offsetFuture;
     }
 
     @VisibleForTesting
@@ -320,8 +386,12 @@ public class PartitionLog {
         Optional<Long> firstOffset = Optional.empty();
         boolean readFirstMessage = false;
         boolean isTransaction = false;
+        boolean isControlBatch = false;
         int validBytesCount = 0;
-
+        int firstSequence = Integer.MAX_VALUE;
+        int lastSequence = -1;
+        Optional<Long> producerId = Optional.empty();
+        short producerEpoch = -1;
         KopLogValidator.CompressionCodec sourceCodec = DEFAULT_COMPRESSION;
 
         for (RecordBatch batch : records.batches()) {
@@ -347,11 +417,24 @@ public class PartitionLog {
             validBytesCount += batchSize;
             numMessages += (batch.lastOffset() - batch.baseOffset() + 1);
             isTransaction = batch.isTransactional();
+            isControlBatch = batch.isControlBatch();
+
+            // We assume batches producerId are same.
+            if (batch.hasProducerId()) {
+                producerId = Optional.of(batch.producerId());
+                producerEpoch = batch.producerEpoch();
+            }
 
             if (batch.compressionType().id != CompressionType.NONE.id) {
                 CompressionType compressionType = CompressionType.forId(batch.compressionType().id);
                 sourceCodec = new KopLogValidator.CompressionCodec(
                         compressionType.name, compressionType.id);
+            }
+            if (firstSequence > batch.baseSequence()) {
+                firstSequence = batch.baseSequence();
+            }
+            if (lastSequence < batch.lastSequence()) {
+                lastSequence = batch.lastSequence();
             }
         }
 
@@ -363,8 +446,8 @@ public class PartitionLog {
 
         KopLogValidator.CompressionCodec targetCodec =
                 KopLogValidator.getTargetCodec(sourceCodec, kafkaConfig.getKafkaCompressionType());
-        return new LogAppendInfo(firstOffset, numMessages, shallowMessageCount, isTransaction,
-                validBytesCount, sourceCodec, targetCodec);
+        return new LogAppendInfo(firstOffset, producerId, producerEpoch, numMessages, shallowMessageCount,
+                isTransaction, isControlBatch, validBytesCount, firstSequence, lastSequence, sourceCodec, targetCodec);
     }
 
     private MemoryRecords trimInvalidBytes(MemoryRecords records, LogAppendInfo info) {
