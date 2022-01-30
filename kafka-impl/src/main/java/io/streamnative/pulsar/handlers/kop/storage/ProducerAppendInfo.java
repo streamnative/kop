@@ -21,7 +21,6 @@ import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.utils.Lists;
 import org.apache.kafka.common.errors.InvalidTxnStateException;
-import org.apache.kafka.common.errors.OutOfOrderSequenceException;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.Record;
@@ -67,14 +66,7 @@ public class ProducerAppendInfo {
         this.currentEntry = currentEntry;
         this.origin = origin;
 
-        resetUpdatedEntry();
-    }
-
-    private void maybeValidateDataBatch(Short producerEpoch, Integer firstSeq) {
-        checkProducerEpoch(producerEpoch);
-        if (origin.equals(PartitionLog.AppendOrigin.Client)) {
-            checkSequence(producerEpoch, firstSeq);
-        }
+        initUpdatedEntry();
     }
 
     private void checkProducerEpoch(Short producerEpoch) {
@@ -85,51 +77,12 @@ public class ProducerAppendInfo {
         }
     }
 
-    private void checkSequence(Short producerEpoch, Integer appendFirstSeq) {
-        if (log.isDebugEnabled()) {
-            log.debug("append data batch checkSequence producerEpoch: {}, appendFirstSeq: {}",
-                    producerEpoch, appendFirstSeq);
-        }
-        if (!producerEpoch.equals(updatedEntry.producerEpoch())) {
-            if (appendFirstSeq != 0 && updatedEntry.producerEpoch() != RecordBatch.NO_PRODUCER_EPOCH) {
-                String msg = String.format("Invalid sequence number for new epoch in partition %s: %s "
-                        + "(request epoch), %s (seq. number)", topicPartition, producerEpoch, appendFirstSeq);
-                throw new OutOfOrderSequenceException(msg);
-            }
-        } else {
-            int currentLastSeq;
-            if (!updatedEntry.isEmpty()) {
-                currentLastSeq = updatedEntry.lastSeq();
-            } else if (producerEpoch.equals(currentEntry.producerEpoch())) {
-                currentLastSeq = currentEntry.lastSeq();
-            } else {
-                currentLastSeq = RecordBatch.NO_SEQUENCE;
-            }
-
-            // If there is no current producer epoch (possibly because all producer records have been deleted due to
-            // retention or the DeleteRecords API) accept writes with any sequence number
-            if (!(currentEntry.producerEpoch() == RecordBatch.NO_PRODUCER_EPOCH
-                    || inSequence(currentLastSeq, appendFirstSeq))) {
-                String msg = String.format("Out of order sequence number for producerId %s in partition %s: %s "
-                                + "(incoming seq. number), %s (current end sequence number)",
-                        currentEntry.producerEpoch(), topicPartition, appendFirstSeq, currentLastSeq);
-                throw new OutOfOrderSequenceException(msg);
-            }
-        }
-    }
-
-    private Boolean inSequence(Integer lastSeq, Integer nextSeq) {
-        if (log.isDebugEnabled()) {
-            log.debug("check sequence lastSeq: {}, nextSeq: {}.", lastSeq, nextSeq);
-        }
-        return nextSeq == lastSeq + 1L || (nextSeq == 0 && lastSeq == Integer.MAX_VALUE);
-    }
-
     public Optional<CompletedTxn> append(RecordBatch batch, Optional<Long> firstOffset) {
         if (log.isDebugEnabled()) {
-            log.debug("Append batch: pid: {} baseSequence: {} lastSequence: {} baseOffset: {}  lastOffset: {} ",
-                    batch.producerId(), batch.baseSequence(), batch.lastSequence(), batch.baseOffset(),
-                    batch.lastOffset());
+            log.debug("Append batch: pid: {} firstOffset {} baseSequence: {} lastSequence: {} "
+                            + "baseOffset: {}  lastOffset: {} ",
+                    batch.producerId(), firstOffset, batch.baseSequence(),
+                    batch.lastSequence(), batch.baseOffset(), batch.lastOffset());
         }
         if (batch.isControlBatch()) {
             Iterator<Record> recordIterator = batch.iterator();
@@ -144,22 +97,9 @@ public class ProducerAppendInfo {
                 return Optional.empty();
             }
         } else {
-            appendDataBatch(batch.producerEpoch(), batch.baseSequence(), batch.lastSequence(), batch.maxTimestamp(),
-                    firstOffset.orElse(batch.baseOffset()), batch.lastOffset());
+            updateCurrentTxnFirstOffset(batch.isTransactional(), firstOffset.orElse(batch.baseOffset()));
             return Optional.empty();
         }
-    }
-
-    public void appendDataBatch(Short epoch, Integer firstSeq, Integer lastSeq, Long lastTimestamp,
-                                Long firstOffset, Long lastOffset) {
-        if (log.isDebugEnabled()) {
-            log.debug("append data batch epoch: {}, firstSeq: {}, lastSeq: {}, firstOffset: {}, lastOffset: {}",
-                    epoch, firstSeq, lastSeq, firstOffset, lastOffset);
-        }
-        maybeValidateDataBatch(epoch, firstSeq);
-        // We use lastSeq - firstSeq instead of lastOffset - firstOffset, because current offset is wrong,
-        // the offset is set when message published to storage.
-        updatedEntry.addBatch(epoch, lastSeq, lastOffset, lastSeq - firstSeq, lastTimestamp);
     }
 
     /**
@@ -212,7 +152,7 @@ public class ProducerAppendInfo {
         return transactions;
     }
 
-    private void resetUpdatedEntry() {
+    private void initUpdatedEntry() {
         updatedEntry = ProducerStateEntry.empty(producerId);
         updatedEntry.producerEpoch(currentEntry.producerEpoch());
         updatedEntry.coordinatorEpoch(currentEntry.coordinatorEpoch());
