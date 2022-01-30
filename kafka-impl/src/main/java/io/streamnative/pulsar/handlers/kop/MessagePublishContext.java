@@ -21,6 +21,7 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.protocol.Errors;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.Topic.PublishContext;
 
@@ -37,6 +38,26 @@ public final class MessagePublishContext implements PublishContext {
     private long startTimeNs;
     private int numberOfMessages;
     private long baseOffset;
+    private long sequenceId;
+    private long highestSequenceId;
+    private String producerName;
+    private boolean isControlBatch;
+
+    @Override
+    public long getSequenceId() {
+        return this.sequenceId;
+    }
+
+    @Override
+    public long getHighestSequenceId() {
+        return this.highestSequenceId;
+    }
+
+    @Override
+    public boolean isMarkerMessage() {
+        return this.isControlBatch;
+    }
+
     private MetadataCorruptedException peekOffsetError;
 
     @Override
@@ -60,17 +81,29 @@ public final class MessagePublishContext implements PublishContext {
             offsetFuture.completeExceptionally(exception);
         } else {
             if (log.isDebugEnabled()) {
-                log.debug("Success write topic: {}, ledgerId: {}, entryId: {}"
+                log.debug("Success write topic: {}, producerName {} ledgerId: {}, entryId: {}"
                         + " And triggered send callback.",
-                    topic.getName(), ledgerId, entryId);
+                    topic.getName(), producerName, ledgerId, entryId);
             }
 
             topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.MICROSECONDS);
+
+            // duplicated message
+            if (ledgerId == -1 && entryId == -1) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Failed to write topic: {}, producerName {}, ledgerId: {}, entryId: {}"
+                                    + " with duplicated message.",
+                            topic.getName(), producerName, ledgerId, entryId);
+                }
+                offsetFuture.completeExceptionally(Errors.DUPLICATE_SEQUENCE_NUMBER.exception());
+                return;
+            }
             // setMetadataFromEntryData() was called before completed() is called so that baseOffset could be set
             if (baseOffset == DEFAULT_OFFSET) {
                 log.error("[{}] Failed to get offset for ({}, {}): {}",
                         topic, ledgerId, entryId, peekOffsetError.getMessage());
             }
+
             offsetFuture.complete(baseOffset);
         }
 
@@ -80,15 +113,23 @@ public final class MessagePublishContext implements PublishContext {
     // recycler
     public static MessagePublishContext get(CompletableFuture<Long> offsetFuture,
                                             Topic topic,
+                                            String producerName,
+                                            long sequenceId,
+                                            long highestSequenceId,
                                             int numberOfMessages,
+                                            boolean isControlBatch,
                                             long startTimeNs) {
         MessagePublishContext callback = RECYCLER.get();
         callback.offsetFuture = offsetFuture;
         callback.topic = topic;
+        callback.producerName = producerName;
         callback.numberOfMessages = numberOfMessages;
         callback.startTimeNs = startTimeNs;
         callback.baseOffset = DEFAULT_OFFSET;
+        callback.sequenceId = sequenceId;
+        callback.highestSequenceId = highestSequenceId;
         callback.peekOffsetError = null;
+        callback.isControlBatch = isControlBatch;
         return callback;
     }
 
@@ -105,17 +146,26 @@ public final class MessagePublishContext implements PublishContext {
     };
 
     @Override
+    public String getProducerName() {
+        return this.producerName;
+    }
+
+    @Override
     public long getNumberOfMessages() {
         return numberOfMessages;
     }
 
     public void recycle() {
         offsetFuture = null;
+        producerName = null;
         topic = null;
         startTimeNs = -1;
         numberOfMessages = 0;
         baseOffset = DEFAULT_OFFSET;
+        sequenceId = -1;
+        highestSequenceId = -1;
         peekOffsetError = null;
+        isControlBatch = false;
         recyclerHandle.recycle(this);
     }
 }
