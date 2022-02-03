@@ -83,21 +83,21 @@ public final class MessageFetchContext {
     };
 
     private final Handle<MessageFetchContext> recyclerHandle;
-    private Map<TopicPartition, PartitionData<MemoryRecords>> responseData;
-    private ConcurrentLinkedQueue<DecodeResult> decodeResults;
-    private KafkaRequestHandler requestHandler;
-    private int maxReadEntriesNum;
-    private KafkaTopicManager topicManager;
-    private RequestStats statsLogger;
-    private TransactionCoordinator tc;
-    private String clientHost;
-    private FetchRequest fetchRequest;
-    private RequestHeader header;
+    private final Map<TopicPartition, PartitionData<MemoryRecords>> responseData = new ConcurrentHashMap<>();
+    private final ConcurrentLinkedQueue<DecodeResult> decodeResults = new ConcurrentLinkedQueue<>();
+    private final AtomicBoolean hasComplete = new AtomicBoolean(false);
+    private final AtomicLong bytesReadable = new AtomicLong(0);
+    private volatile KafkaRequestHandler requestHandler;
+    private volatile int maxReadEntriesNum;
+    private volatile KafkaTopicManager topicManager;
+    private volatile RequestStats statsLogger;
+    private volatile TransactionCoordinator tc;
+    private volatile String clientHost;
+    private volatile FetchRequest fetchRequest;
+    private volatile RequestHeader header;
     private volatile CompletableFuture<AbstractResponse> resultFuture;
-    private AtomicBoolean hasComplete;
-    private AtomicLong bytesReadable;
-    private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
-    private String namespacePrefix;
+    private volatile DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
+    private volatile String namespacePrefix;
 
     // recycler and get for this object
     public static MessageFetchContext get(KafkaRequestHandler requestHandler,
@@ -107,8 +107,6 @@ public final class MessageFetchContext {
                                           String namespacePrefix) {
         MessageFetchContext context = RECYCLER.get();
         context.namespacePrefix = namespacePrefix;
-        context.responseData = new ConcurrentHashMap<>();
-        context.decodeResults = new ConcurrentLinkedQueue<>();
         context.requestHandler = requestHandler;
         context.maxReadEntriesNum = requestHandler.getMaxReadEntriesNum();
         context.topicManager = requestHandler.getTopicManager();
@@ -118,8 +116,6 @@ public final class MessageFetchContext {
         context.fetchRequest = (FetchRequest) kafkaHeaderAndRequest.getRequest();
         context.header = kafkaHeaderAndRequest.getHeader();
         context.resultFuture = resultFuture;
-        context.hasComplete = new AtomicBoolean(false);
-        context.bytesReadable = new AtomicLong(0);
         context.fetchPurgatory = fetchPurgatory;
         return context;
     }
@@ -130,8 +126,6 @@ public final class MessageFetchContext {
                                           CompletableFuture<AbstractResponse> resultFuture) {
         MessageFetchContext context = RECYCLER.get();
         context.namespacePrefix = namespacePrefix;
-        context.responseData = new ConcurrentHashMap<>();
-        context.decodeResults = new ConcurrentLinkedQueue<>();
         context.requestHandler = null;
         context.maxReadEntriesNum = 0;
         context.topicManager = null;
@@ -141,7 +135,6 @@ public final class MessageFetchContext {
         context.fetchRequest = fetchRequest;
         context.header = null;
         context.resultFuture = resultFuture;
-        context.hasComplete = new AtomicBoolean(false);
         return context;
     }
 
@@ -151,8 +144,10 @@ public final class MessageFetchContext {
 
 
     private void recycle() {
-        responseData = null;
-        decodeResults = null;
+        responseData.clear();
+        decodeResults.clear();
+        hasComplete.set(false);
+        bytesReadable.set(0L);
         requestHandler = null;
         maxReadEntriesNum = 0;
         topicManager = null;
@@ -162,8 +157,6 @@ public final class MessageFetchContext {
         fetchRequest = null;
         header = null;
         resultFuture = null;
-        hasComplete = null;
-        bytesReadable = null;
         fetchPurgatory = null;
         namespacePrefix = null;
         recyclerHandle.recycle(this);
