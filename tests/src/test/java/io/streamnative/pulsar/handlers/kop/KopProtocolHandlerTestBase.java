@@ -28,9 +28,9 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.Closeable;
-import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -40,7 +40,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import lombok.Getter;
@@ -75,12 +74,11 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.metadata.api.MetadataStoreException;
+import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
-import org.apache.pulsar.zookeeper.ZooKeeperClientFactory;
-import org.apache.pulsar.zookeeper.ZookeeperClientFactoryImpl;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.MockZooKeeper;
-import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.eclipse.jetty.server.Server;
 
@@ -109,6 +107,7 @@ public abstract class KopProtocolHandlerTestBase {
     protected int kafkaSchemaRegistryPort = PortManager.nextFreePort();
 
     protected MockZooKeeper mockZooKeeper;
+    protected MockZooKeeper mockZooKeeperGlobal;
     protected NonClosableMockBookKeeper mockBookKeeper;
     protected final String configClusterName = "test";
 
@@ -380,7 +379,7 @@ public abstract class KopProtocolHandlerTestBase {
 
     protected void setupBrokerMocks(PulsarService pulsar) throws Exception {
         // Override default providers with mocked ones
-        doReturn(mockZooKeeperClientFactory).when(pulsar).getZooKeeperClientFactory();
+        doReturn(createLocalMetadataStore()).when(pulsar).createLocalMetadataStore();
         doReturn(mockBookKeeperClientFactory).when(pulsar).newBookKeeperClientFactory();
         doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createLocalMetadataStore();
         doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createConfigurationMetadataStore();
@@ -398,19 +397,31 @@ public abstract class KopProtocolHandlerTestBase {
         List<ACL> dummyAclList = new ArrayList<>(0);
 
         ZkUtils.createFullPathOptimistic(zk, "/ledgers/available/192.168.1.1:" + 5000,
-            "".getBytes(ZookeeperClientFactoryImpl.ENCODING_SCHEME), dummyAclList, CreateMode.PERSISTENT);
+            "".getBytes(StandardCharsets.UTF_8), dummyAclList, CreateMode.PERSISTENT);
 
         zk.create(
             "/ledgers/LAYOUT",
-            "1\nflat:1".getBytes(ZookeeperClientFactoryImpl.ENCODING_SCHEME), dummyAclList,
+            "1\nflat:1".getBytes(StandardCharsets.UTF_8), dummyAclList,
             CreateMode.PERSISTENT);
 
         ZkUtils.createFullPathOptimistic(zk, "/admin/clusters/" + clusterName,
             String.format("{\"serviceUrl\" : \"%s\", \"serviceUrlTls\" : \"%s\", \"brokerServiceUrl\" : \"%s\","
             + "\"brokerServiceUrlTls\" : \"%s\"}", brokerUrl, brokerUrlTls, brokerServiceUrl, brokerServiceUrlTls)
-                .getBytes(ZookeeperClientFactoryImpl.ENCODING_SCHEME), dummyAclList, CreateMode.PERSISTENT);
+                .getBytes(StandardCharsets.UTF_8), dummyAclList, CreateMode.PERSISTENT);
 
         return zk;
+    }
+
+    public static MockZooKeeper createMockZooKeeperGlobal() {
+        return  MockZooKeeper.newInstanceForGlobalZK(MoreExecutors.newDirectExecutorService());
+    }
+
+    protected MetadataStoreExtended createLocalMetadataStore() throws MetadataStoreException {
+        return new ZKMetadataStore(mockZooKeeper);
+    }
+
+    protected MetadataStoreExtended createConfigurationMetadataStore() throws MetadataStoreException {
+        return new ZKMetadataStore(mockZooKeeperGlobal);
     }
 
     public static NonClosableMockBookKeeper createMockBookKeeper(OrderedExecutor executor) throws Exception {
@@ -441,33 +452,23 @@ public abstract class KopProtocolHandlerTestBase {
         }
     }
 
-    protected ZooKeeperClientFactory mockZooKeeperClientFactory = new ZooKeeperClientFactory() {
+    private final BookKeeperClientFactory mockBookKeeperClientFactory = new BookKeeperClientFactory() {
 
         @Override
-        public CompletableFuture<ZooKeeper> create(String serverList, SessionType sessionType,
-                                                   int zkSessionTimeoutMillis) {
-            // Always return the same instance
-            // (so that we don't loose the mock ZK content on broker restart
-            return CompletableFuture.completedFuture(mockZooKeeper);
-        }
-    };
-
-    private BookKeeperClientFactory mockBookKeeperClientFactory = new BookKeeperClientFactory() {
-
-        @Override
-        public BookKeeper create(ServiceConfiguration conf, ZooKeeper zkClient, EventLoopGroup eventLoopGroup,
+        public BookKeeper create(ServiceConfiguration conf, MetadataStoreExtended store,
+                                 EventLoopGroup eventLoopGroup,
                                  Optional<Class<? extends EnsemblePlacementPolicy>> ensemblePlacementPolicyClass,
-                                 Map<String, Object> ensemblePlacementPolicyProperties) {
+                                 Map<String, Object> properties) {
             // Always return the same instance (so that we don't loose the mock BK content on broker restart
             return mockBookKeeper;
         }
 
         @Override
-        public BookKeeper create(ServiceConfiguration serviceConfiguration, ZooKeeper zooKeeper,
+        public BookKeeper create(ServiceConfiguration conf, MetadataStoreExtended store,
                                  EventLoopGroup eventLoopGroup,
-                                 Optional<Class<? extends EnsemblePlacementPolicy>> optional,
-                                 Map<String, Object> ensemblePlacementPolicyProperties,
-                                 StatsLogger statsLogger) throws IOException {
+                                 Optional<Class<? extends EnsemblePlacementPolicy>> ensemblePlacementPolicyClass,
+                                 Map<String, Object> properties, StatsLogger statsLogger) {
+            // Always return the same instance (so that we don't loose the mock BK content on broker restart
             return mockBookKeeper;
         }
 

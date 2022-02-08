@@ -300,7 +300,7 @@ public class KafkaTopicConsumerManager implements Closeable {
                     && Objects.equals(lastConfirmedEntry.getNext(), position)) {
                 log.debug("Found position {} for offset {}, LAC {} -> RETURN LATEST",
                         position, offset, lastConfirmedEntry);
-                return PositionImpl.latest;
+                return PositionImpl.LATEST;
             } else {
                 return position;
             }

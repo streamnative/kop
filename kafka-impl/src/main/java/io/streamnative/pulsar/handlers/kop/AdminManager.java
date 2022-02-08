@@ -272,7 +272,7 @@ class AdminManager {
             errorConsumer.accept("Cannot find position");
             return;
         }
-        if (position.equals(PositionImpl.latest)) {
+        if (position.equals(PositionImpl.LATEST)) {
             admin.topics()
                 .truncateAsync(topicToDelete)
                 .thenRun(() -> {
