@@ -221,7 +221,8 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
             fail("should have failed");
         } catch (ExecutionException e) {
             assertTrue(e.getCause() instanceof TimeoutException);
-            assertTrue(e.getMessage().contains("Failed to update metadata"));
+            assertTrue(e.getMessage().contains("Topic " + TOPIC
+                    + " not present in metadata after " + metadataTimeoutMs + " ms."));
         }
     }
 
