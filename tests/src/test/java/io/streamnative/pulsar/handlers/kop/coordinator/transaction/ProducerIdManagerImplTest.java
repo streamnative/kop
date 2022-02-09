@@ -82,7 +82,7 @@ public class ProducerIdManagerImplTest extends KopProtocolHandlerTestBase {
         pulsar.getLocalMetadataStore()
                 .put(ProducerIdManagerImpl.KOP_PID_BLOCK_ZNODE,
                         ProducerIdManager.generateProducerIdBlockJson(
-                                new ProducerIdManager.ProducerIdBlock(
+                                new ProducerIdManagerImpl.ProducerIdBlock(
                                         1, Long.MAX_VALUE - ProducerIdManagerImpl.PID_BLOCK_SIZE, Long.MAX_VALUE)),
                         Optional.empty()).get(10, TimeUnit.SECONDS);
 
