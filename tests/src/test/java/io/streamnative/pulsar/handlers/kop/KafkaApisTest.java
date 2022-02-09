@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.DEFAULT_FETCH_MAX_BYTES;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.DEFAULT_MAX_PARTITION_FETCH_BYTES;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
+import static org.junit.Assert.assertNotNull;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.testng.Assert.assertEquals;
@@ -33,6 +34,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndReq
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -41,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -57,7 +60,9 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.Struct;
+import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
@@ -72,6 +77,8 @@ import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetCommitRequest.PartitionData;
 import org.apache.kafka.common.requests.OffsetCommitResponse;
+import org.apache.kafka.common.requests.ProduceRequest;
+import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -840,5 +847,73 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
         assertEquals(listOffsetResponse.responseData().get(tp).error,
             Errors.UNKNOWN_TOPIC_OR_PARTITION);
+    }
+
+    @Test(timeOut = 20000)
+    public void testIdempotentProduce() throws Exception {
+        String namespace = "public/idempotent";
+        admin.namespaces().createNamespace(namespace);
+        admin.namespaces().setDeduplicationStatus(namespace, true);
+        String fullTopicName = "persistent://" + namespace + "/testIdempotentProduceTopic";
+
+        admin.topics().createPartitionedTopic(fullTopicName, 1);
+
+        Properties producerProperties = newKafkaProducerProperties();
+        try (KafkaProducer<String, String> producer = new KafkaProducer<>(producerProperties)) {
+            producer.send(new ProducerRecord<>(fullTopicName, "test"));
+        }
+        final TopicPartition topicPartition = new TopicPartition(fullTopicName, 0);
+
+        // single message
+        verifySendMessageToPartition(topicPartition,
+                newIdempotentRecords(0, (short) 0, 0, 1), Errors.NONE, 1);
+        verifySendMessageToPartition(topicPartition,
+                newIdempotentRecords(0, (short) 0, 0, 1), Errors.DUPLICATE_SEQUENCE_NUMBER, -1);
+        verifySendMessageToPartition(topicPartition,
+                newIdempotentRecords(0, (short) 0, 1, 1), Errors.NONE, 2);
+        verifySendMessageToPartition(topicPartition,
+                newIdempotentRecords(1, (short) 0, 0, 1), Errors.NONE, 3);
+        verifySendMessageToPartition(topicPartition,
+                newIdempotentRecords(1, (short) 1, 0, 1), Errors.NONE, 4);
+
+        // batch message
+        verifySendMessageToPartition(topicPartition,
+                newIdempotentRecords(2, (short) 0, 0, 10), Errors.NONE, 5);
+        verifySendMessageToPartition(topicPartition,
+                newIdempotentRecords(2, (short) 0, 10, 10), Errors.NONE, 15);
+        verifySendMessageToPartition(topicPartition,
+                newIdempotentRecords(2, (short) 0, 10, 10), Errors.DUPLICATE_SEQUENCE_NUMBER, -1);
+    }
+
+    private void verifySendMessageToPartition(final TopicPartition topicPartition,
+                                              final MemoryRecords records,
+                                              final Errors expectedError,
+                                              final long expectedOffset)
+            throws ExecutionException, InterruptedException {
+        final KafkaHeaderAndRequest request = buildRequest(ProduceRequest.Builder.forCurrentMagic(
+                (short) -1, 30000, Collections.singletonMap(topicPartition, records)));
+        final CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
+        kafkaRequestHandler.handleProduceRequest(request, future);
+        final ProduceResponse.PartitionResponse response =
+                ((ProduceResponse) future.get()).responses().get(topicPartition);
+        assertNotNull(response);
+        assertEquals(response.error, expectedError);
+        assertEquals(response.baseOffset, expectedOffset);
+    }
+
+    private static MemoryRecords newIdempotentRecords(
+            long producerId, short producerEpoch, int baseSequence, int recordsNum) {
+        final MemoryRecordsBuilder builder = MemoryRecords.builder(
+                ByteBuffer.allocate(1024),
+                CompressionType.NONE,
+                0L,
+                producerId,
+                producerEpoch,
+                baseSequence,
+                false);
+        for (int i = 0; i < recordsNum; i++) {
+            builder.append(System.currentTimeMillis(), null, "msg".getBytes(StandardCharsets.UTF_8));
+        }
+        return builder.build();
     }
 }
