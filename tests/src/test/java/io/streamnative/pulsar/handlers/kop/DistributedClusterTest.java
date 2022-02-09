@@ -577,7 +577,6 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
             if (kConsumer2 != null) {
                 kConsumer2.close();
             }
-            pulsarService1.getAdminClient().topics().deletePartitionedTopic(pulsarTopicName);
         }
 
     }
