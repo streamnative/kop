@@ -384,6 +384,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private int kafkaBrokerId = 1;
 
     @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Store producer id sequence on a Pulsar topic"
+    )
+    private boolean kafkaTransactionProducerIdsStoredOnPulsar = true;
+
+    @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
             doc = "Flag to enable transaction coordinator"
     )
