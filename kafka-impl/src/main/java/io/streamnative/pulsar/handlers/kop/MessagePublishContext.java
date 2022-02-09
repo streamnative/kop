@@ -21,7 +21,10 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.errors.KafkaStorageException;
+import org.apache.kafka.common.errors.NotLeaderForPartitionException;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.Topic.PublishContext;
 
@@ -74,10 +77,16 @@ public final class MessagePublishContext implements PublishContext {
      */
     @Override
     public void completed(Exception exception, long ledgerId, long entryId) {
-
         if (exception != null) {
-            log.error("Failed write entry: ledgerId: {}, entryId: {}. triggered send callback.",
-                ledgerId, entryId);
+            if (exception instanceof BrokerServiceException.TopicClosedException
+                    || exception instanceof BrokerServiceException.TopicTerminatedException
+                    || exception instanceof BrokerServiceException.TopicFencedException) {
+                log.warn("[{}] Failed to publish message: {}", topic.getName(), exception.getMessage());
+                offsetFuture.completeExceptionally(new NotLeaderForPartitionException());
+            } else {
+                log.error("[{}] Failed to publish message", topic.getName(), exception);
+                offsetFuture.completeExceptionally(new KafkaStorageException(exception));
+            }
             offsetFuture.completeExceptionally(exception);
         } else {
             if (log.isDebugEnabled()) {

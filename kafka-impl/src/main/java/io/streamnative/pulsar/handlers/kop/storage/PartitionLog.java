@@ -47,6 +47,8 @@ import org.apache.bookkeeper.mledger.Position;
 import org.apache.commons.compress.utils.Lists;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
+import org.apache.kafka.common.errors.KafkaStorageException;
+import org.apache.kafka.common.errors.NotLeaderForPartitionException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.CompressionType;
@@ -372,8 +374,16 @@ public class PartitionLog {
 
             @Override
             public void addFailed(ManagedLedgerException exception, Object ctx) {
-                log.error("Failed to abort control message: ", exception);
-                offsetFuture.completeExceptionally(exception);
+                if (exception instanceof ManagedLedgerException.ManagedLedgerAlreadyClosedException
+                        || exception instanceof ManagedLedgerException.ManagedLedgerTerminatedException
+                        || exception instanceof ManagedLedgerException.ManagedLedgerFencedException) {
+                    log.warn("[{}] Failed to publish control message: {}",
+                            persistentTopic.getName(), exception.getMessage());
+                    offsetFuture.completeExceptionally(new NotLeaderForPartitionException());
+                } else {
+                    log.error("[{}] Failed to publish control message", persistentTopic.getName(), exception);
+                    offsetFuture.completeExceptionally(new KafkaStorageException(exception));
+                }
             }
         }, null);
         return offsetFuture;
