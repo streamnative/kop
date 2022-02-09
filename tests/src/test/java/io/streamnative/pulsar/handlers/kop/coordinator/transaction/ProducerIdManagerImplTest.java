@@ -30,7 +30,7 @@ import org.testng.annotations.Test;
  * Producer id manager test.
  */
 @Slf4j
-public class ProducerIdManagerTest extends KopProtocolHandlerTestBase {
+public class ProducerIdManagerImplTest extends KopProtocolHandlerTestBase {
 
     private static final long DEFAULT_TEST_TIMEOUT = 20 * 1000;
 
@@ -49,44 +49,44 @@ public class ProducerIdManagerTest extends KopProtocolHandlerTestBase {
     @BeforeMethod(timeOut = DEFAULT_TEST_TIMEOUT)
     protected void cleanZNode() throws Exception {
         pulsar.getLocalMetadataStore()
-                .deleteRecursive(ProducerIdManager.KOP_PID_BLOCK_ZNODE).get(10, TimeUnit.SECONDS);
+                .deleteRecursive(ProducerIdManagerImpl.KOP_PID_BLOCK_ZNODE).get(10, TimeUnit.SECONDS);
     }
 
     @Test(timeOut = DEFAULT_TEST_TIMEOUT)
     public void testGetProducerId() throws Exception {
-        ProducerIdManager manager1 = new ProducerIdManager(0, pulsar.getLocalMetadataStore());
+        ProducerIdManager manager1 = new ProducerIdManagerImpl(0, pulsar.getLocalMetadataStore());
         manager1.initialize().get();
-        ProducerIdManager manager2 = new ProducerIdManager(1, pulsar.getLocalMetadataStore());
+        ProducerIdManager manager2 = new ProducerIdManagerImpl(1, pulsar.getLocalMetadataStore());
         manager2.initialize().get();
 
         long pid1 = manager1.generateProducerId().get();
         long pid2 = manager2.generateProducerId().get();
 
         assertEquals(0, pid1);
-        assertEquals(ProducerIdManager.PID_BLOCK_SIZE.longValue(), pid2);
+        assertEquals(ProducerIdManagerImpl.PID_BLOCK_SIZE.longValue(), pid2);
 
-        for (long i = 1; i < ProducerIdManager.PID_BLOCK_SIZE; i++) {
+        for (long i = 1; i < ProducerIdManagerImpl.PID_BLOCK_SIZE; i++) {
             assertEquals(pid1 + i, manager1.generateProducerId().get().longValue());
         }
 
-        for (long i = 1; i < ProducerIdManager.PID_BLOCK_SIZE; i++) {
+        for (long i = 1; i < ProducerIdManagerImpl.PID_BLOCK_SIZE; i++) {
             assertEquals(pid2 + i, manager2.generateProducerId().get().longValue());
         }
 
-        assertEquals(pid2 + ProducerIdManager.PID_BLOCK_SIZE, manager1.generateProducerId().get().longValue());
-        assertEquals(pid2 + ProducerIdManager.PID_BLOCK_SIZE * 2, manager2.generateProducerId().get().longValue());
+        assertEquals(pid2 + ProducerIdManagerImpl.PID_BLOCK_SIZE, manager1.generateProducerId().get().longValue());
+        assertEquals(pid2 + ProducerIdManagerImpl.PID_BLOCK_SIZE * 2, manager2.generateProducerId().get().longValue());
     }
 
     @Test(timeOut = DEFAULT_TEST_TIMEOUT)
     public void testExceedProducerIdLimit() throws Exception {
         pulsar.getLocalMetadataStore()
-                .put(ProducerIdManager.KOP_PID_BLOCK_ZNODE,
+                .put(ProducerIdManagerImpl.KOP_PID_BLOCK_ZNODE,
                         ProducerIdManager.generateProducerIdBlockJson(
                                 new ProducerIdManager.ProducerIdBlock(
-                                        1, Long.MAX_VALUE - ProducerIdManager.PID_BLOCK_SIZE, Long.MAX_VALUE)),
+                                        1, Long.MAX_VALUE - ProducerIdManagerImpl.PID_BLOCK_SIZE, Long.MAX_VALUE)),
                         Optional.empty()).get(10, TimeUnit.SECONDS);
 
-        ProducerIdManager producerIdManager = new ProducerIdManager(0, pulsar.getLocalMetadataStore());
+        ProducerIdManager producerIdManager = new ProducerIdManagerImpl(0, pulsar.getLocalMetadataStore());
         try {
             producerIdManager.initialize().get();
             fail("Have exhausted all producerIds, the initialize operation should be failed.");
