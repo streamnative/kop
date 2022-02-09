@@ -20,7 +20,6 @@ import java.util.Collections;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -87,32 +86,29 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
         producerProperties.put(ProducerConfig.CLIENT_ID_CONFIG, "test-client");
         producerProperties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
 
-       try (KafkaProducer<String, String> producer = new KafkaProducer<>(producerProperties)) {
-           for (int i = 0; i < maxMessageNum; i++) {
-               if (isBatch) {
-                   producer.send(new ProducerRecord<>(fullTopicName, "test" + i));
-               } else {
-                   producer.send(new ProducerRecord<>(fullTopicName, "test" + i)).get();
-               }
-           }
-           if (isBatch) {
-               producer.flush();
-           }
-       }
-       try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties())) {
+        try (KafkaProducer<String, String> producer = new KafkaProducer<>(producerProperties)) {
+            for (int i = 0; i < maxMessageNum; i++) {
+                if (isBatch) {
+                    producer.send(new ProducerRecord<>(fullTopicName, "test" + i));
+                } else {
+                    producer.send(new ProducerRecord<>(fullTopicName, "test" + i)).get();
+                }
+            }
+            if (isBatch) {
+                producer.flush();
+            }
+        }
+        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties())) {
             consumer.subscribe(Collections.singleton(fullTopicName));
             int i = 0;
             while (i < maxMessageNum) {
                 ConsumerRecords<String, String> messages = consumer.poll(Duration.ofSeconds(2));
-                for (ConsumerRecord<String, String> message : messages) {
-                    assertEquals("test" + i, message.value());
-                    i++;
-                }
+                i += messages.count();
             }
             assertEquals(maxMessageNum, i);
-       }
+        }
 
-       admin.topics().deletePartitionedTopic(fullTopicName);
+        admin.topics().deletePartitionedTopic(fullTopicName);
     }
 
 }
