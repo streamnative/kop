@@ -41,6 +41,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -56,14 +57,19 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.record.CompressionType;
+import org.apache.kafka.common.record.ControlRecordType;
+import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.MutableRecordBatch;
+import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.FetchRequest;
@@ -82,6 +88,8 @@ import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.pulsar.broker.service.Topic;
+import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -920,5 +928,61 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             builder.append(System.currentTimeMillis(), null, "msg".getBytes(StandardCharsets.UTF_8));
         }
         return builder.build();
+    }
+
+    private static MemoryRecords newNormalRecords() {
+        final MemoryRecordsBuilder builder = MemoryRecords.builder(
+                ByteBuffer.allocate(1024),
+                RecordBatch.CURRENT_MAGIC_VALUE,
+                CompressionType.NONE,
+                TimestampType.CREATE_TIME,
+                0L);
+        builder.append(System.currentTimeMillis(), null, "msg".getBytes(StandardCharsets.UTF_8));
+        return builder.build();
+    }
+
+    private static MemoryRecords newAbortTxnMarker() {
+        final MemoryRecordsBuilder builder = MemoryRecords.builder(
+                ByteBuffer.allocate(1024),
+                RecordBatch.CURRENT_MAGIC_VALUE,
+                CompressionType.NONE,
+                TimestampType.CREATE_TIME,
+                0L,
+                0L,
+                System.currentTimeMillis(),
+                (short) 0,
+                0,
+                true,
+                true/* isControlBatch */,
+                0);
+        builder.appendEndTxnMarker(System.currentTimeMillis(), new EndTransactionMarker(ControlRecordType.ABORT, 0));
+        return builder.build();
+    }
+
+    @Test(timeOut = 20000)
+    public void testIllegalManagedLedger() throws Exception {
+        final String topic = "testIllegalManagedLedger";
+        admin.topics().createPartitionedTopic(topic, 1);
+
+        final TopicPartition topicPartition = new TopicPartition(topic, 0);
+
+        @Cleanup
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+        // Trigger the creation of PersistentTopic
+        final RecordMetadata metadata = producer.send(new ProducerRecord<>(topic, "hello")).get();
+        assertEquals(metadata.offset(), 0);
+
+        verifySendMessageToPartition(topicPartition, newNormalRecords(), Errors.NONE, 1L);
+        verifySendMessageToPartition(topicPartition, newAbortTxnMarker(), Errors.NONE, 2L);
+
+        final Optional<Topic> optionalTopic = pulsar.getBrokerService()
+                .getTopicIfExists("persistent://public/default/" + topic + "-partition-0")
+                .get();
+        assertTrue(optionalTopic.isPresent());
+        final PersistentTopic persistentTopic = (PersistentTopic) optionalTopic.get();
+        persistentTopic.getManagedLedger().close();
+        // Now, the managed ledger is closed
+        verifySendMessageToPartition(topicPartition, newNormalRecords(), Errors.NOT_LEADER_FOR_PARTITION, -1L);
+        verifySendMessageToPartition(topicPartition, newAbortTxnMarker(), Errors.NOT_LEADER_FOR_PARTITION, -1L);
     }
 }
