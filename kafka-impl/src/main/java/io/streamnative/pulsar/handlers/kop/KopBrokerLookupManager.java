@@ -68,6 +68,11 @@ public class KopBrokerLookupManager {
                     try {
                         final String listener = getAdvertisedListener(
                                 internalListenerAddress, topic, advertisedEndPoint);
+                        if (listener == null) {
+                            log.error("Failed to find the advertised listener for {} ", topic);
+                            removeTopicManagerCache(topic);
+                            return Optional.empty();
+                        }
                         if (log.isDebugEnabled()) {
                             log.debug("Found listener {} for topic {}", listener, topic);
                         }
