@@ -40,7 +40,6 @@ import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
-import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.InvalidPartitionsException;
@@ -297,9 +296,10 @@ class AdminManager {
 
     }
 
-    CompletableFuture<Map<String, ApiError>> createPartitionsAsync(Map<String, CreatePartitionsRequest.PartitionDetails> createInfo,
-                                                                   int timeoutMs,
-                                                                   String namespacePrefix) {
+    CompletableFuture<Map<String, ApiError>> createPartitionsAsync(
+            Map<String, CreatePartitionsRequest.PartitionDetails> createInfo,
+            int timeoutMs,
+            String namespacePrefix) {
         final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();
         final AtomicInteger numTopics = new AtomicInteger(createInfo.size());
         final CompletableFuture<Map<String, ApiError>> resultFuture = new CompletableFuture<>();

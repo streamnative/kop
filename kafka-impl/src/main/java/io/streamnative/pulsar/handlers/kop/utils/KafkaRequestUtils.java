@@ -16,9 +16,6 @@ package io.streamnative.pulsar.handlers.kop.utils;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import java.util.Optional;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequest;
@@ -28,12 +25,12 @@ import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 public class KafkaRequestUtils {
 
     public static void forEachCreatePartitionsRequest(CreatePartitionsRequest request,
-                                                      BiConsumer<String, CreatePartitionsRequest.PartitionDetails> consumer) {
+                                        BiConsumer<String, CreatePartitionsRequest.PartitionDetails> consumer) {
         request.newPartitions().forEach(consumer);
     }
 
     public static void forEachListOffsetRequest(ListOffsetRequest request,
-                                                BiConsumer<TopicPartition, ListOffsetRequest.PartitionData> consumer) {
+                                        BiConsumer<TopicPartition, ListOffsetRequest.PartitionData> consumer) {
         request.partitionTimestamps().forEach(consumer);
     }
 
