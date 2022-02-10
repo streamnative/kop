@@ -44,7 +44,6 @@ public final class MessagePublishContext implements PublishContext {
     private long sequenceId;
     private long highestSequenceId;
     private String producerName;
-    private boolean isControlBatch;
 
     @Override
     public long getSequenceId() {
@@ -54,11 +53,6 @@ public final class MessagePublishContext implements PublishContext {
     @Override
     public long getHighestSequenceId() {
         return this.highestSequenceId;
-    }
-
-    @Override
-    public boolean isMarkerMessage() {
-        return this.isControlBatch;
     }
 
     private MetadataCorruptedException peekOffsetError;
@@ -126,7 +120,6 @@ public final class MessagePublishContext implements PublishContext {
                                             long sequenceId,
                                             long highestSequenceId,
                                             int numberOfMessages,
-                                            boolean isControlBatch,
                                             long startTimeNs) {
         MessagePublishContext callback = RECYCLER.get();
         callback.offsetFuture = offsetFuture;
@@ -138,7 +131,6 @@ public final class MessagePublishContext implements PublishContext {
         callback.sequenceId = sequenceId;
         callback.highestSequenceId = highestSequenceId;
         callback.peekOffsetError = null;
-        callback.isControlBatch = isControlBatch;
         return callback;
     }
 
@@ -174,7 +166,6 @@ public final class MessagePublishContext implements PublishContext {
         sequenceId = -1;
         highestSequenceId = -1;
         peekOffsetError = null;
-        isControlBatch = false;
         recyclerHandle.recycle(this);
     }
 }
