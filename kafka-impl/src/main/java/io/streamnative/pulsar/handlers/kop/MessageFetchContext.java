@@ -231,9 +231,9 @@ public final class MessageFetchContext {
             }
         });
 
-        // Create another reference to this.decodeResults so the lambda expression will capture this local reference
-        // because this.decodeResults will be reset to null after resultFuture is completed.
-        final ConcurrentLinkedQueue<DecodeResult> decodeResults = this.decodeResults;
+        // Create a copy of this.decodeResults so the lambda expression will capture the current state
+        // because this.decodeResults will cleared after resultFuture is completed.
+        final List<DecodeResult> decodeResults = new ArrayList<>(this.decodeResults);
         resultFuture.complete(
                 new ResponseCallbackWrapper(
                         new FetchResponse<>(
