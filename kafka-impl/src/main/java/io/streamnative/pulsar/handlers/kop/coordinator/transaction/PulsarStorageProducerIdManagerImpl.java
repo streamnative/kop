@@ -14,9 +14,13 @@
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
 import java.math.BigInteger;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
@@ -33,12 +37,13 @@ import org.apache.pulsar.client.api.Reader;
  */
 @Slf4j
 public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
-
+    static final int BLOCK_SIZE = 1000;
     private final AtomicLong nextId = new AtomicLong(0);
     private final String topic;
     private final PulsarClient pulsarClient;
     private CompletableFuture<Reader<byte[]>> reader;
     private CompletableFuture<Void> currentReadHandle;
+    private final ConcurrentLinkedQueue<Long> availableIdsLocally = new ConcurrentLinkedQueue<>();
 
     private synchronized CompletableFuture<Reader<byte[]>> ensureReaderHandle() {
         if (reader == null) {
@@ -108,6 +113,12 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
 
     @Override
     public synchronized CompletableFuture<Long> generateProducerId() {
+        Long booked = availableIdsLocally.poll();
+        if (booked != null) {
+            log.debug("Returning pre-allocated id {} for {}", booked, topic);
+            return CompletableFuture.completedFuture(booked);
+        }
+        log.debug("Allocating new block of ids for {}", topic);
         // we could get rid of the Exclusive Producer if we had Message.getIndex()
         // introduced in 2.9.0 https://github.com/apache/pulsar/pull/11553
         CompletableFuture<Producer<byte[]>> producerHandle = pulsarClient.newProducer()
@@ -121,17 +132,23 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
             // wait for local cache to be up-to-date
             CompletableFuture<Long> dummy = ensureLatestData(true)
                     .thenCompose((___) -> {
-                        final long result = nextId.get() + 1;
+                        long start = nextId.get();
+                        List<Long> block = generateBlock(start + BLOCK_SIZE, BLOCK_SIZE);
+                        final long nextAvailableId = start + BLOCK_SIZE;
                         // write to Pulsar
-                        byte[] serialized = BigInteger.valueOf(result).toByteArray();
+                        byte[] serialized = BigInteger.valueOf(nextAvailableId).toByteArray();
                         CompletableFuture<Long>  res =  opProducer
                                 .newMessage()
                                 .key("") // always the same key, this way we can rely on compaction
                                 .value(serialized)
                                 .sendAsync()
                                 .thenApply((msgId) -> {
-                                    log.debug("{} written {} as {}", this, result, msgId);
-                                    nextId.set(result);
+                                    log.debug("{} written {} as {}", this, nextAvailableId, msgId);
+                                    nextId.set(nextAvailableId);
+                                    availableIdsLocally.addAll(block);
+                                    long result = availableIdsLocally.remove();
+                                    log.debug("Returning allocated id {} for {}, new range: {}-{}",
+                                            result, topic, start, nextAvailableId);
                                     return result;
                                 });
                         return res;
@@ -142,6 +159,12 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
             });
             return dummy;
         });
+    }
+
+    private static List<Long> generateBlock(long start, int blockSize) {
+        return LongStream.range(start, start + blockSize)
+                .boxed()
+                .collect(Collectors.toList());
     }
 
     public PulsarStorageProducerIdManagerImpl(String topicName, PulsarClient pulsarClient) {

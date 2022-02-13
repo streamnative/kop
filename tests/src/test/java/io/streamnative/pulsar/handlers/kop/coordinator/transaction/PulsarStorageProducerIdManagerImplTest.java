@@ -13,10 +13,13 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import static org.testng.Assert.assertTrue;
 import static org.testng.AssertJUnit.assertEquals;
 
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.util.HashSet;
 import java.util.Random;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -42,26 +45,72 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
 
     @Test
     public void testGetProducerId() throws Exception {
-
         // we need a non-partitioned topic
-        pulsar.getAdminClient().topics().createNonPartitionedTopic("producerId");
+        pulsar.getAdminClient().topics().createNonPartitionedTopic("testGetProducerId");
 
-        ProducerIdManager manager1 = new PulsarStorageProducerIdManagerImpl("producerId", pulsar.getClient());
+        ProducerIdManager manager1 = new PulsarStorageProducerIdManagerImpl(
+                "testGetProducerId", pulsar.getClient());
         manager1.initialize().get();
-        ProducerIdManager manager2 = new PulsarStorageProducerIdManagerImpl("producerId", pulsar.getClient());
+        ProducerIdManager manager2 = new PulsarStorageProducerIdManagerImpl(
+                "testGetProducerId", pulsar.getClient());
         manager2.initialize().get();
 
         long pid1 = manager1.generateProducerId().get();
         long pid2 = manager2.generateProducerId().get();
 
-        assertEquals(1, pid1);
-        assertEquals(2, pid2);
+        assertEquals(PulsarStorageProducerIdManagerImpl.BLOCK_SIZE, pid1);
+        assertEquals(pid1 + PulsarStorageProducerIdManagerImpl.BLOCK_SIZE, pid2);
 
-        Random r = new Random(1032);
-        for (long i = 1; i < 100; i++) {
-            ProducerIdManager manager = r.nextBoolean() ? manager1 : manager2;
-            assertEquals(pid2 + i, manager.generateProducerId().get().longValue());
+        for (long i = 1; i < PulsarStorageProducerIdManagerImpl.BLOCK_SIZE; i++) {
+            assertEquals(pid1 + i, manager1.generateProducerId().get().longValue());
         }
+
+        for (long i = 1; i < PulsarStorageProducerIdManagerImpl.BLOCK_SIZE; i++) {
+            assertEquals(pid2 + i, manager2.generateProducerId().get().longValue());
+        }
+
+        assertEquals(pid2 + PulsarStorageProducerIdManagerImpl.BLOCK_SIZE,
+                manager1.generateProducerId().get().longValue());
+        assertEquals(pid2 + PulsarStorageProducerIdManagerImpl.BLOCK_SIZE * 2,
+                manager2.generateProducerId().get().longValue());
     }
 
+
+    @Test
+    public void testGetProducerIdWithoutDuplicates() throws Exception {
+
+        // we need a non-partitioned topic
+        pulsar.getAdminClient().topics().createNonPartitionedTopic("testGetProducerIdWithoutDuplicates");
+
+        ProducerIdManager manager1 = new PulsarStorageProducerIdManagerImpl(
+                "testGetProducerIdWithoutDuplicates", pulsar.getClient());
+        manager1.initialize().get();
+        ProducerIdManager manager2 = new PulsarStorageProducerIdManagerImpl(
+                "testGetProducerIdWithoutDuplicates", pulsar.getClient());
+        manager2.initialize().get();
+
+        long pid1 = manager1.generateProducerId().get();
+        long pid2 = manager2.generateProducerId().get();
+
+        assertEquals(PulsarStorageProducerIdManagerImpl.BLOCK_SIZE, pid1);
+        assertEquals(pid1 + PulsarStorageProducerIdManagerImpl.BLOCK_SIZE, pid2);
+
+        Set<Long> checkDuplicates = new HashSet<>();
+        checkDuplicates.add(pid1);
+        checkDuplicates.add(pid2);
+        Random r = new Random(1032);
+        for (long i = 0; i < PulsarStorageProducerIdManagerImpl.BLOCK_SIZE * 4; i++) {
+            final boolean useFirst = r.nextBoolean();
+            final ProducerIdManager manager;
+            if (useFirst) {
+                manager = manager1;
+            } else {
+                manager = manager2;
+            }
+            final long generated = manager.generateProducerId().get().longValue();
+            assertTrue(checkDuplicates.add(generated));
+            assertTrue(generated > 0);
+        }
+        assertEquals(checkDuplicates.size(), PulsarStorageProducerIdManagerImpl.BLOCK_SIZE * 4 + 2);
+    }
 }
