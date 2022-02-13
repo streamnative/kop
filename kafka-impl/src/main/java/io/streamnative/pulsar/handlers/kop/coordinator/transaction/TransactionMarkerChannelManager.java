@@ -220,6 +220,7 @@ public class TransactionMarkerChannelManager {
                                     TransactionMetadata txnMetadata,
                                     TransactionMetadata.TxnTransitMetadata newMetadata,
                                     String namespacePrefix) {
+        ensureDrainQueuedTransactionMarkersActivity();
         String transactionalId = txnMetadata.getTransactionalId();
         PendingCompleteTxn pendingCompleteTxn = new PendingCompleteTxn(
                 transactionalId,
@@ -244,6 +245,7 @@ public class TransactionMarkerChannelManager {
     }
 
     public void maybeWriteTxnCompletion(String transactionalId) {
+        ensureDrainQueuedTransactionMarkersActivity();
         PendingCompleteTxn pendingCompleteTxn = transactionsWithPendingMarkers.get(transactionalId);
         if (!hasPendingMarkersToWrite(pendingCompleteTxn.txnMetadata)
                 && transactionsWithPendingMarkers.remove(transactionalId, pendingCompleteTxn)) {
@@ -258,6 +260,7 @@ public class TransactionMarkerChannelManager {
                                            Integer coordinatorEpoch,
                                            Set<TopicPartition> topicPartitions,
                                            String namespacePrefixForUserTopics) {
+        ensureDrainQueuedTransactionMarkersActivity();
         Integer txnTopicPartition = txnStateManager.partitionFor(transactionalId);
 
         Map<InetSocketAddress, List<TopicPartition>> addressAndPartitionMap = new ConcurrentHashMap<>();
@@ -399,6 +402,7 @@ public class TransactionMarkerChannelManager {
     }
 
     public void removeMarkersForTxnTopicPartition(Integer txnTopicPartitionId) {
+        ensureDrainQueuedTransactionMarkersActivity();
         BlockingQueue<TxnIdAndMarkerEntry> unknownBrokerMarkerEntries =
                 markersQueueForUnknownBroker.removeMarkersForTxnTopicPartition(txnTopicPartitionId);
         if (unknownBrokerMarkerEntries != null) {
