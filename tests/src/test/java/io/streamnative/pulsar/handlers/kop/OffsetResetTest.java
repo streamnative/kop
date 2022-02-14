@@ -251,7 +251,7 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
         }
 
         managedLedger.rollCurrentLedgerIfFull();
-        managedLedger.trimConsumedLedgersInBackground(Futures.nullPromise_);
+        managedLedger.trimConsumedLedgersInBackground(Futures.NULL_PROMISE);
         Thread.sleep(1000);
         log.info("current ledger ids: {}", managedLedger.getLedgersInfo().keySet());
         log.info("finish deleting some ledgers");

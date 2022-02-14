@@ -34,7 +34,7 @@ public class InternalProducer extends Producer {
                             long producerId, String producerName) {
         super(topic, cnx, producerId, producerName, null,
                 false, null, null, 0, false,
-                ProducerAccessMode.Shared, Optional.empty());
+                ProducerAccessMode.Shared, Optional.empty(), false);
         this.serverCnx = cnx;
     }
 
