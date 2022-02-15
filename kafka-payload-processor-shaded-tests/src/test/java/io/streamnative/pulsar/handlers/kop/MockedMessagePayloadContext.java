@@ -84,7 +84,8 @@ public class MockedMessagePayloadContext implements MessagePayloadContext {
                     null,
                     schema,
                     0,
-                    false);
+                    false,
+                    Commands.DEFAULT_CONSUMER_EPOCH);
         } finally {
             payloadBuffer.release();
         }
