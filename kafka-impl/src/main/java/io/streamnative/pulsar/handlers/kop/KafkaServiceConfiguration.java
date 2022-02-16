@@ -212,10 +212,10 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private String kafkaProtocolMap;
 
-    @Deprecated
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "Use kafkaProtocolMap, kafkaListeners and advertisedAddress instead."
+            doc = "Use kafkaProtocolMap, kafkaListeners and advertisedAddress if you want to use multiple listeners.\n"
+                    + "Otherwise, it should be the listeners published to ZooKeeper for clients to use.\n"
     )
     private String kafkaAdvertisedListeners;
 
