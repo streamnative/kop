@@ -78,6 +78,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Getter;
@@ -2547,7 +2548,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     Node newSelfNode() {
-        return newNode(advertisedEndPoint.getInetAddress());
+        String advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
+        String listener = EndPoint.findListener(advertisedListeners, advertisedEndPoint.getListenerName());
+        if (listener == null) {
+            return newNode(advertisedEndPoint.getInetAddress());
+        }
+        final Matcher matcher = EndPoint.matcherListener(listener,
+                listener + " cannot be split into 3 parts");
+        return newNode(new InetSocketAddress(matcher.group(2), Integer.parseInt(matcher.group(3))));
     }
 
     static PartitionMetadata newPartitionMetadata(TopicName topicName, Node node) {
