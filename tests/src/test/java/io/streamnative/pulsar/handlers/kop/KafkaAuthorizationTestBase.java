@@ -307,7 +307,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         }
     }
 
-    @Test(timeOut = 20000)
+    @Test()
     public void testListTopic() throws Exception {
         String newTopic = "newTestListTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
@@ -326,6 +326,17 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                 ANOTHER_USER,
                 Sets.newHashSet(AuthAction.consume, AuthAction.produce));
 
+        @Cleanup
+        PulsarAdmin pulsarAdmin = PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString())
+                .authentication(this.conf.getBrokerClientAuthenticationPlugin(),
+                        "token:" + anotherToken).build();
+        try {
+            pulsarAdmin.topics().getList(TENANT + "/" + NAMESPACE);
+            fail("Should fail with NotAuthorizedException");
+        } catch (Exception ex) {
+            assertTrue(ex instanceof PulsarAdminException.NotAuthorizedException);
+        }
+
         // Use consumer to list topic
         result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
         assertEquals(result.size(), 2);
@@ -336,8 +347,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         ListTopicsResult listTopicsResult = adminClient.listTopics();
         Set<String> topics = listTopicsResult.names().get();
 
-        assertEquals(topics.size(), 1);
-        assertTrue(topics.contains(newTopic));
+        assertEquals(topics.size(), 0);
 
         // Cleanup
         kConsumer.close();
