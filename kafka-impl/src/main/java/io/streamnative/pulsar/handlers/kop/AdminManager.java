@@ -430,27 +430,15 @@ class AdminManager {
     }
 
     public Collection<? extends Node> getBrokers(String listenerName) {
-        brokersCacheLock.readLock().lock();
-        try {
-            if (brokersCache.containsKey(listenerName)) {
-                return brokersCache.get(listenerName);
-            }
-
-            return Collections.emptyList();
-        } finally {
-            brokersCacheLock.readLock().unlock();
+        if (brokersCache.containsKey(listenerName)) {
+            return brokersCache.get(listenerName);
         }
+
+        return Collections.emptyList();
     }
 
-    // Since getBrokers method in KopEventThread uses asynchronous,
-    // so we should use readLock here.
     public Map<String, Set<Node>> getAllBrokers() {
-        brokersCacheLock.readLock().lock();
-        try {
-            return brokersCache;
-        } finally {
-            brokersCacheLock.readLock().unlock();
-        }
+        return brokersCache;
     }
 
     public void setBrokers(Map<String, Set<Node>> newBrokers) {
@@ -465,27 +453,21 @@ class AdminManager {
 
     // only set when setBrokers
     private void setControllerId(Map<String, Set<Node>> newBrokers) {
+        Map<String, Integer> newControllerId = Maps.newHashMap();
         newBrokers.forEach((listenerName, brokers) -> {
             if (brokers.size() == 0) {
-                controllerId.put(listenerName, MetadataResponse.NO_CONTROLLER_ID);
+                newControllerId.put(listenerName, MetadataResponse.NO_CONTROLLER_ID);
             } else {
                 List<Node> nodes = Lists.newArrayList(brokers);
-                controllerId.put(listenerName,
+                newControllerId.put(listenerName,
                         nodes.size() > 1 ? nodes.get(random.nextInt(brokers.size())).id() : nodes.get(0).id());
             }
         });
+        this.controllerId = newControllerId;
     }
 
     // always get the controllerId directly from the cache
     public int getControllerId(String listenerName) {
-        brokersCacheLock.readLock().lock();
-        try {
-            if (controllerId.containsKey(listenerName)) {
-                return controllerId.get(listenerName);
-            }
-            return MetadataResponse.NO_CONTROLLER_ID;
-        } finally {
-            brokersCacheLock.readLock().unlock();
-        }
+        return controllerId.getOrDefault(listenerName, MetadataResponse.NO_CONTROLLER_ID);
     }
 }
