@@ -430,6 +430,7 @@ class AdminManager {
     }
 
     public Collection<? extends Node> getBrokers(String listenerName) {
+
         if (brokersCache.containsKey(listenerName)) {
             return brokersCache.get(listenerName);
         }
