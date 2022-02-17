@@ -133,6 +133,7 @@ import org.apache.kafka.common.requests.HeartbeatRequest;
 import org.apache.kafka.common.requests.HeartbeatResponse;
 import org.apache.kafka.common.requests.InitProducerIdRequest;
 import org.apache.kafka.common.requests.InitProducerIdResponse;
+import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
@@ -267,10 +268,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     public TransactionCoordinator getTransactionCoordinator() {
-        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
-            return tenantContextManager.getTransactionCoordinator(getCurrentTenant());
-        }
-        return null;
+        throwIfTransactionCoordinatorDisabled();
+        return tenantContextManager.getTransactionCoordinator(getCurrentTenant());
     }
 
     public ReplicaManager getReplicaManager() {
@@ -1025,7 +1024,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         int partition;
 
         if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.TRANSACTION) {
-            throwIfTransactionCoordinatorDisabled();
             TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
             partition = transactionCoordinator.partitionFor(request.coordinatorKey());
             pulsarTopicName = transactionCoordinator.getTopicPartitionName(partition);
@@ -1652,8 +1650,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     topic, data.toString());
             });
         }
+        TransactionCoordinator transactionCoordinator = null;
+        if (request.isolationLevel().equals(IsolationLevel.READ_COMMITTED)) {
+            transactionCoordinator = getTransactionCoordinator();
+        }
         String namespacePrefix = currentNamespacePrefix();
-        MessageFetchContext.get(this, fetch, resultFuture,
+        MessageFetchContext.get(this, transactionCoordinator, fetch, resultFuture,
                 fetchPurgatory, namespacePrefix).handleFetch();
     }
 
@@ -2006,7 +2008,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleInitProducerId(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                         CompletableFuture<AbstractResponse> response) {
         InitProducerIdRequest request = (InitProducerIdRequest) kafkaHeaderAndRequest.getRequest();
-        throwIfTransactionCoordinatorDisabled();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         transactionCoordinator.handleInitProducerId(
                 request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(), (resp) -> {
@@ -2024,7 +2025,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
         Map<TopicPartition, Errors> nonExistingTopicErrors = Maps.newConcurrentMap();
         Set<TopicPartition> authorizedPartitions = Sets.newConcurrentHashSet();
-        throwIfTransactionCoordinatorDisabled();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(partitionsToAdd.size());
         Consumer<Runnable> completeOne = (action) -> {
@@ -2083,7 +2083,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         AddOffsetsToTxnRequest request = (AddOffsetsToTxnRequest) kafkaHeaderAndRequest.getRequest();
         int partition = getGroupCoordinator().partitionFor(request.consumerGroupId());
         String offsetTopicName = getGroupCoordinator().getGroupManager().getOffsetConfig().offsetsTopicName();
-        throwIfTransactionCoordinatorDisabled();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         Set<TopicPartition> topicPartitions = Collections.singleton(new TopicPartition(offsetTopicName, partition));
         transactionCoordinator.handleAddPartitionsToTransaction(
@@ -2203,7 +2202,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleEndTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                 CompletableFuture<AbstractResponse> response) {
         EndTxnRequest request = (EndTxnRequest) kafkaHeaderAndRequest.getRequest();
-        throwIfTransactionCoordinatorDisabled();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         transactionCoordinator.handleEndTransaction(
                 request.transactionalId(),
