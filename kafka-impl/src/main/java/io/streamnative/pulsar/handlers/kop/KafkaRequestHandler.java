@@ -134,6 +134,7 @@ import org.apache.kafka.common.requests.HeartbeatRequest;
 import org.apache.kafka.common.requests.HeartbeatResponse;
 import org.apache.kafka.common.requests.InitProducerIdRequest;
 import org.apache.kafka.common.requests.InitProducerIdResponse;
+import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
@@ -270,6 +271,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     public TransactionCoordinator getTransactionCoordinator() {
+        throwIfTransactionCoordinatorDisabled();
         return tenantContextManager.getTransactionCoordinator(getCurrentTenant());
     }
 
@@ -1045,7 +1047,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             partition = getGroupCoordinator().partitionFor(request.coordinatorKey());
             pulsarTopicName = getGroupCoordinator().getTopicPartitionName(partition);
         } else {
-            throw new NotImplementedException("FindCoordinatorRequest not support TRANSACTION type "
+            throw new NotImplementedException("FindCoordinatorRequest not support unknown type "
                 + request.coordinatorType());
         }
 
@@ -1664,8 +1666,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     topic, data.toString());
             });
         }
+        TransactionCoordinator transactionCoordinator = null;
+        if (request.isolationLevel().equals(IsolationLevel.READ_COMMITTED)) {
+            transactionCoordinator = getTransactionCoordinator();
+        }
         String namespacePrefix = currentNamespacePrefix();
-        MessageFetchContext.get(this, fetch, resultFuture,
+        MessageFetchContext.get(this, transactionCoordinator, fetch, resultFuture,
                 fetchPurgatory, namespacePrefix).handleFetch();
     }
 
@@ -2035,7 +2041,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
         Map<TopicPartition, Errors> nonExistingTopicErrors = Maps.newConcurrentMap();
         Set<TopicPartition> authorizedPartitions = Sets.newConcurrentHashSet();
-
+        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(partitionsToAdd.size());
         Consumer<Runnable> completeOne = (action) -> {
             action.run();
@@ -2049,7 +2055,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     }
                     response.complete(new AddPartitionsToTxnResponse(0, partitionErrors));
                 } else {
-                    TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
                     transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
                             request.producerId(), request.producerEpoch(), authorizedPartitions, (errors) -> {
                                 // TODO: handle PRODUCER_FENCED errors
@@ -2587,6 +2592,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             log.debug("Request {} get failed response ", requestHar.getHeader().apiKey(), e);
         }
         return requestHar.getRequest().getErrorResponse(((Integer) THROTTLE_TIME_MS.defaultValue), e);
+    }
+
+    private void throwIfTransactionCoordinatorDisabled() {
+        if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+            throw new IllegalArgumentException("Broker has disabled transaction coordinator, "
+                    + "please enable it before using transaction.");
+        }
     }
 
     @VisibleForTesting
