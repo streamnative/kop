@@ -101,6 +101,7 @@ public final class MessageFetchContext {
 
     // recycler and get for this object
     public static MessageFetchContext get(KafkaRequestHandler requestHandler,
+                                          TransactionCoordinator tc,
                                           KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                           CompletableFuture<AbstractResponse> resultFuture,
                                           DelayedOperationPurgatory<DelayedOperation> fetchPurgatory,
@@ -111,7 +112,7 @@ public final class MessageFetchContext {
         context.maxReadEntriesNum = requestHandler.getMaxReadEntriesNum();
         context.topicManager = requestHandler.getTopicManager();
         context.statsLogger = requestHandler.requestStats;
-        context.tc = requestHandler.getTransactionCoordinator();
+        context.tc = tc;
         context.clientHost = kafkaHeaderAndRequest.getClientHost();
         context.fetchRequest = (FetchRequest) kafkaHeaderAndRequest.getRequest();
         context.header = kafkaHeaderAndRequest.getHeader();
@@ -472,7 +473,7 @@ public final class MessageFetchContext {
                     groupName,
                     statsLogger);
             List<FetchResponse.AbortedTransaction> abortedTransactions;
-            if (requestHandler.getKafkaConfig().isKafkaTransactionCoordinatorEnabled() && readCommitted && tc != null) {
+            if (readCommitted) {
                 abortedTransactions = partitionLog.getAbortedIndexList(partitionData.fetchOffset);
             } else {
                 abortedTransactions = null;

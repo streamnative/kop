@@ -131,6 +131,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         conf.setKafkaMetadataNamespace("__kafka");
         conf.setKafkaTenant(TENANT);
         conf.setKafkaNamespace(NAMESPACE);
+        conf.setKafkaTransactionCoordinatorEnabled(true);
 
         conf.setClusterName(super.configClusterName);
         conf.setAuthorizationEnabled(true);
