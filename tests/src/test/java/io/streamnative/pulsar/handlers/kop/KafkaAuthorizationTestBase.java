@@ -333,7 +333,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         try {
             pulsarAdmin.topics().getList(TENANT + "/" + NAMESPACE);
             fail("Should fail with NotAuthorizedException");
-        } catch (Exception ex) {
+        } catch (PulsarAdminException ex) {
             assertTrue(ex instanceof PulsarAdminException.NotAuthorizedException);
         }
 
