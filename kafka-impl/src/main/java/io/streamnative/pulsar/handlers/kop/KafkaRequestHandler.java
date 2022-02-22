@@ -605,7 +605,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 topicMap.computeIfAbsent(topic, ignored -> new ArrayList<>()).add(topicName))
                         )
                 );
-                log.info("WK allTopicMap {}", allTopicMap);
                 pulsarTopicsFuture.complete(allTopicMap);
             });
         } else {
@@ -2585,8 +2584,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             case DESCRIBE:
                 if (resource.getResourceType() == ResourceType.TOPIC) {
                     isAuthorizedFuture = authorizer.canLookupAsync(session.getPrincipal(), resource);
-                }
-                if (resource.getResourceType() == ResourceType.NAMESPACE) {
+                } else if (resource.getResourceType() == ResourceType.NAMESPACE) {
                     isAuthorizedFuture = authorizer.canGetTopicList(session.getPrincipal(), resource);
                 }
                 break;

@@ -307,7 +307,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         }
     }
 
-    @Test()
+    @Test(timeOut = 20000)
     public void testListTopic() throws Exception {
         String newTopic = "newTestListTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
