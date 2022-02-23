@@ -13,14 +13,17 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import java.util.Collection;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.experimental.UtilityClass;
 
 /**
@@ -76,4 +79,12 @@ public final class CoreUtils {
             ));
     }
 
+    public static <T> CompletableFuture<Void> waitForAll(final Collection<CompletableFuture<T>> futures) {
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+    }
+
+    public static <T, R> CompletableFuture<R> waitForAll(final Collection<CompletableFuture<T>> futures,
+                                                         final Function<Stream<T>, R> function) {
+        return waitForAll(futures).thenApply(__ -> function.apply(futures.stream().map(CompletableFuture::join)));
+    }
 }
