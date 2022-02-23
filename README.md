@@ -68,4 +68,5 @@ You can configure and manage KoP based on your requirements. Check the following
 -   [@hangc0276](https://github.com/hangc0276)
 -   [@jiazhai](https://github.com/jiazhai)
 -   [@PierreZ](https://github.com/PierreZ)
+-   [@wenbingshen](https://github.com/wenbingshen)
 -   [@wuzhanpeng](https://github.com/wuzhanpeng)
