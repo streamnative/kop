@@ -33,6 +33,17 @@ public interface Authorizer {
     CompletableFuture<Boolean> canLookupAsync(KafkaPrincipal principal, Resource resource);
 
     /**
+     * Check whether the specified role can list topic.
+     *
+     * For that the caller needs to have producer or consumer permission.
+     *
+     * @param principal login info
+     * @param resource resources to be authorized
+     * @return a boolean to determine whether authorized or not
+     */
+    CompletableFuture<Boolean> canGetTopicList(KafkaPrincipal principal, Resource resource);
+
+    /**
      * Check whether the specified role can access a Pulsar Tenant.
      *
      * @param principal login info
