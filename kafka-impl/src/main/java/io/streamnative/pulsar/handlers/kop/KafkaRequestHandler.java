@@ -513,28 +513,44 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String namespacePrefix = currentNamespacePrefix();
         allowedNamespacesFuture.thenAccept(allowedNamespaces -> {
             final AtomicInteger pendingNamespacesCount = new AtomicInteger(allowedNamespaces.size());
-
+            Runnable completeOne = () -> {
+                if (pendingNamespacesCount.decrementAndGet() == 0) {
+                    topicMapFuture.complete(topicMap);
+                }
+            };
             for (String namespace : allowedNamespaces) {
-                pulsarService.getNamespaceService().getListOfPersistentTopics(NamespaceName.get(namespace))
-                        .whenComplete((topics, e) -> {
-                            if (e != null) {
-                                log.error("Failed to getListOfPersistentTopic of {}", namespace, e);
-                                topicMapFuture.completeExceptionally(e);
+                authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.NAMESPACE, namespace))
+                        .whenComplete((isAuthorized, ex) -> {
+                            if (ex != null) {
+                                log.error("Describe namespace authorize failed, namespace - {}. {}",
+                                        namespace, ex.getMessage());
+                                completeOne.run();
                                 return;
                             }
-                            if (topicMapFuture.isCompletedExceptionally()) {
-                                return;
-                            }
-                            for (String topic : topics) {
-                                final TopicName topicName = TopicName.get(topic);
-                                final String key = topicName.getPartitionedTopicName();
-                                topicMap.computeIfAbsent(
-                                        KopTopic.removeDefaultNamespacePrefix(key, namespacePrefix),
-                                        ignored -> Collections.synchronizedList(new ArrayList<>())
-                                ).add(topicName);
-                            }
-                            if (pendingNamespacesCount.decrementAndGet() == 0) {
-                                topicMapFuture.complete(topicMap);
+                            if (isAuthorized) {
+                                pulsarService.getNamespaceService()
+                                        .getListOfPersistentTopics(NamespaceName.get(namespace))
+                                        .whenComplete((topics, e) -> {
+                                            if (e != null) {
+                                                log.error("Failed to getListOfPersistentTopic of {}", namespace, e);
+                                                topicMapFuture.completeExceptionally(e);
+                                                return;
+                                            }
+                                            if (topicMapFuture.isCompletedExceptionally()) {
+                                                return;
+                                            }
+                                            for (String topic : topics) {
+                                                final TopicName topicName = TopicName.get(topic);
+                                                final String key = topicName.getPartitionedTopicName();
+                                                topicMap.computeIfAbsent(
+                                                        KopTopic.removeDefaultNamespacePrefix(key, namespacePrefix),
+                                                        ignored -> Collections.synchronizedList(new ArrayList<>())
+                                                ).add(topicName);
+                                            }
+                                            completeOne.run();
+                                        });
+                            } else {
+                                completeOne.run();
                             }
                         });
             }
@@ -585,42 +601,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             // get all topics, filter by permissions.
             final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
             getAllTopicsAsync().thenAccept((allTopicMap) -> {
-                if (allTopicMap.isEmpty()) {
-                    pulsarTopicsFuture.complete(allTopicMap);
-                    return;
-                }
-                AtomicInteger allTopicCount =
-                        new AtomicInteger(allTopicMap.values().stream().mapToInt(List::size).sum());
-                if (allTopicCount.get() == 0) {
-                    pulsarTopicsFuture.complete(topicMap);
-                    return;
-                }
-                final Runnable completeOne = () -> {
-                    if (allTopicCount.decrementAndGet() == 0) {
-                        pulsarTopicsFuture.complete(topicMap);
-                    }
-                };
-
-                allTopicMap.forEach((topic, list) -> {
-                   list.forEach((topicName ->
-                           authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, topicName.toString()))
-                           .whenComplete((authorized, ex) -> {
-                               if (ex != null || !authorized) {
-                                   allTopicMetadata.add(new TopicMetadata(
-                                           Errors.TOPIC_AUTHORIZATION_FAILED,
-                                           topic,
-                                           KopTopic.isInternalTopic(topicName.toString(), metadataNamespace),
-                                           Collections.emptyList()));
-                                   completeOne.run();
-                                   return;
-                               }
-                               topicMap.computeIfAbsent(
-                                       topic,
-                                       ignored -> Collections.synchronizedList(new ArrayList<>())
-                               ).add(topicName);
-                               completeOne.run();
-                           })));
-                });
+                allTopicMap.forEach((topic, list) ->
+                        list.forEach((topicName ->
+                                topicMap.computeIfAbsent(topic, ignored -> new ArrayList<>()).add(topicName))
+                        )
+                );
+                pulsarTopicsFuture.complete(allTopicMap);
             });
         } else {
             // get only the provided topics
@@ -2597,7 +2583,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 isAuthorizedFuture = authorizer.canProduceAsync(session.getPrincipal(), resource);
                 break;
             case DESCRIBE:
-                isAuthorizedFuture = authorizer.canLookupAsync(session.getPrincipal(), resource);
+                if (resource.getResourceType() == ResourceType.TOPIC) {
+                    isAuthorizedFuture = authorizer.canLookupAsync(session.getPrincipal(), resource);
+                } else if (resource.getResourceType() == ResourceType.NAMESPACE) {
+                    isAuthorizedFuture = authorizer.canGetTopicList(session.getPrincipal(), resource);
+                }
                 break;
             case CREATE:
                 isAuthorizedFuture = authorizer.canCreateTopicAsync(session.getPrincipal(), resource);

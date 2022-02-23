@@ -21,6 +21,7 @@ import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authorization.AuthorizationService;
+import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.NamespaceOperation;
 import org.apache.pulsar.common.policies.data.PolicyName;
@@ -142,6 +143,17 @@ public class SimpleAclAuthorizer implements Authorizer {
                 String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
         TopicName topicName = TopicName.get(resource.getName());
         return authorizationService.canLookupAsync(topicName, principal.getName(), principal.getAuthenticationData());
+    }
+
+    @Override
+    public CompletableFuture<Boolean> canGetTopicList(KafkaPrincipal principal, Resource resource) {
+        checkArgument(resource.getResourceType() == ResourceType.NAMESPACE,
+                String.format("Expected resource type is NAMESPACE, but have [%s]", resource.getResourceType()));
+        return authorizationService.allowNamespaceOperationAsync(
+                NamespaceName.get(resource.getName()),
+                NamespaceOperation.GET_TOPICS,
+                principal.getName(),
+                principal.getAuthenticationData());
     }
 
     @Override
