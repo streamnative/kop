@@ -595,11 +595,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private CompletableFuture<ListPair<String>> authorizeTopicsAsync(final Collection<String> topics,
-                                                                         final AclOperation aclOperation) {
+                                                                     final AclOperation aclOperation) {
         final Map<String, CompletableFuture<Boolean>> futureMap = topics.stream().collect(
                 Collectors.toMap(
-                        namespace -> namespace,
-                        namespace -> authorize(aclOperation, Resource.of(ResourceType.NAMESPACE, namespace))
+                        topic -> topic,
+                        topic -> authorize(aclOperation, Resource.of(ResourceType.TOPIC, topic))
                 ));
         return CoreUtils.waitForAll(futureMap.values()).thenApply(__ ->
                 ListPair.of(futureMap.entrySet()

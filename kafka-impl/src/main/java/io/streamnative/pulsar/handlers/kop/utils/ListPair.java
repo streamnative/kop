@@ -55,7 +55,7 @@ public class ListPair<T> {
     }
 
     public static <T> ListPair<T> of(final Map<Boolean, List<T>> data) {
-        return new ListPair<T>(data);
+        return new ListPair<>(data);
     }
 
     private ListPair(final Map<Boolean, List<T>> data) {
