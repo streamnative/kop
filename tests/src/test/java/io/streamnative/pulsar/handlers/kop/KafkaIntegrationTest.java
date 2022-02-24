@@ -89,7 +89,9 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
                 // TODO: rustlang-rdkafka is failing on Github Actions and works locally, we need to investigate
                 // {"rustlang-rdkafka", Optional.empty(), true, true},
                 // consumer is broken, see integrations/README.md
-                {"node-kafka-node", Optional.empty(), true, false},
+                // no more supported after switching to Kafka client 2.1.1
+                // {"node-kafka-node", Optional.empty(), true, false},
+                // no more supported after switching to Kafka client 2.1.1
                 // {"node-rdkafka", Optional.empty(), true, true},
                 {"kafka-client-1.0.0", Optional.empty(), true, true},
                 {"kafka-client-1.1.0", Optional.empty(), true, true},
