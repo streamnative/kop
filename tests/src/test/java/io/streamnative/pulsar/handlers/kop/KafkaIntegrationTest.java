@@ -90,7 +90,7 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
                 // {"rustlang-rdkafka", Optional.empty(), true, true},
                 // consumer is broken, see integrations/README.md
                 {"node-kafka-node", Optional.empty(), true, false},
-                {"node-rdkafka", Optional.empty(), true, true},
+                // {"node-rdkafka", Optional.empty(), true, true},
                 {"kafka-client-1.0.0", Optional.empty(), true, true},
                 {"kafka-client-1.1.0", Optional.empty(), true, true},
                 {"kafka-client-2.0.0", Optional.empty(), true, true},
