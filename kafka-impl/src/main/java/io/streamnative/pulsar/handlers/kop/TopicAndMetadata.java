@@ -87,7 +87,7 @@ public class TopicAndMetadata {
     }
 
     public TopicMetadata toTopicMetadata(final Function<String, String> getOriginalTopic,
-                                                          final String metadataNamespace) {
+                                         final String metadataNamespace) {
         return new TopicMetadata(
                 error(),
                 getOriginalTopic.apply(topic),

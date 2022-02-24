@@ -11,8 +11,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop.utils;
+package io.streamnative.pulsar.handlers.kop;
 
+import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -35,10 +36,7 @@ public class ListPair<T> {
     private final Map<Boolean, List<T>> data;
 
     public <R> ListPair<R> map(final Function<T, R> function) {
-        return of(data.entrySet().stream().collect(Collectors.toMap(
-                Map.Entry::getKey,
-                e -> e.getValue().stream().map(function).collect(Collectors.toList())
-        )));
+        return of(CoreUtils.mapValue(data, list -> CoreUtils.listToList(list, function)));
     }
 
     public List<T> getSuccessfulList() {
