@@ -14,11 +14,13 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -77,6 +79,21 @@ public final class CoreUtils {
                 e -> e.getKey(),
                 e -> func.apply(e)
             ));
+    }
+
+    public static <R, T> List<R> listToList(final List<T> list,
+                                            final Function<T, R> function) {
+        return list.stream().map(function).collect(Collectors.toList());
+    }
+
+    public static <K, V> Map<K, V> listToMap(final List<K> list,
+                                             final Function<K, V> function) {
+        return list.stream().collect(Collectors.toMap(key -> key, function));
+    }
+
+    public static <K, V, R> List<R> mapToList(final Map<K, V> map,
+                                              final BiFunction<K, V, R> function) {
+        return map.entrySet().stream().map(e -> function.apply(e.getKey(), e.getValue())).collect(Collectors.toList());
     }
 
     public static <T> CompletableFuture<Void> waitForAll(final Collection<CompletableFuture<T>> futures) {

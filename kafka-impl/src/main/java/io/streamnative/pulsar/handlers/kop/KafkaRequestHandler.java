@@ -48,6 +48,7 @@ import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaRequestUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import io.streamnative.pulsar.handlers.kop.utils.ListPair;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
@@ -593,7 +594,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 topicsStream -> topicsStream.flatMap(List::stream));
     }
 
-    private CompletableFuture<AuthorizedTopicsPair> authorizeTopicsAsync(final Collection<String> topics,
+    private CompletableFuture<ListPair<String>> authorizeTopicsAsync(final Collection<String> topics,
                                                                          final AclOperation aclOperation) {
         final Map<String, CompletableFuture<Boolean>> futureMap = topics.stream().collect(
                 Collectors.toMap(
@@ -601,31 +602,26 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         namespace -> authorize(aclOperation, Resource.of(ResourceType.NAMESPACE, namespace))
                 ));
         return CoreUtils.waitForAll(futureMap.values()).thenApply(__ ->
-            new AuthorizedTopicsPair(futureMap.entrySet().stream()
-                    .collect(Collectors.groupingBy(e -> e.getValue().join()))
-                    .entrySet().stream()
-                    .collect(Collectors.toMap(
-                            Map.Entry::getKey,
-                            e -> e.getValue().stream().map(Map.Entry::getKey).collect(Collectors.toList())
-                    ))
-            )
-        );
+                ListPair.of(futureMap.entrySet()
+                        .stream()
+                        .collect(Collectors.groupingBy(e -> e.getValue().join()))
+                ).map(Map.Entry::getKey));
     }
 
-    private CompletableFuture<List<TopicAndMetadata>> findTopicMetadata(final AuthorizedTopicsPair result,
+    private CompletableFuture<List<TopicAndMetadata>> findTopicMetadata(final ListPair<String> listPair,
                                                                         final boolean allowTopicAutoCreation) {
-        final Map<String, CompletableFuture<Integer>> futureMap = result.getAuthorizedTopics().stream()
-                .collect(Collectors.toMap(
-                        topic -> topic,
-                        topic -> getPartitionedTopicMetadataAsync(topic, allowTopicAutoCreation))
-                );
+        final Map<String, CompletableFuture<Integer>> futureMap = CoreUtils.listToMap(
+                listPair.getSuccessfulList(),
+                topic -> getPartitionedTopicMetadataAsync(topic, allowTopicAutoCreation)
+        );
         return CoreUtils.waitForAll(futureMap.values()).thenApply(__ ->
-            futureMap.entrySet().stream()
-                    .map(e -> new TopicAndMetadata(e.getKey(), e.getValue().join())).collect(Collectors.toList())
+                CoreUtils.mapToList(futureMap, (key, value) -> new TopicAndMetadata(key, value.join()))
         ).thenApply(topicAndMetadataList -> {
-            result.getUnauthorizedTopics().forEach(topic ->
-                    topicAndMetadataList.add(new TopicAndMetadata(topic, TopicAndMetadata.AUTHORIZATION_FAILURE)));
-            return topicAndMetadataList;
+            // Create a new list in case `topicAndMetadataList` is not modifiable.
+            final List<TopicAndMetadata> list = CoreUtils.listToList(listPair.getFailedList(),
+                    topic -> new TopicAndMetadata(topic, TopicAndMetadata.AUTHORIZATION_FAILURE));
+            list.addAll(topicAndMetadataList);
+            return list;
         });
     }
 
@@ -686,13 +682,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 return;
             }
 
-            final Map<Boolean, List<TopicAndMetadata>> topicAndMetadataMap = topicAndMetadataList.stream()
-                    .collect(Collectors.groupingBy(TopicAndMetadata::hasNoError));
-            CoreUtils.waitForAll(topicAndMetadataMap.get(true).stream()
+            final ListPair<TopicAndMetadata> listPair =
+                    ListPair.split(topicAndMetadataList.stream(), TopicAndMetadata::hasNoError);
+            CoreUtils.waitForAll(listPair.getSuccessfulList().stream()
                     .map(topicAndMetadata ->
-                            topicAndMetadata.lookupAsync(this::findBroker, getOriginalTopic, metadataNamespace))
-                    .collect(Collectors.toList()), topicMetadataStream -> {
-                final List<TopicMetadata> topicMetadataList = topicAndMetadataMap.get(false).stream()
+                            topicAndMetadata.lookupAsync(this::findBroker, getOriginalTopic, metadataNamespace)
+                    ).collect(Collectors.toList()), topicMetadataStream -> {
+                final List<TopicMetadata> topicMetadataList = listPair.getFailedList().stream()
                         .map(metadata -> metadata.toTopicMetadata(getOriginalTopic, metadataNamespace))
                         .collect(Collectors.toList());
                 topicMetadataStream.forEach(topicMetadataList::add);
@@ -2376,7 +2372,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         .map(inetSocketAddress -> newPartitionMetadata(topic, newNode(inetSocketAddress)))
                         .orElse(null)
                 ).whenComplete((partitionMetadata, e) -> {
-            if (e == null || partitionMetadata == null) {
+            if (e != null || partitionMetadata == null) {
                 log.warn("[{}] Request {}: Exception while find Broker metadata", ctx.channel(), e);
                 future.complete(newFailedPartitionMetadata(topic));
             } else {
