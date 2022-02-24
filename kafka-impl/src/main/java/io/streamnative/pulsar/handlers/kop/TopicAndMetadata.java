@@ -68,12 +68,12 @@ public class TopicAndMetadata {
         return CoreUtils.waitForAll(stream()
                 .map(TopicName::get)
                 .map(lookupFunction)
-                .collect(Collectors.toList()), partitionMetadataStream ->
+                .collect(Collectors.toList()), partitionMetadataList ->
                 new TopicMetadata(
                         error(),
                         getOriginalTopic.apply(topic),
                         KopTopic.isInternalTopic(topic, metadataNamespace),
-                        partitionMetadataStream.collect(Collectors.toList())
+                        partitionMetadataList
                 ));
     }
 

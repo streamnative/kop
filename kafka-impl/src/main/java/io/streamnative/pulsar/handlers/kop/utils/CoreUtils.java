@@ -25,7 +25,6 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import lombok.experimental.UtilityClass;
 
 /**
@@ -101,7 +100,8 @@ public final class CoreUtils {
     }
 
     public static <T, R> CompletableFuture<R> waitForAll(final Collection<CompletableFuture<T>> futures,
-                                                         final Function<Stream<T>, R> function) {
-        return waitForAll(futures).thenApply(__ -> function.apply(futures.stream().map(CompletableFuture::join)));
+                                                         final Function<List<T>, R> function) {
+        return waitForAll(futures).thenApply(__ ->
+                function.apply(futures.stream().map(CompletableFuture::join).collect(Collectors.toList())));
     }
 }

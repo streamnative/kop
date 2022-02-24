@@ -591,7 +591,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 .map(namespace -> pulsarService.getNamespaceService()
                         .getListOfPersistentTopics(NamespaceName.get(namespace))
                 ).collect(Collectors.toList()),
-                topicsStream -> topicsStream.flatMap(List::stream));
+                topics -> topics.stream().flatMap(List::stream));
     }
 
     private CompletableFuture<ListPair<String>> authorizeTopicsAsync(final Collection<String> topics,
@@ -666,8 +666,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 topic -> new KopTopic(topic, namespacePrefix).getFullName(),
                                 topic -> topic
                         ));
-        final Function<String, String> getOriginalTopic = fullTopicName ->
-                fullTopicNameToOriginal.getOrDefault(fullTopicName, fullTopicName);
+        // NOTE: for all topics METADATA request, remove the default namespace prefix just for backward compatibility.
+        final Function<String, String> getOriginalTopic = fullTopicName -> fullTopicNameToOriginal.isEmpty()
+                ? KopTopic.removeDefaultNamespacePrefix(fullTopicName, namespacePrefix)
+                : fullTopicNameToOriginal.getOrDefault(fullTopicName, fullTopicName);
 
         final String metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
         getTopicsAsync(request, fullTopicNameToOriginal.keySet()).whenComplete((topicAndMetadataList, e) -> {
@@ -687,11 +689,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             CoreUtils.waitForAll(listPair.getSuccessfulList().stream()
                     .map(topicAndMetadata ->
                             topicAndMetadata.lookupAsync(this::findBroker, getOriginalTopic, metadataNamespace)
-                    ).collect(Collectors.toList()), topicMetadataStream -> {
+                    ).collect(Collectors.toList()), successfulTopicMetadataList -> {
                 final List<TopicMetadata> topicMetadataList = listPair.getFailedList().stream()
                         .map(metadata -> metadata.toTopicMetadata(getOriginalTopic, metadataNamespace))
                         .collect(Collectors.toList());
-                topicMetadataStream.forEach(topicMetadataList::add);
+                topicMetadataList.addAll(successfulTopicMetadataList);
                 resultFuture.complete(
                         KafkaResponseUtils.newMetadata(allNodes, clusterName, controllerId, topicMetadataList));
                 return null;
