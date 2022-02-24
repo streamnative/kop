@@ -85,12 +85,12 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
                 //  See https://github.com/streamnative/kop/issues/629.
                 //{"golang-sarama", Optional.empty(), true, true},
                 //{"golang-sarama", Optional.of("persistent://public/default/my-sarama-topic-full-name"), true, true},
-                {"golang-confluent-kafka", Optional.empty(), true, true},
+                // no more supported after switching to Kafka client 2.1.1
+                // {"golang-confluent-kafka", Optional.empty(), true, true},
                 // TODO: rustlang-rdkafka is failing on Github Actions and works locally, we need to investigate
                 // {"rustlang-rdkafka", Optional.empty(), true, true},
                 // consumer is broken, see integrations/README.md
-                // no more supported after switching to Kafka client 2.1.1
-                // {"node-kafka-node", Optional.empty(), true, false},
+                {"node-kafka-node", Optional.empty(), true, false},
                 // no more supported after switching to Kafka client 2.1.1
                 // {"node-rdkafka", Optional.empty(), true, true},
                 {"kafka-client-1.0.0", Optional.empty(), true, true},
