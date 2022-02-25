@@ -14,9 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertSame;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -28,20 +26,10 @@ import org.testng.annotations.Test;
 public class CoreUtilsTest {
 
     @Test
-    public void testListConcat() {
-        final List<Integer> list1 = Arrays.asList(1, 2, 3);
-        final List<Integer> list2 = Arrays.asList(4, 5);
-        final List<Integer> list3 = CoreUtils.concatList(list1, list2);
-        assertEquals(list3, Arrays.asList(1, 2, 3, 4, 5));
+    public void testListOperations() {
+        assertEquals(CoreUtils.concatList(Arrays.asList(1, 2, 3), Arrays.asList(4, 5)),
+                Arrays.asList(1, 2, 3, 4, 5));
 
-        final List<Integer> list4 = new ArrayList<>(list1);
-        final List<Integer> list5 = CoreUtils.concatList(list4, list2);
-        assertEquals(list5, Arrays.asList(1, 2, 3, 4, 5));
-        assertSame(list5, list4); // `list4` is modifiable, so the `concatList` happens in place
-    }
-
-    @Test
-    public void testListConversion() {
         final List<Integer> integers = Arrays.asList(1, 2, 3);
         final List<String> strings = CoreUtils.listToList(integers, i -> "msg-" + i);
         assertEquals(strings, Arrays.asList("msg-1", "msg-2", "msg-3"));

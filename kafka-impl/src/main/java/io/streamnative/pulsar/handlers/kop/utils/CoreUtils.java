@@ -82,13 +82,7 @@ public final class CoreUtils {
     }
 
     public static <T> List<T> concatList(final List<T> list1, final List<T> list2) {
-        try {
-            // if `list` can be modifiable, modify the `list1` in place.
-            list1.addAll(list2);
-            return list1;
-        } catch (UnsupportedOperationException ignored) {
-            return Stream.concat(list1.stream(), list2.stream()).collect(Collectors.toList());
-        }
+        return Stream.concat(list1.stream(), list2.stream()).collect(Collectors.toList());
     }
 
     public static <R, T> List<R> listToList(final List<T> list,
