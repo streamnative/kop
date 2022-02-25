@@ -72,6 +72,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -2677,4 +2678,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             throw new AuthenticationException("Internal error while verifying tenant access:" + err, err);
         }
     }
+
+    /**
+     * Return the threadpool that executes the conversion of data during Fetches.
+     * We don't want to decode data inside the critical threads like the ManagedLedger Ordered Executor threads.
+     * @return a executor.
+     */
+    public Executor getDecodeExecutor() {
+        return this.executor;
+    }
+
 }
