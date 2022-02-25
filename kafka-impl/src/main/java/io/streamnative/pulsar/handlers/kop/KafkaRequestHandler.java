@@ -556,14 +556,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (lastIndex < 0) {
                 topicAndMetadataList.add(
                         new TopicAndMetadata(topic, TopicAndMetadata.NON_PARTITIONED_NUMBER));
+            } else if (lastIndex == partitionIndexes.size() - 1) {
+                topicAndMetadataList.add(new TopicAndMetadata(topic, partitionIndexes.size()));
             } else {
-                if (lastIndex == partitionIndexes.size() - 1) {
-                    topicAndMetadataList.add(new TopicAndMetadata(topic, partitionIndexes.size()));
-                } else {
-                    log.warn("The partitions of topic {} is wrong ({}), try to create missed partitions",
-                            topic, partitionIndexes.size());
-                    admin.topics().createMissedPartitionsAsync(topic);
-                }
+                // The partitions should be [0, 1, ..., n-1], `n` is the number of partitions. If the last index is not
+                // `n-1`, there must be some missed partitions.
+                log.warn("The partitions of topic {} is wrong ({}), try to create missed partitions",
+                        topic, partitionIndexes.size());
+                admin.topics().createMissedPartitionsAsync(topic);
             }
         });
         return topicAndMetadataList;
