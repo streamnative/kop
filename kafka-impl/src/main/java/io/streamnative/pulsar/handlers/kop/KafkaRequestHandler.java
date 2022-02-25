@@ -674,13 +674,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final String metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
         getTopicsAsync(request, fullTopicNameToOriginal.keySet()).whenComplete((topicAndMetadataList, e) -> {
             if (e != null) {
-                log.error("[{}] Request {}: Exception fetching metadata, will return null Response",
-                        ctx.channel(), metadataHar.getHeader(), e);
-                resultFuture.complete(KafkaResponseUtils.newMetadata(
-                        allNodes,
-                        clusterName,
-                        controllerId,
-                        Collections.emptyList()));
+                log.error("[{}] Request {}: Exception fetching metadata", ctx.channel(), metadataHar.getHeader(), e);
+                resultFuture.completeExceptionally(e);
                 return;
             }
 
