@@ -486,6 +486,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 if (createException == null) {
                                     future.complete(defaultNumPartitions);
                                 } else {
+                                    log.warn("[{}] Failed to create partitioned topic {}: {}",
+                                            ctx.channel(), topicName, createException.getMessage());
                                     future.complete(TopicAndMetadata.INVALID_PARTITIONS);
                                 }
                             });
@@ -615,13 +617,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         );
         return CoreUtils.waitForAll(futureMap.values()).thenApply(__ ->
                 CoreUtils.mapToList(futureMap, (key, value) -> new TopicAndMetadata(key, value.join()))
-        ).thenApply(topicAndMetadataList -> {
-            // Create a new list in case `topicAndMetadataList` is not modifiable.
-            final List<TopicAndMetadata> list = CoreUtils.listToList(listPair.getFailedList(),
-                    topic -> new TopicAndMetadata(topic, TopicAndMetadata.AUTHORIZATION_FAILURE));
-            list.addAll(topicAndMetadataList);
-            return list;
-        });
+        ).thenApply(authorizedTopicAndMetadataList ->
+            CoreUtils.concatList(authorizedTopicAndMetadataList,
+                    CoreUtils.listToList(listPair.getFailedList(),
+                            topic -> new TopicAndMetadata(topic, TopicAndMetadata.AUTHORIZATION_FAILURE))
+            )
+        );
     }
 
     private CompletableFuture<List<TopicAndMetadata>> getTopicsAsync(MetadataRequest request,
@@ -689,10 +690,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     .map(topicAndMetadata ->
                             topicAndMetadata.lookupAsync(this::findBroker, getOriginalTopic, metadataNamespace)
                     ).collect(Collectors.toList()), successfulTopicMetadataList -> {
-                final List<TopicMetadata> topicMetadataList = listPair.getFailedList().stream()
-                        .map(metadata -> metadata.toTopicMetadata(getOriginalTopic, metadataNamespace))
-                        .collect(Collectors.toList());
-                topicMetadataList.addAll(successfulTopicMetadataList);
+                final List<TopicMetadata> topicMetadataList = CoreUtils.concatList(successfulTopicMetadataList,
+                        CoreUtils.listToList(listPair.getFailedList(),
+                                metadata -> metadata.toTopicMetadata(getOriginalTopic, metadataNamespace))
+                );
                 resultFuture.complete(
                         KafkaResponseUtils.newMetadata(allNodes, clusterName, controllerId, topicMetadataList));
                 return null;
