@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.TopicKey;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -28,6 +29,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -49,6 +51,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
+import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 
@@ -66,6 +69,9 @@ class AdminManager {
 
     private volatile Map<String, Set<Node>> brokersCache = Maps.newHashMap();
     private final ReentrantReadWriteLock brokersCacheLock = new ReentrantReadWriteLock();
+
+    private final Random random = new Random();
+    private volatile Map<String, Integer> controllerId = Maps.newHashMap();
 
 
     public AdminManager(PulsarAdmin admin, KafkaServiceConfiguration conf) {
@@ -439,10 +445,30 @@ class AdminManager {
     public void setBrokers(Map<String, Set<Node>> newBrokers) {
         brokersCacheLock.writeLock().lock();
         try {
+            setControllerId(newBrokers);
             this.brokersCache = newBrokers;
         } finally {
             brokersCacheLock.writeLock().unlock();
         }
     }
 
+    // only set when setBrokers
+    private void setControllerId(Map<String, Set<Node>> newBrokers) {
+        Map<String, Integer> newControllerId = Maps.newHashMap();
+        newBrokers.forEach((listenerName, brokers) -> {
+            if (brokers.size() == 0) {
+                newControllerId.put(listenerName, MetadataResponse.NO_CONTROLLER_ID);
+            } else {
+                List<Node> nodes = Lists.newArrayList(brokers);
+                newControllerId.put(listenerName,
+                        nodes.size() > 1 ? nodes.get(random.nextInt(brokers.size())).id() : nodes.get(0).id());
+            }
+        });
+        this.controllerId = newControllerId;
+    }
+
+    // always get the controllerId directly from the cache
+    public int getControllerId(String listenerName) {
+        return controllerId.getOrDefault(listenerName, MetadataResponse.NO_CONTROLLER_ID);
+    }
 }
