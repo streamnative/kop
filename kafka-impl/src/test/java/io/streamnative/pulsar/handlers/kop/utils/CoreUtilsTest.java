@@ -27,9 +27,6 @@ public class CoreUtilsTest {
 
     @Test
     public void testListOperations() {
-        assertEquals(CoreUtils.concatList(Arrays.asList(1, 2, 3), Arrays.asList(4, 5)),
-                Arrays.asList(1, 2, 3, 4, 5));
-
         final List<Integer> integers = Arrays.asList(1, 2, 3);
         final List<String> strings = CoreUtils.listToList(integers, i -> "msg-" + i);
         assertEquals(strings, Arrays.asList("msg-1", "msg-2", "msg-3"));

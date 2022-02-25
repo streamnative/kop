@@ -25,7 +25,6 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import lombok.experimental.UtilityClass;
 
 /**
@@ -79,10 +78,6 @@ public final class CoreUtils {
                 e -> e.getKey(),
                 e -> func.apply(e)
             ));
-    }
-
-    public static <T> List<T> concatList(final List<T> list1, final List<T> list2) {
-        return Stream.concat(list1.stream(), list2.stream()).collect(Collectors.toList());
     }
 
     public static <R, T> List<R> listToList(final List<T> list,

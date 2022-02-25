@@ -87,6 +87,7 @@ import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.clients.admin.NewPartitions;
@@ -618,7 +619,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return CoreUtils.waitForAll(futureMap.values()).thenApply(__ ->
                 CoreUtils.mapToList(futureMap, (key, value) -> new TopicAndMetadata(key, value.join()))
         ).thenApply(authorizedTopicAndMetadataList ->
-            CoreUtils.concatList(authorizedTopicAndMetadataList,
+            ListUtils.union(authorizedTopicAndMetadataList,
                     CoreUtils.listToList(listPair.getFailedList(),
                             topic -> new TopicAndMetadata(topic, TopicAndMetadata.AUTHORIZATION_FAILURE))
             )
@@ -685,7 +686,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     .map(topicAndMetadata ->
                             topicAndMetadata.lookupAsync(this::findBroker, getOriginalTopic, metadataNamespace)
                     ).collect(Collectors.toList()), successfulTopicMetadataList -> {
-                final List<TopicMetadata> topicMetadataList = CoreUtils.concatList(successfulTopicMetadataList,
+                final List<TopicMetadata> topicMetadataList = ListUtils.union(successfulTopicMetadataList,
                         CoreUtils.listToList(listPair.getFailedList(),
                                 metadata -> metadata.toTopicMetadata(getOriginalTopic, metadataNamespace))
                 );
