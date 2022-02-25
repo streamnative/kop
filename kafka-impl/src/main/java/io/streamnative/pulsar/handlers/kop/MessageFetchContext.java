@@ -425,21 +425,14 @@ public final class MessageFetchContext {
 
         // use compatible magic value by apiVersion
         short apiVersion = header.apiVersion();
-        byte magic = RecordBatch.CURRENT_MAGIC_VALUE;
+        final byte magic;
         if (apiVersion <= 1) {
             magic = RecordBatch.MAGIC_VALUE_V0;
         } else if (apiVersion <= 3) {
             magic = RecordBatch.MAGIC_VALUE_V1;
+        } else {
+            magic = RecordBatch.CURRENT_MAGIC_VALUE;
         }
-
-        final long startDecodingEntriesNanos = MathUtils.nowInNano();
-        final DecodeResult decodeResult = requestHandler
-                .getEntryFormatter().decode(entries, magic);
-        requestHandler.requestStats.getFetchDecodeStats().registerSuccessfulEvent(
-                MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
-        decodeResults.add(decodeResult);
-
-        final MemoryRecords kafkaRecords = decodeResult.getRecords();
 
         CompletableFuture<String> groupNameFuture = requestHandler
                 .getCurrentConnectedGroup()
@@ -462,11 +455,23 @@ public final class MessageFetchContext {
                             });
                     return future;
                 });
-        groupNameFuture.whenComplete((groupName, ex) -> {
+
+        // this part is heavyweight, and we should not execute in the ManagedLedger Ordered executor thread
+        groupNameFuture.whenCompleteAsync((groupName, ex) -> {
             if (ex != null) {
                 log.error("Get groupId failed.", ex);
                 groupName = "";
             }
+
+
+            final long startDecodingEntriesNanos = MathUtils.nowInNano();
+            final DecodeResult decodeResult = requestHandler
+                    .getEntryFormatter().decode(entries, magic);
+            requestHandler.requestStats.getFetchDecodeStats().registerSuccessfulEvent(
+                    MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
+            decodeResults.add(decodeResult);
+
+            final MemoryRecords kafkaRecords = decodeResult.getRecords();
             // collect consumer metrics
             decodeResult.updateConsumerStats(topicPartition,
                     entries.size(),
@@ -487,7 +492,7 @@ public final class MessageFetchContext {
                     kafkaRecords));
             bytesReadable.getAndAdd(kafkaRecords.sizeInBytes());
             tryComplete();
-        });
+        }, requestHandler.getDecodeExecutor());
     }
 
     private List<Entry> getCommittedEntries(List<Entry> entries, long lso) {
