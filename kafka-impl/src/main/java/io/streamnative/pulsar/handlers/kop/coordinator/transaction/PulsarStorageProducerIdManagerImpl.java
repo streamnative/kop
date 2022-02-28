@@ -40,6 +40,7 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
     static final int BLOCK_SIZE = 1000;
     private final AtomicLong nextId = new AtomicLong(0);
     private final String topic;
+    private final int blockSize;
     private final PulsarClient pulsarClient;
     private CompletableFuture<Reader<byte[]>> reader;
     private CompletableFuture<Void> currentReadHandle;
@@ -133,8 +134,8 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
             CompletableFuture<Long> dummy = ensureLatestData(true)
                     .thenCompose((___) -> {
                         long start = nextId.get();
-                        List<Long> block = generateBlock(start + BLOCK_SIZE, BLOCK_SIZE);
-                        final long nextAvailableId = start + BLOCK_SIZE;
+                        List<Long> block = generateBlock(start + blockSize, blockSize);
+                        final long nextAvailableId = start + blockSize;
                         // write to Pulsar
                         byte[] serialized = BigInteger.valueOf(nextAvailableId).toByteArray();
                         CompletableFuture<Long>  res =  opProducer
@@ -167,9 +168,14 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
                 .collect(Collectors.toList());
     }
 
-    public PulsarStorageProducerIdManagerImpl(String topicName, PulsarClient pulsarClient) {
+    public PulsarStorageProducerIdManagerImpl(String topicName, PulsarClient pulsarClient, int blockSize) {
         this.topic = topicName;
         this.pulsarClient = pulsarClient;
+        this.blockSize = blockSize;
+    }
+
+    public PulsarStorageProducerIdManagerImpl(String topicName, PulsarClient pulsarClient) {
+        this(topicName, pulsarClient, BLOCK_SIZE);
     }
 
     @Override
@@ -178,7 +184,14 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
     }
 
     @Override
-    public void shutdown() {
+    public synchronized void shutdown() {
+        if (reader != null) {
+            reader.whenComplete((r, e) -> {
+                if (r != null) {
+                    r.closeAsync();
+                }
+            });
+        }
     }
 
 }
