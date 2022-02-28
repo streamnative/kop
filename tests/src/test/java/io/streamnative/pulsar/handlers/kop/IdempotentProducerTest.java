@@ -70,7 +70,7 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
         };
     }
 
-    @Test(timeOut = 20 * 1000, dataProvider = "produceConfigProvider")
+    @Test(timeOut = 35 * 1000, dataProvider = "produceConfigProvider")
     public void testIdempotentProducer(boolean isBatch)
             throws PulsarAdminException, ExecutionException, InterruptedException {
         String topic = "testIdempotentProducer";
