@@ -79,7 +79,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Getter;
@@ -200,7 +199,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final Boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
     private final String advertisedListeners;
-    private final Node selfNode;
     private final boolean skipMessagesWithoutIndex;
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
@@ -315,7 +313,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
         this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
-        this.selfNode = newSelfNode();
         this.skipMessagesWithoutIndex = skipMessagesWithoutIndex;
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
@@ -757,9 +754,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         // 2. After get all topics, for each topic, get the service Broker for it, and add to response
         AtomicInteger topicsCompleted = new AtomicInteger(0);
-        // Each Pulsar broker can manage metadata like controller in Kafka, Kafka's AdminClient needs to find a
-        // controller node for metadata management. So here we return the broker itself as a controller.
-        final int controllerId = selfNode.id();
+        // Each Pulsar broker can manage metadata like controller in Kafka,
+        // Kafka's AdminClient needs to find a controller node for metadata management.
+        // So here we return an random broker as a controller for the given listenerName.
+        final int controllerId = adminManager.getControllerId(advertisedEndPoint.getListenerName());
         pulsarTopicsFuture.whenComplete((pulsarTopics, e) -> {
             if (e != null) {
                 log.warn("[{}] Request {}: Exception fetching metadata, will return null Response",
@@ -2539,17 +2537,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             Murmur3_32Hash.getInstance().makeHash((address.getHostString() + address.getPort()).getBytes(UTF_8)),
             address.getHostString(),
             address.getPort());
-    }
-
-    private Node newSelfNode() {
-        String advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
-        String listener = EndPoint.findListener(advertisedListeners, advertisedEndPoint.getListenerName());
-        if (listener == null) {
-            return newNode(advertisedEndPoint.getInetAddress());
-        }
-        final Matcher matcher = EndPoint.matcherListener(listener,
-                listener + " cannot be split into 3 parts");
-        return newNode(new InetSocketAddress(matcher.group(2), Integer.parseInt(matcher.group(3))));
     }
 
     static PartitionMetadata newPartitionMetadata(TopicName topicName, Node node) {
