@@ -163,8 +163,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
         manager2.shutdown();
     }
 
-    @Test(enabled = false, description = "This test does not pass on Luna Streaming, but on ASF Pulsar it works,"
-            + "  in LS we are missing some fixes about Reader#hasMessageAvailalable")
+    @Test
     public void testGetProducerIdWithTTL() throws Exception {
         String namespace = "public/namespace-no-retention-ttl";
         pulsar.getAdminClient().namespaces().createNamespace(namespace);
@@ -174,8 +173,8 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
                 InactiveTopicDeleteMode.delete_when_no_subscriptions, Integer.MAX_VALUE, false));
         pulsar.getAdminClient().namespaces().setNamespaceMessageTTL(namespace, 1);
 
-        String topic = namespace + "/testGetProducerIdNoRetention";
-        // we need a non-partitioned topic
+        String topic = namespace + "/testGetProducerIdNoRetentionTTL";
+        // we prefer a non-partitioned topic
         pulsar.getAdminClient().topics().createNonPartitionedTopic(topic);
 
         ProducerIdManager manager1 = new PulsarStorageProducerIdManagerImpl(topic, pulsar.getClient(), 1);
