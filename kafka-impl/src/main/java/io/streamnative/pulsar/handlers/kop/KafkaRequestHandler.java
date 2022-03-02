@@ -677,7 +677,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // This map is used to find the original topic name. Both key and value don't have the "-partition-" suffix.
         final Map<String, String> fullTopicNameToOriginal = (request.topics() == null)
                 ? Collections.emptyMap()
-                : request.topics().stream().collect(
+                : request.topics().stream().distinct().collect(
                         Collectors.toMap(
                                 topic -> new KopTopic(topic, namespacePrefix).getFullName(),
                                 topic -> topic
