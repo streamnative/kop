@@ -34,8 +34,13 @@ public class NamespaceBundleOwnershipListenerImpl implements NamespaceBundleOwne
     private final NamespaceService namespaceService;
     private final String brokerUrl;
 
+    /**
+     * @implNote Like {@link NamespaceService#addNamespaceBundleOwnershipListener}, when a new listener is added, the
+     * `onLoad` method should be called on each owned bundle if `test(bundle)` returns true.
+     */
     public void addTopicOwnershipListener(final TopicOwnershipListener listener) {
         topicOwnershipListeners.add(listener);
+        namespaceService.getOwnedServiceUnits().stream().filter(this).forEach(this::onLoad);
     }
 
     @Override
