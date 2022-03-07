@@ -284,7 +284,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     initTransactionCoordinator(tenant, brokerService.getPulsar().getAdminClient(), clusterData);
             // Listening transaction topic load/unload
             final NamespaceName kafkaMetaNs = NamespaceName.get(tenant, kafkaConfig.getKafkaMetadataNamespace());
-            final NamespaceName kafkaTopicNs = NamespaceName.get(tenant, kafkaConfig.getKafkaNamespace());
             final String metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
             bundleListener.addTopicOwnershipListener(new TopicOwnershipListener() {
                 @Override
@@ -308,7 +307,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
                 @Override
                 public boolean test(NamespaceName namespaceName) {
-                    return namespaceName.equals(kafkaMetaNs) || namespaceName.equals(kafkaTopicNs);
+                    return namespaceName.equals(kafkaMetaNs);
                 }
             });
             return transactionCoordinator;
@@ -337,7 +336,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
             // and listener for Offset topics load/unload
             final NamespaceName kafkaMetaNs = NamespaceName.get(tenant, kafkaConfig.getKafkaMetadataNamespace());
-            final NamespaceName kafkaTopicNs = NamespaceName.get(tenant, kafkaConfig.getKafkaNamespace());
             final String metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
             bundleListener.addTopicOwnershipListener(new TopicOwnershipListener() {
                 @Override
@@ -361,7 +359,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
                 @Override
                 public boolean test(NamespaceName namespaceName) {
-                    return namespaceName.equals(kafkaMetaNs) || namespaceName.equals(kafkaTopicNs);
+                    return namespaceName.equals(kafkaMetaNs);
                 }
             });
         } catch (Exception e) {
