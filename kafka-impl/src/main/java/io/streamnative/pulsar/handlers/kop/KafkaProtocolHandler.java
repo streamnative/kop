@@ -303,7 +303,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
                 @Override
                 public String name() {
-                    return "TransactionStateRecover";
+                    return "TransactionStateRecover-" + transactionCoordinator.getTopicPartitionName();
                 }
 
                 @Override
@@ -356,7 +356,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
                 @Override
                 public String name() {
-                    return "OffsetAndTopicListener";
+                    return "OffsetAndTopicListener-" + groupCoordinator.getGroupManager().getTopicPartitionName();
                 }
 
                 @Override
