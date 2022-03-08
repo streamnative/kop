@@ -705,6 +705,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         CoreUtils.listToList(listPair.getFailedList(),
                                 metadata -> metadata.toTopicMetadata(getOriginalTopic, metadataNamespace))
                 );
+                topicMetadataList.forEach(topicMetadata ->
+                        topicMetadata.partitionMetadata().forEach(partitionMetadata -> {
+                            final Node leader = partitionMetadata.leader();
+                            if (allNodes.stream().noneMatch(node -> node.equals(leader))) {
+                                allNodes.add(leader);
+                            }
+                        })
+                );
                 resultFuture.complete(
                         KafkaResponseUtils.newMetadata(allNodes, clusterName, controllerId, topicMetadataList));
                 return null;
