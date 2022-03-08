@@ -35,6 +35,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -81,6 +82,7 @@ import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.MockZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.eclipse.jetty.server.Server;
+import org.testng.Assert;
 
 /**
  * Unit test to test KoP handler.
@@ -782,9 +784,20 @@ public abstract class KopProtocolHandlerTestBase {
         return adminProps;
     }
 
+    public KafkaProtocolHandler getProtocolHandler() {
+        return (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
+    }
+
+    public static <T> T getFirst(Set<T> set) {
+        Assert.assertNotNull(set);
+        final Iterator<T> iterator = set.iterator();
+        Assert.assertTrue(iterator.hasNext());
+        return iterator.next();
+    }
+
     public KafkaChannelInitializer getFirstChannelInitializer() {
-        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
-        return (KafkaChannelInitializer) handler.getChannelInitializerMap().entrySet().iterator().next().getValue();
+        return (KafkaChannelInitializer) getFirst(getProtocolHandler().getChannelInitializerMap().entrySet())
+                .getValue();
     }
 
     public KafkaRequestHandler newRequestHandler() throws Exception {
