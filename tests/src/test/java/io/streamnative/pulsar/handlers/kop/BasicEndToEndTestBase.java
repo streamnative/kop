@@ -19,6 +19,7 @@ import io.streamnative.kafka.client.api.Header;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
@@ -27,6 +28,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -50,6 +52,7 @@ import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Test;
 
 /**
  * Basic end-to-end test.
@@ -331,4 +334,39 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
         }
     }
 
+
+    @Test(timeOut = 20000)
+    public void testDeletePartition() throws Exception {
+        final String topic = "test-delete-partition";
+
+        pulsar.getAdminClient().topics().createPartitionedTopic(topic, 2);
+
+        @Cleanup
+        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        sendSingleMessages(kafkaProducer, topic, Arrays.asList("a", "b", "c"));
+
+        List<String> expectValues = Arrays.asList("a", "b", "c");
+
+        @Cleanup
+        final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
+        List<String> kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
+        Assert.assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
+
+        sendSingleMessages(kafkaProducer, topic, Arrays.asList("d", "e", "f"));
+        expectValues = Arrays.asList("d", "e", "f");
+        kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
+        Assert.assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
+
+
+        sendSingleMessages(kafkaProducer, topic, Arrays.asList("g", "h", "i"));
+
+
+        pulsar.getAdminClient().topics().delete(topic + "-partition-1", true);
+        // "h" is usually written to Partition 1, so deleting partition-1 means that we lose "h"
+        expectValues = Arrays.asList("g", "i");
+
+        kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
+        Assert.assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
+
+    }
 }
