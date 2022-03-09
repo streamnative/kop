@@ -102,7 +102,7 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
             }
 
             final Properties props = new Properties();
-            props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
+            props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
             props.put(ProducerConfig.BATCH_SIZE_CONFIG, batchSize); // avoid all messages are in a single batch
@@ -160,7 +160,7 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
 
             // 3. Consume messages use Kafka consumer.
             @Cleanup
-            KConsumer kConsumer = new KConsumer(topicName, getClientPort(), "testKafkaProduce-KafkaConsume");
+            KConsumer kConsumer = new KConsumer(topicName, getKafkaBrokerPort(), "testKafkaProduce-KafkaConsume");
             kConsumer.getConsumer().subscribe(Collections.singleton(topicName));
             for (int i = 0; i < totalMsgs; ) {
                 ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
