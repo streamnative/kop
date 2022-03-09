@@ -184,6 +184,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
+            doc = "send queue size of system client to produce system topic."
+    )
+    private int maxPendingMessages = 10000;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
             doc = "Zookeeper path for storing kop consumer group"
     )
     private String groupIdZooKeeperPath = "/client_group_id";
