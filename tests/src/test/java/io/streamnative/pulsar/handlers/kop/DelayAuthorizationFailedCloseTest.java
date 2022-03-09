@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
@@ -44,7 +45,6 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.awaitility.Awaitility;
-import org.junit.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -198,7 +198,7 @@ public class DelayAuthorizationFailedCloseTest extends KopProtocolHandlerTestBas
         try {
             selector.poll(50);
         } catch (IOException e) {
-            Assert.fail("Caught unexpected exception " + e);
+            fail("Caught unexpected exception " + e);
         }
     }
 }
