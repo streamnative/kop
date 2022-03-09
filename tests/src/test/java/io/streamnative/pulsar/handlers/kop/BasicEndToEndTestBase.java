@@ -13,7 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static org.junit.Assert.assertEquals;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertNull;
 
 import io.streamnative.kafka.client.api.Header;
 import java.nio.charset.StandardCharsets;
@@ -149,7 +151,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
                                       final List<String> values) throws ExecutionException, InterruptedException {
         for (String value : values) {
             producer.send(new ProducerRecord<>(topic, value), (metadata, exception) -> {
-                Assert.assertNull(exception);
+                assertNull(exception);
                 if (log.isDebugEnabled()) {
                     log.debug("KafkaProducer send {} to {}-partition-{}@{}",
                             format(value), metadata.topic(), metadata.partition(), metadata.offset());
@@ -175,14 +177,14 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
         Future<RecordMetadata> future = null;
         for (String value : values) {
             future = producer.send(new ProducerRecord<>(topic, value), (metadata, exception) -> {
-                Assert.assertNull(exception);
+                assertNull(exception);
                 if (log.isDebugEnabled()) {
                     log.debug("KafkaProducer send {} to {}-partition-{}@{}",
                             format(value), metadata.topic(), metadata.partition(), metadata.offset());
                 }
             });
         }
-        Assert.assertNotNull(future);
+        assertNotNull(future);
         future.get();
     }
 
@@ -200,7 +202,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
                         return null;
                     });
         }
-        Assert.assertNotNull(future);
+        assertNotNull(future);
         future.get();
     }
 
@@ -334,39 +336,4 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
         }
     }
 
-
-    @Test(timeOut = 20000)
-    public void testDeletePartition() throws Exception {
-        final String topic = "test-delete-partition";
-
-        pulsar.getAdminClient().topics().createPartitionedTopic(topic, 2);
-
-        @Cleanup
-        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
-        sendSingleMessages(kafkaProducer, topic, Arrays.asList("a", "b", "c"));
-
-        List<String> expectValues = Arrays.asList("a", "b", "c");
-
-        @Cleanup
-        final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
-        List<String> kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
-        Assert.assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
-
-        sendSingleMessages(kafkaProducer, topic, Arrays.asList("d", "e", "f"));
-        expectValues = Arrays.asList("d", "e", "f");
-        kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
-        Assert.assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
-
-
-        sendSingleMessages(kafkaProducer, topic, Arrays.asList("g", "h", "i"));
-
-
-        pulsar.getAdminClient().topics().delete(topic + "-partition-1", true);
-        // "h" is usually written to Partition 1, so deleting partition-1 means that we lose "h"
-        expectValues = Arrays.asList("g", "i");
-
-        kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
-        Assert.assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
-
-    }
 }
