@@ -243,23 +243,15 @@ public class KafkaTopicManager {
 
     }
 
-    public void registerProducerInPersistentTopic(String topicName, PersistentTopic persistentTopic) {
+    public Optional<Producer> registerProducerInPersistentTopic(String topicName, PersistentTopic persistentTopic) {
         if (closed.get()) {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Failed to registerProducerInPersistentTopic for topic '{}'",
                         requestHandler.ctx.channel(), topicName);
             }
-            return;
+            return Optional.empty();
         }
-        if (references.containsKey(topicName)) {
-            return;
-        }
-        synchronized (this) {
-            if (references.containsKey(topicName)) {
-                return;
-            }
-            references.put(topicName, registerInPersistentTopic(persistentTopic));
-        }
+        return Optional.of(references.computeIfAbsent(topicName, (__) -> registerInPersistentTopic(persistentTopic)));
     }
 
     // when channel close, release all the topics reference in persistentTopic

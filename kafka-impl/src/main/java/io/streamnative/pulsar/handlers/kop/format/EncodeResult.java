@@ -85,11 +85,9 @@ public class EncodeResult {
 
     public void updateProducerStats(final TopicPartition topicPartition,
                                     final RequestStats requestStats,
-                                    final String namespacePrefix) {
+                                    final Producer producer) {
         final int numBytes = encodedByteBuf.readableBytes();
 
-        final Producer producer = KafkaTopicManager
-                .getReferenceProducer(KopTopic.toString(topicPartition, namespacePrefix));
         producer.updateRates(numMessages, numBytes);
         producer.getTopic().incrementPublishCount(numMessages, numBytes);
 
