@@ -328,4 +328,9 @@ public class KafkaTopicManager {
             log.error("Failed to close reference for individual topic {}. exception:", topicName, e);
         }
     }
+
+    public void invalidateCacheForFencedManagerLedgerOnTopic(String fullTopicName) {
+        log.info("Invalidating cache for fenced error on topic {} (maybe topic was deleted)", fullTopicName);
+        deReference(fullTopicName);
+    }
 }
