@@ -13,7 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static org.junit.Assert.assertEquals;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertNull;
 
 import io.streamnative.kafka.client.api.Header;
 import java.time.Duration;
@@ -45,7 +47,6 @@ import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.MessageIdImpl;
-import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 
@@ -136,7 +137,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
                                       final List<String> values) throws ExecutionException, InterruptedException {
         for (String value : values) {
             producer.send(new ProducerRecord<>(topic, value), (metadata, exception) -> {
-                Assert.assertNull(exception);
+                assertNull(exception);
                 if (log.isDebugEnabled()) {
                     log.debug("KafkaProducer send {} to {}-partition-{}@{}",
                             format(value), metadata.topic(), metadata.partition(), metadata.offset());
@@ -162,14 +163,14 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
         Future<RecordMetadata> future = null;
         for (String value : values) {
             future = producer.send(new ProducerRecord<>(topic, value), (metadata, exception) -> {
-                Assert.assertNull(exception);
+                assertNull(exception);
                 if (log.isDebugEnabled()) {
                     log.debug("KafkaProducer send {} to {}-partition-{}@{}",
                             format(value), metadata.topic(), metadata.partition(), metadata.offset());
                 }
             });
         }
-        Assert.assertNotNull(future);
+        assertNotNull(future);
         future.get();
     }
 
@@ -187,7 +188,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
                         return null;
                     });
         }
-        Assert.assertNotNull(future);
+        assertNotNull(future);
         future.get();
     }
 

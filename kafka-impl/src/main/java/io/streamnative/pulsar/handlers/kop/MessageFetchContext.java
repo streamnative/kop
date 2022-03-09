@@ -571,8 +571,12 @@ public final class MessageFetchContext {
 
             @Override
             public void readEntriesFailed(ManagedLedgerException exception, Object ctx) {
-                log.error("Error read entry for topic: {}", KopTopic.toString(topicPartition, namespacePrefix));
-                messageReadStats.registerSuccessfulEvent(
+                String fullTopicName = KopTopic.toString(topicPartition, namespacePrefix);
+                log.error("Error read entry for topic: {}", fullTopicName);
+                if (exception instanceof ManagedLedgerException.ManagedLedgerFencedException) {
+                    topicManager.invalidateCacheForFencedManagerLedgerOnTopic(fullTopicName);
+                }
+                messageReadStats.registerFailedEvent(
                         MathUtils.elapsedNanos(startReadingMessagesNanos), TimeUnit.NANOSECONDS);
                 readFuture.completeExceptionally(exception);
             }

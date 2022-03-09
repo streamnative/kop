@@ -289,4 +289,39 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         assertEquals(getKeysFromRecords(receivedRecords), keys);
         assertEquals(getFirstHeadersFromRecords(receivedRecords), headers);
     }
+
+    @Test(timeOut = 20000)
+    public void testDeletePartition() throws Exception {
+        final String topic = "test-delete-partition";
+
+        pulsar.getAdminClient().topics().createPartitionedTopic(topic, 2);
+
+        @Cleanup
+        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        sendSingleMessages(kafkaProducer, topic, Arrays.asList("a", "b", "c"));
+
+        List<String> expectValues = Arrays.asList("a", "b", "c");
+
+        @Cleanup
+        final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
+        List<String> kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
+        assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
+
+        sendSingleMessages(kafkaProducer, topic, Arrays.asList("d", "e", "f"));
+        expectValues = Arrays.asList("d", "e", "f");
+        kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
+        assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
+
+
+        sendSingleMessages(kafkaProducer, topic, Arrays.asList("g", "h", "i"));
+
+
+        pulsar.getAdminClient().topics().delete(topic + "-partition-1", true);
+        // "h" is usually written to Partition 1, so deleting partition-1 means that we lose "h"
+        expectValues = Arrays.asList("g", "i");
+
+        kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
+        assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
+
+    }
 }
