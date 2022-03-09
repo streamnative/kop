@@ -71,7 +71,6 @@ public class EntryFormatterTest {
             Time.SYSTEM,
             new TopicPartition("test", 1),
             "test",
-            "test",
             null,
             new ProducerStateManager("test"));
 
