@@ -325,7 +325,12 @@ public final class MessageFetchContext {
             if (tcm == null) {
                 registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
                 // remove null future cache
-                KafkaTopicConsumerManagerCache.getInstance().removeAndCloseByTopic(fullTopicName);
+                requestHandler.getKafkaTopicManagerSharedState()
+                        .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullTopicName);
+                if (log.isDebugEnabled()) {
+                    log.debug("Fetch for {}: no tcm for topic {} return NOT_LEADER_FOR_PARTITION.",
+                            topicPartition, fullTopicName);
+                }
                 addErrorPartitionResponse(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
             } else if (!checkOffsetOutOfRange(tcm, offset, topicPartition, startPrepareMetadataNanos)) {
                 if (log.isDebugEnabled()) {
@@ -340,7 +345,8 @@ public final class MessageFetchContext {
                     log.warn("[{}] KafkaTopicConsumerManager is closed, remove TCM of {}",
                             requestHandler.ctx, fullTopicName);
                     registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
-                    KafkaTopicConsumerManagerCache.getInstance().removeAndCloseByTopic(fullTopicName);
+                    requestHandler.getKafkaTopicManagerSharedState()
+                            .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullTopicName);
                     addErrorPartitionResponse(topicPartition, Errors.NONE);
                 } else {
                     cursorFuture.whenComplete((cursorLongPair, ex) -> {
@@ -348,7 +354,8 @@ public final class MessageFetchContext {
                             log.error("KafkaTopicConsumerManager.asyncGetCursorByOffset({}) failed for topic {}.",
                                     offset, topicPartition, ex.getCause());
                             registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
-                            KafkaTopicConsumerManagerCache.getInstance().removeAndCloseByTopic(fullTopicName);
+                            requestHandler.getKafkaTopicManagerSharedState()
+                                    .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullTopicName);
                             addErrorPartitionResponse(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
                         } else if (cursorLongPair == null) {
                             log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "

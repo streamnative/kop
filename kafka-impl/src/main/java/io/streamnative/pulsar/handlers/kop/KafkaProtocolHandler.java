@@ -91,8 +91,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
-    @Getter
     private BrokerService brokerService;
+    private KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
+
     @Getter
     private KopEventManager kopEventManager;
     private OrderedScheduler sendResponseScheduler;
@@ -131,7 +132,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     kafkaConfig,
                     Time.SYSTEM,
                     entryFormatter,
-                    producePurgatory);
+                    producePurgatory,
+                    kafkaTopicManagerSharedState);
         });
     }
 
@@ -200,6 +202,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             KopVersion.getBuildTime());
 
         brokerService = service;
+        kafkaTopicManagerSharedState = new KafkaTopicManagerSharedState(brokerService);
         PulsarAdmin pulsarAdmin;
         try {
             pulsarAdmin = brokerService.getPulsar().getAdminClient();
@@ -241,9 +244,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             }
 
             private void invalidateBundleCache(TopicName topicName) {
-                KafkaTopicManager.deReference(topicName.toString());
+                kafkaTopicManagerSharedState.deReference(topicName.toString());
                 if (!topicName.isPartitioned()) {
-                    KafkaTopicManager.deReference(topicName.getPartition(0).toString());
+                    kafkaTopicManagerSharedState.deReference(topicName.getPartition(0).toString());
                 }
             }
         });
@@ -269,6 +272,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             kafkaConfig.getKopPrometheusStatsLatencyRolloverSeconds());
         statsProvider.start(conf);
         brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
+
     }
 
     private TransactionCoordinator createAndBootTransactionCoordinator(String tenant) {
@@ -392,7 +396,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 endPoint,
                 kafkaConfig.isSkipMessagesWithoutIndex(),
                 requestStats,
-                sendResponseScheduler);
+                sendResponseScheduler,
+                kafkaTopicManagerSharedState);
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
@@ -448,10 +453,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         kopEventManager.close();
         transactionCoordinatorByTenant.values().forEach(TransactionCoordinator::shutdown);
         KopBrokerLookupManager.clear();
-        KafkaTopicManager.cancelCursorExpireTask();
-        KafkaTopicConsumerManagerCache.getInstance().close();
-        KafkaTopicManager.getReferences().clear();
-        KafkaTopicManager.getTopics().clear();
+        kafkaTopicManagerSharedState.close();
         kopBrokerLookupManager.close();
         statsProvider.stop();
         sendResponseScheduler.shutdown();
