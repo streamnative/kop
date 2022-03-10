@@ -44,7 +44,6 @@ public class PartitionLogTest {
             Time.SYSTEM,
             new TopicPartition("test", 1),
             "test",
-            "test",
             null,
             new ProducerStateManager("test"));
 
