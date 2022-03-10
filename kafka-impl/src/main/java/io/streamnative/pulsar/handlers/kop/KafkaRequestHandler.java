@@ -889,10 +889,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         log.warn("Store groupId failed, the groupId might already stored.", ex);
                     }
                     findBroker(TopicName.get(pulsarTopicName))
-                            .thenAccept(node -> {
-                                if (node.error() != Errors.NONE) {
+                            .whenComplete((node, throwable) -> {
+                                if (node.error() != Errors.NONE || throwable != null) {
                                     log.error("[{}] Request {}: Error while find coordinator.",
-                                            ctx.channel(), findCoordinator.getHeader());
+                                            ctx.channel(), findCoordinator.getHeader(), throwable);
 
                                     resultFuture.complete(KafkaResponseUtils
                                             .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
