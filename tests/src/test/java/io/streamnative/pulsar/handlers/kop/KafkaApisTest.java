@@ -26,6 +26,7 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
@@ -43,6 +44,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -97,9 +99,12 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
+import org.apache.pulsar.common.policies.data.AutoTopicCreationOverride;
+import org.apache.pulsar.common.policies.data.Policies;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
@@ -646,7 +651,11 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     }
 
     private KafkaHeaderAndRequest createTopicMetadataRequest(List<String> topics) {
-        AbstractRequest.Builder builder = new MetadataRequest.Builder(topics, true);
+        return createTopicMetadataRequest(topics, true);
+    }
+
+    private KafkaHeaderAndRequest createTopicMetadataRequest(List<String> topics, boolean allowAutoTopicCreation) {
+        AbstractRequest.Builder builder = new MetadataRequest.Builder(topics, allowAutoTopicCreation);
         return buildRequest(builder);
     }
 
@@ -803,7 +812,89 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             maxPartitionBytes, maxResponseBytes, messagesPerPartition);
     }
 
+    @DataProvider(name = "allowAutoTopicCreation")
+    public static Object[][] allowAutoTopicCreation() {
+        return new Object[][]{
+                { true, true, true },
+                { true, true, false},
+                { true, false, true },
+                { true, false, false},
+                { true, null, true },
+                { true, null, false},
+                { false, true, true },
+                { false, true, false},
+                { false, false, true },
+                { false, false, false},
+                { false, null, true },
+                { false, null, false}
+        };
+    }
+
     // verify Metadata request handling.
+    @Test(timeOut = 20000, dataProvider = "allowAutoTopicCreation")
+    public void testBrokerHandleTopicMetadataRequestAllowAutoTopicCreation(boolean brokerAllowAutoTopicCreation,
+                                                     Boolean overrideNameSpaceAutoTopicCreation,
+                                                     boolean allowAutoTopicCreationInRequest) throws Exception {
+        boolean original = conf.isAllowAutoTopicCreation();
+        try {
+            conf.setAllowAutoTopicCreation(brokerAllowAutoTopicCreation);
+            boolean expectedAllowTopicCreation = overrideNameSpaceAutoTopicCreation != null
+                    ? overrideNameSpaceAutoTopicCreation : conf.isAllowAutoTopicCreation();
+            if (overrideNameSpaceAutoTopicCreation != null) {
+                // override per-namespace
+                admin.namespaces().setAutoTopicCreation("public/default", AutoTopicCreationOverride
+                        .builder()
+                        .allowAutoTopicCreation(overrideNameSpaceAutoTopicCreation)
+                        .defaultNumPartitions(conf.getDefaultNumPartitions())
+                        .topicType("partitioned")
+                        .build());
+                Policies policies = admin.namespaces().getPolicies("public/default");
+                assertEquals(policies.autoTopicCreationOverride.isAllowAutoTopicCreation(),
+                        overrideNameSpaceAutoTopicCreation.booleanValue());
+            } else {
+                admin.namespaces().removeAutoTopicCreation("public/default");
+                Policies policies = admin.namespaces().getPolicies("public/default");
+                assertNull(policies.autoTopicCreationOverride);
+            }
+
+            String topicName = "kopBrokerHandleTopicMetadataRequest-" + brokerAllowAutoTopicCreation + "-"
+                    + overrideNameSpaceAutoTopicCreation + "-"
+                    + allowAutoTopicCreationInRequest;
+            List<String> kafkaTopics = Arrays.asList(topicName);
+            KafkaHeaderAndRequest metadataRequest =
+                    createTopicMetadataRequest(kafkaTopics, allowAutoTopicCreationInRequest);
+            CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+            kafkaRequestHandler.handleTopicMetadataRequest(metadataRequest, responseFuture);
+            MetadataResponse metadataResponse = (MetadataResponse) responseFuture.get();
+
+            final Errors expectedError;
+            if (expectedAllowTopicCreation) {
+                if (allowAutoTopicCreationInRequest) {
+                    // topic will be created
+                    expectedError = null;
+                    assertEquals(1, metadataResponse.topicMetadata().size());
+                    assertEquals(topicName, metadataResponse.topicMetadata().iterator().next().topic());
+                } else {
+                    // topic does not exist and it is not created
+                    expectedError = Errors.UNKNOWN_TOPIC_OR_PARTITION;
+                }
+            } else {
+                if (allowAutoTopicCreationInRequest) {
+                    expectedError = Errors.TOPIC_AUTHORIZATION_FAILED;
+                } else {
+                    // topic does not exist and it is not created
+                    expectedError = Errors.UNKNOWN_TOPIC_OR_PARTITION;
+                }
+            }
+            log.info("errors {}", metadataResponse.errors());
+            assertEquals(expectedError, metadataResponse.errors().get(topicName));
+        } finally {
+            conf.setAllowAutoTopicCreation(original);
+            admin.namespaces().removeAutoTopicCreation("public/default");
+        }
+    }
+
+    // verify Metadata request handling
     @Test(timeOut = 20000)
     public void testBrokerHandleTopicMetadataRequest() throws Exception {
         String topicName = "kopBrokerHandleTopicMetadataRequest";

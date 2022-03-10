@@ -485,18 +485,36 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
             } else if (e instanceof PulsarAdminException.NotFoundException) {
                 if (allowAutoTopicCreation) {
-                    log.info("[{}] Topic {} doesn't exist, auto create it with {} partitions",
-                            ctx.channel(), topicName, defaultNumPartitions);
-                    admin.topics().createPartitionedTopicAsync(topicName, defaultNumPartitions)
-                            .whenComplete((__, createException) -> {
-                                if (createException == null) {
-                                    future.complete(defaultNumPartitions);
-                                } else {
-                                    log.warn("[{}] Failed to create partitioned topic {}: {}",
-                                            ctx.channel(), topicName, createException.getMessage());
-                                    future.complete(TopicAndMetadata.INVALID_PARTITIONS);
-                                }
-                            });
+                    String namespace = TopicName.get(topicName).getNamespace();
+                    admin.namespaces().getPoliciesAsync(namespace).whenComplete((policies, err) -> {
+                        if (err != null || policies == null) {
+                            log.error("[{}] Cannot get policies for namespace {}", ctx.channel(), namespace, err);
+                            future.complete(TopicAndMetadata.INVALID_PARTITIONS);
+                        } else {
+                            boolean allowed = kafkaConfig.isAllowAutoTopicCreation();
+                            if (policies.autoTopicCreationOverride != null) {
+                                allowed = policies.autoTopicCreationOverride.isAllowAutoTopicCreation();
+                            }
+                            if (!allowed) {
+                                log.error("[{}] Automatic topic creation is not allowed on namespace {}",
+                                        ctx.channel(), namespace);
+                                future.complete(TopicAndMetadata.AUTHORIZATION_FAILURE);
+                            } else {
+                                log.info("[{}] Topic {} doesn't exist, auto create it with {} partitions",
+                                        ctx.channel(), topicName, defaultNumPartitions);
+                                admin.topics().createPartitionedTopicAsync(topicName, defaultNumPartitions)
+                                        .whenComplete((__, createException) -> {
+                                            if (createException == null) {
+                                                future.complete(defaultNumPartitions);
+                                            } else {
+                                                log.warn("[{}] Failed to create partitioned topic {}: {}",
+                                                        ctx.channel(), topicName, createException.getMessage());
+                                                future.complete(TopicAndMetadata.INVALID_PARTITIONS);
+                                            }
+                                        });
+                            }
+                        }
+                    });
                 } else {
                     log.error("[{}] Topic {} doesn't exist and it's not allowed to auto create partitioned topic",
                             ctx.channel(), topicName, e);
@@ -643,10 +661,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     .thenCompose(this::listAllTopicsFromNamespacesAsync)
                     .thenApply(this::analyzeFullTopicNames);
         } else {
-            final boolean allowTopicCreation = kafkaConfig.isAllowAutoTopicCreation()
-                    && request.allowAutoTopicCreation();
             return authorizeTopicsAsync(fullTopicNames, AclOperation.DESCRIBE)
-                    .thenCompose(authorizedTopicsPair -> findTopicMetadata(authorizedTopicsPair, allowTopicCreation));
+                    .thenCompose(authorizedTopicsPair -> findTopicMetadata(authorizedTopicsPair,
+                            request.allowAutoTopicCreation()));
         }
     }
 
