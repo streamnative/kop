@@ -83,7 +83,6 @@ public class PartitionLog {
     private final KafkaServiceConfiguration kafkaConfig;
     private final Time time;
     private final TopicPartition topicPartition;
-    private final String namespacePrefix;
     private final String fullPartitionName;
     private final EntryFormatter entryFormatter;
     private final ProducerStateManager producerStateManager;
@@ -259,10 +258,13 @@ public class PartitionLog {
             return;
         }
 
-        appendRecordsContext.getTopicManager().registerProducerInPersistentTopic(fullPartitionName, persistentTopic);
-
-        // collect metrics
-        encodeResult.updateProducerStats(topicPartition, requestStats, namespacePrefix);
+        appendRecordsContext
+                .getTopicManager()
+                .registerProducerInPersistentTopic(fullPartitionName, persistentTopic)
+                .ifPresent((producer) -> {
+                    // collect metrics
+                    encodeResult.updateProducerStats(topicPartition, requestStats, producer);
+                });
 
         final int numMessages = encodeResult.getNumMessages();
         final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
