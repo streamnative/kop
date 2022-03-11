@@ -278,7 +278,11 @@ public class PartitionLog {
         } else {
             offsetFuture = publishNormalMessage(persistentTopic, byteBuf, appendInfo);
         }
-
+        try {
+            TimeUnit.MILLISECONDS.sleep(400);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
         offsetFuture.whenComplete((offset, e) -> {
             appendRecordsContext.getCompleteSendOperationForThrottling().accept(byteBuf.readableBytes());
 

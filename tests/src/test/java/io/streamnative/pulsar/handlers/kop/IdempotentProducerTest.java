@@ -65,9 +65,7 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
     protected static Object[][] produceConfigProvider() {
         // isBatch
         return new Object[][]{
-                // TODO: Currently when batching is enabled, the testIdempotentProducer is flaky in CI env, see
-                //  https://github.com/streamnative/kop/issues/1053. Disable the test first.
-                //{true},
+                {true},
                 {false}
         };
     }
@@ -87,6 +85,7 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
         Properties producerProperties = newKafkaProducerProperties();
         producerProperties.put(ProducerConfig.CLIENT_ID_CONFIG, "test-client");
         producerProperties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+        producerProperties.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);
 
         try (KafkaProducer<String, String> producer = new KafkaProducer<>(producerProperties)) {
             for (int i = 0; i < maxMessageNum; i++) {
