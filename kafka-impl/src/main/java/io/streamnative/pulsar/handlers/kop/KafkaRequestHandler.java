@@ -904,33 +904,35 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
                 findCoordinator.getHeader().clientId());
 
-        // Store group name to metadata store for current client.
+        // Store group name to metadata store for current client, use to collect consumer metrics.
         storeGroupId(groupId, groupIdPath)
-                .thenAccept(__ -> findBroker(TopicName.get(pulsarTopicName))
-                        .thenAccept(node -> {
-                            if (node.error() != Errors.NONE) {
-                                log.error("[{}] Request {}: Error while find coordinator.",
-                                        ctx.channel(), findCoordinator.getHeader());
+                .whenComplete((__, ex) -> {
+                    if (ex != null) {
+                        log.warn("Store groupId failed, the groupId might already stored.", ex);
+                    }
+                    findBroker(TopicName.get(pulsarTopicName))
+                            .whenComplete((node, throwable) -> {
+                                if (node.error() != Errors.NONE || throwable != null) {
+                                    log.error("[{}] Request {}: Error while find coordinator.",
+                                            ctx.channel(), findCoordinator.getHeader(), throwable);
 
-                                resultFuture.complete(KafkaResponseUtils
-                                        .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
-                                return;
-                            }
+                                    resultFuture.complete(KafkaResponseUtils
+                                            .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
+                                    return;
+                                }
 
-                            if (log.isDebugEnabled()) {
-                                log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
-                                        ctx.channel(), node.leader(), request.coordinatorKey(), partition);
-                            }
+                                if (log.isDebugEnabled()) {
+                                    log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
+                                            ctx.channel(), node.leader(), request.coordinatorKey(), partition);
+                                }
 
-                            resultFuture.complete(KafkaResponseUtils.newFindCoordinator(node.leader()));
-                        }))
-                .exceptionally(ex -> {
-                    log.error("Store groupId failed.", ex);
-                    return null;
+                                resultFuture.complete(KafkaResponseUtils.newFindCoordinator(node.leader()));
+                            });
                 });
     }
 
-    private CompletableFuture<Void> storeGroupId(String groupId, String groupIdPath) {
+    @VisibleForTesting
+    protected CompletableFuture<Void> storeGroupId(String groupId, String groupIdPath) {
         String path = groupIdStoredPath + groupIdPath;
         CompletableFuture<Void> future = new CompletableFuture<>();
         metadataStore.put(path, groupId.getBytes(UTF_8), Optional.empty())
