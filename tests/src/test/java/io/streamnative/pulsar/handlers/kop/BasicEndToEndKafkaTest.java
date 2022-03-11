@@ -312,12 +312,12 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
         assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
 
-
-        sendSingleMessages(kafkaProducer, topic, Arrays.asList("g", "h", "i"));
-
+        kafkaProducer.send(new ProducerRecord<>(topic, 0, null, "g")).get();
+        kafkaProducer.send(new ProducerRecord<>(topic, 1, null, "h")).get();
+        kafkaProducer.send(new ProducerRecord<>(topic, 0, null, "i")).get();
 
         pulsar.getAdminClient().topics().delete(topic + "-partition-1", true);
-        // "h" is usually written to Partition 1, so deleting partition-1 means that we lose "h"
+        // "h" is written to Partition 1, so deleting partition-1 means that we lose "h"
         expectValues = Arrays.asList("g", "i");
 
         kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
