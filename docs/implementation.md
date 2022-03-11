@@ -47,7 +47,7 @@ In Kafka, each message is assigned with an offset once the message is successful
 KoP leverages [Broker Entry Metadata](https://github.com/apache/pulsar/wiki/PIP-70%3A-Introduce-lightweight-broker-entry-metadata), which was introduced in Pulsar 2.8.0, to store an extra index metadata in [BookKeeper Entries](https://bookkeeper.apache.org/docs/4.14.0/getting-started/concepts/#entries). An Entry represents a [record batch](https://kafka.apache.org/documentation/#recordbatch), which consists of one or more messages. The index metadata of an Entry is equivalent to the first offset in a record batch.
 
 - Given a message ID, KoP can locate the Entry and parse the index metadata from the Entry.
-- Given a offset, KoP can locate the Entry via a binary search approach among all Entries of a topic.
+- Given an offset, KoP can locate the Entry via a binary search approach among all Entries of a topic.
 
 ## Produce Messages
 
