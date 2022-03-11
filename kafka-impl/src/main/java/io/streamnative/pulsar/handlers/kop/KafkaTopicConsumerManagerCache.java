@@ -43,10 +43,6 @@ public class KafkaTopicConsumerManagerCache {
     private final Map<String, Map<SocketAddress, CompletableFuture<KafkaTopicConsumerManager>>>
             cache = new ConcurrentHashMap<>();
 
-    public KafkaTopicConsumerManagerCache() {
-        // No ops
-    }
-
     public CompletableFuture<KafkaTopicConsumerManager> computeIfAbsent(
             final String fullTopicName,
             final SocketAddress remoteAddress,
