@@ -909,7 +909,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 });
     }
 
-    private CompletableFuture<Void> storeGroupId(String groupId, String groupIdPath) {
+    @VisibleForTesting
+    protected CompletableFuture<Void> storeGroupId(String groupId, String groupIdPath) {
         String path = groupIdStoredPath + groupIdPath;
         CompletableFuture<Void> future = new CompletableFuture<>();
         metadataStore.put(path, groupId.getBytes(UTF_8), Optional.empty())
