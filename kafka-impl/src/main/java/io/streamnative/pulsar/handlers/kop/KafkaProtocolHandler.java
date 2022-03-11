@@ -132,8 +132,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     kafkaConfig,
                     Time.SYSTEM,
                     entryFormatter,
-                    producePurgatory,
-                    kafkaTopicManagerSharedState);
+                    producePurgatory
+                    );
         });
     }
 

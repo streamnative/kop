@@ -16,10 +16,8 @@ package io.streamnative.pulsar.handlers.kop.format;
 import static org.apache.kafka.common.record.LegacyRecord.RECORD_OVERHEAD_V0;
 import static org.apache.kafka.common.record.LegacyRecord.RECORD_OVERHEAD_V1;
 import static org.apache.kafka.common.record.Records.LOG_OVERHEAD;
-import static org.mockito.Mockito.mock;
 
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
-import io.streamnative.pulsar.handlers.kop.KafkaTopicManagerSharedState;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import java.io.DataOutputStream;
@@ -46,7 +44,6 @@ import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
 import org.apache.kafka.common.utils.Crc32C;
 import org.apache.kafka.common.utils.Time;
-import org.apache.pulsar.broker.service.BrokerService;
 import org.testng.Assert;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
@@ -75,8 +72,7 @@ public class EntryFormatterTest {
             new TopicPartition("test", 1),
             "test",
             null,
-            new ProducerStateManager("test"),
-            new KafkaTopicManagerSharedState(mock(BrokerService.class)));
+            new ProducerStateManager("test"));
 
     private void init() {
         pulsarServiceConfiguration.setEntryFormat("pulsar");
