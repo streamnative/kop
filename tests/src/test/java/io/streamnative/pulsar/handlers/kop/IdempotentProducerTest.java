@@ -85,7 +85,6 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
         Properties producerProperties = newKafkaProducerProperties();
         producerProperties.put(ProducerConfig.CLIENT_ID_CONFIG, "test-client");
         producerProperties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
-        producerProperties.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);
 
         try (KafkaProducer<String, String> producer = new KafkaProducer<>(producerProperties)) {
             for (int i = 0; i < maxMessageNum; i++) {
