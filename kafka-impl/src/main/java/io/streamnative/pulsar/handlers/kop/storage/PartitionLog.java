@@ -221,14 +221,9 @@ public class PartitionLog {
                         appendRecordsContext);
             };
 
-            if (topicFuture.isDone()) {
-                persistentTopicConsumer.accept(topicFuture.getNow(Optional.empty()));
-            } else {
-                // topic is not available now
-                appendRecordsContext.getPendingTopicFuturesMap()
-                        .computeIfAbsent(topicPartition, ignored -> new PendingTopicFutures(requestStats))
-                        .addListener(topicFuture, persistentTopicConsumer, appendFuture::completeExceptionally);
-            }
+            appendRecordsContext.getPendingTopicFuturesMap()
+                    .computeIfAbsent(topicPartition, ignored -> new PendingTopicFutures(requestStats))
+                    .addListener(topicFuture, persistentTopicConsumer, appendFuture::completeExceptionally);
         } catch (Exception exception) {
             log.error("Failed to handle produce request for {}", topicPartition, exception);
             appendFuture.completeExceptionally(exception);
