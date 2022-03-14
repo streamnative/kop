@@ -101,17 +101,6 @@ public class KafkaTopicConsumerManagerCache {
     }
 
     @VisibleForTesting
-    public void clear() {
-        if (!cache.isEmpty()) {
-            log.error("Clearing cache, contents {}",
-                    cache, new Exception("TCM cache is not empty! " + cache).fillInStackTrace());
-            cache.clear();
-        }
-
-
-    }
-
-    @VisibleForTesting
     public int getCount() {
         final AtomicInteger count = new AtomicInteger(0);
         forEach(ignored -> count.incrementAndGet());

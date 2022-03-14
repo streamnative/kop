@@ -47,7 +47,8 @@ public class PartitionLogManager {
 
         return logMap.computeIfAbsent(kopTopic, key ->
                 new PartitionLog(kafkaConfig, time, topicPartition, kopTopic, formatter,
-                        new ProducerStateManager(kopTopic)));
+                        new ProducerStateManager(kopTopic))
+        );
     }
 }
 

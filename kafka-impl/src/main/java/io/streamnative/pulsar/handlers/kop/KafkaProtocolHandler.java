@@ -132,8 +132,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     kafkaConfig,
                     Time.SYSTEM,
                     entryFormatter,
-                    producePurgatory
-                    );
+                    producePurgatory);
         });
     }
 
@@ -272,7 +271,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             kafkaConfig.getKopPrometheusStatsLatencyRolloverSeconds());
         statsProvider.start(conf);
         brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
-
     }
 
     private TransactionCoordinator createAndBootTransactionCoordinator(String tenant) {
