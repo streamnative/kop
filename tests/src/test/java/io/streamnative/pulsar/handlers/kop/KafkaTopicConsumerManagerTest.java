@@ -115,7 +115,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         KafkaTopicConsumerManager topicConsumerManager2 = tcm.get();
 
         assertTrue(topicConsumerManager == topicConsumerManager2);
-        assertEquals(KafkaTopicConsumerManagerCache.getInstance().getCount(), 1);
+        assertEquals(kafkaRequestHandler.getKafkaTopicManagerSharedState()
+                .getKafkaTopicConsumerManagerCache().getCount(), 1);
 
         // 2. verify another get with different topic will return different tcm
         String topicName2 = "persistent://public/default/testGetTopicConsumerManager2";
@@ -123,7 +124,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         tcm = kafkaTopicManager.getTopicConsumerManager(topicName2);
         topicConsumerManager2 = tcm.get();
         assertTrue(topicConsumerManager != topicConsumerManager2);
-        assertEquals(KafkaTopicConsumerManagerCache.getInstance().getCount(), 2);
+        assertEquals(kafkaRequestHandler.getKafkaTopicManagerSharedState()
+                .getKafkaTopicConsumerManagerCache().getCount(), 2);
     }
 
 
@@ -346,8 +348,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
             numReceived += consumer.poll(Duration.ofSeconds(1)).count();
         }
 
-        final List<KafkaTopicConsumerManager> tcmList =
-                KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(partitionName);
+        final List<KafkaTopicConsumerManager> tcmList = kafkaRequestHandler.getKafkaTopicManagerSharedState()
+                .getKafkaTopicConsumerManagerCache().getTopicConsumerManagers(partitionName);
         assertFalse(tcmList.isEmpty());
         // Only 1 cursor should be created for a consumer even if there were a lot of FETCH requests
         // This check is to ensure that KafkaTopicConsumerManager#add is called in FETCH request handler
@@ -398,8 +400,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         }
         latch.await(10, TimeUnit.SECONDS);
 
-        final List<KafkaTopicConsumerManager> tcmList =
-                KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(partitionName);
+        final List<KafkaTopicConsumerManager> tcmList = kafkaRequestHandler.getKafkaTopicManagerSharedState()
+                .getKafkaTopicConsumerManagerCache().getTopicConsumerManagers(partitionName);
         assertEquals(tcmList.size(), numConsumers);
 
         // All TCMs share the same topic, so each internal PersistentTopic of TCM has `numConsumers` cursors.
@@ -440,7 +442,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         final Function<Integer, KafkaTopicConsumerManager> getTcmForPartition = partition -> {
             final String fullTopicName = new KopTopic(topic, "public/default").getPartitionName(partition);
             final List<KafkaTopicConsumerManager> tcmList =
-                    KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(fullTopicName);
+                    kafkaRequestHandler.getKafkaTopicManagerSharedState()
+                            .getKafkaTopicConsumerManagerCache().getTopicConsumerManagers(fullTopicName);
             return tcmList.isEmpty() ? null : tcmList.get(0);
         };
 

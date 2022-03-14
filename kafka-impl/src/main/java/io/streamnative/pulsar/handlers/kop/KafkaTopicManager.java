@@ -16,12 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import java.net.SocketAddress;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
@@ -39,29 +34,12 @@ import org.apache.pulsar.common.naming.TopicName;
 @Slf4j
 public class KafkaTopicManager {
 
-    private static final KafkaTopicConsumerManagerCache TCM_CACHE = KafkaTopicConsumerManagerCache.getInstance();
-
     private final KafkaRequestHandler requestHandler;
     private final BrokerService brokerService;
     private final LookupClient lookupClient;
     private volatile SocketAddress remoteAddress;
 
-    // cache for topics: <topicName, persistentTopic>, for removing producer
-    @Getter
-    private static final ConcurrentHashMap<String, CompletableFuture<Optional<PersistentTopic>>>
-        topics = new ConcurrentHashMap<>();
-    // cache for references in PersistentTopic: <topicName, producer>
-    @Getter
-    private static final ConcurrentHashMap<String, Producer>
-        references = new ConcurrentHashMap<>();
-
     private final InternalServerCnx internalServerCnx;
-
-    // every 1 min, check if the KafkaTopicConsumerManagers have expired cursors.
-    // remove expired cursors, so backlog can be cleared.
-    private static final long checkPeriodMillis = 1 * 60 * 1000;
-    private static final long expirePeriodMillis = 2 * 60 * 1000;
-    private static volatile ScheduledFuture<?> cursorExpireTask = null;
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -71,35 +49,7 @@ public class KafkaTopicManager {
         this.brokerService = pulsarService.getBrokerService();
         this.internalServerCnx = new InternalServerCnx(requestHandler);
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
-        initializeCursorExpireTask(brokerService.executor());
-    }
-
-    private static void initializeCursorExpireTask(final ScheduledExecutorService executor) {
-        if (cursorExpireTask == null) {
-            synchronized (KafkaTopicManager.class) {
-                if (cursorExpireTask == null) {
-                    // check expired cursor every 1 min.
-                    cursorExpireTask = executor.scheduleWithFixedDelay(() -> {
-                        long current = System.currentTimeMillis();
-                        TCM_CACHE.forEach(future -> {
-                            if (future != null && future.isDone() && !future.isCompletedExceptionally()) {
-                                future.join().deleteExpiredCursor(current, expirePeriodMillis);
-                            }
-                        });
-                    }, checkPeriodMillis, checkPeriodMillis, TimeUnit.MILLISECONDS);
-                }
-            }
-        }
-    }
-
-    public static void cancelCursorExpireTask() {
-        synchronized (KafkaTopicManager.class) {
-            if (cursorExpireTask != null) {
-                cursorExpireTask.cancel(true);
-                cursorExpireTask = null;
-            }
-        }
-    }
+     }
 
     // update Ctx information, since at internalServerCnx create time there is no ctx passed into kafkaRequestHandler.
     public void setRemoteAddress(SocketAddress remoteAddress) {
@@ -122,7 +72,7 @@ public class KafkaTopicManager {
                     requestHandler.ctx.channel(), topicName);
             return CompletableFuture.completedFuture(null);
         }
-        return TCM_CACHE.computeIfAbsent(
+        return requestHandler.getKafkaTopicManagerSharedState().getKafkaTopicConsumerManagerCache().computeIfAbsent(
             topicName,
             remoteAddress,
             () -> {
@@ -223,7 +173,7 @@ public class KafkaTopicManager {
             topicCompletableFuture.complete(Optional.empty());
         });
         // cache for removing producer
-        topics.put(topicName, topicCompletableFuture);
+        requestHandler.getKafkaTopicManagerSharedState().getTopics().put(topicName, topicCompletableFuture);
         return topicCompletableFuture;
     }
 
@@ -251,7 +201,8 @@ public class KafkaTopicManager {
             }
             return Optional.empty();
         }
-        return Optional.of(references.computeIfAbsent(topicName, (__) -> registerInPersistentTopic(persistentTopic)));
+        return Optional.of(requestHandler.getKafkaTopicManagerSharedState()
+                .getReferences().computeIfAbsent(topicName, (__) -> registerInPersistentTopic(persistentTopic)));
     }
 
     // when channel close, release all the topics reference in persistentTopic
@@ -264,61 +215,12 @@ public class KafkaTopicManager {
             return;
         }
 
-        try {
-            TCM_CACHE.removeAndCloseByAddress(remoteAddress);
-
-            topics.keySet().forEach(topicName -> {
-                if (log.isDebugEnabled()) {
-                    log.debug("[{}] remove producer {} for topic {} at close()",
-                            requestHandler.ctx.channel(), references.get(topicName), topicName);
-                }
-                removePersistentTopicAndReferenceProducer(topicName);
-            });
-        } catch (Exception e) {
-            log.error("[{}] Failed to close KafkaTopicManager. exception:",
-                requestHandler.ctx.channel(), e);
-        }
-    }
-
-    private static void removePersistentTopicAndReferenceProducer(final String topicName) {
-        // 1. Remove PersistentTopic and Producer from caches, these calls are thread safe
-        final CompletableFuture<Optional<PersistentTopic>> topicFuture = topics.remove(topicName);
-        final Producer producer = references.remove(topicName);
-
-        if (topicFuture == null) {
-            KopBrokerLookupManager.removeTopicManagerCache(topicName);
-            return;
-        }
-
-        // 2. Remove Producer from PersistentTopic's internal cache
-        topicFuture.thenAccept(persistentTopic -> {
-            if (producer != null && persistentTopic.isPresent()) {
-                try {
-                    persistentTopic.get().removeProducer(producer);
-                } catch (IllegalArgumentException ignored) {
-                    log.error("[{}] The producer's topic ({}) doesn't match the current PersistentTopic",
-                            topicName, (producer.getTopic() == null) ? "null" : producer.getTopic().getName());
-                }
-            }
-        }).exceptionally(e -> {
-            log.error("Failed to get topic '{}' in removeTopicAndReferenceProducer", topicName, e);
-            return null;
-        });
-    }
-
-    public static void deReference(String topicName) {
-        try {
-            KopBrokerLookupManager.removeTopicManagerCache(topicName);
-
-            TCM_CACHE.removeAndCloseByTopic(topicName);
-            removePersistentTopicAndReferenceProducer(topicName);
-        } catch (Exception e) {
-            log.error("Failed to close reference for individual topic {}. exception:", topicName, e);
-        }
+        requestHandler.getKafkaTopicManagerSharedState()
+                .handlerKafkaRequestHandlerClosed(remoteAddress, requestHandler);
     }
 
     public void invalidateCacheForFencedManagerLedgerOnTopic(String fullTopicName) {
         log.info("Invalidating cache for fenced error on topic {} (maybe topic was deleted)", fullTopicName);
-        deReference(fullTopicName);
+        requestHandler.getKafkaTopicManagerSharedState().deReference(fullTopicName);
     }
 }

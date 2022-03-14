@@ -46,6 +46,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final TenantContextManager tenantContextManager;
     @Getter
     private final KopBrokerLookupManager kopBrokerLookupManager;
+    @Getter
+    private final KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
 
     private final AdminManager adminManager;
     private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
@@ -72,7 +74,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    EndPoint advertisedEndPoint,
                                    boolean skipMessagesWithoutIndex,
                                    RequestStats requestStats,
-                                   OrderedScheduler sendResponseScheduler) {
+                                   OrderedScheduler sendResponseScheduler,
+                                   KafkaTopicManagerSharedState kafkaTopicManagerSharedState) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -91,6 +94,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
             sslContextFactory = null;
         }
         this.sendResponseScheduler = sendResponseScheduler;
+        this.kafkaTopicManagerSharedState = kafkaTopicManagerSharedState;
     }
 
     @Override
@@ -115,7 +119,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         return new KafkaRequestHandler(pulsarService, kafkaConfig,
                 tenantContextManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
-                enableTls, advertisedEndPoint, skipMessagesWithoutIndex, requestStats, sendResponseScheduler);
+                enableTls, advertisedEndPoint, skipMessagesWithoutIndex, requestStats, sendResponseScheduler,
+                kafkaTopicManagerSharedState);
     }
 
     @VisibleForTesting
@@ -124,6 +129,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 tenantContextManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex, RequestStats.NULL_INSTANCE,
-                sendResponseScheduler);
+                sendResponseScheduler,
+                kafkaTopicManagerSharedState);
     }
 }
