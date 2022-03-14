@@ -186,6 +186,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final KafkaTopicManager topicManager;
     private final TenantContextManager tenantContextManager;
     private final KopBrokerLookupManager kopBrokerLookupManager;
+    @Getter
+    private final KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
 
     private final String clusterName;
     private final ScheduledExecutorService executor;
@@ -288,7 +290,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                EndPoint advertisedEndPoint,
                                boolean skipMessagesWithoutIndex,
                                RequestStats requestStats,
-                               OrderedScheduler sendResponseScheduler) throws Exception {
+                               OrderedScheduler sendResponseScheduler,
+                               KafkaTopicManagerSharedState kafkaTopicManagerSharedState) throws Exception {
         super(requestStats, kafkaConfig, sendResponseScheduler);
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
@@ -322,6 +325,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
         this.failedAuthenticationDelayMs = kafkaConfig.getFailedAuthenticationDelayMs();
+        this.kafkaTopicManagerSharedState = kafkaTopicManagerSharedState;
 
         // update alive channel count stats
         RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
