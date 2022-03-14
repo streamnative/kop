@@ -42,7 +42,12 @@ NULL value|NULL value| If the field of a Kafka message is NULL, the converted Pu
 
 ## Message ID and offset
 
-In Kafka, each message is assigned with an offset once the message is successfully produced to a topic partition. In Pulsar, each message is assigned with a `MessageID`. The message ID consists of `ledger-id`, `entry-id`, and `batch-index` components. KoP uses the same approach in Pulsar-Kafka wrapper to convert a Pulsar `MessageID` to an offset and vice versa.
+In Kafka, each message is assigned with an offset once the message is successfully produced to a topic partition. In Pulsar, each message is assigned with a `MessageID`. The message ID consists of `ledger-id`, `entry-id`, and `batch-index` components.
+
+KoP leverages [Broker Entry Metadata](https://github.com/apache/pulsar/wiki/PIP-70%3A-Introduce-lightweight-broker-entry-metadata), which was introduced in Pulsar 2.8.0, to store an extra index metadata in [BookKeeper Entries](https://bookkeeper.apache.org/docs/4.14.0/getting-started/concepts/#entries). An Entry represents a [record batch](https://kafka.apache.org/documentation/#recordbatch), which consists of one or more messages. The index metadata of an Entry is equivalent to the first offset in a record batch.
+
+- Given a message ID, KoP can locate the Entry and parse the index metadata from the Entry.
+- Given an offset, KoP can locate the Entry via a binary search approach among all Entries of a topic.
 
 ## Produce Messages
 
@@ -58,4 +63,4 @@ The most challenging part is to implement the group coordinator and offset manag
 
 It is difficult to align the Pulsar model with the Kafka model. Therefore, to be fully compatible with Kafka clients, KoP implements the Kafka group coordinator by storing the coordinator group changes and offsets in a system topic called `public/__kafka/__consumer_offsets` in Pulsar. 
 
-This bridges the gap between Pulsar and Kafka and allows people to use existing Pulsar tools and policies to manage subscriptions and monitor Kafka consumers. KoP adds a background thread in the implemented group coordinator to periodically synchronize offset updates from the system topic to Pulsar cursors. Therefore, a Kafka consumer group is effectively treated as a Pulsar subscription. All the existing Pulsar tools can be used for managing Kafka consumer groups as well.
+In Kafka, the consumer group concept is similar to the subscription concept in Pulsar. However, since the group metadata is stored in a system topic, the Kafka group information is independent of Pulsar's subscription management. Therefore, `pulsar-admin` cannot be used to manage the groups in KoP. We must use the Kafka's tools like `kafka-consumer-groups.sh` to manage groups in KoP.
