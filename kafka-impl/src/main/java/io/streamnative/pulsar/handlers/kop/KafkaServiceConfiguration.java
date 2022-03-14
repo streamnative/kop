@@ -186,7 +186,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             category = CATEGORY_KOP,
             doc = "send queue size of system client to produce system topic."
     )
-    private int maxPendingMessages = 10000;
+    private int kafkaMetaMaxPendingMessages = 10000;
 
     @FieldContext(
             category = CATEGORY_KOP,

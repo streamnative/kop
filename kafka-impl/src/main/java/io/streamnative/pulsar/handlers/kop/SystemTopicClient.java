@@ -30,7 +30,7 @@ public class SystemTopicClient extends AbstractPulsarClient {
     public SystemTopicClient(final PulsarService pulsarService, final KafkaServiceConfiguration kafkaConfig) {
         // Disable stats recorder for producer and readers
         super(createPulsarClient(pulsarService, kafkaConfig, conf -> conf.setStatsIntervalSeconds(0L)));
-        maxPendingMessages = kafkaConfig.getMaxPendingMessages();
+        maxPendingMessages = kafkaConfig.getKafkaMetaMaxPendingMessages();
     }
 
     public ProducerBuilder<ByteBuffer> newProducerBuilder() {
