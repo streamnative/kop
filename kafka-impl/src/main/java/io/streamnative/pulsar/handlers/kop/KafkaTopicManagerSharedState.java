@@ -84,11 +84,6 @@ public final class KafkaTopicManagerSharedState {
         }
     }
 
-
-    public Producer getReferenceProducer(String topicName) {
-        return references.get(topicName);
-    }
-
     private void removePersistentTopicAndReferenceProducer(final String topicName) {
         // 1. Remove PersistentTopic and Producer from caches, these calls are thread safe
         final CompletableFuture<Optional<PersistentTopic>> topicFuture = topics.remove(topicName);
