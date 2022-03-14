@@ -25,13 +25,18 @@ import org.apache.pulsar.client.api.Schema;
  */
 public class SystemTopicClient extends AbstractPulsarClient {
 
+    private final int maxPendingMessages;
+
     public SystemTopicClient(final PulsarService pulsarService, final KafkaServiceConfiguration kafkaConfig) {
         // Disable stats recorder for producer and readers
         super(createPulsarClient(pulsarService, kafkaConfig, conf -> conf.setStatsIntervalSeconds(0L)));
+        maxPendingMessages = kafkaConfig.getKafkaMetaMaxPendingMessages();
     }
 
     public ProducerBuilder<ByteBuffer> newProducerBuilder() {
-        return getPulsarClient().newProducer(Schema.BYTEBUFFER);
+        return getPulsarClient().newProducer(Schema.BYTEBUFFER)
+                .maxPendingMessages(maxPendingMessages)
+                .blockIfQueueFull(true);
     }
 
     public ReaderBuilder<ByteBuffer> newReaderBuilder() {
