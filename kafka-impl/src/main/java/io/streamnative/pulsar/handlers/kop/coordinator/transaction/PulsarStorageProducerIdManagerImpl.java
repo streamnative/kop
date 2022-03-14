@@ -166,7 +166,7 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
                     if (errorClose != null) {
                         log.error("Error closing producer for {}", topic, errorClose);
                     }
-                })
+                });
             });
         });
     }
