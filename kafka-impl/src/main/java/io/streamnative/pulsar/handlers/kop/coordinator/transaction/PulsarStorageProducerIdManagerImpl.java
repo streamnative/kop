@@ -78,7 +78,7 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
                 });
     }
 
-    synchronized CompletableFuture<Void> ensureLatestData(boolean beforeWrite) {
+    private synchronized CompletableFuture<Void> ensureLatestData(boolean beforeWrite) {
         if (currentReadHandle != null) {
             if (beforeWrite) {
                 // we are inside a write loop, so
@@ -116,12 +116,14 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
     public synchronized CompletableFuture<Long> generateProducerId() {
         Long booked = availableIdsLocally.poll();
         if (booked != null) {
-            log.debug("Returning pre-allocated id {} for {}", booked, topic);
+            if (log.isDebugEnabled()) {
+                log.debug("Returning pre-allocated id {} for {}", booked, topic);
+            }
             return CompletableFuture.completedFuture(booked);
         }
-        log.debug("Allocating new block of ids for {}", topic);
-        // we could get rid of the Exclusive Producer if we had Message.getIndex()
-        // introduced in 2.9.0 https://github.com/apache/pulsar/pull/11553
+        if (log.isDebugEnabled()) {
+            log.debug("Allocating new block of ids for {}", topic);
+        }
         CompletableFuture<Producer<byte[]>> producerHandle = pulsarClient.newProducer()
                 .enableBatching(false)
                 .topic(topic)
@@ -138,27 +140,34 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
                         final long nextAvailableId = start + blockSize;
                         // write to Pulsar
                         byte[] serialized = BigInteger.valueOf(nextAvailableId).toByteArray();
-                        CompletableFuture<Long>  res =  opProducer
+                        CompletableFuture<Long> res = opProducer
                                 .newMessage()
                                 .key("") // always the same key, this way we can rely on compaction
                                 .value(serialized)
                                 .sendAsync()
                                 .thenApply((msgId) -> {
-                                    log.debug("{} written {} as {}", this, nextAvailableId, msgId);
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("{} written {} as {}", this, nextAvailableId, msgId);
+                                    }
                                     nextId.set(nextAvailableId);
                                     availableIdsLocally.addAll(block);
                                     long result = availableIdsLocally.remove();
-                                    log.debug("Returning allocated id {} for {}, new range: {}-{}",
-                                            result, topic, start, nextAvailableId);
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("Returning allocated id {} for {}, new range: {}-{}",
+                                                result, topic, start, nextAvailableId);
+                                    }
                                     return result;
                                 });
                         return res;
                     });
             // ensure that we release the exclusive producer in any case
-            dummy.whenComplete((___, err) -> {
-                opProducer.closeAsync();
+            return dummy.whenComplete((___, err) -> {
+                opProducer.closeAsync().whenComplete( (____, errorClose) -> {
+                    if (errorClose != null) {
+                        log.error("Error closing producer for {}", topic, errorClose);
+                    }
+                })
             });
-            return dummy;
         });
     }
 
@@ -188,7 +197,11 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
         if (reader != null) {
             reader.whenComplete((r, e) -> {
                 if (r != null) {
-                    r.closeAsync();
+                    r.closeAsync().whenComplete((___, err) -> {
+                       if (err != null) {
+                           log.error("Error closing reader for {}", topic, err);
+                       }
+                    });
                 }
             });
         }

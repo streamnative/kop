@@ -51,7 +51,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
         super.internalCleanup();
     }
 
-    @Test
+    @Test(timeOut = 20000)
     public void testGetProducerId() throws Exception {
         pulsar.getAdminClient().topics().createPartitionedTopic("testGetProducerId", 1);
 
@@ -83,7 +83,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
     }
 
 
-    @Test
+    @Test(timeOut = 20000)
     public void testGetProducerIdWithoutDuplicates() throws Exception {
 
         pulsar.getAdminClient().topics().createPartitionedTopic("testGetProducerIdWithoutDuplicates", 1);
@@ -120,7 +120,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
         assertEquals(checkDuplicates.size(), PulsarStorageProducerIdManagerImpl.BLOCK_SIZE * 4 + 2);
     }
 
-    @Test
+    @Test(timeOut = 20000)
     public void testGetProducerIdWithRetentionAndTopicDeleted() throws Exception {
         String namespace = "public/namespace-no-retention";
         pulsar.getAdminClient().namespaces().createNamespace(namespace);
@@ -160,7 +160,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
         manager2.shutdown();
     }
 
-    @Test
+    @Test(timeOut = 20000)
     public void testGetProducerIdWithTTL() throws Exception {
         String namespace = "public/namespace-no-retention-ttl";
         pulsar.getAdminClient().namespaces().createNamespace(namespace);
