@@ -162,7 +162,7 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
                     });
             // ensure that we release the exclusive producer in any case
             return dummy.whenComplete((___, err) -> {
-                opProducer.closeAsync().whenComplete( (____, errorClose) -> {
+                opProducer.closeAsync().whenComplete((____, errorClose) -> {
                     if (errorClose != null) {
                         log.error("Error closing producer for {}", topic, errorClose);
                     }
