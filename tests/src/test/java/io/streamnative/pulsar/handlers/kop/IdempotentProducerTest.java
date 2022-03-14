@@ -65,9 +65,7 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
     protected static Object[][] produceConfigProvider() {
         // isBatch
         return new Object[][]{
-                // TODO: Currently when batching is enabled, the testIdempotentProducer is flaky in CI env, see
-                //  https://github.com/streamnative/kop/issues/1053. Disable the test first.
-                //{true},
+                {true},
                 {false}
         };
     }
