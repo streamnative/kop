@@ -27,6 +27,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.Topic.PublishContext;
+import org.apache.pulsar.broker.service.persistent.MessageDeduplication;
 
 /**
  * Implementation for PublishContext.
@@ -77,11 +78,13 @@ public final class MessagePublishContext implements PublishContext {
                     || exception instanceof BrokerServiceException.TopicFencedException) {
                 log.warn("[{}] Failed to publish message: {}", topic.getName(), exception.getMessage());
                 offsetFuture.completeExceptionally(new NotLeaderForPartitionException());
+            } else if (exception instanceof MessageDeduplication.MessageDupUnknownException) {
+                log.warn("[{}] Failed to publish message: {}", topic.getName(), exception.getMessage());
+                offsetFuture.completeExceptionally(Errors.OUT_OF_ORDER_SEQUENCE_NUMBER.exception());
             } else {
                 log.error("[{}] Failed to publish message", topic.getName(), exception);
                 offsetFuture.completeExceptionally(new KafkaStorageException(exception));
             }
-            offsetFuture.completeExceptionally(exception);
         } else {
             if (log.isDebugEnabled()) {
                 log.debug("Success write topic: {}, producerName {} ledgerId: {}, entryId: {}"
@@ -98,7 +101,7 @@ public final class MessagePublishContext implements PublishContext {
                                     + " with duplicated message.",
                             topic.getName(), producerName, ledgerId, entryId);
                 }
-                offsetFuture.completeExceptionally(Errors.DUPLICATE_SEQUENCE_NUMBER.exception());
+                offsetFuture.completeExceptionally(Errors.OUT_OF_ORDER_SEQUENCE_NUMBER.exception());
                 return;
             }
             // setMetadataFromEntryData() was called before completed() is called so that baseOffset could be set
