@@ -910,7 +910,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         verifySendMessageToPartition(topicPartition,
                 newIdempotentRecords(0, (short) 0, 0, 1), Errors.NONE, 1);
         verifySendMessageToPartition(topicPartition,
-                newIdempotentRecords(0, (short) 0, 0, 1), Errors.DUPLICATE_SEQUENCE_NUMBER, -1);
+                newIdempotentRecords(0, (short) 0, 0, 1), Errors.OUT_OF_ORDER_SEQUENCE_NUMBER, -1);
         verifySendMessageToPartition(topicPartition,
                 newIdempotentRecords(0, (short) 0, 1, 1), Errors.NONE, 2);
         verifySendMessageToPartition(topicPartition,
@@ -924,7 +924,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         verifySendMessageToPartition(topicPartition,
                 newIdempotentRecords(2, (short) 0, 10, 10), Errors.NONE, 15);
         verifySendMessageToPartition(topicPartition,
-                newIdempotentRecords(2, (short) 0, 10, 10), Errors.DUPLICATE_SEQUENCE_NUMBER, -1);
+                newIdempotentRecords(2, (short) 0, 10, 10), Errors.OUT_OF_ORDER_SEQUENCE_NUMBER, -1);
     }
 
     private void verifySendMessageToPartition(final TopicPartition topicPartition,
