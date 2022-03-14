@@ -795,11 +795,6 @@ public abstract class KopProtocolHandlerTestBase {
         return iterator.next();
     }
 
-    public KafkaChannelInitializer getFirstChannelInitializer() {
-        return (KafkaChannelInitializer) getFirst(getProtocolHandler().getChannelInitializerMap().entrySet())
-                .getValue();
-    }
-
     public KafkaRequestHandler newRequestHandler() throws Exception {
         final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
         final GroupCoordinator groupCoordinator = handler.getGroupCoordinator(conf.getKafkaMetadataTenant());
