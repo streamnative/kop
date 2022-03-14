@@ -578,11 +578,9 @@ public class GroupMetadataManager {
                     });
                 }
 
-                if (log.isDebugEnabled()) {
-                    log.debug("Offset commit {} from group {}, consumer {} with generation {} failed"
-                            + " when appending to log due to ",
+                log.error("Offset commit {} from group {}, consumer {} with generation {} failed"
+                                + " when appending to log due to ",
                         filteredOffsetMetadata, group.groupId(), consumerId, group.generationId(), cause);
-                }
 
                 return Errors.UNKNOWN_SERVER_ERROR;
             })
