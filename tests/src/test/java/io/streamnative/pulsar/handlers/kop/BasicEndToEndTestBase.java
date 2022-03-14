@@ -203,6 +203,9 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
     }
 
     protected List<String> receiveMessages(final KafkaConsumer<String, String> consumer, int numMessages) {
+        if (log.isDebugEnabled()) {
+            log.debug("KafkaConsumer receiveMessages {} messages..");
+        }
         List<String> values = new ArrayList<>();
         while (numMessages > 0) {
             for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofMillis(100))) {

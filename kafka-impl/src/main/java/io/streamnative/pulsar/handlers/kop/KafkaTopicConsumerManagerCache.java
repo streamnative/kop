@@ -37,21 +37,11 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class KafkaTopicConsumerManagerCache {
 
-    private static final KafkaTopicConsumerManagerCache TCM_CACHE = new KafkaTopicConsumerManagerCache();
-
     // The 1st key is the full topic name, the 2nd key is the remote address of Kafka client.
     // Because a topic could have multiple connected consumers, for different consumers we should maintain different
     // KafkaTopicConsumerManagers, which are responsible for maintaining the cursors.
     private final Map<String, Map<SocketAddress, CompletableFuture<KafkaTopicConsumerManager>>>
             cache = new ConcurrentHashMap<>();
-
-    public static KafkaTopicConsumerManagerCache getInstance() {
-        return TCM_CACHE;
-    }
-
-    private KafkaTopicConsumerManagerCache() {
-        // No ops
-    }
 
     public CompletableFuture<KafkaTopicConsumerManager> computeIfAbsent(
             final String fullTopicName,
