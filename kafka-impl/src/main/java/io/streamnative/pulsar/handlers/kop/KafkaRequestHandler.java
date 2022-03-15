@@ -498,7 +498,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             if (!allowed) {
                                 log.error("[{}] Automatic topic creation is not allowed on namespace {}",
                                         ctx.channel(), namespace);
-                                future.complete(TopicAndMetadata.AUTHORIZATION_FAILURE);
+                                future.complete(TopicAndMetadata.INVALID_PARTITIONS);
                             } else {
                                 log.info("[{}] Topic {} doesn't exist, auto create it with {} partitions",
                                         ctx.channel(), topicName, defaultNumPartitions);
