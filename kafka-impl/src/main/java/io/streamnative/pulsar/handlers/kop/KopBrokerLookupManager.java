@@ -141,8 +141,8 @@ public class KopBrokerLookupManager {
             log.error("No node for broker {} under loadBalance", internalListenerAddress);
             return null;
         }
-        if (serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME).isPresent() &&
-                serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME).get()
+        if (serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME).isPresent()
+                && serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME).get()
                         .equals(selfAdvertisedListeners)){
             // the topic is owned by this broker, cache the look up result
             LOOKUP_CACHE.put(topic, CompletableFuture.completedFuture(internalListenerAddress));
