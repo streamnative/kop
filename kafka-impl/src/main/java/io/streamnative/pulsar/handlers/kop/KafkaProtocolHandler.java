@@ -249,8 +249,10 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         });
         namespaceService.addNamespaceBundleOwnershipListener(bundleListener);
 
-        // initialize default Group Coordinator
-        getGroupCoordinator(kafkaConfig.getKafkaMetadataTenant());
+        if (kafkaConfig.isKafkaManageSystemNamespaces()) {
+            // initialize default Group Coordinator
+            getGroupCoordinator(kafkaConfig.getKafkaMetadataTenant());
+        }
 
         // init KopEventManager
         kopEventManager = new KopEventManager(adminManager,
@@ -260,7 +262,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 groupCoordinatorsByTenant);
         kopEventManager.start();
 
-        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled() && kafkaConfig.isKafkaManageSystemNamespaces()) {
             getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
         }
 
