@@ -40,6 +40,7 @@ public class KopBrokerLookupManager {
 
     private final LookupClient lookupClient;
     private final MetadataStoreCacheLoader metadataStoreCacheLoader;
+    private final String selfAdvertisedListeners;
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -50,6 +51,7 @@ public class KopBrokerLookupManager {
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
         this.metadataStoreCacheLoader = new MetadataStoreCacheLoader(pulsarService.getPulsarResources(),
                 conf.getBrokerLookupTimeoutMs());
+        this.selfAdvertisedListeners = conf.getKafkaAdvertisedListeners();
     }
 
     public CompletableFuture<Optional<InetSocketAddress>> findBroker(String topic,
@@ -98,7 +100,11 @@ public class KopBrokerLookupManager {
         if (log.isDebugEnabled()) {
             log.debug("Handle Lookup for topic {}", topicName);
         }
-        return LOOKUP_CACHE.computeIfAbsent(topicName, this::lookupBroker);
+
+        if (LOOKUP_CACHE.containsKey(topicName)) {
+            return LOOKUP_CACHE.get(topicName);
+        }
+        return lookupBroker(topicName);
     }
 
     private CompletableFuture<InetSocketAddress> lookupBroker(final String topic) {
@@ -134,6 +140,12 @@ public class KopBrokerLookupManager {
         if (!serviceLookupData.isPresent()) {
             log.error("No node for broker {} under loadBalance", internalListenerAddress);
             return null;
+        }
+        if (serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME).isPresent() &&
+                serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME).get()
+                        .equals(selfAdvertisedListeners)){
+            // the topic is owned by this broker, cache the look up result
+            LOOKUP_CACHE.put(topic, CompletableFuture.completedFuture(internalListenerAddress));
         }
 
         return serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME).map(kafkaAdvertisedListeners ->
