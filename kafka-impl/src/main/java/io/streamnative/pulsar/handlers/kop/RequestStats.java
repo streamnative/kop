@@ -18,8 +18,8 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.ALIVE_CHANNEL_C
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.BATCH_COUNT_PER_MEMORYRECORDS;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.CATEGORY_SERVER;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.FETCH_DECODE;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.KOP_TOTAL_BYTES_IN;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.KOP_TOTAL_BYTES_OUT;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.KOP_NETWORK_TOTAL_BYTES_IN;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.KOP_NETWORK_TOTAL_BYTES_OUT;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_PUBLISH;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_QUEUED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_READ;
@@ -140,8 +140,8 @@ public class RequestStats {
         this.prepareMetadataStats = statsLogger.getOpStatsLogger(PREPARE_METADATA);
         this.messageReadStats = statsLogger.getOpStatsLogger(MESSAGE_READ);
         this.fetchDecodeStats  = statsLogger.getOpStatsLogger(FETCH_DECODE);
-        this.totalBytesIn = statsLogger.getCounter(KOP_TOTAL_BYTES_IN);
-        this.totalBytesOut = statsLogger.getCounter(KOP_TOTAL_BYTES_OUT);
+        this.networkTotalBytesIn = statsLogger.getCounter(KOP_NETWORK_TOTAL_BYTES_IN);
+        this.networkTotalBytesOut = statsLogger.getCounter(KOP_NETWORK_TOTAL_BYTES_OUT);
 
         statsLogger.registerGauge(REQUEST_QUEUE_SIZE, new Gauge<Number>() {
             @Override
@@ -193,16 +193,16 @@ public class RequestStats {
     }
 
     @StatsDoc(
-            name = KOP_TOTAL_BYTES_IN,
+            name = KOP_NETWORK_TOTAL_BYTES_IN,
             help = "total bytes received"
     )
-    private final Counter totalBytesIn;
+    private final Counter networkTotalBytesIn;
 
     @StatsDoc(
-            name = KOP_TOTAL_BYTES_OUT,
+            name = KOP_NETWORK_TOTAL_BYTES_OUT,
             help = "total bytes received"
     )
-    private final Counter totalBytesOut;
+    private final Counter networkTotalBytesOut;
 
     /**
      * Get the stats logger for Kafka requests.

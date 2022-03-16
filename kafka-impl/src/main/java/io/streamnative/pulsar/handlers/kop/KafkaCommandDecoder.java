@@ -184,7 +184,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         // Get a buffer that contains the full frame
         ByteBuf buffer = (ByteBuf) msg;
-        requestStats.getTotalBytesIn().add(buffer.readableBytes());
+        requestStats.getNetworkTotalBytesIn().add(buffer.readableBytes());
 
         // Update parse request latency metrics
         final BiConsumer<Long, Throwable> registerRequestParseLatency = (timeBeforeParse, throwable) -> {
@@ -433,7 +433,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
                     final ByteBuf result = responseToByteBuf(response, request);
                     channel.writeAndFlush(result).addListener(future -> {
-                        requestStats.getTotalBytesOut().add(result.readableBytes());
+                        requestStats.getNetworkTotalBytesOut().add(result.readableBytes());
                         if (response instanceof ResponseCallbackWrapper) {
                             ((ResponseCallbackWrapper) response).responseComplete();
                         }
