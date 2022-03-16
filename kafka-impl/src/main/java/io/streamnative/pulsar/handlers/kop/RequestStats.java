@@ -123,6 +123,18 @@ public class RequestStats {
     )
     private final OpStatsLogger fetchDecodeStats;
 
+    @StatsDoc(
+            name = KOP_NETWORK_TOTAL_BYTES_IN,
+            help = "total bytes received"
+    )
+    private final Counter networkTotalBytesIn;
+
+    @StatsDoc(
+            name = KOP_NETWORK_TOTAL_BYTES_OUT,
+            help = "total bytes received"
+    )
+    private final Counter networkTotalBytesOut;
+
     private final Map<ApiKeys, StatsLogger> apiKeysToStatsLogger = new ConcurrentHashMap<>();
 
     public RequestStats(StatsLogger statsLogger) {
@@ -191,18 +203,6 @@ public class RequestStats {
             }
         });
     }
-
-    @StatsDoc(
-            name = KOP_NETWORK_TOTAL_BYTES_IN,
-            help = "total bytes received"
-    )
-    private final Counter networkTotalBytesIn;
-
-    @StatsDoc(
-            name = KOP_NETWORK_TOTAL_BYTES_OUT,
-            help = "total bytes received"
-    )
-    private final Counter networkTotalBytesOut;
 
     /**
      * Get the stats logger for Kafka requests.
