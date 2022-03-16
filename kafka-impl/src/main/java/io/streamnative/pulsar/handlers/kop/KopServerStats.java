@@ -92,4 +92,10 @@ public interface KopServerStats {
     String KOP_EVENT_QUEUE_SIZE = "KOP_EVENT_QUEUE_SIZE";
     String KOP_EVENT_QUEUED_LATENCY = "KOP_EVENT_QUEUED_LATENCY";
     String KOP_EVENT_LATENCY = "KOP_EVENT_LATENCY";
+
+    /**
+     * Network stats.
+     */
+    String KOP_TOTAL_BYTES_IN = "KOP_TOTAL_BYTES_IN";
+    String KOP_TOTAL_BYTES_OUT = "KOP_TOTAL_BYTES_OUT";
 }
