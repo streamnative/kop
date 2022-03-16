@@ -101,10 +101,8 @@ public class KopBrokerLookupManager {
             log.debug("Handle Lookup for topic {}", topicName);
         }
 
-        if (LOOKUP_CACHE.containsKey(topicName)) {
-            return LOOKUP_CACHE.get(topicName);
-        }
-        return lookupBroker(topicName);
+        final CompletableFuture<InetSocketAddress> future = LOOKUP_CACHE.get(topicName);
+        return (future != null) ? future : lookupBroker(topicName);
     }
 
     private CompletableFuture<InetSocketAddress> lookupBroker(final String topic) {
@@ -141,18 +139,16 @@ public class KopBrokerLookupManager {
             log.error("No node for broker {} under loadBalance", internalListenerAddress);
             return null;
         }
-        if (serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME).isPresent()
-                && serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME).get()
-                        .equals(selfAdvertisedListeners)){
-            // the topic is owned by this broker, cache the look up result
-            LOOKUP_CACHE.put(topic, CompletableFuture.completedFuture(internalListenerAddress));
-        }
 
-        return serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME).map(kafkaAdvertisedListeners ->
-            Optional.ofNullable(advertisedEndPoint)
+        return serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME).map(kafkaAdvertisedListeners -> {
+            if (kafkaAdvertisedListeners.equals(selfAdvertisedListeners)) {
+                // the topic is owned by this broker, cache the look up result
+                LOOKUP_CACHE.put(topic, CompletableFuture.completedFuture(internalListenerAddress));
+            }
+            return Optional.ofNullable(advertisedEndPoint)
                     .map(endPoint -> EndPoint.findListener(kafkaAdvertisedListeners, endPoint.getListenerName()))
-                    .orElse(EndPoint.findFirstListener(kafkaAdvertisedListeners))
-        ).orElseThrow(() -> new IllegalStateException(
+                    .orElse(EndPoint.findFirstListener(kafkaAdvertisedListeners));
+        }).orElseThrow(() -> new IllegalStateException(
                 "No kafkaAdvertisedListeners found in broker " + internalListenerAddress));
     }
 
