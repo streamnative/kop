@@ -1096,6 +1096,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // create partitioned topic.
         admin.topics().createPartitionedTopic(topicName, 1);
+        Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + getKafkaBrokerPort());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         @Cleanup
