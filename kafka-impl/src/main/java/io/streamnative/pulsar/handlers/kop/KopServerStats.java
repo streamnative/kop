@@ -96,6 +96,6 @@ public interface KopServerStats {
     /**
      * Network stats.
      */
-    String KOP_NETWORK_TOTAL_BYTES_IN = "KOP_NETWORK_TOTAL_BYTES_IN";
-    String KOP_NETWORK_TOTAL_BYTES_OUT = "KOP_NETWORK_TOTAL_BYTES_OUT";
+    String NETWORK_TOTAL_BYTES_IN = "NETWORK_TOTAL_BYTES_IN";
+    String NETWORK_TOTAL_BYTES_OUT = "NETWORK_TOTAL_BYTES_OUT";
 }
