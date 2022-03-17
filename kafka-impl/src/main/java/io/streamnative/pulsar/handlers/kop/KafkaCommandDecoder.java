@@ -462,8 +462,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     }
 
     private void sendErrorResponse(KafkaHeaderAndRequest request, Channel channel, Throwable customError) {
-        ByteBuf result =
-                request.createErrorResponse(customError);
+        ByteBuf result = request.createErrorResponse(customError);
         final int resultSize = result.readableBytes();
         channel.writeAndFlush(result).addListener(future -> {
             if (future.isSuccess()) {
