@@ -13,10 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
-import java.math.BigInteger;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -28,6 +26,7 @@ import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerAccessMode;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.client.api.Schema;
 
 /**
  * ProducerIdManager is the part of the transaction coordinator that provides ProducerIds in a unique way
@@ -51,7 +50,6 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
             reader = pulsarClient.newReader()
                     .topic(topic)
                     .startMessageId(MessageId.earliest)
-                    .startMessageIdInclusive()
                     .readCompacted(true)
                     .createAsync();
         }
@@ -69,8 +67,10 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
                         CompletableFuture<Message<byte[]>> opMessage = reader.readNextAsync();
                         return opMessage.thenCompose(msg -> {
                             byte[] value = msg.getValue();
-                            long newId = new BigInteger(value).longValue();
-                            log.debug("{} Read {} from {}", this, newId, msg.getMessageId());
+                            long newId = Schema.INT64.decode(value);
+                            if (log.isDebugEnabled()) {
+                                log.debug("{} Read {} from {}", this, newId, msg.getMessageId());
+                            }
                             nextId.set(newId);
                             return readNextMessageIfAvailable(reader);
                         });
@@ -85,7 +85,9 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
                 // we must ensure that we start to read now
                 // otherwise the write would use non up-to-date data
                 // so let's finish the current loop
-                log.debug("A read was already pending, starting a new one in order to ensure consistency");
+                if (log.isDebugEnabled()) {
+                    log.debug("A read was already pending, starting a new one in order to ensure consistency");
+                }
                 return currentReadHandle
                         .thenCompose(___ -> ensureLatestData(false));
             }
@@ -97,13 +99,11 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
         CompletableFuture<Reader<byte[]>> readerHandle = ensureReaderHandle();
         final CompletableFuture<Void> newReadHandle =
                 readerHandle.thenCompose(this::readNextMessageIfAvailable);
-        currentReadHandle = newReadHandle;
-        return newReadHandle.whenComplete((a, b) -> {
+        currentReadHandle = newReadHandle.thenApply((__) -> {
             endReadLoop(newReadHandle);
-            if (b != null) {
-                throw new CompletionException(b);
-            }
+            return null;
         });
+        return currentReadHandle;
     }
 
     private synchronized void endReadLoop(CompletableFuture<?> handle) {
@@ -139,8 +139,8 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
                         List<Long> block = generateBlock(start + blockSize, blockSize);
                         final long nextAvailableId = start + blockSize;
                         // write to Pulsar
-                        byte[] serialized = BigInteger.valueOf(nextAvailableId).toByteArray();
-                        CompletableFuture<Long> res = opProducer
+                        byte[] serialized = Schema.INT64.encode(nextAvailableId);
+                        return opProducer
                                 .newMessage()
                                 .key("") // always the same key, this way we can rely on compaction
                                 .value(serialized)
@@ -158,7 +158,6 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
                                     }
                                     return result;
                                 });
-                        return res;
                     });
             // ensure that we release the exclusive producer in any case
             return dummy.whenComplete((___, err) -> {
