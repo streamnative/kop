@@ -17,7 +17,6 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
-import static org.testng.internal.junit.ArrayAsserts.assertArrayEquals;
 
 import com.google.common.collect.Sets;
 import java.util.HashMap;
@@ -93,12 +92,12 @@ public class MemberMetadataTest {
         protocols.put("roundrobin", new byte[] { 0xe });
 
         MemberMetadata memberMetadata = newMember(protocols);
-        assertArrayEquals(
-            new byte[] { 0xf },
-            memberMetadata.metadata("range"));
-        assertArrayEquals(
-            new byte[] { 0xe },
-            memberMetadata.metadata("roundrobin"));
+        assertEquals(
+                memberMetadata.metadata("range"),
+                new byte[] { 0xf });
+        assertEquals(
+                memberMetadata.metadata("roundrobin"),
+                new byte[] { 0xe });
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
