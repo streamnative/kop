@@ -99,11 +99,11 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
         CompletableFuture<Reader<byte[]>> readerHandle = ensureReaderHandle();
         final CompletableFuture<Void> newReadHandle =
                 readerHandle.thenCompose(this::readNextMessageIfAvailable);
-        currentReadHandle = newReadHandle.thenApply((__) -> {
+        currentReadHandle = newReadHandle;
+        return newReadHandle.thenApply((__) -> {
             endReadLoop(newReadHandle);
             return null;
         });
-        return currentReadHandle;
     }
 
     private synchronized void endReadLoop(CompletableFuture<?> handle) {
