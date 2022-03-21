@@ -131,7 +131,7 @@ public class RequestStats {
 
     @StatsDoc(
             name = NETWORK_TOTAL_BYTES_OUT,
-            help = "total bytes received"
+            help = "total bytes sent out"
     )
     private final Counter networkTotalBytesOut;
 
