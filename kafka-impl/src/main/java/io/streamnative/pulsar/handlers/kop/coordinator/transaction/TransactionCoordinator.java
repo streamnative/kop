@@ -128,13 +128,20 @@ public class TransactionCoordinator {
         String namespacePrefixForUserTopics = MetadataUtils.constructUserTopicsNamespace(tenant, kafkaConfig);
         TransactionStateManager transactionStateManager =
                 new TransactionStateManager(transactionConfig, txnTopicClient, scheduler, time);
+        ProducerIdManager producerIdManager;
+        if (kafkaConfig.isKafkaTransactionProducerIdsStoredOnPulsar()) {
+            producerIdManager = new PulsarStorageProducerIdManagerImpl(
+                    transactionConfig.getTransactionProducerIdTopicName(), txnTopicClient.getPulsarClient());
+        } else {
+            producerIdManager = new ProducerIdManagerImpl(transactionConfig.getBrokerId(), metadataStore);
+        }
         return new TransactionCoordinator(
                 transactionConfig,
                 new TransactionMarkerChannelManager(tenant, kafkaConfig, transactionStateManager,
                         kopBrokerLookupManager, false, namespacePrefixForUserTopics,
                         scheduler),
                 scheduler,
-                new ProducerIdManagerImpl(transactionConfig.getBrokerId(), metadataStore),
+                producerIdManager,
                 transactionStateManager,
                 time,
                 namespacePrefixForMetadata,
