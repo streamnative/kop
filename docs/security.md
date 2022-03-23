@@ -262,7 +262,7 @@ sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginMo
 
 ### Together with Pulsar's authentication
 
-Since KoP reuses Pulsar's authentication providers for authentication, it can be enabled with other authentication providers at the same time.
+Since KoP reuses Pulsar's authentication providers for authentication, you can enable KoP's authentication and Pulsar authentication at the same time.
 
 For example, you can enable KoP's `PLAIN` SASL mechanism and Pulsar's [TLS authentication](https://pulsar.apache.org/docs/en/security-tls-authentication/) simultaneously.
 
