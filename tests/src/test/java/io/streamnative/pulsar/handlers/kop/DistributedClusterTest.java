@@ -15,8 +15,8 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
-import static org.junit.Assert.assertTrue;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -39,7 +39,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
-import org.junit.Assert;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.AfterMethod;
@@ -173,7 +172,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         }
 
         List<String> brokers =  admin.brokers().getActiveBrokers(configClusterName);
-        Assert.assertEquals(brokers.size(), 2);
+        assertEquals(2, brokers.size());
         log.info("broker1: {} broker2: {}", brokers.get(0), brokers.get(1));
     }
 

@@ -311,7 +311,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
                 Integer key = record.key();
-                assertEquals(messageStrPrefix + key.toString(), record.value());
+                assertEquals(record.value(), messageStrPrefix + key.toString());
 
                 if (log.isDebugEnabled()) {
                     log.debug("Kafka consumer get message: {}, key: {} at offset {}",
