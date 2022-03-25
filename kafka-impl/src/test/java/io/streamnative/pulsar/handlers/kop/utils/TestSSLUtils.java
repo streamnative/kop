@@ -27,8 +27,8 @@ import java.util.List;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
-import org.junit.Test;
 import org.testng.Assert;
+import org.testng.annotations.Test;
 
 /**
  * Test SSLUtils.
