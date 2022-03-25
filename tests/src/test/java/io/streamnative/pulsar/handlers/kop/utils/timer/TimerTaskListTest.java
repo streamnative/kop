@@ -13,14 +13,14 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils.timer;
 
-import static org.junit.Assert.assertEquals;
+import static org.testng.Assert.assertEquals;
 
 import io.streamnative.pulsar.handlers.kop.utils.timer.TimerTaskList.TimerTaskEntry;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import org.junit.Test;
+import org.testng.annotations.Test;
 
 /**
  * Unit test {@link TimerTaskList}.
@@ -59,50 +59,50 @@ public class TimerTaskListTest {
         List<TimerTask> tasks = IntStream.rangeClosed(1, 10).mapToObj(i -> {
             TestTask task = new TestTask(0L);
             list1.add(new TimerTaskEntry(task, 10L));
-            assertEquals(i, sharedCounter.get());
+            assertEquals(sharedCounter.get(), i);
             return task;
         }).collect(Collectors.toList());
 
-        assertEquals(tasks.size(), sharedCounter.get());
+        assertEquals(sharedCounter.get(), tasks.size());
 
         // reinserting the existing tasks shouldn't change the task count.
         tasks.subList(0, 4).forEach(task -> {
             int prevCount = sharedCounter.get();
             // new TimerTaskEntry(task) will remove the existing entry from the list
             list2.add(new TimerTaskEntry(task, 10L));
-            assertEquals(prevCount, sharedCounter.get());
+            assertEquals(sharedCounter.get(), prevCount);
         });
-        assertEquals(10 - 4, size(list1));
-        assertEquals(4, size(list2));
-        assertEquals(tasks.size(), sharedCounter.get());
+        assertEquals(size(list1), 10 - 4);
+        assertEquals(size(list2), 4);
+        assertEquals(sharedCounter.get(), tasks.size());
 
         // reinserting the existing tasks shouldn't change the task count
         tasks.subList(4, 10).forEach(task -> {
             int prevCount = sharedCounter.get();
             // new TimerTaskEntry(task) will remove the existing entry from the list
             list3.add(new TimerTaskEntry(task, 10L));
-            assertEquals(prevCount, sharedCounter.get());
+            assertEquals(sharedCounter.get(), prevCount);
         });
-        assertEquals(0, size(list1));
-        assertEquals(4, size(list2));
-        assertEquals(6, size(list3));
-        assertEquals(tasks.size(), sharedCounter.get());
+        assertEquals(size(list1), 0);
+        assertEquals(size(list2), 4);
+        assertEquals(size(list3), 6);
+        assertEquals(sharedCounter.get(), tasks.size());
 
         // cancel tasks in the lists
         list1.forEach(TimerTask::cancel);
-        assertEquals(0, size(list1));
-        assertEquals(4, size(list2));
-        assertEquals(6, size(list3));
+        assertEquals(size(list1), 0);
+        assertEquals(size(list2), 4);
+        assertEquals(size(list3), 6);
 
         list2.forEach(TimerTask::cancel);
-        assertEquals(0, size(list1));
-        assertEquals(0, size(list2));
-        assertEquals(6, size(list3));
+        assertEquals(size(list1), 0);
+        assertEquals(size(list2), 0);
+        assertEquals(size(list3), 6);
 
         list3.forEach(TimerTask::cancel);
-        assertEquals(0, size(list1));
-        assertEquals(0, size(list2));
-        assertEquals(0, size(list3));
+        assertEquals(size(list1), 0);
+        assertEquals(size(list2), 0);
+        assertEquals(size(list3), 0);
     }
 
 }

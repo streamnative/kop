@@ -13,7 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static org.junit.Assert.assertEquals;
+import static org.testng.Assert.assertEquals;
 
 import java.time.Duration;
 import java.util.Collections;

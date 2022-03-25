@@ -14,9 +14,9 @@
 package io.streamnative.pulsar.handlers.kop.utils.delayed;
 
 import static io.streamnative.pulsar.handlers.kop.utils.CoreUtils.inLock;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.testng.AssertJUnit.assertEquals;
+import static org.testng.AssertJUnit.assertFalse;
+import static org.testng.AssertJUnit.assertTrue;
 
 import com.google.common.collect.Lists;
 import io.streamnative.pulsar.handlers.kop.utils.TestUtils;
@@ -41,9 +41,9 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.SneakyThrows;
 import org.apache.kafka.common.utils.Time;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
 
 /**
  * Unit test {@link DelayedOperation}.
@@ -134,14 +134,14 @@ public class DelayedOperationTest {
     DelayedOperationPurgatory<MockDelayedOperation> purgatory = null;
     ScheduledExecutorService executorService = null;
 
-    @Before
+    @BeforeMethod
     public void setup() {
         purgatory = DelayedOperationPurgatory.<MockDelayedOperation>builder()
             .purgatoryName("mock")
             .build();
     }
 
-    @After
+    @AfterMethod
     public void teardown() {
         purgatory.shutdown();
         if (null != executorService) {

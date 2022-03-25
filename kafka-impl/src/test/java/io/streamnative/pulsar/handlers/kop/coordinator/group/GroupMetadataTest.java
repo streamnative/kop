@@ -18,11 +18,11 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.D
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.Empty;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.PreparingRebalance;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.Stable;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNull;
+import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.CommitRecordMetadataAndOffset;
@@ -35,8 +35,8 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import lombok.val;
 import org.apache.kafka.common.TopicPartition;
-import org.junit.Before;
-import org.junit.Test;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
 
 /**
  * Unit test {@link GroupMetadata}.
@@ -53,7 +53,7 @@ public class GroupMetadataTest {
 
     private GroupMetadata group = null;
 
-    @Before
+    @BeforeMethod
     public void setUp() {
         group = new GroupMetadata(groupId, Empty);
     }
@@ -134,12 +134,12 @@ public class GroupMetadataTest {
         assertState(group, Stable);
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test(expectedExceptions = IllegalStateException.class)
     public void testEmptyToStableIllegalTransition() {
         group.transitionTo(Stable);
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test(expectedExceptions = IllegalStateException.class)
     public void testStableToStableIllegalTransition() {
         group.transitionTo(PreparingRebalance);
         group.transitionTo(CompletingRebalance);
@@ -148,24 +148,24 @@ public class GroupMetadataTest {
         fail("should have failed due to illegal transition");
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test(expectedExceptions = IllegalStateException.class)
     public void testEmptyToAwaitingRebalanceIllegalTransition() {
         group.transitionTo(CompletingRebalance);
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test(expectedExceptions = IllegalStateException.class)
     public void testPreparingRebalanceToPreparingRebalanceIllegalTransition() {
         group.transitionTo(PreparingRebalance);
         group.transitionTo(PreparingRebalance);
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test(expectedExceptions = IllegalStateException.class)
     public void testPreparingRebalanceToStableIllegalTransition() {
         group.transitionTo(PreparingRebalance);
         group.transitionTo(Stable);
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test(expectedExceptions = IllegalStateException.class)
     public void testAwaitingRebalanceToAwaitingRebalanceIllegalTransition() {
         group.transitionTo(PreparingRebalance);
         group.transitionTo(CompletingRebalance);
@@ -180,21 +180,21 @@ public class GroupMetadataTest {
         assertState(group, Dead);
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test(expectedExceptions = IllegalStateException.class)
     public void testDeadToStableIllegalTransition() {
         group.transitionTo(PreparingRebalance);
         group.transitionTo(Dead);
         group.transitionTo(Stable);
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test(expectedExceptions = IllegalStateException.class)
     public void testDeadToPreparingRebalanceIllegalTransition() {
         group.transitionTo(PreparingRebalance);
         group.transitionTo(Dead);
         group.transitionTo(PreparingRebalance);
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test(expectedExceptions = IllegalStateException.class)
     public void testDeadToAwaitingRebalanceIllegalTransition() {
         group.transitionTo(PreparingRebalance);
         group.transitionTo(Dead);
@@ -218,7 +218,7 @@ public class GroupMetadataTest {
             protocols);
 
         group.add(member);
-        assertEquals("range", group.selectProtocol());
+        assertEquals(group.selectProtocol(), "range");
 
         String otherMemberId = "otherMemberId";
         protocols = new LinkedHashMap<>();
@@ -257,7 +257,7 @@ public class GroupMetadataTest {
         assertEquals("roundrobin", group.selectProtocol());
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test(expectedExceptions = IllegalStateException.class)
     public void testSelectProtocolRaisesIfNoMembers() {
         group.selectProtocol();
         fail("Should not reach here");

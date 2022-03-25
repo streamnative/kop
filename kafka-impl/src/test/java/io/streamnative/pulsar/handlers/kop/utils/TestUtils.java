@@ -13,7 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
-import static org.junit.Assert.fail;
+import static org.testng.Assert.fail;
 
 import java.util.function.Supplier;
 import lombok.SneakyThrows;
