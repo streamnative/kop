@@ -584,6 +584,7 @@ public class GroupMetadataManager {
                         filteredOffsetMetadata, group.groupId(), consumerId, group.generationId(), cause);
 
                 if (cause.getCause() instanceof PulsarClientException.AlreadyClosedException) {
+                    this.offsetsProducers.remove(partitionFor(group.groupId()));
                     return Errors.NOT_COORDINATOR;
                 }
                 return Errors.UNKNOWN_SERVER_ERROR;

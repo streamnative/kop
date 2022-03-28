@@ -54,9 +54,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -1199,16 +1197,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         int fetchMessages = 0;
 
-        // Need open another thread to clear the offset producers
-        Executors.newSingleThreadExecutor().submit(() -> {
-            try {
-                TimeUnit.SECONDS.sleep(5);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            handler.getGroupCoordinator().getOffsetsProducers().clear();
-        });
-
         // Make sure only close once.
         final AtomicBoolean flag = new AtomicBoolean(true);
 
@@ -1216,8 +1204,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             try {
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
                 records.forEach(record -> {
-                    record.offset();
-                    record.partition();
                     consumer.commitSync();
                     if (flag.get()) {
                         handler.getGroupCoordinator().getOffsetsProducers().values()
@@ -1233,7 +1219,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 });
                 fetchMessages += records.count();
             } catch (KafkaException ex) {
-                fail("Should not have kafka exception.");
+                log.error("Have kafka exception: ", ex);
+                throw ex;
             }
         }
         assertEquals(fetchMessages, numMessages);
