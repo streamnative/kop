@@ -1184,7 +1184,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     public void testCommitOffsetRetryWhenProducerClosed()
             throws ExecutionException, InterruptedException, PulsarAdminException {
         String topic = "testCommitOffsetRetryWhenProducerClosed";
-        String groupId = "test-group";
+        String groupId = "test-commit-offset-group";
         admin.topics().createPartitionedTopic(topic, 1);
         int numMessages = 10;
         @Cleanup
