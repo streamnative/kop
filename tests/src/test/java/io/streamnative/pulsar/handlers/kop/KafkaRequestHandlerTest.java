@@ -54,7 +54,10 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
@@ -74,6 +77,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigResource;
@@ -106,6 +110,7 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.AutoTopicCreationOverride;
@@ -1173,6 +1178,65 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             conf.setAllowAutoTopicCreation(original);
             admin.namespaces().removeAutoTopicCreation("public/default");
         }
+    }
+
+    @Test(timeOut = 30000)
+    public void testCommitOffsetRetryWhenProducerClosed()
+            throws ExecutionException, InterruptedException, PulsarAdminException {
+        String topic = "testCommitOffsetRetryWhenProducerClosed";
+        String groupId = "test-group";
+        admin.topics().createPartitionedTopic(topic, 1);
+        int numMessages = 10;
+        @Cleanup
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+        for (int i = 0; i < numMessages; i++) {
+            producer.send(new ProducerRecord<>(topic, "value")).get();
+        }
+
+        @Cleanup
+        final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties(groupId));
+        consumer.subscribe(Collections.singleton(topic));
+
+        int fetchMessages = 0;
+
+        // Need open another thread to clear the offset producers
+        Executors.newSingleThreadExecutor().submit(() -> {
+            try {
+                TimeUnit.SECONDS.sleep(5);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            handler.getGroupCoordinator().getOffsetsProducers().clear();
+        });
+
+        // Make sure only close once.
+        final AtomicBoolean flag = new AtomicBoolean(true);
+
+        while (fetchMessages < numMessages) {
+            try {
+                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
+                records.forEach(record -> {
+                    record.offset();
+                    record.partition();
+                    consumer.commitSync();
+                    if (flag.get()) {
+                        handler.getGroupCoordinator().getOffsetsProducers().values()
+                                .forEach(producerCompletableFuture -> {
+                            try {
+                                producerCompletableFuture.get().close();
+                            } catch (PulsarClientException | InterruptedException | ExecutionException e) {
+                                log.error("Close offset producer failed.");
+                            }
+                        });
+                        flag.set(false);
+                    }
+                });
+                fetchMessages += records.count();
+            } catch (KafkaException ex) {
+                fail("Should not have kafka exception.");
+            }
+        }
+        assertEquals(fetchMessages, numMessages);
     }
 
     private KafkaHeaderAndRequest createTopicMetadataRequest(List<String> topics, boolean allowAutoTopicCreation) {
