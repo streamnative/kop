@@ -77,6 +77,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private PrometheusMetricsProvider statsProvider;
     @Getter
     private KopBrokerLookupManager kopBrokerLookupManager;
+    @VisibleForTesting
+    @Getter
     private AdminManager adminManager = null;
     private SystemTopicClient txnTopicClient;
     private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
@@ -91,8 +93,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
-    @Getter
     private BrokerService brokerService;
+    private KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
+
     @Getter
     private KopEventManager kopEventManager;
     private OrderedScheduler sendResponseScheduler;
@@ -200,6 +203,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             KopVersion.getBuildTime());
 
         brokerService = service;
+        kafkaTopicManagerSharedState = new KafkaTopicManagerSharedState(brokerService);
         PulsarAdmin pulsarAdmin;
         try {
             pulsarAdmin = brokerService.getPulsar().getAdminClient();
@@ -241,16 +245,18 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             }
 
             private void invalidateBundleCache(TopicName topicName) {
-                KafkaTopicManager.deReference(topicName.toString());
+                kafkaTopicManagerSharedState.deReference(topicName.toString());
                 if (!topicName.isPartitioned()) {
-                    KafkaTopicManager.deReference(topicName.getPartition(0).toString());
+                    kafkaTopicManagerSharedState.deReference(topicName.getPartition(0).toString());
                 }
             }
         });
         namespaceService.addNamespaceBundleOwnershipListener(bundleListener);
 
-        // initialize default Group Coordinator
-        getGroupCoordinator(kafkaConfig.getKafkaMetadataTenant());
+        if (kafkaConfig.isKafkaManageSystemNamespaces()) {
+            // initialize default Group Coordinator
+            getGroupCoordinator(kafkaConfig.getKafkaMetadataTenant());
+        }
 
         // init KopEventManager
         kopEventManager = new KopEventManager(adminManager,
@@ -260,7 +266,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 groupCoordinatorsByTenant);
         kopEventManager.start();
 
-        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled() && kafkaConfig.isKafkaManageSystemNamespaces()) {
             getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
         }
 
@@ -392,7 +398,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 endPoint,
                 kafkaConfig.isSkipMessagesWithoutIndex(),
                 requestStats,
-                sendResponseScheduler);
+                sendResponseScheduler,
+                kafkaTopicManagerSharedState);
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
@@ -448,10 +455,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         kopEventManager.close();
         transactionCoordinatorByTenant.values().forEach(TransactionCoordinator::shutdown);
         KopBrokerLookupManager.clear();
-        KafkaTopicManager.cancelCursorExpireTask();
-        KafkaTopicConsumerManagerCache.getInstance().close();
-        KafkaTopicManager.getReferences().clear();
-        KafkaTopicManager.getTopics().clear();
+        kafkaTopicManagerSharedState.close();
         kopBrokerLookupManager.close();
         statsProvider.stop();
         sendResponseScheduler.shutdown();
@@ -515,6 +519,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         TransactionConfig transactionConfig = TransactionConfig.builder()
                 .transactionLogNumPartitions(kafkaConfig.getKafkaTxnLogTopicNumPartitions())
                 .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(tenant, kafkaConfig))
+                .transactionProducerIdTopicName(MetadataUtils.constructTxnProducerIdTopicBaseName(tenant, kafkaConfig))
                 .abortTimedOutTransactionsIntervalMs(kafkaConfig.getKafkaTxnAbortTimedOutTransactionCleanupIntervalMs())
                 .transactionalIdExpirationMs(kafkaConfig.getKafkaTransactionalIdExpirationMs())
                 .removeExpiredTransactionalIdsIntervalMs(

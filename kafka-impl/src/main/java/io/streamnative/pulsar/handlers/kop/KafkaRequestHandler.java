@@ -185,6 +185,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final KafkaTopicManager topicManager;
     private final TenantContextManager tenantContextManager;
     private final KopBrokerLookupManager kopBrokerLookupManager;
+    @Getter
+    private final KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
 
     private final String clusterName;
     private final ScheduledExecutorService executor;
@@ -286,7 +288,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                EndPoint advertisedEndPoint,
                                boolean skipMessagesWithoutIndex,
                                RequestStats requestStats,
-                               OrderedScheduler sendResponseScheduler) throws Exception {
+                               OrderedScheduler sendResponseScheduler,
+                               KafkaTopicManagerSharedState kafkaTopicManagerSharedState) throws Exception {
         super(requestStats, kafkaConfig, sendResponseScheduler);
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
@@ -319,6 +322,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
         this.failedAuthenticationDelayMs = kafkaConfig.getFailedAuthenticationDelayMs();
+        this.kafkaTopicManagerSharedState = kafkaTopicManagerSharedState;
 
         // update alive channel count stats
         RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
@@ -481,18 +485,36 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
             } else if (e instanceof PulsarAdminException.NotFoundException) {
                 if (allowAutoTopicCreation) {
-                    log.info("[{}] Topic {} doesn't exist, auto create it with {} partitions",
-                            ctx.channel(), topicName, defaultNumPartitions);
-                    admin.topics().createPartitionedTopicAsync(topicName, defaultNumPartitions)
-                            .whenComplete((__, createException) -> {
-                                if (createException == null) {
-                                    future.complete(defaultNumPartitions);
-                                } else {
-                                    log.warn("[{}] Failed to create partitioned topic {}: {}",
-                                            ctx.channel(), topicName, createException.getMessage());
-                                    future.complete(TopicAndMetadata.INVALID_PARTITIONS);
-                                }
-                            });
+                    String namespace = TopicName.get(topicName).getNamespace();
+                    admin.namespaces().getPoliciesAsync(namespace).whenComplete((policies, err) -> {
+                        if (err != null || policies == null) {
+                            log.error("[{}] Cannot get policies for namespace {}", ctx.channel(), namespace, err);
+                            future.complete(TopicAndMetadata.INVALID_PARTITIONS);
+                        } else {
+                            boolean allowed = kafkaConfig.isAllowAutoTopicCreation();
+                            if (policies.autoTopicCreationOverride != null) {
+                                allowed = policies.autoTopicCreationOverride.isAllowAutoTopicCreation();
+                            }
+                            if (!allowed) {
+                                log.error("[{}] Automatic topic creation is not allowed on namespace {}",
+                                        ctx.channel(), namespace);
+                                future.complete(TopicAndMetadata.INVALID_PARTITIONS);
+                            } else {
+                                log.info("[{}] Topic {} doesn't exist, auto create it with {} partitions",
+                                        ctx.channel(), topicName, defaultNumPartitions);
+                                admin.topics().createPartitionedTopicAsync(topicName, defaultNumPartitions)
+                                        .whenComplete((__, createException) -> {
+                                            if (createException == null) {
+                                                future.complete(defaultNumPartitions);
+                                            } else {
+                                                log.warn("[{}] Failed to create partitioned topic {}: {}",
+                                                        ctx.channel(), topicName, createException.getMessage());
+                                                future.complete(TopicAndMetadata.INVALID_PARTITIONS);
+                                            }
+                                        });
+                            }
+                        }
+                    });
                 } else {
                     log.error("[{}] Topic {} doesn't exist and it's not allowed to auto create partitioned topic",
                             ctx.channel(), topicName, e);
@@ -639,10 +661,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     .thenCompose(this::listAllTopicsFromNamespacesAsync)
                     .thenApply(this::analyzeFullTopicNames);
         } else {
-            final boolean allowTopicCreation = kafkaConfig.isAllowAutoTopicCreation()
-                    && request.allowAutoTopicCreation();
             return authorizeTopicsAsync(fullTopicNames, AclOperation.DESCRIBE)
-                    .thenCompose(authorizedTopicsPair -> findTopicMetadata(authorizedTopicsPair, allowTopicCreation));
+                    .thenCompose(authorizedTopicsPair -> findTopicMetadata(authorizedTopicsPair,
+                            request.allowAutoTopicCreation()));
         }
     }
 
@@ -882,33 +903,35 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
                 findCoordinator.getHeader().clientId());
 
-        // Store group name to metadata store for current client.
+        // Store group name to metadata store for current client, use to collect consumer metrics.
         storeGroupId(groupId, groupIdPath)
-                .thenAccept(__ -> findBroker(TopicName.get(pulsarTopicName))
-                        .thenAccept(node -> {
-                            if (node.error() != Errors.NONE) {
-                                log.error("[{}] Request {}: Error while find coordinator.",
-                                        ctx.channel(), findCoordinator.getHeader());
+                .whenComplete((__, ex) -> {
+                    if (ex != null) {
+                        log.warn("Store groupId failed, the groupId might already stored.", ex);
+                    }
+                    findBroker(TopicName.get(pulsarTopicName))
+                            .whenComplete((node, throwable) -> {
+                                if (node.error() != Errors.NONE || throwable != null) {
+                                    log.error("[{}] Request {}: Error while find coordinator.",
+                                            ctx.channel(), findCoordinator.getHeader(), throwable);
 
-                                resultFuture.complete(KafkaResponseUtils
-                                        .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
-                                return;
-                            }
+                                    resultFuture.complete(KafkaResponseUtils
+                                            .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
+                                    return;
+                                }
 
-                            if (log.isDebugEnabled()) {
-                                log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
-                                        ctx.channel(), node.leader(), request.coordinatorKey(), partition);
-                            }
+                                if (log.isDebugEnabled()) {
+                                    log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
+                                            ctx.channel(), node.leader(), request.coordinatorKey(), partition);
+                                }
 
-                            resultFuture.complete(KafkaResponseUtils.newFindCoordinator(node.leader()));
-                        }))
-                .exceptionally(ex -> {
-                    log.error("Store groupId failed.", ex);
-                    return null;
+                                resultFuture.complete(KafkaResponseUtils.newFindCoordinator(node.leader()));
+                            });
                 });
     }
 
-    private CompletableFuture<Void> storeGroupId(String groupId, String groupIdPath) {
+    @VisibleForTesting
+    protected CompletableFuture<Void> storeGroupId(String groupId, String groupIdPath) {
         String path = groupIdStoredPath + groupIdPath;
         CompletableFuture<Void> future = new CompletableFuture<>();
         metadataStore.put(path, groupId.getBytes(UTF_8), Optional.empty())

@@ -1,3 +1,11 @@
+* [Security](#security)
+  * [Authentication](#authentication)
+    * [PLAIN](#plain)
+    * [OAUTHBEARER](#oauthbearer)
+    * [Together with Pulsar's authentication](#together-with-pulsars-authentication)
+  * [Authorization](#authorization)
+  * [SSL connection](#ssl-connection)
+
 # Security
 
 KoP supports authentication and SSL connection.
@@ -9,16 +17,15 @@ By default, KoP is installed with no encryption, authentication, and authorizati
 KoP authentication mechanism uses [Kafka SASL mechanisms](https://docs.confluent.io/platform/current/kafka/overview-authentication-methods.html) and achieves authentication with [Pulsar token-based authentication mechanism](https://pulsar.apache.org/docs/en/security-overview/). Consequently, if you want to enable the authentication feature for KoP, you need to enable authentication for the following components:
 
 - Pulsar brokers
-
 - KoP (some configurations of KoP rely on the configurations of Pulsar brokers)
-
 - Kafka clients
 
 Currently, KoP supports the following SASL mechanisms:
 
 - [`PLAIN`](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_plain.html#kafka-sasl-auth-plain)
-
 - [`OAUTHBEARER`](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_oauth.html#kafka-oauth-auth)
+
+They are both based on the [JWT authentication](https://pulsar.apache.org/docs/en/security-jwt/), so you must configure `authenticationProviders` with  `AuthenticationProviderToken`. See following chapters for more details.
 
 ### `PLAIN`
 
@@ -253,7 +260,44 @@ sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginMo
    oauth.audience="https://broker.example.com";
 ```
 
+### Together with Pulsar's authentication
+
+Since KoP reuses Pulsar's authentication providers for authentication, you can enable KoP's authentication and Pulsar authentication at the same time.
+
+For example, you can enable KoP's `PLAIN` SASL mechanism and Pulsar's [TLS authentication](https://pulsar.apache.org/docs/en/security-tls-authentication/) simultaneously.
+
+```properties
+superUserRoles=admin
+authenticationEnabled=true
+# Enable both AuthenticationProviderToken and AuthenticationProviderTls here
+authenticationProviders=org.apache.pulsar.broker.authentication.AuthenticationProviderToken,org.apache.pulsar.broker.authentication.AuthenticationProviderTls
+
+# Enable JWT authentication at Pulsar side
+tokenPublicKey=/path/to/my-public.key
+
+# Enable PLAIN SASL mechanism for KoP, which reuses the JWT authentication
+saslAllowedMechanisms=PLAIN
+
+# Enable TLS authentication at Pulsar side
+tlsEnabled=true
+brokerServicePortTls=6651
+webServicePortTls=8443
+tlsRequireTrustedClientCertOnConnect=true
+tlsCertificateFilePath=/path/to/broker.cert.pem
+tlsKeyFilePath=/path/to/broker.key-pk8.pem
+tlsTrustCertsFilePath=/path/to/ca.cert.pem
+
+# Configure broker's built-in client
+brokerClientTlsEnabled=true
+brokerClientTlsTrustCertsFilePath=/path/to/ca.cert.pem
+brokerClientAuthenticationPlugin=org.apache.pulsar.client.impl.auth.AuthenticationTls
+brokerClientAuthenticationParameters=tlsCertFile:/path/to/admin.cert.pem,tlsKeyFile:/path/to/my-ca/admin.key-pk8.pem
+```
+
+See [Transport Encryption using TLS](https://pulsar.apache.org/docs/en/security-tls-transport/) and [Authentication using TLS](https://pulsar.apache.org/docs/en/security-tls-authentication/) for how to generate certificates and keys for TLS authentication.
+
 ## Authorization
+
 To enable authorization on KoP, please make sure the authentication is enabled.
 
 **Note**: For more information, see [Authorization](http://pulsar.apache.org/docs/en/security-jwt/#authorization).
@@ -263,7 +307,7 @@ To enable authorization on KoP, please make sure the authentication is enabled.
    ```properties
    authorizationEnabled=true
    ```
-   
+
 2. Generate JWT tokens.
 
     A token is the credential associated with a user. The association is done through the "`principal`" or "`role`". In the case of JWT tokens, this field is typically referred as `subject`, though they are exactly the same concept.
@@ -278,7 +322,7 @@ To enable authorization on KoP, please make sure the authentication is enabled.
 3. Grant permission to specific role.
 
    The token itself does not have any permission associated. The authorization engine determines whether the token should have permissions or not. Once you have created the token, you can grant permission for this token to do certain actions. <br/>The following is an example.
-      
+
    ```shell
    $ bin/pulsar-admin --auth-plugin "org.apache.pulsar.client.impl.auth.AuthenticationToken" --auth-params "token:<token-of-super-user-role>" \
             namespaces grant-permission <tenant>/<namespace> \

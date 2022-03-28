@@ -184,6 +184,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
+            doc = "send queue size of system client to produce system topic."
+    )
+    private int kafkaMetaMaxPendingMessages = 10000;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
             doc = "Zookeeper path for storing kop consumer group"
     )
     private String groupIdZooKeeperPath = "/client_group_id";
@@ -376,6 +382,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         doc = "The broker id, default is 1"
     )
     private int kafkaBrokerId = 1;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Store producer id sequence on a Pulsar topic"
+    )
+    private boolean kafkaTransactionProducerIdsStoredOnPulsar = false;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,

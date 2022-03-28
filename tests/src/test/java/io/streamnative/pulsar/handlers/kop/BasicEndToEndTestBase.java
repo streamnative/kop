@@ -203,6 +203,9 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
     }
 
     protected List<String> receiveMessages(final KafkaConsumer<String, String> consumer, int numMessages) {
+        if (log.isDebugEnabled()) {
+            log.debug("KafkaConsumer receiveMessages {} messages..");
+        }
         List<String> values = new ArrayList<>();
         while (numMessages > 0) {
             for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofMillis(100))) {
@@ -308,7 +311,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
                 Integer key = record.key();
-                assertEquals(messageStrPrefix + key.toString(), record.value());
+                assertEquals(record.value(), messageStrPrefix + key.toString());
 
                 if (log.isDebugEnabled()) {
                     log.debug("Kafka consumer get message: {}, key: {} at offset {}",

@@ -83,7 +83,6 @@ public class PartitionLog {
     private final KafkaServiceConfiguration kafkaConfig;
     private final Time time;
     private final TopicPartition topicPartition;
-    private final String namespacePrefix;
     private final String fullPartitionName;
     private final EntryFormatter entryFormatter;
     private final ProducerStateManager producerStateManager;
@@ -222,14 +221,9 @@ public class PartitionLog {
                         appendRecordsContext);
             };
 
-            if (topicFuture.isDone()) {
-                persistentTopicConsumer.accept(topicFuture.getNow(Optional.empty()));
-            } else {
-                // topic is not available now
-                appendRecordsContext.getPendingTopicFuturesMap()
-                        .computeIfAbsent(topicPartition, ignored -> new PendingTopicFutures(requestStats))
-                        .addListener(topicFuture, persistentTopicConsumer, appendFuture::completeExceptionally);
-            }
+            appendRecordsContext.getPendingTopicFuturesMap()
+                    .computeIfAbsent(topicPartition, ignored -> new PendingTopicFutures(requestStats))
+                    .addListener(topicFuture, persistentTopicConsumer, appendFuture::completeExceptionally);
         } catch (Exception exception) {
             log.error("Failed to handle produce request for {}", topicPartition, exception);
             appendFuture.completeExceptionally(exception);
@@ -259,10 +253,13 @@ public class PartitionLog {
             return;
         }
 
-        appendRecordsContext.getTopicManager().registerProducerInPersistentTopic(fullPartitionName, persistentTopic);
-
-        // collect metrics
-        encodeResult.updateProducerStats(topicPartition, requestStats, namespacePrefix);
+        appendRecordsContext
+                .getTopicManager()
+                .registerProducerInPersistentTopic(fullPartitionName, persistentTopic)
+                .ifPresent((producer) -> {
+                    // collect metrics
+                    encodeResult.updateProducerStats(topicPartition, requestStats, producer);
+                });
 
         final int numMessages = encodeResult.getNumMessages();
         final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();

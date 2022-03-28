@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.testng.Assert.fail;
 import static org.testng.AssertJUnit.assertEquals;
 import static org.testng.AssertJUnit.assertTrue;
 
@@ -29,7 +30,6 @@ import org.apache.kafka.common.network.Selector;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.awaitility.Awaitility;
-import org.junit.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -114,7 +114,7 @@ public class KafkaIdleConnectionTest extends KopProtocolHandlerTestBase {
         try {
             selector.poll(50);
         } catch (IOException e) {
-            Assert.fail("Caught unexpected exception " + e);
+            fail("Caught unexpected exception " + e);
         }
     }
 
