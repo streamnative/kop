@@ -56,6 +56,7 @@ public class MetadataUtilsTest {
         conf.setKafkaMetadataNamespace("default");
         conf.setSuperUserRoles(Sets.newHashSet("admin"));
         conf.setOffsetsTopicNumPartitions(8);
+        conf.setKafkaNamespace("userNamespace");
 
         final KopTopic offsetsTopic = new KopTopic(MetadataUtils
                 .constructOffsetsTopicBaseName(conf.getKafkaMetadataTenant(), conf), namespacePrefix);
@@ -99,20 +100,31 @@ public class MetadataUtilsTest {
                 .getNamespaceReplicationClusters(eq(namespace));
 
         MetadataUtils.createTxnMetadataIfMissing(conf.getKafkaMetadataTenant(), mockPulsarAdmin, clusterData, conf);
+        // create user topics namespace
+        MetadataUtils.createKafkaNamespaceIfMissing(mockPulsarAdmin, clusterData, conf);
 
         verify(mockTenants, times(1)).createTenant(eq(conf.getKafkaMetadataTenant()), any(TenantInfo.class));
         verify(mockNamespaces, times(1)).createNamespace(eq(conf.getKafkaMetadataTenant() + "/"
             + conf.getKafkaMetadataNamespace()), any(Set.class));
         verify(mockNamespaces, times(1)).setNamespaceReplicationClusters(eq(conf.getKafkaMetadataTenant()
             + "/" + conf.getKafkaMetadataNamespace()), any(Set.class));
-        verify(mockNamespaces, times(2)).setRetention(eq(conf.getKafkaMetadataTenant() + "/"
+        verify(mockNamespaces, times(1)).setRetention(eq(conf.getKafkaMetadataTenant() + "/"
             + conf.getKafkaMetadataNamespace()), any(RetentionPolicies.class));
-        verify(mockNamespaces, times(2)).setNamespaceMessageTTL(eq(conf.getKafkaMetadataTenant() + "/"
+        verify(mockNamespaces, times(1)).setNamespaceMessageTTL(eq(conf.getKafkaMetadataTenant() + "/"
             + conf.getKafkaMetadataNamespace()), any(Integer.class));
         verify(mockTopics, times(1)).createPartitionedTopic(
                 eq(offsetsTopic.getFullName()), eq(conf.getOffsetsTopicNumPartitions()));
         verify(mockTopics, times(1)).createPartitionedTopic(
                 eq(txnTopic.getFullName()), eq(conf.getKafkaTxnLogTopicNumPartitions()));
+        // check user topics namespace doesn't set the policy
+        verify(mockNamespaces, times(1)).createNamespace(eq(conf.getKafkaTenant() + "/"
+                + conf.getKafkaNamespace()), any(Set.class));
+        verify(mockNamespaces, times(1)).setNamespaceReplicationClusters(eq(conf.getKafkaTenant()
+                + "/" + conf.getKafkaNamespace()), any(Set.class));
+        verify(mockNamespaces, times(0)).setRetention(eq(conf.getKafkaTenant() + "/"
+                + conf.getKafkaNamespace()), any(RetentionPolicies.class));
+        verify(mockNamespaces, times(0)).setNamespaceMessageTTL(eq(conf.getKafkaTenant() + "/"
+                + conf.getKafkaNamespace()), any(Integer.class));
 
         // Test that cluster is added to existing Tenant if missing
         // Test that the cluster is added to the namespace replication cluster list if it is missing
