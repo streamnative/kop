@@ -57,6 +57,7 @@ public class MetadataUtilsTest {
         conf.setSuperUserRoles(Sets.newHashSet("admin"));
         conf.setOffsetsTopicNumPartitions(8);
         conf.setKafkaNamespace("userNamespace");
+        conf.setSystemTopicRetentionSizeInMB(1000);
 
         final KopTopic offsetsTopic = new KopTopic(MetadataUtils
                 .constructOffsetsTopicBaseName(conf.getKafkaMetadataTenant(), conf), namespacePrefix);
@@ -103,13 +104,16 @@ public class MetadataUtilsTest {
         // create user topics namespace
         MetadataUtils.createKafkaNamespaceIfMissing(mockPulsarAdmin, clusterData, conf);
 
+        RetentionPolicies retentionPolicies =
+                new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), conf.getSystemTopicRetentionSizeInMB());
+
         verify(mockTenants, times(1)).createTenant(eq(conf.getKafkaMetadataTenant()), any(TenantInfo.class));
         verify(mockNamespaces, times(1)).createNamespace(eq(conf.getKafkaMetadataTenant() + "/"
             + conf.getKafkaMetadataNamespace()), any(Set.class));
         verify(mockNamespaces, times(1)).setNamespaceReplicationClusters(eq(conf.getKafkaMetadataTenant()
             + "/" + conf.getKafkaMetadataNamespace()), any(Set.class));
         verify(mockNamespaces, times(1)).setRetention(eq(conf.getKafkaMetadataTenant() + "/"
-            + conf.getKafkaMetadataNamespace()), any(RetentionPolicies.class));
+            + conf.getKafkaMetadataNamespace()), eq(retentionPolicies));
         verify(mockNamespaces, times(1)).setNamespaceMessageTTL(eq(conf.getKafkaMetadataTenant() + "/"
             + conf.getKafkaMetadataNamespace()), any(Integer.class));
         verify(mockTopics, times(1)).createPartitionedTopic(
@@ -122,7 +126,7 @@ public class MetadataUtilsTest {
         verify(mockNamespaces, times(1)).setNamespaceReplicationClusters(eq(conf.getKafkaTenant()
                 + "/" + conf.getKafkaNamespace()), any(Set.class));
         verify(mockNamespaces, times(0)).setRetention(eq(conf.getKafkaTenant() + "/"
-                + conf.getKafkaNamespace()), any(RetentionPolicies.class));
+                + conf.getKafkaNamespace()), eq(retentionPolicies));
         verify(mockNamespaces, times(0)).setNamespaceMessageTTL(eq(conf.getKafkaTenant() + "/"
                 + conf.getKafkaNamespace()), any(Integer.class));
 

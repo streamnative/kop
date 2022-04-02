@@ -205,10 +205,15 @@ public class MetadataUtils {
             // set namespace config only when offset metadata namespace first create
             if (isMetadataNamespace) {
                 int retentionMinutes = (int) conf.getOffsetsRetentionMinutes();
+                int retentionSizeInMB = conf.getSystemTopicRetentionSizeInMB();
                 RetentionPolicies retentionPolicies = namespaces.getRetention(kafkaNamespace);
-                if (retentionPolicies == null || retentionPolicies.getRetentionTimeInMinutes() != retentionMinutes) {
+
+                if (retentionPolicies == null
+                        || retentionPolicies.getRetentionTimeInMinutes() != retentionMinutes
+                        || retentionPolicies.getRetentionSizeInMB() != retentionSizeInMB
+                ) {
                     namespaces.setRetention(kafkaNamespace,
-                            new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), -1));
+                            new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), retentionSizeInMB));
                 }
 
                 Long compactionThreshold = namespaces.getCompactionThreshold(kafkaNamespace);

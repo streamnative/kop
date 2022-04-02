@@ -52,6 +52,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private static final int GroupInitialRebalanceDelayMs = 3000;
     // offset configuration
     private static final int OffsetsRetentionMinutes = 3 * 24 * 60;
+    private static final int DefaultSystemTopicRetentionSizeInMb = -1;
     public static final int DefaultOffsetsTopicNumPartitions = 50;
     private static final int OffsetsMessageTTL = 3 * 24 * 3600;
     // txn configuration
@@ -169,6 +170,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         doc = "Offsets older than this retention period will be discarded"
     )
     private long offsetsRetentionMinutes = OffsetsRetentionMinutes;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "System topic retention size in mb"
+    )
+    private int systemTopicRetentionSizeInMB = DefaultSystemTopicRetentionSizeInMb;
 
     @FieldContext(
         category = CATEGORY_KOP,
