@@ -33,8 +33,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.StringJoiner;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -80,6 +82,8 @@ public class PartitionLog {
 
     private static final String PID_PREFIX = "KOP-PID-PREFIX";
 
+    private final String localProducerName = PID_PREFIX + "-" + UUID.randomUUID();
+    private final AtomicLong sequenceIdGenerator = new AtomicLong();
     private final KafkaServiceConfiguration kafkaConfig;
     private final Time time;
     private final TopicPartition topicPartition;
@@ -326,18 +330,29 @@ public class PartitionLog {
         // This producerName is only used to check the message deduplication.
         // Kafka will reuse pid when transactionId is the same but will increase the producerEpoch.
         // So we need to ensure the producerName is not the same.
-        String producerName = new StringJoiner("-")
-                .add(PID_PREFIX)
-                .add(String.valueOf(appendInfo.producerId().orElse(-1L)))
-                .add(String.valueOf(appendInfo.producerEpoch())).toString();
-
-        persistentTopic.publishMessage(byteBuf,
-                MessagePublishContext.get(
-                        offsetFuture, persistentTopic, producerName,
-                        appendInfo.firstSequence(),
-                        appendInfo.lastSequence(),
-                        appendInfo.numMessages(),
-                        time.nanoseconds()));
+        final MessagePublishContext messagePublishContext;
+        long producerId = appendInfo.producerId().orElse(-1L);
+        if (producerId != -1) {
+            String producerName = new StringJoiner("-")
+                    .add(PID_PREFIX)
+                    .add(String.valueOf(producerId))
+                    .add(String.valueOf(appendInfo.producerEpoch())).toString();
+            messagePublishContext = MessagePublishContext.get(
+                    offsetFuture, persistentTopic, producerName,
+                    appendInfo.firstSequence(),
+                    appendInfo.lastSequence(),
+                    appendInfo.numMessages(),
+                    time.nanoseconds());
+        } else {
+            long sequenceId = sequenceIdGenerator.incrementAndGet();
+            messagePublishContext = MessagePublishContext.get(
+                    offsetFuture, persistentTopic, localProducerName,
+                    sequenceId,
+                    sequenceId,
+                    appendInfo.numMessages(),
+                    time.nanoseconds());
+        }
+        persistentTopic.publishMessage(byteBuf, messagePublishContext);
         return offsetFuture;
     }
 
