@@ -65,15 +65,17 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
     protected static Object[][] produceConfigProvider() {
         // isBatch
         return new Object[][]{
-                {true},
-                {false}
+                {true, true},
+                {false, true},
+                {true, false},
+                {false, false}
         };
     }
 
-    @Test(timeOut = 35 * 1000, dataProvider = "produceConfigProvider")
-    public void testIdempotentProducer(boolean isBatch)
+    @Test(timeOut = 30 * 1000, dataProvider = "produceConfigProvider")
+    public void testIdempotentProducer(boolean isBatch, boolean useIdempotent)
             throws PulsarAdminException, ExecutionException, InterruptedException {
-        String topic = "testIdempotentProducer";
+        String topic = "testIdempotentProducer-" + useIdempotent;
         if (isBatch) {
             topic += "-batch";
         }
@@ -83,8 +85,13 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
         int maxMessageNum = 1000;
 
         Properties producerProperties = newKafkaProducerProperties();
-        producerProperties.put(ProducerConfig.CLIENT_ID_CONFIG, "test-client");
-        producerProperties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+        if (useIdempotent) {
+            producerProperties.put(ProducerConfig.CLIENT_ID_CONFIG, "test-client");
+            producerProperties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+        } else {
+            // in this case we want to verify that the producer works even with
+            // deduplication enabled on the namespace
+        }
 
         try (KafkaProducer<String, String> producer = new KafkaProducer<>(producerProperties)) {
             for (int i = 0; i < maxMessageNum; i++) {

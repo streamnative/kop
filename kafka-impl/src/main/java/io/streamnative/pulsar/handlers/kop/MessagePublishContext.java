@@ -45,6 +45,12 @@ public final class MessagePublishContext implements PublishContext {
     private long sequenceId;
     private long highestSequenceId;
     private String producerName;
+    private boolean enableDeduplication;
+
+    @Override
+    public boolean isMarkerMessage() {
+        return !this.enableDeduplication;
+    }
 
     @Override
     public long getSequenceId() {
@@ -120,6 +126,7 @@ public final class MessagePublishContext implements PublishContext {
     public static MessagePublishContext get(CompletableFuture<Long> offsetFuture,
                                             Topic topic,
                                             String producerName,
+                                            boolean enableDeduplication,
                                             long sequenceId,
                                             long highestSequenceId,
                                             int numberOfMessages,
@@ -134,6 +141,7 @@ public final class MessagePublishContext implements PublishContext {
         callback.sequenceId = sequenceId;
         callback.highestSequenceId = highestSequenceId;
         callback.peekOffsetError = null;
+        callback.enableDeduplication = enableDeduplication;
         return callback;
     }
 
@@ -169,6 +177,7 @@ public final class MessagePublishContext implements PublishContext {
         sequenceId = -1;
         highestSequenceId = -1;
         peekOffsetError = null;
+        enableDeduplication = false;
         recyclerHandle.recycle(this);
     }
 }
