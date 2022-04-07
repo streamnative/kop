@@ -85,12 +85,12 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
         int maxMessageNum = 1000;
 
         Properties producerProperties = newKafkaProducerProperties();
+
+        // in this case we want to verify that the producer works even with
+        // deduplication enabled on the namespace
         if (useIdempotent) {
             producerProperties.put(ProducerConfig.CLIENT_ID_CONFIG, "test-client");
             producerProperties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
-        } else {
-            // in this case we want to verify that the producer works even with
-            // deduplication enabled on the namespace
         }
 
         try (KafkaProducer<String, String> producer = new KafkaProducer<>(producerProperties)) {
