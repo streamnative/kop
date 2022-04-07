@@ -47,6 +47,13 @@ public final class MessagePublishContext implements PublishContext {
     private String producerName;
     private boolean enableDeduplication;
 
+    /**
+     * On Pulsar side, the replicator marker message will skip the deduplication check,
+     * For support produce a regular message in KoP when Pulsar deduplication is enabled,
+     * KoP uses this method to support this feature.
+     *
+     * See: https://github.com/streamnative/kop/issues/1225
+     */
     @Override
     public boolean isMarkerMessage() {
         return !this.enableDeduplication;
