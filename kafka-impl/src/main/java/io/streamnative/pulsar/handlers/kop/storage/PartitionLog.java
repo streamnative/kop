@@ -331,9 +331,13 @@ public class PartitionLog {
                 .add(String.valueOf(appendInfo.producerId().orElse(-1L)))
                 .add(String.valueOf(appendInfo.producerEpoch())).toString();
 
+
         persistentTopic.publishMessage(byteBuf,
                 MessagePublishContext.get(
-                        offsetFuture, persistentTopic, producerName,
+                        offsetFuture,
+                        persistentTopic,
+                        producerName,
+                        appendInfo.producerId().isPresent(),
                         appendInfo.firstSequence(),
                         appendInfo.lastSequence(),
                         appendInfo.numMessages(),
