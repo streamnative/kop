@@ -19,7 +19,7 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 
 
 /**
- * Copy from OAuthBearerValidatorCallback.
+ * Copied from {@link org.apache.kafka.common.security.oauthbearer.OAuthBearerValidatorCallback}.
  *
  * A {@code Callback} for use by the {@code SaslServer} implementation when it
  * needs to provide an OAuth 2 bearer token compact serialization for
