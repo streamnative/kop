@@ -122,17 +122,6 @@ public class KopOAuthBearerSaslServer implements SaslServer {
     }
 
     private byte[] process(String tokenValue, String authorizationId) throws SaslException {
-//        if (callbackHandler instanceof OAuthBearerUnsecuredValidatorCallbackHandler) {
-//            OAuthBearerValidatorCallback callback = new OAuthBearerValidatorCallback(tokenValue);
-//            try {
-//                callbackHandler.handle(new Callback[] {callback});
-//            } catch (IOException | UnsupportedCallbackException e) {
-//                String msg = String.format("%s: %s", INTERNAL_ERROR_ON_SERVER, e.getMessage());
-//                if (log.isDebugEnabled())
-//                    log.debug(msg, e);
-//                throw new SaslException(msg);
-//            }
-//        }
         KopOAuthBearerValidatorCallback callback = new KopOAuthBearerValidatorCallback(tokenValue);
         try {
             callbackHandler.handle(new Callback[] {callback});

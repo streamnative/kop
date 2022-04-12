@@ -22,6 +22,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerSaslServer;
+import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerUnsecuredValidatorCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import java.nio.ByteBuffer;
 import java.util.Collections;
@@ -53,8 +54,6 @@ import org.apache.kafka.common.requests.SaslAuthenticateRequest;
 import org.apache.kafka.common.requests.SaslHandshakeRequest;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
-import org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerSaslServer;
-import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerUnsecuredValidatorCallbackHandler;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
@@ -254,7 +253,7 @@ public class SaslAuthenticator {
                 throw new RuntimeException("Failed to cast " + className + ": " + e.getMessage());
             }
         } else {
-            handler = new OAuthBearerUnsecuredValidatorCallbackHandler();
+            handler = new KopOAuthBearerUnsecuredValidatorCallbackHandler();
         }
 
         final Properties props = config.getKopOauth2Properties();
