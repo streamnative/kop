@@ -21,6 +21,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerSaslServer;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import java.nio.ByteBuffer;
 import java.util.Collections;
@@ -277,7 +278,7 @@ public class SaslAuthenticator {
                 throw new IllegalArgumentException("No OAuth2CallbackHandler found when mechanism is "
                         + OAuthBearerLoginModule.OAUTHBEARER_MECHANISM);
             }
-            saslServer = new OAuthBearerSaslServer(oauth2CallbackHandler);
+            saslServer = new KopOAuthBearerSaslServer(oauth2CallbackHandler);
         } else {
             throw new AuthenticationException("KoP doesn't support '" + mechanism + "' mechanism");
         }
