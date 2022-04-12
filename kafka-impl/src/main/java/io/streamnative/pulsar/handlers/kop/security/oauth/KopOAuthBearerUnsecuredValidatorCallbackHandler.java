@@ -1,24 +1,35 @@
+/**
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
-import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
-import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
-import org.apache.kafka.common.security.oauthbearer.OAuthBearerValidatorCallback;
-import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerConfigException;
-import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerIllegalTokenException;
-import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerScopeUtils;
-import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerUnsecuredJws;
-import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerValidationResult;
-import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerValidationUtils;
-import org.apache.kafka.common.utils.Time;
-import javax.security.auth.callback.Callback;
-import javax.security.auth.callback.UnsupportedCallbackException;
-import javax.security.auth.login.AppConfigurationEntry;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import javax.security.auth.callback.Callback;
+import javax.security.auth.callback.UnsupportedCallbackException;
+import javax.security.auth.login.AppConfigurationEntry;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
+import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
+import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerConfigException;
+import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerIllegalTokenException;
+import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerScopeUtils;
+import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerValidationResult;
+import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerValidationUtils;
+import org.apache.kafka.common.utils.Time;
 
 @Slf4j
 public class KopOAuthBearerUnsecuredValidatorCallbackHandler implements AuthenticateCallbackHandler {
@@ -33,7 +44,7 @@ public class KopOAuthBearerUnsecuredValidatorCallbackHandler implements Authenti
     private boolean configured = false;
 
     /**
-     * For testing
+     * For testing.
      *
      * @param time
      *            the mandatory time to set
@@ -43,7 +54,7 @@ public class KopOAuthBearerUnsecuredValidatorCallbackHandler implements Authenti
     }
 
     /**
-     * Return true if this instance has been configured, otherwise false
+     * Return true if this instance has been configured, otherwise false.
      *
      * @return true if this instance has been configured, otherwise false
      */
@@ -54,12 +65,14 @@ public class KopOAuthBearerUnsecuredValidatorCallbackHandler implements Authenti
     @SuppressWarnings("unchecked")
     @Override
     public void configure(Map<String, ?> configs, String saslMechanism, List<AppConfigurationEntry> jaasConfigEntries) {
-        if (!OAuthBearerLoginModule.OAUTHBEARER_MECHANISM.equals(saslMechanism))
+        if (!OAuthBearerLoginModule.OAUTHBEARER_MECHANISM.equals(saslMechanism)) {
             throw new IllegalArgumentException(String.format("Unexpected SASL mechanism: %s", saslMechanism));
-        if (Objects.requireNonNull(jaasConfigEntries).size() != 1 || jaasConfigEntries.get(0) == null)
+        }
+        if (Objects.requireNonNull(jaasConfigEntries).size() != 1 || jaasConfigEntries.get(0) == null) {
             throw new IllegalArgumentException(
                     String.format("Must supply exactly 1 non-null JAAS mechanism configuration (size was %d)",
                             jaasConfigEntries.size()));
+        }
         final Map<String, String> unmodifiableModuleOptions = Collections
                 .unmodifiableMap((Map<String, String>) jaasConfigEntries.get(0).getOptions());
         this.moduleOptions = unmodifiableModuleOptions;
@@ -68,8 +81,9 @@ public class KopOAuthBearerUnsecuredValidatorCallbackHandler implements Authenti
 
     @Override
     public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
-        if (!configured())
+        if (!configured()) {
             throw new IllegalStateException("Callback handler not configured");
+        }
         for (Callback callback : callbacks) {
             if (callback instanceof KopOAuthBearerValidatorCallback) {
                 KopOAuthBearerValidatorCallback validationCallback = (KopOAuthBearerValidatorCallback) callback;
@@ -81,8 +95,9 @@ public class KopOAuthBearerUnsecuredValidatorCallbackHandler implements Authenti
                     validationCallback.error(failureScope != null ? "insufficient_scope" : "invalid_token",
                             failureScope, failureReason.failureOpenIdConfig());
                 }
-            } else
+            } else {
                 throw new UnsupportedCallbackException(callback);
+            }
         }
     }
 
@@ -93,8 +108,9 @@ public class KopOAuthBearerUnsecuredValidatorCallbackHandler implements Authenti
 
     private void handleCallback(KopOAuthBearerValidatorCallback callback) {
         String tokenValue = callback.tokenValue();
-        if (tokenValue == null)
+        if (tokenValue == null) {
             throw new IllegalArgumentException("Callback missing required token value");
+        }
         String principalClaimName = principalClaimName();
         String scopeClaimName = scopeClaimName();
         List<String> requiredScope = requiredScope();
@@ -154,8 +170,9 @@ public class KopOAuthBearerUnsecuredValidatorCallbackHandler implements Authenti
     }
 
     private String option(String key) {
-        if (!configured)
+        if (!configured){
             throw new IllegalStateException("Callback handler not configured");
+        }
         return moduleOptions.get(Objects.requireNonNull(key));
     }
 }

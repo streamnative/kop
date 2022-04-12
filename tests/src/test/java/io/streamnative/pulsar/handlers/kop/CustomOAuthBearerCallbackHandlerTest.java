@@ -19,7 +19,8 @@ import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
-import java.io.IOException;
+import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerToken;
+import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerValidatorCallback;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -31,15 +32,10 @@ import javax.crypto.SecretKey;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.AppConfigurationEntry;
-
-import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerToken;
-import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerValidatorCallback;
 import lombok.Cleanup;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
-import org.apache.kafka.common.security.oauthbearer.OAuthBearerToken;
-import org.apache.kafka.common.security.oauthbearer.OAuthBearerValidatorCallback;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerUnsecuredJws;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
@@ -148,7 +144,7 @@ public class CustomOAuthBearerCallbackHandlerTest extends KopProtocolHandlerTest
         }
 
         @Override
-        public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
+        public void handle(Callback[] callbacks) throws UnsupportedCallbackException {
             for (Callback callback : callbacks) {
                 if (callback instanceof KopOAuthBearerValidatorCallback) {
                     KopOAuthBearerValidatorCallback validationCallback = (KopOAuthBearerValidatorCallback) callback;

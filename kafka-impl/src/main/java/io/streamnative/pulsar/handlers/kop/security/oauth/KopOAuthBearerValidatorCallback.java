@@ -1,10 +1,22 @@
+/**
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
-import org.apache.kafka.common.annotation.InterfaceStability;
-import org.apache.kafka.common.security.oauthbearer.OAuthBearerToken;
-
-import javax.security.auth.callback.Callback;
 import java.util.Objects;
+import javax.security.auth.callback.Callback;
+import org.apache.kafka.common.annotation.InterfaceStability;
+
 
 /**
  * Copy from OAuthBearerValidatorCallback.
@@ -36,19 +48,20 @@ public class KopOAuthBearerValidatorCallback implements Callback {
     private String errorOpenIDConfiguration = null;
 
     /**
-     * Constructor
+     * Constructor.
      *
      * @param tokenValue
      *            the mandatory/non-blank token value
      */
     public KopOAuthBearerValidatorCallback(String tokenValue) {
-        if (Objects.requireNonNull(tokenValue).isEmpty())
+        if (Objects.requireNonNull(tokenValue).isEmpty()) {
             throw new IllegalArgumentException("token value must not be empty");
+        }
         this.tokenValue = tokenValue;
     }
 
     /**
-     * Return the (always non-null) token value
+     * Return the (always non-null) token value.
      *
      * @return the (always non-null) token value
      */
@@ -57,7 +70,7 @@ public class KopOAuthBearerValidatorCallback implements Callback {
     }
 
     /**
-     * Return the (potentially null) token
+     * Return the (potentially null) token.
      *
      * @return the (potentially null) token
      */
@@ -131,8 +144,9 @@ public class KopOAuthBearerValidatorCallback implements Callback {
      *            the optional error openid-configuration value to set
      */
     public void error(String errorStatus, String errorScope, String errorOpenIDConfiguration) {
-        if (Objects.requireNonNull(errorStatus).isEmpty())
+        if (Objects.requireNonNull(errorStatus).isEmpty()) {
             throw new IllegalArgumentException("error status must not be empty");
+        }
         this.errorStatus = errorStatus;
         this.errorScope = errorScope;
         this.errorOpenIDConfiguration = errorOpenIDConfiguration;
