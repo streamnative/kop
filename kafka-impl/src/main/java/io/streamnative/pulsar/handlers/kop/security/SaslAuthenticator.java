@@ -57,7 +57,6 @@ import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 
@@ -85,6 +84,7 @@ public class SaslAuthenticator {
     private boolean enableKafkaSaslAuthenticateHeaders;
     private ByteBuf authenticationFailureResponse = null;
     private ChannelHandlerContext ctx = null;
+    private String defaultKafkaMetadataTenant;
 
     private enum State {
         HANDSHAKE_OR_VERSIONS_REQUEST,
@@ -110,6 +110,29 @@ public class SaslAuthenticator {
 
         public UnsupportedSaslMechanismException(String mechanism) {
             super("SASL mechanism '" + mechanism + "' requested by client is not supported");
+        }
+    }
+
+    /**
+     * The exception to indicate that the SaslServer doesn't have the expected property.
+     */
+    public static class NoExpectedPropertyException extends AuthenticationException {
+
+        public NoExpectedPropertyException(String propertyName, String msg) {
+            super("No expected property for " + propertyName + ": " + msg);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T safeGetProperty(final SaslServer saslServer, final String propertyName) {
+        try {
+            final Object property = saslServer.getNegotiatedProperty(propertyName);
+            if (property == null) {
+                throw new NoExpectedPropertyException(propertyName, "property not found");
+            }
+            return (T) property;
+        } catch (ClassCastException e) {
+            throw new NoExpectedPropertyException(propertyName, e.getMessage());
         }
     }
 
@@ -151,6 +174,7 @@ public class SaslAuthenticator {
         this.oauth2CallbackHandler = allowedMechanisms.contains(OAuthBearerLoginModule.OAUTHBEARER_MECHANISM)
                 ? createOauth2CallbackHandler(config) : null;
         this.enableKafkaSaslAuthenticateHeaders = false;
+        this.defaultKafkaMetadataTenant = config.getKafkaMetadataTenant();
     }
 
     /**
@@ -277,7 +301,7 @@ public class SaslAuthenticator {
                 throw new IllegalArgumentException("No OAuth2CallbackHandler found when mechanism is "
                         + OAuthBearerLoginModule.OAUTHBEARER_MECHANISM);
             }
-            saslServer = new KopOAuthBearerSaslServer(oauth2CallbackHandler);
+            saslServer = new KopOAuthBearerSaslServer(oauth2CallbackHandler, defaultKafkaMetadataTenant);
         } else {
             throw new AuthenticationException("KoP doesn't support '" + mechanism + "' mechanism");
         }
@@ -422,8 +446,8 @@ public class SaslAuthenticator {
                 if (response != null) {
                     final Session newSession = new Session(
                             new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID(),
-                                    (String) saslServer.getNegotiatedProperty(USER_NAME_PROP),
-                                    (AuthenticationDataSource) saslServer.getNegotiatedProperty(AUTH_DATA_SOURCE_PROP)),
+                                    safeGetProperty(saslServer, USER_NAME_PROP),
+                                    safeGetProperty(saslServer, AUTH_DATA_SOURCE_PROP)),
                             "old-clientId");
                     if (!tenantAccessValidationFunction.apply(newSession)) {
                         throw new AuthenticationException("User is not allowed to access this tenant");
@@ -479,8 +503,8 @@ public class SaslAuthenticator {
                 String pulsarRole = saslServer.getAuthorizationID();
                 this.session = new Session(
                         new KafkaPrincipal(KafkaPrincipal.USER_TYPE, pulsarRole,
-                                (String) saslServer.getNegotiatedProperty(USER_NAME_PROP),
-                                (AuthenticationDataSource) saslServer.getNegotiatedProperty(AUTH_DATA_SOURCE_PROP)),
+                                safeGetProperty(saslServer, USER_NAME_PROP),
+                                safeGetProperty(saslServer, AUTH_DATA_SOURCE_PROP)),
                         header.clientId());
                 registerRequestLatency.accept(apiKey, startProcessTime);
                 if (!tenantAccessValidationFunction.apply(session)) {

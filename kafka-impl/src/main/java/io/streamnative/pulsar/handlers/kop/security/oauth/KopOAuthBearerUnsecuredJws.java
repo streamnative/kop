@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerIllegalTokenException;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerUnsecuredJws;
+import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 
 /**
@@ -26,6 +27,7 @@ import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
  */
 public class KopOAuthBearerUnsecuredJws extends OAuthBearerUnsecuredJws implements KopOAuthBearerToken {
 
+    private final AuthenticationDataCommand authData;
     /**
      * Constructor with the given principal and scope claim names.
      *
@@ -42,10 +44,11 @@ public class KopOAuthBearerUnsecuredJws extends OAuthBearerUnsecuredJws implemen
     public KopOAuthBearerUnsecuredJws(String compactSerialization, String principalClaimName, String scopeClaimName)
             throws OAuthBearerIllegalTokenException {
         super(compactSerialization, principalClaimName, scopeClaimName);
+        this.authData = new AuthenticationDataCommand(compactSerialization);
     }
 
     @Override
     public AuthenticationDataSource authDataSource() {
-        return null;
+        return authData;
     }
 }
