@@ -34,7 +34,9 @@ import org.apache.pulsar.common.policies.data.TopicOperation;
 public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
 
     @Override
-    public void close() {}
+    public void close() {
+        // no-op
+    }
 
     @Override
     public CompletableFuture<Boolean> isSuperUser(String role,
@@ -288,7 +290,9 @@ public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
                 case "fail":
                     return false;
                 case "error":
-                    throw new RuntimeException("Error in authn");
+                    throw new IllegalStateException("Error in authn");
+                default:
+                   return false;
             }
         }
         throw new IllegalArgumentException(
