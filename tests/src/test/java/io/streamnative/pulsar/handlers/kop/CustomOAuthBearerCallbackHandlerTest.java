@@ -37,6 +37,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerUnsecuredJws;
+import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
@@ -173,7 +174,7 @@ public class CustomOAuthBearerCallbackHandlerTest extends KopProtocolHandlerTest
 
                         @Override
                         public AuthenticationDataSource authDataSource() {
-                            return null;
+                            return new AuthenticationDataCommand(validationCallback.tokenValue());
                         }
 
                         @Override
