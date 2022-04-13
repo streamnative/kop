@@ -26,7 +26,7 @@ jobs:
       run: docker-compose -f ci/hydra/docker-compose.yml up -d
 
     - name: Init oauth server
-      run: ./ci/init_oauth.sh localhost:4445
+      run: ./ci/init_oauth.sh
 
 
 #    - name: License check

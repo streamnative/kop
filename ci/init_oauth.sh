@@ -18,12 +18,12 @@ wait_for_url() {
     done
 }
 
-URI=${HYDRA_URI}
-if [ "" == "${URI}" ]; then
-    URI="http://${HYDRA_HOST:-hydra}:{localhost:-4445}/clients"
-fi
+#URI=${HYDRA_URI}
+#if [ "" == "${URI}" ]; then
+#    URI="http://${HYDRA_HOST:-hydra}:{localhost:-4445}/clients"
+#fi
 
-wait_for_url $URI "Waiting for Hydra admin REST to start"
+wait_for_url "http://localhost:4445/clients" "Waiting for Hydra admin REST to start"
 
 
 
