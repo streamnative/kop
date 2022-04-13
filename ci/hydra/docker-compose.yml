@@ -1,0 +1,20 @@
+version: '3'
+
+services:
+
+  hydra:
+    image: oryd/hydra:v1.11.2
+    container_name: hydra
+    ports:
+      - 4444:4444
+      - 4445:4445
+      - 9020:9020
+    command: serve all --dangerous-force-http
+
+    environment:
+      - DSN=memory
+      - URLS_SELF_ISSUER=http://hydra:4444/
+      - URLS_CONSENT=http://hydra:9020/consent
+      - URLS_LOGIN=http://hydra:9020/login
+      - SERVE_PUBLIC_PORT=4444
+      - SERVE_ADMIN_PORT=4445

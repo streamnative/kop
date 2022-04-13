@@ -22,23 +22,30 @@ jobs:
       with:
         java-version: 1.8
 
-    - name: License check
-      run: mvn -ntp -B license:check
+    - name: Start hydra server
+      run: docker-compose -f ci/hydra/docker-compose.yml up -d
 
-    - name: Build with Maven skipTests
-      run: mvn clean install -ntp -B -DskipTests
+    - name: Init oauth server
+      run: ./ci/init_oauth.sh localhost:4445
 
-    - name: Style check
-      run: mvn -ntp -B checkstyle:check
 
-    - name: Spotbugs check
-      run: mvn -ntp -B spotbugs:check
+#    - name: License check
+#      run: mvn -ntp -B license:check
 
-    - name: kafka-impl test after build
-      run: mvn test -ntp -B -DfailIfNoTests=false -pl kafka-impl
-
-    - name: kafka-payload-processor test after build
-      run: mvn test -ntp -B -DfailIfNoTests=false -pl kafka-payload-processor-shaded-tests
+#    - name: Build with Maven skipTests
+#      run: mvn clean install -ntp -B -DskipTests
+#
+#    - name: Style check
+#      run: mvn -ntp -B checkstyle:check
+#
+#    - name: Spotbugs check
+#      run: mvn -ntp -B spotbugs:check
+#
+#    - name: kafka-impl test after build
+#      run: mvn test -ntp -B -DfailIfNoTests=false -pl kafka-impl
+#
+#    - name: kafka-payload-processor test after build
+#      run: mvn test -ntp -B -DfailIfNoTests=false -pl kafka-payload-processor-shaded-tests
 
     - name: package surefire artifacts
       if: failure()
