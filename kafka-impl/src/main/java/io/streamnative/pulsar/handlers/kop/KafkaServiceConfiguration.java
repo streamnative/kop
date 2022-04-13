@@ -439,7 +439,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             doc = "The fully qualified name of a SASL server callback handler class that implements the "
                     + "AuthenticateCallbackHandler interface, which is used for OAuth2 authentication. "
                     + "If it's not set, the class will be Kafka's default server callback handler for "
-                    + "OAUTHBEARER mechanism: OAuthBearerUnsecuredValidatorCallbackHandler."
+                    + "OAUTHBEARER mechanism: KopOAuthBearerUnsecuredValidatorCallbackHandler."
     )
     private String kopOauth2AuthenticateCallbackHandler;
 

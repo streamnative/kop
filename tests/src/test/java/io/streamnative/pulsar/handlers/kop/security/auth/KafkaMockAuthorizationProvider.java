@@ -13,49 +13,277 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import org.apache.pulsar.broker.auth.MockAuthorizationProvider;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
+import org.apache.pulsar.broker.authorization.AuthorizationProvider;
+import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.policies.data.AuthAction;
+import org.apache.pulsar.common.policies.data.NamespaceOperation;
 import org.apache.pulsar.common.policies.data.PolicyName;
 import org.apache.pulsar.common.policies.data.PolicyOperation;
+import org.apache.pulsar.common.policies.data.TenantInfo;
+import org.apache.pulsar.common.policies.data.TenantOperation;
 import org.apache.pulsar.common.policies.data.TopicOperation;
+import org.testng.Assert;
 
 
-public class KafkaMockAuthorizationProvider extends MockAuthorizationProvider {
+@Slf4j
+public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
+
     @Override
-    public CompletableFuture<Boolean> allowTopicOperationAsync(
-            TopicName topic, String role, TopicOperation operation, AuthenticationDataSource authData) {
-        return CompletableFuture.completedFuture(true);
+    public void close() {
+        // no-op
     }
 
     @Override
-    public Boolean allowTopicOperation(
-            TopicName topicName,
-            String role,
-            TopicOperation operation,
-            AuthenticationDataSource authData) {
-        return true;
+    public CompletableFuture<Boolean> isSuperUser(String role,
+                                                  AuthenticationDataSource authenticationData,
+                                                  ServiceConfiguration serviceConfiguration) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
     }
 
     @Override
-    public CompletableFuture<Boolean> allowTopicOperationAsync(
-            TopicName topic,
-            String originalRole,
-            String role,
-            TopicOperation operation,
-            AuthenticationDataSource authData) {
-        return CompletableFuture.completedFuture(true);
+    public CompletableFuture<Boolean> isSuperUser(String role, ServiceConfiguration serviceConfiguration) {
+        return roleAuthorizedAsync(role);
     }
 
     @Override
-    public Boolean allowTopicOperation(
-            TopicName topicName,
-            String originalRole,
-            String role,
-            TopicOperation operation,
-            AuthenticationDataSource authData) {
-        return true;
+    public CompletableFuture<Boolean> isTenantAdmin(String tenant, String role, TenantInfo tenantInfo,
+                                                    AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> canProduceAsync(TopicName topicName, String role,
+                                                      AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> canConsumeAsync(TopicName topicName, String role,
+                                                      AuthenticationDataSource authenticationData,
+                                                      String subscription) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> canLookupAsync(TopicName topicName, String role,
+                                                     AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> allowFunctionOpsAsync(NamespaceName namespaceName, String role,
+                                                            AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> allowSourceOpsAsync(NamespaceName namespaceName, String role,
+                                                          AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> allowSinkOpsAsync(NamespaceName namespaceName, String role,
+                                                        AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public CompletableFuture<Void> grantPermissionAsync(NamespaceName namespace, Set<AuthAction> actions, String role,
+                                                        String authDataJson) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<Void> grantSubscriptionPermissionAsync(NamespaceName namespace,
+                                                                    String subscriptionName, Set<String> roles,
+                                                                    String authDataJson) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<Void> revokeSubscriptionPermissionAsync(NamespaceName namespace, String subscriptionName,
+                                                                     String role, String authDataJson) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<Void> grantPermissionAsync(TopicName topicName, Set<AuthAction> actions, String role,
+                                                        String authDataJson) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> allowTenantOperationAsync(String tenantName, String originalRole, String role,
+                                                                TenantOperation operation,
+                                                                AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public Boolean allowTenantOperation(String tenantName, String originalRole, String role, TenantOperation operation,
+                                        AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorized(role);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> allowTenantOperationAsync(String tenantName, String role,
+                                                                TenantOperation operation,
+                                                                AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public Boolean allowTenantOperation(String tenantName, String role, TenantOperation operation,
+                                        AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorized(role);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> allowNamespaceOperationAsync(NamespaceName namespaceName,
+                                                                   String role,
+                                                                   NamespaceOperation operation,
+                                                                   AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public Boolean allowNamespaceOperation(NamespaceName namespaceName,
+                                           String role,
+                                           NamespaceOperation operation,
+                                           AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorized(role);
+    }
+
+
+    @Override
+    public CompletableFuture<Boolean> allowNamespaceOperationAsync(NamespaceName namespaceName,
+                                                                   String originalRole,
+                                                                   String role,
+                                                                   NamespaceOperation operation,
+                                                                   AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public Boolean allowNamespaceOperation(NamespaceName namespaceName,
+                                           String originalRole,
+                                           String role,
+                                           NamespaceOperation operation,
+                                           AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorized(role);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> allowNamespacePolicyOperationAsync(NamespaceName namespaceName,
+                                                                         PolicyName policy,
+                                                                         PolicyOperation operation,
+                                                                         String role,
+                                                                         AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public Boolean allowNamespacePolicyOperation(NamespaceName namespaceName,
+                                                 PolicyName policy,
+                                                 PolicyOperation operation,
+                                                 String role,
+                                                 AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorized(role);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> allowNamespacePolicyOperationAsync(NamespaceName namespaceName,
+                                                                         PolicyName policy,
+                                                                         PolicyOperation operation,
+                                                                         String originalRole,
+                                                                         String role,
+                                                                         AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public Boolean allowNamespacePolicyOperation(NamespaceName namespaceName,
+                                                 PolicyName policy,
+                                                 PolicyOperation operation,
+                                                 String originalRole,
+                                                 String role,
+                                                 AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorized(role);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> allowTopicOperationAsync(TopicName topic,
+                                                               String role,
+                                                               TopicOperation operation,
+                                                               AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public Boolean allowTopicOperation(TopicName topicName,
+                                       String role,
+                                       TopicOperation operation,
+                                       AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorized(role);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> allowTopicOperationAsync(TopicName topic,
+                                                               String originalRole,
+                                                               String role,
+                                                               TopicOperation operation,
+                                                               AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public Boolean allowTopicOperation(TopicName topicName,
+                                       String originalRole,
+                                       String role,
+                                       TopicOperation operation,
+                                       AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorized(role);
+    }
+
+    CompletableFuture<Boolean> roleAuthorizedAsync(String role) {
+        CompletableFuture<Boolean> promise = new CompletableFuture<>();
+        try {
+            promise.complete(roleAuthorized(role));
+        } catch (Exception e) {
+            promise.completeExceptionally(e);
+        }
+        return promise;
     }
 
     @Override
@@ -64,8 +292,9 @@ public class KafkaMockAuthorizationProvider extends MockAuthorizationProvider {
             String role,
             PolicyName policy,
             PolicyOperation operation,
-            AuthenticationDataSource authData) {
-        return CompletableFuture.completedFuture(true);
+            AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorizedAsync(role);
     }
 
     @Override
@@ -74,7 +303,26 @@ public class KafkaMockAuthorizationProvider extends MockAuthorizationProvider {
             String role,
             PolicyName policy,
             PolicyOperation operation,
-            AuthenticationDataSource authData) {
-        return true;
+            AuthenticationDataSource authenticationData) {
+        Assert.assertNotNull(authenticationData);
+        return roleAuthorized(role);
+    }
+
+    public boolean roleAuthorized(String role) {
+        String[] parts = role.split("\\.");
+        if (parts.length == 2) {
+            switch (parts[1]) {
+                case "pass":
+                    return true;
+                case "fail":
+                    return false;
+                case "error":
+                    throw new IllegalStateException("Error in authn");
+                default:
+                   return false;
+            }
+        }
+        throw new IllegalArgumentException(
+                "Not a valid principle. Should be [pass|fail|error].[pass|fail|error], found " + role);
     }
 }
