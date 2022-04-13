@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.security.auth.KafkaMockAuthorizationProvider;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
 import java.net.URL;
@@ -50,8 +51,8 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         // Broker's config
         conf.setAuthenticationEnabled(true);
         conf.setAuthorizationEnabled(true);
+        conf.setAuthorizationProvider(OauthMockAuthorizationProvider.class.getName());
         conf.setAuthenticationProviders(Sets.newHashSet(AuthenticationProviderToken.class.getName()));
-        conf.setSuperUserRoles(Sets.newHashSet(ADMIN_USER));
         conf.setBrokerClientAuthenticationPlugin(AuthenticationOAuth2.class.getName());
         conf.setBrokerClientAuthenticationParameters(String.format("{\"type\":\"client_credentials\","
                 + "\"privateKey\":\"%s\",\"issuerUrl\":\"%s\",\"audience\":\"%s\"}",
@@ -113,5 +114,13 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
                 "file://" + Paths.get("./src/test/resources/credentials_file.json").toAbsolutePath(),
                 "https://dev-kt-aa9ne.us.auth0.com/api/v2/"
         ));
+    }
+
+    public static class OauthMockAuthorizationProvider extends KafkaMockAuthorizationProvider {
+
+        @Override
+        public boolean roleAuthorized(String role) {
+            return role.equals(ADMIN_USER);
+        }
     }
 }

@@ -19,7 +19,8 @@ import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
-import java.io.IOException;
+import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerToken;
+import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerValidatorCallback;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -35,9 +36,9 @@ import lombok.Cleanup;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
-import org.apache.kafka.common.security.oauthbearer.OAuthBearerToken;
-import org.apache.kafka.common.security.oauthbearer.OAuthBearerValidatorCallback;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerUnsecuredJws;
+import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
+import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -144,12 +145,43 @@ public class CustomOAuthBearerCallbackHandlerTest extends KopProtocolHandlerTest
         }
 
         @Override
-        public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
+        public void handle(Callback[] callbacks) throws UnsupportedCallbackException {
             for (Callback callback : callbacks) {
-                if (callback instanceof OAuthBearerValidatorCallback) {
-                    OAuthBearerValidatorCallback validationCallback = (OAuthBearerValidatorCallback) callback;
-                    OAuthBearerToken token = new OAuthBearerUnsecuredJws(
+                if (callback instanceof KopOAuthBearerValidatorCallback) {
+                    KopOAuthBearerValidatorCallback validationCallback = (KopOAuthBearerValidatorCallback) callback;
+                    OAuthBearerUnsecuredJws oAuthBearerUnsecuredJws = new OAuthBearerUnsecuredJws(
                             validationCallback.tokenValue(), "sub", "scope");
+                    KopOAuthBearerToken token = new KopOAuthBearerToken() {
+                        @Override
+                        public String value() {
+                            return validationCallback.tokenValue();
+                        }
+
+                        @Override
+                        public Set<String> scope() {
+                            return null;
+                        }
+
+                        @Override
+                        public long lifetimeMs() {
+                            return 0;
+                        }
+
+                        @Override
+                        public String principalName() {
+                            return oAuthBearerUnsecuredJws.principalName();
+                        }
+
+                        @Override
+                        public AuthenticationDataSource authDataSource() {
+                            return new AuthenticationDataCommand(validationCallback.tokenValue());
+                        }
+
+                        @Override
+                        public Long startTimeMs() {
+                            return null;
+                        }
+                    };
                     validationCallback.token(token);
                     authenticatedUsers.add(token.principalName());
                 } else {
