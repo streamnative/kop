@@ -26,7 +26,7 @@ wait_for_url() {
 wait_for_url "http://localhost:4445/clients" "Waiting for Hydra admin REST to start"
 
 
-docker run --rm -it \
+docker run --rm \
   --network hydra_default \
   oryd/hydra:v1.11.2 \
   clients create \
@@ -36,7 +36,7 @@ docker run --rm -it \
     --grant-types client_credentials \
     --response-types token,code
 
-docker run --rm -it \
+docker run --rm \
   --network hydra_default \
   oryd/hydra:v1.11.2 \
   token client \
