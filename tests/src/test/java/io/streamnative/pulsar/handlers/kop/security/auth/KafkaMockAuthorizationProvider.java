@@ -13,12 +13,14 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
+import java.io.IOException;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authorization.AuthorizationProvider;
+import org.apache.pulsar.broker.cache.ConfigurationCacheService;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.AuthAction;
@@ -57,6 +59,11 @@ public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
                                                     AuthenticationDataSource authenticationData) {
         Assert.assertNotNull(authenticationData);
         return roleAuthorizedAsync(role);
+    }
+
+    @Override
+    public void initialize(ServiceConfiguration conf, ConfigurationCacheService configCache) throws IOException {
+        // No-op
     }
 
     @Override
