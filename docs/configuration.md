@@ -113,6 +113,7 @@ This section lists configurations about the group coordinator and the `__consume
 |offsetsMessageTTL| The offsets message TTL in seconds. | 259200 |
 |offsetsRetentionCheckIntervalMs| The frequency at which to check for stale offsets.  |600000|
 |offsetsTopicNumPartitions| The number of partitions for the offsets topic.  |50|
+|systemTopicRetentionSizeInMB| The system topic retention size in mb. | -1 |
 
 ## Transaction
 
