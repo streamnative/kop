@@ -25,7 +25,7 @@ wait_for_url() {
         CMD="curl -sL -o /dev/null -w %{http_code} $URL"
     fi
 
-    until [ "200" == "`$CMD`" ]
+    until [ "200" == "$($CMD)" ]
     do
         echo "$MSG ($URL)"
         sleep 2
@@ -48,7 +48,7 @@ docker run --rm \
 # Replace access token
 docker run --rm \
   --network hydra_default \
-  -v ${PWD}/ci/hydra/keys:/tmp/keys \
+  -v "${PWD}"/ci/hydra/keys:/tmp/keys \
   oryd/hydra:v1.11.7 \
   --endpoint=http://hydra:4445 \
   keys import hydra.jwt.access-token /tmp/keys/private_key.json /tmp/keys/public_key.json
