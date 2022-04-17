@@ -79,5 +79,11 @@
       <artifactId>testng</artifactId>
       <scope>test</scope>
     </dependency>
+
+    <dependency>
+      <groupId>io.streamnative.pulsar.handlers</groupId>
+      <artifactId>test-listener</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 </project>
