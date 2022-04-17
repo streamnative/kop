@@ -31,25 +31,33 @@ import org.testng.annotations.Test;
 /**
  * Testing the SASL-OAUTHBEARER features on KoP with KoP's own login callback handler and server callback handler.
  *
- * <p>The public key, issuer url, credentials url and audience are from an example in https://auth0.com</p>
+ * <p>The public key, issuer url, credentials url and audience are from hydra oauth server</p>
  *
  * @see OauthLoginCallbackHandler
  * @see OauthValidatorCallbackHandler
  */
-public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
+public class SaslOauthKopHandlersWithHydraServerTest extends SaslOauthBearerTestBase {
 
-    private static final String ADMIN_USER = "Xd23RHsUnvUlP7wchjNYOaIfazgeHd9x@clients";
-    private static final String ISSUER_URL = "https://dev-kt-aa9ne.us.auth0.com";
+    private static final String ADMIN_USER = "simple_client_id";
+    private static final String ISSUER_URL = "http://localhost:4444";
     private static final String CREDENTIALS_URL = "file://"
-            + Paths.get("./src/test/resources/credentials_file.json").toAbsolutePath();
-    private static final String AUDIENCE = "https://dev-kt-aa9ne.us.auth0.com/api/v2/";
+            + Paths.get("./src/test/resources/oauth_credentials/simple_credentials_file.json").toAbsolutePath();
+    private static final String AUDIENCE = "http://example.com/api/v2/";
 
-    private static final String TOKEN_PUBLIC_KEY =
-            "data:;base64,MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2tZd/4gJda3U"
-            + "2Pc3tpgRAN7JPGWx/Gn17v/0IiZlNNRbP/Mmf0Vc6G1qsnaRaWNWOR+t6/a6ekFHJMikQ1N2X6yfz4UjMc8/G2FDPRmWjA+GURzA"
-            + "RjVhxc/BBEYGoD0Kwvbq/u9CZm2QjlKrYaLfg3AeB09j0btNrDJ8rBsNzU6AuzChRvXj9IdcE/A/4N/UQ+S9cJ4UXP6NJbToLwaj"
-            + "Q5km+CnxdGE6nfB7LWHvOFHjn9C2Rb9e37CFlmeKmIVFkagFM0gbmGOb6bnGI8Bp/VNGV0APef4YaBvBTqwoZ1Z4aDHy5eRxXfAM"
-            + "dtBkBupmBXqL6bpd15XRYUbu/7ck9QIDAQAB";
+    private static final String TOKEN_PUBLIC_KEY = "data:;base64,MIICIjANBgkqhk"
+            + "iG9w0BAQEFAAOCAg8AMIICCgKCAgEA4g8rgGslfLNGdfh94Kbf"
+            + "sMPjgX17nnEHnCLhrlVyA+jxSThiQyQVQCkZfav9k4cLCiKdoqxKtLV0RA3hWXGH"
+            + "E0qUNUJWVN3vz3NOI7ccEHBJHzbDk24NYxsW7M6zNfBfTc6ZrJr5XENy7emscODn"
+            + "8HJ2Qf1UkMUeze5EirJ2lsB9Zzo1GIw9ZU65W9HWWcgS5sL9eHlDRbVLmgph7jRz"
+            + "kQJGm2hOeyiE+ufUOWkBQH49BhKaNGfjZ8BOJ1WRsbIIVtwhS7m+HSIKmglboG+o"
+            + "nNd5LYAmngbkCuhwjJajBQayxkeBeumvRQACC1+mKC5KaW40JmVRKFFHDcf892t6"
+            + "GX6c7PaVWPqvf2l6nYRbYT9nl4fQK1aUTiCqrPf2+WjEH1JIEwTfFZKTwpTtlr3e"
+            + "jGJMT7wH2L4uFbpguKawTo4lYHWN3IsryDfUVvNbb7l8KMqiuDIy+5R6WezajsCY"
+            + "I/GzvLGCYO1EnRTDFdEmipfbNT2/D91OPKNGmZLVUkVVlL0z+1iQtwfRamn2oRNH"
+            + "zMYMAplGikxrQld/IPUIbKjgtLWPDnfskoWvuCIDQdRzMpxAXa3O/cq5uQRpu2o8"
+            + "xZ8RYWixxrIGc1/8m+QQLy7DwcmVd0dGU29S+fnfOzWr43KWlyWfGsBLFxUkltjY"
+            + "6gx6oB6tsQVC3Cy5Eku8FdcCAwEAAQ==";
+
     @BeforeClass
     @Override
     protected void setup() throws Exception {
