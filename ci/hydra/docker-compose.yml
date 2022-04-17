@@ -1,0 +1,35 @@
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+version: '3'
+
+services:
+
+  hydra:
+    image: oryd/hydra:v1.11.7
+    container_name: hydra
+    ports:
+      - 4444:4444
+      - 4445:4445
+      - 9020:9020
+    command: serve all --dangerous-force-http
+    environment:
+      - DSN=memory
+      - URLS_SELF_ISSUER=http://127.0.0.1:4444/
+      - URLS_CONSENT=http://127.0.0.1:9020/consent
+      - URLS_LOGIN=http://127.0.0.1:9020/login
+      - SERVE_PUBLIC_PORT=4444
+      - SERVE_ADMIN_PORT=4445
+      - STRATEGIES_ACCESS_TOKEN=jwt
+      - OIDC_SUBJECT_IDENTIFIERS_SUPPORTED_TYPES=public
