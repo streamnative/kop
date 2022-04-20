@@ -14,20 +14,17 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.SneakyThrows;
 
-@AllArgsConstructor
 @NoArgsConstructor
 @Getter
 @Setter
@@ -57,11 +54,6 @@ class HydraClientInfo {
     // NOTE: Currently KoP only supports "client_secret_post" auth method
     @JsonProperty("token_endpoint_auth_method")
     private String tokenEndpointAuthMethod = "client_secret_post";
-
-
-    public static HydraClientInfo[] parseToArray(String json) throws JsonProcessingException {
-        return objectMapper.readValue(json, HydraClientInfo[].class);
-    }
 
     @SneakyThrows
     @Override
