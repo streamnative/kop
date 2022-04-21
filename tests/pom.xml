@@ -32,7 +32,7 @@
 
   <properties>
     <schema.registry.version>5.0.0</schema.registry.version>
-    <testcontainers.version>1.15.1</testcontainers.version>
+    <hydra.version>1.11.7</hydra.version>
   </properties>
 
   <!-- include the dependencies -->
@@ -159,6 +159,13 @@
         </exclusion>
       </exclusions>
     </dependency>
+
+    <dependency>
+      <groupId>sh.ory.hydra</groupId>
+      <artifactId>hydra-client</artifactId>
+      <version>${hydra.version}</version>
+    </dependency>
+
   </dependencies>
 
   <build>

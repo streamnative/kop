@@ -16,6 +16,10 @@ package io.streamnative.pulsar.handlers.kop;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.net.URL;
 import java.time.Duration;
 import java.util.Collections;
@@ -40,6 +44,9 @@ import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
+import sh.ory.hydra.ApiException;
+import sh.ory.hydra.api.AdminApi;
+import sh.ory.hydra.model.OAuth2Client;
 
 /**
  * Testing the SASL-OAUTHBEARER features on KoP with KoP's own login callback handler and server callback handler.
@@ -70,15 +77,14 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
             + "xZ8RYWixxrIGc1/8m+QQLy7DwcmVd0dGU29S+fnfOzWr43KWlyWfGsBLFxUkltjY"
             + "6gx6oB6tsQVC3Cy5Eku8FdcCAwEAAQ==";
 
-    private final HydraHttpClient hydraHttpClient = new HydraHttpClient();
-    private volatile String adminCredentialPath = null;
+    private final AdminApi hydraAdmin = new AdminApi();
+    private String adminCredentialPath = null;
 
     @BeforeClass(timeOut = 20000)
     @Override
     protected void setup() throws Exception {
-        final HydraClientInfo adminHydraClient = hydraHttpClient.createClient(
-                ADMIN_USER, "admin_secret", AUDIENCE);
-        adminCredentialPath = adminHydraClient.writeCredentials("admin_credentials.json");
+        hydraAdmin.setCustomBaseUrl("http://localhost:4445");
+        adminCredentialPath = createOAuthClient(ADMIN_USER, "admin_secret");
 
         super.resetConfig();
         // Broker's config
@@ -105,7 +111,6 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
     @AfterClass
     @Override
     protected void cleanup() throws Exception {
-        hydraHttpClient.close();
         super.internalCleanup();
     }
 
@@ -119,6 +124,42 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
                 .build();
     }
 
+    /**
+     * Create a new client on the Hydra server and write the credentials to a file under the resource directory.
+     *
+     * @param clientId the Client ID, which is also the basename of the credentials file
+     * @param clientSecret the Client Secret
+     * @return the absolute path of the credentials file with the "file://" prefix
+     * @throws ApiException if failed to create the OAuth2 client unless the client already exists
+     * @throws IOException if failed to write the credentials file
+     */
+    private String createOAuthClient(String clientId, String clientSecret) throws ApiException, IOException {
+        final OAuth2Client oAuth2Client = new OAuth2Client()
+                .audience(Collections.singletonList(SaslOauthKopHandlersTest.AUDIENCE))
+                .clientId(clientId)
+                .clientSecret(clientSecret)
+                .grantTypes(Collections.singletonList("client_credentials"))
+                .responseTypes(Collections.singletonList("code"))
+                .tokenEndpointAuthMethod("client_secret_post");
+        try {
+            hydraAdmin.createOAuth2Client(oAuth2Client);
+        } catch (ApiException e) {
+            if (e.getCode() != 409) {
+                throw e;
+            }
+        }
+        final String content = "{\n"
+                + "    \"client_id\": \"" + clientId + "\",\n"
+                + "    \"client_secret\": \"" + clientSecret + "\"\n"
+                + "}\n";
+
+        File file = new File(SaslOauthKopHandlersTest.class.getResource("/").getFile() + "/" + clientId);
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
+            writer.write(content);
+        }
+        return "file://" + file.getAbsolutePath();
+    }
+
     @Test(timeOut = 15000)
     public void testSimpleProduceConsume() throws Exception {
         super.testSimpleProduceConsume();
@@ -129,19 +170,18 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         final String namespace = conf.getKafkaTenant() + "/" + conf.getKafkaNamespace();
         final String topic = "test-grant-and-revoke-permission";
         final String role = "normal-role-" + System.currentTimeMillis();
-        final HydraClientInfo clientInfo = hydraHttpClient.createClient(role, "secret", AUDIENCE);
-        final String credentialsPath = clientInfo.writeCredentials("test-grant-and-revoke-permission.json");
+        final String clientCredentialPath = createOAuthClient(role, "secret");
 
         admin.namespaces().grantPermissionOnNamespace(namespace, role, Collections.singleton(AuthAction.produce));
         final Properties consumerProps = newKafkaConsumerProperties();
-        internalConfigureOauth2(consumerProps, credentialsPath);
+        internalConfigureOauth2(consumerProps, clientCredentialPath);
         @Cleanup
         final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerProps);
         consumer.subscribe(Collections.singleton(topic));
         Assert.assertThrows(TopicAuthorizationException.class, () -> consumer.poll(Duration.ofSeconds(5)));
 
         final Properties producerProps = newKafkaProducerProperties();
-        internalConfigureOauth2(producerProps, credentialsPath);
+        internalConfigureOauth2(producerProps, clientCredentialPath);
         @Cleanup
         final KafkaProducer<String, String> producer = new KafkaProducer<>(producerProps);
         producer.send(new ProducerRecord<>(topic, "msg-0")).get();
