@@ -138,7 +138,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         @Cleanup
         final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerProps);
         consumer.subscribe(Collections.singleton(topic));
-        Assert.assertThrows(TopicAuthorizationException.class, () -> consumer.poll(Duration.ofSeconds(2)));
+        Assert.assertThrows(TopicAuthorizationException.class, () -> consumer.poll(Duration.ofSeconds(5)));
 
         final Properties producerProps = newKafkaProducerProperties();
         internalConfigureOauth2(producerProps, credentialsPath);
