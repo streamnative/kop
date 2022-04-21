@@ -52,26 +52,3 @@ docker run --rm \
   oryd/hydra:v1.11.7 \
   --endpoint=http://hydra:4445 \
   keys import hydra.jwt.access-token /tmp/keys/private_key.json /tmp/keys/public_key.json
-
-# Create a new client
-docker run --rm \
-  --network hydra_default \
-  oryd/hydra:v1.11.7 \
-  clients create \
-    --endpoint http://hydra:4445 \
-    --id simple_client_id \
-    --secret simple_client_secret \
-    --grant-types client_credentials \
-    --response-types token,code \
-    --token-endpoint-auth-method client_secret_post \
-    --audience http://example.com/api/v2/
-
-# Try to generate a token using the new client
-docker run --rm \
-  --network hydra_default \
-  oryd/hydra:v1.11.7 \
-  token client \
-    --client-id simple_client_id \
-    --client-secret simple_client_secret \
-    --endpoint http://hydra:4444
-
