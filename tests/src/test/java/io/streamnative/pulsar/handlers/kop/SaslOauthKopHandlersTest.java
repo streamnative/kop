@@ -26,6 +26,7 @@ import java.util.Collections;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import javax.security.auth.login.LoginException;
 import lombok.Cleanup;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -59,6 +60,7 @@ import sh.ory.hydra.model.OAuth2Client;
 public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
 
     private static final String ADMIN_USER = "simple_client_id";
+    private static final String ADMIN_SECRET = "admin_secret";
     private static final String ISSUER_URL = "http://localhost:4444";
     private static final String AUDIENCE = "http://example.com/api/v2/";
 
@@ -84,7 +86,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
     @Override
     protected void setup() throws Exception {
         hydraAdmin.setCustomBaseUrl("http://localhost:4445");
-        adminCredentialPath = createOAuthClient(ADMIN_USER, "admin_secret");
+        adminCredentialPath = createOAuthClient(ADMIN_USER, ADMIN_SECRET);
 
         super.resetConfig();
         // Broker's config
@@ -124,15 +126,6 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
                 .build();
     }
 
-    /**
-     * Create a new client on the Hydra server and write the credentials to a file under the resource directory.
-     *
-     * @param clientId the Client ID, which is also the basename of the credentials file
-     * @param clientSecret the Client Secret
-     * @return the absolute path of the credentials file with the "file://" prefix
-     * @throws ApiException if failed to create the OAuth2 client unless the client already exists
-     * @throws IOException if failed to write the credentials file
-     */
     private String createOAuthClient(String clientId, String clientSecret) throws ApiException, IOException {
         final OAuth2Client oAuth2Client = new OAuth2Client()
                 .audience(Collections.singletonList(SaslOauthKopHandlersTest.AUDIENCE))
@@ -148,12 +141,16 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
                 throw e;
             }
         }
+        return writeCredentialsFile(clientId, clientSecret, clientId + ".json");
+    }
+
+    private String writeCredentialsFile(String clientId, String clientSecret, String basename) throws IOException {
         final String content = "{\n"
                 + "    \"client_id\": \"" + clientId + "\",\n"
                 + "    \"client_secret\": \"" + clientSecret + "\"\n"
                 + "}\n";
 
-        File file = new File(SaslOauthKopHandlersTest.class.getResource("/").getFile() + "/" + clientId);
+        File file = new File(SaslOauthKopHandlersTest.class.getResource("/").getFile() + "/" + basename);
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
             writer.write(content);
         }
@@ -197,6 +194,19 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         admin.namespaces().grantPermissionOnNamespace(namespace, role, Collections.singleton(AuthAction.consume));
         ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(2));
         Assert.assertEquals(records.iterator().next().value(), "msg-0");
+    }
+
+    @Test(timeOut = 15000)
+    public void testWrongSecret() throws IOException {
+        final Properties producerProps = newKafkaProducerProperties();
+        internalConfigureOauth2(producerProps,
+                writeCredentialsFile(ADMIN_USER, ADMIN_SECRET + "-wrong", "test-wrong-secret.json"));
+        try {
+            new KafkaProducer<>(producerProps);
+        } catch (Exception e) {
+            Assert.assertNotNull(e.getCause());
+            Assert.assertTrue(e.getCause().getCause() instanceof LoginException);
+        }
     }
 
     @Test(timeOut = 15000)
