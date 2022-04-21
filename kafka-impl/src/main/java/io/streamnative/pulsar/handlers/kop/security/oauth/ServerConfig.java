@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import java.util.Map;
 import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
 
 /**
  * The server configs associated with OauthValidatorCallbackHandler.
@@ -23,7 +22,6 @@ import lombok.extern.slf4j.Slf4j;
  * @see OauthValidatorCallbackHandler
  */
 @Getter
-@Slf4j
 public class ServerConfig {
 
     public static final String DEFAULT_OAUTH_VALIDATE_METHOD = "token";
