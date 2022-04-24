@@ -31,11 +31,6 @@ public class ServerConfig {
     private final String validateMethod;
 
     public ServerConfig(Map<String, String> configs) {
-        String tempValidateMethod;
-        tempValidateMethod = configs.get(OAUTH_VALIDATE_METHOD);
-        if (tempValidateMethod == null) {
-            tempValidateMethod = DEFAULT_OAUTH_VALIDATE_METHOD;
-        }
-        this.validateMethod = tempValidateMethod;
+        this.validateMethod = configs.getOrDefault(OAUTH_VALIDATE_METHOD, DEFAULT_OAUTH_VALIDATE_METHOD);
     }
 }
