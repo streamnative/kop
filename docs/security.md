@@ -145,7 +145,7 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
     kopOauth2ConfigFile=conf/kop-handler.properties
     ```
 
-(3) Specify the authentication method name of the provider (that is, `oauth.validate.method`) in the `conf/kop-handler.properties` file. The default oauth validate method is `token`, if you are using the `token` method, then don't need to specify this setting.
+(3) Specify the authentication method name of the provider (that is, `oauth.validate.method`) in the `conf/kop-handler.properties` file. By default, it uses the `token` authentication method. If you have configured the `token` authentication  method, you do not need to specify the authentication method name.
 
    - If you use `AuthenticationProviderToken`, since `AuthenticationProviderToken#getAuthMethodName()` returns `token`, set the `oauth.validate.method` as the token.
 
