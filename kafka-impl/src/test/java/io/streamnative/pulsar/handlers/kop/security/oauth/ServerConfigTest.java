@@ -35,11 +35,8 @@ public class ServerConfigTest {
     }
 
     @Test
-    public void testInvalidConfig() {
-        try {
-            new ServerConfig(new HashMap<>());
-        } catch (IllegalArgumentException e) {
-            Assert.assertEquals(e.getMessage(), "no key for " + ServerConfig.OAUTH_VALIDATE_METHOD);
-        }
+    public void testGetDefaultValidateMethod() {
+        ServerConfig serverConfig = new ServerConfig(new HashMap<>());
+        Assert.assertEquals(ServerConfig.DEFAULT_OAUTH_VALIDATE_METHOD, serverConfig.getValidateMethod());
     }
 }

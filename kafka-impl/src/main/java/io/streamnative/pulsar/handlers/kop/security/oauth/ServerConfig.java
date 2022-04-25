@@ -24,14 +24,13 @@ import lombok.Getter;
 @Getter
 public class ServerConfig {
 
+    public static final String DEFAULT_OAUTH_VALIDATE_METHOD = "token";
+
     public static final String OAUTH_VALIDATE_METHOD = "oauth.validate.method";
 
     private final String validateMethod;
 
     public ServerConfig(Map<String, String> configs) {
-        this.validateMethod = configs.get(OAUTH_VALIDATE_METHOD);
-        if (this.validateMethod == null) {
-            throw new IllegalArgumentException("no key for " + OAUTH_VALIDATE_METHOD);
-        }
+        this.validateMethod = configs.getOrDefault(OAUTH_VALIDATE_METHOD, DEFAULT_OAUTH_VALIDATE_METHOD);
     }
 }
