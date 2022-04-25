@@ -68,6 +68,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
@@ -204,6 +205,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final int failedAuthenticationDelayMs;
     // store the group name for current connected client.
     private final ConcurrentHashMap<String, CompletableFuture<String>> currentConnectedGroup;
+    private final ConcurrentSkipListSet<String> currentConnectedClientId;
     private final String groupIdStoredPath;
 
     @Getter
@@ -318,6 +320,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig);
         this.currentConnectedGroup = new ConcurrentHashMap<>();
+        this.currentConnectedClientId = new ConcurrentSkipListSet<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
@@ -361,6 +364,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 log.info("currentConnectedGroup remove {}", clientHost);
                 currentConnectedGroup.remove(clientHost);
             }
+
+            // Try to remove all stored groupID on the metadata store.
+            if (log.isDebugEnabled()) {
+                log.debug("Try to remove all stored groupID on the metadata store. Current connected clientIds: {}",
+                        currentConnectedClientId);
+            }
+            currentConnectedClientId.forEach(clientId -> {
+                String path = groupIdStoredPath + GroupIdUtils.groupIdPathFormat(clientHost, clientId);
+                metadataStore.deleteRecursive(path)
+                        .whenComplete((__, ex) -> {
+                            if (ex != null) {
+                                log.error("Delete groupId failed. Path: [{}]", path, ex);
+                                return;
+                            }
+                            if (log.isDebugEnabled()) {
+                                log.debug("Delete groupId success. Path: [{}]", path);
+                            }
+                        });
+            });
 
             // update alive channel count stat
             RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
@@ -902,6 +924,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String groupId = request.coordinatorKey();
         String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
                 findCoordinator.getHeader().clientId());
+        currentConnectedClientId.add(findCoordinator.getHeader().clientId());
 
         // Store group name to metadata store for current client, use to collect consumer metrics.
         storeGroupId(groupId, groupIdPath)
