@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.testng.AssertJUnit.fail;
+
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -41,6 +43,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.awaitility.Awaitility;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -230,29 +233,54 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 20000)
-    public void testUpdateGroupId() throws Exception {
+    public void testUpdateGroupId() {
         final String topic = "testUpdateGroupId";
         final String clientId = "my-client";
         final String group1 = "my-group-1";
         final String group2 = "my-group-2";
 
-        tryConsume(topic, clientId, group1);
-        List<String> children = mockZooKeeper.getChildren(conf.getGroupIdZooKeeperPath(), false);
-        Assert.assertEquals(children.size(), 1);
-        Assert.assertEquals(children.get(0), "127.0.0.1-" + clientId);
-        byte[] data = mockZooKeeper.getData(conf.getGroupIdZooKeeperPath() + "/" + children.get(0), false, null);
-        Assert.assertEquals(new String(data, StandardCharsets.UTF_8), group1);
+        tryConsume(topic, clientId, group1, () -> {
+            try {
+                List<String> children = mockZooKeeper.getChildren(conf.getGroupIdZooKeeperPath(), false);
+                Assert.assertEquals(children.size(), 1);
+                Assert.assertEquals(children.get(0), "127.0.0.1-" + clientId);
+                byte[] data = mockZooKeeper
+                        .getData(conf.getGroupIdZooKeeperPath() + "/" + children.get(0), false, null);
+                Assert.assertEquals(new String(data, StandardCharsets.UTF_8), group1);
+            } catch (Exception ex) {
+                fail("Should not have exception." + ex.getMessage());
+            }
+        });
+
+        Awaitility.await().untilAsserted(() -> {
+            List<String> children1 = mockZooKeeper.getChildren(conf.getGroupIdZooKeeperPath(), false);
+            Assert.assertEquals(children1.size(), 0);
+        });
 
         // Create a consumer with the same hostname and client id, the existed z-node will be updated
-        tryConsume(topic, clientId, group2);
-        children = mockZooKeeper.getChildren(conf.getGroupIdZooKeeperPath(), false);
-        Assert.assertEquals(children.size(), 1);
-        Assert.assertEquals(children.get(0), "127.0.0.1-" + clientId);
-        data = mockZooKeeper.getData(conf.getGroupIdZooKeeperPath() + "/" + children.get(0), false, null);
-        Assert.assertEquals(new String(data, StandardCharsets.UTF_8), group2);
+        tryConsume(topic, clientId, group2, () -> {
+            try {
+                List<String> children = mockZooKeeper.getChildren(conf.getGroupIdZooKeeperPath(), false);
+                Assert.assertEquals(children.size(), 1);
+                Assert.assertEquals(children.get(0), "127.0.0.1-" + clientId);
+                byte[] data = mockZooKeeper
+                        .getData(conf.getGroupIdZooKeeperPath() + "/" + children.get(0), false, null);
+                Assert.assertEquals(new String(data, StandardCharsets.UTF_8), group2);
+            } catch (Exception ex) {
+                fail("Should not have exception." + ex.getMessage());
+            }
+        });
+
+        Awaitility.await().untilAsserted(() -> {
+            List<String> children1 = mockZooKeeper.getChildren(conf.getGroupIdZooKeeperPath(), false);
+            Assert.assertEquals(children1.size(), 0);
+        });
     }
 
-    private void tryConsume(final String topic, final String clientId, final String groupId) {
+    private void tryConsume(final String topic,
+                            final String clientId,
+                            final String groupId,
+                            Runnable runBeforeClose) {
         final Properties props = newKafkaConsumerProperties();
         props.put(ConsumerConfig.CLIENT_ID_CONFIG, clientId);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
@@ -260,6 +288,10 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
         consumer.subscribe(Collections.singleton(topic));
         consumer.poll(Duration.ofSeconds(3));
+
+        if (runBeforeClose != null) {
+            runBeforeClose.run();
+        }
         consumer.close();
     }
 }
