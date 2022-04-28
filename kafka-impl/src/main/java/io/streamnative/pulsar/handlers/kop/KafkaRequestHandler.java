@@ -172,6 +172,7 @@ import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
+import org.apache.pulsar.metadata.api.MetadataStoreException;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 
 /**
@@ -372,9 +373,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
             currentConnectedClientId.forEach(clientId -> {
                 String path = groupIdStoredPath + GroupIdUtils.groupIdPathFormat(clientHost, clientId);
-                metadataStore.deleteRecursive(path)
+                metadataStore.delete(path, Optional.empty())
                         .whenComplete((__, ex) -> {
                             if (ex != null) {
+                                if (ex instanceof MetadataStoreException.NotFoundException) {
+                                    return;
+                                }
                                 log.error("Delete groupId failed. Path: [{}]", path, ex);
                                 return;
                             }

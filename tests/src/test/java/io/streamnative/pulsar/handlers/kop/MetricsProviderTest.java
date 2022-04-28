@@ -32,7 +32,6 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.util.SafeRunnable;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
@@ -240,7 +239,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         final String group1 = "my-group-1";
         final String group2 = "my-group-2";
 
-        tryConsume(topic, clientId, group1, SafeRunnable.safeRun(() -> {
+        tryConsume(topic, clientId, group1, () -> {
             try {
                 List<String> children = mockZooKeeper.getChildren(conf.getGroupIdZooKeeperPath(), false);
                 Assert.assertEquals(children.size(), 1);
@@ -251,7 +250,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
             } catch (Exception ex) {
                 fail("Should not have exception." + ex.getMessage());
             }
-        }));
+        });
 
         Awaitility.await().untilAsserted(() -> {
             List<String> children1 = mockZooKeeper.getChildren(conf.getGroupIdZooKeeperPath(), false);
@@ -259,7 +258,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         });
 
         // Create a consumer with the same hostname and client id, the existed z-node will be updated
-        tryConsume(topic, clientId, group2, SafeRunnable.safeRun(() -> {
+        tryConsume(topic, clientId, group2, () -> {
             try {
                 List<String> children = mockZooKeeper.getChildren(conf.getGroupIdZooKeeperPath(), false);
                 Assert.assertEquals(children.size(), 1);
@@ -270,7 +269,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
             } catch (Exception ex) {
                 fail("Should not have exception." + ex.getMessage());
             }
-        }));
+        });
 
         Awaitility.await().untilAsserted(() -> {
             List<String> children1 = mockZooKeeper.getChildren(conf.getGroupIdZooKeeperPath(), false);
@@ -281,7 +280,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
     private void tryConsume(final String topic,
                             final String clientId,
                             final String groupId,
-                            SafeRunnable runBeforeClose) {
+                            Runnable runBeforeClose) {
         final Properties props = newKafkaConsumerProperties();
         props.put(ConsumerConfig.CLIENT_ID_CONFIG, clientId);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
