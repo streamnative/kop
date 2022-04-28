@@ -57,9 +57,6 @@ public class ClientConfig {
                     "invalid %s \"%s\": %s", OAUTH_CREDENTIALS_URL, credentialsUrlString, e.getMessage()));
         }
 
-        this.audience = configs.get(OAUTH_AUDIENCE);
-        if (this.audience == null) {
-            throw new IllegalArgumentException("no key for " + OAUTH_AUDIENCE);
-        }
+        this.audience = configs.getOrDefault(OAUTH_AUDIENCE, null);
     }
 }

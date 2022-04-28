@@ -174,19 +174,6 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
       <groupId>io.streamnative.pulsar.handlers</groupId>
       <artifactId>oauth-client</artifactId>
       <version>${kop.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>org.apache.logging.log4j</groupId>
-          <artifactId>log4j-slf4j-impl</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-
-    <!-- KoP's login callback handler has a pulsar-client dependency -->
-    <dependency>
-      <groupId>org.apache.pulsar</groupId>
-      <artifactId>pulsar-client</artifactId>
-      <version>${pulsar.version}</version>
     </dependency>
     ```
 
