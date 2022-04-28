@@ -27,7 +27,7 @@ public class ClientConfigTest {
 
     @Test
     public void testValidConfig() {
-        final ClientConfig clientConfig = ClientConfigFactory.create(
+        final ClientConfig clientConfig = ClientConfigHelper.create(
                 "https://issuer-url.com",
                 "file:///etc/config/credentials.json",
                 "audience"
@@ -58,14 +58,14 @@ public class ClientConfigTest {
     @Test
     public void testInvalidUrl() {
         try {
-            ClientConfigFactory.create("xxx", "file:///tmp/key.json");
+            ClientConfigHelper.create("xxx", "file:///tmp/key.json");
         } catch (IllegalArgumentException e) {
             System.out.println(e.getMessage());
             Assert.assertTrue(e.getMessage().startsWith("invalid " + ClientConfig.OAUTH_ISSUER_URL + " \"xxx\""));
         }
 
         try {
-            ClientConfigFactory.create("https://issuer-url.com", "xxx");
+            ClientConfigHelper.create("https://issuer-url.com", "xxx");
         } catch (IllegalArgumentException e) {
             System.out.println(e.getMessage());
             Assert.assertTrue(e.getMessage().startsWith("invalid " + ClientConfig.OAUTH_CREDENTIALS_URL + " \"xxx\""));

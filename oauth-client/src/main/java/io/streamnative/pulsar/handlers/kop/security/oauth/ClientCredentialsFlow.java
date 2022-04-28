@@ -42,40 +42,6 @@ import org.asynchttpclient.Response;
  */
 public class ClientCredentialsFlow implements Closeable {
 
-    @Getter
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class Metadata {
-
-        @JsonProperty("token_endpoint")
-        private String tokenEndPoint;
-    }
-
-    @Getter
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class ClientInfo {
-
-        @JsonProperty("client_id")
-        private String id;
-
-        @JsonProperty("client_secret")
-        private String secret;
-    }
-
-    @Getter
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class TokenError {
-
-        @JsonProperty("error")
-        private String error;
-
-        @JsonProperty("error_description")
-        private String errorDescription;
-
-        @JsonProperty("error_uri")
-        private String errorUri;
-    }
-
-
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final ObjectReader METADATA_READER = OBJECT_MAPPER.readerFor(Metadata.class);
     private static final ObjectReader CLIENT_INFO_READER = OBJECT_MAPPER.readerFor(ClientInfo.class);
@@ -168,5 +134,38 @@ public class ClientCredentialsFlow implements Closeable {
             bodyMap.put("audience", URLEncoder.encode(clientConfig.getAudience(), "UTF-8"));
         }
         return bodyMap.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).collect(Collectors.joining("&"));
+    }
+
+    @Getter
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Metadata {
+
+        @JsonProperty("token_endpoint")
+        private String tokenEndPoint;
+    }
+
+    @Getter
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class ClientInfo {
+
+        @JsonProperty("client_id")
+        private String id;
+
+        @JsonProperty("client_secret")
+        private String secret;
+    }
+
+    @Getter
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class TokenError {
+
+        @JsonProperty("error")
+        private String error;
+
+        @JsonProperty("error_description")
+        private String errorDescription;
+
+        @JsonProperty("error_uri")
+        private String errorUri;
     }
 }

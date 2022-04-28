@@ -17,7 +17,7 @@ import java.util.HashMap;
 import java.util.Map;
 import javax.annotation.Nullable;
 
-public class ClientConfigFactory {
+public class ClientConfigHelper {
 
     public static ClientConfig create(final String issuerUrl, final String credentialsUrl) {
         return create(issuerUrl, credentialsUrl, null);

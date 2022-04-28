@@ -22,7 +22,7 @@ public class ClientCredentialsFlowTest {
 
     @Test
     public void testFindAuthorizationServer() throws IOException {
-        final ClientCredentialsFlow flow = new ClientCredentialsFlow(ClientConfigFactory.create(
+        final ClientCredentialsFlow flow = new ClientCredentialsFlow(ClientConfigHelper.create(
                 "http://localhost:4444", // a local OAuth2 server started by init_hydra_oauth_server.sh
                 "file:///tmp/not_exist.json"
         ));
@@ -32,7 +32,7 @@ public class ClientCredentialsFlowTest {
 
     @Test
     public void testLoadPrivateKey() throws Exception {
-        final ClientCredentialsFlow flow = new ClientCredentialsFlow(ClientConfigFactory.create(
+        final ClientCredentialsFlow flow = new ClientCredentialsFlow(ClientConfigHelper.create(
                 "http://localhost:4444",
                 Objects.requireNonNull(
                         getClass().getClassLoader().getResource("private_key.json")).toString()
