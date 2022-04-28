@@ -377,6 +377,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         .whenComplete((__, ex) -> {
                             if (ex != null) {
                                 if (ex.getCause() instanceof MetadataStoreException.NotFoundException) {
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("The groupId store path doesn't exist. Path: [{}]", path);
+                                    }
                                     return;
                                 }
                                 log.error("Delete groupId failed. Path: [{}]", path, ex);
