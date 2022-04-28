@@ -133,6 +133,9 @@ public class ClientCredentialsFlow implements Closeable {
         if (clientConfig.getAudience() != null) {
             bodyMap.put("audience", URLEncoder.encode(clientConfig.getAudience(), "UTF-8"));
         }
+        if (clientConfig.getScope() != null) {
+            bodyMap.put("scope", URLEncoder.encode(clientConfig.getScope(), "UTF-8"));
+        }
         return bodyMap.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).collect(Collectors.joining("&"));
     }
 

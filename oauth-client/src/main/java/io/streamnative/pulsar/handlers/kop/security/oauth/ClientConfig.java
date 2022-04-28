@@ -29,10 +29,12 @@ public class ClientConfig {
     public static final String OAUTH_ISSUER_URL = "oauth.issuer.url";
     public static final String OAUTH_CREDENTIALS_URL = "oauth.credentials.url";
     public static final String OAUTH_AUDIENCE = "oauth.audience";
+    public static final String OAUTH_SCOPE = "oauth.scope";
 
     private final URL issuerUrl;
     private final URL credentialsUrl;
     private final String audience;
+    private final String scope;
 
     public ClientConfig(Map<String, String> configs) {
         final String issuerUrlString = configs.get(OAUTH_ISSUER_URL);
@@ -58,5 +60,6 @@ public class ClientConfig {
         }
 
         this.audience = configs.getOrDefault(OAUTH_AUDIENCE, null);
+        this.scope = configs.getOrDefault(OAUTH_SCOPE, null);
     }
 }

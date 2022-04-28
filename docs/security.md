@@ -111,7 +111,8 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
     | `type` | Oauth 2.0 authentication type <br><br> The **default** value is `client_credentials`| Optional | `client_credentials`  |
     | `privateKey` | URL to a JSON credential file <br><br>The following pattern formats are supported:<br> - `file:///path/to/file` <br> - `file:/path/to/file` <br> - `data:application/json;base64,<base64-encoded value>` |   Required |file:///path/to/credentials_file.json
     | `issuerUrl` | URL of the authentication provider which allows the Pulsar client to obtain an access token | Required | `https://accounts.google.com` |
-    | `audience`  | An OAuth 2.0 "resource server" identifier for the Pulsar cluster | Required |`https://broker.example.com` |
+    | `audience`  | An OAuth 2.0 "resource server" identifier for the Pulsar cluster | Optional |`https://broker.example.com` |
+    | `scope` | The scope of the access request that is expressed as a list of space-delimited, case-sensitive strings | Optional | `api://pulsar-cluster-1/.default` |
 
 
     ```properties
@@ -233,6 +234,13 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
                 </td>
                 <td>https://broker.example.com</td>
                 <td>This property is the same to the audience property in <a href="http://pulsar.apache.org/docs/en/security-oauth2/#authentication-types">Pulsar client credentials</a></td>
+            </tr>
+            <tr>
+                <td><code>oauth.scope<code></td>
+                <td>The scope of the access request that is expressed as a list of space-delimited, case-sensitive strings.
+                </td>
+                <td>api://pulsar-cluster-1/.default</td>
+                <td>This property is the same to the scope property in <a href="http://pulsar.apache.org/docs/en/security-oauth2/#authentication-types">Pulsar client credentials</a></td>
             </tr>
         </tbody>
     </table>
