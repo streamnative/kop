@@ -22,6 +22,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -497,6 +498,11 @@ public class TransactionMarkerChannelManager {
                 log.info("Cannot close TransactionMarkerChannelHandler for {}", address, err);
             }
         });
+        try {
+            authentication.close();
+        } catch (IOException e) {
+            log.error("Transaction marker authentication close failed.", e);
+        }
     }
 
     public String getAuthenticationUsername() {
