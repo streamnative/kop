@@ -25,11 +25,11 @@ jobs:
     - name: License check
       run: mvn -ntp -B license:check
 
-    - name: Build with Maven skipTests
-      run: mvn clean install -ntp -B -DskipTests
-
     - name: Style check
       run: mvn -ntp -B checkstyle:check
+
+    - name: Build with Maven skipTests
+      run: mvn clean install -ntp -B -DskipTests
 
     - name: Spotbugs check
       run: mvn -ntp -B spotbugs:check
