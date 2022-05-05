@@ -66,10 +66,18 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     private final AtomicInteger correlationId = new AtomicInteger(0);
     private final TransactionMarkerChannelManager transactionMarkerChannelManager;
+    private final String mechanism;
 
     public TransactionMarkerChannelHandler(
             TransactionMarkerChannelManager transactionMarkerChannelManager) {
         this.transactionMarkerChannelManager = transactionMarkerChannelManager;
+        if (transactionMarkerChannelManager.getAuthentication() instanceof AuthenticationToken) {
+            mechanism = PlainSaslServer.PLAIN_MECHANISM;
+        } else if (transactionMarkerChannelManager.getAuthentication() instanceof AuthenticationOAuth2) {
+            mechanism = OAuthBearerLoginModule.OAUTHBEARER_MECHANISM;
+        } else {
+            mechanism = "";
+        }
     }
 
     public void enqueueRequest(WriteTxnMarkersRequest request,
@@ -269,12 +277,6 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
                 "tx", //ignored
                 correlationId.incrementAndGet()
         );
-        String mechanism = "";
-        if (transactionMarkerChannelManager.getAuthentication() instanceof AuthenticationToken) {
-            mechanism = PlainSaslServer.PLAIN_MECHANISM;
-        } else if (transactionMarkerChannelManager.getAuthentication() instanceof AuthenticationOAuth2) {
-            mechanism = OAuthBearerLoginModule.OAUTHBEARER_MECHANISM;
-        }
 
         SaslHandshakeRequest request = new SaslHandshakeRequest
                 .Builder(mechanism)
