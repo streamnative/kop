@@ -22,12 +22,27 @@ jobs:
       with:
         java-version: 1.8
 
+    - name: License check
+      run: mvn -ntp -B license:check
+
+    - name: Style check
+      run: mvn -ntp -B checkstyle:check
+
+    - name: Build with Maven skipTests
+      run: mvn clean install -ntp -B -DskipTests
+
+    - name: Spotbugs check
+      run: mvn -ntp -B spotbugs:check
+
+    - name: kafka-impl test after build
+      run: mvn test -ntp -B -DfailIfNoTests=false -pl kafka-impl
+
     - name: Start and init the oauth server
       run: ./ci/init_hydra_oauth_server.sh
       timeout-minutes: 5
 
-    - name: Build with Maven skipTests
-      run: mvn clean install -ntp -B -DskipTests
+    - name: oauth-client test after build
+      run: mvn test -ntp -B -DfailIfNoTests=false -pl oauth-client
 
     - name: tests module
       run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test' -pl tests
