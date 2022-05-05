@@ -26,6 +26,7 @@ import java.net.URI;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -125,16 +126,20 @@ public class ClientCredentialsFlow implements Closeable {
         }
     }
 
+    private static String encode(String s) throws UnsupportedEncodingException {
+        return URLEncoder.encode(s, StandardCharsets.UTF_8.name());
+    }
+
     private String buildClientCredentialsBody() throws UnsupportedEncodingException {
         final Map<String, String> bodyMap = new HashMap<>();
         bodyMap.put("grant_type", "client_credentials");
-        bodyMap.put("client_id", URLEncoder.encode(id, "UTF-8"));
-        bodyMap.put("client_secret", URLEncoder.encode(secret, "UTF-8"));
+        bodyMap.put("client_id", encode(id));
+        bodyMap.put("client_secret", encode(secret));
         if (clientConfig.getAudience() != null) {
-            bodyMap.put("audience", URLEncoder.encode(clientConfig.getAudience(), "UTF-8"));
+            bodyMap.put("audience", encode(clientConfig.getAudience()));
         }
         if (clientConfig.getScope() != null) {
-            bodyMap.put("scope", URLEncoder.encode(clientConfig.getScope(), "UTF-8"));
+            bodyMap.put("scope", encode(clientConfig.getScope()));
         }
         return bodyMap.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).collect(Collectors.joining("&"));
     }
