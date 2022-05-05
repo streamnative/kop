@@ -322,8 +322,11 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
                         + "\u0000" + authUsername
                         + "\u0000" + authPassword;
                 saslAuthBytes = usernamePassword.getBytes(UTF_8);
-            } else {
+            } else if (authentication instanceof AuthenticationOAuth2) {
                 saslAuthBytes = new OAuthBearerClientInitialResponse(commandData).toBytes();
+            } else {
+                log.error("Unknown authentication : {}", authentication);
+                saslAuthBytes = new byte[0];
             }
             SaslAuthenticateRequest request = new SaslAuthenticateRequest
                     .Builder(ByteBuffer.wrap(saslAuthBytes))
