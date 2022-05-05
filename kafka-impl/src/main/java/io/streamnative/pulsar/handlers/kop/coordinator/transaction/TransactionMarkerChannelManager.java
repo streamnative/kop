@@ -50,8 +50,8 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
+import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
-import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.ChannelFutures;
 import org.eclipse.jetty.util.BlockingArrayQueue;
@@ -67,7 +67,6 @@ public class TransactionMarkerChannelManager {
     private final String tenant;
     @Getter
     private final KafkaServiceConfiguration kafkaConfig;
-    private final String authenticationToken;
     private final EventLoopGroup eventLoopGroup;
     private final boolean enableTls;
     private final SslContextFactory sslContextFactory;
@@ -87,6 +86,9 @@ public class TransactionMarkerChannelManager {
     private final String namespacePrefixForUserTopics;
     private final ScheduledExecutorService scheduler;
     private ScheduledFuture<?> drainQueuedTransactionMarkersHandle;
+
+    @Getter
+    private Authentication authentication;
 
     @AllArgsConstructor
     @ToString
@@ -162,16 +164,11 @@ public class TransactionMarkerChannelManager {
             sslContextFactory = null;
             sslEndPoint = null;
         }
-        if (kafkaConfig.isAuthenticationEnabled()
-                && AuthenticationToken.class.getName().equals(kafkaConfig.getBrokerClientAuthenticationPlugin())) {
-            // this currently works only for JWT authentication
+        if (kafkaConfig.isAuthenticationEnabled()) {
             String auth = kafkaConfig.getBrokerClientAuthenticationPlugin();
             String authParams = kafkaConfig.getBrokerClientAuthenticationParameters();
-            authenticationToken = AuthenticationUtil.create(auth, authParams)
-                    .getAuthData()
-                    .getCommandData();
-        } else {
-            authenticationToken = null;
+            authentication = AuthenticationUtil.create(auth, authParams);
+            authentication.start();
         }
         eventLoopGroup = new NioEventLoopGroup();
         bootstrap = new Bootstrap();
@@ -504,12 +501,5 @@ public class TransactionMarkerChannelManager {
 
     public String getAuthenticationUsername() {
         return tenant;
-    }
-
-    public String getAuthenticationPassword() {
-        if (authenticationToken == null) {
-            return "";
-        }
-        return "token:" + authenticationToken;
     }
 }
