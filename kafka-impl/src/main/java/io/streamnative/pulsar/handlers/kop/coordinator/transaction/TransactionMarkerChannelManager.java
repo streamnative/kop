@@ -498,10 +498,12 @@ public class TransactionMarkerChannelManager {
                 log.info("Cannot close TransactionMarkerChannelHandler for {}", address, err);
             }
         });
-        try {
-            authentication.close();
-        } catch (IOException e) {
-            log.error("Transaction marker authentication close failed.", e);
+        if (authentication != null) {
+            try {
+                authentication.close();
+            } catch (IOException e) {
+                log.error("Transaction marker authentication close failed.", e);
+            }
         }
     }
 
