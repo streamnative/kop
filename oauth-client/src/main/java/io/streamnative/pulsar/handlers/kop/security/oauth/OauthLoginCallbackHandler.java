@@ -79,7 +79,6 @@ public class OauthLoginCallbackHandler implements AuthenticateCallbackHandler {
             throw new IllegalArgumentException("Callback had a token already");
         }
         try (final ClientCredentialsFlow flow = new ClientCredentialsFlow(clientConfig)) {
-            flow.initialize();
             callback.token(flow.authenticate());
         }
     }

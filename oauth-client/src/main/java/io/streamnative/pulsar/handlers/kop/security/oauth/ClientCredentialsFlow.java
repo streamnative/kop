@@ -53,9 +53,6 @@ public class ClientCredentialsFlow implements Closeable {
     private final Duration readTimeout = Duration.ofSeconds(30);
     private final ClientConfig clientConfig;
     private final AsyncHttpClient httpClient;
-    private volatile String tokenEndPoint;
-    private volatile String id;
-    private volatile String secret;
 
     public ClientCredentialsFlow(ClientConfig clientConfig) {
         this.clientConfig = clientConfig;
@@ -66,16 +63,11 @@ public class ClientCredentialsFlow implements Closeable {
                 .build());
     }
 
-    public void initialize() throws IOException {
-        tokenEndPoint = findAuthorizationServer().getTokenEndPoint();
-        final ClientInfo clientInfo = loadPrivateKey();
-        id = clientInfo.getId();
-        secret = clientInfo.getSecret();
-    }
-
     public OAuthBearerTokenImpl authenticate() throws IOException {
+        final String tokenEndPoint = findAuthorizationServer().getTokenEndPoint();
+        final ClientInfo clientInfo = loadPrivateKey();
         try {
-            final String body = buildClientCredentialsBody();
+            final String body = buildClientCredentialsBody(clientInfo);
             final Response response = httpClient.preparePost(tokenEndPoint)
                     .setHeader("Accept", "application/json")
                     .setHeader("Content-Type", "application/x-www-form-urlencoded")
@@ -130,11 +122,11 @@ public class ClientCredentialsFlow implements Closeable {
         return URLEncoder.encode(s, StandardCharsets.UTF_8.name());
     }
 
-    private String buildClientCredentialsBody() throws UnsupportedEncodingException {
+    private String buildClientCredentialsBody(ClientInfo clientInfo) throws UnsupportedEncodingException {
         final Map<String, String> bodyMap = new HashMap<>();
         bodyMap.put("grant_type", "client_credentials");
-        bodyMap.put("client_id", encode(id));
-        bodyMap.put("client_secret", encode(secret));
+        bodyMap.put("client_id", encode(clientInfo.getId()));
+        bodyMap.put("client_secret", encode(clientInfo.getSecret()));
         if (clientConfig.getAudience() != null) {
             bodyMap.put("audience", encode(clientConfig.getAudience()));
         }
