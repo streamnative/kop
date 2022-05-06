@@ -252,6 +252,10 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     protected final void internalSetup() throws Exception {
+        internalSetup(true);
+    }
+
+    protected final void internalSetup(boolean startBroker) throws Exception {
         sameThreadOrderedSafeExecutor = new SameThreadOrderedSafeExecutor();
 
         bkExecutor = OrderedScheduler.newSchedulerBuilder().numThreads(2).name("mock-pulsar-bk").build();
@@ -275,14 +279,15 @@ public abstract class KopProtocolHandlerTestBase {
             brokerServiceUrlTls);
         mockBookKeeper = createMockBookKeeper(bkExecutor);
 
-        startBroker();
+        if (startBroker) {
+            startBroker();
+            createAdmin();
+            createClient();
 
-        createAdmin();
-        createClient();
-
-        MetadataUtils.createOffsetMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
-        if (conf.isKafkaTransactionCoordinatorEnabled()) {
-            MetadataUtils.createTxnMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
+            MetadataUtils.createOffsetMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
+            if (conf.isKafkaTransactionCoordinatorEnabled()) {
+                MetadataUtils.createTxnMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
+            }
         }
 
         if (enableSchemaRegistry) {
@@ -352,10 +357,14 @@ public abstract class KopProtocolHandlerTestBase {
         startBroker();
     }
 
-    protected void stopBroker() throws Exception {
+    protected static void stopBroker(final PulsarService pulsar) throws Exception {
         // set shutdown timeout to 0 for forceful shutdown
         pulsar.getConfiguration().setBrokerShutdownTimeoutMs(0L);
         pulsar.close();
+    }
+
+    protected void stopBroker() throws Exception {
+        stopBroker(pulsar);
     }
 
     protected void startBroker() throws Exception {
