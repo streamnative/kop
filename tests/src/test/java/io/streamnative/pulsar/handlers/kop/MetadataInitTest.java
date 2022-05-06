@@ -15,7 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
-import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.assertThrows;
 
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.net.URISyntaxException;
@@ -92,11 +92,7 @@ public class MetadataInitTest extends KopProtocolHandlerTestBase {
         conf.setKafkaManageSystemNamespaces(false);
 
         final PulsarService pulsarService = startBroker(conf);
-        try {
-            new MetadataNamespacePolicies(pulsarService);
-        } catch (Exception e) {
-            assertTrue(e instanceof PulsarAdminException.NotFoundException);
-        }
+        assertThrows(PulsarAdminException.NotFoundException.class, () -> new MetadataNamespacePolicies(pulsarService));
         stopBroker(pulsarService);
     }
 
