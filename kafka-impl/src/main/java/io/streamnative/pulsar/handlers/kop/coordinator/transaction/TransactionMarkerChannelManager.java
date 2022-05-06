@@ -22,6 +22,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -50,8 +51,8 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
+import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
-import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.ChannelFutures;
@@ -68,7 +69,6 @@ public class TransactionMarkerChannelManager {
     private final String tenant;
     @Getter
     private final KafkaServiceConfiguration kafkaConfig;
-    private final String authenticationToken;
     private final EventLoopGroup eventLoopGroup;
     private final boolean enableTls;
     private final SslContextFactory sslContextFactory;
@@ -88,6 +88,9 @@ public class TransactionMarkerChannelManager {
     private final String namespacePrefixForUserTopics;
     private final ScheduledExecutorService scheduler;
     private ScheduledFuture<?> drainQueuedTransactionMarkersHandle;
+
+    @Getter
+    private Authentication authentication;
 
     @AllArgsConstructor
     @ToString
@@ -163,16 +166,11 @@ public class TransactionMarkerChannelManager {
             sslContextFactory = null;
             sslEndPoint = null;
         }
-        if (kafkaConfig.isAuthenticationEnabled()
-                && AuthenticationToken.class.getName().equals(kafkaConfig.getBrokerClientAuthenticationPlugin())) {
-            // this currently works only for JWT authentication
+        if (kafkaConfig.isAuthenticationEnabled()) {
             String auth = kafkaConfig.getBrokerClientAuthenticationPlugin();
             String authParams = kafkaConfig.getBrokerClientAuthenticationParameters();
-            authenticationToken = AuthenticationUtil.create(auth, authParams)
-                    .getAuthData()
-                    .getCommandData();
-        } else {
-            authenticationToken = null;
+            authentication = AuthenticationUtil.create(auth, authParams);
+            authentication.start();
         }
         eventLoopGroup = new NioEventLoopGroup();
         bootstrap = new Bootstrap();
@@ -501,16 +499,16 @@ public class TransactionMarkerChannelManager {
                 log.info("Cannot close TransactionMarkerChannelHandler for {}", address, err);
             }
         });
+        if (authentication != null) {
+            try {
+                authentication.close();
+            } catch (IOException e) {
+                log.error("Transaction marker authentication close failed.", e);
+            }
+        }
     }
 
     public String getAuthenticationUsername() {
         return tenant;
-    }
-
-    public String getAuthenticationPassword() {
-        if (authenticationToken == null) {
-            return "";
-        }
-        return "token:" + authenticationToken;
     }
 }
