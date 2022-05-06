@@ -91,17 +91,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                                            String transactionalId,
                                            String isolation,
                                            boolean isBatch) throws Exception {
-        String kafkaServer = "localhost:" + getKafkaBrokerPort();
-
-        Properties producerProps = new Properties();
-        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
-        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
-        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
-        producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
-
         @Cleanup
-        KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
 
         producer.initTransactions();
 
@@ -144,20 +135,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     private void consumeTxnMessage(String topicName,
                                    int totalMessageCount,
                                    String lastMessage,
-                                   String isolation) throws InterruptedException {
-        String kafkaServer = "localhost:" + getKafkaBrokerPort();
-
-        Properties consumerProps = new Properties();
-        consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
-        consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, IntegerDeserializer.class.getName());
-        consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        consumerProps.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
-        consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "consumer-test");
-        consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        consumerProps.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, isolation);
-
+                                   String isolation) {
         @Cleanup
-        KafkaConsumer<Integer, String> consumer = new KafkaConsumer<>(consumerProps);
+        KafkaConsumer<Integer, String> consumer = buildTransactionConsumer("test_consumer", isolation);
         consumer.subscribe(Collections.singleton(topicName));
 
         log.info("the last message is: {}", lastMessage);
@@ -206,30 +186,17 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     public void txnOffsetTest(String topic, int messageCnt, boolean isCommit) throws Exception {
-        String kafkaServer = "localhost:" + getKafkaBrokerPort();
         String groupId = "my-group-id";
 
-        List<String> sendMsgs = prepareData(topic, kafkaServer, "first send message - ", messageCnt);
+        List<String> sendMsgs = prepareData(topic, "first send message - ", messageCnt);
 
         // producer
-        Properties producerProps = new Properties();
-        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
-        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
-        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
-        producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "12");
         @Cleanup
-        KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
+        KafkaProducer<Integer, String> producer = buildTransactionProducer("12");
 
         // consumer
-        Properties consumeProps = new Properties();
-        consumeProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
-        consumeProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, IntegerDeserializer.class.getName());
-        consumeProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        consumeProps.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
-        consumeProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         @Cleanup
-        KafkaConsumer<Integer, String> consumer = new KafkaConsumer<>(consumeProps);
+        KafkaConsumer<Integer, String> consumer = buildTransactionConsumer(groupId, "read_uncommitted");
         consumer.subscribe(Collections.singleton(topic));
 
         producer.initTransactions();
@@ -281,18 +248,10 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     private List<String> prepareData(String sourceTopicName,
-                                     String kafkaServer,
                                      String messageContent,
                                      int messageCount) throws ExecutionException, InterruptedException {
         // producer
-        Properties producerProps = new Properties();
-        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
-        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
-        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
-        producerProps.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
-
-        KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
+        KafkaProducer<Integer, String> producer = buildIdempotenceProducer();
 
         List<String> sendMsgs = new ArrayList<>();
         for (int i = 0; i < messageCount; i++) {
@@ -335,4 +294,51 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         });
     }
 
+    private KafkaProducer<Integer, String> buildTransactionProducer(String transactionalId) {
+        String kafkaServer = "localhost:" + getKafkaBrokerPort();
+
+        Properties producerProps = new Properties();
+        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
+        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
+        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
+        producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
+        addCustomizeProps(producerProps);
+
+        return new KafkaProducer<>(producerProps);
+    }
+
+    private KafkaConsumer<Integer, String> buildTransactionConsumer(String groupId, String isolation) {
+        String kafkaServer = "localhost:" + getKafkaBrokerPort();
+
+        Properties consumerProps = new Properties();
+        consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
+        consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, IntegerDeserializer.class.getName());
+        consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        consumerProps.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
+        consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+        consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        consumerProps.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, isolation);
+        addCustomizeProps(consumerProps);
+
+        return new KafkaConsumer<>(consumerProps);
+    }
+
+    private KafkaProducer<Integer, String> buildIdempotenceProducer() {
+        String kafkaServer = "localhost:" + getKafkaBrokerPort();
+
+        Properties producerProps = new Properties();
+        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
+        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
+        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
+        producerProps.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
+
+        addCustomizeProps(producerProps);
+        return new KafkaProducer<>(producerProps);
+    }
+
+    protected void addCustomizeProps(Properties producerProps) {
+        // No-op
+    }
 }
