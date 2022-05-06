@@ -27,12 +27,11 @@ public class ClientConfigTest {
 
     @Test
     public void testValidConfig() {
-        final Map<String, String> configs = new HashMap<>();
-        configs.put(ClientConfig.OAUTH_ISSUER_URL, "https://issuer-url.com");
-        configs.put(ClientConfig.OAUTH_CREDENTIALS_URL, "file:///etc/config/credentials.json");
-        configs.put(ClientConfig.OAUTH_AUDIENCE, "audience");
-
-        final ClientConfig clientConfig = new ClientConfig(configs);
+        final ClientConfig clientConfig = ClientConfigHelper.create(
+                "https://issuer-url.com",
+                "file:///etc/config/credentials.json",
+                "audience"
+        );
         Assert.assertEquals(clientConfig.getIssuerUrl().toString(), "https://issuer-url.com");
         Assert.assertEquals(clientConfig.getCredentialsUrl().toString(), "file:/etc/config/credentials.json");
         Assert.assertEquals(clientConfig.getAudience(), "audience");
@@ -54,30 +53,19 @@ public class ClientConfigTest {
         } catch (IllegalArgumentException e) {
             Assert.assertEquals(e.getMessage(), "no key for " + ClientConfig.OAUTH_CREDENTIALS_URL);
         }
-
-        configs.put(ClientConfig.OAUTH_CREDENTIALS_URL, "file:///etc/config/credentials.json");
-        try {
-            new ClientConfig(configs);
-        } catch (IllegalArgumentException e) {
-            Assert.assertEquals(e.getMessage(), "no key for " + ClientConfig.OAUTH_AUDIENCE);
-        }
     }
 
     @Test
     public void testInvalidUrl() {
-        final Map<String, String> configs = new HashMap<>();
-        configs.put(ClientConfig.OAUTH_ISSUER_URL, "xxx");
         try {
-            new ClientConfig(configs);
+            ClientConfigHelper.create("xxx", "file:///tmp/key.json");
         } catch (IllegalArgumentException e) {
             System.out.println(e.getMessage());
             Assert.assertTrue(e.getMessage().startsWith("invalid " + ClientConfig.OAUTH_ISSUER_URL + " \"xxx\""));
         }
 
-        configs.put(ClientConfig.OAUTH_ISSUER_URL, "https://issuer-url.com");
-        configs.put(ClientConfig.OAUTH_CREDENTIALS_URL, "xxx");
         try {
-            new ClientConfig(configs);
+            ClientConfigHelper.create("https://issuer-url.com", "xxx");
         } catch (IllegalArgumentException e) {
             System.out.println(e.getMessage());
             Assert.assertTrue(e.getMessage().startsWith("invalid " + ClientConfig.OAUTH_CREDENTIALS_URL + " \"xxx\""));
