@@ -533,7 +533,7 @@ public class SaslAuthenticator {
                 sendAuthenticationFailureResponse();
                 if (log.isDebugEnabled()) {
                     log.debug("Authenticate failed for client, header {}, request {}, reason {}",
-                            header, saslAuthenticateRequest, e.getMessage());
+                            header, saslAuthenticateRequest, e.getMessage(), e);
                 }
             }
         }
