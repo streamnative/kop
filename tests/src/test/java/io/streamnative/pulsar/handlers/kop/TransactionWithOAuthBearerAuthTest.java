@@ -35,7 +35,7 @@ import sh.ory.hydra.api.AdminApi;
 import sh.ory.hydra.model.OAuth2Client;
 
 @Slf4j
-public class TransactionWithAuthTest extends TransactionTest {
+public class TransactionWithOAuthBearerAuthTest extends TransactionTest {
 
     private static final String ADMIN_USER = "simple_client_id";
     private static final String ADMIN_SECRET = "admin_secret";

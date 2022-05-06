@@ -314,19 +314,24 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
         try {
             byte[] saslAuthBytes;
             String commandData = authentication.getAuthData().getCommandData();
-            if (authentication instanceof AuthenticationToken) {
-                String prefix = "TX"; // the prefix TX means nothing, it is ignored by SaslUtils#parseSaslAuthBytes
-                String authUsername = transactionMarkerChannelManager.getAuthenticationUsername();
-                String authPassword = "token:" + commandData;
-                String usernamePassword = prefix
-                        + "\u0000" + authUsername
-                        + "\u0000" + authPassword;
-                saslAuthBytes = usernamePassword.getBytes(UTF_8);
-            } else if (authentication instanceof AuthenticationOAuth2) {
-                saslAuthBytes = new OAuthBearerClientInitialResponse(commandData).toBytes();
-            } else {
-                log.error("Unknown authentication : {}", authentication);
-                saslAuthBytes = new byte[0];
+
+            switch (mechanism) {
+                case PlainSaslServer.PLAIN_MECHANISM:
+                    String prefix = "TX"; // the prefix TX means nothing, it is ignored by SaslUtils#parseSaslAuthBytes
+                    String authUsername = transactionMarkerChannelManager.getAuthenticationUsername();
+                    String authPassword = "token:" + commandData;
+                    String usernamePassword = prefix
+                            + "\u0000" + authUsername
+                            + "\u0000" + authPassword;
+                    saslAuthBytes = usernamePassword.getBytes(UTF_8);
+                    break;
+                case OAuthBearerLoginModule.OAUTHBEARER_MECHANISM:
+                    saslAuthBytes = new OAuthBearerClientInitialResponse(commandData).toBytes();
+                    break;
+                default:
+                    log.error("No corresponding mechanism to {}", authentication.getClass().getName());
+                    saslAuthBytes = new byte[0];
+                    break;
             }
             SaslAuthenticateRequest request = new SaslAuthenticateRequest
                     .Builder(ByteBuffer.wrap(saslAuthBytes))
