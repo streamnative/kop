@@ -204,28 +204,12 @@ public class MetadataUtils {
 
             // set namespace config only when offset metadata namespace first create
             if (isMetadataNamespace) {
-                int retentionMinutes = (int) conf.getOffsetsRetentionMinutes();
-                int retentionSizeInMB = conf.getSystemTopicRetentionSizeInMB();
-                RetentionPolicies retentionPolicies = namespaces.getRetention(kafkaNamespace);
-
-                if (retentionPolicies == null
-                        || retentionPolicies.getRetentionTimeInMinutes() != retentionMinutes
-                        || retentionPolicies.getRetentionSizeInMB() != retentionSizeInMB
-                ) {
-                    namespaces.setRetention(kafkaNamespace,
-                            new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), retentionSizeInMB));
-                }
-
-                Long compactionThreshold = namespaces.getCompactionThreshold(kafkaNamespace);
-                if (compactionThreshold != null && compactionThreshold != MAX_COMPACTION_THRESHOLD) {
-                    namespaces.setCompactionThreshold(kafkaNamespace, MAX_COMPACTION_THRESHOLD);
-                }
-
-                int targetMessageTTL = conf.getOffsetsMessageTTL();
-                Integer messageTTL = namespaces.getNamespaceMessageTTL(kafkaNamespace);
-                if (messageTTL == null || messageTTL != targetMessageTTL) {
-                    namespaces.setNamespaceMessageTTL(kafkaNamespace, targetMessageTTL);
-                }
+                namespaces.setRetention(kafkaNamespace, new RetentionPolicies(
+                        (int) conf.getOffsetsRetentionMinutes(),
+                        conf.getSystemTopicRetentionSizeInMB())
+                );
+                namespaces.setCompactionThreshold(kafkaNamespace, MAX_COMPACTION_THRESHOLD);
+                namespaces.setNamespaceMessageTTL(kafkaNamespace, conf.getOffsetsMessageTTL());
             }
         } else {
             List<String> replicationClusters = namespaces.getNamespaceReplicationClusters(kafkaNamespace);
