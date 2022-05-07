@@ -36,6 +36,9 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.DefaultEventLoop;
+import io.netty.channel.EventLoopGroup;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -98,6 +101,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
+import org.apache.pulsar.common.util.netty.EventLoopUtil;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Ignore;
@@ -139,11 +143,15 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         }
 
         log.info("created namespaces, init handler");
-
+        DefaultThreadFactory defaultThreadFactory = new DefaultThreadFactory("pulsar-ph-kafka");
+        EventLoopGroup dedicatedWorkerGroup =
+                EventLoopUtil.newEventLoopGroup(1, false, defaultThreadFactory);
+        DefaultEventLoop eventExecutors = new DefaultEventLoop(dedicatedWorkerGroup);
         kafkaRequestHandler = newRequestHandler();
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
+        doReturn(eventExecutors).when(mockCtx).executor();
         kafkaRequestHandler.ctx = mockCtx;
 
         serviceAddress = new InetSocketAddress(pulsar.getBindAddress(), kafkaBrokerPort);
