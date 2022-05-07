@@ -503,13 +503,14 @@ public abstract class KopProtocolHandlerTestBase {
         public KProducer(String topic, Boolean isAsync, String host,
                          int port, String username, String password,
                          Boolean retry, String keySer, String valueSer,
-                         String transactionalId) {
+                         String transactionalId, int batchSize) {
             Properties props = new Properties();
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducer");
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, keySer);
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, valueSer);
             props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 10000);
+            props.put(ProducerConfig.BATCH_SIZE_CONFIG, batchSize);
             if (transactionalId != null) {
                 props.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
             }
@@ -535,6 +536,13 @@ public abstract class KopProtocolHandlerTestBase {
 
         public KProducer(String topic, Boolean isAsync, String host,
                          int port, String username, String password,
+                         Boolean retry, String keySer, String valueSer,
+                         String transactionalId) {
+            this(topic, isAsync, host, port, username, password, retry, keySer, valueSer, transactionalId, 16384);
+        }
+
+        public KProducer(String topic, Boolean isAsync, String host,
+                         int port, String username, String password,
                          Boolean retry, String keySer, String valueSer) {
             this(topic, isAsync, host, port, username, password, retry, keySer, valueSer, null);
         }
@@ -543,6 +551,12 @@ public abstract class KopProtocolHandlerTestBase {
                          int port, String username, String password) {
             this(topic, isAsync, host, port, username, password, false,
                     IntegerSerializer.class.getName(), StringSerializer.class.getName());
+        }
+
+        public KProducer(String topic, Boolean isAsync, String host,
+                         int port, String username, String password, int batchSize) {
+            this(topic, isAsync, host, port, username, password, false,
+                    IntegerSerializer.class.getName(), StringSerializer.class.getName(), null, batchSize);
         }
 
         public KProducer(String topic, Boolean isAsync, String host, int port) {
