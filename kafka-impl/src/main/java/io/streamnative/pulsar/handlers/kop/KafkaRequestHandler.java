@@ -885,7 +885,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
             final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
             authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
-                    .whenComplete((isAuthorized, ex) -> {
+                    .whenCompleteAsync((isAuthorized, ex) -> {
                         if (ex != null) {
                             log.error("Write topic authorize failed, topic - {}. {}",
                                     fullPartitionName, ex.getMessage());
@@ -902,7 +902,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         }
                         authorizedRequestInfo.put(topicPartition, records);
                         completeOne.run();
-                    });
+                    }, ctx.executor());
         });
 
 
