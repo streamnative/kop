@@ -112,9 +112,6 @@ public abstract class KopProtocolHandlerTestBase {
     protected NonClosableMockBookKeeper mockBookKeeper;
     protected final String configClusterName = "test";
 
-    protected final String tenant = "public";
-    protected final String namespace = "default";
-
     private SameThreadOrderedSafeExecutor sameThreadOrderedSafeExecutor;
     private OrderedExecutor bkExecutor;
 
@@ -171,9 +168,6 @@ public abstract class KopProtocolHandlerTestBase {
 
         kafkaConfig.setForceDeleteTenantAllowed(true);
         kafkaConfig.setForceDeleteNamespaceAllowed(true);
-
-        kafkaConfig.setKafkaMetadataTenant(tenant);
-        kafkaConfig.setKafkaMetadataNamespace(namespace);
 
         // kafka related settings.
         kafkaConfig.setOffsetsTopicNumPartitions(1);

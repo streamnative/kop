@@ -77,18 +77,24 @@ public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
         assertFalse(KopBrokerLookupManager.KOP_ADDRESS_CACHE.isEmpty());
         assertFalse(KopBrokerLookupManager.LOOKUP_CACHE.isEmpty());
 
-        BundlesData bundles = pulsar.getAdminClient().namespaces().getBundles(
-                conf.getKafkaTenant() + "/" + conf.getKafkaNamespace());
+        log.info("Before unload, LOOKUP_CACHE is {}", KopBrokerLookupManager.LOOKUP_CACHE);
+        log.info("Before unload, KOP_ADDRESS_CACHE {}", KopBrokerLookupManager.KOP_ADDRESS_CACHE);
+        String namespace = conf.getKafkaTenant() + "/" + conf.getKafkaNamespace();
+        BundlesData bundles = pulsar.getAdminClient().namespaces().getBundles(namespace);
         List<String> boundaries = bundles.getBoundaries();
         for (int i = 0; i < boundaries.size() - 1; i++) {
             String bundle = String.format("%s_%s", boundaries.get(i), boundaries.get(i + 1));
-            pulsar.getAdminClient().namespaces()
-                    .unloadNamespaceBundle(conf.getKafkaTenant() + "/" + conf.getKafkaNamespace(), bundle);
+            pulsar.getAdminClient().namespaces().unloadNamespaceBundle(namespace, bundle);
+        }
+        namespace = conf.getKafkaMetadataTenant() + "/" + conf.getKafkaMetadataNamespace();
+        bundles = pulsar.getAdminClient().namespaces().getBundles(namespace);
+        boundaries = bundles.getBoundaries();
+        for (int i = 0; i < boundaries.size() - 1; i++) {
+            String bundle = String.format("%s_%s", boundaries.get(i), boundaries.get(i + 1));
+            pulsar.getAdminClient().namespaces().unloadNamespaceBundle(namespace, bundle);
         }
 
         Awaitility.await().untilAsserted(() -> {
-            log.info("LOOKUP_CACHE {}", KopBrokerLookupManager.LOOKUP_CACHE);
-            log.info("KOP_ADDRESS_CACHE {}", KopBrokerLookupManager.KOP_ADDRESS_CACHE);
             assertTrue(KopBrokerLookupManager.KOP_ADDRESS_CACHE.isEmpty());
             assertTrue(KopBrokerLookupManager.LOOKUP_CACHE.isEmpty());
         });
