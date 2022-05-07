@@ -82,7 +82,7 @@ public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
         for (int i = 0; i < boundaries.size() - 1; i++) {
             String bundle = String.format("%s_%s", boundaries.get(i), boundaries.get(i + 1));
             pulsar.getAdminClient().namespaces()
-                    .unloadNamespaceBundle(conf.getKafkaTenant() + "/" + conf.getKafkaNamespace(), bundle);
+                    .unloadNamespaceBundle(conf.getKafkaTenant() + "/" + conf.getKafkaMetadataNamespace(), bundle);
         }
 
         Awaitility.await().untilAsserted(() -> {
