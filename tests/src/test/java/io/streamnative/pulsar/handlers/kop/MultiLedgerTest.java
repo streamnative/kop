@@ -47,6 +47,7 @@ import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.TopicMessageIdImpl;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.awaitility.Awaitility;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -70,6 +71,10 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
+        // Use infinite retention to avoid rollover ledgers being deleted immediately
+        admin.namespaces().setRetention(
+                conf.getKafkaTenant() + "/" + conf.getKafkaNamespace(),
+                new RetentionPolicies(-1, -1));
         log.info("success internal setup");
     }
 

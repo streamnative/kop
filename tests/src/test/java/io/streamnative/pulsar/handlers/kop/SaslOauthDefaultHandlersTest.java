@@ -64,7 +64,7 @@ public class SaslOauthDefaultHandlersTest extends SaslOauthBearerTestBase {
         super.internalSetup();
 
         admin.namespaces().grantPermissionOnNamespace(
-                tenant + "/" + namespace,
+                conf.getKafkaTenant() + "/" + conf.getKafkaNamespace(),
                 USER,
                 Sets.newHashSet(AuthAction.consume, AuthAction.produce)
         );
