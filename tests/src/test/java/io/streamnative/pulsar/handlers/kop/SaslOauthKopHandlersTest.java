@@ -14,6 +14,8 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.when;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
@@ -223,15 +225,15 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
 
         // Mock the AuthenticationProvider, make sure throw a AuthenticationException.
         AuthenticationProviderToken mockedAuthenticationProviderToken = Mockito.mock(AuthenticationProviderToken.class);
-        Mockito.doThrow(new AuthenticationException("Mock authentication exception."))
+        doThrow(new AuthenticationException("Mock authentication exception."))
                 .when(mockedAuthenticationProviderToken)
                 .newAuthState(Mockito.any(AuthData.class), Mockito.isNull(), Mockito.isNull());
 
         AuthenticationService mockedAuthenticationServer = Mockito.mock(AuthenticationService.class);
-        Mockito.when(mockedAuthenticationServer.getAuthenticationProvider(Mockito.eq(
+        when(mockedAuthenticationServer.getAuthenticationProvider(Mockito.eq(
                 ServerConfig.DEFAULT_OAUTH_VALIDATE_METHOD))).thenReturn(mockedAuthenticationProviderToken);
         BrokerService brokerService = Mockito.spy(pulsar.getBrokerService());
-        Mockito.doReturn(mockedAuthenticationServer).when(brokerService).getAuthenticationService();
+        doReturn(mockedAuthenticationServer).when(brokerService).getAuthenticationService();
         doReturn(brokerService).when(pulsar).getBrokerService();
 
         final String namespace = conf.getKafkaTenant() + "/" + conf.getKafkaNamespace();
