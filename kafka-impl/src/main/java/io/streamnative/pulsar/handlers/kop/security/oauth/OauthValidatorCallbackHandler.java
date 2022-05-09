@@ -58,10 +58,13 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
         if (options == null) {
             throw new IllegalArgumentException("JAAS configuration options is null");
         }
-        if (configs == null || configs.isEmpty() || !configs.containsKey("AuthenticationService")) {
-            throw new IllegalArgumentException("Configs do not contains AuthenticationService.");
+
+        if (configs == null || configs.isEmpty()
+                || !configs.containsKey(SaslAuthenticator.AUTHENTICATION_SERVER_OBJ)) {
+            throw new IllegalArgumentException("Configs map do not contains AuthenticationService.");
         }
-        authenticationService = (AuthenticationService) configs.get(SaslAuthenticator.AUTHENTICATION_SERVER_OBJ);
+
+        this.authenticationService = (AuthenticationService) configs.get(SaslAuthenticator.AUTHENTICATION_SERVER_OBJ);
         this.config = new ServerConfig(options);
     }
 
