@@ -24,21 +24,25 @@ import javax.naming.AuthenticationException;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.AppConfigurationEntry;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerIllegalTokenException;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerValidationResult;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
+import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authentication.AuthenticationState;
 import org.apache.pulsar.common.api.AuthData;
 
 /**
  * OAuth 2.0 server callback handler.
  */
+@Slf4j
 public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandler {
 
     private ServerConfig config = null;
+    private AuthenticationService authenticationService;
 
     @Override
     public void configure(Map<String, ?> configs, String saslMechanism, List<AppConfigurationEntry> jaasConfigEntries) {
@@ -54,6 +58,10 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
         if (options == null) {
             throw new IllegalArgumentException("JAAS configuration options is null");
         }
+        if (configs == null || configs.isEmpty() || !configs.containsKey("AuthenticationService")) {
+            throw new IllegalArgumentException("Configs do not contains AuthenticationService.");
+        }
+        authenticationService = (AuthenticationService) configs.get(SaslAuthenticator.AUTHENTICATION_SERVER_OBJ);
         this.config = new ServerConfig(options);
     }
 
@@ -85,11 +93,11 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
         if (callback.tokenValue() == null) {
             throw new IllegalArgumentException("Callback has null token value!");
         }
-        if (SaslAuthenticator.getAuthenticationService() == null) {
+        if (authenticationService == null) {
             throw new IllegalStateException("AuthenticationService is null during token validation");
         }
         final AuthenticationProvider authenticationProvider =
-                SaslAuthenticator.getAuthenticationService().getAuthenticationProvider(config.getValidateMethod());
+                authenticationService.getAuthenticationProvider(config.getValidateMethod());
         if (authenticationProvider == null) {
             throw new IllegalStateException("No AuthenticationProvider found for method " + config.getValidateMethod());
         }
@@ -134,6 +142,7 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
                 }
             });
         } catch (AuthenticationException e) {
+            log.error("Oauth validator callback handler new auth state failed: ", e);
             throw new OAuthBearerIllegalTokenException(OAuthBearerValidationResult.newFailure(e.getMessage()));
         }
     }
