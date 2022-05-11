@@ -13,9 +13,14 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.when;
+
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
+import io.streamnative.pulsar.handlers.kop.security.oauth.ServerConfig;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
@@ -26,21 +31,27 @@ import java.util.Collections;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import javax.naming.AuthenticationException;
 import javax.security.auth.login.LoginException;
 import lombok.Cleanup;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.errors.SaslAuthenticationException;
 import org.apache.kafka.common.errors.TopicAuthorizationException;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
+import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authorization.PulsarAuthorizationProvider;
+import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationFactoryOAuth2;
 import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationOAuth2;
+import org.apache.pulsar.common.api.AuthData;
 import org.apache.pulsar.common.policies.data.AuthAction;
+import org.mockito.Mockito;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -207,6 +218,39 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
             Assert.assertNotNull(e.getCause());
             Assert.assertTrue(e.getCause().getCause() instanceof LoginException);
         }
+    }
+
+    @Test
+    public void testAuthenticationHasException() throws Exception {
+
+        // Mock the AuthenticationProvider, make sure throw a AuthenticationException.
+        AuthenticationProviderToken mockedAuthenticationProviderToken = Mockito.mock(AuthenticationProviderToken.class);
+        doThrow(new AuthenticationException("Mock authentication exception."))
+                .when(mockedAuthenticationProviderToken)
+                .newAuthState(Mockito.any(AuthData.class), Mockito.isNull(), Mockito.isNull());
+
+        AuthenticationService mockedAuthenticationServer = Mockito.mock(AuthenticationService.class);
+        when(mockedAuthenticationServer.getAuthenticationProvider(Mockito.eq(
+                ServerConfig.DEFAULT_OAUTH_VALIDATE_METHOD))).thenReturn(mockedAuthenticationProviderToken);
+        BrokerService brokerService = Mockito.spy(pulsar.getBrokerService());
+        doReturn(mockedAuthenticationServer).when(brokerService).getAuthenticationService();
+        doReturn(brokerService).when(pulsar).getBrokerService();
+
+        final String namespace = conf.getKafkaTenant() + "/" + conf.getKafkaNamespace();
+        final String topic = "test-authentication-has-exception";
+        final String role = "test-role-" + System.currentTimeMillis();
+        final String clientCredentialPath = createOAuthClient(role, "secret");
+
+        admin.namespaces().grantPermissionOnNamespace(namespace, role, Collections.singleton(AuthAction.consume));
+        final Properties consumerProps = newKafkaConsumerProperties();
+        internalConfigureOauth2(consumerProps, clientCredentialPath);
+        @Cleanup
+        final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerProps);
+        consumer.subscribe(Collections.singleton(topic));
+
+        Assert.assertThrows(SaslAuthenticationException.class, () -> consumer.poll(Duration.ofSeconds(5)));
+
+        Mockito.reset(brokerService);
     }
 
     @Test(timeOut = 15000)
