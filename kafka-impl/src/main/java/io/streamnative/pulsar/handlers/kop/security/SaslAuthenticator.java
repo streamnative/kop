@@ -448,7 +448,7 @@ public class SaslAuthenticator {
                 byte[] response = saslServer.evaluateResponse(clientToken);
                 if (response != null) {
                     ByteBuf byteBuf = sizePrefixed(ByteBuffer.wrap(response));
-                    Session newSession = null;
+                    final Session newSession;
                     if (saslServer.isComplete()) {
                         newSession = new Session(
                                 new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID(),
@@ -458,14 +458,15 @@ public class SaslAuthenticator {
                         if (!tenantAccessValidationFunction.apply(newSession)) {
                             throw new AuthenticationException("User is not allowed to access this tenant");
                         }
+                    } else {
+                        newSession = null;
                     }
-                    final Session finalNewSession = newSession;
                     ctx.channel().writeAndFlush(byteBuf).addListener(future -> {
                         if (!future.isSuccess()) {
                             log.error("[{}] Failed to write {}", ctx.channel(), future.cause());
                         } else {
                             // This session is required for authorization.
-                            session = finalNewSession;
+                            session = newSession;
                             if (log.isDebugEnabled()) {
                                 log.debug("Send sasl response to SASL_HANDSHAKE v0 old client {} successfully, "
                                         + "session {}", ctx.channel(), session);
