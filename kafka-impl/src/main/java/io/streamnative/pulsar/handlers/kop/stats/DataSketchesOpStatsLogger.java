@@ -14,15 +14,11 @@
 package io.streamnative.pulsar.handlers.kop.stats;
 
 import com.yahoo.sketches.quantiles.DoublesSketch;
-import com.yahoo.sketches.quantiles.DoublesSketchBuilder;
 import com.yahoo.sketches.quantiles.DoublesUnion;
 import com.yahoo.sketches.quantiles.DoublesUnionBuilder;
-import io.netty.util.concurrent.FastThreadLocal;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
-import java.util.concurrent.locks.StampedLock;
 import org.apache.bookkeeper.stats.OpStatsData;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 
@@ -64,14 +60,7 @@ public class DataSketchesOpStatsLogger implements OpStatsLogger {
         failCountAdder.increment();
         failSumAdder.add((long) valueMillis);
 
-        LocalData localData = current.localData.get();
-
-        long stamp = localData.lock.readLock();
-        try {
-            localData.failSketch.update(valueMillis);
-        } finally {
-            localData.lock.unlockRead(stamp);
-        }
+        current.getLocalData().updateFailedSketch(valueMillis);
     }
 
     @Override
@@ -81,14 +70,7 @@ public class DataSketchesOpStatsLogger implements OpStatsLogger {
         successCountAdder.increment();
         successSumAdder.add((long) valueMillis);
 
-        LocalData localData = current.localData.get();
-
-        long stamp = localData.lock.readLock();
-        try {
-            localData.successSketch.update(valueMillis);
-        } finally {
-            localData.lock.unlockRead(stamp);
-        }
+        current.getLocalData().updateSuccessSketch(valueMillis);
     }
 
     @Override
@@ -96,14 +78,7 @@ public class DataSketchesOpStatsLogger implements OpStatsLogger {
         successCountAdder.increment();
         successSumAdder.add(value);
 
-        LocalData localData = current.localData.get();
-
-        long stamp = localData.lock.readLock();
-        try {
-            localData.successSketch.update(value);
-        } finally {
-            localData.lock.unlockRead(stamp);
-        }
+        current.getLocalData().updateSuccessSketch(value);
     }
 
     @Override
@@ -111,14 +86,7 @@ public class DataSketchesOpStatsLogger implements OpStatsLogger {
         failCountAdder.increment();
         failSumAdder.add(value);
 
-        LocalData localData = current.localData.get();
-
-        long stamp = localData.lock.readLock();
-        try {
-            localData.failSketch.update(value);
-        } finally {
-            localData.lock.unlockRead(stamp);
-        }
+        current.getLocalData().updateFailedSketch(value);
     }
 
     @Override
@@ -139,21 +107,10 @@ public class DataSketchesOpStatsLogger implements OpStatsLogger {
         current = replacement;
         replacement = local;
 
-        final DoublesUnion aggregateSuccesss = new DoublesUnionBuilder().build();
+        final DoublesUnion aggregateSuccess = new DoublesUnionBuilder().build();
         final DoublesUnion aggregateFail = new DoublesUnionBuilder().build();
-        local.map.forEach((localData, b) -> {
-            long stamp = localData.lock.writeLock();
-            try {
-                aggregateSuccesss.update(localData.successSketch);
-                localData.successSketch.reset();
-                aggregateFail.update(localData.failSketch);
-                localData.failSketch.reset();
-            } finally {
-                localData.lock.unlockWrite(stamp);
-            }
-        });
-
-        successResult = aggregateSuccesss.getResultAndReset();
+        local.record(aggregateSuccess, aggregateFail);
+        successResult = aggregateSuccess.getResultAndReset();
         failResult = aggregateFail.getResultAndReset();
     }
 
@@ -174,27 +131,5 @@ public class DataSketchesOpStatsLogger implements OpStatsLogger {
         return labels;
     }
 
-    private static class LocalData {
-        private final DoublesSketch successSketch = new DoublesSketchBuilder().build();
-        private final DoublesSketch failSketch = new DoublesSketchBuilder().build();
-        private final StampedLock lock = new StampedLock();
-    }
 
-    private static class ThreadLocalAccessor {
-        private final Map<LocalData, Boolean> map = new ConcurrentHashMap<>();
-        private final FastThreadLocal<LocalData> localData = new FastThreadLocal<LocalData>() {
-
-            @Override
-            protected LocalData initialValue() throws Exception {
-                LocalData localData = new LocalData();
-                map.put(localData, Boolean.TRUE);
-                return localData;
-            }
-
-            @Override
-            protected void onRemoval(LocalData value) throws Exception {
-                map.remove(value);
-            }
-        };
-    }
 }
