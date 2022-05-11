@@ -121,6 +121,9 @@ public class PlainSaslServer implements SaslServer {
 
     @Override
     public String getAuthorizationID() {
+        if (!complete) {
+            throw new IllegalStateException("Authentication exchange has not completed");
+        }
         return authorizationId;
     }
 

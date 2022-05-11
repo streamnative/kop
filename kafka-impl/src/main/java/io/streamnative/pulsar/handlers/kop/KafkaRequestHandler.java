@@ -420,26 +420,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void maybeDelayCloseOnAuthenticationFailure() {
         if (this.failedAuthenticationDelayMs > 0) {
             this.ctx.executor().schedule(
-                    this::handleCloseOnAuthenticationFailure,
+                    this::completeCloseOnAuthenticationFailure,
                     this.failedAuthenticationDelayMs,
                     TimeUnit.MILLISECONDS);
         } else {
-            handleCloseOnAuthenticationFailure();
-        }
-    }
-
-    private void handleCloseOnAuthenticationFailure() {
-        try {
             this.completeCloseOnAuthenticationFailure();
-        } finally {
-            this.close();
         }
     }
 
     @Override
     protected void completeCloseOnAuthenticationFailure() {
         if (isActive.get() && authenticator != null) {
-            authenticator.sendAuthenticationFailureResponse();
+            authenticator.sendAuthenticationFailureResponse(__ -> this.close());
         }
     }
 
