@@ -351,17 +351,10 @@ public final class MessageFetchContext {
                 } else {
                     cursorFuture.whenComplete((cursorLongPair, ex) -> {
                         if (ex != null) {
-                            log.error("KafkaTopicConsumerManager.asyncGetCursorByOffset({}) failed for topic {}.",
-                                    offset, topicPartition, ex);
-                            try {
-                                registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
-                                requestHandler.getKafkaTopicManagerSharedState()
-                                        .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullTopicName);
-                                addErrorPartitionResponse(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
-                            } catch (Throwable t) {
-                                log.error("Unhandled error here", t);
-                                addErrorPartitionResponse(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
-                            }
+                            registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
+                            requestHandler.getKafkaTopicManagerSharedState()
+                                    .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullTopicName);
+                            addErrorPartitionResponse(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
                         } else if (cursorLongPair == null) {
                             log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
                                             + "Fetch for topic return error.",
