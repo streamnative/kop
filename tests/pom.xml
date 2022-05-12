@@ -166,6 +166,11 @@
       <version>${hydra.version}</version>
     </dependency>
 
+    <dependency>
+      <groupId>io.fusionauth</groupId>
+      <artifactId>fusionauth-jwt</artifactId>
+    </dependency>
+
   </dependencies>
 
   <build>
