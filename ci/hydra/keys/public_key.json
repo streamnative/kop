@@ -1,9 +1,0 @@
-{
-  "alg": "RS256",
-  "e": "AQAB",
-  "kid": "public:7e9cbc3a-20f4-44aa-831c-75471946a7dc",
-  "kty": "RSA",
-  "n": "4g8rgGslfLNGdfh94KbfsMPjgX17nnEHnCLhrlVyA-jxSThiQyQVQCkZfav9k4cLCiKdoqxKtLV0RA3hWXGHE0qUNUJWVN3vz3NOI7ccEHBJHzbDk24NYxsW7M6zNfBfTc6ZrJr5XENy7emscODn8HJ2Qf1UkMUeze5EirJ2lsB9Zzo1GIw9ZU65W9HWWcgS5sL9eHlDRbVLmgph7jRzkQJGm2hOeyiE-ufUOWkBQH49BhKaNGfjZ8BOJ1WRsbIIVtwhS7m-HSIKmglboG-onNd5LYAmngbkCuhwjJajBQayxkeBeumvRQACC1-mKC5KaW40JmVRKFFHDcf892t6GX6c7PaVWPqvf2l6nYRbYT9nl4fQK1aUTiCqrPf2-WjEH1JIEwTfFZKTwpTtlr3ejGJMT7wH2L4uFbpguKawTo4lYHWN3IsryDfUVvNbb7l8KMqiuDIy-5R6WezajsCYI_GzvLGCYO1EnRTDFdEmipfbNT2_D91OPKNGmZLVUkVVlL0z-1iQtwfRamn2oRNHzMYMAplGikxrQld_IPUIbKjgtLWPDnfskoWvuCIDQdRzMpxAXa3O_cq5uQRpu2o8xZ8RYWixxrIGc1_8m-QQLy7DwcmVd0dGU29S-fnfOzWr43KWlyWfGsBLFxUkltjY6gx6oB6tsQVC3Cy5Eku8Fdc",
-  "use": "sig",
-  "x5c": null
-}

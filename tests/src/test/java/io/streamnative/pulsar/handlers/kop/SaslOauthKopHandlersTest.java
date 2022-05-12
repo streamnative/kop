@@ -17,7 +17,14 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
 import com.google.common.collect.Sets;
+import io.fusionauth.jwks.domain.JSONWebKey;
+import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.security.Keys;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.ServerConfig;
@@ -26,7 +33,10 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.net.URL;
+import java.security.KeyPair;
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
@@ -58,6 +68,7 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 import sh.ory.hydra.ApiException;
 import sh.ory.hydra.api.AdminApi;
+import sh.ory.hydra.model.JSONWebKeySet;
 import sh.ory.hydra.model.OAuth2Client;
 
 /**
@@ -75,21 +86,6 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
     private static final String ISSUER_URL = "http://localhost:4444";
     private static final String AUDIENCE = "http://example.com/api/v2/";
 
-    // Generated from ci/hydra/keys/public_key.json
-    private static final String TOKEN_PUBLIC_KEY = "data:;base64,MIICIjANBgkqhk"
-            + "iG9w0BAQEFAAOCAg8AMIICCgKCAgEA4g8rgGslfLNGdfh94Kbf"
-            + "sMPjgX17nnEHnCLhrlVyA+jxSThiQyQVQCkZfav9k4cLCiKdoqxKtLV0RA3hWXGH"
-            + "E0qUNUJWVN3vz3NOI7ccEHBJHzbDk24NYxsW7M6zNfBfTc6ZrJr5XENy7emscODn"
-            + "8HJ2Qf1UkMUeze5EirJ2lsB9Zzo1GIw9ZU65W9HWWcgS5sL9eHlDRbVLmgph7jRz"
-            + "kQJGm2hOeyiE+ufUOWkBQH49BhKaNGfjZ8BOJ1WRsbIIVtwhS7m+HSIKmglboG+o"
-            + "nNd5LYAmngbkCuhwjJajBQayxkeBeumvRQACC1+mKC5KaW40JmVRKFFHDcf892t6"
-            + "GX6c7PaVWPqvf2l6nYRbYT9nl4fQK1aUTiCqrPf2+WjEH1JIEwTfFZKTwpTtlr3e"
-            + "jGJMT7wH2L4uFbpguKawTo4lYHWN3IsryDfUVvNbb7l8KMqiuDIy+5R6WezajsCY"
-            + "I/GzvLGCYO1EnRTDFdEmipfbNT2/D91OPKNGmZLVUkVVlL0z+1iQtwfRamn2oRNH"
-            + "zMYMAplGikxrQld/IPUIbKjgtLWPDnfskoWvuCIDQdRzMpxAXa3O/cq5uQRpu2o8"
-            + "xZ8RYWixxrIGc1/8m+QQLy7DwcmVd0dGU29S+fnfOzWr43KWlyWfGsBLFxUkltjY"
-            + "6gx6oB6tsQVC3Cy5Eku8FdcCAwEAAQ==";
-
     private final AdminApi hydraAdmin = new AdminApi();
     private String adminCredentialPath = null;
 
@@ -97,8 +93,8 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
     @Override
     protected void setup() throws Exception {
         hydraAdmin.setCustomBaseUrl("http://localhost:4445");
+        String tokenPublicKey = initOAuthJwtAccessToken();
         adminCredentialPath = createOAuthClient(ADMIN_USER, ADMIN_SECRET);
-
         super.resetConfig();
         // Broker's config
         conf.setAuthenticationEnabled(true);
@@ -110,7 +106,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
                         + "\"privateKey\":\"%s\",\"issuerUrl\":\"%s\",\"audience\":\"%s\"}",
                 adminCredentialPath, ISSUER_URL, AUDIENCE));
         final Properties properties = new Properties();
-        properties.setProperty("tokenPublicKey", TOKEN_PUBLIC_KEY);
+        properties.setProperty("tokenPublicKey", tokenPublicKey);
         conf.setProperties(properties);
 
         // KoP's config
@@ -135,6 +131,36 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
                         AuthenticationFactoryOAuth2.clientCredentials(
                                 new URL(ISSUER_URL), new URL(adminCredentialPath), AUDIENCE))
                 .build();
+    }
+
+    /**
+     * Init the Hydra OAuth jwt access token.
+     *
+     * @return base64 pem public key
+     */
+    private String initOAuthJwtAccessToken() throws JsonProcessingException, ApiException {
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        ObjectReader jwkReader = objectMapper.readerFor(sh.ory.hydra.model.JSONWebKey.class);
+        KeyPair pair = Keys.keyPairFor(SignatureAlgorithm.RS256);
+        pair.getPrivate().getEncoded();
+        JSONWebKey jwkPublic = JSONWebKey.build(pair.getPublic());
+        JSONWebKey jwkPrivate = JSONWebKey.build(pair.getPrivate());
+        jwkPublic.kid = "public:hydra.jwt.access-token";
+        jwkPrivate.kid = "private:hydra.jwt.access-token";
+        sh.ory.hydra.model.JSONWebKey hydraJwkPublic =
+                jwkReader.readValue(objectMapper.writeValueAsString(jwkPublic));
+        sh.ory.hydra.model.JSONWebKey hydraJwkPrivate =
+                jwkReader.readValue(objectMapper.writeValueAsString(jwkPrivate));
+        try {
+            hydraAdmin.updateJsonWebKeySet("hydra.jwt.access-token", new JSONWebKeySet()
+                    .keys(Arrays.asList(hydraJwkPublic, hydraJwkPrivate)));
+        } catch (ApiException e) {
+            if (e.getCode() != 409) {
+                throw e;
+            }
+        }
+        return Base64.getEncoder().encodeToString(pair.getPublic().getEncoded());
     }
 
     private String createOAuthClient(String clientId, String clientSecret) throws ApiException, IOException {

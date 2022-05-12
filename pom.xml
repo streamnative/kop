@@ -51,6 +51,8 @@
     <awaitility.version>4.0.3</awaitility.version>
     <grpc.version>1.45.1</grpc.version>
     <junit.version>4.13.1</junit.version>
+    <fusionauth-jwt.version>5.2.0</fusionauth-jwt.version>
+
     <!-- plugin dependencies -->
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
     <maven-checkstyle-plugin.version>3.1.1</maven-checkstyle-plugin.version>
@@ -224,6 +226,12 @@
         <groupId>org.awaitility</groupId>
         <artifactId>awaitility</artifactId>
         <version>${awaitility.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>io.fusionauth</groupId>
+        <artifactId>fusionauth-jwt</artifactId>
+        <version>${fusionauth-jwt.version}</version>
       </dependency>
 
       <dependency>
