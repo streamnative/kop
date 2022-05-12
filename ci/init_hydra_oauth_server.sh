@@ -37,18 +37,3 @@ docker-compose -f ci/hydra/docker-compose.yml up -d
 
 # Wait until the hydra server started
 wait_for_url "http://localhost:4445/clients" "Waiting for Hydra admin REST to start"
-
-# Delete access token
-docker run --rm \
-  --network hydra_default \
-  oryd/hydra:v1.11.7 \
-  --endpoint=http://hydra:4445 \
-  keys delete hydra.jwt.access-token
-
-# Replace access token
-docker run --rm \
-  --network hydra_default \
-  -v "${PWD}"/ci/hydra/keys:/tmp/keys \
-  oryd/hydra:v1.11.7 \
-  --endpoint=http://hydra:4445 \
-  keys import hydra.jwt.access-token /tmp/keys/private_key.json /tmp/keys/public_key.json
