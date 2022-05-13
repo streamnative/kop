@@ -410,6 +410,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (authenticator != null) {
             authenticator.authenticate(ctx, requestBuf, registerRequestParseLatency, registerRequestLatency,
                     this::validateTenantAccessForSession);
+            if (authenticator.complete() && kafkaConfig.isKafkaEnableMultiTenantMetadata()) {
+                setRequestStats(requestStats.forTenant(getCurrentTenant()));
+            }
         }
     }
 
