@@ -230,6 +230,10 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_MESSAGE_CONVERSIONS{partition=\"0\","
                 + "topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
         Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_MESSAGE_CONVERSIONS_TIME_NANOS"));
+
+        // network stats
+        Assert.assertTrue(sb.toString().contains("NETWORK_TOTAL_BYTES_IN"));
+        Assert.assertTrue(sb.toString().contains("NETWORK_TOTAL_BYTES_OUT"));
     }
 
     @Test(timeOut = 20000)
