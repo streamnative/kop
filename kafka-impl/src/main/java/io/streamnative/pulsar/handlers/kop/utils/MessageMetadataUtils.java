@@ -13,10 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import com.google.common.base.Predicate;
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import java.util.concurrent.CompletableFuture;
 import javax.annotation.Nullable;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.Entry;
@@ -171,7 +173,18 @@ public class MessageMetadataUtils {
     public static CompletableFuture<Position> asyncFindPosition(final ManagedLedger managedLedger,
                                                                 final long offset,
                                                                 final boolean skipMessagesWithoutIndex) {
-        return managedLedger.asyncFindPosition(entry -> {
+        return managedLedger.asyncFindPosition(new FindEntryByOffset(managedLedger,
+                offset, skipMessagesWithoutIndex));
+    }
+
+    @AllArgsConstructor
+    private static class FindEntryByOffset implements Predicate<Entry> {
+        private final ManagedLedger managedLedger;
+        private final long offset;
+        private final boolean skipMessagesWithoutIndex;
+
+        @Override
+        public boolean apply(Entry entry) {
             if (entry == null) {
                 // `entry` should not be null, add the null check here to fix the spotbugs check
                 return false;
@@ -191,6 +204,12 @@ public class MessageMetadataUtils {
             } finally {
                 entry.release();
             }
-        });
+        }
+
+        @Override
+        public String toString() {
+            return "FindEntryByOffset{ " + offset + "}";
+        }
     }
+
 }
