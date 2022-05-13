@@ -62,7 +62,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     private final LinkedBlockingQueue<ResponseAndRequest> requestQueue;
     @Getter
     @Setter
-    protected RequestStats requestStats;
+    protected volatile RequestStats requestStats;
     @Getter
     protected final KafkaServiceConfiguration kafkaConfig;
 
