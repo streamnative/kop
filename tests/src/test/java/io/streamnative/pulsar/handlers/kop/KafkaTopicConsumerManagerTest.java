@@ -514,7 +514,9 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
             topicConsumerManager.removeCursorFuture(totalMessages - 1).get();
             fail("should have failed");
         } catch (ExecutionException ex) {
-            assertTrue(ex.getCause().getMessage().contains("Current managedLedger has been closed."));
+            log.info("error", ex);
+            assertTrue(ex.getCause().getMessage().contains("Current managedLedger for "
+                    + fullTopicName + " has been closed."));
         }
 
     }

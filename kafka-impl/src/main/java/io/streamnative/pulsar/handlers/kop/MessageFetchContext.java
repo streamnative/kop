@@ -351,8 +351,6 @@ public final class MessageFetchContext {
                 } else {
                     cursorFuture.whenComplete((cursorLongPair, ex) -> {
                         if (ex != null) {
-                            log.error("KafkaTopicConsumerManager.asyncGetCursorByOffset({}) failed for topic {}.",
-                                    offset, topicPartition, ex.getCause());
                             registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
                             requestHandler.getKafkaTopicManagerSharedState()
                                     .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullTopicName);
@@ -375,7 +373,16 @@ public final class MessageFetchContext {
                                         if (throwable != null) {
                                             tcm.deleteOneCursorAsync(cursorLongPair.getLeft(),
                                                     "cursor.readEntry fail. deleteCursor");
-                                            addErrorPartitionResponse(topicPartition, Errors.forException(throwable));
+                                            if (throwable instanceof ManagedLedgerException.CursorAlreadyClosedException
+                                                || throwable
+                                                    instanceof ManagedLedgerException.ManagedLedgerFencedException) {
+                                                addErrorPartitionResponse(topicPartition,
+                                                        Errors.NOT_LEADER_FOR_PARTITION);
+                                            } else {
+                                                log.error("Read entry error on {}", partitionData, throwable);
+                                                addErrorPartitionResponse(topicPartition,
+                                                        Errors.forException(throwable));
+                                            }
                                         } else if (entries == null) {
                                             addErrorPartitionResponse(topicPartition,
                                                     Errors.forException(new ApiException("Cursor is null")));
@@ -605,7 +612,7 @@ public final class MessageFetchContext {
             // this is OK, since this is kind of cumulative ack, following commit will come.
             @Override
             public void markDeleteFailed(ManagedLedgerException e, Object ctx) {
-                log.warn("Mark delete success for position: {} with error:",
+                log.warn("Mark delete failed for position: {} with error:",
                         currentPosition, e);
             }
         }, null);
