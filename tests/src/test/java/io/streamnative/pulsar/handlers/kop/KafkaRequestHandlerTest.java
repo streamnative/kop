@@ -1093,6 +1093,28 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertTrue(causeException instanceof RecordTooLargeException);
     }
 
+    @Test
+    public void testNetworkMetrics() throws Exception {
+        String topicName = "testNetworkMetrics";
+
+        // create partitioned topic.
+        admin.topics().createPartitionedTopic(topicName, 1);
+        Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + getKafkaBrokerPort());
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        @Cleanup
+        KafkaProducer<String, String> producer = new KafkaProducer<>(props);
+        producer.send(new ProducerRecord<>(topicName, "key", "value")).get();
+
+        KafkaProtocolHandler protocolHandler = getProtocolHandler();
+        long bytesIn = protocolHandler.getRequestStats().getNetworkTotalBytesIn().get();
+        long bytesOut = protocolHandler.getRequestStats().getNetworkTotalBytesOut().get();
+
+        assertTrue(bytesIn > 0);
+        assertTrue(bytesOut > 0);
+    }
+
 
     @DataProvider(name = "allowAutoTopicCreation")
     public static Object[][] allowAutoTopicCreation() {
