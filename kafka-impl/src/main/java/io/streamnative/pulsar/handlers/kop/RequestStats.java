@@ -205,4 +205,8 @@ public class RequestStats {
     public Set<ApiKeys> getApiKeysSet() {
         return new TreeSet<>(apiKeysToStatsLogger.keySet());
     }
+
+    public RequestStats forTenant(String tenant) {
+        return new RequestStats(statsLogger.scopeLabel("tenant", tenant));
+    }
 }
