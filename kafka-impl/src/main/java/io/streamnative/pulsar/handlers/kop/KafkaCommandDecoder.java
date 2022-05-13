@@ -60,8 +60,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected AtomicBoolean isActive = new AtomicBoolean(false);
     // Queue to make response get responseFuture in order and limit the max request size
     private final LinkedBlockingQueue<ResponseAndRequest> requestQueue;
-
-    protected final RequestStats requestStats;
+    @Getter
+    @Setter
+    protected volatile RequestStats requestStats;
     @Getter
     protected final KafkaServiceConfiguration kafkaConfig;
 
