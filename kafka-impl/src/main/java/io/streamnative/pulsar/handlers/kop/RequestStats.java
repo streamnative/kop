@@ -21,6 +21,8 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.FETCH_DECODE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_PUBLISH;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_QUEUED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_READ;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.NETWORK_TOTAL_BYTES_IN;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.NETWORK_TOTAL_BYTES_OUT;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PREPARE_METADATA;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_ENCODE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_PARSE_LATENCY;
@@ -121,6 +123,18 @@ public class RequestStats {
     )
     private final OpStatsLogger fetchDecodeStats;
 
+    @StatsDoc(
+            name = NETWORK_TOTAL_BYTES_IN,
+            help = "total bytes received"
+    )
+    private final Counter networkTotalBytesIn;
+
+    @StatsDoc(
+            name = NETWORK_TOTAL_BYTES_OUT,
+            help = "total bytes sent out"
+    )
+    private final Counter networkTotalBytesOut;
+
     private final Map<ApiKeys, StatsLogger> apiKeysToStatsLogger = new ConcurrentHashMap<>();
 
     public RequestStats(StatsLogger statsLogger) {
@@ -138,6 +152,8 @@ public class RequestStats {
         this.prepareMetadataStats = statsLogger.getOpStatsLogger(PREPARE_METADATA);
         this.messageReadStats = statsLogger.getOpStatsLogger(MESSAGE_READ);
         this.fetchDecodeStats  = statsLogger.getOpStatsLogger(FETCH_DECODE);
+        this.networkTotalBytesIn = statsLogger.getCounter(NETWORK_TOTAL_BYTES_IN);
+        this.networkTotalBytesOut = statsLogger.getCounter(NETWORK_TOTAL_BYTES_OUT);
 
         statsLogger.registerGauge(REQUEST_QUEUE_SIZE, new Gauge<Number>() {
             @Override
