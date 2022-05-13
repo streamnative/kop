@@ -53,6 +53,8 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationOAuth2;
 
+import javax.security.sasl.SaslException;
+
 
 /**
  * Transaction marker channel handler.
@@ -326,7 +328,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
                     saslAuthBytes = usernamePassword.getBytes(UTF_8);
                     break;
                 case OAuthBearerLoginModule.OAUTHBEARER_MECHANISM:
-                    saslAuthBytes = new OAuthBearerClientInitialResponse(commandData).toBytes();
+                    saslAuthBytes = new OAuthBearerClientInitialResponse(commandData.getBytes(UTF_8)).toBytes();
                     break;
                 default:
                     log.error("No corresponding mechanism to {}", authentication.getClass().getName());
@@ -347,7 +349,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
             );
             sendGenericRequestOnTheWire(channel, fullRequest, result);
 
-        } catch (PulsarClientException ex) {
+        } catch (PulsarClientException | SaslException ex) {
             log.error("Transaction marker channel handler authentication failed.", ex);
             result.completeExceptionally(ex);
         }
