@@ -21,6 +21,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder;
+import io.streamnative.pulsar.handlers.kop.security.PlainSaslServer;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
@@ -45,6 +46,12 @@ import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SaslHandshakeRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
+import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
+import org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerClientInitialResponse;
+import org.apache.pulsar.client.api.Authentication;
+import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.impl.auth.AuthenticationToken;
+import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationOAuth2;
 
 
 /**
@@ -59,10 +66,18 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     private final AtomicInteger correlationId = new AtomicInteger(0);
     private final TransactionMarkerChannelManager transactionMarkerChannelManager;
+    private final String mechanism;
 
     public TransactionMarkerChannelHandler(
             TransactionMarkerChannelManager transactionMarkerChannelManager) {
         this.transactionMarkerChannelManager = transactionMarkerChannelManager;
+        if (transactionMarkerChannelManager.getAuthentication() instanceof AuthenticationToken) {
+            mechanism = PlainSaslServer.PLAIN_MECHANISM;
+        } else if (transactionMarkerChannelManager.getAuthentication() instanceof AuthenticationOAuth2) {
+            mechanism = OAuthBearerLoginModule.OAUTHBEARER_MECHANISM;
+        } else {
+            mechanism = "";
+        }
     }
 
     public void enqueueRequest(WriteTxnMarkersRequest request,
@@ -262,17 +277,17 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
                 "tx", //ignored
                 correlationId.incrementAndGet()
         );
+
         SaslHandshakeRequest request = new SaslHandshakeRequest
-                .Builder("PLAIN")
+                .Builder(mechanism)
                 .build();
         ByteBuffer buffer = request.serialize(header);
-        KafkaCommandDecoder.KafkaHeaderAndRequest fullRequest = new KafkaCommandDecoder.KafkaHeaderAndRequest(
+        return new KafkaCommandDecoder.KafkaHeaderAndRequest(
                 header,
                 request,
                 Unpooled.wrappedBuffer(buffer),
                 null
         );
-        return fullRequest;
     }
 
     private CompletableFuture<ChannelHandlerContext> authenticate(final ChannelHandlerContext channel) {
@@ -286,33 +301,57 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     }
 
     private CompletableFuture<ChannelHandlerContext> authenticateInternal(ChannelHandlerContext channel) {
+        CompletableFuture<AbstractResponse> result = new CompletableFuture<>();
+
         RequestHeader header = new RequestHeader(
                 ApiKeys.SASL_AUTHENTICATE,
                 ApiKeys.SASL_AUTHENTICATE.latestVersion(),
                 "tx", // ignored
                 correlationId.incrementAndGet()
         );
-        String prefix = "TX"; // the prefix TX means nothing, it is ignored by SaslUtils#parseSaslAuthBytes
-        String authUsername = transactionMarkerChannelManager.getAuthenticationUsername();
-        String authPassword = transactionMarkerChannelManager.getAuthenticationPassword();
-        String usernamePassword = prefix
-                + "\u0000" + authUsername
-                + "\u0000" + authPassword;
-        byte[] saslAuthBytes = usernamePassword.getBytes(UTF_8);
-        SaslAuthenticateRequest request = new SaslAuthenticateRequest
-                .Builder(ByteBuffer.wrap(saslAuthBytes))
-                .build();
+        Authentication authentication = transactionMarkerChannelManager.getAuthentication();
 
-        ByteBuffer buffer = request.serialize(header);
+        try {
+            byte[] saslAuthBytes;
+            String commandData = authentication.getAuthData().getCommandData();
 
-        KafkaCommandDecoder.KafkaHeaderAndRequest fullRequest = new KafkaCommandDecoder.KafkaHeaderAndRequest(
-                header,
-                request,
-                Unpooled.wrappedBuffer(buffer),
-                null
-        );
-        CompletableFuture<AbstractResponse> result = new CompletableFuture<>();
-        sendGenericRequestOnTheWire(channel, fullRequest, result);
+            switch (mechanism) {
+                case PlainSaslServer.PLAIN_MECHANISM:
+                    String prefix = "TX"; // the prefix TX means nothing, it is ignored by SaslUtils#parseSaslAuthBytes
+                    String authUsername = transactionMarkerChannelManager.getAuthenticationUsername();
+                    String authPassword = "token:" + commandData;
+                    String usernamePassword = prefix
+                            + "\u0000" + authUsername
+                            + "\u0000" + authPassword;
+                    saslAuthBytes = usernamePassword.getBytes(UTF_8);
+                    break;
+                case OAuthBearerLoginModule.OAUTHBEARER_MECHANISM:
+                    saslAuthBytes = new OAuthBearerClientInitialResponse(commandData).toBytes();
+                    break;
+                default:
+                    log.error("No corresponding mechanism to {}", authentication.getClass().getName());
+                    saslAuthBytes = new byte[0];
+                    break;
+            }
+            SaslAuthenticateRequest request = new SaslAuthenticateRequest
+                    .Builder(ByteBuffer.wrap(saslAuthBytes))
+                    .build();
+
+            ByteBuffer buffer = request.serialize(header);
+
+            KafkaCommandDecoder.KafkaHeaderAndRequest fullRequest = new KafkaCommandDecoder.KafkaHeaderAndRequest(
+                    header,
+                    request,
+                    Unpooled.wrappedBuffer(buffer),
+                    null
+            );
+            sendGenericRequestOnTheWire(channel, fullRequest, result);
+
+        } catch (PulsarClientException ex) {
+            log.error("Transaction marker channel handler authentication failed.", ex);
+            result.completeExceptionally(ex);
+        }
+
         return result.thenApply(response -> {
             SaslAuthenticateResponse saslResponse = (SaslAuthenticateResponse) response;
             if (saslResponse.error() != Errors.NONE) {

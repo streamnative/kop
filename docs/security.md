@@ -1,3 +1,11 @@
+* [Security](#security)
+  * [Authentication](#authentication)
+    * [PLAIN](#plain)
+    * [OAUTHBEARER](#oauthbearer)
+    * [Together with Pulsar's authentication](#together-with-pulsars-authentication)
+  * [Authorization](#authorization)
+  * [SSL connection](#ssl-connection)
+
 # Security
 
 KoP supports authentication and SSL connection.
@@ -9,16 +17,15 @@ By default, KoP is installed with no encryption, authentication, and authorizati
 KoP authentication mechanism uses [Kafka SASL mechanisms](https://docs.confluent.io/platform/current/kafka/overview-authentication-methods.html) and achieves authentication with [Pulsar token-based authentication mechanism](https://pulsar.apache.org/docs/en/security-overview/). Consequently, if you want to enable the authentication feature for KoP, you need to enable authentication for the following components:
 
 - Pulsar brokers
-
 - KoP (some configurations of KoP rely on the configurations of Pulsar brokers)
-
 - Kafka clients
 
 Currently, KoP supports the following SASL mechanisms:
 
 - [`PLAIN`](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_plain.html#kafka-sasl-auth-plain)
-
 - [`OAUTHBEARER`](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_oauth.html#kafka-oauth-auth)
+
+They are both based on the [JWT authentication](https://pulsar.apache.org/docs/en/security-jwt/), so you must configure `authenticationProviders` with  `AuthenticationProviderToken`. See following chapters for more details.
 
 ### `PLAIN`
 
@@ -104,7 +111,8 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
     | `type` | Oauth 2.0 authentication type <br><br> The **default** value is `client_credentials`| Optional | `client_credentials`  |
     | `privateKey` | URL to a JSON credential file <br><br>The following pattern formats are supported:<br> - `file:///path/to/file` <br> - `file:/path/to/file` <br> - `data:application/json;base64,<base64-encoded value>` |   Required |file:///path/to/credentials_file.json
     | `issuerUrl` | URL of the authentication provider which allows the Pulsar client to obtain an access token | Required | `https://accounts.google.com` |
-    | `audience`  | An OAuth 2.0 "resource server" identifier for the Pulsar cluster | Required |`https://broker.example.com` |
+    | `audience`  | An OAuth 2.0 "resource server" identifier for the Pulsar cluster | Optional |`https://broker.example.com` |
+    | `scope` | The scope of the access request that is expressed as a list of space-delimited, case-sensitive strings | Optional | `api://pulsar-cluster-1/.default` |
 
 
     ```properties
@@ -138,7 +146,7 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
     kopOauth2ConfigFile=conf/kop-handler.properties
     ```
 
-(3) Specify the authentication method name of the provider (that is, `oauth.validate.method`) in the `conf/kop-handler.properties` file.
+(3) Specify the authentication method name of the provider (that is, `oauth.validate.method`) in the `conf/kop-handler.properties` file. By default, it uses the `token` authentication method. If you have configured the `token` authentication  method, you do not need to specify the authentication method name.
 
    - If you use `AuthenticationProviderToken`, since `AuthenticationProviderToken#getAuthMethodName()` returns `token`, set the `oauth.validate.method` as the token.
 
@@ -167,19 +175,6 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
       <groupId>io.streamnative.pulsar.handlers</groupId>
       <artifactId>oauth-client</artifactId>
       <version>${kop.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>org.apache.logging.log4j</groupId>
-          <artifactId>log4j-slf4j-impl</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-
-    <!-- KoP's login callback handler has a pulsar-client dependency -->
-    <dependency>
-      <groupId>org.apache.pulsar</groupId>
-      <artifactId>pulsar-client</artifactId>
-      <version>${pulsar.version}</version>
     </dependency>
     ```
 
@@ -240,6 +235,13 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
                 <td>https://broker.example.com</td>
                 <td>This property is the same to the audience property in <a href="http://pulsar.apache.org/docs/en/security-oauth2/#authentication-types">Pulsar client credentials</a></td>
             </tr>
+            <tr>
+                <td><code>oauth.scope<code></td>
+                <td>The scope of the access request that is expressed as a list of space-delimited, case-sensitive strings.
+                </td>
+                <td>api://pulsar-cluster-1/.default</td>
+                <td>This property is the same to the scope property in <a href="http://pulsar.apache.org/docs/en/security-oauth2/#authentication-types">Pulsar client credentials</a></td>
+            </tr>
         </tbody>
     </table>
 
@@ -253,7 +255,44 @@ sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginMo
    oauth.audience="https://broker.example.com";
 ```
 
+### Together with Pulsar's authentication
+
+Since KoP reuses Pulsar's authentication providers for authentication, you can enable KoP's authentication and Pulsar authentication at the same time.
+
+For example, you can enable KoP's `PLAIN` SASL mechanism and Pulsar's [TLS authentication](https://pulsar.apache.org/docs/en/security-tls-authentication/) simultaneously.
+
+```properties
+superUserRoles=admin
+authenticationEnabled=true
+# Enable both AuthenticationProviderToken and AuthenticationProviderTls here
+authenticationProviders=org.apache.pulsar.broker.authentication.AuthenticationProviderToken,org.apache.pulsar.broker.authentication.AuthenticationProviderTls
+
+# Enable JWT authentication at Pulsar side
+tokenPublicKey=/path/to/my-public.key
+
+# Enable PLAIN SASL mechanism for KoP, which reuses the JWT authentication
+saslAllowedMechanisms=PLAIN
+
+# Enable TLS authentication at Pulsar side
+tlsEnabled=true
+brokerServicePortTls=6651
+webServicePortTls=8443
+tlsRequireTrustedClientCertOnConnect=true
+tlsCertificateFilePath=/path/to/broker.cert.pem
+tlsKeyFilePath=/path/to/broker.key-pk8.pem
+tlsTrustCertsFilePath=/path/to/ca.cert.pem
+
+# Configure broker's built-in client
+brokerClientTlsEnabled=true
+brokerClientTlsTrustCertsFilePath=/path/to/ca.cert.pem
+brokerClientAuthenticationPlugin=org.apache.pulsar.client.impl.auth.AuthenticationTls
+brokerClientAuthenticationParameters=tlsCertFile:/path/to/admin.cert.pem,tlsKeyFile:/path/to/my-ca/admin.key-pk8.pem
+```
+
+See [Transport Encryption using TLS](https://pulsar.apache.org/docs/en/security-tls-transport/) and [Authentication using TLS](https://pulsar.apache.org/docs/en/security-tls-authentication/) for how to generate certificates and keys for TLS authentication.
+
 ## Authorization
+
 To enable authorization on KoP, please make sure the authentication is enabled.
 
 **Note**: For more information, see [Authorization](http://pulsar.apache.org/docs/en/security-jwt/#authorization).
@@ -263,7 +302,7 @@ To enable authorization on KoP, please make sure the authentication is enabled.
    ```properties
    authorizationEnabled=true
    ```
-   
+
 2. Generate JWT tokens.
 
     A token is the credential associated with a user. The association is done through the "`principal`" or "`role`". In the case of JWT tokens, this field is typically referred as `subject`, though they are exactly the same concept.
@@ -278,7 +317,7 @@ To enable authorization on KoP, please make sure the authentication is enabled.
 3. Grant permission to specific role.
 
    The token itself does not have any permission associated. The authorization engine determines whether the token should have permissions or not. Once you have created the token, you can grant permission for this token to do certain actions. <br/>The following is an example.
-      
+
    ```shell
    $ bin/pulsar-admin --auth-plugin "org.apache.pulsar.client.impl.auth.AuthenticationToken" --auth-params "token:<token-of-super-user-role>" \
             namespaces grant-permission <tenant>/<namespace> \

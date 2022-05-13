@@ -1,9 +1,0 @@
-{
-  "name": "node-rdkafka",
-  "version": "1.0.0",
-  "main": "main.js",
-  "license": "Apache-2.0",
-  "dependencies": {
-    "node-rdkafka": "^2.7.4"
-  }
-}

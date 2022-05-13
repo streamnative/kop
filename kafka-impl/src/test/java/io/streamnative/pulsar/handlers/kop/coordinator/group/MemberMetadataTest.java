@@ -13,17 +13,16 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.group;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 import com.google.common.collect.Sets;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import org.junit.Test;
+import org.testng.annotations.Test;
 import org.testng.collections.Maps;
 
 /**
@@ -82,8 +81,8 @@ public class MemberMetadataTest {
         protocols.put("roundrobin", new byte[0]);
 
         MemberMetadata member = newMember(protocols);
-        assertEquals("range", member.vote(Sets.newHashSet("range", "roundrobin")));
-        assertEquals("roundrobin", member.vote(Sets.newHashSet("blah", "roundrobin")));
+        assertEquals(member.vote(Sets.newHashSet("range", "roundrobin")), "range");
+        assertEquals(member.vote(Sets.newHashSet("blah", "roundrobin")), "roundrobin");
     }
 
     @Test
@@ -93,15 +92,15 @@ public class MemberMetadataTest {
         protocols.put("roundrobin", new byte[] { 0xe });
 
         MemberMetadata memberMetadata = newMember(protocols);
-        assertArrayEquals(
-            new byte[] { 0xf },
-            memberMetadata.metadata("range"));
-        assertArrayEquals(
-            new byte[] { 0xe },
-            memberMetadata.metadata("roundrobin"));
+        assertEquals(
+                memberMetadata.metadata("range"),
+                new byte[] { 0xf });
+        assertEquals(
+                memberMetadata.metadata("roundrobin"),
+                new byte[] { 0xe });
     }
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test(expectedExceptions = IllegalArgumentException.class)
     public void testMetadataRaisesOnUnsupportedProtocol() {
         Map<String, byte[]> protocols = new LinkedHashMap<>();
         protocols.put("range", new byte[0]);
@@ -112,7 +111,7 @@ public class MemberMetadataTest {
         fail("Should not reach here");
     }
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test(expectedExceptions = IllegalArgumentException.class)
     public void testVoteRaisesOnUnsupportedProtocols() {
         Map<String, byte[]> protocols = new LinkedHashMap<>();
         protocols.put("range", new byte[0]);

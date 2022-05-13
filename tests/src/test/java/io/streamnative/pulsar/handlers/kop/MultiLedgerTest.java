@@ -21,6 +21,7 @@ import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
+import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -46,6 +47,7 @@ import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.TopicMessageIdImpl;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.awaitility.Awaitility;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -69,6 +71,10 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
+        // Use infinite retention to avoid rollover ledgers being deleted immediately
+        admin.namespaces().setRetention(
+                conf.getKafkaTenant() + "/" + conf.getKafkaNamespace(),
+                new RetentionPolicies(-1, -1));
         log.info("success internal setup");
     }
 
@@ -206,6 +212,10 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
         }
         assertEquals(managedLedger.getLedgersInfo().size(), numLedgers);
 
+        // The rollover can only happen when state is LedgerOpened since https://github.com/apache/pulsar/pull/14664
+        Field stateUpdater = ManagedLedgerImpl.class.getDeclaredField("state");
+        stateUpdater.setAccessible(true);
+        stateUpdater.set(managedLedger, ManagedLedgerImpl.State.LedgerOpened);
         // Rollover and delete the old ledgers, wait until there is only one empty ledger
         managedLedger.getConfig().setRetentionTime(0, TimeUnit.MILLISECONDS);
         managedLedger.rollCurrentLedgerIfFull();

@@ -38,9 +38,11 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManage
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -53,6 +55,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
@@ -72,6 +75,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigResource;
@@ -84,6 +88,8 @@ import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.protocol.types.Struct;
+import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
@@ -102,8 +108,11 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.policies.data.AutoTopicCreationOverride;
+import org.apache.pulsar.common.policies.data.Policies;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.Assert;
@@ -1082,6 +1091,169 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         }
         assertNotNull(causeException);
         assertTrue(causeException instanceof RecordTooLargeException);
+    }
+
+
+    @DataProvider(name = "allowAutoTopicCreation")
+    public static Object[][] allowAutoTopicCreation() {
+        return new Object[][]{
+                { true, true, true },
+                { true, true, false },
+                { true, false, true },
+                { true, false, false },
+                { true, null, true },
+                { true, null, false },
+                { false, true, true },
+                { false, true, false },
+                { false, false, true },
+                { false, false, false },
+                { false, null, true },
+                { false, null, false }
+        };
+    }
+
+    // verify Metadata request handling.
+    @Test(timeOut = 20000, dataProvider = "allowAutoTopicCreation")
+    public void testBrokerHandleTopicMetadataRequestAllowAutoTopicCreation(boolean brokerAllowAutoTopicCreation,
+                                                                           Boolean overrideNameSpaceAutoTopicCreation,
+                                                                           boolean allowAutoTopicCreationInRequest)
+            throws Exception {
+        boolean original = conf.isAllowAutoTopicCreation();
+        try {
+            conf.setAllowAutoTopicCreation(brokerAllowAutoTopicCreation);
+            boolean expectedAllowTopicCreation = overrideNameSpaceAutoTopicCreation != null
+                    ? overrideNameSpaceAutoTopicCreation : conf.isAllowAutoTopicCreation();
+            if (overrideNameSpaceAutoTopicCreation != null) {
+                // override per-namespace
+                admin.namespaces().setAutoTopicCreation("public/default", AutoTopicCreationOverride
+                        .builder()
+                        .allowAutoTopicCreation(overrideNameSpaceAutoTopicCreation)
+                        .defaultNumPartitions(conf.getDefaultNumPartitions())
+                        .topicType("partitioned")
+                        .build());
+                Policies policies = admin.namespaces().getPolicies("public/default");
+                assertEquals(policies.autoTopicCreationOverride.isAllowAutoTopicCreation(),
+                        overrideNameSpaceAutoTopicCreation.booleanValue());
+            } else {
+                admin.namespaces().removeAutoTopicCreation("public/default");
+                Policies policies = admin.namespaces().getPolicies("public/default");
+                assertNull(policies.autoTopicCreationOverride);
+            }
+
+            String topicName = "kopBrokerHandleTopicMetadataRequest-" + brokerAllowAutoTopicCreation + "-"
+                    + overrideNameSpaceAutoTopicCreation + "-"
+                    + allowAutoTopicCreationInRequest;
+            List<String> kafkaTopics = Arrays.asList(topicName);
+            KafkaHeaderAndRequest metadataRequest =
+                    createTopicMetadataRequest(kafkaTopics, allowAutoTopicCreationInRequest);
+            CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+            handler.handleTopicMetadataRequest(metadataRequest, responseFuture);
+            MetadataResponse metadataResponse = (MetadataResponse) responseFuture.get();
+
+            final Errors expectedError;
+            if (expectedAllowTopicCreation) {
+                if (allowAutoTopicCreationInRequest) {
+                    // topic will be created
+                    expectedError = null;
+                    assertEquals(1, metadataResponse.topicMetadata().size());
+                    assertEquals(topicName, metadataResponse.topicMetadata().iterator().next().topic());
+                } else {
+                    // topic does not exist and it is not created
+                    expectedError = Errors.UNKNOWN_TOPIC_OR_PARTITION;
+                }
+            } else {
+                if (allowAutoTopicCreationInRequest) {
+                    // topic does not exist and it cannot be created
+                    expectedError = Errors.UNKNOWN_TOPIC_OR_PARTITION;
+                } else {
+                    // topic does not exist and it is not created
+                    expectedError = Errors.UNKNOWN_TOPIC_OR_PARTITION;
+                }
+            }
+            log.info("errors {}", metadataResponse.errors());
+            assertEquals(expectedError, metadataResponse.errors().get(topicName));
+        } finally {
+            conf.setAllowAutoTopicCreation(original);
+            admin.namespaces().removeAutoTopicCreation("public/default");
+        }
+    }
+
+    @Test(timeOut = 30000)
+    public void testCommitOffsetRetryWhenProducerClosed()
+            throws ExecutionException, InterruptedException, PulsarAdminException {
+        String topic = "testCommitOffsetRetryWhenProducerClosed";
+        String groupId = "test-commit-offset-group";
+        admin.topics().createPartitionedTopic(topic, 1);
+        int numMessages = 10;
+        @Cleanup
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+        for (int i = 0; i < numMessages; i++) {
+            producer.send(new ProducerRecord<>(topic, "value")).get();
+        }
+
+        @Cleanup
+        final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties(groupId));
+        consumer.subscribe(Collections.singleton(topic));
+
+        int fetchMessages = 0;
+
+        // Make sure only close once.
+        final AtomicBoolean flag = new AtomicBoolean(true);
+
+        while (fetchMessages < numMessages) {
+            try {
+                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
+                records.forEach(record -> {
+                    consumer.commitSync();
+                    if (flag.get()) {
+                        handler.getGroupCoordinator().getOffsetsProducers().values()
+                                .forEach(producerCompletableFuture -> {
+                            try {
+                                producerCompletableFuture.get().close();
+                            } catch (PulsarClientException | InterruptedException | ExecutionException e) {
+                                log.error("Close offset producer failed.");
+                            }
+                        });
+                        flag.set(false);
+                    }
+                });
+                fetchMessages += records.count();
+            } catch (KafkaException ex) {
+                log.error("Have kafka exception: ", ex);
+                throw ex;
+            }
+        }
+        assertEquals(fetchMessages, numMessages);
+    }
+
+    private KafkaHeaderAndRequest createTopicMetadataRequest(List<String> topics, boolean allowAutoTopicCreation) {
+        AbstractRequest.Builder builder = new MetadataRequest.Builder(topics, allowAutoTopicCreation);
+        return buildRequest(builder);
+    }
+
+
+    private KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
+        SocketAddress serviceAddress = InetSocketAddress.createUnresolved("localhost", 1111);
+        return buildRequest(builder, serviceAddress);
+    }
+
+    public static KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
+                                                     SocketAddress serviceAddress) {
+        AbstractRequest request = builder.build();
+        builder.apiKey();
+
+        ByteBuffer serializedRequest = request
+                .serialize(new RequestHeader(builder.apiKey(), request.version(), "fake_client_id", 0));
+
+        ByteBuf byteBuf = Unpooled.copiedBuffer(serializedRequest);
+
+        RequestHeader header = RequestHeader.parse(serializedRequest);
+
+        ApiKeys apiKey = header.apiKey();
+        short apiVersion = header.apiVersion();
+        Struct struct = apiKey.parseRequest(apiVersion, serializedRequest);
+        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
+        return new KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
     }
 
 }

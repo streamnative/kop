@@ -35,6 +35,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -81,6 +82,7 @@ import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.MockZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.eclipse.jetty.server.Server;
+import org.testng.Assert;
 
 /**
  * Unit test to test KoP handler.
@@ -110,9 +112,6 @@ public abstract class KopProtocolHandlerTestBase {
     protected MockZooKeeper mockZooKeeperGlobal;
     protected NonClosableMockBookKeeper mockBookKeeper;
     protected final String configClusterName = "test";
-
-    protected final String tenant = "public";
-    protected final String namespace = "default";
 
     private SameThreadOrderedSafeExecutor sameThreadOrderedSafeExecutor;
     private OrderedExecutor bkExecutor;
@@ -170,9 +169,6 @@ public abstract class KopProtocolHandlerTestBase {
 
         kafkaConfig.setForceDeleteTenantAllowed(true);
         kafkaConfig.setForceDeleteNamespaceAllowed(true);
-
-        kafkaConfig.setKafkaMetadataTenant(tenant);
-        kafkaConfig.setKafkaMetadataNamespace(namespace);
 
         // kafka related settings.
         kafkaConfig.setOffsetsTopicNumPartitions(1);
@@ -256,6 +252,10 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     protected final void internalSetup() throws Exception {
+        internalSetup(true);
+    }
+
+    protected final void internalSetup(boolean startBroker) throws Exception {
         sameThreadOrderedSafeExecutor = new SameThreadOrderedSafeExecutor();
 
         bkExecutor = OrderedScheduler.newSchedulerBuilder().numThreads(2).name("mock-pulsar-bk").build();
@@ -279,14 +279,15 @@ public abstract class KopProtocolHandlerTestBase {
             brokerServiceUrlTls);
         mockBookKeeper = createMockBookKeeper(bkExecutor);
 
-        startBroker();
+        if (startBroker) {
+            startBroker();
+            createAdmin();
+            createClient();
 
-        createAdmin();
-        createClient();
-
-        MetadataUtils.createOffsetMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
-        if (conf.isKafkaTransactionCoordinatorEnabled()) {
-            MetadataUtils.createTxnMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
+            MetadataUtils.createOffsetMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
+            if (conf.isKafkaTransactionCoordinatorEnabled()) {
+                MetadataUtils.createTxnMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
+            }
         }
 
         if (enableSchemaRegistry) {
@@ -356,10 +357,14 @@ public abstract class KopProtocolHandlerTestBase {
         startBroker();
     }
 
-    protected void stopBroker() throws Exception {
+    protected static void stopBroker(final PulsarService pulsar) throws Exception {
         // set shutdown timeout to 0 for forceful shutdown
         pulsar.getConfiguration().setBrokerShutdownTimeoutMs(0L);
         pulsar.close();
+    }
+
+    protected void stopBroker() throws Exception {
+        stopBroker(pulsar);
     }
 
     protected void startBroker() throws Exception {
@@ -507,13 +512,14 @@ public abstract class KopProtocolHandlerTestBase {
         public KProducer(String topic, Boolean isAsync, String host,
                          int port, String username, String password,
                          Boolean retry, String keySer, String valueSer,
-                         String transactionalId) {
+                         String transactionalId, int batchSize) {
             Properties props = new Properties();
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducer");
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, keySer);
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, valueSer);
             props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 10000);
+            props.put(ProducerConfig.BATCH_SIZE_CONFIG, batchSize);
             if (transactionalId != null) {
                 props.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
             }
@@ -539,6 +545,13 @@ public abstract class KopProtocolHandlerTestBase {
 
         public KProducer(String topic, Boolean isAsync, String host,
                          int port, String username, String password,
+                         Boolean retry, String keySer, String valueSer,
+                         String transactionalId) {
+            this(topic, isAsync, host, port, username, password, retry, keySer, valueSer, transactionalId, 16384);
+        }
+
+        public KProducer(String topic, Boolean isAsync, String host,
+                         int port, String username, String password,
                          Boolean retry, String keySer, String valueSer) {
             this(topic, isAsync, host, port, username, password, retry, keySer, valueSer, null);
         }
@@ -547,6 +560,12 @@ public abstract class KopProtocolHandlerTestBase {
                          int port, String username, String password) {
             this(topic, isAsync, host, port, username, password, false,
                     IntegerSerializer.class.getName(), StringSerializer.class.getName());
+        }
+
+        public KProducer(String topic, Boolean isAsync, String host,
+                         int port, String username, String password, int batchSize) {
+            this(topic, isAsync, host, port, username, password, false,
+                    IntegerSerializer.class.getName(), StringSerializer.class.getName(), null, batchSize);
         }
 
         public KProducer(String topic, Boolean isAsync, String host, int port) {
@@ -782,9 +801,15 @@ public abstract class KopProtocolHandlerTestBase {
         return adminProps;
     }
 
-    public KafkaChannelInitializer getFirstChannelInitializer() {
-        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
-        return (KafkaChannelInitializer) handler.getChannelInitializerMap().entrySet().iterator().next().getValue();
+    public KafkaProtocolHandler getProtocolHandler() {
+        return (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
+    }
+
+    public static <T> T getFirst(Set<T> set) {
+        Assert.assertNotNull(set);
+        final Iterator<T> iterator = set.iterator();
+        Assert.assertTrue(iterator.hasNext());
+        return iterator.next();
     }
 
     public KafkaRequestHandler newRequestHandler() throws Exception {

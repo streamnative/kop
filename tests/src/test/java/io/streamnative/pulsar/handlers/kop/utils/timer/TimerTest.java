@@ -13,8 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils.timer;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.testng.Assert.fail;
+import static org.testng.AssertJUnit.assertEquals;
+import static org.testng.AssertJUnit.assertTrue;
 
 import com.google.common.collect.Lists;
 import java.util.ArrayList;
@@ -27,9 +28,9 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.utils.Time;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
 
 /**
  * Unit test {@link Timer}.
@@ -65,7 +66,7 @@ public class TimerTest {
 
     private Timer timer = null;
 
-    @Before
+    @BeforeMethod
     public void setup() {
         this.timer = SystemTimer.builder()
             .executorName("test")
@@ -75,7 +76,7 @@ public class TimerTest {
             .build();
     }
 
-    @After
+    @AfterMethod
     public void teardown() {
         timer.shutdown();
     }
@@ -93,10 +94,7 @@ public class TimerTest {
 
         latches.forEach(latch -> {
             try {
-                assertEquals(
-                    "already expired tasks should run immediately",
-                    true,
-                    latch.await(3, TimeUnit.SECONDS));
+                assertTrue("already expired tasks should run immediately", latch.await(3, TimeUnit.SECONDS));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 fail("Should not reach here");

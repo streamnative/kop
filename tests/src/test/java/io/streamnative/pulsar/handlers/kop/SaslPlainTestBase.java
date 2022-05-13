@@ -138,9 +138,9 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 40000)
-    void simpleProduceAndConsume() throws Exception {
+    void simpleProduceAndConsume() {
         KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
-            TENANT + "/" + NAMESPACE, "token:" + userToken);
+            TENANT + "/" + NAMESPACE, "token:" + userToken, 1);
         int totalMsgs = 10;
         String messageStrPrefix = TOPIC + "_message_";
 

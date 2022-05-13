@@ -24,22 +24,25 @@ import javax.naming.AuthenticationException;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.AppConfigurationEntry;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
-import org.apache.kafka.common.security.oauthbearer.OAuthBearerToken;
-import org.apache.kafka.common.security.oauthbearer.OAuthBearerValidatorCallback;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerIllegalTokenException;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerValidationResult;
+import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
+import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authentication.AuthenticationState;
 import org.apache.pulsar.common.api.AuthData;
 
 /**
  * OAuth 2.0 server callback handler.
  */
+@Slf4j
 public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandler {
 
     private ServerConfig config = null;
+    private AuthenticationService authenticationService;
 
     @Override
     public void configure(Map<String, ?> configs, String saslMechanism, List<AppConfigurationEntry> jaasConfigEntries) {
@@ -55,6 +58,13 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
         if (options == null) {
             throw new IllegalArgumentException("JAAS configuration options is null");
         }
+
+        if (configs == null || configs.isEmpty()
+                || !configs.containsKey(SaslAuthenticator.AUTHENTICATION_SERVER_OBJ)) {
+            throw new IllegalArgumentException("Configs map do not contains AuthenticationService.");
+        }
+
+        this.authenticationService = (AuthenticationService) configs.get(SaslAuthenticator.AUTHENTICATION_SERVER_OBJ);
         this.config = new ServerConfig(options);
     }
 
@@ -66,8 +76,8 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
     @Override
     public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
         for (Callback callback : callbacks) {
-            if (callback instanceof OAuthBearerValidatorCallback) {
-                OAuthBearerValidatorCallback validatorCallback = (OAuthBearerValidatorCallback) callback;
+            if (callback instanceof KopOAuthBearerValidatorCallback) {
+                KopOAuthBearerValidatorCallback validatorCallback = (KopOAuthBearerValidatorCallback) callback;
                 try {
                     handleCallback(validatorCallback);
                 } catch (OAuthBearerIllegalTokenException e) {
@@ -82,15 +92,15 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
         }
     }
 
-    private void handleCallback(OAuthBearerValidatorCallback callback) {
+    private void handleCallback(KopOAuthBearerValidatorCallback callback) {
         if (callback.tokenValue() == null) {
             throw new IllegalArgumentException("Callback has null token value!");
         }
-        if (SaslAuthenticator.getAuthenticationService() == null) {
+        if (authenticationService == null) {
             throw new IllegalStateException("AuthenticationService is null during token validation");
         }
         final AuthenticationProvider authenticationProvider =
-                SaslAuthenticator.getAuthenticationService().getAuthenticationProvider(config.getValidateMethod());
+                authenticationService.getAuthenticationProvider(config.getValidateMethod());
         if (authenticationProvider == null) {
             throw new IllegalStateException("No AuthenticationProvider found for method " + config.getValidateMethod());
         }
@@ -100,7 +110,8 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
             final AuthenticationState authState = authenticationProvider.newAuthState(
                     AuthData.of(token.getBytes(StandardCharsets.UTF_8)), null, null);
             final String role = authState.getAuthRole();
-            callback.token(new OAuthBearerToken() {
+            AuthenticationDataSource authDataSource = authState.getAuthDataSource();
+            callback.token(new KopOAuthBearerToken() {
                 @Override
                 public String value() {
                     return token;
@@ -123,12 +134,18 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
                 }
 
                 @Override
+                public AuthenticationDataSource authDataSource() {
+                    return authDataSource;
+                }
+
+                @Override
                 public Long startTimeMs() {
                     // TODO: convert "iat" claim to ms.
                     return Long.MAX_VALUE;
                 }
             });
         } catch (AuthenticationException e) {
+            log.error("Oauth validator callback handler new auth state failed: ", e);
             throw new OAuthBearerIllegalTokenException(OAuthBearerValidationResult.newFailure(e.getMessage()));
         }
     }

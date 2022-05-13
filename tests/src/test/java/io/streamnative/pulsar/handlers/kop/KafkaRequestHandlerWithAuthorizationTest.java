@@ -29,6 +29,9 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.DefaultEventLoop;
+import io.netty.channel.EventLoopGroup;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
@@ -85,6 +88,7 @@ import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
+import org.apache.pulsar.common.util.netty.EventLoopUtil;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
@@ -158,10 +162,16 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         log.info("created namespaces, init handler");
 
+        DefaultThreadFactory defaultThreadFactory = new DefaultThreadFactory("pulsar-ph-kafka");
+        EventLoopGroup dedicatedWorkerGroup =
+                EventLoopUtil.newEventLoopGroup(1, false, defaultThreadFactory);
+        DefaultEventLoop eventExecutors = new DefaultEventLoop(dedicatedWorkerGroup);
+
         handler = newRequestHandler();
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
+        doReturn(eventExecutors).when(mockCtx).executor();
         handler.ctx = mockCtx;
 
         serviceAddress = new InetSocketAddress(pulsar.getBindAddress(), kafkaBrokerPort);
@@ -241,7 +251,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         final RequestHeader header = new RequestHeader(ApiKeys.METADATA, (short) 1, "client", 0);
         final MetadataRequest request =
-                new MetadataRequest(Collections.emptyList(), true, (short) 1);
+                new MetadataRequest(Collections.emptyList(), true, (short) 0);
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         spyHandler.handleTopicMetadataRequest(
                 new KafkaCommandDecoder.KafkaHeaderAndRequest(

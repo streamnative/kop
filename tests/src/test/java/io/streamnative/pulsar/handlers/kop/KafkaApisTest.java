@@ -17,10 +17,16 @@ import static org.apache.kafka.clients.consumer.ConsumerConfig.DEFAULT_FETCH_MAX
 import static org.apache.kafka.clients.consumer.ConsumerConfig.DEFAULT_MAX_PARTITION_FETCH_BYTES;
 import static org.apache.kafka.common.requests.ListOffsetRequest.EARLIEST_TIMESTAMP;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
-import static org.junit.Assert.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
@@ -31,6 +37,9 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.DefaultEventLoop;
+import io.netty.channel.EventLoopGroup;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -75,6 +84,7 @@ import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
+import org.apache.kafka.common.requests.FindCoordinatorRequest;
 import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
@@ -92,6 +102,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
+import org.apache.pulsar.common.util.netty.EventLoopUtil;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Ignore;
@@ -133,11 +144,15 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         }
 
         log.info("created namespaces, init handler");
-
+        DefaultThreadFactory defaultThreadFactory = new DefaultThreadFactory("pulsar-ph-kafka");
+        EventLoopGroup dedicatedWorkerGroup =
+                EventLoopUtil.newEventLoopGroup(1, false, defaultThreadFactory);
+        DefaultEventLoop eventExecutors = new DefaultEventLoop(dedicatedWorkerGroup);
         kafkaRequestHandler = newRequestHandler();
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
+        doReturn(eventExecutors).when(mockCtx).executor();
         kafkaRequestHandler.ctx = mockCtx;
 
         serviceAddress = new InetSocketAddress(pulsar.getBindAddress(), kafkaBrokerPort);
@@ -864,6 +879,28 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 20000)
+    public void testHandleFindCoordinatorRequestWithStoreGroupIdFailed()
+            throws ExecutionException, InterruptedException {
+        String groupId = "test";
+
+        KafkaRequestHandler spyHandler = spy(kafkaRequestHandler);
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        future.completeExceptionally(new Exception("Store failed."));
+        doReturn(future).when(spyHandler).storeGroupId(eq(groupId), anyString());
+
+        FindCoordinatorRequest.Builder builder =
+                new FindCoordinatorRequest.Builder(FindCoordinatorRequest.CoordinatorType.GROUP, groupId);
+
+        KafkaHeaderAndRequest request = buildRequest(builder);
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        spyHandler.handleFindCoordinatorRequest(request, responseFuture);
+
+        AbstractResponse abstractResponse = responseFuture.get();
+        assertNotNull(abstractResponse);
+        verify(spyHandler, times(1)).findBroker(any());
+    }
+
+    @Test(timeOut = 20000)
     public void testIdempotentProduce() throws Exception {
         String namespace = "public/idempotent";
         admin.namespaces().createNamespace(namespace);
@@ -882,7 +919,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         verifySendMessageToPartition(topicPartition,
                 newIdempotentRecords(0, (short) 0, 0, 1), Errors.NONE, 1);
         verifySendMessageToPartition(topicPartition,
-                newIdempotentRecords(0, (short) 0, 0, 1), Errors.DUPLICATE_SEQUENCE_NUMBER, -1);
+                newIdempotentRecords(0, (short) 0, 0, 1), Errors.OUT_OF_ORDER_SEQUENCE_NUMBER, -1);
         verifySendMessageToPartition(topicPartition,
                 newIdempotentRecords(0, (short) 0, 1, 1), Errors.NONE, 2);
         verifySendMessageToPartition(topicPartition,
@@ -896,7 +933,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         verifySendMessageToPartition(topicPartition,
                 newIdempotentRecords(2, (short) 0, 10, 10), Errors.NONE, 15);
         verifySendMessageToPartition(topicPartition,
-                newIdempotentRecords(2, (short) 0, 10, 10), Errors.DUPLICATE_SEQUENCE_NUMBER, -1);
+                newIdempotentRecords(2, (short) 0, 10, 10), Errors.OUT_OF_ORDER_SEQUENCE_NUMBER, -1);
     }
 
     private void verifySendMessageToPartition(final TopicPartition topicPartition,

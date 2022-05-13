@@ -82,6 +82,7 @@ import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.Reader;
 import org.apache.pulsar.client.api.ReaderBuilder;
 import org.apache.pulsar.client.impl.MessageIdImpl;
@@ -578,12 +579,14 @@ public class GroupMetadataManager {
                     });
                 }
 
-                if (log.isDebugEnabled()) {
-                    log.debug("Offset commit {} from group {}, consumer {} with generation {} failed"
-                            + " when appending to log due to ",
+                log.error("Offset commit {} from group {}, consumer {} with generation {} failed"
+                                + " when appending to log due to ",
                         filteredOffsetMetadata, group.groupId(), consumerId, group.generationId(), cause);
-                }
 
+                if (cause.getCause() instanceof PulsarClientException.AlreadyClosedException) {
+                    this.offsetsProducers.remove(partitionFor(group.groupId()));
+                    return Errors.NOT_COORDINATOR;
+                }
                 return Errors.UNKNOWN_SERVER_ERROR;
             })
             .thenApplyAsync(errors -> offsetMetadata.entrySet()

@@ -13,7 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static org.junit.Assert.assertEquals;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertNull;
 
 import io.streamnative.kafka.client.api.Header;
 import java.nio.charset.StandardCharsets;
@@ -47,7 +49,6 @@ import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.MessageIdImpl;
-import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 
@@ -146,7 +147,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
                                       final List<String> values) throws ExecutionException, InterruptedException {
         for (String value : values) {
             producer.send(new ProducerRecord<>(topic, value), (metadata, exception) -> {
-                Assert.assertNull(exception);
+                assertNull(exception);
                 if (log.isDebugEnabled()) {
                     log.debug("KafkaProducer send {} to {}-partition-{}@{}",
                             format(value), metadata.topic(), metadata.partition(), metadata.offset());
@@ -172,14 +173,14 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
         Future<RecordMetadata> future = null;
         for (String value : values) {
             future = producer.send(new ProducerRecord<>(topic, value), (metadata, exception) -> {
-                Assert.assertNull(exception);
+                assertNull(exception);
                 if (log.isDebugEnabled()) {
                     log.debug("KafkaProducer send {} to {}-partition-{}@{}",
                             format(value), metadata.topic(), metadata.partition(), metadata.offset());
                 }
             });
         }
-        Assert.assertNotNull(future);
+        assertNotNull(future);
         future.get();
     }
 
@@ -197,11 +198,14 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
                         return null;
                     });
         }
-        Assert.assertNotNull(future);
+        assertNotNull(future);
         future.get();
     }
 
     protected List<String> receiveMessages(final KafkaConsumer<String, String> consumer, int numMessages) {
+        if (log.isDebugEnabled()) {
+            log.debug("KafkaConsumer receiveMessages {} messages..");
+        }
         List<String> values = new ArrayList<>();
         while (numMessages > 0) {
             for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofMillis(100))) {
@@ -307,7 +311,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
             ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
             for (ConsumerRecord<Integer, String> record : records) {
                 Integer key = record.key();
-                assertEquals(messageStrPrefix + key.toString(), record.value());
+                assertEquals(record.value(), messageStrPrefix + key.toString());
 
                 if (log.isDebugEnabled()) {
                     log.debug("Kafka consumer get message: {}, key: {} at offset {}",

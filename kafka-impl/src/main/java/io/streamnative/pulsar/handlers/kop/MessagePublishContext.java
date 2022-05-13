@@ -27,6 +27,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.Topic.PublishContext;
+import org.apache.pulsar.broker.service.persistent.MessageDeduplication;
 
 /**
  * Implementation for PublishContext.
@@ -44,6 +45,19 @@ public final class MessagePublishContext implements PublishContext {
     private long sequenceId;
     private long highestSequenceId;
     private String producerName;
+    private boolean enableDeduplication;
+
+    /**
+     * On Pulsar side, the replicator marker message will skip the deduplication check,
+     * For support produce a regular message in KoP when Pulsar deduplication is enabled,
+     * KoP uses this method to support this feature.
+     *
+     * See: https://github.com/streamnative/kop/issues/1225
+     */
+    @Override
+    public boolean isMarkerMessage() {
+        return !this.enableDeduplication;
+    }
 
     @Override
     public long getSequenceId() {
@@ -77,11 +91,13 @@ public final class MessagePublishContext implements PublishContext {
                     || exception instanceof BrokerServiceException.TopicFencedException) {
                 log.warn("[{}] Failed to publish message: {}", topic.getName(), exception.getMessage());
                 offsetFuture.completeExceptionally(new NotLeaderForPartitionException());
+            } else if (exception instanceof MessageDeduplication.MessageDupUnknownException) {
+                log.warn("[{}] Failed to publish message: {}", topic.getName(), exception.getMessage());
+                offsetFuture.completeExceptionally(Errors.OUT_OF_ORDER_SEQUENCE_NUMBER.exception());
             } else {
                 log.error("[{}] Failed to publish message", topic.getName(), exception);
                 offsetFuture.completeExceptionally(new KafkaStorageException(exception));
             }
-            offsetFuture.completeExceptionally(exception);
         } else {
             if (log.isDebugEnabled()) {
                 log.debug("Success write topic: {}, producerName {} ledgerId: {}, entryId: {}"
@@ -98,7 +114,7 @@ public final class MessagePublishContext implements PublishContext {
                                     + " with duplicated message.",
                             topic.getName(), producerName, ledgerId, entryId);
                 }
-                offsetFuture.completeExceptionally(Errors.DUPLICATE_SEQUENCE_NUMBER.exception());
+                offsetFuture.completeExceptionally(Errors.OUT_OF_ORDER_SEQUENCE_NUMBER.exception());
                 return;
             }
             // setMetadataFromEntryData() was called before completed() is called so that baseOffset could be set
@@ -117,6 +133,7 @@ public final class MessagePublishContext implements PublishContext {
     public static MessagePublishContext get(CompletableFuture<Long> offsetFuture,
                                             Topic topic,
                                             String producerName,
+                                            boolean enableDeduplication,
                                             long sequenceId,
                                             long highestSequenceId,
                                             int numberOfMessages,
@@ -131,6 +148,7 @@ public final class MessagePublishContext implements PublishContext {
         callback.sequenceId = sequenceId;
         callback.highestSequenceId = highestSequenceId;
         callback.peekOffsetError = null;
+        callback.enableDeduplication = enableDeduplication;
         return callback;
     }
 
@@ -166,6 +184,7 @@ public final class MessagePublishContext implements PublishContext {
         sequenceId = -1;
         highestSequenceId = -1;
         peekOffsetError = null;
+        enableDeduplication = false;
         recyclerHandle.recycle(this);
     }
 }

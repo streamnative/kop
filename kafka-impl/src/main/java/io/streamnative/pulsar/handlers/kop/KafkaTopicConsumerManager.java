@@ -237,6 +237,9 @@ public class KafkaTopicConsumerManager implements Closeable {
         }
 
         return MessageMetadataUtils.asyncFindPosition(ledger, offset, skipMessagesWithoutIndex).thenApply(position -> {
+            if (position == null) {
+                return null;
+            }
             final String cursorName = "kop-consumer-cursor-" + topic.getName()
                     + "-" + position.getLedgerId() + "-" + position.getEntryId()
                     + "-" + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 10);

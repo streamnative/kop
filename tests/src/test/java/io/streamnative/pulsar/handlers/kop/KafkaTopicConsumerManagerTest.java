@@ -27,7 +27,6 @@ import static org.testng.Assert.fail;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
-import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -59,7 +58,6 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.TopicStats;
 import org.awaitility.Awaitility;
 import org.testng.annotations.AfterMethod;
@@ -79,8 +77,9 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
-        this.triggerTopicLookup(MetadataUtils.constructOffsetsTopicBaseName(
-                TopicName.PUBLIC_TENANT, this.conf), this.conf.getOffsetsTopicNumPartitions());
+        // Perform topic lookup to let broker acquire the ownership of namespace bundles so that
+        // `BrokerService#getOrCreateTopic` won't fail with "Namespace bundle not served by this instance".
+        this.triggerTopicLookup(conf.getKafkaTenant() + "/" + conf.getKafkaNamespace() + "/setup-topic", 16);
         kafkaRequestHandler = newRequestHandler();
 
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
@@ -100,7 +99,10 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
 
     private void registerPartitionedTopic(final String topic) throws PulsarAdminException {
         admin.topics().createPartitionedTopic(topic, 1);
-        pulsar.getBrokerService().getOrCreateTopic(topic);
+        pulsar.getBrokerService().getOrCreateTopic(topic).exceptionally(e -> {
+            log.error("Failed to create topic {}", topic, e);
+            return null;
+        });
     }
 
     @Test
@@ -115,7 +117,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         KafkaTopicConsumerManager topicConsumerManager2 = tcm.get();
 
         assertTrue(topicConsumerManager == topicConsumerManager2);
-        assertEquals(KafkaTopicConsumerManagerCache.getInstance().getCount(), 1);
+        assertEquals(kafkaRequestHandler.getKafkaTopicManagerSharedState()
+                .getKafkaTopicConsumerManagerCache().getCount(), 1);
 
         // 2. verify another get with different topic will return different tcm
         String topicName2 = "persistent://public/default/testGetTopicConsumerManager2";
@@ -123,7 +126,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         tcm = kafkaTopicManager.getTopicConsumerManager(topicName2);
         topicConsumerManager2 = tcm.get();
         assertTrue(topicConsumerManager != topicConsumerManager2);
-        assertEquals(KafkaTopicConsumerManagerCache.getInstance().getCount(), 2);
+        assertEquals(kafkaRequestHandler.getKafkaTopicManagerSharedState()
+                .getKafkaTopicConsumerManagerCache().getCount(), 2);
     }
 
 
@@ -346,8 +350,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
             numReceived += consumer.poll(Duration.ofSeconds(1)).count();
         }
 
-        final List<KafkaTopicConsumerManager> tcmList =
-                KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(partitionName);
+        final List<KafkaTopicConsumerManager> tcmList = kafkaRequestHandler.getKafkaTopicManagerSharedState()
+                .getKafkaTopicConsumerManagerCache().getTopicConsumerManagers(partitionName);
         assertFalse(tcmList.isEmpty());
         // Only 1 cursor should be created for a consumer even if there were a lot of FETCH requests
         // This check is to ensure that KafkaTopicConsumerManager#add is called in FETCH request handler
@@ -398,8 +402,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         }
         latch.await(10, TimeUnit.SECONDS);
 
-        final List<KafkaTopicConsumerManager> tcmList =
-                KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(partitionName);
+        final List<KafkaTopicConsumerManager> tcmList = kafkaRequestHandler.getKafkaTopicManagerSharedState()
+                .getKafkaTopicConsumerManagerCache().getTopicConsumerManagers(partitionName);
         assertEquals(tcmList.size(), numConsumers);
 
         // All TCMs share the same topic, so each internal PersistentTopic of TCM has `numConsumers` cursors.
@@ -440,7 +444,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         final Function<Integer, KafkaTopicConsumerManager> getTcmForPartition = partition -> {
             final String fullTopicName = new KopTopic(topic, "public/default").getPartitionName(partition);
             final List<KafkaTopicConsumerManager> tcmList =
-                    KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(fullTopicName);
+                    kafkaRequestHandler.getKafkaTopicManagerSharedState()
+                            .getKafkaTopicConsumerManagerCache().getTopicConsumerManagers(fullTopicName);
             return tcmList.isEmpty() ? null : tcmList.get(0);
         };
 

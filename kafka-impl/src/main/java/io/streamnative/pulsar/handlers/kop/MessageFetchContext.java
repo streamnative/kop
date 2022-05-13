@@ -325,7 +325,12 @@ public final class MessageFetchContext {
             if (tcm == null) {
                 registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
                 // remove null future cache
-                KafkaTopicConsumerManagerCache.getInstance().removeAndCloseByTopic(fullTopicName);
+                requestHandler.getKafkaTopicManagerSharedState()
+                        .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullTopicName);
+                if (log.isDebugEnabled()) {
+                    log.debug("Fetch for {}: no tcm for topic {} return NOT_LEADER_FOR_PARTITION.",
+                            topicPartition, fullTopicName);
+                }
                 addErrorPartitionResponse(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
             } else if (!checkOffsetOutOfRange(tcm, offset, topicPartition, startPrepareMetadataNanos)) {
                 if (log.isDebugEnabled()) {
@@ -340,7 +345,8 @@ public final class MessageFetchContext {
                     log.warn("[{}] KafkaTopicConsumerManager is closed, remove TCM of {}",
                             requestHandler.ctx, fullTopicName);
                     registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
-                    KafkaTopicConsumerManagerCache.getInstance().removeAndCloseByTopic(fullTopicName);
+                    requestHandler.getKafkaTopicManagerSharedState()
+                            .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullTopicName);
                     addErrorPartitionResponse(topicPartition, Errors.NONE);
                 } else {
                     cursorFuture.whenComplete((cursorLongPair, ex) -> {
@@ -348,7 +354,8 @@ public final class MessageFetchContext {
                             log.error("KafkaTopicConsumerManager.asyncGetCursorByOffset({}) failed for topic {}.",
                                     offset, topicPartition, ex.getCause());
                             registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
-                            KafkaTopicConsumerManagerCache.getInstance().removeAndCloseByTopic(fullTopicName);
+                            requestHandler.getKafkaTopicManagerSharedState()
+                                    .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullTopicName);
                             addErrorPartitionResponse(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
                         } else if (cursorLongPair == null) {
                             log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
@@ -425,21 +432,14 @@ public final class MessageFetchContext {
 
         // use compatible magic value by apiVersion
         short apiVersion = header.apiVersion();
-        byte magic = RecordBatch.CURRENT_MAGIC_VALUE;
+        final byte magic;
         if (apiVersion <= 1) {
             magic = RecordBatch.MAGIC_VALUE_V0;
         } else if (apiVersion <= 3) {
             magic = RecordBatch.MAGIC_VALUE_V1;
+        } else {
+            magic = RecordBatch.CURRENT_MAGIC_VALUE;
         }
-
-        final long startDecodingEntriesNanos = MathUtils.nowInNano();
-        final DecodeResult decodeResult = requestHandler
-                .getEntryFormatter().decode(entries, magic);
-        requestHandler.requestStats.getFetchDecodeStats().registerSuccessfulEvent(
-                MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
-        decodeResults.add(decodeResult);
-
-        final MemoryRecords kafkaRecords = decodeResult.getRecords();
 
         CompletableFuture<String> groupNameFuture = requestHandler
                 .getCurrentConnectedGroup()
@@ -462,11 +462,23 @@ public final class MessageFetchContext {
                             });
                     return future;
                 });
-        groupNameFuture.whenComplete((groupName, ex) -> {
+
+        // this part is heavyweight, and we should not execute in the ManagedLedger Ordered executor thread
+        groupNameFuture.whenCompleteAsync((groupName, ex) -> {
             if (ex != null) {
                 log.error("Get groupId failed.", ex);
                 groupName = "";
             }
+
+
+            final long startDecodingEntriesNanos = MathUtils.nowInNano();
+            final DecodeResult decodeResult = requestHandler
+                    .getEntryFormatter().decode(entries, magic);
+            requestHandler.requestStats.getFetchDecodeStats().registerSuccessfulEvent(
+                    MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
+            decodeResults.add(decodeResult);
+
+            final MemoryRecords kafkaRecords = decodeResult.getRecords();
             // collect consumer metrics
             decodeResult.updateConsumerStats(topicPartition,
                     entries.size(),
@@ -487,7 +499,7 @@ public final class MessageFetchContext {
                     kafkaRecords));
             bytesReadable.getAndAdd(kafkaRecords.sizeInBytes());
             tryComplete();
-        });
+        }, requestHandler.getDecodeExecutor());
     }
 
     private List<Entry> getCommittedEntries(List<Entry> entries, long lso) {
@@ -566,8 +578,12 @@ public final class MessageFetchContext {
 
             @Override
             public void readEntriesFailed(ManagedLedgerException exception, Object ctx) {
-                log.error("Error read entry for topic: {}", KopTopic.toString(topicPartition, namespacePrefix));
-                messageReadStats.registerSuccessfulEvent(
+                String fullTopicName = KopTopic.toString(topicPartition, namespacePrefix);
+                log.error("Error read entry for topic: {}", fullTopicName);
+                if (exception instanceof ManagedLedgerException.ManagedLedgerFencedException) {
+                    topicManager.invalidateCacheForFencedManagerLedgerOnTopic(fullTopicName);
+                }
+                messageReadStats.registerFailedEvent(
                         MathUtils.elapsedNanos(startReadingMessagesNanos), TimeUnit.NANOSECONDS);
                 readFuture.completeExceptionally(exception);
             }

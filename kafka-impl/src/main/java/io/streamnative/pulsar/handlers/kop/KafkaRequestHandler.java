@@ -22,7 +22,6 @@ import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
@@ -69,16 +68,19 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
@@ -87,6 +89,7 @@ import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
@@ -139,7 +142,6 @@ import org.apache.kafka.common.requests.ListGroupsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
-import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
@@ -166,10 +168,10 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
+import org.apache.pulsar.metadata.api.MetadataStoreException;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 
 /**
@@ -184,6 +186,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final KafkaTopicManager topicManager;
     private final TenantContextManager tenantContextManager;
     private final KopBrokerLookupManager kopBrokerLookupManager;
+    @Getter
+    private final KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
 
     private final String clusterName;
     private final ScheduledExecutorService executor;
@@ -201,6 +205,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final int failedAuthenticationDelayMs;
     // store the group name for current connected client.
     private final ConcurrentHashMap<String, CompletableFuture<String>> currentConnectedGroup;
+    private final ConcurrentSkipListSet<String> currentConnectedClientId;
     private final String groupIdStoredPath;
 
     @Getter
@@ -285,7 +290,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                EndPoint advertisedEndPoint,
                                boolean skipMessagesWithoutIndex,
                                RequestStats requestStats,
-                               OrderedScheduler sendResponseScheduler) throws Exception {
+                               OrderedScheduler sendResponseScheduler,
+                               KafkaTopicManagerSharedState kafkaTopicManagerSharedState) throws Exception {
         super(requestStats, kafkaConfig, sendResponseScheduler);
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
@@ -314,10 +320,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig);
         this.currentConnectedGroup = new ConcurrentHashMap<>();
+        this.currentConnectedClientId = new ConcurrentSkipListSet<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
         this.maxPendingBytes = kafkaConfig.getMaxMessagePublishBufferSizeInMB() * 1024L * 1024L;
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
         this.failedAuthenticationDelayMs = kafkaConfig.getFailedAuthenticationDelayMs();
+        this.kafkaTopicManagerSharedState = kafkaTopicManagerSharedState;
 
         // update alive channel count stats
         RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
@@ -357,6 +365,31 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 currentConnectedGroup.remove(clientHost);
             }
 
+            // Try to remove all stored groupID on the metadata store.
+            if (log.isDebugEnabled()) {
+                log.debug("Try to remove all stored groupID on the metadata store. Current connected clientIds: {}",
+                        currentConnectedClientId);
+            }
+            currentConnectedClientId.forEach(clientId -> {
+                String path = groupIdStoredPath + GroupIdUtils.groupIdPathFormat(clientHost, clientId);
+                metadataStore.delete(path, Optional.empty())
+                        .whenComplete((__, ex) -> {
+                            if (ex != null) {
+                                if (ex.getCause() instanceof MetadataStoreException.NotFoundException) {
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("The groupId store path doesn't exist. Path: [{}]", path);
+                                    }
+                                    return;
+                                }
+                                log.error("Delete groupId failed. Path: [{}]", path, ex);
+                                return;
+                            }
+                            if (log.isDebugEnabled()) {
+                                log.debug("Delete groupId success. Path: [{}]", path);
+                            }
+                        });
+            });
+
             // update alive channel count stat
             RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
         }
@@ -383,26 +416,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void maybeDelayCloseOnAuthenticationFailure() {
         if (this.failedAuthenticationDelayMs > 0) {
             this.ctx.executor().schedule(
-                    this::handleCloseOnAuthenticationFailure,
+                    this::completeCloseOnAuthenticationFailure,
                     this.failedAuthenticationDelayMs,
                     TimeUnit.MILLISECONDS);
         } else {
-            handleCloseOnAuthenticationFailure();
-        }
-    }
-
-    private void handleCloseOnAuthenticationFailure() {
-        try {
             this.completeCloseOnAuthenticationFailure();
-        } finally {
-            this.close();
         }
     }
 
     @Override
     protected void completeCloseOnAuthenticationFailure() {
         if (isActive.get() && authenticator != null) {
-            authenticator.sendAuthenticationFailureResponse();
+            authenticator.sendAuthenticationFailureResponse(__ -> this.close());
         }
     }
 
@@ -464,8 +489,63 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     // Leverage pulsar admin to get partitioned topic metadata
-    private CompletableFuture<PartitionedTopicMetadata> getPartitionedTopicMetadataAsync(String topicName) {
-        return admin.topics().getPartitionedTopicMetadataAsync(topicName);
+    // NOTE: the returned future never completes exceptionally
+    private CompletableFuture<Integer> getPartitionedTopicMetadataAsync(String topicName,
+                                                                        boolean allowAutoTopicCreation) {
+        final CompletableFuture<Integer> future = new CompletableFuture<>();
+        admin.topics().getPartitionedTopicMetadataAsync(topicName).whenComplete((metadata, e) -> {
+            if (e == null) {
+                if (metadata.partitions > 0) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Topic {} has {} partitions", topicName, metadata.partitions);
+                    }
+                    future.complete(metadata.partitions);
+                } else {
+                    future.complete(TopicAndMetadata.NON_PARTITIONED_NUMBER);
+                }
+            } else if (e instanceof PulsarAdminException.NotFoundException) {
+                if (allowAutoTopicCreation) {
+                    String namespace = TopicName.get(topicName).getNamespace();
+                    admin.namespaces().getPoliciesAsync(namespace).whenComplete((policies, err) -> {
+                        if (err != null || policies == null) {
+                            log.error("[{}] Cannot get policies for namespace {}", ctx.channel(), namespace, err);
+                            future.complete(TopicAndMetadata.INVALID_PARTITIONS);
+                        } else {
+                            boolean allowed = kafkaConfig.isAllowAutoTopicCreation();
+                            if (policies.autoTopicCreationOverride != null) {
+                                allowed = policies.autoTopicCreationOverride.isAllowAutoTopicCreation();
+                            }
+                            if (!allowed) {
+                                log.error("[{}] Automatic topic creation is not allowed on namespace {}",
+                                        ctx.channel(), namespace);
+                                future.complete(TopicAndMetadata.INVALID_PARTITIONS);
+                            } else {
+                                log.info("[{}] Topic {} doesn't exist, auto create it with {} partitions",
+                                        ctx.channel(), topicName, defaultNumPartitions);
+                                admin.topics().createPartitionedTopicAsync(topicName, defaultNumPartitions)
+                                        .whenComplete((__, createException) -> {
+                                            if (createException == null) {
+                                                future.complete(defaultNumPartitions);
+                                            } else {
+                                                log.warn("[{}] Failed to create partitioned topic {}: {}",
+                                                        ctx.channel(), topicName, createException.getMessage());
+                                                future.complete(TopicAndMetadata.INVALID_PARTITIONS);
+                                            }
+                                        });
+                            }
+                        }
+                    });
+                } else {
+                    log.error("[{}] Topic {} doesn't exist and it's not allowed to auto create partitioned topic",
+                            ctx.channel(), topicName, e);
+                    future.complete(TopicAndMetadata.INVALID_PARTITIONS);
+                }
+            } else {
+                log.error("[{}] Failed to get partitioned topic {}", ctx.channel(), topicName, e);
+                future.complete(TopicAndMetadata.INVALID_PARTITIONS);
+            }
+        });
+        return future;
     }
 
     private CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces) {
@@ -498,348 +578,167 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 .thenApply(f -> result);
     }
 
-    // Get all topics in the configured allowed namespaces.
-    //   key: the full topic name without partition suffix, e.g. persistent://public/default/my-topic
-    //   value: the partitions associated with the key, e.g. for a topic with 3 partitions,
-    //     persistent://public/default/my-topic-partition-0
-    //     persistent://public/default/my-topic-partition-1
-    //     persistent://public/default/my-topic-partition-2
-    private CompletableFuture<Map<String, List<TopicName>>> getAllTopicsAsync() {
-        CompletableFuture<Map<String, List<TopicName>>> topicMapFuture = new CompletableFuture<>();
-        final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
-        final CompletableFuture<Set<String>> allowedNamespacesFuture =
-                expandAllowedNamespaces(kafkaConfig.getKopAllowedNamespaces());
-        String namespacePrefix = currentNamespacePrefix();
-        allowedNamespacesFuture.thenAccept(allowedNamespaces -> {
-            final AtomicInteger pendingNamespacesCount = new AtomicInteger(allowedNamespaces.size());
-            Runnable completeOne = () -> {
-                if (pendingNamespacesCount.decrementAndGet() == 0) {
-                    topicMapFuture.complete(topicMap);
-                }
-            };
-            for (String namespace : allowedNamespaces) {
-                authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.NAMESPACE, namespace))
-                        .whenComplete((isAuthorized, ex) -> {
-                            if (ex != null) {
-                                log.error("Describe namespace authorize failed, namespace - {}. {}",
-                                        namespace, ex.getMessage());
-                                completeOne.run();
-                                return;
-                            }
-                            if (isAuthorized) {
-                                pulsarService.getNamespaceService()
-                                        .getListOfPersistentTopics(NamespaceName.get(namespace))
-                                        .whenComplete((topics, e) -> {
-                                            if (e != null) {
-                                                log.error("Failed to getListOfPersistentTopic of {}", namespace, e);
-                                                topicMapFuture.completeExceptionally(e);
-                                                return;
-                                            }
-                                            if (topicMapFuture.isCompletedExceptionally()) {
-                                                return;
-                                            }
-                                            for (String topic : topics) {
-                                                final TopicName topicName = TopicName.get(topic);
-                                                final String key = topicName.getPartitionedTopicName();
-                                                topicMap.computeIfAbsent(
-                                                        KopTopic.removeDefaultNamespacePrefix(key, namespacePrefix),
-                                                        ignored -> Collections.synchronizedList(new ArrayList<>())
-                                                ).add(topicName);
-                                            }
-                                            completeOne.run();
-                                        });
-                            } else {
-                                completeOne.run();
-                            }
-                        });
-            }
-        }).exceptionally(error -> {
-            topicMapFuture.completeExceptionally(error);
-            return null;
+    private List<TopicAndMetadata> analyzeFullTopicNames(final Stream<String> fullTopicNames) {
+        // key is the topic name, value is a list of the topic's partition indexes
+        final Map<String, List<Integer>> topicToPartitionIndexes = new HashMap<>();
+        fullTopicNames.forEach(fullTopicName -> {
+            final TopicName topicName = TopicName.get(fullTopicName);
+            topicToPartitionIndexes.computeIfAbsent(
+                    topicName.getPartitionedTopicName(),
+                    ignored -> new ArrayList<>()
+            ).add(topicName.getPartitionIndex());
         });
-        return topicMapFuture;
+        if (topicToPartitionIndexes.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // Check missed partitions
+        final List<TopicAndMetadata> topicAndMetadataList = new ArrayList<>();
+        topicToPartitionIndexes.forEach((topic, partitionIndexes) -> {
+            Collections.sort(partitionIndexes);
+            final int lastIndex = partitionIndexes.get(partitionIndexes.size() - 1);
+            if (lastIndex < 0) {
+                topicAndMetadataList.add(
+                        new TopicAndMetadata(topic, TopicAndMetadata.NON_PARTITIONED_NUMBER));
+            } else if (lastIndex == partitionIndexes.size() - 1) {
+                topicAndMetadataList.add(new TopicAndMetadata(topic, partitionIndexes.size()));
+            } else {
+                // The partitions should be [0, 1, ..., n-1], `n` is the number of partitions. If the last index is not
+                // `n-1`, there must be some missed partitions.
+                log.warn("The partitions of topic {} is wrong ({}), try to create missed partitions",
+                        topic, partitionIndexes.size());
+                admin.topics().createMissedPartitionsAsync(topic);
+            }
+        });
+        return topicAndMetadataList;
+    }
+
+    private CompletableFuture<List<String>> authorizeNamespacesAsync(final Collection<String> namespaces,
+                                                                     final AclOperation aclOperation) {
+        final Map<String, CompletableFuture<Boolean>> futureMap = namespaces.stream().collect(
+                Collectors.toMap(
+                        namespace -> namespace,
+                        namespace -> authorize(aclOperation, Resource.of(ResourceType.NAMESPACE, namespace))
+                ));
+        return CoreUtils.waitForAll(futureMap.values()).thenApply(__ ->
+            futureMap.entrySet().stream().filter(e -> {
+                if (!e.getValue().join()) {
+                    log.warn("Failed to authorize {} for ACL operation {}", e.getKey(), aclOperation);
+                    return false;
+                }
+                return true;
+            }).map(Map.Entry::getKey).collect(Collectors.toList())
+        );
+    }
+
+    private CompletableFuture<Stream<String>> listAllTopicsFromNamespacesAsync(final List<String> namespaces) {
+        return CoreUtils.waitForAll(namespaces.stream()
+                .map(namespace -> pulsarService.getNamespaceService()
+                        .getListOfPersistentTopics(NamespaceName.get(namespace))
+                ).collect(Collectors.toList()),
+                topics -> topics.stream().flatMap(List::stream));
+    }
+
+    private CompletableFuture<ListPair<String>> authorizeTopicsAsync(final Collection<String> topics,
+                                                                     final AclOperation aclOperation) {
+        final Map<String, CompletableFuture<Boolean>> futureMap = topics.stream().collect(
+                Collectors.toMap(
+                        topic -> topic,
+                        topic -> authorize(aclOperation, Resource.of(ResourceType.TOPIC, topic))
+                ));
+        return CoreUtils.waitForAll(futureMap.values()).thenApply(__ ->
+                ListPair.of(futureMap.entrySet()
+                        .stream()
+                        .collect(Collectors.groupingBy(e -> e.getValue().join()))
+                ).map(Map.Entry::getKey));
+    }
+
+    private CompletableFuture<List<TopicAndMetadata>> findTopicMetadata(final ListPair<String> listPair,
+                                                                        final boolean allowTopicAutoCreation) {
+        final Map<String, CompletableFuture<Integer>> futureMap = CoreUtils.listToMap(
+                listPair.getSuccessfulList(),
+                topic -> getPartitionedTopicMetadataAsync(topic, allowTopicAutoCreation)
+        );
+        return CoreUtils.waitForAll(futureMap.values()).thenApply(__ ->
+                CoreUtils.mapToList(futureMap, (key, value) -> new TopicAndMetadata(key, value.join()))
+        ).thenApply(authorizedTopicAndMetadataList ->
+            ListUtils.union(authorizedTopicAndMetadataList,
+                    CoreUtils.listToList(listPair.getFailedList(),
+                            topic -> new TopicAndMetadata(topic, TopicAndMetadata.AUTHORIZATION_FAILURE))
+            )
+        );
+    }
+
+    private CompletableFuture<List<TopicAndMetadata>> getTopicsAsync(MetadataRequest request,
+                                                                     Set<String> fullTopicNames) {
+        // The implementation of MetadataRequest#isAllTopics() in kafka-clients 2.0 is wrong.
+        // Because in version 0, an empty topic list indicates "request metadata for all topics."
+        if ((request.topics() == null) || (request.topics().isEmpty() && request.version() == 0)) {
+            // clean all cache when get all metadata for librdkafka(<1.0.0).
+            KopBrokerLookupManager.clear();
+            return expandAllowedNamespaces(kafkaConfig.getKopAllowedNamespaces())
+                    .thenCompose(namespaces -> authorizeNamespacesAsync(namespaces, AclOperation.DESCRIBE))
+                    .thenCompose(this::listAllTopicsFromNamespacesAsync)
+                    .thenApply(this::analyzeFullTopicNames);
+        } else {
+            return authorizeTopicsAsync(fullTopicNames, AclOperation.DESCRIBE)
+                    .thenCompose(authorizedTopicsPair -> findTopicMetadata(authorizedTopicsPair,
+                            request.allowAutoTopicCreation()));
+        }
     }
 
     @Override
     protected void handleTopicMetadataRequest(KafkaHeaderAndRequest metadataHar,
                                               CompletableFuture<AbstractResponse> resultFuture) {
-        checkArgument(metadataHar.getRequest() instanceof MetadataRequest);
-
-        MetadataRequest metadataRequest = (MetadataRequest) metadataHar.getRequest();
-        if (log.isDebugEnabled()) {
-            log.debug("[{}] Request {}: for topic {} ",
-                ctx.channel(), metadataHar.getHeader(), metadataRequest.topics());
-        }
-
-        // Command response for all topics
-        List<TopicMetadata> allTopicMetadata = Collections.synchronizedList(Lists.newArrayList());
-        List<Node> allNodes = Collections.synchronizedList(Lists.newArrayList());
         // Get all kop brokers in local cache
-        allNodes.addAll(adminManager.getBrokers(advertisedEndPoint.getListenerName()));
+        List<Node> allNodes = Collections.synchronizedList(
+                new ArrayList<>(adminManager.getBrokers(advertisedEndPoint.getListenerName())));
 
-        List<String> topics = metadataRequest.topics();
-        // topics in format : persistent://%s/%s/abc-partition-x, will be grouped by as:
-        //      Entry<abc, List[TopicName]>
-
-        // A future for a map from <kafka topic> to <pulsarPartitionTopics>:
-        //      e.g. <topic1, {persistent://public/default/topic1-partition-0,...}>
-        //   1. no topics provided, get all topics from namespace;
-        //   2. topics provided, get provided topics.
-        CompletableFuture<Map<String, List<TopicName>>> pulsarTopicsFuture;
-
-        // Map for <partition-zero, non-partitioned-topic>, use for findBroker
-        // e.g. <persistent://public/default/topic1-partition-0, persistent://public/default/topic1>
-        final Map<String, TopicName> nonPartitionedTopicMap = Maps.newConcurrentMap();
-
-        final String metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
-        pulsarTopicsFuture = new CompletableFuture<>();
-
-        if (topics == null || topics.isEmpty()) {
-            // clean all cache when get all metadata for librdkafka(<1.0.0).
-            KopBrokerLookupManager.clear();
-            // get all topics, filter by permissions.
-            final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
-            getAllTopicsAsync().thenAccept((allTopicMap) -> {
-                allTopicMap.forEach((topic, list) ->
-                        list.forEach((topicName ->
-                                topicMap.computeIfAbsent(topic, ignored -> new ArrayList<>()).add(topicName))
-                        )
-                );
-                pulsarTopicsFuture.complete(allTopicMap);
-            });
-        } else {
-            // get only the provided topics
-            final Map<String, List<TopicName>> pulsarTopics = Maps.newConcurrentMap();
-
-            List<String> requestTopics = metadataRequest.topics();
-            final int topicsNumber = requestTopics.size();
-            AtomicInteger topicsCompleted = new AtomicInteger(0);
-
-            final Runnable completeOneTopic = () -> {
-                if (topicsCompleted.incrementAndGet() == topicsNumber) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("[{}] Request {}: Completed get {} topic's partitions",
-                                ctx.channel(), metadataHar.getHeader(), topicsNumber);
-                    }
-                    pulsarTopicsFuture.complete(pulsarTopics);
-                }
-            };
-            final String namespacePrefix = currentNamespacePrefix();
-            final BiConsumer<String, Integer> addTopicPartition = (topic, partition) -> {
-                final KopTopic kopTopic = new KopTopic(topic, namespacePrefix);
-                pulsarTopics.putIfAbsent(topic,
-                        IntStream.range(0, partition)
-                                .mapToObj(i -> TopicName.get(kopTopic.getPartitionName(i)))
-                                .collect(Collectors.toList()));
-                completeOneTopic.run();
-            };
-
-            final BiConsumer<String, String> completeOneAuthFailedTopic = (topic, fullTopicName) -> {
-                allTopicMetadata.add(new TopicMetadata(
-                        Errors.TOPIC_AUTHORIZATION_FAILED,
-                        topic,
-                        KopTopic.isInternalTopic(fullTopicName, metadataNamespace),
-                        Collections.emptyList()));
-                completeOneTopic.run();
-            };
-
-            requestTopics.forEach(topic -> {
-                final String fullTopicName = new KopTopic(topic, namespacePrefix).getFullName();
-
-                authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullTopicName))
-                    .whenComplete((authorized, ex) -> {
-                        if (ex != null) {
-                            log.error("Describe topic authorize failed, topic - {}. {}",
-                                    fullTopicName, ex.getMessage());
-                            // Authentication failed
-                            completeOneAuthFailedTopic.accept(topic, fullTopicName);
-                            return;
-                        }
-                        if (!authorized) {
-                            // Permission denied
-                            completeOneAuthFailedTopic.accept(topic, fullTopicName);
-                            return;
-                        }
-                        // get partition numbers for each topic.
-                        // If topic doesn't exist and allowAutoTopicCreation is enabled,
-                        // the topic will be created first.
-                        getPartitionedTopicMetadataAsync(fullTopicName)
-                                .whenComplete((partitionedTopicMetadata, throwable) -> {
-                                    if (throwable != null) {
-                                        if (throwable instanceof PulsarAdminException.NotFoundException) {
-                                            if (kafkaConfig.isAllowAutoTopicCreation()
-                                                    && metadataRequest.allowAutoTopicCreation()) {
-                                                log.info("[{}] Request {}: Topic {} doesn't exist, "
-                                                                + "auto create it with {} partitions",
-                                                        ctx.channel(), metadataHar.getHeader(),
-                                                        topic, defaultNumPartitions);
-                                                admin.topics().createPartitionedTopicAsync(
-                                                                fullTopicName, defaultNumPartitions)
-                                                        .whenComplete((ignored, e) -> {
-                                                            if (e == null) {
-                                                                addTopicPartition.accept(topic, defaultNumPartitions);
-                                                            } else {
-                                                                log.error("[{}] Failed to create partitioned topic {}",
-                                                                        ctx.channel(), topic, e);
-                                                                completeOneTopic.run();
-                                                            }
-                                                        });
-                                            } else {
-                                                log.error("[{}] Request {}: Topic {} doesn't exist and it's "
-                                                                + "not allowed to auto create partitioned topic",
-                                                        ctx.channel(), metadataHar.getHeader(), topic);
-                                                // not allow to auto create topic, return unknown topic
-                                                allTopicMetadata.add(
-                                                        new TopicMetadata(
-                                                                Errors.UNKNOWN_TOPIC_OR_PARTITION,
-                                                                topic,
-                                                                KopTopic.isInternalTopic(fullTopicName,
-                                                                        metadataNamespace),
-                                                                Collections.emptyList()));
-                                                completeOneTopic.run();
-                                            }
-                                        } else {
-                                            // Failed get partitions.
-                                            allTopicMetadata.add(
-                                                    new TopicMetadata(
-                                                            Errors.UNKNOWN_TOPIC_OR_PARTITION,
-                                                            topic,
-                                                            KopTopic.isInternalTopic(fullTopicName, metadataNamespace),
-                                                            Collections.emptyList()));
-                                            log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} "
-                                                            + "metadata: {}",
-                                                    ctx.channel(), metadataHar.getHeader(),
-                                                    fullTopicName, throwable.getMessage());
-                                            completeOneTopic.run();
-                                        }
-                                    } else { // the topic already existed
-                                        if (partitionedTopicMetadata.partitions > 0) {
-                                            if (log.isDebugEnabled()) {
-                                                log.debug("Topic {} has {} partitions",
-                                                        topic, partitionedTopicMetadata.partitions);
-                                            }
-                                            addTopicPartition.accept(topic, partitionedTopicMetadata.partitions);
-                                        } else {
-                                            // In case non-partitioned topic, treat as a one partitioned topic.
-                                            nonPartitionedTopicMap.put(TopicName
-                                                            .get(fullTopicName)
-                                                            .getPartition(0)
-                                                            .toString(),
-                                                    TopicName.get(fullTopicName)
-                                            );
-                                            addTopicPartition.accept(topic, 1);
-                                        }
-                                    }
-                                });
-                    });
-
-                });
-        }
-
-        // 2. After get all topics, for each topic, get the service Broker for it, and add to response
-        AtomicInteger topicsCompleted = new AtomicInteger(0);
         // Each Pulsar broker can manage metadata like controller in Kafka,
         // Kafka's AdminClient needs to find a controller node for metadata management.
         // So here we return an random broker as a controller for the given listenerName.
         final int controllerId = adminManager.getControllerId(advertisedEndPoint.getListenerName());
-        pulsarTopicsFuture.whenComplete((pulsarTopics, e) -> {
+
+        final String namespacePrefix = currentNamespacePrefix();
+        final MetadataRequest request = (MetadataRequest) metadataHar.getRequest();
+        // This map is used to find the original topic name. Both key and value don't have the "-partition-" suffix.
+        final Map<String, String> fullTopicNameToOriginal = (request.topics() == null)
+                ? Collections.emptyMap()
+                : request.topics().stream().distinct().collect(
+                        Collectors.toMap(
+                                topic -> new KopTopic(topic, namespacePrefix).getFullName(),
+                                topic -> topic
+                        ));
+        // NOTE: for all topics METADATA request, remove the default namespace prefix just for backward compatibility.
+        final Function<String, String> getOriginalTopic = fullTopicName -> fullTopicNameToOriginal.isEmpty()
+                ? KopTopic.removeDefaultNamespacePrefix(fullTopicName, namespacePrefix)
+                : fullTopicNameToOriginal.getOrDefault(fullTopicName, fullTopicName);
+
+        final String metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
+        getTopicsAsync(request, fullTopicNameToOriginal.keySet()).whenComplete((topicAndMetadataList, e) -> {
             if (e != null) {
-                log.warn("[{}] Request {}: Exception fetching metadata, will return null Response",
-                    ctx.channel(), metadataHar.getHeader(), e);
-                MetadataResponse finalResponse =
-                        KafkaResponseUtils.newMetadata(
-                                allNodes,
-                                clusterName,
-                                controllerId,
-                                Collections.emptyList());
-                resultFuture.complete(finalResponse);
+                log.error("[{}] Request {}: Exception fetching metadata", ctx.channel(), metadataHar.getHeader(), e);
+                resultFuture.completeExceptionally(e);
                 return;
             }
 
-            final int topicsNumber = pulsarTopics.size();
-
-            if (topicsNumber == 0) {
-                // no topic partitions added, return now.
-                MetadataResponse finalResponse =
-                        KafkaResponseUtils.newMetadata(
-                                allNodes,
-                                clusterName,
-                                controllerId,
-                                allTopicMetadata);
-                resultFuture.complete(finalResponse);
-                return;
-            }
-            final String namespacePrefix = currentNamespacePrefix();
-            pulsarTopics.forEach((topic, list) -> {
-                final int partitionsNumber = list.size();
-                AtomicInteger partitionsCompleted = new AtomicInteger(0);
-                List<PartitionMetadata> partitionMetadatas = Collections
-                    .synchronizedList(Lists.newArrayListWithExpectedSize(partitionsNumber));
-
-                list.forEach(topicName -> {
-                    // For non-partitioned topic.
-                    TopicName realTopicName = nonPartitionedTopicMap.getOrDefault(topicName.toString(), topicName);
-                    findBroker(realTopicName)
-                            .whenComplete(((partitionMetadata, throwable) -> {
-                                if (throwable != null || partitionMetadata == null) {
-                                    log.warn("[{}] Request {}: Exception while find Broker metadata",
-                                            ctx.channel(), metadataHar.getHeader(), throwable);
-                                    partitionMetadatas.add(newFailedPartitionMetadata(realTopicName));
-                                } else {
-                                    Node newNode = partitionMetadata.leader();
-                                    synchronized (allNodes) {
-                                        if (!allNodes.stream().anyMatch(node1 -> node1.equals(newNode))) {
-                                            allNodes.add(newNode);
-                                        }
-                                    }
-                                    partitionMetadatas.add(partitionMetadata);
-                                }
-
-                                // whether completed this topic's partitions list.
-                                int finishedPartitions = partitionsCompleted.incrementAndGet();
-                                if (log.isDebugEnabled()) {
-                                    log.debug("[{}] Request {}: FindBroker for topic {}, partitions found/all: {}/{}.",
-                                            ctx.channel(), metadataHar.getHeader(),
-                                            topic, finishedPartitions, partitionsNumber);
-                                }
-                                if (finishedPartitions == partitionsNumber) {
-                                    // new TopicMetadata for this topic
-                                    allTopicMetadata.add(
-                                            new TopicMetadata(
-                                                    Errors.NONE,
-                                                    // The topic returned to Kafka clients should be
-                                                    // the same with what it sent
-                                                    topic,
-                                                    KopTopic.isInternalTopic(
-                                                            new KopTopic(topic, namespacePrefix).getFullName(),
-                                                            metadataNamespace),
-                                                    partitionMetadatas));
-
-                                    // whether completed all the topics requests.
-                                    int finishedTopics = topicsCompleted.incrementAndGet();
-                                    if (log.isDebugEnabled()) {
-                                        log.debug("[{}] Request {}: Completed findBroker for topic {}, "
-                                                        + "partitions found/all: {}/{}. \n dump All Metadata:",
-                                                ctx.channel(), metadataHar.getHeader(), topic,
-                                                finishedTopics, topicsNumber);
-
-                                        allTopicMetadata.stream()
-                                                .forEach(data -> log.debug("TopicMetadata response: {}",
-                                                        data.toString()));
-                                    }
-                                    if (finishedTopics == topicsNumber) {
-                                        // TODO: confirm right value for controller_id
-                                        MetadataResponse finalResponse =
-                                                KafkaResponseUtils.newMetadata(
-                                                        allNodes,
-                                                        clusterName,
-                                                        controllerId,
-                                                        allTopicMetadata);
-                                        resultFuture.complete(finalResponse);
-                                    }
-                                }
-                            }));
-                });
+            final ListPair<TopicAndMetadata> listPair =
+                    ListPair.split(topicAndMetadataList.stream(), TopicAndMetadata::hasNoError);
+            CoreUtils.waitForAll(listPair.getSuccessfulList().stream()
+                    .map(topicAndMetadata ->
+                            topicAndMetadata.lookupAsync(this::findBroker, getOriginalTopic, metadataNamespace)
+                    ).collect(Collectors.toList()), successfulTopicMetadataList -> {
+                final List<TopicMetadata> topicMetadataList = ListUtils.union(successfulTopicMetadataList,
+                        CoreUtils.listToList(listPair.getFailedList(),
+                                metadata -> metadata.toTopicMetadata(getOriginalTopic, metadataNamespace))
+                );
+                resultFuture.complete(
+                        KafkaResponseUtils.newMetadata(allNodes, clusterName, controllerId, topicMetadataList));
+                return null;
+            }).exceptionally(lookupException -> {
+                log.error("[{}] Unexpected exception during lookup", ctx.channel(), lookupException);
+                resultFuture.completeExceptionally(lookupException);
+                return null;
             });
         });
     }
@@ -955,7 +854,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
             final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
             authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
-                    .whenComplete((isAuthorized, ex) -> {
+                    .whenCompleteAsync((isAuthorized, ex) -> {
                         if (ex != null) {
                             log.error("Write topic authorize failed, topic - {}. {}",
                                     fullPartitionName, ex.getMessage());
@@ -972,7 +871,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         }
                         authorizedRequestInfo.put(topicPartition, records);
                         completeOne.run();
-                    });
+                    }, ctx.executor());
         });
 
 
@@ -1023,34 +922,37 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String groupId = request.coordinatorKey();
         String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
                 findCoordinator.getHeader().clientId());
+        currentConnectedClientId.add(findCoordinator.getHeader().clientId());
 
-        // Store group name to metadata store for current client.
+        // Store group name to metadata store for current client, use to collect consumer metrics.
         storeGroupId(groupId, groupIdPath)
-                .thenAccept(__ -> findBroker(TopicName.get(pulsarTopicName))
-                        .whenComplete((node, t) -> {
-                            if (t != null || node == null){
-                                log.error("[{}] Request {}: Error while find coordinator, .",
-                                        ctx.channel(), findCoordinator.getHeader(), t);
+                .whenComplete((__, ex) -> {
+                    if (ex != null) {
+                        log.warn("Store groupId failed, the groupId might already stored.", ex);
+                    }
+                    findBroker(TopicName.get(pulsarTopicName))
+                            .whenComplete((node, throwable) -> {
+                                if (node.error() != Errors.NONE || throwable != null) {
+                                    log.error("[{}] Request {}: Error while find coordinator.",
+                                            ctx.channel(), findCoordinator.getHeader(), throwable);
 
-                                resultFuture.complete(KafkaResponseUtils
-                                        .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
-                                return;
-                            }
+                                    resultFuture.complete(KafkaResponseUtils
+                                            .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
+                                    return;
+                                }
 
-                            if (log.isDebugEnabled()) {
-                                log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
-                                        ctx.channel(), node.leader(), request.coordinatorKey(), partition);
-                            }
+                                if (log.isDebugEnabled()) {
+                                    log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
+                                            ctx.channel(), node.leader(), request.coordinatorKey(), partition);
+                                }
 
-                            resultFuture.complete(KafkaResponseUtils.newFindCoordinator(node.leader()));
-                        }))
-                .exceptionally(ex -> {
-                    log.error("Store groupId failed.", ex);
-                    return null;
+                                resultFuture.complete(KafkaResponseUtils.newFindCoordinator(node.leader()));
+                            });
                 });
     }
 
-    private CompletableFuture<Void> storeGroupId(String groupId, String groupIdPath) {
+    @VisibleForTesting
+    protected CompletableFuture<Void> storeGroupId(String groupId, String groupIdPath) {
         String path = groupIdStoredPath + groupIdPath;
         CompletableFuture<Void> future = new CompletableFuture<>();
         metadataStore.put(path, groupId.getBytes(UTF_8), Optional.empty())
@@ -2452,15 +2354,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.close();
     }
 
+    // The returned future never completes exceptionally
     public CompletableFuture<PartitionMetadata> findBroker(TopicName topic) {
         if (log.isDebugEnabled()) {
             log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }
-        return kopBrokerLookupManager.findBroker(topic.toString(), advertisedEndPoint)
+        final CompletableFuture<PartitionMetadata> future = new CompletableFuture<>();
+        kopBrokerLookupManager.findBroker(topic.toString(), advertisedEndPoint)
                 .thenApply(listenerInetSocketAddressOpt -> listenerInetSocketAddressOpt
                         .map(inetSocketAddress -> newPartitionMetadata(topic, newNode(inetSocketAddress)))
                         .orElse(null)
-                );
+                ).whenComplete((partitionMetadata, e) -> {
+            if (e != null || partitionMetadata == null) {
+                log.warn("[{}] Request {}: Exception while find Broker metadata", ctx.channel(), e);
+                future.complete(newFailedPartitionMetadata(topic));
+            } else {
+                future.complete(partitionMetadata);
+            }
+        });
+        return future;
     }
 
     static Node newNode(InetSocketAddress address) {
@@ -2599,4 +2511,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             throw new AuthenticationException("Internal error while verifying tenant access:" + err, err);
         }
     }
+
+    /**
+     * Return the threadpool that executes the conversion of data during Fetches.
+     * We don't want to decode data inside the critical threads like the ManagedLedger Ordered Executor threads.
+     * @return a executor.
+     */
+    public Executor getDecodeExecutor() {
+        return this.executor;
+    }
+
 }

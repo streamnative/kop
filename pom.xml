@@ -29,7 +29,7 @@
 
   <groupId>io.streamnative.pulsar.handlers</groupId>
   <artifactId>pulsar-protocol-handler-kafka-parent</artifactId>
-  <version>2.10.0-SNAPSHOT</version>
+  <version>2.11.0-SNAPSHOT</version>
   <name>StreamNative :: Pulsar Protocol Handler :: KoP Parent</name>
   <description>Parent for Kafka on Pulsar implemented using Pulsar Protocol Handler.</description>
 
@@ -38,16 +38,21 @@
     <redirectTestOutputToFile>true</redirectTestOutputToFile>
 
     <!-- dependencies -->
-    <jackson.version>2.12.6</jackson.version>
+    <jackson.version>2.13.2</jackson.version>
+    <jackson-databind.version>2.13.2.1</jackson-databind.version>
     <kafka.version>2.1.1</kafka.version>
     <lombok.version>1.18.4</lombok.version>
     <mockito.version>2.22.0</mockito.version>
     <pulsar.group.id>io.streamnative</pulsar.group.id>
-    <pulsar.version>2.10.0.0-rc4</pulsar.version>
+    <pulsar.version>2.10.0.1</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
     <testng.version>6.14.3</testng.version>
     <awaitility.version>4.0.3</awaitility.version>
+    <grpc.version>1.45.1</grpc.version>
+    <junit.version>4.13.1</junit.version>
+    <fusionauth-jwt.version>5.2.0</fusionauth-jwt.version>
+
     <!-- plugin dependencies -->
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
     <maven-checkstyle-plugin.version>3.1.1</maven-checkstyle-plugin.version>
@@ -81,6 +86,7 @@
     <module>kafka-payload-processor</module>
     <module>kafka-payload-processor-shaded</module>
     <module>kafka-payload-processor-shaded-tests</module>
+    <module>test-listener</module>
   </modules>
 
   <!-- dependency definitions -->
@@ -96,6 +102,38 @@
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>pulsar-broker</artifactId>
         <version>${pulsar.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-all</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-core</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-testing</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-auth</artifactId>
+          </exclusion>
+        </exclusions>
+      </dependency>
+
+      <dependency>
+        <groupId>io.grpc</groupId>
+        <artifactId>grpc-all</artifactId>
+        <version>${grpc.version}</version>
+        <scope>provided</scope>
+      </dependency>
+
+      <dependency>
+        <groupId>junit</groupId>
+        <artifactId>junit</artifactId>
+        <version>${junit.version}</version>
+        <scope>provided</scope>
       </dependency>
 
       <dependency>
@@ -108,6 +146,12 @@
       <dependency>
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>pulsar-client-original</artifactId>
+        <version>${pulsar.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>${pulsar.group.id}</groupId>
+        <artifactId>pulsar-common</artifactId>
         <version>${pulsar.version}</version>
       </dependency>
 
@@ -151,7 +195,7 @@
       <dependency>
         <groupId>com.fasterxml.jackson.core</groupId>
         <artifactId>jackson-databind</artifactId>
-        <version>${jackson.version}</version>
+        <version>${jackson-databind.version}</version>
       </dependency>
 
       <dependency>
@@ -182,6 +226,18 @@
         <groupId>org.awaitility</groupId>
         <artifactId>awaitility</artifactId>
         <version>${awaitility.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>io.fusionauth</groupId>
+        <artifactId>fusionauth-jwt</artifactId>
+        <version>${fusionauth-jwt.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>io.streamnative.pulsar.handlers</groupId>
+        <artifactId>test-listener</artifactId>
+        <version>${project.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
@@ -262,6 +318,16 @@
           <forkCount>1</forkCount>
           <redirectTestOutputToFile>${redirectTestOutputToFile}</redirectTestOutputToFile>
           <trimStackTrace>false</trimStackTrace>
+          <properties>
+            <property>
+              <name>usedefaultlisteners</name>
+              <value>false</value> <!-- disabling default listeners is optional -->
+            </property>
+            <property>
+              <name>listener</name>
+              <value>io.streamnative.pulsar.handlers.kop.common.test.TimeOutTestListener</value>
+            </property>
+          </properties>
         </configuration>
       </plugin>
 

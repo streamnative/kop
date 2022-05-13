@@ -22,6 +22,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -35,6 +36,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import lombok.AllArgsConstructor;
@@ -47,8 +51,8 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
+import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
-import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.ChannelFutures;
 import org.eclipse.jetty.util.BlockingArrayQueue;
@@ -64,7 +68,6 @@ public class TransactionMarkerChannelManager {
     private final String tenant;
     @Getter
     private final KafkaServiceConfiguration kafkaConfig;
-    private final String authenticationToken;
     private final EventLoopGroup eventLoopGroup;
     private final boolean enableTls;
     private final SslContextFactory sslContextFactory;
@@ -82,6 +85,11 @@ public class TransactionMarkerChannelManager {
     private BlockingQueue<PendingCompleteTxn> txnLogAppendRetryQueue = new LinkedBlockingQueue<>();
     private volatile boolean closed;
     private final String namespacePrefixForUserTopics;
+    private final ScheduledExecutorService scheduler;
+    private ScheduledFuture<?> drainQueuedTransactionMarkersHandle;
+
+    @Getter
+    private Authentication authentication;
 
     @AllArgsConstructor
     @ToString
@@ -141,13 +149,15 @@ public class TransactionMarkerChannelManager {
                                            TransactionStateManager txnStateManager,
                                            KopBrokerLookupManager kopBrokerLookupManager,
                                            boolean enableTls,
-                                           String namespacePrefixForUserTopics) throws Exception {
+                                           String namespacePrefixForUserTopics,
+                                           ScheduledExecutorService scheduler) throws Exception {
         this.tenant = tenant;
         this.kafkaConfig = kafkaConfig;
         this.namespacePrefixForUserTopics = namespacePrefixForUserTopics;
         this.txnStateManager = txnStateManager;
         this.kopBrokerLookupManager = kopBrokerLookupManager;
         this.enableTls = enableTls;
+        this.scheduler = scheduler;
         if (this.enableTls) {
             sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
             sslEndPoint = EndPoint.getSslEndPoint(kafkaConfig.getKafkaListeners());
@@ -155,41 +165,24 @@ public class TransactionMarkerChannelManager {
             sslContextFactory = null;
             sslEndPoint = null;
         }
-        if (kafkaConfig.isAuthenticationEnabled()
-                && AuthenticationToken.class.getName().equals(kafkaConfig.getBrokerClientAuthenticationPlugin())) {
-            // this currently works only for JWT authentication
+        if (kafkaConfig.isAuthenticationEnabled()) {
             String auth = kafkaConfig.getBrokerClientAuthenticationPlugin();
             String authParams = kafkaConfig.getBrokerClientAuthenticationParameters();
-            authenticationToken = AuthenticationUtil.create(auth, authParams)
-                    .getAuthData()
-                    .getCommandData();
-        } else {
-            authenticationToken = null;
+            authentication = AuthenticationUtil.create(auth, authParams);
+            authentication.start();
         }
         eventLoopGroup = new NioEventLoopGroup();
         bootstrap = new Bootstrap();
         bootstrap.group(eventLoopGroup);
         bootstrap.channel(NioSocketChannel.class);
         bootstrap.handler(new TransactionMarkerChannelInitializer(kafkaConfig, enableTls, this));
-
-        Thread thread = new Thread(() -> {
-            while (!closed) {
-                drainQueuedTransactionMarkers();
-                try {
-                    Thread.sleep(1);
-                } catch (InterruptedException e) {
-                    log.info("ignore {}", e);
-                }
-            }
-        }, "kop-transaction-channel-manager-" + namespacePrefixForUserTopics);
-        thread.setDaemon(true);
-        thread.start();
     }
 
     public CompletableFuture<TransactionMarkerChannelHandler> getChannel(InetSocketAddress socketAddress) {
         if (closed) {
             return FutureUtil.failedFuture(new Exception("This TransactionMarkerChannelManager is closed"));
         }
+        ensureDrainQueuedTransactionMarkersActivity();
         return handlerMap.computeIfAbsent(socketAddress, address -> {
             CompletableFuture<TransactionMarkerChannelHandler> handlerFuture = new CompletableFuture<>();
             ChannelFutures.toCompletableFuture(bootstrap.connect(socketAddress))
@@ -225,6 +218,7 @@ public class TransactionMarkerChannelManager {
                                     TransactionMetadata txnMetadata,
                                     TransactionMetadata.TxnTransitMetadata newMetadata,
                                     String namespacePrefix) {
+        ensureDrainQueuedTransactionMarkersActivity();
         String transactionalId = txnMetadata.getTransactionalId();
         PendingCompleteTxn pendingCompleteTxn = new PendingCompleteTxn(
                 transactionalId,
@@ -249,6 +243,7 @@ public class TransactionMarkerChannelManager {
     }
 
     public void maybeWriteTxnCompletion(String transactionalId) {
+        ensureDrainQueuedTransactionMarkersActivity();
         PendingCompleteTxn pendingCompleteTxn = transactionsWithPendingMarkers.get(transactionalId);
         if (!hasPendingMarkersToWrite(pendingCompleteTxn.txnMetadata)
                 && transactionsWithPendingMarkers.remove(transactionalId, pendingCompleteTxn)) {
@@ -263,6 +258,7 @@ public class TransactionMarkerChannelManager {
                                            Integer coordinatorEpoch,
                                            Set<TopicPartition> topicPartitions,
                                            String namespacePrefixForUserTopics) {
+        ensureDrainQueuedTransactionMarkersActivity();
         Integer txnTopicPartition = txnStateManager.partitionFor(transactionalId);
 
         Map<InetSocketAddress, List<TopicPartition>> addressAndPartitionMap = new ConcurrentHashMap<>();
@@ -404,6 +400,7 @@ public class TransactionMarkerChannelManager {
     }
 
     public void removeMarkersForTxnTopicPartition(Integer txnTopicPartitionId) {
+        ensureDrainQueuedTransactionMarkersActivity();
         BlockingQueue<TxnIdAndMarkerEntry> unknownBrokerMarkerEntries =
                 markersQueueForUnknownBroker.removeMarkersForTxnTopicPartition(txnTopicPartitionId);
         if (unknownBrokerMarkerEntries != null) {
@@ -475,8 +472,24 @@ public class TransactionMarkerChannelManager {
         }
     }
 
+    private synchronized void ensureDrainQueuedTransactionMarkersActivity() {
+        if (drainQueuedTransactionMarkersHandle != null || closed) {
+            return;
+        }
+        drainQueuedTransactionMarkersHandle = scheduler.scheduleWithFixedDelay(() -> {
+            drainQueuedTransactionMarkers();
+        }, 100, 100, TimeUnit.MILLISECONDS);
+    }
+
+    private synchronized void stopDrainQueuedTransactionMarkersHandleActivity() {
+        if (drainQueuedTransactionMarkersHandle != null) {
+            drainQueuedTransactionMarkersHandle.cancel(false);
+        }
+    }
+
     public void close() {
         this.closed = true;
+        stopDrainQueuedTransactionMarkersHandleActivity();
         handlerMap.forEach((address, handler) -> {
             try {
                 final TransactionMarkerChannelHandler transactionMarkerChannelHandler = handler.get();
@@ -485,16 +498,16 @@ public class TransactionMarkerChannelManager {
                 log.info("Cannot close TransactionMarkerChannelHandler for {}", address, err);
             }
         });
+        if (authentication != null) {
+            try {
+                authentication.close();
+            } catch (IOException e) {
+                log.error("Transaction marker authentication close failed.", e);
+            }
+        }
     }
 
     public String getAuthenticationUsername() {
         return tenant;
-    }
-
-    public String getAuthenticationPassword() {
-        if (authenticationToken == null) {
-            return "";
-        }
-        return "token:" + authenticationToken;
     }
 }

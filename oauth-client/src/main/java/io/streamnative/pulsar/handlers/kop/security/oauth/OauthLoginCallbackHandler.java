@@ -14,34 +14,22 @@
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import javax.naming.AuthenticationException;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.AppConfigurationEntry;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
-import org.apache.kafka.common.security.oauthbearer.OAuthBearerToken;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerTokenCallback;
-import org.apache.pulsar.client.api.Authentication;
-import org.apache.pulsar.client.api.AuthenticationDataProvider;
-import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationFactoryOAuth2;
-import org.apache.pulsar.common.api.AuthData;
 
 /**
  * OAuth 2.0 login callback handler.
  */
 public class OauthLoginCallbackHandler implements AuthenticateCallbackHandler {
 
-    private static final String DEFAULT_PRINCIPAL_CLAIM_NAME = "sub";
-    private static final String DEFAULT_SCOPE_CLAIM_NAME = "scope";
     private ClientConfig clientConfig = null;
 
     @Override
@@ -55,6 +43,7 @@ public class OauthLoginCallbackHandler implements AuthenticateCallbackHandler {
                             jaasConfigEntries.size()));
         }
 
+        @SuppressWarnings("unchecked cast")
         final Map<String, String> options = (Map<String, String>) jaasConfigEntries.get(0).getOptions();
         if (options == null) {
             throw new IllegalArgumentException("JAAS configuration options is null");
@@ -89,44 +78,8 @@ public class OauthLoginCallbackHandler implements AuthenticateCallbackHandler {
         if (callback.token() != null) {
             throw new IllegalArgumentException("Callback had a token already");
         }
-        try (Authentication authentication = AuthenticationFactoryOAuth2.clientCredentials(
-                clientConfig.getIssuerUrl(),
-                clientConfig.getCredentialsUrl(),
-                clientConfig.getAudience()
-        )) {
-            authentication.start();
-            final AuthenticationDataProvider provider = authentication.getAuthData();
-            final AuthData authData = provider.authenticate(AuthData.INIT_AUTH_DATA);
-            callback.token(new OAuthBearerToken() {
-                @Override
-                public String value() {
-                    return new String(authData.getBytes(), StandardCharsets.UTF_8);
-                }
-
-                @Override
-                public Set<String> scope() {
-                    return Collections.singleton(DEFAULT_SCOPE_CLAIM_NAME);
-                }
-
-                @Override
-                public long lifetimeMs() {
-                    // TODO: convert "exp" claim to ms.
-                    return Long.MAX_VALUE;
-                }
-
-                @Override
-                public String principalName() {
-                    return DEFAULT_PRINCIPAL_CLAIM_NAME;
-                }
-
-                @Override
-                public Long startTimeMs() {
-                    // TODO: convert "iat" claim to ms.
-                    return Long.MAX_VALUE;
-                }
-            });
-        } catch (PulsarClientException | AuthenticationException e) {
-            throw new KafkaException(e);
+        try (final ClientCredentialsFlow flow = new ClientCredentialsFlow(clientConfig)) {
+            callback.token(flow.authenticate());
         }
     }
 }

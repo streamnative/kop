@@ -52,6 +52,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private static final int GroupInitialRebalanceDelayMs = 3000;
     // offset configuration
     private static final int OffsetsRetentionMinutes = 3 * 24 * 60;
+    private static final int DefaultSystemTopicRetentionSizeInMb = -1;
     public static final int DefaultOffsetsTopicNumPartitions = 50;
     private static final int OffsetsMessageTTL = 3 * 24 * 3600;
     // txn configuration
@@ -171,6 +172,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private long offsetsRetentionMinutes = OffsetsRetentionMinutes;
 
     @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "System topic retention size in mb"
+    )
+    private int systemTopicRetentionSizeInMB = DefaultSystemTopicRetentionSizeInMb;
+
+    @FieldContext(
         category = CATEGORY_KOP,
         doc = "Offsets message ttl in seconds. default is 259200."
     )
@@ -181,6 +188,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         doc = "Frequency at which to check for stale offsets"
     )
     private long offsetsRetentionCheckIntervalMs = OffsetConfig.DefaultOffsetsRetentionCheckIntervalMs;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "send queue size of system client to produce system topic."
+    )
+    private int kafkaMetaMaxPendingMessages = 10000;
 
     @FieldContext(
             category = CATEGORY_KOP,
@@ -378,6 +391,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private int kafkaBrokerId = 1;
 
     @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Store producer id sequence on a Pulsar topic"
+    )
+    private boolean kafkaTransactionProducerIdsStoredOnPulsar = false;
+
+    @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
             doc = "Flag to enable transaction coordinator"
     )
@@ -420,7 +439,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             doc = "The fully qualified name of a SASL server callback handler class that implements the "
                     + "AuthenticateCallbackHandler interface, which is used for OAuth2 authentication. "
                     + "If it's not set, the class will be Kafka's default server callback handler for "
-                    + "OAUTHBEARER mechanism: OAuthBearerUnsecuredValidatorCallbackHandler."
+                    + "OAUTHBEARER mechanism: KopOAuthBearerUnsecuredValidatorCallbackHandler."
     )
     private String kopOauth2AuthenticateCallbackHandler;
 
