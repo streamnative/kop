@@ -326,7 +326,8 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
                     saslAuthBytes = usernamePassword.getBytes(UTF_8);
                     break;
                 case OAuthBearerLoginModule.OAUTHBEARER_MECHANISM:
-                    saslAuthBytes = new OAuthBearerClientInitialResponse(commandData.getBytes(UTF_8)).toBytes();
+                    saslAuthBytes = new OAuthBearerClientInitialResponse(commandData, null, null)
+                            .toBytes();
                     break;
                 default:
                     log.error("No corresponding mechanism to {}", authentication.getClass().getName());
