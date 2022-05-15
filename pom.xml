@@ -386,6 +386,8 @@
             <includeOnlyProperty>^git.build.user.(email|name)$</includeOnlyProperty>
           </includeOnlyProperties>
           <commitIdGenerationMode>full</commitIdGenerationMode>
+          <!-- A workaround to make build work in a Git worktree, see https://github.com/git-commit-id/git-commit-id-maven-plugin/issues/215 -->
+          <useNativeGit>true</useNativeGit>
         </configuration>
       </plugin>
 
