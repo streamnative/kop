@@ -46,6 +46,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.TreeMap;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import javax.crypto.SecretKey;
 import javax.security.auth.login.Configuration;
@@ -78,6 +79,7 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
     private File jaasConfigFile;
 
     protected Map<KafkaVersion, KafkaClientFactory> kafkaClientFactories = Arrays.stream(KafkaVersion.values())
+            .filter(k -> k != KafkaVersion.KAFKA_0_9_0_0 && k != KafkaVersion.KAFKA_0_10_0_0)
             .collect(Collectors.toMap(
                     version -> version,
                     version -> {
@@ -353,8 +355,9 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
 
                 producer.newContextBuilder(KAFKA_TOPIC, "hello").build().sendAsync().get();
                 fail("should have failed");
-            } catch (Exception e) {
-                if (version == KafkaVersion.KAFKA_2_8_0
+            } catch (ExecutionException e) {
+                if (version == KafkaVersion.DEFAULT
+                    || version == KafkaVersion.KAFKA_2_8_0
                     || version == KafkaVersion.KAFKA_3_0_0) {
                     assertTrue(e.getMessage().contains("Topic " + KAFKA_TOPIC
                             + " not present in metadata after " + metadataTimeoutMs + " ms."));
