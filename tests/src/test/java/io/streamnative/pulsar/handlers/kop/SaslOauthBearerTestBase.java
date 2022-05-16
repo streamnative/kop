@@ -88,7 +88,8 @@ public abstract class SaslOauthBearerTestBase extends KopProtocolHandlerTestBase
             fail("should have failed");
         } catch (ExecutionException e) {
             assertTrue(e.getCause() instanceof TimeoutException);
-            assertTrue(e.getMessage().contains("Failed to update metadata"));
+            assertTrue(e.getMessage().contains("Topic " + topic
+                    + " not present in metadata after 3000 ms."));
         }
     }
 }
