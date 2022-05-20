@@ -16,7 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
-
+import static org.testng.Assert.assertEquals;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
@@ -34,10 +34,13 @@ import java.util.concurrent.ExecutionException;
 import javax.naming.AuthenticationException;
 import javax.security.auth.login.LoginException;
 import lombok.Cleanup;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.errors.SaslAuthenticationException;
 import org.apache.kafka.common.errors.TopicAuthorizationException;
 import org.apache.pulsar.broker.ServiceConfiguration;
@@ -65,6 +68,7 @@ import org.testng.annotations.Test;
  * @see OauthLoginCallbackHandler
  * @see OauthValidatorCallbackHandler
  */
+@Slf4j
 public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
 
     private static final String ADMIN_USER = "simple_client_id";
@@ -120,6 +124,41 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
     @Test(timeOut = 15000)
     public void testSimpleProduceConsume() throws Exception {
         super.testSimpleProduceConsume();
+    }
+
+    @Test(timeOut = 30000)
+    protected void testSimpleProduceConsumeWithTokenRefresh() throws Exception {
+        final String topic = "testSimpleProduceConsume";
+        final String message = "hello";
+
+
+        final Properties producerProps = newKafkaProducerProperties();
+        configureOauth2(producerProps);
+        @Cleanup final KafkaProducer<String, String> producer = new KafkaProducer<>(producerProps);
+
+        final Properties consumerProps = newKafkaConsumerProperties();
+        configureOauth2(consumerProps);
+        @Cleanup final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerProps);
+        consumer.subscribe(Collections.singleton(topic));
+
+        final List<String> receivedMessages = new ArrayList<>();
+
+        // Sleep 5 seconds to make sure the original OAuth token expires. If the token refresh logic doesn't kick in
+        // any subsequent requests would fail with unauthorized.
+        Thread.sleep(5000);
+
+        RecordMetadata metadata = producer.send(new ProducerRecord<>(topic, message)).get();
+        log.info("Send to {}-partition-{}@{}", metadata.topic(), metadata.partition(), metadata.offset());
+
+        while (receivedMessages.isEmpty()) {
+            for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofSeconds(1))) {
+                receivedMessages.add(record.value());
+                log.info("Receive {} from {}-partition-{}@{}",
+                        record.value(), record.topic(), record.partition(), record.offset());
+            }
+        }
+        assertEquals(receivedMessages.size(), 1);
+        assertEquals(receivedMessages.get(0), message);
     }
 
     @Test(timeOut = 15000)
