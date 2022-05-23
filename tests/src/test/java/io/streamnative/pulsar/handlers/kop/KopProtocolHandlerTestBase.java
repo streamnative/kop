@@ -798,9 +798,8 @@ public abstract class KopProtocolHandlerTestBase {
         return adminProps;
     }
 
-    public KafkaChannelInitializer getFirstChannelInitializer() {
-        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
-        return (KafkaChannelInitializer) handler.getChannelInitializerMap().entrySet().iterator().next().getValue();
+    public KafkaProtocolHandler getProtocolHandler() {
+        return (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
     }
 
     public KafkaRequestHandler newRequestHandler() throws Exception {
