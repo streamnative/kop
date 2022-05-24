@@ -3,18 +3,18 @@ name: KoP Release Notes
 on:
   push:
     branches:
-      - master
+    - master
     path-ignores:
-      - 'docs/**'
-      - 'README.md'
-      - 'CONTRIBUTING.md'
+    - docs/**
+    - README.md
+    - CONTRIBUTING.md
 jobs:
   build:
 
     runs-on: ubuntu-latest
 
     steps:
-      - name: release note
-        uses: toolmantim/release-drafter@v5.2.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: release note
+      uses: toolmantim/release-drafter@v5.2.0
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
