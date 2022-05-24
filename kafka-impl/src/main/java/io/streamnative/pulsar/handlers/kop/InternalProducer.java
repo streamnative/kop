@@ -38,6 +38,24 @@ public class InternalProducer extends Producer {
         this.serverCnx = cnx;
     }
 
+    // Don't add the `@Override` annotation so that it can be cherry-picked into older branches. This method was first
+    // introduced from https://github.com/apache/pulsar/pull/13885.
+    public CompletableFuture<Void> checkPermissionsAsync() {
+        // `Producer#checkPermissionsAsync` is called in `PersistentTopic#onPoliciesUpdate`. The default implementation
+        // calls `AuthenticationService#canProduce` with the internal `appId` as the auth role and the authentication
+        // data source from the `cnx` field.
+        // `InternalProducer` is just a mock to record the producer stats. The authorization on this class is not
+        // necessary and might lead to some unexpected behaviors (like NPE if the authorization provider assumes the
+        // auth role is not null).
+        return CompletableFuture.completedFuture(null);
+    }
+
+    // Add this method because in some older versions of Pulsar (before https://github.com/apache/pulsar/pull/13885),
+    // `checkPermissions` is a method of `Producer` while `checkPermissionsAsync` is not.
+    public void checkPermissions() {
+        // No ops
+    }
+
     // this will call back by bundle unload
     @Override
     public CompletableFuture<Void> disconnect() {
