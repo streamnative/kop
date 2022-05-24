@@ -24,7 +24,10 @@ import io.streamnative.pulsar.handlers.kop.security.oauth.ServerConfig;
 import java.io.IOException;
 import java.net.URL;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -121,6 +124,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
 
     @Test(timeOut = 15000)
     public void testGrantAndRevokePermission() throws Exception {
+        OauthMockAuthorizationProvider.NULL_ROLE_STACKS.clear();
         final String namespace = conf.getKafkaTenant() + "/" + conf.getKafkaNamespace();
         final String topic = "test-grant-and-revoke-permission";
         final String role = "normal-role-" + System.currentTimeMillis();
@@ -129,14 +133,12 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         admin.namespaces().grantPermissionOnNamespace(namespace, role, Collections.singleton(AuthAction.produce));
         final Properties consumerProps = newKafkaConsumerProperties();
         internalConfigureOauth2(consumerProps, clientCredentialPath);
-        @Cleanup
         final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerProps);
         consumer.subscribe(Collections.singleton(topic));
         Assert.assertThrows(TopicAuthorizationException.class, () -> consumer.poll(Duration.ofSeconds(5)));
 
         final Properties producerProps = newKafkaProducerProperties();
         internalConfigureOauth2(producerProps, clientCredentialPath);
-        @Cleanup
         final KafkaProducer<String, String> producer = new KafkaProducer<>(producerProps);
         producer.send(new ProducerRecord<>(topic, "msg-0")).get();
 
@@ -151,6 +153,10 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         admin.namespaces().grantPermissionOnNamespace(namespace, role, Collections.singleton(AuthAction.consume));
         ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(2));
         Assert.assertEquals(records.iterator().next().value(), "msg-0");
+
+        consumer.close();
+        producer.close();
+        Assert.assertEquals(OauthMockAuthorizationProvider.NULL_ROLE_STACKS.size(), 0);
     }
 
     @Test(timeOut = 15000)
@@ -227,11 +233,18 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
 
     public static class OauthMockAuthorizationProvider extends PulsarAuthorizationProvider {
 
+        public static final List<StackTraceElement> NULL_ROLE_STACKS = Collections.synchronizedList(new ArrayList<>());
+
         @Override
         public CompletableFuture<Boolean> isSuperUser(String role,
                                                       AuthenticationDataSource authenticationData,
                                                       ServiceConfiguration serviceConfiguration) {
-            return CompletableFuture.completedFuture(role.equals(ADMIN_USER));
+            try {
+                return CompletableFuture.completedFuture(role.equals(ADMIN_USER));
+            } catch (NullPointerException e) {
+                NULL_ROLE_STACKS.addAll(Arrays.asList(e.getStackTrace()));
+                return CompletableFuture.completedFuture(true);
+            }
         }
     }
 }
