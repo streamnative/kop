@@ -45,13 +45,12 @@ import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.api.AuthData;
 import org.apache.pulsar.common.policies.data.ClusterData;
-
-import javax.naming.AuthenticationException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import javax.security.sasl.AuthenticationException;
 
 @Slf4j
 public class SchemaRegistryManager {
