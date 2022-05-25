@@ -33,6 +33,7 @@ import java.util.concurrent.ExecutionException;
 import javax.crypto.SecretKey;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.avro.generic.IndexedRecord;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.Config;
@@ -43,6 +44,8 @@ import org.apache.kafka.clients.admin.ListTopicsResult;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.config.ConfigResource;
@@ -54,6 +57,7 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.policies.data.TenantInfo;
+import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -85,6 +89,8 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     @BeforeClass
     @Override
     protected void setup() throws Exception {
+        // this is for SchemaRegistry testing with Authentication and Authorization
+        enableSchemaRegistry = true;
 
         Properties properties = new Properties();
         properties.setProperty("tokenSecretKey", AuthTokenUtils.encodeKeyBase64(secretKey));
@@ -100,6 +106,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         conf.setKafkaMetadataNamespace("__kafka");
         conf.setKafkaTenant(TENANT);
         conf.setKafkaNamespace(NAMESPACE);
+        conf.setKopSchemaRegistryNamespace(NAMESPACE);
 
         conf.setClusterName(super.configClusterName);
         conf.setAuthorizationEnabled(true);
@@ -680,6 +687,55 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         props.put("security.protocol", "SASL_PLAINTEXT");
         props.put("sasl.mechanism", "PLAIN");
         return AdminClient.create(props);
+    }
+
+
+    // this test creates the schema registry topic, and this may interfere with other tests
+    @Test(timeOut = 30000, priority = 1000)
+    public void testAvroProduceAndConsumeWithAuth() throws Exception {
+
+        if (conf.isKafkaEnableMultiTenantMetadata()) {
+            // ensure that the KOP metadata namespace exists and that the user can write to it
+            // because we require "produce" permissions on the Schema Registry Topic
+            // while working in Multi Tenant mode
+            if (!admin.namespaces().getNamespaces(TENANT).contains(TENANT + "/" + conf.getKafkaMetadataNamespace())) {
+                admin.namespaces().createNamespace(TENANT + "/" + conf.getKafkaMetadataNamespace());
+            }
+            admin.namespaces()
+                    .grantPermissionOnNamespace(TENANT + "/" + conf.getKafkaMetadataNamespace(), SIMPLE_USER,
+                            Sets.newHashSet(AuthAction.produce, AuthAction.consume));
+        }
+
+        String topic = "SchemaRegistryTest-testAvroProduceAndConsumeWithAuth";
+        IndexedRecord avroRecord = createAvroRecord();
+        Object[] objects = new Object[]{ avroRecord, true, 130, 345L, 1.23f, 2.34d, "abc", "def".getBytes() };
+        @Cleanup
+        KafkaProducer<Integer, Object> producer = createAvroProducer();
+        for (int i = 0; i < objects.length; i++) {
+            final Object object = objects[i];
+            producer.send(new ProducerRecord<>(topic, i, object), (metadata, e) -> {
+                if (e != null) {
+                    log.error("Failed to send {}: {}", object, e.getMessage());
+                    Assert.fail("Failed to send " + object + ": " + e.getMessage());
+                }
+                log.info("Success send {} to {}-partition-{}@{}",
+                        object, metadata.topic(), metadata.partition(), metadata.offset());
+            }).get();
+        }
+        producer.close();
+
+        @Cleanup
+        KafkaConsumer<Integer, Object> consumer = createAvroConsumer();
+        consumer.subscribe(Collections.singleton(topic));
+        int i = 0;
+        while (i < objects.length) {
+            for (ConsumerRecord<Integer, Object> record : consumer.poll(Duration.ofSeconds(3))) {
+                assertEquals(record.key().intValue(), i);
+                assertEquals(record.value(), objects[i]);
+                i++;
+            }
+        }
+        consumer.close();
     }
 
 }

@@ -279,6 +279,13 @@ public abstract class KopProtocolHandlerTestBase {
             brokerServiceUrlTls);
         mockBookKeeper = createMockBookKeeper(bkExecutor);
 
+        if (enableSchemaRegistry) {
+
+            conf.setKopSchemaRegistryEnable(true);
+            conf.setKopSchemaRegistryPort(getKafkaSchemaRegistryPort());
+            restConnect = "http://localhost:" + getKafkaSchemaRegistryPort();
+        }
+
         if (startBroker) {
             startBroker();
             createAdmin();
@@ -290,27 +297,6 @@ public abstract class KopProtocolHandlerTestBase {
             }
         }
 
-        if (enableSchemaRegistry) {
-            admin.topics().createPartitionedTopic(KAFKASTORE_TOPIC, 1);
-            final Properties props = new Properties();
-            props.put(SchemaRegistryConfig.PORT_CONFIG, Integer.toString(getKafkaSchemaRegistryPort()));
-            // Increase the kafkastore.timeout.ms (default: 500) to avoid test failure in CI
-            props.put(SchemaRegistryConfig.KAFKASTORE_TIMEOUT_CONFIG, 3000);
-            // NOTE: KoP doesn't support kafkastore.connection.url
-            props.put(SchemaRegistryConfig.KAFKASTORE_BOOTSTRAP_SERVERS_CONFIG,
-                    "PLAINTEXT://localhost:" + getKafkaBrokerPort());
-            props.put(SchemaRegistryConfig.KAFKASTORE_TOPIC_CONFIG, KAFKASTORE_TOPIC);
-            props.put(SchemaRegistryConfig.COMPATIBILITY_CONFIG, AvroCompatibilityLevel.NONE.name);
-            props.put(SchemaRegistryConfig.MASTER_ELIGIBILITY, true);
-
-            restApp = new SchemaRegistryRestApplication(props);
-            restServer = restApp.createServer();
-            restServer.start();
-            restConnect = restServer.getURI().toString();
-            if (restConnect.endsWith("/")) {
-                restConnect = restConnect.substring(0, restConnect.length() - 1);
-            }
-        }
     }
 
     protected final void internalCleanup() throws Exception {
@@ -820,7 +806,14 @@ public abstract class KopProtocolHandlerTestBase {
         final ReplicaManager replicaManager =
                 handler.getReplicaManager(conf.getKafkaMetadataTenant());
 
-        return ((KafkaChannelInitializer) handler.getChannelInitializerMap().entrySet().iterator().next().getValue())
+        return handler
+                .getChannelInitializerMap()
+                .values()
+                .stream()
+                .filter(e -> e instanceof KafkaChannelInitializer)
+                .map(f -> ((KafkaChannelInitializer) f))
+                .findFirst()
+                .get()
                 .newCnxWithoutStats(new TenantContextManager() {
                     @Override
                     public GroupCoordinator getGroupCoordinator(String tenant) {
