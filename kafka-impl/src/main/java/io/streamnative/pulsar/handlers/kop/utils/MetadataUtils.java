@@ -109,7 +109,7 @@ public class MetadataUtils {
      * </ul>
      */
     private static void createKafkaMetadataIfMissing(String tenant,
-                                                     String kafkaMetadataNamespace,
+                                                     String namespace,
                                                      PulsarAdmin pulsarAdmin,
                                                      ClusterData clusterData,
                                                      KafkaServiceConfiguration conf,
@@ -121,6 +121,7 @@ public class MetadataUtils {
             log.info("Skipping initialization of topic {} for tenant {}", kopTopic.getFullName(), tenant);
             return;
         }
+        String kafkaMetadataNamespace = tenant + "/" + namespace;
         String cluster = conf.getClusterName();
 
         boolean clusterExists = false;
