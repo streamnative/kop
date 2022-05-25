@@ -50,7 +50,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
-import javax.security.sasl.AuthenticationException;
+import javax.naming.AuthenticationException;
 
 @Slf4j
 public class SchemaRegistryManager {
