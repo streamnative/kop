@@ -33,6 +33,12 @@ import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import javax.naming.AuthenticationException;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
@@ -45,12 +51,6 @@ import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.api.AuthData;
 import org.apache.pulsar.common.policies.data.ClusterData;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.Optional;
-import java.util.concurrent.ExecutionException;
-import javax.naming.AuthenticationException;
 
 @Slf4j
 public class SchemaRegistryManager {
