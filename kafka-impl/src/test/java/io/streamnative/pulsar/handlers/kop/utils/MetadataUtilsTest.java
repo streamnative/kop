@@ -59,6 +59,9 @@ public class MetadataUtilsTest {
         conf.setKafkaNamespace("userNamespace");
         conf.setSystemTopicRetentionSizeInMB(1000);
 
+        conf.setKopSchemaRegistryNamespace("schemaRegistry");
+        conf.setKopSchemaRegistryEnable(true);
+
         final KopTopic offsetsTopic = new KopTopic(MetadataUtils
                 .constructOffsetsTopicBaseName(conf.getKafkaMetadataTenant(), conf), namespacePrefix);
         final KopTopic txnTopic = new KopTopic(MetadataUtils
@@ -103,6 +106,8 @@ public class MetadataUtilsTest {
         MetadataUtils.createTxnMetadataIfMissing(conf.getKafkaMetadataTenant(), mockPulsarAdmin, clusterData, conf);
         // create user topics namespace
         MetadataUtils.createKafkaNamespaceIfMissing(mockPulsarAdmin, clusterData, conf);
+        MetadataUtils.createSchemaRegistryMetadataIfMissing(conf.getKafkaMetadataTenant(),
+                mockPulsarAdmin, clusterData, conf);
 
         RetentionPolicies retentionPolicies =
                 new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), conf.getSystemTopicRetentionSizeInMB());
@@ -129,6 +134,17 @@ public class MetadataUtilsTest {
                 + conf.getKafkaNamespace()), eq(retentionPolicies));
         verify(mockNamespaces, times(0)).setNamespaceMessageTTL(eq(conf.getKafkaTenant() + "/"
                 + conf.getKafkaNamespace()), any(Integer.class));
+
+        // check schema registry topics namespace set the policy
+        verify(mockNamespaces, times(1)).createNamespace(eq(conf.getKafkaMetadataTenant() + "/"
+                + conf.getKopSchemaRegistryNamespace()), any(Set.class));
+        verify(mockNamespaces, times(1)).setNamespaceReplicationClusters(eq(conf.getKafkaMetadataTenant()
+                + "/" + conf.getKopSchemaRegistryNamespace()), any(Set.class));
+        verify(mockNamespaces, times(1)).setRetention(eq(conf.getKafkaMetadataTenant() + "/"
+                + conf.getKopSchemaRegistryNamespace()), any(RetentionPolicies.class));
+        // NO TTL
+        verify(mockNamespaces, times(0)).setNamespaceMessageTTL(eq(conf.getKafkaMetadataTenant() + "/"
+                + conf.getKopSchemaRegistryNamespace()), any(Integer.class));
 
         // Test that cluster is added to existing Tenant if missing
         // Test that the cluster is added to the namespace replication cluster list if it is missing

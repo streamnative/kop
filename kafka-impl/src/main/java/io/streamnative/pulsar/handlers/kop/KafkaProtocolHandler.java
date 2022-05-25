@@ -27,6 +27,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
@@ -100,6 +101,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KopEventManager kopEventManager;
     private OrderedScheduler sendResponseScheduler;
     private NamespaceBundleOwnershipListenerImpl bundleListener;
+    private SchemaRegistryManager schemaRegistryManager;
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
@@ -275,6 +277,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             kafkaConfig.getKopPrometheusStatsLatencyRolloverSeconds());
         statsProvider.start(conf);
         brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
+        schemaRegistryManager = new SchemaRegistryManager(kafkaConfig, brokerService.getPulsar(),
+                brokerService.getAuthenticationService());
     }
 
     private TransactionCoordinator createAndBootTransactionCoordinator(String tenant) {
@@ -425,6 +429,10 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     forEach((listener, endPoint) ->
                             builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint))
                     );
+            Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer = schemaRegistryManager.build();
+            if (schemaRegistryChannelInitializer.isPresent()) {
+                builder.put(schemaRegistryManager.getAddress(), schemaRegistryChannelInitializer.get());
+            }
             channelInitializerMap = builder.build();
             return channelInitializerMap;
         } catch (Exception e){
@@ -453,6 +461,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         }
         groupCoordinatorsByTenant.values().forEach(GroupCoordinator::shutdown);
         kopEventManager.close();
+        if (schemaRegistryManager != null) {
+            schemaRegistryManager.close();
+        }
         transactionCoordinatorByTenant.values().forEach(TransactionCoordinator::shutdown);
         KopBrokerLookupManager.clear();
         kafkaTopicManagerSharedState.close();

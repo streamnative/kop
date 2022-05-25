@@ -53,6 +53,11 @@ public class MetadataUtils {
                 + "/__transaction_producerid_generator";
     }
 
+    public static String constructSchemaRegistryTopicName(String tenant, KafkaServiceConfiguration conf) {
+        return tenant + "/" + conf.getKopSchemaRegistryNamespace()
+                + "/" + conf.getKopSchemaRegistryTopicName();
+    }
+
     public static String constructMetadataNamespace(String tenant, KafkaServiceConfiguration conf) {
         return tenant + "/" + conf.getKafkaMetadataNamespace();
     }
@@ -67,8 +72,9 @@ public class MetadataUtils {
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructOffsetsTopicBaseName(tenant, conf),
                 constructMetadataNamespace(tenant, conf));
-        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
-                conf.getOffsetsTopicNumPartitions());
+        String kafkaMetadataNamespace = tenant + "/" + conf.getKafkaMetadataNamespace();
+        createKafkaMetadataIfMissing(tenant, kafkaMetadataNamespace, pulsarAdmin, clusterData, conf, kopTopic,
+                conf.getOffsetsTopicNumPartitions(), false);
     }
 
     public static void createTxnMetadataIfMissing(String tenant,
@@ -78,8 +84,9 @@ public class MetadataUtils {
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructTxnLogTopicBaseName(tenant, conf),
                 constructMetadataNamespace(tenant, conf));
-        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
-                conf.getKafkaTxnLogTopicNumPartitions());
+        String kafkaMetadataNamespace = tenant + "/" + conf.getKafkaMetadataNamespace();
+        createKafkaMetadataIfMissing(tenant, kafkaMetadataNamespace, pulsarAdmin, clusterData, conf, kopTopic,
+                conf.getKafkaTxnLogTopicNumPartitions(), false);
         if (conf.isKafkaTransactionProducerIdsStoredOnPulsar()) {
             KopTopic producerIdKopTopic = new KopTopic(constructTxnProducerIdTopicBaseName(tenant, conf),
                     constructMetadataNamespace(tenant, conf));
@@ -102,18 +109,19 @@ public class MetadataUtils {
      * </ul>
      */
     private static void createKafkaMetadataIfMissing(String tenant,
+                                                     String kafkaMetadataNamespace,
                                                      PulsarAdmin pulsarAdmin,
                                                      ClusterData clusterData,
                                                      KafkaServiceConfiguration conf,
                                                      KopTopic kopTopic,
-                                                     int partitionNum)
+                                                     int partitionNum,
+                                                     boolean infiniteRetention)
         throws PulsarAdminException {
         if (!conf.isKafkaManageSystemNamespaces()) {
             log.info("Skipping initialization of topic {} for tenant {}", kopTopic.getFullName(), tenant);
             return;
         }
         String cluster = conf.getClusterName();
-        String kafkaMetadataNamespace = tenant + "/" + conf.getKafkaMetadataNamespace();
 
         boolean clusterExists = false;
         boolean tenantExists = false;
@@ -146,7 +154,8 @@ public class MetadataUtils {
 
             // Check if the metadata namespace exists and create it if not
             Namespaces namespaces = pulsarAdmin.namespaces();
-            createNamespaceIfMissing(tenant, conf, cluster, kafkaMetadataNamespace, namespaces, true);
+            createNamespaceIfMissing(tenant, conf, cluster, kafkaMetadataNamespace, namespaces,
+                    infiniteRetention, true);
 
             namespaceExists = true;
 
@@ -193,7 +202,9 @@ public class MetadataUtils {
 
     private static void createNamespaceIfMissing(String tenant, KafkaServiceConfiguration conf,
                                                  String cluster, String kafkaNamespace,
-                                                 Namespaces namespaces, boolean isMetadataNamespace)
+                                                 Namespaces namespaces,
+                                                 boolean infiniteRetention,
+                                                 boolean isMetadataNamespace)
             throws PulsarAdminException {
         if (!namespaces.getNamespaces(tenant).contains(kafkaNamespace)) {
             log.info("Namespaces: {} does not exist in tenant: {}, creating it ...",
@@ -204,10 +215,17 @@ public class MetadataUtils {
 
             // set namespace config only when offset metadata namespace first create
             if (isMetadataNamespace) {
-                namespaces.setRetention(kafkaNamespace, new RetentionPolicies(
-                        (int) conf.getOffsetsRetentionMinutes(),
-                        conf.getSystemTopicRetentionSizeInMB())
-                );
+                if (infiniteRetention) {
+                    log.info("Namespaces: {}, setting infinite retention",
+                            kafkaNamespace, tenant);
+                    namespaces.setRetention(kafkaNamespace, new RetentionPolicies(-1, -1)
+                    );
+                } else {
+                    namespaces.setRetention(kafkaNamespace, new RetentionPolicies(
+                            (int) conf.getOffsetsRetentionMinutes(),
+                            conf.getSystemTopicRetentionSizeInMB())
+                    );
+                }
                 namespaces.setCompactionThreshold(kafkaNamespace, MAX_COMPACTION_THRESHOLD);
                 namespaces.setNamespaceMessageTTL(kafkaNamespace, conf.getOffsetsMessageTTL());
             }
@@ -275,7 +293,7 @@ public class MetadataUtils {
 
             Namespaces namespaces = pulsarAdmin.namespaces();
             // Check if the kafka namespace exists and create it if not
-            createNamespaceIfMissing(tenant, conf, cluster, kafkaNamespace, namespaces, false);
+            createNamespaceIfMissing(tenant, conf, cluster, kafkaNamespace, namespaces, false, false);
             namespaceExists = true;
 
         } catch (PulsarAdminException e) {
@@ -307,5 +325,16 @@ public class MetadataUtils {
             admin.topics().createMissedPartitions(topic);
         } catch (PulsarAdminException ignored) {
         }
+    }
+
+    public static void createSchemaRegistryMetadataIfMissing(String tenant,
+                                                             PulsarAdmin pulsarAdmin,
+                                                             ClusterData clusterData,
+                                                             KafkaServiceConfiguration conf)
+            throws PulsarAdminException {
+        KopTopic kopTopic = new KopTopic(constructSchemaRegistryTopicName(tenant, conf),
+                constructMetadataNamespace(tenant, conf));
+        createKafkaMetadataIfMissing(tenant, conf.getKopSchemaRegistryNamespace(), pulsarAdmin, clusterData,
+                conf, kopTopic, 1, true);
     }
 }
