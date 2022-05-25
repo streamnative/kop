@@ -41,7 +41,7 @@
     <jackson.version>2.13.2</jackson.version>
     <jackson-databind.version>2.13.2.1</jackson-databind.version>
     <kafka.version>2.1.1</kafka.version>
-    <lombok.version>1.18.4</lombok.version>
+    <lombok.version>1.18.22</lombok.version>
     <mockito.version>2.22.0</mockito.version>
     <pulsar.group.id>io.streamnative</pulsar.group.id>
     <pulsar.version>2.10.0.1</pulsar.version>
