@@ -16,6 +16,8 @@ package io.streamnative.pulsar.handlers.kop.utils;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import java.util.Optional;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequest;
@@ -43,6 +45,14 @@ public class KafkaRequestUtils {
     }
 
     public static class LegacyUtils {
+
+        public static void forEachListOffsetRequest(
+                org.apache.kafka200.common.requests.ListOffsetRequest request,
+                Function<org.apache.kafka200.common.TopicPartition, Function<Long, Consumer<Integer>>> function) {
+            request.offsetData().forEach((topicPartition, partitionData) -> {
+                function.apply(topicPartition).apply(partitionData.timestamp).accept(partitionData.maxNumOffsets);
+            });
+        }
 
         // V2 adds retention time to the request and V5 removes retention time
         public static long getRetentionTime(OffsetCommitRequest request) {

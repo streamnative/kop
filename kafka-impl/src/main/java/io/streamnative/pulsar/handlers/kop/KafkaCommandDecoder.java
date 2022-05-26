@@ -154,6 +154,20 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
+    protected org.apache.kafka200.common.requests.ListOffsetRequest byteBufToListOffsetRequestV0(ByteBuf buf) {
+        checkArgument(buf.readableBytes() > 0);
+        ByteBuffer nio = buf.nioBuffer();
+        org.apache.kafka200.common.requests.RequestHeader header =
+                org.apache.kafka200.common.requests.RequestHeader.parse(nio);
+        short apiVersion = header.apiVersion();
+        org.apache.kafka200.common.protocol.ApiKeys apiKey = header.apiKey();
+        org.apache.kafka200.common.protocol.types.Struct struct = apiKey.parseRequest(apiVersion, nio);
+        org.apache.kafka200.common.requests.AbstractRequest body =
+                org.apache.kafka200.common.requests.AbstractRequest.parseRequest(apiKey, apiVersion, struct);
+
+        return (org.apache.kafka200.common.requests.ListOffsetRequest) body;
+    }
+
     protected static ByteBuf responseToByteBuf(AbstractResponse response, KafkaHeaderAndRequest request) {
         try (KafkaHeaderAndResponse kafkaHeaderAndResponse =
                  KafkaHeaderAndResponse.responseForRequest(request, response)) {

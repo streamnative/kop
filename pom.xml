@@ -87,6 +87,7 @@
     <module>kafka-payload-processor-shaded</module>
     <module>kafka-payload-processor-shaded-tests</module>
     <module>test-listener</module>
+    <module>kafka-client-2-0-shade</module>
   </modules>
 
   <!-- dependency definitions -->
@@ -96,6 +97,12 @@
         <groupId>org.apache.kafka</groupId>
         <artifactId>kafka-clients</artifactId>
         <version>${kafka.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>io.streamnative.pulsar.handlers</groupId>
+        <artifactId>kafka-client-2-0-shade</artifactId>
+        <version>${project.version}</version>
       </dependency>
 
       <dependency>
