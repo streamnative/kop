@@ -148,6 +148,14 @@
       </exclusions>
     </dependency>
 
+    <!-- this is needed for the Kakfa Avro Serialiser -->
+    <dependency>
+      <groupId>org.codehaus.jackson</groupId>
+      <artifactId>jackson-mapper-asl</artifactId>
+      <version>1.9.13</version>
+      <scope>test</scope>
+    </dependency>
+
     <dependency>
       <groupId>io.confluent</groupId>
       <artifactId>kafka-avro-serializer</artifactId>
