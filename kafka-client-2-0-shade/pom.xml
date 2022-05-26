@@ -54,10 +54,6 @@
                                     <pattern>org.apache.kafka</pattern>
                                     <shadedPattern>org.apache.kafka200</shadedPattern>
                                 </relocation>
-                                <relocation>
-                                    <pattern>org.apache.kafka</pattern>
-                                    <shadedPattern>org.apache.kafka200</shadedPattern>
-                                </relocation>
                             </relocations>
                         </configuration>
                     </execution>
