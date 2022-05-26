@@ -94,11 +94,6 @@ public class ListOffsetRequestV0 extends AbstractRequest {
      */
     private static final Schema LIST_OFFSET_REQUEST_V3 = LIST_OFFSET_REQUEST_V2;
 
-    public static Schema[] schemaVersions() {
-        return new Schema[] {LIST_OFFSET_REQUEST_V0, LIST_OFFSET_REQUEST_V1, LIST_OFFSET_REQUEST_V2,
-                LIST_OFFSET_REQUEST_V3};
-    }
-
     private final int replicaId;
     private final IsolationLevel isolationLevel;
     private final Map<TopicPartition, ListOffsetRequestV0.PartitionData> offsetData;
@@ -151,8 +146,8 @@ public class ListOffsetRequestV0 extends AbstractRequest {
             if (version == 0) {
                 if (offsetData == null) {
                     if (partitionTimestamps == null) {
-                        throw new RuntimeException("Must set partitionTimestamps or offsetData when creating a v0 "
-                                + "ListOffsetRequest");
+                        throw new IllegalArgumentException(
+                                "Must set partitionTimestamps or offsetData when creating a v0 ListOffsetRequest");
                     } else {
                         offsetData = new HashMap<>();
                         for (Map.Entry<TopicPartition, Long> entry: partitionTimestamps.entrySet()) {
@@ -164,10 +159,10 @@ public class ListOffsetRequestV0 extends AbstractRequest {
                 }
             } else {
                 if (offsetData != null) {
-                    throw new RuntimeException("Cannot create a v" + version + " ListOffsetRequest with v0 "
+                    throw new IllegalArgumentException("Cannot create a v" + version + " ListOffsetRequest with v0 "
                             + "PartitionData.");
                 } else if (partitionTimestamps == null) {
-                    throw new RuntimeException("Must set partitionTimestamps when creating a v"
+                    throw new IllegalArgumentException("Must set partitionTimestamps when creating a v"
                             + version + " ListOffsetRequest");
                 }
             }
@@ -358,6 +353,11 @@ public class ListOffsetRequestV0 extends AbstractRequest {
         }
         struct.set(TOPICS_KEY_NAME, topicArray.toArray());
         return struct;
+    }
+
+    public static Schema[] schemaVersions() {
+        return new Schema[] {LIST_OFFSET_REQUEST_V0, LIST_OFFSET_REQUEST_V1, LIST_OFFSET_REQUEST_V2,
+                LIST_OFFSET_REQUEST_V3};
     }
 
     public static <T> Map<String, Map<Integer, T>> groupDataByTopic(Map<TopicPartition, ? extends T> data) {

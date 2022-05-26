@@ -1080,13 +1080,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private CompletableFuture<Pair<Errors, Long>> fetchOffset(String topicName, long timestamp) {
         CompletableFuture<Pair<Errors, Long>> partitionData = new CompletableFuture<>();
 
-        topicManager.getTopic(topicName).whenComplete((perTopicOpt, t) -> {
-            if (t != null) {
-                log.error("Failed while get persistentTopic topic: {} ts: {}. ",
-                    !perTopicOpt.isPresent() ? "null" : perTopicOpt.get().getName(), timestamp, t);
-                partitionData.complete(Pair.of(Errors.forException(t), null));
-                return;
-            }
+        topicManager.getTopic(topicName).thenAccept((perTopicOpt) -> {
             if (!perTopicOpt.isPresent()) {
                 partitionData.complete(Pair.of(Errors.UNKNOWN_TOPIC_OR_PARTITION, null));
                 return;
@@ -1147,6 +1141,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             } else {
                 fetchOffsetByTimestamp(partitionData, managedLedger, lac, timestamp, perTopic.getName());
             }
+        }).exceptionally(e -> {
+            Throwable throwable = FutureUtil.unwrapCompletionException(e);
+            log.error("Failed while get persistentTopic topic: {} ts: {}. ", topicName, timestamp, throwable);
+            partitionData.complete(Pair.of(Errors.forException(throwable), null));
+            return null;
         });
 
         return partitionData;
