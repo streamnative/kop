@@ -21,6 +21,7 @@ import java.util.function.Function;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequest;
+import org.apache.kafka.common.requests.ListOffsetRequestV0;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 
@@ -47,8 +48,8 @@ public class KafkaRequestUtils {
     public static class LegacyUtils {
 
         public static void forEachListOffsetRequest(
-                org.apache.kafka200.common.requests.ListOffsetRequest request,
-                Function<org.apache.kafka200.common.TopicPartition, Function<Long, Consumer<Integer>>> function) {
+                ListOffsetRequestV0 request,
+                Function<TopicPartition, Function<Long, Consumer<Integer>>> function) {
             request.offsetData().forEach((topicPartition, partitionData) -> {
                 function.apply(topicPartition).apply(partitionData.timestamp).accept(partitionData.maxNumOffsets);
             });

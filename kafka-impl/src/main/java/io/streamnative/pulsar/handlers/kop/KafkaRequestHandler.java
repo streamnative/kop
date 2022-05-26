@@ -140,6 +140,7 @@ import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
 import org.apache.kafka.common.requests.ListGroupsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequest;
+import org.apache.kafka.common.requests.ListOffsetRequestV0;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
@@ -1270,7 +1271,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     // https://cfchou.github.io/blog/2015/04/23/a-closer-look-at-kafka-offsetrequest/ through web.archive.org
     private void handleListOffsetRequestV0(KafkaHeaderAndRequest listOffset,
                                            CompletableFuture<AbstractResponse> resultFuture) {
-        org.apache.kafka200.common.requests.ListOffsetRequest request =
+        ListOffsetRequestV0 request =
                 byteBufToListOffsetRequestV0(listOffset.getBuffer());
 
         Map<TopicPartition, CompletableFuture<Pair<Errors, Long>>> responseData =
@@ -1292,21 +1293,20 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         String namespacePrefix = currentNamespacePrefix();
         KafkaRequestUtils.LegacyUtils.forEachListOffsetRequest(request, topic -> times -> maxNumOffsets -> {
-            TopicPartition topicV1 = new TopicPartition(topic.topic(), topic.partition());
-            String fullPartitionName = KopTopic.toString(topicV1, namespacePrefix);
+            String fullPartitionName = KopTopic.toString(topic, namespacePrefix);
 
             authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullPartitionName))
                     .whenComplete((isAuthorized, ex) -> {
                         if (ex != null) {
                             log.error("Describe topic authorize failed, topic - {}. {}",
                                     fullPartitionName, ex.getMessage());
-                            responseData.put(topicV1, CompletableFuture.completedFuture(
+                            responseData.put(topic, CompletableFuture.completedFuture(
                                     Pair.of(Errors.TOPIC_AUTHORIZATION_FAILED, null)));
                             completeOne.run();
                             return;
                         }
                         if (!isAuthorized) {
-                            responseData.put(topicV1, CompletableFuture.completedFuture(
+                            responseData.put(topic, CompletableFuture.completedFuture(
                                     Pair.of(Errors.TOPIC_AUTHORIZATION_FAILED, null)));
                             completeOne.run();
                             return;
@@ -1322,7 +1322,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         }
 
                         partitionData = fetchOffset(fullPartitionName, times);
-                        responseData.put(topicV1, partitionData);
+                        responseData.put(topic, partitionData);
                         completeOne.run();
                     });
 

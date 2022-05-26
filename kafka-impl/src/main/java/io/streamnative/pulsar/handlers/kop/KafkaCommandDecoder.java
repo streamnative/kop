@@ -43,6 +43,7 @@ import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.KopResponseUtils;
+import org.apache.kafka.common.requests.ListOffsetRequestV0;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.kafka.common.requests.ResponseHeader;
@@ -154,18 +155,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    protected org.apache.kafka200.common.requests.ListOffsetRequest byteBufToListOffsetRequestV0(ByteBuf buf) {
+    protected ListOffsetRequestV0 byteBufToListOffsetRequestV0(ByteBuf buf) {
         checkArgument(buf.readableBytes() > 0);
         ByteBuffer nio = buf.nioBuffer();
-        org.apache.kafka200.common.requests.RequestHeader header =
-                org.apache.kafka200.common.requests.RequestHeader.parse(nio);
+        RequestHeader header = RequestHeader.parse(nio);
         short apiVersion = header.apiVersion();
-        org.apache.kafka200.common.protocol.ApiKeys apiKey = header.apiKey();
-        org.apache.kafka200.common.protocol.types.Struct struct = apiKey.parseRequest(apiVersion, nio);
-        org.apache.kafka200.common.requests.AbstractRequest body =
-                org.apache.kafka200.common.requests.AbstractRequest.parseRequest(apiKey, apiVersion, struct);
-
-        return (org.apache.kafka200.common.requests.ListOffsetRequest) body;
+        return ListOffsetRequestV0.parse(nio, apiVersion);
     }
 
     protected static ByteBuf responseToByteBuf(AbstractResponse response, KafkaHeaderAndRequest request) {
