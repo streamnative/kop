@@ -17,6 +17,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
+
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
