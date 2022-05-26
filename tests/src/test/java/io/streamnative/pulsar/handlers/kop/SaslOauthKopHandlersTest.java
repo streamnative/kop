@@ -17,6 +17,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
@@ -32,11 +33,14 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 import javax.naming.AuthenticationException;
+import javax.security.auth.callback.Callback;
+import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.LoginException;
 import lombok.Cleanup;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -44,6 +48,9 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.errors.SaslAuthenticationException;
 import org.apache.kafka.common.errors.TopicAuthorizationException;
+import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
+import org.apache.kafka.common.security.oauthbearer.OAuthBearerToken;
+import org.apache.kafka.common.security.oauthbearer.OAuthBearerTokenCallback;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
@@ -127,39 +134,31 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         super.testSimpleProduceConsume();
     }
 
-    @Test(timeOut = 30000)
+    @Test(timeOut = 20000)
     protected void testSimpleProduceConsumeWithTokenRefresh() throws Exception {
         final String topic = "testSimpleProduceConsume";
         final String message = "hello";
 
-
         final Properties producerProps = newKafkaProducerProperties();
-        configureOauth2(producerProps);
+        internalConfigureOauth2(producerProps, adminCredentialPath, CustomOauthLoginCallbackHandler.class);
         @Cleanup final KafkaProducer<String, String> producer = new KafkaProducer<>(producerProps);
 
-        final Properties consumerProps = newKafkaConsumerProperties();
-        configureOauth2(consumerProps);
-        @Cleanup final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerProps);
-        consumer.subscribe(Collections.singleton(topic));
+        // Check that a token has been generated
+        assertEquals(1, CustomOauthLoginCallbackHandler.tokens.size());
+        OAuthBearerToken originalToken = CustomOauthLoginCallbackHandler.tokens.get(0);
 
-        final List<String> receivedMessages = new ArrayList<>();
+        // Sleep until the original OAuth token expires
+        Thread.sleep(originalToken.lifetimeMs() - System.currentTimeMillis());
 
-        // Sleep 5 seconds to make sure the original OAuth token expires. If the token refresh logic doesn't kick in
-        // any subsequent requests would fail with unauthorized.
-        Thread.sleep(5000);
+        // Check that new tokens have been generated
+        assertTrue(CustomOauthLoginCallbackHandler.tokens.size() > 1);
 
+        producer.send(new ProducerRecord<>(topic, message)).get();
         RecordMetadata metadata = producer.send(new ProducerRecord<>(topic, message)).get();
-        log.info("Send to {}-partition-{}@{}", metadata.topic(), metadata.partition(), metadata.offset());
 
-        while (receivedMessages.isEmpty()) {
-            for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofSeconds(1))) {
-                receivedMessages.add(record.value());
-                log.info("Receive {} from {}-partition-{}@{}",
-                        record.value(), record.topic(), record.partition(), record.offset());
-            }
-        }
-        assertEquals(receivedMessages.size(), 1);
-        assertEquals(receivedMessages.get(0), message);
+        log.info("Send to {}-partition-{}@{}", metadata.topic(), metadata.partition(), metadata.offset());
+        log.error("tokens: " + CustomOauthLoginCallbackHandler.tokens.stream().map(Object::toString)
+                .collect(Collectors.joining()));
     }
 
     @Test(timeOut = 15000)
@@ -187,7 +186,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
             producer.send(new ProducerRecord<>(topic, "msg-1")).get();
             Assert.fail(role + " should not have permission to produce");
         } catch (ExecutionException e) {
-            Assert.assertTrue(e.getCause() instanceof TopicAuthorizationException);
+            assertTrue(e.getCause() instanceof TopicAuthorizationException);
         }
 
         admin.namespaces().grantPermissionOnNamespace(namespace, role, Collections.singleton(AuthAction.consume));
@@ -208,7 +207,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
             new KafkaProducer<>(producerProps);
         } catch (Exception e) {
             Assert.assertNotNull(e.getCause());
-            Assert.assertTrue(e.getCause().getCause() instanceof LoginException);
+            assertTrue(e.getCause().getCause() instanceof LoginException);
         }
     }
 
@@ -250,8 +249,9 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         super.testProduceWithoutAuth();
     }
 
-    private void internalConfigureOauth2(final Properties props, final String credentialPath) {
-        props.setProperty("sasl.login.callback.handler.class", OauthLoginCallbackHandler.class.getName());
+    private void internalConfigureOauth2(final Properties props, final String credentialPath,
+                                         Class<? extends AuthenticateCallbackHandler> callbackHandler) {
+        props.setProperty("sasl.login.callback.handler.class", callbackHandler.getName());
         props.setProperty("security.protocol", "SASL_PLAINTEXT");
         props.setProperty("sasl.mechanism", "OAUTHBEARER");
 
@@ -264,6 +264,10 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
                 credentialPath,
                 AUDIENCE
         ));
+    }
+
+    private void internalConfigureOauth2(final Properties props, final String credentialPath) {
+        internalConfigureOauth2(props, credentialPath, OauthLoginCallbackHandler.class);
     }
 
     @Override
@@ -284,6 +288,21 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
             } catch (NullPointerException e) {
                 NULL_ROLE_STACKS.addAll(Arrays.asList(e.getStackTrace()));
                 return CompletableFuture.completedFuture(true);
+            }
+        }
+    }
+
+    public static class CustomOauthLoginCallbackHandler extends OauthLoginCallbackHandler {
+        static List<OAuthBearerToken> tokens = new ArrayList<>();
+
+        @SneakyThrows
+        @Override
+        public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
+            assertEquals(1, callbacks.length);
+            Callback callback = callbacks[0];
+            if (callback instanceof OAuthBearerTokenCallback) {
+                super.handle(callbacks);
+                tokens.add(((OAuthBearerTokenCallback) callback).token());
             }
         }
     }
