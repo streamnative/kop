@@ -33,3 +33,5 @@ services:
       - SERVE_ADMIN_PORT=4445
       - STRATEGIES_ACCESS_TOKEN=jwt
       - OIDC_SUBJECT_IDENTIFIERS_SUPPORTED_TYPES=public
+      # Let access token expire after 5 seconds to test token refresh
+      - TTL_ACCESS_TOKEN=5s
