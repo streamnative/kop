@@ -47,7 +47,7 @@ public class TransactionWithOAuthBearerAuthTest extends TransactionTest {
         conf.setBrokerDeduplicationEnabled(true);
         conf.setAuthenticationEnabled(true);
         conf.setAuthorizationEnabled(true);
-        conf.setAuthorizationProvider(SaslOauthKopHandlersTest.OauthMockAuthorizationProvider.class.getName());
+        conf.setAuthorizationProvider(SaslOAuthKopHandlersTest.OAuthMockAuthorizationProvider.class.getName());
         conf.setAuthenticationProviders(Sets.newHashSet(AuthenticationProviderToken.class.getName()));
         conf.setBrokerClientAuthenticationPlugin(AuthenticationOAuth2.class.getName());
         conf.setBrokerClientAuthenticationParameters(String.format("{\"type\":\"client_credentials\","
