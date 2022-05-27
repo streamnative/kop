@@ -17,6 +17,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
@@ -33,19 +34,16 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
 import javax.naming.AuthenticationException;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.LoginException;
 import lombok.Cleanup;
 import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.errors.SaslAuthenticationException;
 import org.apache.kafka.common.errors.TopicAuthorizationException;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
@@ -76,7 +74,6 @@ import org.testng.annotations.Test;
  * @see OauthLoginCallbackHandler
  * @see OauthValidatorCallbackHandler
  */
-@Slf4j
 public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
 
     private static final String ADMIN_USER = "simple_client_id";
@@ -151,14 +148,12 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         Thread.sleep(originalToken.lifetimeMs() - System.currentTimeMillis());
 
         // Check that new tokens have been generated
-        assertTrue(CustomOauthLoginCallbackHandler.tokens.size() > 1);
+        assertEquals(2, CustomOauthLoginCallbackHandler.tokens.size());
+        OAuthBearerToken newToken = CustomOauthLoginCallbackHandler.tokens.get(1);
+        assertNotEquals(newToken.value(), originalToken.value());
+        assertTrue(newToken.lifetimeMs() > originalToken.lifetimeMs());
 
         producer.send(new ProducerRecord<>(topic, message)).get();
-        RecordMetadata metadata = producer.send(new ProducerRecord<>(topic, message)).get();
-
-        log.info("Send to {}-partition-{}@{}", metadata.topic(), metadata.partition(), metadata.offset());
-        log.error("tokens: " + CustomOauthLoginCallbackHandler.tokens.stream().map(Object::toString)
-                .collect(Collectors.joining()));
     }
 
     @Test(timeOut = 15000)
