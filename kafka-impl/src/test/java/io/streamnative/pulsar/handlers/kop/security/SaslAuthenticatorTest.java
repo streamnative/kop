@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.security;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import java.nio.ByteBuffer;
 import org.testng.Assert;
 import org.testng.annotations.Test;
@@ -31,7 +32,13 @@ public class SaslAuthenticatorTest {
         final ByteBuf byteBuf = SaslAuthenticator.sizePrefixed(ByteBuffer.wrap(response));
         Assert.assertEquals(byteBuf.readerIndex(), 0);
         Assert.assertEquals(byteBuf.writerIndex(), 0);
-        Assert.assertEquals(byteBuf.capacity(), 4);
+        Assert.assertEquals(byteBuf.capacity(), 0);
+
+        final byte[] nonEmptyResponse = new byte[2];
+        final ByteBuf nonEmptyBuf = SaslAuthenticator.sizePrefixed(ByteBuffer.wrap(nonEmptyResponse));
+        Assert.assertEquals(nonEmptyBuf.readerIndex(), 0);
+        Assert.assertEquals(nonEmptyBuf.writerIndex(), 2);
+        Assert.assertEquals(nonEmptyBuf.capacity(), 2);
     }
 
 }
