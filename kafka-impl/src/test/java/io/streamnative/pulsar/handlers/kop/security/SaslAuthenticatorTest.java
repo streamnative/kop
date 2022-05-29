@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.security;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import java.nio.ByteBuffer;
 import org.testng.Assert;
 import org.testng.annotations.Test;
