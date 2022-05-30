@@ -79,7 +79,6 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
     private File jaasConfigFile;
 
     protected Map<KafkaVersion, KafkaClientFactory> kafkaClientFactories = Arrays.stream(KafkaVersion.values())
-            .filter(k -> k != KafkaVersion.KAFKA_0_9_0_0 && k != KafkaVersion.KAFKA_0_10_0_0)
             .collect(Collectors.toMap(
                     version -> version,
                     version -> {

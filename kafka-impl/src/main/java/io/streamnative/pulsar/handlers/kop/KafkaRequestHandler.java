@@ -140,6 +140,7 @@ import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
 import org.apache.kafka.common.requests.ListGroupsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequest;
+import org.apache.kafka.common.requests.ListOffsetRequestV0;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
@@ -1076,17 +1077,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
-    private CompletableFuture<Pair<Errors, Long>> fetchOffset(String topicName, ListOffsetRequest.PartitionData pd) {
-        Long timestamp = pd.timestamp;
+    private CompletableFuture<Pair<Errors, Long>> fetchOffset(String topicName, long timestamp) {
         CompletableFuture<Pair<Errors, Long>> partitionData = new CompletableFuture<>();
 
-        topicManager.getTopic(topicName).whenComplete((perTopicOpt, t) -> {
-            if (t != null) {
-                log.error("Failed while get persistentTopic topic: {} ts: {}. ",
-                    !perTopicOpt.isPresent() ? "null" : perTopicOpt.get().getName(), timestamp, t);
-                partitionData.complete(Pair.of(Errors.forException(t), null));
-                return;
-            }
+        topicManager.getTopic(topicName).thenAccept((perTopicOpt) -> {
             if (!perTopicOpt.isPresent()) {
                 partitionData.complete(Pair.of(Errors.UNKNOWN_TOPIC_OR_PARTITION, null));
                 return;
@@ -1147,6 +1141,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             } else {
                 fetchOffsetByTimestamp(partitionData, managedLedger, lac, timestamp, perTopic.getName());
             }
+        }).exceptionally(e -> {
+            Throwable throwable = FutureUtil.unwrapCompletionException(e);
+            log.error("Failed while get persistentTopic topic: {} ts: {}. ", topicName, timestamp, throwable);
+            partitionData.complete(Pair.of(Errors.forException(throwable), null));
+            return null;
         });
 
         return partitionData;
@@ -1258,7 +1257,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     completeOne.run();
                                     return;
                                 }
-                                responseData.put(topic, fetchOffset(fullPartitionName, times));
+                                responseData.put(topic, fetchOffset(fullPartitionName, times.timestamp));
                                 completeOne.run();
                             }
                     );
@@ -1271,10 +1270,62 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     // https://cfchou.github.io/blog/2015/04/23/a-closer-look-at-kafka-offsetrequest/ through web.archive.org
     private void handleListOffsetRequestV0(KafkaHeaderAndRequest listOffset,
                                            CompletableFuture<AbstractResponse> resultFuture) {
-        log.error("{} ListOffset v0 is not supported", this);
-        resultFuture.complete(listOffset
-                .getRequest()
-                .getErrorResponse(new Exception("V0 not supported")));
+        ListOffsetRequestV0 request =
+                byteBufToListOffsetRequestV0(listOffset.getBuffer());
+
+        Map<TopicPartition, CompletableFuture<Pair<Errors, Long>>> responseData =
+                Maps.newConcurrentMap();
+        if (request.offsetData().size() == 0) {
+            resultFuture.complete(new ListOffsetResponse(Collections.emptyMap()));
+            return;
+        }
+        AtomicInteger partitions = new AtomicInteger(request.offsetData().size());
+        Runnable completeOne = () -> {
+            if (partitions.decrementAndGet() == 0) {
+                waitResponseDataComplete(resultFuture, responseData, true);
+            }
+        };
+        // in v0, the iterator is offsetData,
+        // in v1, the iterator is partitionTimestamps,
+        if (log.isDebugEnabled()) {
+            log.debug("received a v0 listOffset: {}", request.toString(true));
+        }
+        String namespacePrefix = currentNamespacePrefix();
+        KafkaRequestUtils.LegacyUtils.forEachListOffsetRequest(request, topic -> times -> maxNumOffsets -> {
+            String fullPartitionName = KopTopic.toString(topic, namespacePrefix);
+
+            authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullPartitionName))
+                    .whenComplete((isAuthorized, ex) -> {
+                        if (ex != null) {
+                            log.error("Describe topic authorize failed, topic - {}. {}",
+                                    fullPartitionName, ex.getMessage());
+                            responseData.put(topic, CompletableFuture.completedFuture(
+                                    Pair.of(Errors.TOPIC_AUTHORIZATION_FAILED, null)));
+                            completeOne.run();
+                            return;
+                        }
+                        if (!isAuthorized) {
+                            responseData.put(topic, CompletableFuture.completedFuture(
+                                    Pair.of(Errors.TOPIC_AUTHORIZATION_FAILED, null)));
+                            completeOne.run();
+                            return;
+                        }
+
+                        CompletableFuture<Pair<Errors, Long>> partitionData;
+                        // num_num_offsets > 1 is not handled for now, returning an error
+                        if (maxNumOffsets > 1) {
+                            log.warn("request is asking for multiples offsets for {}, not supported for now",
+                                    fullPartitionName);
+                            partitionData = new CompletableFuture<>();
+                            partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, null));
+                        }
+
+                        partitionData = fetchOffset(fullPartitionName, times);
+                        responseData.put(topic, partitionData);
+                        completeOne.run();
+                    });
+
+        });
     }
 
     // get offset from underline managedLedger
