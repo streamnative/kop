@@ -145,7 +145,7 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
                 }
             });
         } catch (AuthenticationException e) {
-            log.error("Oauth validator callback handler new auth state failed: ", e);
+            log.error("OAuth validator callback handler new auth state failed: ", e);
             throw new OAuthBearerIllegalTokenException(OAuthBearerValidationResult.newFailure(e.getMessage()));
         }
     }
