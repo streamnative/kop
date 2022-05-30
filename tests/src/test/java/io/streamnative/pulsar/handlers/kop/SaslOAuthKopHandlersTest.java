@@ -74,7 +74,7 @@ import org.testng.annotations.Test;
  * @see OauthLoginCallbackHandler
  * @see OauthValidatorCallbackHandler
  */
-public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
+public class SaslOAuthKopHandlersTest extends SaslOAuthBearerTestBase {
 
     private static final String ADMIN_USER = "simple_client_id";
     private static final String ADMIN_SECRET = "admin_secret";
@@ -92,7 +92,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         // Broker's config
         conf.setAuthenticationEnabled(true);
         conf.setAuthorizationEnabled(true);
-        conf.setAuthorizationProvider(OauthMockAuthorizationProvider.class.getName());
+        conf.setAuthorizationProvider(OAuthMockAuthorizationProvider.class.getName());
         conf.setAuthenticationProviders(Sets.newHashSet(AuthenticationProviderToken.class.getName()));
         conf.setBrokerClientAuthenticationPlugin(AuthenticationOAuth2.class.getName());
         conf.setBrokerClientAuthenticationParameters(String.format("{\"type\":\"client_credentials\","
@@ -137,19 +137,19 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         final String message = "hello";
 
         final Properties producerProps = newKafkaProducerProperties();
-        internalConfigureOauth2(producerProps, adminCredentialPath, CustomOauthLoginCallbackHandler.class);
+        internalConfigureOAuth2(producerProps, adminCredentialPath, CustomOAuthLoginCallbackHandler.class);
         @Cleanup final KafkaProducer<String, String> producer = new KafkaProducer<>(producerProps);
 
         // Check that a token has been generated
-        assertEquals(1, CustomOauthLoginCallbackHandler.tokens.size());
-        OAuthBearerToken originalToken = CustomOauthLoginCallbackHandler.tokens.get(0);
+        assertEquals(1, CustomOAuthLoginCallbackHandler.tokens.size());
+        OAuthBearerToken originalToken = CustomOAuthLoginCallbackHandler.tokens.get(0);
 
         // Sleep until the original OAuth token expires
         Thread.sleep(originalToken.lifetimeMs() - System.currentTimeMillis());
 
         // Check that new tokens have been generated
-        assertEquals(2, CustomOauthLoginCallbackHandler.tokens.size());
-        OAuthBearerToken newToken = CustomOauthLoginCallbackHandler.tokens.get(1);
+        assertEquals(2, CustomOAuthLoginCallbackHandler.tokens.size());
+        OAuthBearerToken newToken = CustomOAuthLoginCallbackHandler.tokens.get(1);
         assertNotEquals(newToken.value(), originalToken.value());
         assertTrue(newToken.lifetimeMs() > originalToken.lifetimeMs());
 
@@ -158,7 +158,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
 
     @Test(timeOut = 15000)
     public void testGrantAndRevokePermission() throws Exception {
-        OauthMockAuthorizationProvider.NULL_ROLE_STACKS.clear();
+        OAuthMockAuthorizationProvider.NULL_ROLE_STACKS.clear();
         final String namespace = conf.getKafkaTenant() + "/" + conf.getKafkaNamespace();
         final String topic = "test-grant-and-revoke-permission";
         final String role = "normal-role-" + System.currentTimeMillis();
@@ -166,13 +166,13 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
 
         admin.namespaces().grantPermissionOnNamespace(namespace, role, Collections.singleton(AuthAction.produce));
         final Properties consumerProps = newKafkaConsumerProperties();
-        internalConfigureOauth2(consumerProps, clientCredentialPath);
+        internalConfigureOAuth2(consumerProps, clientCredentialPath);
         final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerProps);
         consumer.subscribe(Collections.singleton(topic));
         Assert.assertThrows(TopicAuthorizationException.class, () -> consumer.poll(Duration.ofSeconds(5)));
 
         final Properties producerProps = newKafkaProducerProperties();
-        internalConfigureOauth2(producerProps, clientCredentialPath);
+        internalConfigureOAuth2(producerProps, clientCredentialPath);
         final KafkaProducer<String, String> producer = new KafkaProducer<>(producerProps);
         producer.send(new ProducerRecord<>(topic, "msg-0")).get();
 
@@ -186,17 +186,17 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
 
         admin.namespaces().grantPermissionOnNamespace(namespace, role, Collections.singleton(AuthAction.consume));
         ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(2));
-        Assert.assertEquals(records.iterator().next().value(), "msg-0");
+        assertEquals(records.iterator().next().value(), "msg-0");
 
         consumer.close();
         producer.close();
-        Assert.assertEquals(OauthMockAuthorizationProvider.NULL_ROLE_STACKS.size(), 0);
+        assertEquals(OAuthMockAuthorizationProvider.NULL_ROLE_STACKS.size(), 0);
     }
 
     @Test(timeOut = 15000)
     public void testWrongSecret() throws IOException {
         final Properties producerProps = newKafkaProducerProperties();
-        internalConfigureOauth2(producerProps,
+        internalConfigureOAuth2(producerProps,
                 HydraOAuthUtils.writeCredentialsFile(ADMIN_USER, ADMIN_SECRET + "-wrong", "test-wrong-secret.json"));
         try {
             new KafkaProducer<>(producerProps);
@@ -229,7 +229,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
 
         admin.namespaces().grantPermissionOnNamespace(namespace, role, Collections.singleton(AuthAction.consume));
         final Properties consumerProps = newKafkaConsumerProperties();
-        internalConfigureOauth2(consumerProps, clientCredentialPath);
+        internalConfigureOAuth2(consumerProps, clientCredentialPath);
         @Cleanup
         final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerProps);
         consumer.subscribe(Collections.singleton(topic));
@@ -244,7 +244,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         super.testProduceWithoutAuth();
     }
 
-    private void internalConfigureOauth2(final Properties props, final String credentialPath,
+    private void internalConfigureOAuth2(final Properties props, final String credentialPath,
                                          Class<? extends AuthenticateCallbackHandler> callbackHandler) {
         props.setProperty("sasl.login.callback.handler.class", callbackHandler.getName());
         props.setProperty("security.protocol", "SASL_PLAINTEXT");
@@ -261,16 +261,16 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         ));
     }
 
-    private void internalConfigureOauth2(final Properties props, final String credentialPath) {
-        internalConfigureOauth2(props, credentialPath, OauthLoginCallbackHandler.class);
+    private void internalConfigureOAuth2(final Properties props, final String credentialPath) {
+        internalConfigureOAuth2(props, credentialPath, OauthLoginCallbackHandler.class);
     }
 
     @Override
-    protected void configureOauth2(final Properties props) {
-        internalConfigureOauth2(props, adminCredentialPath);
+    protected void configureOAuth2(final Properties props) {
+        internalConfigureOAuth2(props, adminCredentialPath);
     }
 
-    public static class OauthMockAuthorizationProvider extends PulsarAuthorizationProvider {
+    public static class OAuthMockAuthorizationProvider extends PulsarAuthorizationProvider {
 
         public static final List<StackTraceElement> NULL_ROLE_STACKS = Collections.synchronizedList(new ArrayList<>());
 
@@ -287,7 +287,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         }
     }
 
-    public static class CustomOauthLoginCallbackHandler extends OauthLoginCallbackHandler {
+    public static class CustomOAuthLoginCallbackHandler extends OauthLoginCallbackHandler {
         static List<OAuthBearerToken> tokens = new ArrayList<>();
 
         @SneakyThrows
