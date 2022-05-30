@@ -58,7 +58,7 @@ public class EntryFormatterTestBase extends KopProtocolHandlerTestBase {
         for (int i = 0; i < total; i++) {
             String key = "test-format-key-" + i;
             String value = "test-format-value-" + i;
-            producer.send(new ProducerRecord<>(topic, key, value));
+            producer.send(new ProducerRecord<>(topic, key, value)).get();
         }
         producer.close();
 
