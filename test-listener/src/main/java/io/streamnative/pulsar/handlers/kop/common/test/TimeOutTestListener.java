@@ -13,9 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.common.test;
 
-import org.testng.ITestResult;
-import org.testng.TestListenerAdapter;
-import org.testng.internal.thread.ThreadTimeoutException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.management.LockInfo;
@@ -28,6 +25,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import javax.management.JMException;
 import javax.management.ObjectName;
+import org.testng.ITestResult;
+import org.testng.TestListenerAdapter;
+import org.testng.internal.thread.ThreadTimeoutException;
 
 /**
  * TestNG test listener which prints full thread dump into System.err
