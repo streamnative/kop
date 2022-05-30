@@ -37,27 +37,27 @@ import org.apache.kafka.common.errors.TimeoutException;
  * Base class for SASL-OAUTHBEARER tests.
  */
 @Slf4j
-public abstract class SaslOauthBearerTestBase extends KopProtocolHandlerTestBase {
+public abstract class SaslOAuthBearerTestBase extends KopProtocolHandlerTestBase {
 
-    public SaslOauthBearerTestBase() {
+    public SaslOAuthBearerTestBase() {
         super("kafka");
     }
 
-    protected abstract void configureOauth2(Properties props);
+    protected abstract void configureOAuth2(Properties props);
 
     protected void testSimpleProduceConsume() throws Exception {
         final String topic = "testSimpleProduceConsume";
         final String message = "hello";
 
         final Properties producerProps = newKafkaProducerProperties();
-        configureOauth2(producerProps);
+        configureOAuth2(producerProps);
         @Cleanup
         final KafkaProducer<String, String> producer = new KafkaProducer<>(producerProps);
         RecordMetadata metadata = producer.send(new ProducerRecord<>(topic, message)).get();
         log.info("Send to {}-partition-{}@{}", metadata.topic(), metadata.partition(), metadata.offset());
 
         final Properties consumerProps = newKafkaConsumerProperties();
-        configureOauth2(consumerProps);
+        configureOAuth2(consumerProps);
         @Cleanup
         final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerProps);
         consumer.subscribe(Collections.singleton(topic));

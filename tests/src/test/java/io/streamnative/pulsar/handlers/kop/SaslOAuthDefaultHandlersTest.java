@@ -37,7 +37,7 @@ import org.testng.annotations.Test;
  * @see org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerUnsecuredValidatorCallbackHandler
  */
 @Slf4j
-public class SaslOauthDefaultHandlersTest extends SaslOauthBearerTestBase {
+public class SaslOAuthDefaultHandlersTest extends SaslOAuthBearerTestBase {
 
     private static final String ADMIN_USER = "admin_user";
     private static final String USER = "user";
@@ -97,7 +97,7 @@ public class SaslOauthDefaultHandlersTest extends SaslOauthBearerTestBase {
     }
 
     @Override
-    protected void configureOauth2(final Properties props) {
+    protected void configureOAuth2(final Properties props) {
         final String jaasTemplate = "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule"
                 + " required unsecuredLoginStringClaim_sub=\"%s\";";
         props.setProperty("security.protocol", "SASL_PLAINTEXT");
