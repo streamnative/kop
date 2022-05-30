@@ -24,7 +24,7 @@ public class PulsarEntryFormatterTest extends EntryFormatterTestBase {
         super("pulsar");
     }
 
-    @Test(timeOut = 20000)
+    @Test(timeOut = 20000, enabled = false)
     public void testChangePulsarEntryFormat() throws Exception {
         super.testChangePulsarEntryFormat();
     }
