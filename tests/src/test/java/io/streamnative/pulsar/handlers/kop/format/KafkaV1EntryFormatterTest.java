@@ -24,7 +24,7 @@ public class KafkaV1EntryFormatterTest extends EntryFormatterTestBase {
         super("kafka");
     }
 
-    @Test(timeOut = 20000, enabled = false)
+    @Test(timeOut = 20000)
     public void testChangeKafkaEntryFormat() throws Exception {
         super.testChangeKafkaEntryFormat();
     }
