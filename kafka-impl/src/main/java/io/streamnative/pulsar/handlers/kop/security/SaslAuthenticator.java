@@ -172,7 +172,7 @@ public class SaslAuthenticator {
         this.allowedMechanisms = allowedMechanisms;
         this.proxyRoles = config.getProxyRoles();
         this.oauth2CallbackHandler = allowedMechanisms.contains(OAuthBearerLoginModule.OAUTHBEARER_MECHANISM)
-                ? createOauth2CallbackHandler(config) : null;
+                ? createOAuth2CallbackHandler(config) : null;
         this.enableKafkaSaslAuthenticateHeaders = false;
         this.defaultKafkaMetadataTenant = config.getKafkaMetadataTenant();
     }
@@ -194,7 +194,7 @@ public class SaslAuthenticator {
         this.admin = admin;
         this.allowedMechanisms = allowedMechanisms;
         this.oauth2CallbackHandler = allowedMechanisms.contains(OAuthBearerLoginModule.OAUTHBEARER_MECHANISM)
-                ? createOauth2CallbackHandler(config) : null;
+                ? createOAuth2CallbackHandler(config) : null;
         this.enableKafkaSaslAuthenticateHeaders = false;
     }
 
@@ -261,7 +261,7 @@ public class SaslAuthenticator {
         }
     }
 
-    private @NonNull AuthenticateCallbackHandler createOauth2CallbackHandler(
+    private @NonNull AuthenticateCallbackHandler createOAuth2CallbackHandler(
             @NonNull final KafkaServiceConfiguration config) {
         AuthenticateCallbackHandler handler;
         if (config.getKopOauth2AuthenticateCallbackHandler() != null) {

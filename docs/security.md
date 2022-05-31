@@ -106,13 +106,13 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
 
     The properties here are same to that of the `PLAIN` mechanism except `brokerClientAuthenticationPlugin` and `brokerClientAuthenticationParameters`.
 
-    |Property|Description|Required or optional|Example value
-    |---|---|---|---
-    | `type` | Oauth 2.0 authentication type <br><br> The **default** value is `client_credentials`| Optional | `client_credentials`  |
+    |Property| Description                                                                                                                                                                                              |Required or optional|Example value
+    |----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|---|---
+    | `type` | OAuth 2.0 authentication type <br><br> The **default** value is `client_credentials`                                                                                                                     | Optional | `client_credentials`  |
     | `privateKey` | URL to a JSON credential file <br><br>The following pattern formats are supported:<br> - `file:///path/to/file` <br> - `file:/path/to/file` <br> - `data:application/json;base64,<base64-encoded value>` |   Required |file:///path/to/credentials_file.json
-    | `issuerUrl` | URL of the authentication provider which allows the Pulsar client to obtain an access token | Required | `https://accounts.google.com` |
-    | `audience`  | An OAuth 2.0 "resource server" identifier for the Pulsar cluster | Optional |`https://broker.example.com` |
-    | `scope` | The scope of the access request that is expressed as a list of space-delimited, case-sensitive strings | Optional | `api://pulsar-cluster-1/.default` |
+    | `issuerUrl` | URL of the authentication provider which allows the Pulsar client to obtain an access token                                                                                                              | Required | `https://accounts.google.com` |
+    | `audience`  | An OAuth 2.0 "resource server" identifier for the Pulsar cluster                                                                                                                                         | Optional |`https://broker.example.com` |
+    | `scope` | The scope of the access request that is expressed as a list of space-delimited, case-sensitive strings                                                                                                   | Optional | `api://pulsar-cluster-1/.default` |
 
 
     ```properties
