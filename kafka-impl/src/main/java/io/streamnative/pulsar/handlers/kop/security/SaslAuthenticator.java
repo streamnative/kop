@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop.security;
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.kafka.common.protocol.ApiKeys.API_VERSIONS;
 
-import com.google.common.annotations.VisibleForTesting;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -418,13 +417,6 @@ public class SaslAuthenticator {
         );
     }
 
-    @VisibleForTesting
-    public static ByteBuf sizePrefixed(ByteBuffer buffer) {
-        // KoP uses LengthFieldPrepender to indicate message body length,
-        // see https://github.com/streamnative/kop/issues/696 for details.
-        return Unpooled.wrappedBuffer(buffer);
-    }
-
     private void handleSaslToken(ChannelHandlerContext ctx,
                                  ByteBuf requestBuf,
                                  BiConsumer<Long, Throwable> registerRequestParseLatency,
@@ -441,7 +433,7 @@ public class SaslAuthenticator {
                 nioBuffer.get(clientToken, 0, clientToken.length);
                 byte[] response = saslServer.evaluateResponse(clientToken);
                 if (response != null) {
-                    ByteBuf byteBuf = sizePrefixed(ByteBuffer.wrap(response));
+                    ByteBuf byteBuf = Unpooled.wrappedBuffer(ByteBuffer.wrap(response));
                     final Session newSession;
                     if (saslServer.isComplete()) {
                         newSession = new Session(
