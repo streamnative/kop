@@ -24,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -380,8 +381,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                     .filter(s -> s.getTenant().equals(tenant)
                             && s.getSubject().equals(subject)
                             && s.getSchemaDefinition().equals(schemaDefinition))
-                    .sorted(Comparator.comparing(SchemaEntry::getVersion).reversed())
-                    .findFirst()
+                    .max(Comparator.comparing(SchemaEntry::getVersion))
                     .orElse(null));
             return found.thenCompose(schemaEntry -> {
                 if (schemaEntry != null) {
@@ -419,8 +419,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                         .stream()
                         .filter(s -> s.getSubject().equals(subject)
                                 && s.getSchemaDefinition().equals(schemaDefinition))
-                        .sorted(Comparator.comparing(SchemaEntry::getVersion).reversed())
-                        .findFirst()
+                        .max(Comparator.comparing(SchemaEntry::getVersion))
                         .orElse(null);
 
                 if (found != null) {
@@ -467,8 +466,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                     .stream()
                     .filter(s -> s.getSubject().equals(subject))
                     .map(SchemaEntry::getVersion)
-                    .sorted(Comparator.reverseOrder())
-                    .findFirst()
+                    .max(Comparator.reverseOrder())
                     .orElse(0) + 1;
             Op newSchema = Op
                     .builder()

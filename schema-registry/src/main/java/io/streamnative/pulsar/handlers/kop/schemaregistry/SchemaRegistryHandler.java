@@ -32,7 +32,7 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @ChannelHandler.Sharable
-public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
+public class SchemaRegistryHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
 
     private final List<HttpRequestProcessor> processors = new ArrayList<>();
 
@@ -47,11 +47,10 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
     }
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, Object msg) {
+    protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest request) {
         if (log.isDebugEnabled()) {
-            log.debug("SchemaRegistry at {} request {}", ctx.channel().localAddress(), msg);
+            log.debug("SchemaRegistry at {} request {}", ctx.channel().localAddress(), request);
         }
-        FullHttpRequest request = (FullHttpRequest) msg;
         log.info("SchemaRegistry {} {} from {}", request.method(), request.uri(), ctx.channel().localAddress());
 
         HttpRequestProcessor processor = null;
@@ -74,7 +73,7 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
             HttpRequestProcessor.addCORSHeaders(httpResponse);
             log.info("not found {} {} from {}", request.method(), request.uri(), ctx.channel().localAddress());
             if (log.isDebugEnabled()) {
-                log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), msg,
+                log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), request,
                         httpResponse);
             }
             ctx.writeAndFlush(httpResponse);
@@ -84,7 +83,7 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
         CompletableFuture<FullHttpResponse> fullHttpResponse = processor.processRequest(request);
         fullHttpResponse.thenAccept(resp -> {
             if (log.isDebugEnabled()) {
-                log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), msg,
+                log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), request,
                         resp);
             }
             log.info("SchemaRegistry {} {} from {} response {} {}", request.method(), request.uri(),
@@ -94,7 +93,7 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
         }).exceptionally(err -> {
             FullHttpResponse resp = HttpRequestProcessor.buildJsonErrorResponse(err);
             if (log.isDebugEnabled()) {
-                log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), msg,
+                log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), request,
                         resp);
             }
             log.info("SchemaRegistry {} {} from {} response {} {}", request.method(), request.uri(),

@@ -20,6 +20,7 @@ import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import java.io.DataInput;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -97,6 +98,9 @@ public abstract class HttpJsonRequestProcessor<K, R> extends HttpRequestProcesso
 
     private List<String> detectGroups(FullHttpRequest request) {
         String uri = request.uri();
+        // TODO: here we are discarding the query string part
+        // in the future we will probably have to implement
+        // query string parameters
         int questionMark = uri.lastIndexOf('?');
         if (questionMark > 0) {
             uri = uri.substring(0, questionMark);

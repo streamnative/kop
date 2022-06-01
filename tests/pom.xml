@@ -132,6 +132,7 @@
       <scope>test</scope>
     </dependency>
 
+    <!-- needed for kafka.tools in KStreams integration tests -->
     <dependency>
       <groupId>io.confluent</groupId>
       <artifactId>kafka-schema-registry</artifactId>
@@ -205,6 +206,7 @@
     </plugins>
   </build>
 
+  <!-- needed for Kafka Avro Serializer -->
   <repositories>
     <repository>
       <id>io-confluent</id>

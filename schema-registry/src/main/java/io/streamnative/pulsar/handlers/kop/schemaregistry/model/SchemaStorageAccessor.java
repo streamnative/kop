@@ -18,9 +18,10 @@ import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.SchemaStora
 /**
  * Accesses the SchemaStorage instance for a given tenant.
  */
-public interface SchemaStorageAccessor extends Cloneable {
+public interface SchemaStorageAccessor extends AutoCloseable {
 
     SchemaStorage getSchemaStorageForTenant(String tenant) throws SchemaStorageException;
 
+    @Override
     void close();
 }

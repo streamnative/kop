@@ -128,15 +128,17 @@ public class CompatibilityChecker {
             // only latest
             schemas = schemas.subList(schemas.size() - 1, schemas.size());
         }
-        log.info("New schema {}", schemaDefinition);
-        for (String s : schemas) {
-            log.info("Existing schema {}", s);
+        if (log.isDebugEnabled()) {
+            log.debug("New schema {}", schemaDefinition);
+            for (String s : schemas) {
+                log.debug("Existing schema {}", s);
+            }
         }
         try {
             CompatibilityExecutionResult compatibilityExecutionResult =
                     checker.testCompatibility(level, schemas, schemaDefinition);
-            log.info("CompatibilityExecutionResult {}", compatibilityExecutionResult.isCompatible());
             if (!compatibilityExecutionResult.isCompatible()) {
+                log.info("CompatibilityExecutionResult {}", compatibilityExecutionResult.isCompatible());
                 for (CompatibilityDifference error : compatibilityExecutionResult.getIncompatibleDifferences()) {
                     log.info("CompatibilityExecutionResult error {}", error);
                 }

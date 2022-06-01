@@ -37,6 +37,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
+import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -60,7 +61,7 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
         bootstrapServers = "localhost:" + getKafkaBrokerPort();
     }
 
-    @BeforeMethod(alwaysRun = true)
+    @AfterMethod(alwaysRun = true)
     @Override
     protected void cleanup() throws Exception {
         this.internalCleanup();
@@ -98,43 +99,39 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 120000)
     public void testAvroProduceAndConsume() throws Throwable {
-        try {
-            String topic = "SchemaRegistryTest-testAvroProduceAndConsume";
-            IndexedRecord avroRecord = createAvroRecord();
-            Object[] objects = new Object[]{avroRecord, true, 130, 345L, 1.23f, 2.34d, "abc", "def".getBytes()};
-            @Cleanup
-            KafkaProducer<Integer, Object> producer = createAvroProducer();
-            for (int i = 0; i < objects.length; i++) {
-                final Object object = objects[i];
-                log.info("Sending {}", object);
-                producer.send(new ProducerRecord<>(topic, i, object), (metadata, e) -> {
-                    if (e != null) {
-                        log.error("Failed to send {}: {}", object, e.getMessage());
-                        fail("Failed to send " + object + ": " + e.getMessage());
-                    } else {
-                        log.info("Success send {} to {}-partition-{}@{}",
-                                object, metadata.topic(), metadata.partition(), metadata.offset());
-                    }
-                }).get(10, TimeUnit.SECONDS);
-                log.info("Success send final {}", object);
-            }
-            producer.close();
-            log.info("finished sending");
-
-            @Cleanup
-            KafkaConsumer<Integer, Object> consumer = createAvroConsumer();
-            consumer.subscribe(Collections.singleton(topic));
-            int i = 0;
-            while (i < objects.length) {
-                for (ConsumerRecord<Integer, Object> record : consumer.poll(Duration.ofSeconds(3))) {
-                    assertEquals(record.key().intValue(), i);
-                    assertEquals(record.value(), objects[i]);
-                    i++;
+        String topic = "SchemaRegistryTest-testAvroProduceAndConsume";
+        IndexedRecord avroRecord = createAvroRecord();
+        Object[] objects = new Object[]{avroRecord, true, 130, 345L, 1.23f, 2.34d, "abc", "def".getBytes()};
+        @Cleanup
+        KafkaProducer<Integer, Object> producer = createAvroProducer();
+        for (int i = 0; i < objects.length; i++) {
+            final Object object = objects[i];
+            log.info("Sending {}", object);
+            producer.send(new ProducerRecord<>(topic, i, object), (metadata, e) -> {
+                if (e != null) {
+                    log.error("Failed to send {}: {}", object, e.getMessage());
+                    fail("Failed to send " + object + ": " + e.getMessage());
+                } else {
+                    log.info("Success send {} to {}-partition-{}@{}",
+                            object, metadata.topic(), metadata.partition(), metadata.offset());
                 }
-            }
-            consumer.close();
-        } catch (Throwable t) {
-            throw t;
+            }).get(10, TimeUnit.SECONDS);
+            log.info("Success send final {}", object);
         }
+        producer.close();
+        log.info("finished sending");
+
+        @Cleanup
+        KafkaConsumer<Integer, Object> consumer = createAvroConsumer();
+        consumer.subscribe(Collections.singleton(topic));
+        int i = 0;
+        while (i < objects.length) {
+            for (ConsumerRecord<Integer, Object> record : consumer.poll(Duration.ofSeconds(3))) {
+                assertEquals(record.key().intValue(), i);
+                assertEquals(record.value(), objects[i]);
+                i++;
+            }
+        }
+        consumer.close();
     }
 }
