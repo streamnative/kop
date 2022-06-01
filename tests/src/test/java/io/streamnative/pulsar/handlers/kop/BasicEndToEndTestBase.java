@@ -94,13 +94,18 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
     }
 
     protected KafkaConsumer<String, String> newKafkaConsumer(final String topic, final String group) {
+        return newKafkaConsumer(topic, group, false);
+    }
+    protected KafkaConsumer<String, String> newKafkaConsumer(final String topic,
+                                                             final String group,
+                                                             final boolean readCommitted) {
         final Properties props =  new Properties();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers());
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         props.put(ConsumerConfig.GROUP_ID_CONFIG, (group == null) ? GROUP_ID : group);
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-
+        props.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, readCommitted ? "read_committed" : "read_uncommitted");
         final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
         consumer.subscribe(Collections.singleton(topic));
         return consumer;
