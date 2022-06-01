@@ -34,7 +34,7 @@ import lombok.extern.slf4j.Slf4j;
 @ChannelHandler.Sharable
 public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
 
-    private List<HttpRequestProcessor> processors = new ArrayList<>();
+    private final List<HttpRequestProcessor> processors = new ArrayList<>();
 
     public SchemaRegistryHandler addProcessor(HttpRequestProcessor processor) {
         this.processors.add(processor);

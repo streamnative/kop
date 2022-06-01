@@ -148,7 +148,7 @@
       </exclusions>
     </dependency>
 
-    <!-- this is needed for the Kakfa Avro Serialiser -->
+    <!-- this is needed for the Kafka Avro Serialiser -->
     <dependency>
       <groupId>org.codehaus.jackson</groupId>
       <artifactId>jackson-mapper-asl</artifactId>

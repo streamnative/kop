@@ -99,8 +99,7 @@ public class SubjectResource extends AbstractResource {
                                                                  FullHttpRequest request)
                 throws Exception {
             SchemaStorage schemaStorage = getSchemaStorage(request);
-            CompletableFuture<List<String>> subjects = schemaStorage.getAllSubjects();
-            return subjects;
+            return schemaStorage.getAllSubjects();
         }
 
     }

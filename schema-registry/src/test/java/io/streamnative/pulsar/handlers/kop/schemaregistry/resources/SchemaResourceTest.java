@@ -74,8 +74,8 @@ public class SchemaResourceTest {
             + "}";
 
     private SimpleAPIServer server;
-    private MemorySchemaStorageAccessor schemaStorage = new MemorySchemaStorageAccessor();
-    private SchemaRegistryRequestAuthenticator schemaRegistryRequestAuthenticator =
+    private final MemorySchemaStorageAccessor schemaStorage = new MemorySchemaStorageAccessor();
+    private final SchemaRegistryRequestAuthenticator schemaRegistryRequestAuthenticator =
             (r) -> SchemaResource.DEFAULT_TENANT;
 
     @BeforeClass(alwaysRun = true)

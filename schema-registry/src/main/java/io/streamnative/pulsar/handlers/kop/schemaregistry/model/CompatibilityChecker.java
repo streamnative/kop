@@ -70,7 +70,7 @@ public class CompatibilityChecker {
         final List<Integer> idsToCheck;
         if (mode == Mode.BACKWARD || mode == Mode.FORWARD) {
             // only latest
-            idsToCheck = Arrays.asList(versions.stream().mapToInt(Integer::intValue).max().getAsInt());
+            idsToCheck = Collections.singletonList(versions.stream().mapToInt(Integer::intValue).max().getAsInt());
         } else {
             // all the versions
             idsToCheck = versions;

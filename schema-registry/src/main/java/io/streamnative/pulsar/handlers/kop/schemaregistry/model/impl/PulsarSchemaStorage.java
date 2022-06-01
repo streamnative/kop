@@ -202,9 +202,6 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
             });
         } else {
             // we are happy with the result, so return it to the caller
-            if (isDeleted.apply(res)) {
-                return CompletableFuture.completedFuture(null);
-            }
             return CompletableFuture.completedFuture(res);
         }
 
@@ -220,7 +217,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                         .sorted(Comparator.comparing(SchemaEntry::getId)) // this is good for unit tests
                         .collect(Collectors.toList())
                 , (res) -> false  // not applicable
-                , (res) -> res.isEmpty())  // fetch again if nothing found, useful for demos/testing
+                , List::isEmpty)  // fetch again if nothing found, useful for demos/testing
                 .thenApply(l -> {
                     return l
                             .stream()
@@ -427,9 +424,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                         .orElse(null);
 
                 if (found != null) {
-                    List<Map.Entry<Op, SchemaEntry>> cachedRes =
-                            Arrays.asList(new AbstractMap.SimpleImmutableEntry<>((Op) null, found));
-                    return cachedRes;
+                    return Collections.singletonList(new AbstractMap.SimpleImmutableEntry<>((Op) null, found));
                 }
             }
 
@@ -485,7 +480,8 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                     .tenant(tenant)
                     .build();
 
-            return Arrays.asList(new AbstractMap.SimpleImmutableEntry<>(newSchema, newSchema.toSchemaEntry()));
+            return Collections.singletonList(
+                    new AbstractMap.SimpleImmutableEntry<>(newSchema, newSchema.toSchemaEntry()));
         };
     }
 

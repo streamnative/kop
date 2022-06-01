@@ -56,17 +56,13 @@ public abstract class HttpJsonRequestProcessor<K, R> extends HttpRequestProcesso
         if (!request.method().name().equals(method)) {
             return false;
         }
-        List<String> groups = detectGroups(request);
-        if (groups == null) {
-            return false;
-        }
-        return true;
+        return detectGroups(request) != null;
     }
 
     @Override
     public CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request) {
         List<String> groups = detectGroups(request);
-        try (ByteBufInputStream inputStream = new ByteBufInputStream(request.content());) {
+        try (ByteBufInputStream inputStream = new ByteBufInputStream(request.content())) {
             K decodeRequest;
             if (requestModel == Void.class) {
                 decodeRequest = null;
@@ -92,8 +88,8 @@ public abstract class HttpJsonRequestProcessor<K, R> extends HttpRequestProcesso
                 log.error("Error while processing request", err);
                 return buildJsonErrorResponse(err);
             });
-        } catch (Exception err) {
-            log.error("Error while processing request", err);
+        } catch (IOException err) {
+            log.error("Cannot decode request", err);
             return CompletableFuture.completedFuture(buildErrorResponse(HttpResponseStatus.BAD_REQUEST,
                     "Cannot decode request: " + err.getMessage(), "text/plain"));
         }

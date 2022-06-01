@@ -116,7 +116,7 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
                                 object, metadata.topic(), metadata.partition(), metadata.offset());
                     }
                 }).get(10, TimeUnit.SECONDS);
-                log.info("Success send final {}");
+                log.info("Success send final {}", object);
             }
             producer.close();
             log.info("finished sending");
