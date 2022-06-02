@@ -24,7 +24,7 @@ public class KafkaMixedEntryFormatterTest extends EntryFormatterTestBase {
         super("mixed_kafka");
     }
 
-    @Test(timeOut = 20000, enabled = false)
+    @Test(timeOut = 20000)
     public void testChangeKafkaEntryFormat() throws Exception {
         super.testChangeKafkaEntryFormat();
     }
