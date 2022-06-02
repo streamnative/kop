@@ -324,4 +324,23 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
 
     }
+
+
+    @Test(timeOut = 20000)
+    public void testReadCommitted() throws Exception {
+        final String topic = "test-read-committed";
+
+        pulsar.getAdminClient().topics().createPartitionedTopic(topic, 2);
+
+        @Cleanup
+        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        sendSingleMessages(kafkaProducer, topic, Arrays.asList("a", "b", "c"));
+
+        List<String> expectValues = Arrays.asList("a", "b", "c");
+
+        @Cleanup
+        final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic, "test-group", true);
+        List<String> kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
+        assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
+    }
 }
