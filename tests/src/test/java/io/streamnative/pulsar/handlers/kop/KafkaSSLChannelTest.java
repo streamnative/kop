@@ -14,18 +14,30 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.testng.AssertJUnit.assertFalse;
 
 import java.io.Closeable;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
+import java.util.Collections;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.net.ssl.HostnameVerifier;
 import lombok.Cleanup;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Factory;
@@ -43,6 +55,7 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
     private String kopSslTruststorePassword;
     private String kopClientTruststoreLocation;
     private String kopClientTruststorePassword;
+    private final boolean withCertHost;
 
     static {
         final HostnameVerifier defaultHostnameVerifier = javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier();
@@ -61,6 +74,7 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
 
     public KafkaSSLChannelTest(final String entryFormat, boolean withCertHost) {
         super(entryFormat);
+        this.withCertHost = withCertHost;
         setSslConfigurations(withCertHost);
     }
 
@@ -96,6 +110,8 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
     }
 
     protected void sslSetUpForBroker() throws Exception {
+        conf.setKafkaTransactionCoordinatorEnabled(true);
+        conf.setKopTlsEnabledWithBroker(true);
         conf.setKopSslKeystoreType("JKS");
         conf.setKopSslKeystoreLocation(kopSslKeystoreLocation);
         conf.setKopSslKeystorePassword(kopSslKeystorePassword);
@@ -194,5 +210,121 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         public void close() {
             this.producer.close();
         }
+    }
+
+
+    @Test
+    public void basicProduceAndConsumeWithTxTest() throws Exception {
+        final String isolation = "read_committed";
+        String topicName = "test-tls-tx-" + this.withCertHost + "_" + entryFormat;
+        String transactionalId = "test-id-" + this.withCertHost + "_" + entryFormat;
+        String kafkaServer = "localhost:" + getKafkaBrokerPortTls();
+
+        Properties producerProps = new Properties();
+        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
+        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
+        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
+        producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
+        // SSL client config
+        producerProps.put("security.protocol", "SSL");
+        producerProps.put("ssl.truststore.location", kopClientTruststoreLocation);
+        producerProps.put("ssl.truststore.password", kopClientTruststorePassword);
+
+        // default is https, here need to set empty.
+        producerProps.put("ssl.endpoint.identification.algorithm", "");
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
+
+        producer.initTransactions();
+
+        int totalTxnCount = 10;
+        int messageCountPerTxn = 10;
+
+        String lastMessage = "";
+        for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
+            producer.beginTransaction();
+
+            String contentBase;
+            if (txnIndex % 2 != 0) {
+                contentBase = "commit msg txnIndex %s messageIndex %s";
+            } else {
+                contentBase = "abort msg txnIndex %s messageIndex %s";
+            }
+
+            for (int messageIndex = 0; messageIndex < messageCountPerTxn; messageIndex++) {
+                String msgContent = String.format(contentBase, txnIndex, messageIndex);
+                log.info("send txn message {}", msgContent);
+                lastMessage = msgContent;
+                producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
+            }
+            producer.flush();
+
+            if (txnIndex % 2 != 0) {
+                producer.commitTransaction();
+            } else {
+                producer.abortTransaction();
+            }
+
+            Thread.sleep(100);
+        }
+
+        Properties consumerProps = new Properties();
+        consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
+        consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, IntegerDeserializer.class.getName());
+        consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        consumerProps.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
+        consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "consumer-test");
+        consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        consumerProps.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, isolation);
+
+        // SSL client config
+        consumerProps.put("security.protocol", "SSL");
+        consumerProps.put("ssl.truststore.location", kopClientTruststoreLocation);
+        consumerProps.put("ssl.truststore.password", kopClientTruststorePassword);
+
+        // default is https, here need to set empty.
+        consumerProps.put("ssl.endpoint.identification.algorithm", "");
+
+        final int totalMessageCount = totalTxnCount * messageCountPerTxn;
+
+        @Cleanup
+        KafkaConsumer<Integer, String> consumer = new KafkaConsumer<>(consumerProps);
+        consumer.subscribe(Collections.singleton(topicName));
+
+        log.info("the last message is: {}", lastMessage);
+        AtomicInteger receiveCount = new AtomicInteger(0);
+        while (true) {
+            ConsumerRecords<Integer, String> consumerRecords =
+                    consumer.poll(Duration.of(100, ChronoUnit.MILLIS));
+
+            boolean readFinish = false;
+            for (ConsumerRecord<Integer, String> record : consumerRecords) {
+                if (isolation.equals("read_committed")) {
+                    assertFalse(record.value().contains("abort msg txnIndex"));
+                }
+                log.info("Fetch for receive record offset: {}, key: {}, value: {}",
+                        record.offset(), record.key(), record.value());
+                receiveCount.incrementAndGet();
+                if (lastMessage.equalsIgnoreCase(record.value())) {
+                    log.info("receive the last message");
+                    readFinish = true;
+                }
+            }
+
+            if (readFinish) {
+                log.info("Fetch for read finish.");
+                break;
+            }
+        }
+        log.info("Fetch for receive message finish. isolation: {}, receive count: {}", isolation, receiveCount.get());
+
+        if (isolation.equals("read_committed")) {
+            Assert.assertEquals(receiveCount.get(), totalMessageCount / 2);
+        } else {
+            Assert.assertEquals(receiveCount.get(), totalMessageCount);
+        }
+        log.info("Fetch for finish consume messages. isolation: {}", isolation);
     }
 }

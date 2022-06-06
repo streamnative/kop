@@ -138,7 +138,7 @@ public class TransactionCoordinator {
         return new TransactionCoordinator(
                 transactionConfig,
                 new TransactionMarkerChannelManager(tenant, kafkaConfig, transactionStateManager,
-                        kopBrokerLookupManager, false, namespacePrefixForUserTopics,
+                        kopBrokerLookupManager, kafkaConfig.isKopTlsEnabledWithBroker(), namespacePrefixForUserTopics,
                         scheduler),
                 scheduler,
                 producerIdManager,
