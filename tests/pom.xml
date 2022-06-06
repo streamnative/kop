@@ -132,6 +132,7 @@
       <scope>test</scope>
     </dependency>
 
+    <!-- needed for kafka.tools in KStreams integration tests -->
     <dependency>
       <groupId>io.confluent</groupId>
       <artifactId>kafka-schema-registry</artifactId>
@@ -146,6 +147,14 @@
           <artifactId>jersey-common</artifactId>
         </exclusion>
       </exclusions>
+    </dependency>
+
+    <!-- this is needed for the Kafka Avro Serialiser -->
+    <dependency>
+      <groupId>org.codehaus.jackson</groupId>
+      <artifactId>jackson-mapper-asl</artifactId>
+      <version>1.9.13</version>
+      <scope>test</scope>
     </dependency>
 
     <dependency>
@@ -197,6 +206,7 @@
     </plugins>
   </build>
 
+  <!-- needed for Kafka Avro Serializer -->
   <repositories>
     <repository>
       <id>io-confluent</id>
