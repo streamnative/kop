@@ -144,7 +144,7 @@ public class CompatibilityChecker {
                 }
             }
             return compatibilityExecutionResult.isCompatible();
-        } catch (java.lang.IllegalStateException notSupported) {
+        } catch (IllegalStateException notSupported) {
             return false;
         }
     }

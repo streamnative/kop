@@ -313,7 +313,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
         try {
             return MAPPER.writeValueAsBytes(op);
         } catch (JsonProcessingException err) {
-            throw new RuntimeException(err);
+            throw new IllegalArgumentException(err);
         }
     }
 

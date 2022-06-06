@@ -28,6 +28,7 @@ public class MemorySchemaStorageAccessor implements SchemaStorageAccessor {
         tenants.clear();
     }
 
+    @Override
     public void close() {
         tenants.clear();
     }

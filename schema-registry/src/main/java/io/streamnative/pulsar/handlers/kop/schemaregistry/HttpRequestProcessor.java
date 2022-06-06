@@ -65,7 +65,8 @@ public abstract class HttpRequestProcessor implements AutoCloseable {
         return httpResponse;
     }
 
-    public static FullHttpResponse buildJsonErrorResponse(Throwable err) {
+    public static FullHttpResponse buildJsonErrorResponse(Throwable throwable) {
+        Throwable err = throwable;
         while (err instanceof CompletionException) {
             err = err.getCause();
         }
