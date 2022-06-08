@@ -433,7 +433,7 @@ public class SaslAuthenticator {
                 nioBuffer.get(clientToken, 0, clientToken.length);
                 byte[] response = saslServer.evaluateResponse(clientToken);
                 if (response != null) {
-                    ByteBuf byteBuf = Unpooled.wrappedBuffer(ByteBuffer.wrap(response));
+                    ByteBuf byteBuf = Unpooled.wrappedBuffer(response);
                     final Session newSession;
                     if (saslServer.isComplete()) {
                         newSession = new Session(
