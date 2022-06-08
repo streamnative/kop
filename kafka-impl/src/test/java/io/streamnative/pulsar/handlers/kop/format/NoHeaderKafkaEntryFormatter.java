@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.format;
 
 import io.netty.buffer.Unpooled;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
 
@@ -33,8 +34,9 @@ public class NoHeaderKafkaEntryFormatter implements EntryFormatter {
     }
 
     @Override
-    public DecodeResult decode(List<Entry> entries, byte magic) {
+    public CompletableFuture<DecodeResult> decode(List<Entry> entries, byte magic,
+                                                  String topic, SchemaManager schemaManager) {
         // Do nothing
-        return null;
+        return CompletableFuture.completedFuture(null);
     }
 }

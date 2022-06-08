@@ -19,9 +19,7 @@ import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
 import io.streamnative.pulsar.handlers.kop.utils.LongRef;
-import java.util.List;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.TimestampType;
@@ -37,8 +35,8 @@ import org.apache.pulsar.common.protocol.Commands;
 @Slf4j
 public class KafkaMixedEntryFormatter extends AbstractEntryFormatter {
 
-    protected KafkaMixedEntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters) {
-        super(entryfilters);
+    protected KafkaMixedEntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters, boolean applyAvroSchemaOnDecode) {
+        super(entryfilters, applyAvroSchemaOnDecode);
     }
 
     @Override
@@ -76,11 +74,6 @@ public class KafkaMixedEntryFormatter extends AbstractEntryFormatter {
         validationAndOffsetAssignResult.recycle();
 
         return EncodeResult.get(validRecords, buf, numMessages, conversionCount, conversionTimeNanos);
-    }
-
-    @Override
-    public DecodeResult decode(List<Entry> entries, byte magic) {
-        return super.decode(entries, magic);
     }
 
     private static MessageMetadata getMessageMetadataWithNumberMessages(int numMessages) {

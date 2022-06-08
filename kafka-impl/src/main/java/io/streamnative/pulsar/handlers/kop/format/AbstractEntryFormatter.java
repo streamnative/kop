@@ -24,6 +24,9 @@ import io.streamnative.pulsar.handlers.kop.utils.ByteBufUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.Entry;
@@ -47,17 +50,143 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
     private final Time time = Time.SYSTEM;
     private final ImmutableList<EntryFilterWithClassLoader> entryfilters;
 
-    protected AbstractEntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters) {
+    private final boolean applyAvroSchemaOnDecode;
+
+    protected AbstractEntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters, boolean applyAvroSchemaOnDecode) {
         this.entryfilters = entryfilters;
+        this.applyAvroSchemaOnDecode = applyAvroSchemaOnDecode;
     }
 
     @Override
-    public DecodeResult decode(List<Entry> entries, byte magic) {
-        int totalSize = 0;
-        int conversionCount = 0;
-        long conversionTimeNanos = 0L;
+    public final CompletableFuture<DecodeResult> decode(List<Entry> entries, byte magic,
+                                     String pulsarTopicName, SchemaManager schemaManager) {
+
+        if (!applyAvroSchemaOnDecode) {
+            return CompletableFuture.completedFuture(decodeSync(entries, magic, pulsarTopicName, schemaManager));
+        } else {
+            return decodeAsync(entries, magic, pulsarTopicName, schemaManager);
+        }
+    }
+
+    /**
+     * Async decode the entries and apply the schema.
+     * @param entries
+     * @param magic
+     * @param pulsarTopicName
+     * @param schemaManager
+     * @return
+     */
+    private CompletableFuture<DecodeResult> decodeAsync(List<Entry> entries, byte magic,
+                                                        String pulsarTopicName, SchemaManager schemaManager) {
+        AtomicInteger totalSize = new AtomicInteger();
+        AtomicInteger conversionCount = new AtomicInteger();
+        AtomicLong conversionTimeNanos = new AtomicLong();
         // batched ByteBuf should be released after sending to client
-        ByteBuf batchedByteBuf = PulsarByteBufAllocator.DEFAULT.directBuffer(totalSize);
+        ByteBuf batchedByteBuf = PulsarByteBufAllocator.DEFAULT.directBuffer();
+        CompletableFuture<DecodeResult> result = new CompletableFuture<>();
+
+        processEntry(entries, 0, magic, pulsarTopicName, schemaManager, totalSize, conversionCount, conversionTimeNanos,
+                    batchedByteBuf, result);
+
+        return result;
+    }
+
+    private void processEntry(List<Entry> entries, int index, byte magic, String pulsarTopicName,
+                              SchemaManager schemaManager, AtomicInteger totalSize,
+                              AtomicInteger conversionCount, AtomicLong conversionTimeNanos, ByteBuf batchedByteBuf,
+                              CompletableFuture<DecodeResult> result) {
+        if (index == entries.size()) {
+            result.complete(DecodeResult.get(
+                    MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(batchedByteBuf)),
+                    batchedByteBuf,
+                    conversionCount.get(),
+                    conversionTimeNanos.get()));
+            return;
+        }
+        final Entry entry = entries.get(index);
+        final long startOffset;
+        final ByteBuf byteBuf;
+        final MessageMetadata metadata;
+
+        try {
+            startOffset = MessageMetadataUtils.peekBaseOffsetFromEntry(entry);
+            byteBuf = entry.getDataBuffer();
+            metadata = MessageMetadataUtils.parseMessageMetadata(byteBuf);
+
+            // Almost all exceptions in Kafka inherit from KafkaException and will be captured
+            // and processed in KafkaApis. Here, whether it is down-conversion or the IOException
+            // in builder.appendWithOffset in decodePulsarEntryToKafkaRecords will be caught by Kafka
+            // and the KafkaException will be thrown. So we need to catch KafkaException here.
+        } catch (MetadataCorruptedException | KafkaException e) { // skip failed decode entry
+            entry.release();
+
+            // next entry
+            log.error("[{}:{}] Failed to decode entry. skipping.", entry.getLedgerId(), entry.getEntryId(), e);
+            processEntry(entries, index + 1, magic,
+                    pulsarTopicName, schemaManager, totalSize,
+                    conversionCount, conversionTimeNanos, batchedByteBuf,
+                    result);
+            return;
+        } catch (RuntimeException e) {
+            entry.release();
+            log.error("[{}:{}] Fatal error while decoding entry. ", entry.getLedgerId(), entry.getEntryId(), e);
+            result.completeExceptionally(e);
+            return;
+        }
+
+        if (isKafkaEntryFormat(metadata)) {
+            decodeKafkaEntry(magic, totalSize, conversionCount, conversionTimeNanos, batchedByteBuf, entry,
+                    startOffset, byteBuf);
+            entry.release();
+            // next entry (same thread)
+            processEntry(entries, index + 1, magic,
+                    pulsarTopicName, schemaManager, totalSize,
+                    conversionCount, conversionTimeNanos, batchedByteBuf,
+                    result);
+        } else {
+            // handle schema, this MAY require some async operations
+            // the entry MAY be processed in a different thread
+            ByteBufUtils.decodePulsarEntryToKafkaRecordsAsync(pulsarTopicName,
+                            metadata, byteBuf, startOffset,
+                            magic, schemaManager)
+                    .thenAccept((DecodeResult decodeResult) -> {
+
+                decodePulsarEntry(decodeResult, totalSize, conversionCount, conversionTimeNanos, batchedByteBuf);
+
+                // next entry
+                processEntry(entries, index + 1, magic,
+                                pulsarTopicName, schemaManager, totalSize,
+                                conversionCount, conversionTimeNanos, batchedByteBuf,
+                                result);
+            }).exceptionally(err -> {
+                log.error("Error while decoding entry", err);
+                // see below
+                if ((err.getCause() instanceof MetadataCorruptedException)
+                    || (err.getCause() instanceof IOException)
+                        || (err.getCause() instanceof KafkaException)) {
+                    // next entry
+                    processEntry(entries, index + 1, magic,
+                            pulsarTopicName, schemaManager, totalSize,
+                            conversionCount, conversionTimeNanos, batchedByteBuf,
+                            result);
+                } else {
+                    result.completeExceptionally(err);
+                }
+                return null;
+            }).whenComplete((___, err) -> {
+               entry.release();
+            });
+        }
+
+    }
+
+    private DecodeResult decodeSync(List<Entry> entries, byte magic,
+                                         String pulsarTopicName, SchemaManager schemaManager) {
+        AtomicInteger totalSize = new AtomicInteger();
+        AtomicInteger conversionCount = new AtomicInteger();
+        AtomicLong conversionTimeNanos = new AtomicLong();
+        // batched ByteBuf should be released after sending to client
+        ByteBuf batchedByteBuf = PulsarByteBufAllocator.DEFAULT.directBuffer();
         for (Entry entry : entries) {
             try {
                 long startOffset = MessageMetadataUtils.peekBaseOffsetFromEntry(entry);
@@ -68,45 +197,14 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                     continue;
                 }
                 if (isKafkaEntryFormat(metadata)) {
-                    byte batchMagic = byteBuf.getByte(byteBuf.readerIndex() + MAGIC_OFFSET);
-                    byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
-
-                    // batch magic greater than the magic corresponding to the version requested by the client
-                    // need down converted
-                    if (batchMagic > magic) {
-                        long startConversionNanos = MathUtils.nowInNano();
-                        MemoryRecords memoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
-                        // down converted, batch magic will be set to client magic
-                        ConvertedRecords<MemoryRecords> convertedRecords =
-                                memoryRecords.downConvert(magic, startOffset, time);
-                        conversionCount += convertedRecords.recordConversionStats().numRecordsConverted();
-                        conversionTimeNanos += MathUtils.elapsedNanos(startConversionNanos);
-
-                        final ByteBuf kafkaBuffer = Unpooled.wrappedBuffer(convertedRecords.records().buffer());
-                        totalSize += kafkaBuffer.readableBytes();
-                        batchedByteBuf.writeBytes(kafkaBuffer);
-                        kafkaBuffer.release();
-                        if (log.isTraceEnabled()) {
-                            log.trace("[{}:{}] MemoryRecords down converted, start offset {},"
-                                            + " entry magic: {}, client magic: {}",
-                                    entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
-                        }
-
-                    } else {
-                        // not need down converted, batch magic retains the magic value written in production
-                        ByteBuf buf = byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes());
-                        totalSize += buf.readableBytes();
-                        batchedByteBuf.writeBytes(buf);
-                    }
+                    decodeKafkaEntry(magic, totalSize, conversionCount, conversionTimeNanos, batchedByteBuf, entry,
+                            startOffset, byteBuf);
                 } else {
                     final DecodeResult decodeResult =
-                            ByteBufUtils.decodePulsarEntryToKafkaRecords(metadata, byteBuf, startOffset, magic);
-                    conversionCount += decodeResult.getConversionCount();
-                    conversionTimeNanos += decodeResult.getConversionTimeNanos();
-                    final ByteBuf kafkaBuffer = decodeResult.getOrCreateByteBuf();
-                    totalSize += kafkaBuffer.readableBytes();
-                    batchedByteBuf.writeBytes(kafkaBuffer);
-                    decodeResult.recycle();
+                            ByteBufUtils.decodePulsarEntryToKafkaRecords(pulsarTopicName,
+                                    metadata, byteBuf, startOffset,
+                                    magic, schemaManager, false);
+                    decodePulsarEntry(decodeResult, totalSize, conversionCount, conversionTimeNanos, batchedByteBuf);
                 }
 
                 // Almost all exceptions in Kafka inherit from KafkaException and will be captured
@@ -123,8 +221,53 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
         return DecodeResult.get(
                 MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(batchedByteBuf)),
                 batchedByteBuf,
-                conversionCount,
-                conversionTimeNanos);
+                conversionCount.get(),
+                conversionTimeNanos.get());
+    }
+
+    private void decodePulsarEntry(DecodeResult decodeResult, AtomicInteger totalSize, AtomicInteger conversionCount,
+                                   AtomicLong conversionTimeNanos, ByteBuf batchedByteBuf) {
+        conversionCount.addAndGet(decodeResult.getConversionCount());
+        conversionTimeNanos.addAndGet(decodeResult.getConversionTimeNanos());
+        final ByteBuf kafkaBuffer = decodeResult.getOrCreateByteBuf();
+        totalSize.addAndGet(kafkaBuffer.readableBytes());
+        batchedByteBuf.writeBytes(kafkaBuffer);
+        decodeResult.recycle();
+    }
+
+    private void decodeKafkaEntry(byte magic, AtomicInteger totalSize, AtomicInteger conversionCount,
+                           AtomicLong conversionTimeNanos, ByteBuf batchedByteBuf, Entry entry, long startOffset,
+                           ByteBuf byteBuf) {
+        byte batchMagic = byteBuf.getByte(byteBuf.readerIndex() + MAGIC_OFFSET);
+        byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
+
+        // batch magic greater than the magic corresponding to the version requested by the client
+        // need down converted
+        if (batchMagic > magic) {
+            long startConversionNanos = MathUtils.nowInNano();
+            MemoryRecords memoryRecords = MemoryRecords.readableRecords(ByteBufUtils.getNioBuffer(byteBuf));
+            // down converted, batch magic will be set to client magic
+            ConvertedRecords<MemoryRecords> convertedRecords =
+                    memoryRecords.downConvert(magic, startOffset, time);
+            conversionCount.addAndGet(convertedRecords.recordConversionStats().numRecordsConverted());
+            conversionTimeNanos.addAndGet(MathUtils.elapsedNanos(startConversionNanos));
+
+            final ByteBuf kafkaBuffer = Unpooled.wrappedBuffer(convertedRecords.records().buffer());
+            totalSize.addAndGet(kafkaBuffer.readableBytes());
+            batchedByteBuf.writeBytes(kafkaBuffer);
+            kafkaBuffer.release();
+            if (log.isTraceEnabled()) {
+                log.trace("[{}:{}] MemoryRecords down converted, start offset {},"
+                                + " entry magic: {}, client magic: {}",
+                        entry.getLedgerId(), entry.getEntryId(), startOffset, batchMagic, magic);
+            }
+
+        } else {
+            // not need down converted, batch magic retains the magic value written in production
+            ByteBuf buf = byteBuf.slice(byteBuf.readerIndex(), byteBuf.readableBytes());
+            totalSize.addAndGet(buf.readableBytes());
+            batchedByteBuf.writeBytes(buf);
+        }
     }
 
     protected static boolean isKafkaEntryFormat(final MessageMetadata messageMetadata) {

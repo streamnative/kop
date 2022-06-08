@@ -20,10 +20,15 @@ import io.confluent.kafka.serializers.KafkaAvroDeserializer;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
 import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import lombok.AllArgsConstructor;
 import lombok.Cleanup;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
@@ -37,8 +42,15 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
-import org.testng.annotations.AfterMethod;
-import org.testng.annotations.BeforeMethod;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.common.schema.KeyValue;
+import org.apache.pulsar.common.schema.KeyValueEncodingType;
+import org.apache.pulsar.common.util.FutureUtil;
+import org.testng.annotations.AfterClass;
+import org.testng.annotations.BeforeClass;
+import org.testng.annotations.DataProvider;
+import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
 /**
@@ -48,20 +60,33 @@ import org.testng.annotations.Test;
 public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
 
     protected String bootstrapServers;
+    protected boolean applyAvroSchemaOnDecode;
 
-    public SchemaRegistryTest() {
-        super("pulsar");
+    @Factory
+    public static Object[] instances() {
+        return new Object[] {
+                new SchemaRegistryTest("pulsar", false),
+                new SchemaRegistryTest("pulsar", true),
+                new SchemaRegistryTest("kafka", false),
+                new SchemaRegistryTest("kafka", true)
+        };
     }
 
-    @BeforeMethod
+    public SchemaRegistryTest(String entryFormat, boolean applyAvroSchemaOnDecode) {
+        super(entryFormat);
+        this.applyAvroSchemaOnDecode = applyAvroSchemaOnDecode;
+    }
+
+    @BeforeClass
     @Override
     protected void setup() throws Exception {
         super.enableSchemaRegistry = true;
+        this.conf.setKafkaApplyAvroSchemaOnDecode(applyAvroSchemaOnDecode);
         this.internalSetup();
         bootstrapServers = "localhost:" + getKafkaBrokerPort();
     }
 
-    @AfterMethod(alwaysRun = true)
+    @AfterClass(alwaysRun = true)
     @Override
     protected void cleanup() throws Exception {
         this.internalCleanup();
@@ -86,20 +111,24 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
         return new KafkaProducer<>(props);
     }
 
-    private KafkaConsumer<Integer, Object> createAvroConsumer() {
+    private <K, V> KafkaConsumer<K, V> createAvroConsumer() {
+        return createAvroConsumer(IntegerDeserializer.class, KafkaAvroDeserializer.class);
+    }
+
+    private <K, V> KafkaConsumer<K, V> createAvroConsumer(Class deserializer, Class serializer) {
         Properties props = new Properties();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "avroGroup");
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, IntegerDeserializer.class);
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class);
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, deserializer);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, serializer);
         props.put(KafkaAvroSerializerConfig.SCHEMA_REGISTRY_URL_CONFIG, restConnect);
         return new KafkaConsumer<>(props);
     }
 
     @Test(timeOut = 120000)
     public void testAvroProduceAndConsume() throws Throwable {
-        String topic = "SchemaRegistryTest-testAvroProduceAndConsume";
+        String topic = "SchemaRegistryTest-testAvroProduceAndConsume_" + entryFormat + "_" + applyAvroSchemaOnDecode;
         IndexedRecord avroRecord = createAvroRecord();
         Object[] objects = new Object[]{avroRecord, true, 130, 345L, 1.23f, 2.34d, "abc", "def".getBytes()};
         @Cleanup
@@ -132,6 +161,117 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
                 i++;
             }
         }
-        consumer.close();
+    }
+
+    @Data
+    @AllArgsConstructor
+    public static class Pojo {
+        private String name;
+        private int age;
+    }
+
+    @Data
+    @AllArgsConstructor
+    public static class PojoKey {
+        private long pk;
+    }
+
+    @DataProvider(name = "enableBatchingProvider")
+    protected static Object[][] batchProvider() {
+        // isBatch
+        return new Object[][]{
+                {true},
+                {false}
+        };
+    }
+
+    @Test(timeOut = 120000, dataProvider = "enableBatchingProvider")
+    public void testProduceAvroPulsarAndConsume(boolean enableBatching) throws Throwable {
+        if (!applyAvroSchemaOnDecode) {
+            return;
+        }
+        String topic = "SchemaRegistryTest-testProduceAvroPulsarAndConsume_"
+                + entryFormat + "_" + applyAvroSchemaOnDecode + "_" + enableBatching;
+        @Cleanup
+        Producer<Pojo> pojoProducer = pulsarClient.newProducer(org.apache.pulsar.client.api.Schema.AVRO(Pojo.class))
+                .topic(topic)
+                .enableBatching(true)
+                .batchingMaxMessages(10)
+                .blockIfQueueFull(true)
+                .batchingMaxPublishDelay(1, TimeUnit.SECONDS)
+                .create();
+
+        final int numMessages = 100;
+        List<CompletableFuture<?>> handles = new ArrayList<>();
+        for (int i = 0; i < numMessages; i++) {
+            handles.add(pojoProducer.newMessage().value(new Pojo("foo", 1)).key("test").sendAsync());
+        }
+        FutureUtil.waitForAll(handles).get();
+
+        log.info("finished sending");
+
+        @Cleanup
+        KafkaConsumer<String, GenericRecord> consumer = createAvroConsumer(StringDeserializer.class,
+                KafkaAvroDeserializer.class);
+        consumer.subscribe(Collections.singleton(topic));
+        int i = 0;
+        while (i < numMessages){
+            for (ConsumerRecord<String, GenericRecord> record : consumer.poll(Duration.ofSeconds(3))) {
+               assertEquals(record.key(), "test");
+               assertEquals(record.value().get("name").toString(), "foo");
+               assertEquals(record.value().get("age"), 1);
+                i++;
+            }
+        }
+        assertEquals(numMessages, i);
+    }
+
+    @Test(timeOut = 120000, dataProvider = "enableBatchingProvider")
+    public void testProduceAvroKeyValuePulsarAndConsume(boolean enableBatching) throws Throwable {
+        if (!applyAvroSchemaOnDecode) {
+            return;
+        }
+        String topic = "SchemaRegistryTest-testProduceAvroKeyValuePulsarAndConsume_"
+                + entryFormat + "_" + applyAvroSchemaOnDecode + "_" + enableBatching;
+        @Cleanup
+        Producer<KeyValue<PojoKey, Pojo>> pojoProducer = pulsarClient.newProducer(
+                org.apache.pulsar.client.api.Schema.KeyValue(
+                  org.apache.pulsar.client.api.Schema.AVRO(PojoKey.class),
+                  org.apache.pulsar.client.api.Schema.AVRO(Pojo.class),
+                        KeyValueEncodingType.SEPARATED)
+                )
+                .topic(topic)
+                .enableBatching(enableBatching)
+                .batchingMaxMessages(10)
+                .blockIfQueueFull(true)
+                .batchingMaxPublishDelay(1, TimeUnit.SECONDS)
+                .create();
+
+        final int numMessages = 100;
+        List<CompletableFuture<?>> handles = new ArrayList<>();
+        for (int i = 0; i < numMessages; i++) {
+            handles.add(pojoProducer.newMessage().value(
+                            new KeyValue<>(new PojoKey(12314L),
+                                    new Pojo("foo", 1)))
+                    .sendAsync());
+        }
+        FutureUtil.waitForAll(handles).get();
+
+        log.info("finished sending");
+
+        @Cleanup
+        KafkaConsumer<GenericRecord, GenericRecord> consumer = createAvroConsumer(KafkaAvroDeserializer.class,
+                KafkaAvroDeserializer.class);
+        consumer.subscribe(Collections.singleton(topic));
+        int i = 0;
+        while (i < numMessages){
+            for (ConsumerRecord<GenericRecord, GenericRecord> record : consumer.poll(Duration.ofSeconds(3))) {
+                assertEquals(record.key().get("pk"), 12314L);
+                assertEquals(record.value().get("name").toString(), "foo");
+                assertEquals(record.value().get("age"), 1);
+                i++;
+            }
+        }
+        assertEquals(numMessages, i);
     }
 }
