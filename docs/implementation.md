@@ -21,7 +21,7 @@ KoP uses the same topic lookup approach for the Kafka request handler and the Pu
 ## Message
 
 Both a Kafka message and a Pulsar message have the key, value, timestamp, and
-headers. (In Pulsar，The `headers` is called `properties`.) KoP converts these
+headers. (In Pulsar, the `headers` is called `properties`.) KoP converts these
 fields automatically between Kafka messages and Pulsar messages. The mapping relationships are as below.
 
 ### Mapping relationship of converting message fields **from Pulsar to Kafka**
