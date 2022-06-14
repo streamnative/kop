@@ -25,7 +25,7 @@ The following types of metrics are available:
 
 The KoP metrics are exposed under "/metrics" at port `8000` along with Pulsar metrics. You can use a different port by configuring the `stats_server_port` system property.
 
-### Request metrics
+### Channel metrics
 
 | Name | Type | Description |
 |---|---|---|
