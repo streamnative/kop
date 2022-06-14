@@ -270,6 +270,12 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
             Thread.sleep(100);
         }
 
+        consumeTxData(kafkaServer, topicName, isolation,
+                totalTxnCount * messageCountPerTxn, lastMessage);
+    }
+
+    private void consumeTxData(String kafkaServer, String topicName, String isolation,
+                               int totalMessageCount, String lastMessage) throws Exception {
         Properties consumerProps = new Properties();
         consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, IntegerDeserializer.class.getName());
@@ -286,8 +292,6 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
 
         // default is https, here need to set empty.
         consumerProps.put("ssl.endpoint.identification.algorithm", "");
-
-        final int totalMessageCount = totalTxnCount * messageCountPerTxn;
 
         @Cleanup
         KafkaConsumer<Integer, String> consumer = new KafkaConsumer<>(consumerProps);
