@@ -31,7 +31,7 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 public class TransactionMarkerChannelInitializer extends ChannelInitializer<SocketChannel> {
 
     private final boolean enableTls;
-    private final SslContextFactory.Server sslContextFactory;
+    private final SslContextFactory.Client sslContextFactory;
     private final TransactionMarkerChannelManager transactionMarkerChannelManager;
 
     public TransactionMarkerChannelInitializer(KafkaServiceConfiguration kafkaConfig,
@@ -40,7 +40,7 @@ public class TransactionMarkerChannelInitializer extends ChannelInitializer<Sock
         this.enableTls = enableTls;
         this.transactionMarkerChannelManager = transactionMarkerChannelManager;
         if (enableTls) {
-            sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
+            sslContextFactory = SSLUtils.createClientSslContextFactory(kafkaConfig);
         } else {
             sslContextFactory = null;
         }
@@ -49,7 +49,8 @@ public class TransactionMarkerChannelInitializer extends ChannelInitializer<Sock
     @Override
     protected void initChannel(SocketChannel ch) throws Exception {
         if (this.enableTls) {
-            ch.pipeline().addLast(TLS_HANDLER, new SslHandler(SSLUtils.createSslEngine(sslContextFactory)));
+            ch.pipeline().addLast(TLS_HANDLER,
+                    new SslHandler(SSLUtils.createClientSslEngine(sslContextFactory)));
         }
         ch.pipeline().addLast(new LengthFieldPrepender(4));
         ch.pipeline().addLast("frameDecoder",
