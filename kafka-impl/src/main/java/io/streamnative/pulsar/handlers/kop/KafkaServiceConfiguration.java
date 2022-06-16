@@ -306,6 +306,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private String kopSslKeystoreType = "JKS";
 
     @FieldContext(
+            category = CATEGORY_KOP_SSL,
+            doc = "Use TLS while connecting to other brokers"
+    )
+    private boolean kopTlsEnabledWithBroker = false;
+
+    @FieldContext(
         category = CATEGORY_KOP_SSL,
         doc = "Kafka ssl configuration map with: SSL_KEYSTORE_LOCATION_CONFIG = \"ssl.keystore.location\""
     )

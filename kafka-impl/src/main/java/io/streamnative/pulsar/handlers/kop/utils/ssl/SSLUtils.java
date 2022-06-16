@@ -257,4 +257,83 @@ public class SSLUtils {
         return engine;
     }
 
+    public static SSLEngine createClientSslEngine(SslContextFactory.Client sslContextFactory) throws Exception {
+        sslContextFactory.start();
+        SSLEngine engine  = sslContextFactory.newSSLEngine();
+        engine.setUseClientMode(true);
+
+        return engine;
+    }
+
+    public static SslContextFactory.Client createClientSslContextFactory(
+            KafkaServiceConfiguration kafkaServiceConfiguration) {
+        Builder<String, Object> sslConfigValues = ImmutableMap.builder();
+
+        CONFIG_NAME_MAP.forEach((key, value) -> {
+            Object obj = null;
+            switch(key) {
+                case SslConfigs.SSL_PROTOCOL_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslProtocol();
+                    break;
+                case SslConfigs.SSL_PROVIDER_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslProvider();
+                    break;
+                case SslConfigs.SSL_CIPHER_SUITES_CONFIG:
+                    // this obj is Set<String>
+                    obj = kafkaServiceConfiguration.getKopSslCipherSuites();
+                    break;
+                case SslConfigs.SSL_ENABLED_PROTOCOLS_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslEnabledProtocols();
+                    break;
+                case SslConfigs.SSL_KEYSTORE_TYPE_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslKeystoreType();
+                    break;
+                case SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslKeystoreLocation();
+                    break;
+                case SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslKeystorePassword();
+                    break;
+                case SslConfigs.SSL_KEY_PASSWORD_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslKeyPassword();
+                    break;
+                case SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslTruststoreType();
+                    break;
+                case SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslTruststoreLocation();
+                    break;
+                case SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslTruststorePassword();
+                    break;
+                case SslConfigs.SSL_KEYMANAGER_ALGORITHM_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslKeymanagerAlgorithm();
+                    break;
+                case SslConfigs.SSL_TRUSTMANAGER_ALGORITHM_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslTrustmanagerAlgorithm();
+                    break;
+                case SslConfigs.SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslSecureRandomImplementation();
+                    break;
+                case BrokerSecurityConfigs.SSL_CLIENT_AUTH_CONFIG:
+                    obj = kafkaServiceConfiguration.getKopSslClientAuth();
+                    break;
+                default:
+                    log.error("key {} not contained in KafkaServiceConfiguration", key);
+            }
+            if (obj != null) {
+                sslConfigValues.put(key, obj);
+            }
+        });
+        return createClientSslContextFactory(sslConfigValues.build());
+    }
+
+    public static SslContextFactory.Client createClientSslContextFactory(Map<String, Object> sslConfigValues) {
+        SslContextFactory.Client ssl = new SslContextFactory.Client();
+        configureSslContextFactoryTrustStore(ssl, sslConfigValues);
+        configureSslContextFactoryAlgorithms(ssl, sslConfigValues);
+        ssl.setEndpointIdentificationAlgorithm(null);
+        return ssl;
+    }
+
 }

@@ -123,7 +123,7 @@ public abstract class KopProtocolHandlerTestBase {
     protected String restConnect;
     protected boolean enableBrokerEntryMetadata = true;
 
-    private String entryFormat;
+    protected String entryFormat;
 
     protected static final String PLAINTEXT_PREFIX = SecurityProtocol.PLAINTEXT.name() + "://";
     protected static final String SSL_PREFIX = SecurityProtocol.SSL.name() + "://";
