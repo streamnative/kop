@@ -36,6 +36,7 @@ jobs:
 
     - name: test after build
       run: mvn test -DfailIfNoTests=false '-Dtest=!KafkaIntegrationTest'
+      timeout-minutes: 60
 
     - name: KafkaIntegrationTest
       run: mvn test '-Dtest=KafkaIntegrationTest' -pl tests
