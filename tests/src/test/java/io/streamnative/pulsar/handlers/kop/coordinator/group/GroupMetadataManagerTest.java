@@ -547,6 +547,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         assertTrue(group.hasPendingOffsetCommitsFromProducer(producerId));
     }
 
+    @Ignore
     @Test
     public void testLoadWithCommitedAndAbortedTransactionOffsetCommits() throws Exception {
         long producerId = 1000L;
