@@ -33,12 +33,6 @@
   <!-- include the dependencies -->
   <dependencies>
     <dependency>
-      <groupId>io.streamnative.pulsar.handlers</groupId>
-      <artifactId>pulsar-kafka-schema-registry</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-
-    <dependency>
       <groupId>${pulsar.group.id}</groupId>
       <artifactId>pulsar-broker</artifactId>
       <scope>provided</scope>

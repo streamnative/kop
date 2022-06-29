@@ -123,13 +123,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private String kafkaMetadataNamespace = "__kafka";
 
     @FieldContext(
-            category = CATEGORY_KOP,
-            required = true,
-            doc = "The namespace used for storing Kafka Schema Registry"
-    )
-    private String kopSchemaRegistryNamespace = "__kafka_schemaregistry";
-
-    @FieldContext(
         category = CATEGORY_KOP,
         doc = "The minimum allowed session timeout for registered consumers."
             + " Shorter timeouts result in quicker failure detection at the cost"
@@ -475,24 +468,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
                     + "If it's not set or empty, the allowed namespaces will be \"<kafkaTenant>/<kafkaNamespace>\"."
     )
     private Set<String> kopAllowedNamespaces;
-
-    @FieldContext(
-            category = CATEGORY_KOP,
-            doc = "Start the Schema Registry service."
-    )
-    private boolean kopSchemaRegistryEnable = false;
-
-    @FieldContext(
-            category = CATEGORY_KOP,
-            doc = "The name of the topic used by the Schema Registry service."
-    )
-    private String kopSchemaRegistryTopicName = "__schema-registry";
-
-    @FieldContext(
-            category = CATEGORY_KOP,
-            doc = "Schema Registry port."
-    )
-    private int kopSchemaRegistryPort = 8001;
 
     @FieldContext(
             category = CATEGORY_KOP,

@@ -92,6 +92,7 @@ import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
@@ -140,7 +141,6 @@ import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
 import org.apache.kafka.common.requests.ListGroupsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequest;
-import org.apache.kafka.common.requests.ListOffsetRequestV0;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
@@ -1077,10 +1077,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
-    private CompletableFuture<Pair<Errors, Long>> fetchOffset(String topicName, long timestamp) {
+    private CompletableFuture<Pair<Errors, Long>> fetchOffset(String topicName, Long timestamp) {
         CompletableFuture<Pair<Errors, Long>> partitionData = new CompletableFuture<>();
 
-        topicManager.getTopic(topicName).thenAccept((perTopicOpt) -> {
+        topicManager.getTopic(topicName).whenComplete((perTopicOpt, t) -> {
+            if (t != null) {
+                log.error("Failed while get persistentTopic topic: {} ts: {}. ",
+                    !perTopicOpt.isPresent() ? "null" : perTopicOpt.get().getName(), timestamp, t);
+                partitionData.complete(Pair.of(Errors.forException(t), null));
+                return;
+            }
             if (!perTopicOpt.isPresent()) {
                 partitionData.complete(Pair.of(Errors.UNKNOWN_TOPIC_OR_PARTITION, null));
                 return;
@@ -1141,11 +1147,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             } else {
                 fetchOffsetByTimestamp(partitionData, managedLedger, lac, timestamp, perTopic.getName());
             }
-        }).exceptionally(e -> {
-            Throwable throwable = FutureUtil.unwrapCompletionException(e);
-            log.error("Failed while get persistentTopic topic: {} ts: {}. ", topicName, timestamp, throwable);
-            partitionData.complete(Pair.of(Errors.forException(throwable), null));
-            return null;
         });
 
         return partitionData;
@@ -1257,7 +1258,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     completeOne.run();
                                     return;
                                 }
-                                responseData.put(topic, fetchOffset(fullPartitionName, times.timestamp));
+                                responseData.put(topic, fetchOffset(fullPartitionName, times));
                                 completeOne.run();
                             }
                     );
@@ -1270,8 +1271,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     // https://cfchou.github.io/blog/2015/04/23/a-closer-look-at-kafka-offsetrequest/ through web.archive.org
     private void handleListOffsetRequestV0(KafkaHeaderAndRequest listOffset,
                                            CompletableFuture<AbstractResponse> resultFuture) {
-        ListOffsetRequestV0 request =
-                byteBufToListOffsetRequestV0(listOffset.getBuffer());
+        ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
 
         Map<TopicPartition, CompletableFuture<Pair<Errors, Long>>> responseData =
                 Maps.newConcurrentMap();
@@ -2330,7 +2330,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CreatePartitionsRequest request = (CreatePartitionsRequest) createPartitions.getRequest();
 
         final Map<String, ApiError> result = Maps.newConcurrentMap();
-        final Map<String, CreatePartitionsRequest.PartitionDetails> validTopics = Maps.newHashMap();
+        final Map<String, NewPartitions> validTopics = Maps.newHashMap();
         final Set<String> duplicateTopics = request.duplicates();
 
         KafkaRequestUtils.forEachCreatePartitionsRequest(request, (topic, newPartition) -> {
@@ -2351,7 +2351,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         String namespacePrefix = currentNamespacePrefix();
         final AtomicInteger validTopicsCount = new AtomicInteger(validTopics.size());
-        final Map<String, CreatePartitionsRequest.PartitionDetails> authorizedTopics = Maps.newConcurrentMap();
+        final Map<String, NewPartitions> authorizedTopics = Maps.newConcurrentMap();
         Runnable createPartitionsAsync = () -> {
             if (authorizedTopics.isEmpty()) {
                 resultFuture.complete(KafkaResponseUtils.newCreatePartitions(result));
@@ -2365,7 +2365,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         };
 
-        BiConsumer<String, CreatePartitionsRequest.PartitionDetails> completeOneTopic = (topic, newPartitions) -> {
+        BiConsumer<String, NewPartitions> completeOneTopic = (topic, newPartitions) -> {
             authorizedTopics.put(topic, newPartitions);
             if (validTopicsCount.decrementAndGet() == 0) {
                 createPartitionsAsync.run();
