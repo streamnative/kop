@@ -3,12 +3,12 @@ name: kop tests
 on:
   pull_request:
     branches:
-      - master
-      - branch-*
+    - master
+    - branch-*
   push:
     branches:
-      - master
-      - branch-*
+    - master
+    - branch-*
 
 jobs:
   build:
@@ -16,6 +16,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Login to cloudsmith
+      run: docker login -u="${{ secrets.CLOUDSMITH_USERNAME }}" -p="${{ secrets.CLOUDSMITH_API_KEY
+        }}" docker.cloudsmith.io
+      env:
+        CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
     - uses: actions/checkout@v1
     - name: Set up JDK 11
       uses: actions/setup-java@v1
@@ -25,32 +31,60 @@ jobs:
     - name: License check
       run: mvn -ntp -B license:check
 
+      env:
+        CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
     - name: Style check
       run: mvn -ntp -B checkstyle:check
 
+      env:
+        CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
     - name: Build with Maven skipTests
       run: mvn clean install -ntp -B -DskipTests
 
+      env:
+        CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
     - name: Spotbugs check
       run: mvn -ntp -B spotbugs:check
 
+      env:
+        CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
     - name: kafka-impl test after build
       run: mvn test -ntp -B -DfailIfNoTests=false -pl kafka-impl
 
+      env:
+        CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
     - name: kafka-payload-processor test after build
       run: mvn test -ntp -B -DfailIfNoTests=false -pl kafka-payload-processor-shaded-tests
 
+      env:
+        CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
     - name: Start and init the oauth server
       run: ./ci/init_hydra_oauth_server.sh
       timeout-minutes: 5
 
+      env:
+        CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
     - name: oauth-client test after build
       run: mvn test -ntp -B -DfailIfNoTests=false -pl oauth-client
 
+      env:
+        CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
     - name: tests module
-      run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test' -pl tests
+      run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test'
+        -pl tests
       timeout-minutes: 60
 
+      env:
+        CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
     - name: package surefire artifacts
       if: failure()
       run: |
@@ -59,6 +93,9 @@ jobs:
         find . -type d -name "*surefire*" -exec cp --parents -R {} artifacts/ \;
         zip -r artifacts.zip artifacts
 
+      env:
+        CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
     - uses: actions/upload-artifact@master
       name: upload surefire-artifacts
       if: failure()
