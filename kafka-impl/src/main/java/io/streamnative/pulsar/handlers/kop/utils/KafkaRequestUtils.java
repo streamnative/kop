@@ -16,6 +16,9 @@ package io.streamnative.pulsar.handlers.kop.utils;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import java.util.Optional;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequest;
@@ -25,24 +28,32 @@ import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 public class KafkaRequestUtils {
 
     public static void forEachCreatePartitionsRequest(CreatePartitionsRequest request,
-                                        BiConsumer<String, CreatePartitionsRequest.PartitionDetails> consumer) {
+                                                      BiConsumer<String, NewPartitions> consumer) {
         request.newPartitions().forEach(consumer);
     }
 
     public static void forEachListOffsetRequest(ListOffsetRequest request,
-                                        BiConsumer<TopicPartition, ListOffsetRequest.PartitionData> consumer) {
+                                                BiConsumer<TopicPartition, Long> consumer) {
         request.partitionTimestamps().forEach(consumer);
     }
 
     public static String getMetadata(TxnOffsetCommitRequest.CommittedOffset committedOffset) {
-        return Optional.ofNullable(committedOffset.metadata).orElse(OffsetAndMetadata.NoMetadata);
+        return Optional.ofNullable(committedOffset.metadata()).orElse(OffsetAndMetadata.NoMetadata);
     }
 
     public static long getOffset(TxnOffsetCommitRequest.CommittedOffset committedOffset) {
-        return committedOffset.offset;
+        return committedOffset.offset();
     }
 
     public static class LegacyUtils {
+
+        public static void forEachListOffsetRequest(
+                ListOffsetRequest request,
+                Function<TopicPartition, Function<Long, Consumer<Integer>>> function) {
+            request.offsetData().forEach((topicPartition, partitionData) -> {
+                function.apply(topicPartition).apply(partitionData.timestamp).accept(partitionData.maxNumOffsets);
+            });
+        }
 
         // V2 adds retention time to the request and V5 removes retention time
         public static long getRetentionTime(OffsetCommitRequest request) {
