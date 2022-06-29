@@ -19,6 +19,9 @@ import static org.mockito.Mockito.spy;
 
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.MoreExecutors;
+import io.confluent.kafka.schemaregistry.avro.AvroCompatibilityLevel;
+import io.confluent.kafka.schemaregistry.rest.SchemaRegistryConfig;
+import io.confluent.kafka.schemaregistry.rest.SchemaRegistryRestApplication;
 import io.netty.channel.EventLoopGroup;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
@@ -78,6 +81,7 @@ import org.apache.pulsar.metadata.impl.ZKMetadataStore;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.MockZooKeeper;
 import org.apache.zookeeper.data.ACL;
+import org.eclipse.jetty.server.Server;
 import org.testng.Assert;
 
 /**
@@ -109,14 +113,14 @@ public abstract class KopProtocolHandlerTestBase {
     protected NonClosableMockBookKeeper mockBookKeeper;
     protected final String configClusterName = "test";
 
-    protected final String tenant = "public";
-    protected final String namespace = "default";
-
     private SameThreadOrderedSafeExecutor sameThreadOrderedSafeExecutor;
     private OrderedExecutor bkExecutor;
 
-    // Fields about Schema Registry
+    // Fields about Confluent Schema Registry
     protected boolean enableSchemaRegistry = false;
+    private static final String KAFKASTORE_TOPIC = SchemaRegistryConfig.DEFAULT_KAFKASTORE_TOPIC;
+    protected SchemaRegistryRestApplication restApp;
+    protected Server restServer;
     protected String restConnect;
     protected boolean enableBrokerEntryMetadata = true;
 
@@ -140,17 +144,6 @@ public abstract class KopProtocolHandlerTestBase {
 
     protected EndPoint getPlainEndPoint() {
         return new EndPoint(PLAINTEXT_PREFIX + "127.0.0.1:" + kafkaBrokerPort, null);
-    }
-
-
-    /**
-     * Port to be used by clients.
-     * It can be overridden with a different port, in order to pass via the proxy
-     *
-     * @return the port
-     */
-    protected int getClientPort() {
-        return getKafkaBrokerPort();
     }
 
     protected void resetConfig() {
@@ -287,13 +280,6 @@ public abstract class KopProtocolHandlerTestBase {
             brokerServiceUrlTls);
         mockBookKeeper = createMockBookKeeper(bkExecutor);
 
-        if (enableSchemaRegistry) {
-
-            conf.setKopSchemaRegistryEnable(true);
-            conf.setKopSchemaRegistryPort(getKafkaSchemaRegistryPort());
-            restConnect = "http://localhost:" + getKafkaSchemaRegistryPort();
-        }
-
         if (startBroker) {
             startBroker();
             createAdmin();
@@ -305,10 +291,37 @@ public abstract class KopProtocolHandlerTestBase {
             }
         }
 
+        if (enableSchemaRegistry) {
+            admin.topics().createPartitionedTopic(KAFKASTORE_TOPIC, 1);
+            final Properties props = new Properties();
+            props.put(SchemaRegistryConfig.PORT_CONFIG, Integer.toString(getKafkaSchemaRegistryPort()));
+            // Increase the kafkastore.timeout.ms (default: 500) to avoid test failure in CI
+            props.put(SchemaRegistryConfig.KAFKASTORE_TIMEOUT_CONFIG, 3000);
+            // NOTE: KoP doesn't support kafkastore.connection.url
+            props.put(SchemaRegistryConfig.KAFKASTORE_BOOTSTRAP_SERVERS_CONFIG,
+                    "PLAINTEXT://localhost:" + getKafkaBrokerPort());
+            props.put(SchemaRegistryConfig.KAFKASTORE_TOPIC_CONFIG, KAFKASTORE_TOPIC);
+            props.put(SchemaRegistryConfig.COMPATIBILITY_CONFIG, AvroCompatibilityLevel.NONE.name);
+            props.put(SchemaRegistryConfig.MASTER_ELIGIBILITY, true);
+
+            restApp = new SchemaRegistryRestApplication(props);
+            restServer = restApp.createServer();
+            restServer.start();
+            restConnect = restServer.getURI().toString();
+            if (restConnect.endsWith("/")) {
+                restConnect = restConnect.substring(0, restConnect.length() - 1);
+            }
+        }
     }
 
     protected final void internalCleanup() throws Exception {
         try {
+            // if init fails, some of these could be null, and if so would throw
+            // an NPE in shutdown, obscuring the real error
+            if (restServer != null) {
+                restServer.stop();
+                restServer.join();
+            }
             if (admin != null) {
                 admin.close();
             }
@@ -761,7 +774,7 @@ public abstract class KopProtocolHandlerTestBase {
 
     protected Properties newKafkaProducerProperties() {
         final Properties props = new Properties();
-        props.setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
+        props.setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
         props.setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.setProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         return props;
@@ -769,7 +782,7 @@ public abstract class KopProtocolHandlerTestBase {
 
     protected Properties newKafkaConsumerProperties() {
         final Properties props = new Properties();
-        props.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
+        props.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
         props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "my-group");
         props.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
@@ -785,7 +798,7 @@ public abstract class KopProtocolHandlerTestBase {
 
     protected Properties newKafkaAdminClientProperties() {
         final Properties adminProps = new Properties();
-        adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
+        adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
         return adminProps;
     }
 
@@ -808,14 +821,7 @@ public abstract class KopProtocolHandlerTestBase {
         final ReplicaManager replicaManager =
                 handler.getReplicaManager(conf.getKafkaMetadataTenant());
 
-        return handler
-                .getChannelInitializerMap()
-                .values()
-                .stream()
-                .filter(e -> e instanceof KafkaChannelInitializer)
-                .map(f -> ((KafkaChannelInitializer) f))
-                .findFirst()
-                .get()
+        return ((KafkaChannelInitializer) handler.getChannelInitializerMap().entrySet().iterator().next().getValue())
                 .newCnxWithoutStats(new TenantContextManager() {
                     @Override
                     public GroupCoordinator getGroupCoordinator(String tenant) {

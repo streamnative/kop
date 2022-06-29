@@ -22,7 +22,6 @@ import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.Schema;
@@ -37,8 +36,9 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
-import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Factory;
+import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 /**
@@ -47,10 +47,18 @@ import org.testng.annotations.Test;
 @Slf4j
 public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
 
-    protected String bootstrapServers;
+    private String bootstrapServers;
 
-    public SchemaRegistryTest() {
-        super("pulsar");
+    public SchemaRegistryTest(final String entryFormat) {
+        super(entryFormat);
+    }
+
+    @Factory
+    public static Object[] instances() {
+        return new Object[] {
+                new SchemaRegistryTest("pulsar"),
+                new SchemaRegistryTest("kafka")
+        };
     }
 
     @BeforeMethod
@@ -61,7 +69,7 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
         bootstrapServers = "localhost:" + getKafkaBrokerPort();
     }
 
-    @AfterMethod(alwaysRun = true)
+    @BeforeMethod
     @Override
     protected void cleanup() throws Exception {
         this.internalCleanup();
@@ -97,29 +105,25 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
         return new KafkaConsumer<>(props);
     }
 
-    @Test(timeOut = 120000)
-    public void testAvroProduceAndConsume() throws Throwable {
+    @Ignore
+    @Test(timeOut = 40000)
+    public void testAvroProduceAndConsume() throws Exception {
         String topic = "SchemaRegistryTest-testAvroProduceAndConsume";
         IndexedRecord avroRecord = createAvroRecord();
-        Object[] objects = new Object[]{avroRecord, true, 130, 345L, 1.23f, 2.34d, "abc", "def".getBytes()};
+        Object[] objects = new Object[]{ avroRecord, true, 130, 345L, 1.23f, 2.34d, "abc", "def".getBytes() };
         @Cleanup
         KafkaProducer<Integer, Object> producer = createAvroProducer();
         for (int i = 0; i < objects.length; i++) {
             final Object object = objects[i];
-            log.info("Sending {}", object);
             producer.send(new ProducerRecord<>(topic, i, object), (metadata, e) -> {
                 if (e != null) {
                     log.error("Failed to send {}: {}", object, e.getMessage());
                     fail("Failed to send " + object + ": " + e.getMessage());
-                } else {
-                    log.info("Success send {} to {}-partition-{}@{}",
-                            object, metadata.topic(), metadata.partition(), metadata.offset());
                 }
-            }).get(10, TimeUnit.SECONDS);
-            log.info("Success send final {}", object);
+                log.info("Success send {} to {}-partition-{}@{}",
+                        object, metadata.topic(), metadata.partition(), metadata.offset());
+            });
         }
-        producer.close();
-        log.info("finished sending");
 
         @Cleanup
         KafkaConsumer<Integer, Object> consumer = createAvroConsumer();
@@ -132,6 +136,5 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
                 i++;
             }
         }
-        consumer.close();
     }
 }
