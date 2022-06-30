@@ -608,7 +608,7 @@ public class TransactionStateManager {
     }
 
     public int partitionFor(String transactionalId) {
-        return Utils.abs(transactionalId.hashCode()) % transactionTopicPartitionCount;
+        return TransactionCoordinator.partitionFor(transactionalId, transactionTopicPartitionCount);
     }
 
     /**
