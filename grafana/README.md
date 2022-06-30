@@ -16,7 +16,7 @@ A Prometheus data source needs to be [added](https://prometheus.io/docs/visualiz
 
 In the Grafana UI complete the following steps:
 
-1. Use the *New Dashboard* button and click *Import*.
+1. Click **New Dashboard** and then click **Import**.
 2. Upload `dashboard.json` or copy and paste the contents of the file in the textbox and click *Load*.
 3. Set the Prometheus data source and click *Import*.
 4. The dashboard will appear. 
