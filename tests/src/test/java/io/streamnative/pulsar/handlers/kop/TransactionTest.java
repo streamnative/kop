@@ -56,6 +56,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
+        this.conf.setDefaultNumberOfNamespaceBundles(4);
+        this.conf.setOffsetsTopicNumPartitions(50);
+        this.conf.setKafkaTxnLogTopicNumPartitions(50);
         this.conf.setKafkaTransactionCoordinatorEnabled(true);
         this.conf.setBrokerDeduplicationEnabled(true);
         super.internalSetup();
@@ -85,6 +88,14 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 1000 * 10, dataProvider = "produceConfigProvider")
     public void readUncommittedTest(boolean isBatch) throws Exception {
         basicProduceAndConsumeTest("read-uncommitted-test", "txn-12", "read_uncommitted", isBatch);
+    }
+
+    @Test(timeOut = 1000 * 10)
+    public void testInitTransaction() {
+        final KafkaProducer<Integer, String> producer = buildTransactionProducer("prod-1");
+
+        producer.initTransactions();
+        producer.close();
     }
 
     public void basicProduceAndConsumeTest(String topicName,
