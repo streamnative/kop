@@ -45,7 +45,6 @@ import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.Reader;
@@ -608,7 +607,7 @@ public class TransactionStateManager {
     }
 
     public int partitionFor(String transactionalId) {
-        return Utils.abs(transactionalId.hashCode()) % transactionTopicPartitionCount;
+        return TransactionCoordinator.partitionFor(transactionalId, transactionTopicPartitionCount);
     }
 
     /**
