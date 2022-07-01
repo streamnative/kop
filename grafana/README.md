@@ -14,7 +14,7 @@ A Prometheus data source needs to be [added](https://prometheus.io/docs/visualiz
 
 ## Installing the Dashboard
 
-In the Grafana UI complete the following steps:
+To install the Grafana Dashboard, follow these steps in the Grafana UI:
 
 1.  Click **New Dashboard** and then click **Import**.
 2.  Upload the `dashboard.json` JSON file or copy and paste the contents of the file in the textbox and then click **Load**.
