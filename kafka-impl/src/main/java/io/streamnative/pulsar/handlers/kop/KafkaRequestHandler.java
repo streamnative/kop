@@ -910,26 +910,29 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         String pulsarTopicName;
         int partition;
-
+        CompletableFuture<Void> storeGroupIdFuture;
         if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.TRANSACTION) {
             TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
             partition = transactionCoordinator.partitionFor(request.coordinatorKey());
             pulsarTopicName = transactionCoordinator.getTopicPartitionName(partition);
+            storeGroupIdFuture = CompletableFuture.completedFuture(null);
         } else if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
             partition = getGroupCoordinator().partitionFor(request.coordinatorKey());
             pulsarTopicName = getGroupCoordinator().getTopicPartitionName(partition);
+            String groupId = request.coordinatorKey();
+            String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
+                    findCoordinator.getHeader().clientId());
+            currentConnectedClientId.add(findCoordinator.getHeader().clientId());
+
+            // Store group name to metadata store for current client, use to collect consumer metrics.
+            storeGroupIdFuture = storeGroupId(groupId, groupIdPath);
         } else {
             throw new NotImplementedException("FindCoordinatorRequest not support unknown type "
                 + request.coordinatorType());
         }
 
-        String groupId = request.coordinatorKey();
-        String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
-                findCoordinator.getHeader().clientId());
-        currentConnectedClientId.add(findCoordinator.getHeader().clientId());
-
         // Store group name to metadata store for current client, use to collect consumer metrics.
-        storeGroupId(groupId, groupIdPath)
+        storeGroupIdFuture
                 .whenComplete((__, ex) -> {
                     if (ex != null) {
                         log.warn("Store groupId failed, the groupId might already stored.", ex);
