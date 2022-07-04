@@ -40,9 +40,14 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.serialization.IntegerSerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.zookeeper.KeeperException;
 import org.awaitility.Awaitility;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
@@ -58,6 +63,11 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
     @BeforeMethod
     @Override
     protected void setup() throws Exception {
+        this.conf.setDefaultNumberOfNamespaceBundles(4);
+        this.conf.setOffsetsTopicNumPartitions(50);
+        this.conf.setKafkaTxnLogTopicNumPartitions(50);
+        this.conf.setKafkaTransactionCoordinatorEnabled(true);
+        this.conf.setBrokerDeduplicationEnabled(true);
         super.internalSetup();
         log.info("success internal setup");
     }
@@ -279,6 +289,25 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
             List<String> children1 = mockZooKeeper.getChildren(conf.getGroupIdZooKeeperPath(), false);
             Assert.assertEquals(children1.size(), 0);
         });
+    }
+
+    @Test(timeOut = 20000, expectedExceptions = KeeperException.NoNodeException.class)
+    public void testFindTransactionCoordinatorShouldNotStoreGroupId() throws Exception {
+        String kafkaServer = "localhost:" + getKafkaBrokerPort();
+
+        Properties producerProps = new Properties();
+        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
+        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
+        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
+        producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "transactionalId-1");
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
+
+        producer.initTransactions();
+        producer.beginTransaction();
+        mockZooKeeper.getChildren(conf.getGroupIdZooKeeperPath(), false);
     }
 
     private void tryConsume(final String topic,
