@@ -101,26 +101,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.close();
     }
 
-    @Test
-    public void testEndTransactionAndDeleteTopic() throws ExecutionException, InterruptedException {
-        final String topic = "my-topic";
-
-        @Cleanup
-        final AdminClient admin = AdminClient.create(Collections.singletonMap(
-                AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, getKafkaServerAdder()));
-
-        admin.createTopics(Collections.singleton(new NewTopic(topic, 1, (short) 1))).all().get();
-
-        final KafkaProducer<Integer, String> producer = buildTransactionProducer("X0");
-        producer.initTransactions();
-        producer.beginTransaction();
-        producer.send(new ProducerRecord<>(topic, "hello"));
-        producer.commitTransaction();
-        producer.close();
-
-        admin.deleteTopics(Collections.singleton(topic)).all().get();
-    }
-
     public void basicProduceAndConsumeTest(String topicName,
                                            String transactionalId,
                                            String isolation,
@@ -364,6 +344,14 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         addCustomizeProps(producerProps);
         return new KafkaProducer<>(producerProps);
+    }
+
+    private AdminClient buildAdminClient() {
+        Properties producerProps = new Properties();
+        producerProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, getKafkaServerAdder());
+
+        addCustomizeProps(producerProps);
+        return AdminClient.create(producerProps);
     }
 
     /**

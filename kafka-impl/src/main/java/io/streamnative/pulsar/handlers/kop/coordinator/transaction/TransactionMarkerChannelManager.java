@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -79,6 +80,9 @@ public class TransactionMarkerChannelManager {
     private Map<InetSocketAddress, CompletableFuture<TransactionMarkerChannelHandler>> handlerMap = new HashMap<>();
 
     private TransactionStateManager txnStateManager;
+
+    @Getter
+    @VisibleForTesting
     private ConcurrentHashMap<String, PendingCompleteTxn> transactionsWithPendingMarkers = new ConcurrentHashMap<>();
     private Map<InetSocketAddress, TxnMarkerQueue> markersQueuePerBroker = new ConcurrentHashMap<>();
     private TxnMarkerQueue markersQueueForUnknownBroker = new TxnMarkerQueue(null);
@@ -92,8 +96,9 @@ public class TransactionMarkerChannelManager {
     private Authentication authentication;
 
     @AllArgsConstructor
+    @Getter
     @ToString
-    private static class PendingCompleteTxn {
+    protected static class PendingCompleteTxn {
         private final String transactionalId;
         private final Integer coordinatorEpoch;
         private final TransactionMetadata txnMetadata;
@@ -244,11 +249,14 @@ public class TransactionMarkerChannelManager {
 
     public void maybeWriteTxnCompletion(String transactionalId) {
         ensureDrainQueuedTransactionMarkersActivity();
-        PendingCompleteTxn pendingCompleteTxn = transactionsWithPendingMarkers.get(transactionalId);
-        if (!hasPendingMarkersToWrite(pendingCompleteTxn.txnMetadata)
-                && transactionsWithPendingMarkers.remove(transactionalId, pendingCompleteTxn)) {
-            writeTxnCompletion(pendingCompleteTxn);
-        }
+        Optional<PendingCompleteTxn> pendingCompleteTxnOpt =
+                Optional.ofNullable(transactionsWithPendingMarkers.get(transactionalId));
+        pendingCompleteTxnOpt.ifPresent(pendingCompleteTxn -> {
+            if (!hasPendingMarkersToWrite(pendingCompleteTxn.txnMetadata)
+                    && transactionsWithPendingMarkers.remove(transactionalId, pendingCompleteTxn)) {
+                writeTxnCompletion(pendingCompleteTxn);
+            }
+        });
     }
 
     public void addTxnMarkersToBrokerQueue(String transactionalId,
@@ -522,7 +530,7 @@ public class TransactionMarkerChannelManager {
         }
     }
 
-    private synchronized void ensureDrainQueuedTransactionMarkersActivity() {
+    protected synchronized void ensureDrainQueuedTransactionMarkersActivity() {
         if (drainQueuedTransactionMarkersHandle != null || closed) {
             return;
         }
