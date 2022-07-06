@@ -37,7 +37,7 @@ NULL value| NULL value |If the field of a Pulsar message is NULL, the converted 
 Kafka|Pulsar|Note
 |---|---|---
 `Key`|Ordering key and partition key |If a Kafka message has a `key`, both  `ordering key` and `partition key` are set for the converted Pulsar message.<br><br> If a Kafka message does not have a `key`, both `ordering key` and `partition key` are **not set** for the converted Pulsar message.
-`Timestamp`|Event time and publish time |If a Kafka message has a `timestamp`, both  `event time` and `publish time` are set for the converted Pulsar message.<br><br> If a Kafka message does not have a `timestamp`, both `event time` and `publish time` are **not set** for the converted Pulsar message.
+`Timestamp`|Event time and publish time |If a Kafka message has a `timestamp`, both  `event time` and `publish time` are set for the converted Pulsar message.<br><br> If a Kafka message does not have a `timestamp`, `event time` is **not set** for the converted Pulsar message, and `publish time` is set to the current system time.
 NULL value|NULL value| If the field of a Kafka message is NULL, the converted Pulsar message is NULL.
 
 ## Message ID and offset
