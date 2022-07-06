@@ -128,8 +128,13 @@ public class KopBrokerLookupManager {
                     return null;
                 })
                 .exceptionally(throwable -> {
-                    if (throwable.getCause() instanceof PulsarAdminException.NotFoundException) {
+                    Throwable cause = throwable.getCause();
+                    if (cause instanceof PulsarAdminException.NotFoundException) {
                         future.complete(false);
+                    } else {
+                        // Retry when the exception is others exception.
+                        log.error("Get partitioned topic metadata has exception.", cause);
+                        future.complete(true);
                     }
                     return null;
                 });
