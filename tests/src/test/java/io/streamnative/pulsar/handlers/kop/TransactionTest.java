@@ -28,6 +28,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -96,6 +99,26 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         producer.initTransactions();
         producer.close();
+    }
+
+    @Test
+    public void testEndTransactionAndDeleteTopic() throws ExecutionException, InterruptedException {
+        final String topic = "my-topic";
+
+        @Cleanup
+        final AdminClient admin = AdminClient.create(Collections.singletonMap(
+                AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, getKafkaServerAdder()));
+
+        admin.createTopics(Collections.singleton(new NewTopic(topic, 1, (short) 1))).all().get();
+
+        final KafkaProducer<Integer, String> producer = buildTransactionProducer("X0");
+        producer.initTransactions();
+        producer.beginTransaction();
+        producer.send(new ProducerRecord<>(topic, "hello"));
+        producer.commitTransaction();
+        producer.close();
+
+        admin.deleteTopics(Collections.singleton(topic)).all().get();
     }
 
     public void basicProduceAndConsumeTest(String topicName,
@@ -306,10 +329,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     private KafkaProducer<Integer, String> buildTransactionProducer(String transactionalId) {
-        String kafkaServer = "localhost:" + getKafkaBrokerPort();
-
         Properties producerProps = new Properties();
-        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
+        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, getKafkaServerAdder());
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
@@ -320,10 +341,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     private KafkaConsumer<Integer, String> buildTransactionConsumer(String groupId, String isolation) {
-        String kafkaServer = "localhost:" + getKafkaBrokerPort();
-
         Properties consumerProps = new Properties();
-        consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
+        consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, getKafkaServerAdder());
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, IntegerDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
@@ -336,10 +355,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     private KafkaProducer<Integer, String> buildIdempotenceProducer() {
-        String kafkaServer = "localhost:" + getKafkaBrokerPort();
-
         Properties producerProps = new Properties();
-        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
+        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, getKafkaServerAdder());
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
@@ -347,6 +364,13 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         addCustomizeProps(producerProps);
         return new KafkaProducer<>(producerProps);
+    }
+
+    /**
+     * Get the Kafka server address.
+     */
+    private String getKafkaServerAdder() {
+        return "localhost:" + getKafkaBrokerPort();
     }
 
     protected void addCustomizeProps(Properties producerProps) {

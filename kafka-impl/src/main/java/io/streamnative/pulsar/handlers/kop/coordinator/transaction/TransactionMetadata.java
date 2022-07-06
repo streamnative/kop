@@ -368,7 +368,7 @@ public class TransactionMetadata {
                         + "producer epoch {} or previous producer epoch {}",
                         expectedProducerEpoch, producerEpoch, lastProducerEpoch);
                 // TODO the error should be Errors.PRODUCER_FENCED
-                epochBumpResult = new ErrorsAndData<>(Errors.UNKNOWN_SERVER_ERROR);
+                epochBumpResult = new ErrorsAndData<>(Errors.INVALID_PRODUCER_EPOCH);
             }
         }
 
