@@ -221,8 +221,12 @@ public class TransactionCoordinator {
             producerIdManager.generateProducerId().whenComplete((pid, throwable) -> {
                 short producerEpoch = 0;
                 if (throwable != null) {
+                    log.error("Failed to generate producer id for idempotent producer", throwable);
                     responseCallback.accept(new InitProducerIdResult(pid, producerEpoch, Errors.UNKNOWN_SERVER_ERROR));
                     return;
+                }
+                if (log.isDebugEnabled()) {
+                    log.debug("Generate producer id {} for idempotent producer", pid);
                 }
                 responseCallback.accept(new InitProducerIdResult(pid, producerEpoch, Errors.NONE));
             });
@@ -244,13 +248,13 @@ public class TransactionCoordinator {
                     epochAndTxnMetaFuture.complete(existMeta);
                 } else {
                     producerIdManager.generateProducerId().whenComplete((pid, throwable) -> {
-                        short producerEpoch = 0;
                         if (throwable != null) {
-                            responseCallback.accept(new InitProducerIdResult(
-                                    -1L,
-                                    producerEpoch
-                                    , Errors.UNKNOWN_SERVER_ERROR));
+                            log.error("Failed to generate producer id for {}", transactionalId, throwable);
+                            epochAndTxnMetaFuture.complete(null);
                             return;
+                        }
+                        if (log.isDebugEnabled()) {
+                            log.debug("Generate producer id {} for {}", pid, transactionalId);
                         }
                         TransactionMetadata newMetadata = TransactionMetadata.builder()
                                 .transactionalId(transactionalId)
@@ -270,7 +274,12 @@ public class TransactionCoordinator {
             }
 
             epochAndTxnMetaFuture.thenAccept(epochAndTxnMeta -> {
+                if (epochAndTxnMeta == null) {
+                    responseCallback.accept(initTransactionError(Errors.UNKNOWN_SERVER_ERROR));
+                    return;
+                }
                 if (epochAndTxnMeta.hasErrors()) {
+                    log.error("Failed to get epoch and TxnMetadata: {}", epochAndTxnMeta.getErrors());
                     responseCallback.accept(initTransactionError(epochAndTxnMeta.getErrors()));
                     return;
                 }
@@ -302,8 +311,8 @@ public class TransactionCoordinator {
                     responseCallback.accept(initTransactionError(Errors.UNKNOWN_SERVER_ERROR));
                 }
             }).exceptionally(ex -> {
-                log.error("Get epoch and TxnMetadata failed.", ex);
-                responseCallback.accept(initTransactionError(Errors.forException(ex.getCause())));
+                log.error("Unexpected error when processing the CoordinatorEpochAndMetadata", ex);
+                responseCallback.accept(initTransactionError(Errors.UNKNOWN_SERVER_ERROR));
                 return null;
             });
 
@@ -316,6 +325,7 @@ public class TransactionCoordinator {
                                       Throwable prepareInitPidThrowable,
                                       Consumer<InitProducerIdResult> responseCallback) {
         if (errorsAndData.hasErrors()) {
+            log.error("Failed to init producerId: {}", errorsAndData.getErrors());
             responseCallback.accept(initTransactionError(errorsAndData.getErrors()));
             return;
         }
