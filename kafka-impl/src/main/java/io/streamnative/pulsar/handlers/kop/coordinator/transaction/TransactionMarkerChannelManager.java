@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -53,7 +54,6 @@ import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
 import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
-import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.ChannelFutures;
 import org.eclipse.jetty.util.BlockingArrayQueue;
@@ -80,6 +80,9 @@ public class TransactionMarkerChannelManager {
     private Map<InetSocketAddress, CompletableFuture<TransactionMarkerChannelHandler>> handlerMap = new HashMap<>();
 
     private TransactionStateManager txnStateManager;
+
+    @Getter
+    @VisibleForTesting
     private ConcurrentHashMap<String, PendingCompleteTxn> transactionsWithPendingMarkers = new ConcurrentHashMap<>();
     private Map<InetSocketAddress, TxnMarkerQueue> markersQueuePerBroker = new ConcurrentHashMap<>();
     private TxnMarkerQueue markersQueueForUnknownBroker = new TxnMarkerQueue(null);
@@ -93,8 +96,9 @@ public class TransactionMarkerChannelManager {
     private Authentication authentication;
 
     @AllArgsConstructor
+    @Getter
     @ToString
-    private static class PendingCompleteTxn {
+    protected static class PendingCompleteTxn {
         private final String transactionalId;
         private final Integer coordinatorEpoch;
         private final TransactionMetadata txnMetadata;
@@ -245,11 +249,12 @@ public class TransactionMarkerChannelManager {
 
     public void maybeWriteTxnCompletion(String transactionalId) {
         ensureDrainQueuedTransactionMarkersActivity();
-        PendingCompleteTxn pendingCompleteTxn = transactionsWithPendingMarkers.get(transactionalId);
-        if (!hasPendingMarkersToWrite(pendingCompleteTxn.txnMetadata)
-                && transactionsWithPendingMarkers.remove(transactionalId, pendingCompleteTxn)) {
-            writeTxnCompletion(pendingCompleteTxn);
-        }
+        Optional.ofNullable(transactionsWithPendingMarkers.get(transactionalId)).ifPresent(pendingCompleteTxn -> {
+            if (!hasPendingMarkersToWrite(pendingCompleteTxn.txnMetadata)
+                    && transactionsWithPendingMarkers.remove(transactionalId, pendingCompleteTxn)) {
+                writeTxnCompletion(pendingCompleteTxn);
+            }
+        });
     }
 
     public void addTxnMarkersToBrokerQueue(String transactionalId,
@@ -269,32 +274,80 @@ public class TransactionMarkerChannelManager {
         for (TopicPartition topicPartition : topicPartitions) {
             String pulsarTopic = new KopTopic(topicPartition.topic(), namespacePrefixForUserTopics)
                     .getPartitionName(topicPartition.partition());
-            CompletableFuture<Optional<InetSocketAddress>> addressFuture =
-                    kopBrokerLookupManager.findBroker(TopicName.get(pulsarTopic), sslEndPoint);
             CompletableFuture<Void> addFuture = new CompletableFuture<>();
             addressFutureList.add(addFuture);
-            addressFuture.whenComplete((address, throwable) -> {
-                if (throwable != null) {
-                    log.warn("Failed to find broker for topic partition {}", topicPartition, throwable);
-                    unknownBrokerTopicList.add(topicPartition);
-                    addFuture.completeExceptionally(throwable);
-                    return;
-                }
-                if (!address.isPresent()) {
-                    log.warn("No address for broker for topic partition {}", topicPartition);
-                    unknownBrokerTopicList.add(topicPartition);
-                    addFuture.completeExceptionally(new Exception("no address for owner of " + topicPartition));
-                    return;
-                }
-                addressAndPartitionMap.compute(address.get(), (__, set) -> {
-                    if (set == null) {
-                        set = new ArrayList<>();
-                    }
-                    set.add(topicPartition);
-                    return set;
-                });
-                addFuture.complete(null);
-            });
+            kopBrokerLookupManager.isTopicExists(pulsarTopic)
+                    .thenAccept(isTopicExists -> {
+                        if (!isTopicExists) {
+                            ErrorsAndData<Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>>
+                                    transactionState = txnStateManager.getTransactionState(transactionalId);
+                            if (transactionState.hasErrors()) {
+                                log.info("Encountered {} trying to fetch transaction metadata for {} with coordinator "
+                                                + "epoch {}; cancel sending markers to its partition leaders"
+                                , transactionState.getErrors(), transactionalId, coordinatorEpoch);
+                                transactionsWithPendingMarkers.remove(transactionalId);
+                                addFuture.complete(null);
+                                return;
+                            }
+                            Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata> epochAndTxnMetadata =
+                                    transactionState.getData();
+                            if (epochAndTxnMetadata.isPresent()) {
+                                if (!coordinatorEpoch.equals(epochAndTxnMetadata.get().getCoordinatorEpoch())) {
+                                    log.info("The cached metadata has changed to {} (old coordinator epoch is {}) "
+                                                    + "since preparing to send markers; "
+                                                    + "cancel sending markers to its partition leaders",
+                                            epochAndTxnMetadata, coordinatorEpoch);
+                                    transactionsWithPendingMarkers.remove(transactionalId);
+                                } else {
+                                    log.info("Couldn't find leader endpoint for partitions {} while trying "
+                                                    + "to send transaction markers for {}, these partitions are "
+                                                    + "likely deleted already and hence can be skipped",
+                                            topicPartition, transactionalId);
+                                    TransactionMetadata txnMetadata =
+                                            epochAndTxnMetadata.get().getTransactionMetadata();
+                                    txnMetadata.inLock(() -> {
+                                        topicPartitions.forEach(txnMetadata::removePartition);
+                                        return null;
+                                    });
+                                    maybeWriteTxnCompletion(transactionalId);
+                                }
+                            } else {
+                                log.error("The coordinator still owns "
+                                        + "the transaction partition for {}, but there is no metadata in the cache; "
+                                        + "this is not expected", transactionalId);
+                                addFuture.complete(null);
+                                return;
+                            }
+                            addFuture.complete(null);
+                            return;
+                        }
+
+                        CompletableFuture<Optional<InetSocketAddress>> addressFuture =
+                                kopBrokerLookupManager.findBroker(pulsarTopic, sslEndPoint);
+
+                        addressFuture.whenComplete((address, throwable) -> {
+                            if (throwable != null) {
+                                log.warn("Failed to find broker for topic partition {}", topicPartition, throwable);
+                                unknownBrokerTopicList.add(topicPartition);
+                                addFuture.complete(null);
+                                return;
+                            }
+                            if (!address.isPresent()) {
+                                log.warn("No address for broker for topic partition {}", topicPartition);
+                                unknownBrokerTopicList.add(topicPartition);
+                                addFuture.complete(null);
+                                return;
+                            }
+                            addressAndPartitionMap.compute(address.get(), (__, set) -> {
+                                if (set == null) {
+                                    set = new ArrayList<>();
+                                }
+                                set.add(topicPartition);
+                                return set;
+                            });
+                            addFuture.complete(null);
+                        });
+                    });
         }
         FutureUtil.waitForAll(addressFutureList).whenComplete((ignored, throwable) -> {
             addressAndPartitionMap.forEach((address, partitions) -> {
