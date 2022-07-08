@@ -18,6 +18,7 @@ import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.Dead;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.PreparingRebalance;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.MoreObjects.ToStringHelper;
 import com.google.common.base.Supplier;
@@ -661,7 +662,7 @@ public class GroupMetadata {
                 .map(e -> e.offsetAndMetadata);
     }
 
-    // visible for testing
+    @VisibleForTesting
     Optional<CommitRecordMetadataAndOffset> offsetWithRecordMetadata(TopicPartition topicPartition) {
         return Optional.ofNullable(offsets.get(topicPartition));
     }
