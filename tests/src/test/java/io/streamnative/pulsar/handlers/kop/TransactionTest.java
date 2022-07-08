@@ -306,10 +306,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     private KafkaProducer<Integer, String> buildTransactionProducer(String transactionalId) {
-        String kafkaServer = "localhost:" + getKafkaBrokerPort();
-
         Properties producerProps = new Properties();
-        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
+        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, getKafkaServerAdder());
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
@@ -320,10 +318,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     private KafkaConsumer<Integer, String> buildTransactionConsumer(String groupId, String isolation) {
-        String kafkaServer = "localhost:" + getKafkaBrokerPort();
-
         Properties consumerProps = new Properties();
-        consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
+        consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, getKafkaServerAdder());
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, IntegerDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
@@ -336,10 +332,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     private KafkaProducer<Integer, String> buildIdempotenceProducer() {
-        String kafkaServer = "localhost:" + getKafkaBrokerPort();
-
         Properties producerProps = new Properties();
-        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
+        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, getKafkaServerAdder());
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
@@ -347,6 +341,13 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         addCustomizeProps(producerProps);
         return new KafkaProducer<>(producerProps);
+    }
+
+    /**
+     * Get the Kafka server address.
+     */
+    private String getKafkaServerAdder() {
+        return "localhost:" + getKafkaBrokerPort();
     }
 
     protected void addCustomizeProps(Properties producerProps) {
