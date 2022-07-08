@@ -344,13 +344,13 @@ public class GroupMetadata {
 
     private void assertValidTransition(GroupState targetState) {
         if (!validPreviousStates.get(targetState).contains(state)) {
-            throw new IllegalStateException(("Group %s should be in the %s states before moving"
-                + " to %s state. Instead it is in %s state"
-            ).format(
-                groupId,
-                StringUtils.join(validPreviousStates.get(targetState), ","),
-                targetState,
-                state));
+            throw new IllegalStateException(String.format(
+                    "Group %s should be in the %s states before moving"
+                            + " to %s state. Instead it is in %s state",
+                    groupId,
+                    StringUtils.join(validPreviousStates.get(targetState), ","),
+                    targetState,
+                    state));
         }
     }
 
