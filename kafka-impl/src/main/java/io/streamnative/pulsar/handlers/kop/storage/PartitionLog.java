@@ -21,7 +21,6 @@ import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.MessagePublishContext;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
-import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
 import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
@@ -40,15 +39,10 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.ManagedLedger;
-import org.apache.bookkeeper.mledger.ManagedLedgerException;
-import org.apache.bookkeeper.mledger.Position;
 import org.apache.commons.compress.utils.Lists;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
-import org.apache.kafka.common.errors.KafkaStorageException;
-import org.apache.kafka.common.errors.NotLeaderForPartitionException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.CompressionType;
@@ -265,16 +259,8 @@ public class PartitionLog {
         final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
         final long beforePublish = time.nanoseconds();
 
-        CompletableFuture<Long> offsetFuture;
-
-        // For control message we don't need to check deduplication.
-        if (appendInfo.isControlBatch()) {
-            offsetFuture = publishControlMessage(persistentTopic, byteBuf, numMessages);
-        } else {
-            offsetFuture = publishNormalMessage(persistentTopic, byteBuf, appendInfo);
-        }
-
-        offsetFuture.whenComplete((offset, e) -> {
+        publishMessage(persistentTopic, byteBuf, appendInfo)
+                .whenComplete((offset, e) -> {
             appendRecordsContext.getCompleteSendOperationForThrottling().accept(byteBuf.readableBytes());
 
             if (e == null) {
@@ -311,16 +297,17 @@ public class PartitionLog {
     }
 
     /**
-     * publish a non-control message, it will check the message deduplication.
+     * Publish message to bookkeeper.
+     * When the message is control message, then it will not do the message deduplication.
      *
      * @param persistentTopic The persistentTopic, use to publish message and check message deduplication.
      * @param byteBuf Message byteBuf
      * @param appendInfo Pre-analyzed recode info, we can get sequence, message num ...
      * @return offset
      */
-    private CompletableFuture<Long> publishNormalMessage(final PersistentTopic persistentTopic,
-                                                         final ByteBuf byteBuf,
-                                                         final LogAppendInfo appendInfo) {
+    private CompletableFuture<Long> publishMessage(final PersistentTopic persistentTopic,
+                                                   final ByteBuf byteBuf,
+                                                   final LogAppendInfo appendInfo) {
         final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
 
         // This producerName is only used to check the message deduplication.
@@ -337,55 +324,11 @@ public class PartitionLog {
                         offsetFuture,
                         persistentTopic,
                         producerName,
-                        appendInfo.producerId().isPresent(),
+                        appendInfo.producerId().isPresent() && !appendInfo.isControlBatch(),
                         appendInfo.firstSequence(),
                         appendInfo.lastSequence(),
                         appendInfo.numMessages(),
                         time.nanoseconds()));
-        return offsetFuture;
-    }
-
-    /**
-     * Publish a control message, this method will not check message deduplication.
-     * Because control messages don't have a sequence number.
-     *
-     * @param persistentTopic Use to get managed ledger.
-     * @param byteBuf Message byteBuf.
-     * @param numMessages message number.
-     * @return offset
-     */
-    private CompletableFuture<Long> publishControlMessage(final PersistentTopic persistentTopic,
-                                                          final ByteBuf byteBuf,
-                                                          final int numMessages) {
-        final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
-
-        persistentTopic.getManagedLedger().asyncAddEntry(byteBuf, numMessages, new AsyncCallbacks.AddEntryCallback() {
-            @Override
-            public void addComplete(Position position, ByteBuf entryData, Object ctx) {
-                long baseOffset;
-                try {
-                    baseOffset = MessageMetadataUtils.peekBaseOffset(entryData, numMessages);
-                } catch (MetadataCorruptedException e) {
-                    offsetFuture.completeExceptionally(e);
-                    return;
-                }
-                offsetFuture.complete(baseOffset);
-            }
-
-            @Override
-            public void addFailed(ManagedLedgerException exception, Object ctx) {
-                if (exception instanceof ManagedLedgerException.ManagedLedgerAlreadyClosedException
-                        || exception instanceof ManagedLedgerException.ManagedLedgerTerminatedException
-                        || exception instanceof ManagedLedgerException.ManagedLedgerFencedException) {
-                    log.warn("[{}] Failed to publish control message: {}",
-                            persistentTopic.getName(), exception.getMessage());
-                    offsetFuture.completeExceptionally(new NotLeaderForPartitionException());
-                } else {
-                    log.error("[{}] Failed to publish control message", persistentTopic.getName(), exception);
-                    offsetFuture.completeExceptionally(new KafkaStorageException(exception));
-                }
-            }
-        }, null);
         return offsetFuture;
     }
 
