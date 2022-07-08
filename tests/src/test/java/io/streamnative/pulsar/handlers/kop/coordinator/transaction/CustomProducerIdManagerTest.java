@@ -119,6 +119,7 @@ public class CustomProducerIdManagerTest extends KopProtocolHandlerTestBase {
 
         @Override
         public void shutdown() {
+            // No ops
         }
     }
 
