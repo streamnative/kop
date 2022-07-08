@@ -202,8 +202,8 @@ public final class GroupMetadataConstants {
         return Lists.newArrayList(kvs)
             .stream()
             .collect(Collectors.toMap(
-                e -> e.getKey(),
-                e -> e.getValue()
+                    KeyValue::getKey,
+                    KeyValue::getValue
             ));
     }
 
@@ -310,7 +310,7 @@ public final class GroupMetadataConstants {
         value.set(PROTOCOL_KEY, groupMetadata.protocolOrNull());
         value.set(LEADER_KEY, groupMetadata.leaderOrNull());
 
-        List<Struct> memberStructs = groupMetadata.allMemberMetadata().stream().map(memberMetadata -> {
+        value.set(MEMBERS_KEY, groupMetadata.allMemberMetadata().stream().map(memberMetadata -> {
             Struct memberStruct = value.instance(MEMBERS_KEY);
             memberStruct.set(MEMBER_ID_KEY, memberMetadata.memberId());
             memberStruct.set(CLIENT_ID_KEY, memberMetadata.clientId());
@@ -332,15 +332,13 @@ public final class GroupMetadataConstants {
 
             byte[] memberAssignment = assignment.get(memberMetadata.memberId());
             checkState(
-                memberAssignment != null,
-                "Member assignment is null for member %s", memberMetadata.memberId());
+                    memberAssignment != null,
+                    "Member assignment is null for member %s", memberMetadata.memberId());
 
             memberStruct.set(ASSIGNMENT_KEY, ByteBuffer.wrap(memberAssignment));
 
             return memberStruct;
-        }).collect(Collectors.toList());
-
-        value.set(MEMBERS_KEY, memberStructs.toArray());
+        }).toArray());
 
         ByteBuffer byteBuffer = ByteBuffer.allocate(2 /* version */ + value.sizeOf());
         byteBuffer.putShort(version);

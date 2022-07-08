@@ -25,7 +25,7 @@ class DelayedHeartbeat extends DelayedOperation {
     private final GroupCoordinator coordinator;
     private final GroupMetadata group;
     private final MemberMetadata member;
-    private long heartbeatDeadline;
+    private final long heartbeatDeadline;
 
     DelayedHeartbeat(GroupCoordinator coordinator,
                      GroupMetadata group,
@@ -52,7 +52,7 @@ class DelayedHeartbeat extends DelayedOperation {
 
     @Override
     public boolean tryComplete() {
-        return coordinator.tryCompleteHeartbeat(group, member, heartbeatDeadline, () -> forceComplete());
+        return coordinator.tryCompleteHeartbeat(group, member, heartbeatDeadline, this::forceComplete);
     }
 
 }
