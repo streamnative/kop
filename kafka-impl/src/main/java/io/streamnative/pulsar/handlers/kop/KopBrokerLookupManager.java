@@ -123,20 +123,16 @@ public class KopBrokerLookupManager {
     public CompletableFuture<Boolean> isTopicExists(final String topic) {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
         this.adminClient.topics().getPartitionedTopicMetadataAsync(topic)
-                .thenApply(__ -> {
-                    future.complete(true);
-                    return null;
-                })
-                .exceptionally(throwable -> {
-                    Throwable cause = throwable.getCause();
-                    if (cause instanceof PulsarAdminException.NotFoundException) {
-                        future.complete(false);
-                    } else {
+                .whenComplete((__, ex) -> {
+                    if (ex != null) {
+                        if (ex instanceof PulsarAdminException.NotFoundException) {
+                            future.complete(false);
+                            return;
+                        }
                         // Retry when the exception is others exception.
-                        log.error("Get partitioned topic metadata has exception.", cause);
-                        future.complete(true);
+                        log.error("Get partitioned topic metadata has exception.", ex);
                     }
-                    return null;
+                    future.complete(true);
                 });
         return future;
     }

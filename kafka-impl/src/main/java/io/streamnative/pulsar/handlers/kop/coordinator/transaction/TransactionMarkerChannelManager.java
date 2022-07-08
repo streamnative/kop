@@ -249,9 +249,7 @@ public class TransactionMarkerChannelManager {
 
     public void maybeWriteTxnCompletion(String transactionalId) {
         ensureDrainQueuedTransactionMarkersActivity();
-        Optional<PendingCompleteTxn> pendingCompleteTxnOpt =
-                Optional.ofNullable(transactionsWithPendingMarkers.get(transactionalId));
-        pendingCompleteTxnOpt.ifPresent(pendingCompleteTxn -> {
+        Optional.ofNullable(transactionsWithPendingMarkers.get(transactionalId)).ifPresent(pendingCompleteTxn -> {
             if (!hasPendingMarkersToWrite(pendingCompleteTxn.txnMetadata)
                     && transactionsWithPendingMarkers.remove(transactionalId, pendingCompleteTxn)) {
                 writeTxnCompletion(pendingCompleteTxn);
@@ -314,11 +312,10 @@ public class TransactionMarkerChannelManager {
                                     maybeWriteTxnCompletion(transactionalId);
                                 }
                             } else {
-                                String errorMsg = String.format("The coordinator still owns "
-                                        + "the transaction partition for %s, but there is no metadata in the cache; "
+                                log.error("The coordinator still owns "
+                                        + "the transaction partition for {}, but there is no metadata in the cache; "
                                         + "this is not expected", transactionalId);
-                                log.error(errorMsg);
-                                addFuture.completeExceptionally(new IllegalArgumentException(errorMsg));
+                                addFuture.complete(null);
                                 return;
                             }
                             addFuture.complete(null);
@@ -332,14 +329,13 @@ public class TransactionMarkerChannelManager {
                             if (throwable != null) {
                                 log.warn("Failed to find broker for topic partition {}", topicPartition, throwable);
                                 unknownBrokerTopicList.add(topicPartition);
-                                addFuture.completeExceptionally(throwable);
+                                addFuture.complete(null);
                                 return;
                             }
                             if (!address.isPresent()) {
                                 log.warn("No address for broker for topic partition {}", topicPartition);
                                 unknownBrokerTopicList.add(topicPartition);
-                                addFuture.completeExceptionally(
-                                        new Exception("no address for owner of " + topicPartition));
+                                addFuture.complete(null);
                                 return;
                             }
                             addressAndPartitionMap.compute(address.get(), (__, set) -> {
@@ -530,7 +526,7 @@ public class TransactionMarkerChannelManager {
         }
     }
 
-    protected synchronized void ensureDrainQueuedTransactionMarkersActivity() {
+    private synchronized void ensureDrainQueuedTransactionMarkersActivity() {
         if (drainQueuedTransactionMarkersHandle != null || closed) {
             return;
         }
