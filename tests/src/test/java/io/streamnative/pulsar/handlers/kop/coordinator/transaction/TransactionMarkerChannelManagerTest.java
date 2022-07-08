@@ -49,11 +49,6 @@ public class TransactionMarkerChannelManagerTest {
     private OrderedScheduler scheduler;
     private final MockTime time = new MockTime();
     private final Set<TopicPartition> partitions = Sets.newHashSet(new TopicPartition("topic1", 0));
-    private final String transactionalId = "known";
-    private final long producerId = 10L;
-    private final short producerEpoch = 1;
-    private final int txnTimeoutMs = 1;
-    private final int coordinatorEpoch = 0;
 
     @BeforeMethod
     public void setUp() throws Exception {
@@ -91,6 +86,10 @@ public class TransactionMarkerChannelManagerTest {
     @Test(dataProvider = "isTopicExistsList")
     public void testTopicDeletedBeforeWriteMarker(boolean isTopicExists) {
         when(kopBrokerLookupManager.isTopicExists(any())).thenReturn(CompletableFuture.completedFuture(isTopicExists));
+        String transactionalId = "known";
+        long producerId = 10L;
+        short producerEpoch = 1;
+        int txnTimeoutMs = 1;
         TransactionMetadata txnMetadata = TransactionMetadata.builder()
                 .transactionalId(transactionalId)
                 .producerId(producerId)
@@ -115,6 +114,7 @@ public class TransactionMarkerChannelManagerTest {
                 .txnLastUpdateTimestamp(time.milliseconds())
                 .build();
 
+        int coordinatorEpoch = 0;
         TransactionStateManager.CoordinatorEpochAndTxnMetadata epochAndTxnMetadata =
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata);
         when(txnStateManager.getTransactionState(transactionalId))

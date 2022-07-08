@@ -111,7 +111,6 @@ public class ReplicaManager {
                         .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
                                 new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
                         .exceptionally(ex -> {
-                            log.error("Unexpected error when append records.", ex);
                             addPartitionResponse.accept(topicPartition,
                                     new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
                             return null;
