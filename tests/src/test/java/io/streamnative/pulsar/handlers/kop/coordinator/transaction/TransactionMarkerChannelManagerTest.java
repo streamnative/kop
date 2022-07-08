@@ -17,7 +17,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
-import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.assertEquals;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
@@ -32,6 +32,7 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 /**
@@ -82,9 +83,14 @@ public class TransactionMarkerChannelManagerTest {
         txnStateManager = null;
     }
 
-    @Test
-    public void testTopicDeletedBeforeWriteMarker() {
-        when(kopBrokerLookupManager.isTopicExists(any())).thenReturn(CompletableFuture.completedFuture(false));
+    @DataProvider
+    public static Object[] isTopicExistsList() {
+        return new Object[] {true, false};
+    }
+
+    @Test(dataProvider = "isTopicExistsList")
+    public void testTopicDeletedBeforeWriteMarker(boolean isTopicExists) {
+        when(kopBrokerLookupManager.isTopicExists(any())).thenReturn(CompletableFuture.completedFuture(isTopicExists));
         TransactionMetadata txnMetadata = TransactionMetadata.builder()
                 .transactionalId(transactionalId)
                 .producerId(producerId)
@@ -120,7 +126,8 @@ public class TransactionMarkerChannelManagerTest {
                 transition,
                 "public/default"
                 );
-        assertTrue(transactionMarkerChannelManager.getTransactionsWithPendingMarkers().isEmpty());
+
+        assertEquals(transactionMarkerChannelManager.getTransactionsWithPendingMarkers().isEmpty(), !isTopicExists);
     }
 
 }
