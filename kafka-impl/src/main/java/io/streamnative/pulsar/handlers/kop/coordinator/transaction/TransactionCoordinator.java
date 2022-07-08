@@ -37,6 +37,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -128,12 +129,31 @@ public class TransactionCoordinator {
         String namespacePrefixForUserTopics = MetadataUtils.constructUserTopicsNamespace(tenant, kafkaConfig);
         TransactionStateManager transactionStateManager =
                 new TransactionStateManager(transactionConfig, txnTopicClient, scheduler, time);
+        final Supplier<ProducerIdManager> producerIdManagerSupplier = () -> {
+            if (kafkaConfig.isKafkaTransactionProducerIdsStoredOnPulsar()) {
+                return new PulsarStorageProducerIdManagerImpl(
+                        transactionConfig.getTransactionProducerIdTopicName(), txnTopicClient.getPulsarClient());
+            } else {
+                return new ProducerIdManagerImpl(transactionConfig.getBrokerId(), metadataStore);
+            }
+        };
         ProducerIdManager producerIdManager;
-        if (kafkaConfig.isKafkaTransactionProducerIdsStoredOnPulsar()) {
-            producerIdManager = new PulsarStorageProducerIdManagerImpl(
-                    transactionConfig.getTransactionProducerIdTopicName(), txnTopicClient.getPulsarClient());
+        final String producerIdManagerClassName = kafkaConfig.getKopProducerIdManagerClassName();
+        if (producerIdManagerClassName == null) {
+            producerIdManager = producerIdManagerSupplier.get();
         } else {
-            producerIdManager = new ProducerIdManagerImpl(transactionConfig.getBrokerId(), metadataStore);
+            try {
+                producerIdManager = (ProducerIdManager)
+                        Class.forName(producerIdManagerClassName).getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                log.error("Failed to create a instance of {}, fallback to the {} implementation: {}",
+                        producerIdManagerClassName,
+                        kafkaConfig.isKafkaTransactionProducerIdsStoredOnPulsar()
+                                ? "PulsarStorageProducerIdManagerImpl"
+                                : "ProducerIdManagerImpl",
+                        e.getMessage());
+                producerIdManager = producerIdManagerSupplier.get();
+            }
         }
         return new TransactionCoordinator(
                 transactionConfig,

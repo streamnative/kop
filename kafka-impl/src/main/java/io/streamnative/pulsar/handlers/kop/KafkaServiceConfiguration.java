@@ -410,6 +410,13 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private boolean kafkaTransactionProducerIdsStoredOnPulsar = false;
 
     @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "The ProducerIdManager implementation class. If it's not specified or the class cannot be found, the "
+                    + "implementation will be determined by the kafkaTransactionProducerIdsStoredOnPulsar config."
+    )
+    private String kopProducerIdManagerClassName = null;
+
+    @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
             doc = "Flag to enable transaction coordinator"
     )
