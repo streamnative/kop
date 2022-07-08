@@ -60,20 +60,20 @@ public class GroupMetadataTest {
 
     @Test
     public void testCanRebalanceWhenStable() {
-        assertTrue(group.canReblance());
+        assertTrue(group.canRebalance());
     }
 
     @Test
     public void testCanRebalanceWhenCompletingRebalance() {
         group.transitionTo(PreparingRebalance);
         group.transitionTo(CompletingRebalance);
-        assertTrue(group.canReblance());
+        assertTrue(group.canRebalance());
     }
 
     @Test
     public void testCannotRebalanceWhenPreparingRebalance() {
         group.transitionTo(PreparingRebalance);
-        assertFalse(group.canReblance());
+        assertFalse(group.canRebalance());
     }
 
     @Test
@@ -81,7 +81,7 @@ public class GroupMetadataTest {
         group.transitionTo(PreparingRebalance);
         group.transitionTo(Empty);
         group.transitionTo(Dead);
-        assertFalse(group.canReblance());
+        assertFalse(group.canRebalance());
     }
 
     @Test

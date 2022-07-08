@@ -333,7 +333,7 @@ public class GroupMetadata {
         }
     }
 
-    public boolean canReblance() {
+    public boolean canRebalance() {
         return validPreviousStates.get(PreparingRebalance).contains(state);
     }
 
