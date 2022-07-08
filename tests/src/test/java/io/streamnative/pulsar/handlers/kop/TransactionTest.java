@@ -28,8 +28,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -343,14 +341,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         addCustomizeProps(producerProps);
         return new KafkaProducer<>(producerProps);
-    }
-
-    private AdminClient buildAdminClient() {
-        Properties producerProps = new Properties();
-        producerProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, getKafkaServerAdder());
-
-        addCustomizeProps(producerProps);
-        return AdminClient.create(producerProps);
     }
 
     /**

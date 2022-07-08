@@ -46,9 +46,6 @@ public class TransactionMarkerChannelManagerTest {
     private TransactionStateManager txnStateManager;
 
     private OrderedScheduler scheduler;
-
-    private KafkaServiceConfiguration conf;
-
     private final MockTime time = new MockTime();
     private final Set<TopicPartition> partitions = Sets.newHashSet(new TopicPartition("topic1", 0));
     private final String transactionalId = "known";
@@ -64,7 +61,7 @@ public class TransactionMarkerChannelManagerTest {
 
         kopBrokerLookupManager = mock(KopBrokerLookupManager.class);
         scheduler = mock(OrderedScheduler.class);
-        conf = new KafkaServiceConfiguration();
+        KafkaServiceConfiguration conf = new KafkaServiceConfiguration();
         transactionMarkerChannelManager = spy(new TransactionMarkerChannelManager(
                 "public",
                 conf,
@@ -113,11 +110,11 @@ public class TransactionMarkerChannelManagerTest {
                 .build();
 
         TransactionStateManager.CoordinatorEpochAndTxnMetadata epochAndTxnMetadata =
-                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(0, txnMetadata);
+                new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata);
         when(txnStateManager.getTransactionState(transactionalId))
                 .thenReturn(new ErrorsAndData<>(Optional.of(epochAndTxnMetadata)));
         transactionMarkerChannelManager.addTxnMarkersToSend(
-                0,
+                coordinatorEpoch,
                 TransactionResult.COMMIT,
                 txnMetadata,
                 transition,
