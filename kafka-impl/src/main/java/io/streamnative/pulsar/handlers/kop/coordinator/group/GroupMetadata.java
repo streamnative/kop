@@ -18,6 +18,7 @@ import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.Dead;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.PreparingRebalance;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.MoreObjects.ToStringHelper;
 import com.google.common.base.Supplier;
@@ -235,16 +236,14 @@ public class GroupMetadata {
     }
 
     public List<MemberMetadata> allMemberMetadata() {
-        return members.values().stream().collect(Collectors.toList());
+        return new ArrayList<>(members.values());
     }
 
     public int rebalanceTimeoutMs() {
         if (members.isEmpty()) {
             return 0;
         }
-        return members.values().stream().mapToInt(member ->
-            member.rebalanceTimeoutMs()
-        ).max().getAsInt();
+        return members.values().stream().mapToInt(MemberMetadata::rebalanceTimeoutMs).max().getAsInt();
     }
 
     public boolean is(GroupState groupState) {
@@ -285,11 +284,7 @@ public class GroupMetadata {
     private Set<String> candidateProtocols() {
         return members.values().stream()
             .map(MemberMetadata::protocols)
-            .reduce((p1, p2) -> {
-                Set<String> newProtocols = new HashSet<>();
-                newProtocols.addAll(Sets.intersection(p1, p2));
-                return newProtocols;
-            })
+            .reduce((p1, p2) -> new HashSet<>(Sets.intersection(p1, p2)))
             .orElse(Collections.emptySet());
     }
 
@@ -338,7 +333,7 @@ public class GroupMetadata {
         }
     }
 
-    public boolean canReblance() {
+    public boolean canRebalance() {
         return validPreviousStates.get(PreparingRebalance).contains(state);
     }
 
@@ -349,13 +344,13 @@ public class GroupMetadata {
 
     private void assertValidTransition(GroupState targetState) {
         if (!validPreviousStates.get(targetState).contains(state)) {
-            throw new IllegalStateException(("Group %s should be in the %s states before moving"
-                + " to %s state. Instead it is in %s state"
-            ).format(
-                groupId,
-                StringUtils.join(validPreviousStates.get(targetState), ","),
-                targetState,
-                state));
+            throw new IllegalStateException(String.format(
+                    "Group %s should be in the %s states before moving"
+                            + " to %s state. Instead it is in %s state",
+                    groupId,
+                    StringUtils.join(validPreviousStates.get(targetState), ","),
+                    targetState,
+                    state));
         }
     }
 
@@ -382,7 +377,7 @@ public class GroupMetadata {
         }
         return members.entrySet().stream()
             .collect(Collectors.toMap(
-                e -> e.getKey(),
+                    Entry::getKey,
                 e -> e.getValue().metadata(protocol.get())
             ));
     }
@@ -408,7 +403,7 @@ public class GroupMetadata {
         } else {
             List<MemberSummary> summaries = members.values()
                 .stream()
-                .map(member -> member.summaryNoMetadata())
+                .map(MemberMetadata::summaryNoMetadata)
                 .collect(Collectors.toList());
 
             return new GroupSummary(
@@ -536,9 +531,7 @@ public class GroupMetadata {
             pendingTransactionalOffsetCommits.remove(producerId);
         if (isCommit) {
             if (null != pendingOffsets) {
-                pendingOffsets.entrySet().forEach(e -> {
-                    TopicPartition topicPartition = e.getKey();
-                    CommitRecordMetadataAndOffset commitRecordMetadataAndOffset = e.getValue();
+                pendingOffsets.forEach((topicPartition, commitRecordMetadataAndOffset) -> {
                     if (!commitRecordMetadataAndOffset.appendedBatchOffset.isPresent()) {
                         throw new IllegalStateException(String.format("Trying to complete a transactional offset"
                                 + " commit for producerId %s and groupId %s even though the offset commit record"
@@ -549,16 +542,16 @@ public class GroupMetadata {
                     if (currentOffsetOpt == null || currentOffsetOpt.olderThan(commitRecordMetadataAndOffset)) {
                         if (log.isTraceEnabled()) {
                             log.trace("TxnOffsetCommit for producer {} and group {} with offset {} "
-                                + "committed and loaded into the cache.",
-                                producerId, groupId, commitRecordMetadataAndOffset);
+                                            + "committed and loaded into the cache.",
+                                    producerId, groupId, commitRecordMetadataAndOffset);
                         }
                         offsets.put(topicPartition, commitRecordMetadataAndOffset);
                     } else {
                         if (log.isTraceEnabled()) {
                             log.trace("TxnOffsetCommit for producer {} and group {} with offset {} "
-                                    + "committed, but not loaded since its offset is older than current offset"
-                                    + " {}.",
-                                producerId, groupId, commitRecordMetadataAndOffset, currentOffsetOpt);
+                                            + "committed, but not loaded since its offset is older than current offset"
+                                            + " {}.",
+                                    producerId, groupId, commitRecordMetadataAndOffset, currentOffsetOpt);
                         }
                     }
                 });
@@ -586,9 +579,7 @@ public class GroupMetadata {
     public Map<TopicPartition, OffsetAndMetadata> removeOffsets(Stream<TopicPartition> topicPartitions) {
         return topicPartitions.map(topicPartition -> {
             pendingOffsetCommits.remove(topicPartition);
-            pendingTransactionalOffsetCommits.forEach((pid, pendingOffsets) -> {
-                pendingOffsets.remove(topicPartition);
-            });
+            pendingTransactionalOffsetCommits.forEach((pid, pendingOffsets) -> pendingOffsets.remove(topicPartition));
             CommitRecordMetadataAndOffset removedOffset = offsets.remove(topicPartition);
             // removedOffset.offsetAndMetadata() have an NPE
             if (removedOffset == null) {
@@ -602,8 +593,8 @@ public class GroupMetadata {
                 removedOffset.offsetAndMetadata()
             );
         }).collect(Collectors.toMap(
-            e -> e.getKey(),
-            e -> e.getValue()
+                KeyValue::getKey,
+                KeyValue::getValue
         ));
     }
 
@@ -615,11 +606,10 @@ public class GroupMetadata {
         ).collect(Collectors.toList()));
 
         pendingTransactionalOffsetCommits.values().stream().map(Map::keySet)
-                .collect(Collectors.toList()).forEach(partitionSet -> {
-            topicPartitions.addAll(partitionSet.stream().filter(
-                    topicPartition -> topics.contains(topicPartition.topic()))
-                    .collect(Collectors.toList()));
-        });
+                .collect(Collectors.toList())
+                .forEach(partitionSet -> topicPartitions.addAll(partitionSet.stream().filter(
+                                topicPartition -> topics.contains(topicPartition.topic()))
+                        .collect(Collectors.toList())));
 
         topicPartitions.addAll(offsets.keySet().stream().filter(
                 topicPartition -> topics.contains(topicPartition.topic())
@@ -637,17 +627,17 @@ public class GroupMetadata {
                 e.getValue().offsetAndMetadata()
             ))
             .collect(Collectors.toMap(
-                kv -> kv.getKey(),
-                kv -> kv.getValue()
+                    KeyValue::getKey,
+                    KeyValue::getValue
             ));
 
-        expiredOffsets.keySet().forEach(tp -> offsets.remove(tp));
+        expiredOffsets.keySet().forEach(offsets::remove);
         return expiredOffsets;
     }
 
     public Map<TopicPartition, OffsetAndMetadata> allOffsets() {
         return offsets.entrySet().stream().collect(Collectors.toMap(
-            e -> e.getKey(),
+                Entry::getKey,
             e -> e.getValue().offsetAndMetadata()
         ));
     }
@@ -672,7 +662,7 @@ public class GroupMetadata {
                 .map(e -> e.offsetAndMetadata);
     }
 
-    // visible for testing
+    @VisibleForTesting
     Optional<CommitRecordMetadataAndOffset> offsetWithRecordMetadata(TopicPartition topicPartition) {
         return Optional.ofNullable(offsets.get(topicPartition));
     }
