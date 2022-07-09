@@ -51,7 +51,7 @@ class DelayedJoin extends DelayedOperation {
 
     @Override
     public boolean tryComplete() {
-        return coordinator.tryCompleteJoin(group, () -> forceComplete());
+        return coordinator.tryCompleteJoin(group, this::forceComplete);
     }
 
 }
