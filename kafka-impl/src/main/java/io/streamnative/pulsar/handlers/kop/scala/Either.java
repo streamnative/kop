@@ -80,7 +80,7 @@ public class Either<V, W> {
         }
     }
 
-    protected Either(final V left, final W right) {
+    private Either(final V left, final W right) {
         this.left = left;
         this.right = right;
     }
