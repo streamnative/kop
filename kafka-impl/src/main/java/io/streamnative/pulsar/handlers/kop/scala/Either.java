@@ -17,46 +17,52 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import lombok.Getter;
 
+/**
+ * A simple Java migration of <a href="https://www.scala-lang.org/api/2.13.6/scala/util/Either.html">Scala Either</a>.
+ *
+ * Since there is no pattern matching before Java 16, this class provides a {@link Either#match} method to simulate it.
+ *
+ * In scala, pattern matching of an `Either` instance is like:
+ *
+ * ```scala
+ * either match {
+ *     case Left(left) => f1(left)
+ *     case Right(right) => f2(right)
+ * }
+ * ```
+ *
+ * With this class, you can write:
+ *
+ * ```java
+ * // f1(left) will be called if left is not null, otherwise f2(right) will be called.
+ * either.match(f1, f2);
+ * ```
+ *
+ * In scala, you can create `Either` instances by `Left(x)` or `Right(x)`. With this class, you should call the static
+ * methods ({@link Either#left} and {@link Either#right}) to achieve the same goal.
+ *
+ * @param <V> the type of the 1st possible value (the left side)
+ * @param <W> the type of the 2nd possible value (the right side)
+ */
 @Getter
-public class Either<LeftT, RightT> {
+public class Either<V, W> {
 
-    private final LeftT left;
-    private final RightT right;
+    private final V left;
+    private final W right;
 
     public boolean isLeft() {
         return left != null;
     }
 
-    public static <LeftT, RightT> Either<LeftT, RightT> left(final LeftT left) {
+    public static <V, W> Either<V, W> left(final V left) {
         return new Either<>(left, null);
     }
 
-    public static <LeftT, RightT> Either<LeftT, RightT> right(final RightT right) {
+    public static <V, W> Either<V, W> right(final W right) {
         return new Either<>(null, right);
     }
 
-    /**
-     * Simulate pattern matching in Scala.
-     *
-     * In scala, pattern matching of an `Either` instance is like:
-     *
-     * ```scala
-     * either match {
-     *     case Left(left) => f1(left)
-     *     case Right(right) => f2(right)
-     * }
-     * ```
-     *
-     * With this class, you can write:
-     *
-     * ```java
-     * either.match(f1, f2);
-     * ```
-     *
-     * @param leftConsumer
-     * @param rightConsumer
-     */
-    public void match(final Consumer<LeftT> leftConsumer, final Consumer<RightT> rightConsumer) {
+    public void match(final Consumer<V> leftConsumer, final Consumer<W> rightConsumer) {
         if (left == null) {
             rightConsumer.accept(right);
         } else {
@@ -64,17 +70,17 @@ public class Either<LeftT, RightT> {
         }
     }
 
-    public <T> Either<LeftT, T> map(final Function<RightT, T> function) {
+    public <R> Either<V, R> map(final Function<W, R> function) {
         if (left == null) {
             return Either.right(function.apply(right));
         } else {
             @SuppressWarnings("unchecked")
-            Either<LeftT, T> other = (Either<LeftT, T>) this;
+            Either<V, R> other = (Either<V, R>) this;
             return other;
         }
     }
 
-    protected Either(final LeftT left, final RightT right) {
+    protected Either(final V left, final W right) {
         this.left = left;
         this.right = right;
     }
