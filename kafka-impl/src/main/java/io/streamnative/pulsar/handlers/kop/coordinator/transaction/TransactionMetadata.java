@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
 import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.util.Collections;
 import java.util.HashMap;
@@ -333,27 +334,27 @@ public class TransactionMetadata {
                 txnLastUpdateTimestamp);
     }
 
-    public ErrorsAndData<TxnTransitMetadata> prepareIncrementProducerEpoch(Integer newTxnTimeoutMs,
-                                                            Optional<Short> expectedProducerEpoch,
-                                                            Long updateTimestamp) {
+    public Either<Errors, TxnTransitMetadata> prepareIncrementProducerEpoch(Integer newTxnTimeoutMs,
+                                                                            Optional<Short> expectedProducerEpoch,
+                                                                            Long updateTimestamp) {
         if (isProducerEpochExhausted()) {
             throw new IllegalStateException("Cannot allocate any more producer epochs for producerId $producerId");
         }
 
         short bumpedEpoch = (short) (producerEpoch + 1);
 
-        ErrorsAndData<BumpEpochResult> epochBumpResult;
+        final Either<Errors, BumpEpochResult> errorsOrBumpEpochResult;
         if (!expectedProducerEpoch.isPresent()) {
             // If no expected epoch was provided by the producer, bump the current epoch and set the last epoch to -1
             // In the case of a new producer, producerEpoch will be -1 and bumpedEpoch will be 0
-            epochBumpResult = new ErrorsAndData<>(new BumpEpochResult(bumpedEpoch, RecordBatch.NO_PRODUCER_EPOCH));
+            errorsOrBumpEpochResult = Either.right(new BumpEpochResult(bumpedEpoch, RecordBatch.NO_PRODUCER_EPOCH));
         } else {
             if (producerEpoch == RecordBatch.NO_PRODUCER_EPOCH || expectedProducerEpoch.get() == producerEpoch) {
                 // If the expected epoch matches the current epoch, or if there is no current epoch, the producer is
                 // attempting to continue after an error and no other producer has been initialized. Bump the current
                 // and last epochs. The no current epoch case means this is a new producer; producerEpoch will be -1
                 // and bumpedEpoch will be 0
-                epochBumpResult = new ErrorsAndData<>(new BumpEpochResult(bumpedEpoch, producerEpoch));
+                errorsOrBumpEpochResult = Either.right(new BumpEpochResult(bumpedEpoch, producerEpoch));
             } else if (expectedProducerEpoch.get() == lastProducerEpoch) {
                 // If the expected epoch matches the previous epoch, it is a retry of a successful call, so just return
                 // the current epoch without bumping. There is no danger of this producer being fenced, because a new
@@ -361,31 +362,20 @@ public class TransactionMetadata {
                 // Note that if the IBP is prior to 2.4.IV1, the lastProducerId and lastProducerEpoch will not be
                 // written to the transaction log, so a retry that spans a coordinator change will fail. We expect
                 // this to be a rare case.
-                epochBumpResult = new ErrorsAndData<>(new BumpEpochResult(producerEpoch, lastProducerEpoch));
+                errorsOrBumpEpochResult = Either.right(new BumpEpochResult(producerEpoch, lastProducerEpoch));
             } else {
                 // Otherwise, the producer has a fenced epoch and should receive an PRODUCER_FENCED error
                 log.info("Expected producer epoch {} does not match current "
                         + "producer epoch {} or previous producer epoch {}",
                         expectedProducerEpoch, producerEpoch, lastProducerEpoch);
                 // TODO the error should be Errors.PRODUCER_FENCED
-                epochBumpResult = new ErrorsAndData<>(Errors.UNKNOWN_SERVER_ERROR);
+                errorsOrBumpEpochResult = Either.left(Errors.UNKNOWN_SERVER_ERROR);
             }
         }
 
-        if (epochBumpResult.hasErrors()) {
-            return new ErrorsAndData<>(epochBumpResult.getErrors());
-        } else {
-            return new ErrorsAndData<>(
-                    prepareTransitionTo(
-                            TransactionState.EMPTY,
-                            producerId,
-                            epochBumpResult.getData().bumpedEpoch,
-                            epochBumpResult.getData().lastEpoch,
-                            newTxnTimeoutMs,
-                            Collections.emptySet(),
-                            -1,
-                            updateTimestamp));
-        }
+        return errorsOrBumpEpochResult.map(bumpEpochResult -> prepareTransitionTo(TransactionState.EMPTY,
+                producerId, bumpEpochResult.bumpedEpoch, bumpEpochResult.lastEpoch, newTxnTimeoutMs,
+                Collections.emptySet(), -1, updateTimestamp));
     }
 
     @AllArgsConstructor

@@ -355,32 +355,19 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
     }
 
     private void verifyMetadataDoesntExist(String transactionalId) {
-        ErrorsAndData<Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>> transactionState =
-                transactionManager.getTransactionState(transactionalId);
-        if (transactionState.hasErrors()) {
-            fail("shouldn't have been any errors");
-            return;
-        }
-        if (transactionState.getData().isPresent()) {
-            fail("metadata should have been removed");
-        }
+        transactionManager.getTransactionState(transactionalId).match(
+                errors -> fail("shouldn't have been any errors"),
+                option -> option.match(() -> {}, __ -> fail("metadata should have been removed"))
+        );
     }
 
     private void verifyMetadataDoesExistAndIsUsable(String transactionalId) {
-        ErrorsAndData<Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>> transactionState =
-                transactionManager.getTransactionState(transactionalId);
-        if (transactionState.hasErrors()) {
-            fail("shouldn't have been any errors");
-            return;
-        }
-        if (!transactionState.getData().isPresent()) {
-            fail("metadata should have been removed");
-            return;
-        }
-        TransactionStateManager.CoordinatorEpochAndTxnMetadata metadata = transactionState.getData().get();
-
-        assertFalse("metadata shouldn't be in a pending state",
-                metadata.getTransactionMetadata().getPendingState().isPresent());
+        transactionManager.getTransactionState(transactionalId).match(
+                errors -> fail("shouldn't have any errors"),
+                option -> option.match(
+                        () -> fail("metadata should have been removed"),
+                        metadata -> assertFalse("metadata shouldn't be in a pending state",
+                                metadata.getTransactionMetadata().getPendingState().isPresent())));
     }
 
     private void setupAndRunTransactionalIdExpiration(Errors error, TransactionState txnState) {

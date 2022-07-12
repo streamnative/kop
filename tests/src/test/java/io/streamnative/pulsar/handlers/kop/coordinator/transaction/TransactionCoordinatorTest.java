@@ -31,6 +31,8 @@ import static org.testng.AssertJUnit.assertTrue;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import io.streamnative.pulsar.handlers.kop.scala.Either;
+import io.streamnative.pulsar.handlers.kop.scala.Option;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.util.Collections;
@@ -208,15 +210,13 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = defaultTestTimeout)
     public void shouldInitPidWithEpochZeroForNewTransactionalId() {
         initPidGenericMocks();
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.empty()))
-                .when(transactionManager).getTransactionState(eq(transactionalId));
+        doReturn(Either.right(Option.empty()))
+                .when(transactionManager).getTransactionState(transactionalId);
 
         doAnswer(__ -> {
             assertNotNull(capturedTxn.getValue());
-            return new ErrorsAndData<>(
-                    Optional.of(
-                            new TransactionStateManager
-                                    .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, capturedTxn.getValue())));
+            return Either.right(new TransactionStateManager.CoordinatorEpochAndTxnMetadata(
+                    coordinatorEpoch, capturedTxn.getValue()));
         }).when(transactionManager).putTransactionStateIfNotExists(capturedTxn.capture());
 
         doAnswer(__ -> {
@@ -241,14 +241,12 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = defaultTestTimeout)
     public void shouldGenerateNewProducerIdIfNoStateAndProducerIdAndEpochProvided() {
         initPidGenericMocks();
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.empty()))
+        doReturn(Either.right(Option.empty()))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
         doAnswer(__ -> {
             assertNotNull(capturedTxn.getValue());
-            return new ErrorsAndData<>(
-                    Optional.of(
-                            new TransactionStateManager
-                                    .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, capturedTxn.getValue())));
+            return Either.right(new TransactionStateManager.CoordinatorEpochAndTxnMetadata(
+                    coordinatorEpoch, capturedTxn.getValue()));
         }).when(transactionManager).putTransactionStateIfNotExists(capturedTxn.capture());
 
         doAnswer(__ -> {
@@ -292,7 +290,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 Optional.empty(),
                 false);
 
-        doReturn(new ErrorsAndData<>(Optional.of(new TransactionStateManager
+        doReturn(Either.right(Option.of(new TransactionStateManager
                 .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
 
@@ -321,7 +319,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = defaultTestTimeout)
     public void shouldRespondWithNotCoordinatorOnInitPidWhenNotCoordinator() {
         initPidGenericMocks();
-        doReturn(new ErrorsAndData<>(Errors.NOT_COORDINATOR, Optional.empty()))
+        doReturn(Either.left(Errors.NOT_COORDINATOR))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
 
         transactionCoordinator.handleInitProducerId(
@@ -337,7 +335,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = defaultTestTimeout)
     public void shouldRespondWithCoordinatorLoadInProgressOnInitPidWhenCoordinatorLoading() {
         initPidGenericMocks();
-        doReturn(new ErrorsAndData<>(Errors.COORDINATOR_LOAD_IN_PROGRESS, Optional.empty()))
+        doReturn(Either.left(Errors.COORDINATOR_LOAD_IN_PROGRESS))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
 
         transactionCoordinator.handleInitProducerId(
@@ -352,7 +350,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldRespondWithInvalidPidMappingOnAddPartitionsToTransactionWhenTransactionalIdNotPresent() {
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.empty()))
+        doReturn(Either.right(Option.empty()))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
         transactionCoordinator.handleAddPartitionsToTransaction(
                 transactionalId,
@@ -388,7 +386,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldRespondWithNotCoordinatorOnAddPartitionsWhenNotCoordinator() {
-        doReturn(new ErrorsAndData<>(Errors.NOT_COORDINATOR, Optional.empty()))
+        doReturn(Either.left(Errors.NOT_COORDINATOR))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
         transactionCoordinator.handleAddPartitionsToTransaction(
                 transactionalId,
@@ -402,7 +400,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldRespondWithCoordinatorLoadInProgressOnAddPartitionsWhenCoordinatorLoading() {
-        doReturn(new ErrorsAndData<>(Errors.COORDINATOR_LOAD_IN_PROGRESS, Optional.empty()))
+        doReturn(Either.left(Errors.COORDINATOR_LOAD_IN_PROGRESS))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
         transactionCoordinator.handleAddPartitionsToTransaction(
                 transactionalId,
@@ -425,7 +423,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     }
 
     private void validateConcurrentTransactions(TransactionState state) {
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
                         TransactionMetadata.builder()
                                 .transactionalId(transactionalId)
@@ -453,7 +451,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldRespondWithProducerFencedOnAddPartitionsWhenEpochsAreDifferent() {
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
                         TransactionMetadata.builder()
                                 .transactionalId(transactionalId)
@@ -514,7 +512,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 now,
                 Optional.empty(),
                 false);
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata)))
         ).when(transactionManager).getTransactionState(eq(transactionalId));
 
@@ -535,7 +533,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldRespondWithErrorsNoneOnAddPartitionWhenNoErrorsAndPartitionsTheSame() {
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
                         TransactionMetadata.builder()
                                 .transactionalId(transactionalId)
@@ -560,7 +558,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldReplyWithInvalidPidMappingOnEndTxnWhenTxnIdDoesntExist() {
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.empty()))
+        doReturn(Either.right(Option.empty()))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
         transactionCoordinator.handleEndTransaction(
                 transactionalId,
@@ -575,7 +573,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldReplyWithInvalidPidMappingOnEndTxnWhenPidDosentMatchMapped() {
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
                         TransactionMetadata.builder()
                                 .transactionalId(transactionalId)
@@ -603,7 +601,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldReplyWithProducerFencedOnEndTxnWhenEpochIsNotSameAsTransaction() {
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
                         TransactionMetadata.builder()
                                 .transactionalId(transactionalId)
@@ -632,7 +630,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldReturnOkOnEndTxnWhenStatusIsCompleteCommitAndResultIsCommit() {
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
                         TransactionMetadata.builder()
                                 .transactionalId(transactionalId)
@@ -660,7 +658,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldReturnOkOnEndTxnWhenStatusIsCompleteAbortAndResultIsAbort() {
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
                         TransactionMetadata.builder()
                                 .transactionalId(transactionalId)
@@ -688,7 +686,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldReturnInvalidTxnRequestOnEndTxnRequestWhenStatusIsCompleteAbortAndResultIsNotAbort() {
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
                         TransactionMetadata.builder()
                                 .transactionalId(transactionalId)
@@ -716,7 +714,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldReturnInvalidTxnRequestOnEndTxnRequestWhenStatusIsCompleteCommitAndResultIsNotCommit() {
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
                         TransactionMetadata.builder()
                                 .transactionalId(transactionalId)
@@ -744,7 +742,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldReturnConcurrentTxnRequestOnEndTxnRequestWhenStatusIsPrepareCommit() {
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
                         TransactionMetadata.builder()
                                 .transactionalId(transactionalId)
@@ -772,7 +770,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldReturnInvalidTxnRequestOnEndTxnRequestWhenStatusIsPrepareAbort() {
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
                         TransactionMetadata.builder()
                                 .transactionalId(transactionalId)
@@ -850,7 +848,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 .txnStartTimestamp(now)
                 .txnLastUpdateTimestamp(now)
                 .build();
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, originalMetadata))))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
         doAnswer(__ -> null).when(transactionManager)
@@ -876,7 +874,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldRespondWithInvalidRequestOnEndTxnWhenTransactionalIdIsEmpty() {
-        doReturn(new ErrorsAndData<>(Errors.NOT_COORDINATOR, Optional.empty()))
+        doReturn(Either.left(Errors.NOT_COORDINATOR))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
         transactionCoordinator.handleEndTransaction(
                 "",
@@ -889,7 +887,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldRespondWithNotCoordinatorOnEndTxnWhenIsNotCoordinatorForId() {
-        doReturn(new ErrorsAndData<>(Errors.NOT_COORDINATOR, Optional.empty()))
+        doReturn(Either.left(Errors.NOT_COORDINATOR))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
         transactionCoordinator.handleEndTransaction(
                 transactionalId,
@@ -902,7 +900,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldRespondWithCoordinatorLoadInProgressOnEndTxnWhenCoordinatorIsLoading() {
-        doReturn(new ErrorsAndData<>(Errors.COORDINATOR_LOAD_IN_PROGRESS, Optional.empty()))
+        doReturn(Either.left(Errors.COORDINATOR_LOAD_IN_PROGRESS))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
         transactionCoordinator.handleEndTransaction(
                 transactionalId,
@@ -927,7 +925,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
 
     private void verifyEndTxnEpoch(short metadataEpoch, short requestEpoch) {
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch,
                         TransactionMetadata.builder()
                                 .transactionalId(transactionalId)
@@ -995,7 +993,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 .txnStartTimestamp(time.milliseconds())
                 .txnLastUpdateTimestamp(time.milliseconds())
                 .build();
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, metadata))))
                 .when(transactionManager)
                 .getTransactionState(eq(transactionalId));
@@ -1045,7 +1043,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 .txnStartTimestamp(0)
                 .txnLastUpdateTimestamp(0)
                 .build();
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, metadata))))
                 .when(transactionManager)
                 .getTransactionState(eq(transactionalId));
@@ -1071,13 +1069,11 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 .build();
         doReturn(true).when(transactionManager).validateTransactionTimeoutMs(anyInt());
 
-        doReturn(new ErrorsAndData<>(
-                    Optional.of(
-                            new TransactionStateManager
-                                    .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
+        doReturn(Either.right(new TransactionStateManager.CoordinatorEpochAndTxnMetadata(
+                coordinatorEpoch, txnMetadata)))
                 .when(transactionManager).putTransactionStateIfNotExists(any(TransactionMetadata.class));
 
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
                 .when(transactionManager)
                 .getTransactionState(eq(transactionalId));
@@ -1135,10 +1131,8 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 .build();
         doReturn(true).when(transactionManager).validateTransactionTimeoutMs(anyInt());
 
-        doReturn(new ErrorsAndData<>(
-                Optional.of(
-                        new TransactionStateManager
-                                .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
+        doReturn(Either.right(new TransactionStateManager.CoordinatorEpochAndTxnMetadata(
+                coordinatorEpoch, txnMetadata)))
                 .when(transactionManager).putTransactionStateIfNotExists(any(TransactionMetadata.class));
 
         TransactionMetadata bumpedTxnMetadata = TransactionMetadata.builder()
@@ -1157,10 +1151,10 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         AtomicInteger getTransactionStateTime = new AtomicInteger(0);
         doAnswer((__) -> {
             if (getTransactionStateTime.incrementAndGet() == 1) {
-                return new ErrorsAndData<>(Errors.NONE, Optional.of(
+                return Either.right(Option.of(
                         new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata)));
             }
-            return new ErrorsAndData<>(Errors.NONE, Optional.of(
+            return Either.right(Option.of(
                     new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, bumpedTxnMetadata)));
         }).when(transactionManager)
                 .getTransactionState(eq(transactionalId));
@@ -1193,13 +1187,11 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 .build();
         doReturn(true).when(transactionManager).validateTransactionTimeoutMs(anyInt());
 
-        doReturn(new ErrorsAndData<>(
-                Optional.of(
-                        new TransactionStateManager
-                                .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
+        doReturn(Either.right(new TransactionStateManager.CoordinatorEpochAndTxnMetadata(
+                coordinatorEpoch, txnMetadata)))
                 .when(transactionManager).putTransactionStateIfNotExists(any(TransactionMetadata.class));
 
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
                 .when(transactionManager)
                 .getTransactionState(eq(transactionalId));
@@ -1296,13 +1288,11 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
         doReturn(true).when(transactionManager).validateTransactionTimeoutMs(anyInt());
 
-        doReturn(new ErrorsAndData<>(
-                Optional.of(
-                        new TransactionStateManager
-                                .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
+        doReturn(Either.right(new TransactionStateManager.CoordinatorEpochAndTxnMetadata(
+                coordinatorEpoch, txnMetadata)))
                 .when(transactionManager).putTransactionStateIfNotExists(any(TransactionMetadata.class));
 
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
                 .when(transactionManager)
                 .getTransactionState(eq(transactionalId));
@@ -1321,11 +1311,10 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         AtomicInteger getTransactionStateTime = new AtomicInteger(0);
         doAnswer((__) -> {
             if (getTransactionStateTime.incrementAndGet() <= 2) {
-
-                return new ErrorsAndData<>(Errors.NONE, Optional.of(
+                return Either.right(Option.of(
                         new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata)));
             }
-            return new ErrorsAndData<>(Errors.NONE, Optional.of(
+            return Either.right(Option.of(
                     new TransactionStateManager.CoordinatorEpochAndTxnMetadata(
                             coordinatorEpoch, postFenceTxnMetadata)));
         }).when(transactionManager).getTransactionState(eq(transactionalId));
@@ -1386,7 +1375,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 .build();
         doReturn(true).when(transactionManager).validateTransactionTimeoutMs(anyInt());
 
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
                 .when(transactionManager)
                 .getTransactionState(eq(transactionalId));
@@ -1416,7 +1405,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 .build();
         doReturn(true).when(transactionManager).validateTransactionTimeoutMs(anyInt());
 
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
                 .when(transactionManager)
                 .getTransactionState(eq(transactionalId));
@@ -1446,7 +1435,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
         doReturn(true).when(transactionManager).validateTransactionTimeoutMs(anyInt());
 
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
                 .when(transactionManager)
                 .getTransactionState(eq(transactionalId));
@@ -1491,7 +1480,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 .build();
         doReturn(true).when(transactionManager).validateTransactionTimeoutMs(anyInt());
 
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
                 .when(transactionManager)
                 .getTransactionState(eq(transactionalId));
@@ -1542,7 +1531,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 .when(producerIdManager).generateProducerId();
         doReturn(true).when(transactionManager).validateTransactionTimeoutMs(anyInt());
 
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
                 .when(transactionManager)
                 .getTransactionState(eq(transactionalId));
@@ -1598,7 +1587,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 .when(producerIdManager).generateProducerId();
         doReturn(true).when(transactionManager).validateTransactionTimeoutMs(anyInt());
 
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
                 .when(transactionManager)
                 .getTransactionState(eq(transactionalId));
@@ -1665,7 +1654,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                         .TransactionalIdAndProducerIdEpoch(transactionalId, producerId, producerEpoch)))
                 .when(transactionManager).timedOutTransactions();
 
-        doReturn(new ErrorsAndData<>(Optional.of(new TransactionStateManager
+        doReturn(Either.right(Option.of(new TransactionStateManager
                 .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
 
@@ -1733,10 +1722,10 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         AtomicInteger times = new AtomicInteger(0);
         doAnswer(__ -> {
             if (times.getAndIncrement() == 0) {
-                return new ErrorsAndData<>(Optional.of(new TransactionStateManager
+                return Either.right(Option.of(new TransactionStateManager
                         .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata)));
             }
-            return new ErrorsAndData<>(Optional.of(new TransactionStateManager
+            return Either.right(Option.of(new TransactionStateManager
                     .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, bumpedTxnMetadata)));
         }).when(transactionManager).getTransactionState(eq(transactionalId));
 
@@ -1778,7 +1767,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                         .TransactionalIdAndProducerIdEpoch(transactionalId, producerId, producerEpoch)))
                 .when(transactionManager).timedOutTransactions();
 
-        doReturn(new ErrorsAndData<>(Optional.of(new TransactionStateManager
+        doReturn(Either.right(Option.of(new TransactionStateManager
                 .CoordinatorEpochAndTxnMetadata(coordinatorEpoch, metadata))))
                 .when(transactionManager).getTransactionState(eq(transactionalId));
 
@@ -1824,10 +1813,10 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         doAnswer((__) -> {
             if (getTransactionStateTime.incrementAndGet() <= 2) {
 
-                return new ErrorsAndData<>(Errors.NONE, Optional.of(
+                return Either.right(Option.of(
                         new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata)));
             }
-            return new ErrorsAndData<>(Errors.NONE, Optional.of(
+            return Either.right(Option.of(
                     new TransactionStateManager.CoordinatorEpochAndTxnMetadata(
                             coordinatorEpoch, txnMetadataAfterAppendFailure)));
         }).when(transactionManager).getTransactionState(eq(transactionalId));
@@ -1884,7 +1873,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         txnMetadata.prepareAbortOrCommit(TransactionState.PREPARE_COMMIT, time.milliseconds());
         doReturn(true).when(transactionManager).validateTransactionTimeoutMs(anyInt());
 
-        doReturn(new ErrorsAndData<>(Errors.NONE, Optional.of(
+        doReturn(Either.right(Option.of(
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata))))
                 .when(transactionManager)
                 .getTransactionState(eq(transactionalId));
