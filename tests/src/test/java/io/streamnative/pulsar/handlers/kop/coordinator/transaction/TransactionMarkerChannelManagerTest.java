@@ -23,8 +23,8 @@ import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
-import io.streamnative.pulsar.handlers.kop.scala.Option;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
@@ -119,7 +119,7 @@ public class TransactionMarkerChannelManagerTest {
         TransactionStateManager.CoordinatorEpochAndTxnMetadata epochAndTxnMetadata =
                 new TransactionStateManager.CoordinatorEpochAndTxnMetadata(coordinatorEpoch, txnMetadata);
         when(txnStateManager.getTransactionState(transactionalId))
-                .thenReturn(Either.right(Option.of(epochAndTxnMetadata)));
+                .thenReturn(Either.right(Optional.of(epochAndTxnMetadata)));
         transactionMarkerChannelManager.addTxnMarkersToSend(
                 coordinatorEpoch,
                 TransactionResult.COMMIT,

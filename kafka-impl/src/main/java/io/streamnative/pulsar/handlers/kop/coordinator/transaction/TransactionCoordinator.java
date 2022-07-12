@@ -27,7 +27,6 @@ import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
-import io.streamnative.pulsar.handlers.kop.scala.Option;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
 import java.util.HashSet;
@@ -245,7 +244,9 @@ public class TransactionCoordinator {
             txnManager.getTransactionState(transactionalId).match(errors -> {
                 epochAndTxnMetaFuture.complete(Either.left(errors));
             }, optEpochAndTxnMetadata -> {
-                optEpochAndTxnMetadata.match(() -> {
+                if (optEpochAndTxnMetadata.isPresent()) {
+                    epochAndTxnMetaFuture.complete(Either.right(optEpochAndTxnMetadata.get()));
+                } else {
                     producerIdManager.generateProducerId().whenComplete((pid, throwable) -> {
                         if (throwable != null) {
                             log.error("Failed to generate producer id for {}", transactionalId, throwable);
@@ -267,9 +268,7 @@ public class TransactionCoordinator {
                                 .build();
                         epochAndTxnMetaFuture.complete(txnManager.putTransactionStateIfNotExists(newMetadata));
                     });
-                }, epochAndTxnMetadata -> {
-                    epochAndTxnMetaFuture.complete(Either.right(epochAndTxnMetadata));
-                });
+                }
             });
 
             epochAndTxnMetaFuture.thenAccept(either -> {
@@ -472,13 +471,13 @@ public class TransactionCoordinator {
 
         // try to update the transaction metadata and append the updated metadata to txn log;
         // if there is no such metadata treat it as invalid producerId mapping error.
-        Either<Errors, Option<CoordinatorEpochAndTxnMetadata>> errorsOrMetadata =
+        Either<Errors, Optional<CoordinatorEpochAndTxnMetadata>> errorsOrMetadata =
                 txnManager.getTransactionState(transactionalId);
         if (errorsOrMetadata.isLeft()) {
             responseCallback.accept(errorsOrMetadata.getLeft());
             return;
         }
-        if (errorsOrMetadata.getRight().isEmpty()) {
+        if (!errorsOrMetadata.getRight().isPresent()) {
             responseCallback.accept(Errors.INVALID_PRODUCER_ID_MAPPING);
             return;
         }
@@ -562,21 +561,21 @@ public class TransactionCoordinator {
             return;
         }
 
-        Either<Errors, Option<CoordinatorEpochAndTxnMetadata>> transactionState =
+        Either<Errors, Optional<CoordinatorEpochAndTxnMetadata>> transactionState =
                 txnManager.getTransactionState(transactionalId);
         if (transactionState.isLeft()) {
             callback.accept(transactionState.getLeft());
             return;
         }
 
-        Option<CoordinatorEpochAndTxnMetadata> epochAndMetadata = transactionState.getRight();
-        if (epochAndMetadata.isEmpty()) {
+        Optional<CoordinatorEpochAndTxnMetadata> epochAndMetadata = transactionState.getRight();
+        if (!epochAndMetadata.isPresent()) {
             callback.accept(Errors.INVALID_PRODUCER_ID_MAPPING);
             return;
         }
 
         Either<Errors, TxnTransitMetadata> preAppendResult = endTxnPreAppend(
-                epochAndMetadata, transactionalId, producerId, isFromClient, producerEpoch,
+                epochAndMetadata.get(), transactionalId, producerId, isFromClient, producerEpoch,
                 txnMarkerResult, isEpochFence);
 
         if (preAppendResult.isLeft()) {
@@ -603,9 +602,9 @@ public class TransactionCoordinator {
                                 preAppendResult.getRight(), coordinatorEpoch);
 
                         if (isEpochFence.get()) {
-                            Either<Errors, Option<CoordinatorEpochAndTxnMetadata>>
+                            Either<Errors, Optional<CoordinatorEpochAndTxnMetadata>>
                                     errorsAndData = txnManager.getTransactionState(transactionalId);
-                            if (errorsAndData.getRight().isEmpty()) {
+                            if (!errorsAndData.getRight().isPresent()) {
                                 log.warn("The coordinator still owns the transaction partition for {}, but there "
                                         + "is no metadata in the cache; this is not expected", transactionalId);
                                 return;
@@ -628,14 +627,14 @@ public class TransactionCoordinator {
     }
 
     private Either<Errors, TxnTransitMetadata> endTxnPreAppend(
-            Option<CoordinatorEpochAndTxnMetadata> epochAndMetadata,
-            String transactionalId,
-            long producerId,
-            boolean isFromClient,
-            short producerEpoch,
-            TransactionResult txnMarkerResult,
-            AtomicBoolean isEpochFence) {
-        TransactionMetadata txnMetadata = epochAndMetadata.get().getTransactionMetadata();
+                                                        CoordinatorEpochAndTxnMetadata epochAndMetadata,
+                                                        String transactionalId,
+                                                        long producerId,
+                                                        boolean isFromClient,
+                                                        short producerEpoch,
+                                                        TransactionResult txnMarkerResult,
+                                                        AtomicBoolean isEpochFence) {
+        TransactionMetadata txnMetadata = epochAndMetadata.getTransactionMetadata();
 
         return txnMetadata.inLock(() -> {
             if (txnMetadata.getProducerId() != producerId) {
@@ -730,17 +729,10 @@ public class TransactionCoordinator {
                                 TransactionResult txnMarkerResult,
                                 Consumer<Errors> callback) {
 
-        Either<Errors, Option<CoordinatorEpochAndTxnMetadata>> errorsOrOptEpochAndTxnMetadata =
+        Either<Errors, Optional<CoordinatorEpochAndTxnMetadata>> errorsOrOptEpochAndTxnMetadata =
                 txnManager.getTransactionState(transactionalId);
 
-        if (errorsOrOptEpochAndTxnMetadata.getRight() == null) {
-            String errorMsg = String.format("Failed to get transaction state for %s in completeEndTxn",
-                    transactionalId);
-            log.error(errorMsg);
-            throw new IllegalStateException(errorMsg);
-        }
-
-        if (errorsOrOptEpochAndTxnMetadata.getRight().isEmpty()) {
+        if (!errorsOrOptEpochAndTxnMetadata.getRight().isPresent()) {
             String errorMsg = String.format("The coordinator still owns the transaction partition for "
                             + "%s, but there is no metadata in the cache; this is not expected",
                     transactionalId);

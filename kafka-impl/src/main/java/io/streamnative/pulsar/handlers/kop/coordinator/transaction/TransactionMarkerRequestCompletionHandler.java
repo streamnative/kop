@@ -15,11 +15,11 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
-import io.streamnative.pulsar.handlers.kop.scala.Option;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.AllArgsConstructor;
@@ -60,7 +60,7 @@ public class TransactionMarkerRequestCompletionHandler {
                         + "producer id " + txnMarker.producerId());
             }
 
-            Either<Errors, Option<TransactionStateManager.CoordinatorEpochAndTxnMetadata>> errorsAndData =
+            Either<Errors, Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>> errorsAndData =
                     txnStateManager.getTransactionState(transactionalId);
 
             if (errorsAndData.isLeft()) {
@@ -83,7 +83,7 @@ public class TransactionMarkerRequestCompletionHandler {
                 return;
             }
 
-            if (errorsAndData.getRight().isEmpty()) {
+            if (!errorsAndData.getRight().isPresent()) {
                 throw new IllegalStateException("The coordinator still owns the transaction partition for "
                         + transactionalId + ", but there is no metadata in the cache; this is not expected");
             }
