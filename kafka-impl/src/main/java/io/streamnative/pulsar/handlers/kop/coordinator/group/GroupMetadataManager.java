@@ -673,7 +673,7 @@ public class GroupMetadataManager {
                 }
             }
             openGroupsForProducer.computeIfAbsent(producerId, (pid) -> new HashSet<>())
-                .remove(producerId);
+                .remove(groupId);
         }
     }
 
