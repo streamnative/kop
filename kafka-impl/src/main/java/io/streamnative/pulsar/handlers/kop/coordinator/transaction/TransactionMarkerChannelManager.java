@@ -21,6 +21,7 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.streamnative.pulsar.handlers.kop.EndPoint;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
+import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import java.io.IOException;
@@ -280,18 +281,18 @@ public class TransactionMarkerChannelManager {
             kopBrokerLookupManager.isTopicExists(pulsarTopic)
                     .thenAccept(isTopicExists -> {
                         if (!isTopicExists) {
-                            ErrorsAndData<Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>>
+                            Either<Errors, Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>>
                                     transactionState = txnStateManager.getTransactionState(transactionalId);
-                            if (transactionState.hasErrors()) {
+                            if (transactionState.isLeft()) {
                                 log.info("Encountered {} trying to fetch transaction metadata for {} with coordinator "
                                                 + "epoch {}; cancel sending markers to its partition leaders"
-                                , transactionState.getErrors(), transactionalId, coordinatorEpoch);
+                                , transactionState.getLeft(), transactionalId, coordinatorEpoch);
                                 transactionsWithPendingMarkers.remove(transactionalId);
                                 addFuture.complete(null);
                                 return;
                             }
                             Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata> epochAndTxnMetadata =
-                                    transactionState.getData();
+                                    transactionState.getRight();
                             if (epochAndTxnMetadata.isPresent()) {
                                 if (!coordinatorEpoch.equals(epochAndTxnMetadata.get().getCoordinatorEpoch())) {
                                     log.info("The cached metadata has changed to {} (old coordinator epoch is {}) "
@@ -376,11 +377,11 @@ public class TransactionMarkerChannelManager {
         log.info("Completed sending transaction markers for {}; begin transition to {}",
                 transactionalId, newMetadata.getTxnState());
 
-        ErrorsAndData<Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>> errorsAndData =
+        Either<Errors, Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>> errorsAndData =
                 txnStateManager.getTransactionState(transactionalId);
 
-        if (errorsAndData.hasErrors()) {
-            switch (errorsAndData.getErrors()) {
+        if (errorsAndData.isLeft()) {
+            switch (errorsAndData.getLeft()) {
                 case NOT_COORDINATOR:
                     log.info("No longer the coordinator for {} with coordinator epoch {}; cancel appending {} to "
                             + "transaction log", transactionalId, coordinatorEpoch, newMetadata);
@@ -392,15 +393,15 @@ public class TransactionMarkerChannelManager {
                     break;
                 default:
                     throw new IllegalStateException("Unhandled error {} when fetching current transaction state",
-                            errorsAndData.getErrors().exception());
+                            errorsAndData.getLeft().exception());
             }
         } else {
-            if (!errorsAndData.getData().isPresent()) {
+            if (!errorsAndData.getRight().isPresent()) {
                 String errorMsg = String.format("The coordinator still owns the transaction partition for %s, but "
                         + "there is no metadata in the cache; this is not expected", transactionalId);
                 throw new IllegalStateException(errorMsg);
             }
-            TransactionStateManager.CoordinatorEpochAndTxnMetadata epochAndMetadata = errorsAndData.getData().get();
+            TransactionStateManager.CoordinatorEpochAndTxnMetadata epochAndMetadata = errorsAndData.getRight().get();
             if (epochAndMetadata.getCoordinatorEpoch() == coordinatorEpoch) {
                 log.debug("Sending {}'s transaction markers for {} with coordinator epoch {} succeeded, trying to "
                         + "append complete transaction log now", transactionalId, txnMetadata, coordinatorEpoch);

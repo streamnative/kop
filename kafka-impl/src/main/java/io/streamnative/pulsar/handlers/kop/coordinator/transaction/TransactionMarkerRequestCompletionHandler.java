@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
+import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.HashSet;
 import java.util.List;
@@ -59,11 +60,11 @@ public class TransactionMarkerRequestCompletionHandler {
                         + "producer id " + txnMarker.producerId());
             }
 
-            ErrorsAndData<Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>> errorsAndData =
+            Either<Errors, Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>> errorsAndData =
                     txnStateManager.getTransactionState(transactionalId);
 
-            if (errorsAndData.hasErrors()) {
-                switch (errorsAndData.getErrors()) {
+            if (errorsAndData.isLeft()) {
+                switch (errorsAndData.getLeft()) {
                     case NOT_COORDINATOR:
                         log.info("I am no longer the coordinator for {}; cancel sending transaction markers {} to the "
                                 + "brokers", transactionalId, txnMarker);
@@ -76,19 +77,19 @@ public class TransactionMarkerRequestCompletionHandler {
                         txnMarkerChannelManager.removeMarkersForTxnId(transactionalId);
                         break;
                     default:
-                        throw new IllegalStateException("Unhandled error " + errorsAndData.getErrors()
+                        throw new IllegalStateException("Unhandled error " + errorsAndData.getLeft()
                                 + " when fetching current transaction state");
                 }
                 return;
             }
 
-            if (!errorsAndData.getData().isPresent()) {
+            if (!errorsAndData.getRight().isPresent()) {
                 throw new IllegalStateException("The coordinator still owns the transaction partition for "
                         + transactionalId + ", but there is no metadata in the cache; this is not expected");
             }
 
             AbortSendingRetryPartitions abortSendOrRetryPartitions =
-                    hasAbortSendOrRetryPartitions(transactionalId, txnMarker, errorsAndData, errors);
+                    hasAbortSendOrRetryPartitions(transactionalId, txnMarker, errorsAndData.getRight().get(), errors);
 
             if (abortSendOrRetryPartitions.abortSending.get()) {
                 return;
@@ -119,10 +120,8 @@ public class TransactionMarkerRequestCompletionHandler {
     private AbortSendingRetryPartitions hasAbortSendOrRetryPartitions(
             String transactionalId,
             WriteTxnMarkersRequest.TxnMarkerEntry txnMarker,
-            ErrorsAndData<Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>> errorsAndData,
+            TransactionStateManager.CoordinatorEpochAndTxnMetadata epochAndMetadata,
             Map<TopicPartition, Errors> errors) {
-
-        TransactionStateManager.CoordinatorEpochAndTxnMetadata epochAndMetadata = errorsAndData.getData().get();
         TransactionMetadata txnMetadata = epochAndMetadata.getTransactionMetadata();
 
         AbortSendingRetryPartitions abortSendingAndRetryPartitions = new AbortSendingRetryPartitions();
