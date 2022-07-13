@@ -19,6 +19,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
+import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
@@ -313,20 +314,20 @@ public class TransactionStateManager {
             // could have been appended to the log in between these two events, and therefore appendRecords() would
             // append entries with an old coordinator epoch that can still be successfully replicated on followers
             // and make the log in a bad state.
-            ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> errorsAndData =
+            Either<Errors, Optional<CoordinatorEpochAndTxnMetadata>> errorsAndData =
                     getTransactionState(transactionalId);
 
-            if (errorsAndData.hasErrors()) {
-                responseCallback.fail(errorsAndData.getErrors());
+            if (errorsAndData.isLeft()) {
+                responseCallback.fail(errorsAndData.getLeft());
                 return null;
             }
 
-            if (!errorsAndData.getData().isPresent()) {
+            if (!errorsAndData.getRight().isPresent()) {
                 responseCallback.fail(Errors.NOT_COORDINATOR);
                 return null;
             }
 
-            CoordinatorEpochAndTxnMetadata epochAndMetadata = errorsAndData.getData().get();
+            CoordinatorEpochAndTxnMetadata epochAndMetadata = errorsAndData.getRight().get();
             TransactionMetadata metadata = epochAndMetadata.getTransactionMetadata();
             metadata.inLock(() -> {
                 if (epochAndMetadata.getCoordinatorEpoch() != coordinatorEpoch) {
@@ -370,27 +371,26 @@ public class TransactionStateManager {
         }
 
         ProduceResponse.PartitionResponse status = responseStatus.get(topicPartition);
-        ErrorsAndData<Void> result = statusCheck(transactionalId, newMetadata, status);
+        Errors errors = statusCheck(transactionalId, newMetadata, status);
 
-        if (!result.hasErrors()) {
-            validStatus(transactionalId, newMetadata, result, coordinatorEpoch);
+        if (errors == Errors.NONE) {
+            errors = validStatus(transactionalId, newMetadata, errors, coordinatorEpoch);
         } else {
-            invalidStatus(transactionalId, newMetadata, result, coordinatorEpoch, retryOnError);
+            invalidStatus(transactionalId, newMetadata, coordinatorEpoch, errors, retryOnError);
         }
 
-        if (result.hasErrors()) {
-            responseCallback.fail(result.getErrors());
+        if (errors != Errors.NONE) {
+            responseCallback.fail(errors);
         } else {
             responseCallback.complete();
         }
     }
 
-    private ErrorsAndData<Void> statusCheck(String transactionalId,
-                                            TransactionMetadata.TxnTransitMetadata newMetadata,
-                                            ProduceResponse.PartitionResponse status) {
-        ErrorsAndData<Void> result = new ErrorsAndData<>();
+    private Errors statusCheck(String transactionalId,
+                               TransactionMetadata.TxnTransitMetadata newMetadata,
+                               ProduceResponse.PartitionResponse status) {
         if (status.error == Errors.NONE) {
-            result.setErrors(Errors.NONE);
+            return Errors.NONE;
         } else {
             if (log.isDebugEnabled()) {
                 log.debug("Appending {}'s new metadata {} failed due to {}",
@@ -404,39 +404,33 @@ public class TransactionStateManager {
                 case NOT_ENOUGH_REPLICAS_AFTER_APPEND:
                 case REQUEST_TIMED_OUT:
                     // note that for timed out request we return NOT_AVAILABLE error code to let client retry
-                    result.setErrors(Errors.COORDINATOR_NOT_AVAILABLE);
-                    break;
+                    return Errors.COORDINATOR_NOT_AVAILABLE;
                 case KAFKA_STORAGE_ERROR:
 //                case Errors.NOT_LEADER_OR_FOLLOWER:
-                    result.setErrors(Errors.NOT_COORDINATOR);
-                    break;
+                    return Errors.NOT_COORDINATOR;
                 case MESSAGE_TOO_LARGE:
                 case RECORD_LIST_TOO_LARGE:
-                    result.setErrors(Errors.UNKNOWN_SERVER_ERROR);
-                    break;
                 default:
-                    result.setErrors(Errors.UNKNOWN_SERVER_ERROR);
-                    break;
+                    return Errors.UNKNOWN_SERVER_ERROR;
             }
         }
-        return result;
     }
 
-    private void validStatus(String transactionalId,
-                             TransactionMetadata.TxnTransitMetadata newMetadata,
-                             ErrorsAndData<Void> result,
-                             int coordinatorEpoch) {
+    private Errors validStatus(String transactionalId,
+                               TransactionMetadata.TxnTransitMetadata newMetadata,
+                               Errors errors,
+                               int coordinatorEpoch) {
         // now try to update the cache: we need to update the status in-place instead of
         // overwriting the whole object to ensure synchronization
-        ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> errorsAndData =
+        Either<Errors, Optional<CoordinatorEpochAndTxnMetadata>> errorsAndData =
                 getTransactionState(transactionalId);
 
-        if (errorsAndData.hasErrors()) {
+        if (errorsAndData.isLeft()) {
             log.info("Accessing the cached transaction metadata for {} returns {} error; "
                             + "aborting transition to the new metadata and setting the error in the callback",
-                    transactionalId, errorsAndData.getErrors());
-            result.setErrors(errorsAndData.getErrors());
-        } else if (!errorsAndData.getData().isPresent()) {
+                    transactionalId, errorsAndData.getLeft());
+            return errorsAndData.getLeft();
+        } else if (!errorsAndData.getRight().isPresent()) {
             // this transactional id no longer exists, maybe the corresponding partition has already been migrated
             // out. return NOT_COORDINATOR to let the client re-discover the transaction coordinator
             log.info("The cached coordinator metadata does not exist in the cache anymore for {} after appended "
@@ -445,12 +439,12 @@ public class TransactionStateManager {
                             + "in the callback",
                     transactionalId, newMetadata, partitionFor(transactionalId), coordinatorEpoch,
                     Errors.NOT_COORDINATOR);
-            result.setErrors(Errors.NOT_COORDINATOR);
+            return Errors.NOT_COORDINATOR;
         } else {
-            TransactionMetadata metadata = errorsAndData.getData().get().transactionMetadata;
+            TransactionMetadata metadata = errorsAndData.getRight().get().transactionMetadata;
 
-            metadata.inLock(() -> {
-                if (errorsAndData.getData().get().coordinatorEpoch != coordinatorEpoch) {
+            return metadata.inLock(() -> {
+                if (errorsAndData.getRight().get().coordinatorEpoch != coordinatorEpoch) {
                     // the cache may have been changed due to txn topic partition emigration and immigration,
                     // in this case directly return NOT_COORDINATOR to client and let it to re-discover the
                     // transaction coordinator
@@ -460,7 +454,7 @@ public class TransactionStateManager {
                                     + "{} in the callback",
                             transactionalId, coordinatorEpoch, newMetadata, partitionFor(transactionalId),
                             coordinatorEpoch, Errors.NOT_CONTROLLER);
-                    result.setErrors(Errors.NOT_COORDINATOR);
+                    return Errors.NOT_COORDINATOR;
                 } else {
                     try {
                         if (log.isDebugEnabled()) {
@@ -468,60 +462,60 @@ public class TransactionStateManager {
                                     + "successed", transactionalId, newMetadata, coordinatorEpoch, transactionalId);
                         }
                         metadata.completeTransitionTo(newMetadata);
+                        return errors;
                     } catch (IllegalStateException ex) {
                         log.error("Failed to complete transition.", ex);
-                        result.setErrors(Errors.forException(ex));
+                        return Errors.UNKNOWN_SERVER_ERROR;
                     }
                 }
-                return null;
             });
         }
     }
 
     private void invalidStatus(String transactionalId,
                                TransactionMetadata.TxnTransitMetadata newMetadata,
-                               ErrorsAndData<Void> result,
                                int coordinatorEpoch,
+                               Errors errors,
                                RetryOnError retryOnError) {
-        ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> errorsAndData =
+        Either<Errors, Optional<CoordinatorEpochAndTxnMetadata>> errorsAndData =
                 getTransactionState(transactionalId);
 
         // Reset the pending state when returning an error, since there is no active transaction for the
         // transactional id at this point.
-        if (errorsAndData.hasErrors()) {
+        if (errorsAndData.isLeft()) {
             // Do nothing here, since we want to return the original append error to the user.
             log.info("TransactionalId {} append transaction log for {} transition failed due to {}, aborting state "
                     + "transition and returning the error in the callback since retrieving metadata "
-                    + "returned {}", transactionalId, newMetadata, result.getErrors(), errorsAndData.getErrors());
+                    + "returned {}", transactionalId, newMetadata, errors, errorsAndData.getLeft());
 
-        } else if (!errorsAndData.getData().isPresent()) {
+        } else if (!errorsAndData.getRight().isPresent()) {
             // Do nothing here, since we want to return the original append error to the user.
             log.info("TransactionalId {} append transaction log for {} transition failed due to {}, aborting state "
                     + "transition and returning the error in the callback since metadata is not available in the "
-                    + "cache anymore", transactionalId, newMetadata, result.getErrors());
+                    + "cache anymore", transactionalId, newMetadata, errors);
         } else {
-            TransactionMetadata metadata = errorsAndData.getData().get().transactionMetadata;
+            TransactionMetadata metadata = errorsAndData.getRight().get().transactionMetadata;
             metadata.inLock(() -> {
-                if (errorsAndData.getData().get().coordinatorEpoch == coordinatorEpoch) {
-                    if (retryOnError.retry(result.getErrors())) {
+                if (errorsAndData.getRight().get().coordinatorEpoch == coordinatorEpoch) {
+                    if (retryOnError.retry(errors)) {
                         log.info("TransactionalId {} append transaction log for {} transition failed due to {}, "
                                         + "not resetting pending state {} but just returning the error in the callback "
                                         + "to let the caller retry",
-                                metadata.getTransactionalId(), newMetadata, result.getErrors(),
+                                metadata.getTransactionalId(), newMetadata, errors,
                                 metadata.getPendingState());
                     } else {
                         log.info("TransactionalId {} append transaction log for {} transition failed due to {}, "
                                     + "resetting pending state from {}, aborting state transition and returning {} in "
                                     + "the callback",
-                                metadata.getTransactionalId(), newMetadata, result.getErrors(),
-                                metadata.getPendingState(), result.getErrors());
+                                metadata.getTransactionalId(), newMetadata, errors,
+                                metadata.getPendingState(), errorsAndData.getLeft());
                         metadata.setPendingState(Optional.empty());
                     }
                 } else {
                     log.info("TransactionalId {} append transaction log for {} transition failed due to {}, "
                                     + "aborting state transition and returning the error in the callback since the "
                                     + "coordinator epoch has changed from {} to {}", metadata.getTransactionalId(),
-                            newMetadata, result.getErrors(), errorsAndData.getData().get().coordinatorEpoch,
+                            newMetadata, errors, errorsAndData.getRight().get().coordinatorEpoch,
                             coordinatorEpoch);
                 }
                 return null;
@@ -544,18 +538,15 @@ public class TransactionStateManager {
         boolean retry(Errors errors);
     }
 
-    public ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> getTransactionState(String transactionalId) {
+    public Either<Errors, Optional<CoordinatorEpochAndTxnMetadata>> getTransactionState(String transactionalId) {
         return getAndMaybeAddTransactionState(transactionalId, Optional.empty());
     }
 
-    public ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> putTransactionStateIfNotExists(
+    public Either<Errors, CoordinatorEpochAndTxnMetadata> putTransactionStateIfNotExists(
             TransactionMetadata metadata) {
-        ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> errorsAndData =
-                getAndMaybeAddTransactionState(metadata.getTransactionalId(), Optional.of(metadata));
-        if (!errorsAndData.getData().isPresent()) {
-            throw new IllegalStateException("Unexpected empty transaction metadata returned while putting " + metadata);
-        }
-        return errorsAndData;
+        return getAndMaybeAddTransactionState(metadata.getTransactionalId(), Optional.of(metadata))
+                .map(option -> option.orElseThrow(() -> new IllegalStateException(
+                        "Unexpected empty transaction metadata returned while putting " + metadata)));
     }
 
     /**
@@ -571,37 +562,30 @@ public class TransactionStateManager {
      * either return None or create a new metadata and added to the cache.
      * This function is covered by the state read lock.
      */
-    private ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> getAndMaybeAddTransactionState(
+    private Either<Errors, Optional<CoordinatorEpochAndTxnMetadata>> getAndMaybeAddTransactionState(
             String transactionalId,
             Optional<TransactionMetadata> createdTxnMetadataOpt) {
         return CoreUtils.inReadLock(stateLock, () -> {
             int partitionId = partitionFor(transactionalId);
             if (loadingPartitions.contains(partitionId)) {
-                return new ErrorsAndData<>(Errors.COORDINATOR_LOAD_IN_PROGRESS, Optional.empty());
+                return Either.left(Errors.COORDINATOR_LOAD_IN_PROGRESS);
             } else if (leavingPartitions.contains(partitionId)) {
-                return new ErrorsAndData<>(Errors.NOT_COORDINATOR, Optional.empty());
+                return Either.left(Errors.NOT_COORDINATOR);
             } else {
                 Map<String, TransactionMetadata> metadataMap = transactionMetadataCache.get(partitionId);
                 if (metadataMap == null) {
-                    return new ErrorsAndData<>(Errors.NOT_COORDINATOR, Optional.empty());
+                    return Either.left(Errors.NOT_COORDINATOR);
                 }
-                Optional<TransactionMetadata> txnMetadata;
+
+                final Optional<TransactionMetadata> txnMetadata;
                 TransactionMetadata txnMetadataCache = metadataMap.get(transactionalId);
                 if (txnMetadataCache == null) {
-                    if (createdTxnMetadataOpt.isPresent()) {
-                        metadataMap.put(transactionalId, createdTxnMetadataOpt.get());
-                        txnMetadata = createdTxnMetadataOpt;
-                    } else {
-                        txnMetadata = Optional.empty();
-                    }
+                    createdTxnMetadataOpt.ifPresent(metadata -> metadataMap.put(transactionalId, metadata));
+                    txnMetadata = createdTxnMetadataOpt;
                 } else {
                     txnMetadata = Optional.of(txnMetadataCache);
                 }
-
-                return txnMetadata
-                        .map(metadata -> new ErrorsAndData<>(
-                                Optional.of(new CoordinatorEpochAndTxnMetadata(-1, metadata))))
-                        .orElseGet(() -> new ErrorsAndData<>(Errors.NONE, Optional.empty()));
+                return Either.right(txnMetadata.map(metadata -> new CoordinatorEpochAndTxnMetadata(-1, metadata)));
             }
         });
     }
