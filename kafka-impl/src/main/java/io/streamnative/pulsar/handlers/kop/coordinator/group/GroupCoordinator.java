@@ -519,24 +519,22 @@ public class GroupCoordinator {
                                     ))
                             );
 
-                            groupManager.storeGroup(group, assignment).thenApply(error -> {
-                                return group.inLock(() -> {
-                                    // another member may have joined the group while we were awaiting this callback,
-                                    // so we must ensure we are still in the CompletingRebalance state and the same
-                                    // generation when it gets invoked. if we have transitioned to another state,
-                                    // then do nothing
-                                    if (group.is(CompletingRebalance) && generationId == group.generationId()) {
-                                        if (error != Errors.NONE) {
-                                            resetAndPropagateAssignmentError(group, error);
-                                            maybePrepareRebalance(group);
-                                        } else {
-                                            setAndPropagateAssignment(group, assignment);
-                                            group.transitionTo(Stable);
-                                        }
+                            groupManager.storeGroup(group, assignment).thenApply(error -> group.inLock(() -> {
+                                // another member may have joined the group while we were awaiting this callback,
+                                // so we must ensure we are still in the CompletingRebalance state and the same
+                                // generation when it gets invoked. if we have transitioned to another state,
+                                // then do nothing
+                                if (group.is(CompletingRebalance) && generationId == group.generationId()) {
+                                    if (error != Errors.NONE) {
+                                        resetAndPropagateAssignmentError(group, error);
+                                        maybePrepareRebalance(group);
+                                    } else {
+                                        setAndPropagateAssignment(group, assignment);
+                                        group.transitionTo(Stable);
                                     }
-                                    return null;
-                                });
-                            });
+                                }
+                                return null;
+                            }));
                         }
                         break;
 
@@ -559,32 +557,27 @@ public class GroupCoordinator {
         String groupId,
         String memberId
     ) {
-        return validateGroupStatus(groupId, ApiKeys.LEAVE_GROUP).map(error ->
-            CompletableFuture.completedFuture(error)
-        ).orElseGet(() -> {
-            return groupManager.getGroup(groupId).map(group -> {
-                return group.inLock(() -> {
-                    if (group.is(Dead) || !group.has(memberId)) {
-                        return CompletableFuture.completedFuture(Errors.UNKNOWN_MEMBER_ID);
-                    } else {
-                        MemberMetadata member = group.get(memberId);
-                        removeHeartbeatForLeavingMember(group, member);
-                        if (log.isDebugEnabled()) {
-                            log.debug("Member {} in group {} has left, removing it from the group",
-                                member.memberId(), group.groupId());
-                        }
-                        removeMemberAndUpdateGroup(group, member);
-                        return CompletableFuture.completedFuture(Errors.NONE);
-                    }
-                });
-            }).orElseGet(() -> {
-                // if the group is marked as dead, it means some other thread has just removed the group
-                // from the coordinator metadata; this is likely that the group has migrated to some other
-                // coordinator OR the group is in a transient unstable phase. Let the consumer to retry
-                // joining without specified consumer id,
+        return validateGroupStatus(groupId, ApiKeys.LEAVE_GROUP).map(CompletableFuture::completedFuture
+        ).orElseGet(() -> groupManager.getGroup(groupId).map(group -> group.inLock(() -> {
+            if (group.is(Dead) || !group.has(memberId)) {
                 return CompletableFuture.completedFuture(Errors.UNKNOWN_MEMBER_ID);
-            });
-        });
+            } else {
+                MemberMetadata member = group.get(memberId);
+                removeHeartbeatForLeavingMember(member);
+                if (log.isDebugEnabled()) {
+                    log.debug("Member {} in group {} has left, removing it from the group",
+                        member.memberId(), group.groupId());
+                }
+                removeMemberAndUpdateGroup(group, member);
+                return CompletableFuture.completedFuture(Errors.NONE);
+            }
+        })).orElseGet(() -> {
+            // if the group is marked as dead, it means some other thread has just removed the group
+            // from the coordinator metadata; this is likely that the group has migrated to some other
+            // coordinator OR the group is in a transient unstable phase. Let the consumer to retry
+            // joining without specified consumer id,
+            return CompletableFuture.completedFuture(Errors.UNKNOWN_MEMBER_ID);
+        }));
     }
 
     public Map<String, Errors> handleDeleteGroups(Set<String> groupIds) {
@@ -596,52 +589,47 @@ public class GroupCoordinator {
             validateErrorsOpt.map(error -> {
                 groupErrors.put(groupId, error);
                 return error;
-            }).orElseGet(() -> {
-                return groupManager.getGroup(groupId).map(group -> {
-                    return group.inLock(() -> {
-                        switch(group.currentState()) {
-                            case Dead:
-                                if (groupManager.groupNotExists(groupId)) {
-                                    groupErrors.put(groupId, Errors.GROUP_ID_NOT_FOUND);
-                                } else {
-                                    groupErrors.put(groupId, Errors.NOT_COORDINATOR);
-                                }
-                                break;
-                            case Empty:
-                                group.transitionTo(Dead);
-                                groupsEligibleForDeletion.add(group);
-                                break;
-                            default:
-                                groupErrors.put(groupId, Errors.NON_EMPTY_GROUP);
-                                break;
+            }).orElseGet(() -> groupManager.getGroup(groupId).map(group -> group.inLock(() -> {
+                switch(group.currentState()) {
+                    case Dead:
+                        if (groupManager.groupNotExists(groupId)) {
+                            groupErrors.put(groupId, Errors.GROUP_ID_NOT_FOUND);
+                        } else {
+                            groupErrors.put(groupId, Errors.NOT_COORDINATOR);
                         }
-                        return Errors.NONE;
-                    });
-                }).orElseGet(() -> {
-                    Errors error;
-                    if (groupManager.groupNotExists(groupId)) {
-                        error = Errors.GROUP_ID_NOT_FOUND;
-                    } else {
-                        error = Errors.NOT_COORDINATOR;
-                    }
-                    groupErrors.put(groupId, error);
-                    return Errors.NONE;
-                });
-            });
+                        break;
+                    case Empty:
+                        group.transitionTo(Dead);
+                        groupsEligibleForDeletion.add(group);
+                        break;
+                    default:
+                        groupErrors.put(groupId, Errors.NON_EMPTY_GROUP);
+                        break;
+                }
+                return Errors.NONE;
+            })).orElseGet(() -> {
+                Errors error;
+                if (groupManager.groupNotExists(groupId)) {
+                    error = Errors.GROUP_ID_NOT_FOUND;
+                } else {
+                    error = Errors.NOT_COORDINATOR;
+                }
+                groupErrors.put(groupId, error);
+                return Errors.NONE;
+            }));
         });
 
         if (!groupsEligibleForDeletion.isEmpty()) {
             groupManager.cleanGroupMetadata(
                 groupsEligibleForDeletion.stream(),
-                g -> g.removeAllOffsets()
-            ).thenAccept(offsetsRemoved -> {
-                log.info("The following groups were deleted {}. A total of {} offsets were removed.",
+                    GroupMetadata::removeAllOffsets
+            ).thenAccept(offsetsRemoved -> log.info(
+                    "The following groups were deleted {}. A total of {} offsets were removed.",
                     groupsEligibleForDeletion.stream()
-                        .map(GroupMetadata::groupId)
-                        .collect(Collectors.joining(",")),
+                            .map(GroupMetadata::groupId)
+                            .collect(Collectors.joining(",")),
                     offsetsRemoved
-                );
-            });
+            ));
             groupErrors.putAll(
                 groupsEligibleForDeletion.stream()
                     .collect(Collectors.toMap(
@@ -749,7 +737,7 @@ public class GroupCoordinator {
         int generationId,
         Map<TopicPartition, OffsetAndMetadata> offsetMetadata
     ) {
-        CompletableFuture<Map<TopicPartition, Errors>> result = validateGroupStatus(groupId, ApiKeys.OFFSET_COMMIT)
+        return validateGroupStatus(groupId, ApiKeys.OFFSET_COMMIT)
             .map(error ->
                 CompletableFuture.completedFuture(
                     CoreUtils.mapValue(
@@ -757,31 +745,27 @@ public class GroupCoordinator {
                         ignored -> error
                     )
                 )
-            ).orElseGet(() -> {
-                return groupManager.getGroup(groupId)
-                    .map(group ->
-                        doCommitOffsets(
-                            group, memberId, generationId, NO_PRODUCER_ID, NO_PRODUCER_EPOCH,
-                            offsetMetadata
-                        )
-                    ).orElseGet(() -> {
-                        if (generationId < 0) {
-                            // the group is not relying on Kafka for group management, so allow the commit
-                            GroupMetadata group = groupManager.addGroup(new GroupMetadata(groupId, Empty));
-                            return doCommitOffsets(group, memberId, generationId, NO_PRODUCER_ID, NO_PRODUCER_EPOCH,
-                                offsetMetadata);
-                        } else {
-                            return CompletableFuture.completedFuture(
-                                CoreUtils.mapValue(
-                                    offsetMetadata,
-                                    ignored -> Errors.ILLEGAL_GENERATION
-                                )
-                            );
-                        }
-                    });
-            });
-
-        return result;
+            ).orElseGet(() -> groupManager.getGroup(groupId)
+                .map(group ->
+                    doCommitOffsets(
+                        group, memberId, generationId, NO_PRODUCER_ID, NO_PRODUCER_EPOCH,
+                        offsetMetadata
+                    )
+                ).orElseGet(() -> {
+                    if (generationId < 0) {
+                        // the group is not relying on Kafka for group management, so allow the commit
+                        GroupMetadata group = groupManager.addGroup(new GroupMetadata(groupId, Empty));
+                        return doCommitOffsets(group, memberId, generationId, NO_PRODUCER_ID, NO_PRODUCER_EPOCH,
+                            offsetMetadata);
+                    } else {
+                        return CompletableFuture.completedFuture(
+                            CoreUtils.mapValue(
+                                offsetMetadata,
+                                ignored -> Errors.ILLEGAL_GENERATION
+                            )
+                        );
+                    }
+                }));
     }
 
     public CompletableFuture<Void> scheduleHandleTxnCompletion(
@@ -1054,8 +1038,7 @@ public class GroupCoordinator {
             delayedHeartbeat, Lists.newArrayList(memberKey));
     }
 
-    private void removeHeartbeatForLeavingMember(GroupMetadata group,
-                                                 MemberMetadata member) {
+    private void removeHeartbeatForLeavingMember(MemberMetadata member) {
         member.isLeaving(true);
         MemberKey memberKey = new MemberKey(member.groupId(), member.memberId());
         heartbeatPurgatory.checkAndComplete(memberKey);
@@ -1182,7 +1165,7 @@ public class GroupCoordinator {
         group.inLock(() -> {
             // remove any members who haven't joined the group yet
             group.notYetRejoinedMembers().forEach(failedMember -> {
-                removeHeartbeatForLeavingMember(group, failedMember);
+                removeHeartbeatForLeavingMember(failedMember);
                 group.remove(failedMember.memberId());
                 // TODO: cut the socket connection to the client
             });
@@ -1278,14 +1261,6 @@ public class GroupCoordinator {
         return member.awaitingJoinCallback() != null
             || member.awaitingSyncCallback() != null
             || member.latestHeartbeat() + member.sessionTimeoutMs() > heartbeatDeadline;
-    }
-
-    private boolean isCoordinatorForGroup(String groupId) {
-        return groupManager.isGroupLocal(groupId);
-    }
-
-    private boolean isCoordinatorLoadInProgress(String groupId) {
-        return groupManager.isGroupLoading(groupId);
     }
 
     public boolean isActive() {
