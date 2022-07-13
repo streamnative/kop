@@ -311,7 +311,7 @@ public class GroupMetadata {
             this.protocolType = Optional.of(member.protocolType());
         }
 
-        checkArgument(groupId == member.groupId());
+        checkArgument(groupId.equals(member.groupId()));
         checkArgument(Objects.equals(protocolType.orElse(null), member.protocolType()));
         checkArgument(supportsProtocols(member.protocols()));
 
@@ -442,7 +442,7 @@ public class GroupMetadata {
         }
 
         OffsetAndMetadata stagedOffset = pendingOffsetCommits.get(topicPartition);
-        if (null != stagedOffset && offsetWithCommitRecordMetadata.offsetAndMetadata == stagedOffset) {
+        if (offsetWithCommitRecordMetadata.offsetAndMetadata.equals(stagedOffset)) {
             pendingOffsetCommits.remove(topicPartition);
         } else {
             // The pendingOffsetCommits for this partition could be empty if the topic was deleted, in which case
@@ -453,7 +453,7 @@ public class GroupMetadata {
     public void failPendingOffsetWrite(TopicPartition topicPartition,
                                        OffsetAndMetadata offset) {
         OffsetAndMetadata pendingOffset = pendingOffsetCommits.get(topicPartition);
-        if (pendingOffset != null && offset == pendingOffset) {
+        if (offset.equals(pendingOffset)) {
             pendingOffsetCommits.remove(topicPartition);
         }
     }
@@ -512,8 +512,8 @@ public class GroupMetadata {
             pendingTransactionalOffsetCommits.get(producerId);
         if (null != pendingOffsets) {
             if (pendingOffsets.containsKey(topicPartition)
-                && pendingOffsets.get(topicPartition).offsetAndMetadata()
-                    == commitRecordMetadataAndOffset.offsetAndMetadata) {
+                    && pendingOffsets.get(topicPartition).offsetAndMetadata().equals(
+                    commitRecordMetadataAndOffset.offsetAndMetadata)) {
                 pendingOffsets.put(topicPartition, commitRecordMetadataAndOffset);
             }
         } else {
@@ -669,6 +669,11 @@ public class GroupMetadata {
 
     public int numOffsets() {
         return offsets.size();
+    }
+
+    @VisibleForTesting
+    int numPendingOffsetCommits() {
+        return pendingOffsetCommits.size();
     }
 
     public boolean hasOffsets() {

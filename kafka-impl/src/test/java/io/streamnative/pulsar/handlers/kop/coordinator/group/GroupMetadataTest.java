@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import lombok.val;
 import org.apache.kafka.common.TopicPartition;
 import org.testng.annotations.BeforeMethod;
@@ -44,7 +45,7 @@ import org.testng.annotations.Test;
 public class GroupMetadataTest {
 
     private static final String protocolType = "consumer";
-    private static final String groupId = "test-group-id";
+    private static final Supplier<String> groupId = () -> new String("test-group-id".toCharArray());
     private static final String clientId = "test-client-id";
     private static final String clientHost = "test-client-host";
     private static final String NAMESPACE_PREFIX = "public/default";
@@ -55,7 +56,7 @@ public class GroupMetadataTest {
 
     @BeforeMethod
     public void setUp() {
-        group = new GroupMetadata(groupId, Empty);
+        group = new GroupMetadata(groupId.get(), Empty);
     }
 
     @Test
@@ -209,7 +210,7 @@ public class GroupMetadataTest {
         protocols.put("roundrobin", new byte[0]);
         MemberMetadata member = new MemberMetadata(
             memberId,
-            groupId,
+            groupId.get(),
             clientId,
             clientHost,
             rebalanceTimeoutMs,
@@ -226,7 +227,7 @@ public class GroupMetadataTest {
         protocols.put("range", new byte[0]);
         MemberMetadata otherMember = new MemberMetadata(
             otherMemberId,
-            groupId,
+            groupId.get(),
             clientId,
             clientHost,
             rebalanceTimeoutMs,
@@ -236,7 +237,7 @@ public class GroupMetadataTest {
 
         group.add(otherMember);
         // now could be either range or robin since there is no majority preference
-        assertTrue(protocols.keySet().contains(group.selectProtocol()));
+        assertTrue(protocols.containsKey(group.selectProtocol()));
 
         String lastMemberId = "lastMemberId";
         protocols = new LinkedHashMap<>();
@@ -244,7 +245,7 @@ public class GroupMetadataTest {
         protocols.put("range", new byte[0]);
         val lastMember = new MemberMetadata(
             lastMemberId,
-            groupId,
+            groupId.get(),
             clientId,
             clientHost,
             rebalanceTimeoutMs,
@@ -271,7 +272,7 @@ public class GroupMetadataTest {
         protocols.put("roundrobin", new byte[0]);
         MemberMetadata member = new MemberMetadata(
             memberId,
-            groupId,
+            groupId.get(),
             clientId,
             clientHost,
             rebalanceTimeoutMs,
@@ -285,7 +286,7 @@ public class GroupMetadataTest {
         protocols.put("blah", new byte[0]);
         MemberMetadata otherMember = new MemberMetadata(
             otherMemberId,
-            groupId,
+            groupId.get(),
             clientId,
             clientHost,
             rebalanceTimeoutMs,
@@ -309,7 +310,7 @@ public class GroupMetadataTest {
         protocols.put("roundrobin", new byte[0]);
         MemberMetadata member = new MemberMetadata(
             memberId,
-            groupId,
+            groupId.get(),
             clientId,
             clientHost,
             rebalanceTimeoutMs,
@@ -328,7 +329,7 @@ public class GroupMetadataTest {
         protocols.put("blah", new byte[0]);
         MemberMetadata otherMember = new MemberMetadata(
             otherMemberId,
-            groupId,
+            groupId.get(),
             clientId,
             clientHost,
             rebalanceTimeoutMs,
@@ -349,7 +350,7 @@ public class GroupMetadataTest {
         protocols.put("roundrobin", new byte[0]);
         val member = new MemberMetadata(
             memberId,
-            groupId,
+            groupId.get(),
             clientId,
             clientHost,
             rebalanceTimeoutMs,
@@ -397,8 +398,9 @@ public class GroupMetadataTest {
 
         group.onOffsetCommitAppend(
             partition,
-            new CommitRecordMetadataAndOffset(Optional.of(commitRecordOffset), offset));
-        assertTrue(group.hasOffsets());
+            new CommitRecordMetadataAndOffset(Optional.of(commitRecordOffset), OffsetAndMetadata.apply(37)));
+        assertEquals(group.numPendingOffsetCommits(), 0);
+        assertEquals(group.numOffsets(), 1);
         assertEquals(Optional.of(offset), group.offset(partition, NAMESPACE_PREFIX));
     }
 
@@ -413,7 +415,7 @@ public class GroupMetadataTest {
         assertTrue(group.hasOffsets());
         assertEquals(Optional.empty(), group.offset(partition, NAMESPACE_PREFIX));
 
-        group.failPendingOffsetWrite(partition, offset);
+        group.failPendingOffsetWrite(partition, OffsetAndMetadata.apply(37));
         assertFalse(group.hasOffsets());
         assertEquals(Optional.empty(), group.offset(partition, NAMESPACE_PREFIX));
     }
@@ -489,7 +491,7 @@ public class GroupMetadataTest {
         assertTrue(group.hasOffsets());
 
         group.onTxnOffsetCommitAppend(producerId, partition,
-            new CommitRecordMetadataAndOffset(Optional.of(3L), txnOffsetCommit));
+            new CommitRecordMetadataAndOffset(Optional.of(3L), OffsetAndMetadata.apply(37)));
         group.onOffsetCommitAppend(partition,
             new CommitRecordMetadataAndOffset(Optional.of(4L), consumerOffsetCommit));
         assertTrue(group.hasOffsets());
@@ -497,6 +499,8 @@ public class GroupMetadataTest {
 
         group.completePendingTxnOffsetCommit(producerId, true);
         assertTrue(group.hasOffsets());
+        assertEquals(group.numOffsets(), 1);
+        assertEquals(group.numPendingOffsetCommits(), 0);
         // This is the crucial assertion which validates that we materialize offsets in offset order,
         // not transactional order.
         assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition, NAMESPACE_PREFIX));
