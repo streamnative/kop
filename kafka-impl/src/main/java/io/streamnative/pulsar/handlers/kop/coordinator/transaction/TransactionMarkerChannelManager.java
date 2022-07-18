@@ -517,7 +517,7 @@ public class TransactionMarkerChannelManager {
                         sendEntries.add(txnIdAndMarkerEntry.entry);
                     }
                     channelHandler.enqueueWriteTxnMarkers(sendEntries,
-                            new TransactionMarkerRequestCompletionHandler(0, txnStateManager, this,
+                            new TransactionMarkerRequestCompletionHandler(txnStateManager, this,
                                     txnIdAndMarkerEntries, namespacePrefixForUserTopics));
                 });
             }

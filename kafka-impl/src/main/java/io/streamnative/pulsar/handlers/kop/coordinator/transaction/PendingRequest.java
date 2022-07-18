@@ -66,7 +66,7 @@ public class PendingRequest {
         sendFuture.complete(responseContext.getResponse());
     }
 
-    public void completeExceptionally(Throwable throwable) {
+    public void completeExceptionally(final Throwable throwable) {
         sendFuture.completeExceptionally(throwable);
     }
 
