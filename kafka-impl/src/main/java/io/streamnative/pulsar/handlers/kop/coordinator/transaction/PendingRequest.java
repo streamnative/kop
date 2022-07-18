@@ -22,12 +22,8 @@ import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.RequestHeader;
 
-/**
- * See <a href="https://github.com/apache/kafka/pull/8471">#8471</a> for the reserved correlation id design.
- */
 public class PendingRequest {
 
-    private static final CorrelationIdGenerator CORRELATION_ID_GENERATOR = new CorrelationIdGenerator();
     private static final String CLIENT_ID = "kop-internal-txn-client";
     private final RequestHeader requestHeader;
     private final AbstractRequest request;
