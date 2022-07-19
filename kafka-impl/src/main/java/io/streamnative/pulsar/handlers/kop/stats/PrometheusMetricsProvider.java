@@ -39,7 +39,7 @@ public class PrometheusMetricsProvider implements PrometheusRawMetricsProvider {
     public static final int DEFAULT_PROMETHEUS_STATS_LATENCY_ROLLOVER_SECONDS = 60;
 
     private static final String KOP_PROMETHEUS_STATS_CLUSTER = "cluster";
-    private Map<String, String> defaultStatsLoggerLabels = new HashMap<>();
+    private final Map<String, String> defaultStatsLoggerLabels = new HashMap<>();
 
     private final CollectorRegistry registry;
 
