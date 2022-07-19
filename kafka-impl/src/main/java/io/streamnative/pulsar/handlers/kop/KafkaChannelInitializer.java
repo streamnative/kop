@@ -63,6 +63,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final RequestStats requestStats;
     private final OrderedScheduler sendResponseScheduler;
 
+    private final LengthFieldPrepender lengthFieldPrepender;
+
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
                                    TenantContextManager tenantContextManager,
@@ -95,6 +97,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         }
         this.sendResponseScheduler = sendResponseScheduler;
         this.kafkaTopicManagerSharedState = kafkaTopicManagerSharedState;
+        this.lengthFieldPrepender = new LengthFieldPrepender(4);
     }
 
     @Override
@@ -108,7 +111,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         if (this.enableTls) {
             ch.pipeline().addLast(TLS_HANDLER, new SslHandler(SSLUtils.createSslEngine(sslContextFactory)));
         }
-        ch.pipeline().addLast(new LengthFieldPrepender(4));
+        ch.pipeline().addLast(lengthFieldPrepender);
         ch.pipeline().addLast("frameDecoder",
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler", newCnx());
