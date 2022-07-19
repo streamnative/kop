@@ -94,33 +94,40 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                         + transactionalId + ", but there is no metadata in the cache; this is not expected");
             }
 
-            AbortSendingRetryPartitions abortSendOrRetryPartitions =
-                    hasAbortSendOrRetryPartitions(transactionalId, txnMarker, errorsAndData.getRight().get(), errors);
-
-            if (abortSendOrRetryPartitions.abortSending.get()) {
-                return;
-            }
-
-            if (abortSendOrRetryPartitions.retryPartitions.isEmpty()) {
-                txnMarkerChannelManager.maybeWriteTxnCompletion(transactionalId);
-                return;
-            }
-
-            if (log.isDebugEnabled()) {
-                log.debug("Re-enqueuing {} transaction markers for transactional id {} under coordinator epoch {}",
-                        txnMarker.transactionResult(), transactionalId, txnMarker.coordinatorEpoch());
-            }
-
-            // re-enqueue with possible new leaders of the partitions
-            txnMarkerChannelManager.addTxnMarkersToBrokerQueue(
-                    transactionalId,
-                    txnMarker.producerId(),
-                    txnMarker.producerEpoch(),
-                    txnMarker.transactionResult(),
-                    txnMarker.coordinatorEpoch(),
-                    abortSendOrRetryPartitions.retryPartitions,
-                    namespacePrefixForUserTopics);
+            tryAddTxnMarker(transactionalId, txnMarker, errors, errorsAndData.getRight().get());
         });
+    }
+
+    private void tryAddTxnMarker(String transactionalId,
+                                 WriteTxnMarkersRequest.TxnMarkerEntry txnMarker,
+                                 Map<TopicPartition, Errors> errors,
+                                 TransactionStateManager.CoordinatorEpochAndTxnMetadata epochAndMetadata) {
+        AbortSendingRetryPartitions abortSendOrRetryPartitions =
+                hasAbortSendOrRetryPartitions(transactionalId, txnMarker, epochAndMetadata, errors);
+
+        if (abortSendOrRetryPartitions.abortSending.get()) {
+            return;
+        }
+
+        if (abortSendOrRetryPartitions.retryPartitions.isEmpty()) {
+            txnMarkerChannelManager.maybeWriteTxnCompletion(transactionalId);
+            return;
+        }
+
+        if (log.isDebugEnabled()) {
+            log.debug("Re-enqueuing {} transaction markers for transactional id {} under coordinator epoch {}",
+                    txnMarker.transactionResult(), transactionalId, txnMarker.coordinatorEpoch());
+        }
+
+        // re-enqueue with possible new leaders of the partitions
+        txnMarkerChannelManager.addTxnMarkersToBrokerQueue(
+                transactionalId,
+                txnMarker.producerId(),
+                txnMarker.producerEpoch(),
+                txnMarker.transactionResult(),
+                txnMarker.coordinatorEpoch(),
+                abortSendOrRetryPartitions.retryPartitions,
+                namespacePrefixForUserTopics);
     }
 
     private AbortSendingRetryPartitions hasAbortSendOrRetryPartitions(
