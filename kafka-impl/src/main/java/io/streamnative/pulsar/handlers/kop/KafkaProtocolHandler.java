@@ -275,6 +275,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         Configuration conf = new PropertiesConfiguration();
         conf.addProperty("prometheusStatsLatencyRolloverSeconds",
             kafkaConfig.getKopPrometheusStatsLatencyRolloverSeconds());
+        conf.addProperty("cluster", kafkaConfig.getClusterName());
         statsProvider.start(conf);
         brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
         schemaRegistryManager = new SchemaRegistryManager(kafkaConfig, brokerService.getPulsar(),
