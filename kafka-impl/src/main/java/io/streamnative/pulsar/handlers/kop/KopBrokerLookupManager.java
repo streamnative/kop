@@ -27,8 +27,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.resources.MetadataStoreCacheLoader;
-import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.policies.data.loadbalancer.LoadManagerReport;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
@@ -44,7 +42,7 @@ public class KopBrokerLookupManager {
     private final MetadataStoreCacheLoader metadataStoreCacheLoader;
     private final String selfAdvertisedListeners;
 
-    private final PulsarAdmin adminClient;
+    private final PulsarService pulsar;
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -52,8 +50,8 @@ public class KopBrokerLookupManager {
             LOOKUP_CACHE = new ConcurrentHashMap<>();
 
     public KopBrokerLookupManager(KafkaServiceConfiguration conf, PulsarService pulsarService) throws Exception {
+        this.pulsar = pulsarService;
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
-        this.adminClient = pulsarService.getAdminClient();
         this.metadataStoreCacheLoader = new MetadataStoreCacheLoader(pulsarService.getPulsarResources(),
                 conf.getBrokerLookupTimeoutMs());
         this.selfAdvertisedListeners = conf.getKafkaAdvertisedListeners();
@@ -122,19 +120,30 @@ public class KopBrokerLookupManager {
 
     public CompletableFuture<Boolean> isTopicExists(final String topic) {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
-        this.adminClient.topics().getPartitionedTopicMetadataAsync(topic)
-                .whenComplete((__, ex) -> {
+        TopicName topicName = TopicName.get(topic);
+        this.pulsar.getBrokerService().fetchPartitionedTopicMetadataAsync(TopicName.get(topic))
+                .whenComplete((metadata, ex) -> {
                     if (ex != null) {
-                        if (ex instanceof PulsarAdminException.NotFoundException) {
-                            future.complete(false);
-                            return;
-                        }
-                        // Retry when the exception is others exception.
-                        log.error("Get partitioned topic metadata has exception.", ex);
+                        log.error("Fetch partitioned topic metadata has exception.", ex);
+                        future.complete(true);
+                        return;
+                    }
+                    if (metadata.partitions == 0) {
+                        internalCheckTopicExists(topicName).thenAccept(future::complete)
+                                .exceptionally(throwable -> {
+                                    log.error("Check topic exists has exception.", throwable);
+                                    future.complete(true);
+                                    return null;
+                                });
+                        return;
                     }
                     future.complete(true);
                 });
         return future;
+    }
+
+    protected CompletableFuture<Boolean> internalCheckTopicExists(TopicName topicName) {
+        return this.pulsar.getNamespaceService().checkTopicExists(topicName);
     }
 
 
