@@ -27,6 +27,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.resources.MetadataStoreCacheLoader;
+import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.policies.data.loadbalancer.LoadManagerReport;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
@@ -42,6 +44,8 @@ public class KopBrokerLookupManager {
     private final LookupClient lookupClient;
     private final MetadataStoreCacheLoader metadataStoreCacheLoader;
 
+    private final PulsarAdmin adminClient;
+
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     public static final ConcurrentHashMap<String, ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>>
@@ -52,6 +56,7 @@ public class KopBrokerLookupManager {
 
     public KopBrokerLookupManager(KafkaServiceConfiguration conf, PulsarService pulsarService) throws Exception {
         this.advertisedListeners = conf.getKafkaAdvertisedListeners();
+        this.adminClient = pulsarService.getAdminClient();
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
         this.metadataStoreCacheLoader = new MetadataStoreCacheLoader(pulsarService.getPulsarResources(),
                 conf.getBrokerLookupTimeoutMs());
@@ -140,6 +145,23 @@ public class KopBrokerLookupManager {
             return CompletableFuture.completedFuture(null);
         }
         return lookupClient.getBrokerAddress(TopicName.get(topic), listenerName);
+    }
+
+    public CompletableFuture<Boolean> isTopicExists(final String topic) {
+        CompletableFuture<Boolean> future = new CompletableFuture<>();
+        this.adminClient.topics().getPartitionedTopicMetadataAsync(topic)
+                .whenComplete((__, ex) -> {
+                    if (ex != null) {
+                        if (ex instanceof PulsarAdminException.NotFoundException) {
+                            future.complete(false);
+                            return;
+                        }
+                        // Retry when the exception is others exception.
+                        log.error("Get partitioned topic metadata has exception.", ex);
+                    }
+                    future.complete(true);
+                });
+        return future;
     }
 
     private CompletableFuture<Optional<String>> getProtocolDataToAdvertise(
