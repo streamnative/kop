@@ -123,6 +123,11 @@ public class KopBrokerLookupManager {
         TopicName topicName = TopicName.get(topic);
         this.pulsar.getBrokerService().fetchPartitionedTopicMetadataAsync(TopicName.get(topic))
                 .whenComplete((metadata, ex) -> {
+                    if (ex != null) {
+                        log.error("Fetch partitioned topic metadata has exception.", ex);
+                        future.complete(true);
+                        return;
+                    }
                     if (metadata.partitions == 0) {
                         internalCheckTopicExists(topicName).thenAccept(future::complete)
                                 .exceptionally(throwable -> {
@@ -130,11 +135,6 @@ public class KopBrokerLookupManager {
                                     future.complete(true);
                                     return null;
                                 });
-                    }
-                    if (ex != null) {
-                        log.error("Fetch partitioned topic metadata has exception.", ex);
-                        future.complete(true);
-                        return;
                     }
                     future.complete(true);
                 });
