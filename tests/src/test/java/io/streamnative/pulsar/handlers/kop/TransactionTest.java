@@ -13,8 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static org.testng.AssertJUnit.assertFalse;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState;
+import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -22,10 +25,12 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -41,6 +46,7 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.awaitility.Awaitility;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -96,6 +102,36 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         producer.initTransactions();
         producer.close();
+    }
+
+    @Test(timeOut = 1000 * 10)
+    public void testMultiCommits() throws Exception {
+        final String topic = "test-multi-commits";
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("X1");
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("X2");
+        producer1.initTransactions();
+        producer2.initTransactions();
+        producer1.beginTransaction();
+        producer2.beginTransaction();
+        producer1.send(new ProducerRecord<>(topic, "msg-0")).get();
+        producer2.send(new ProducerRecord<>(topic, "msg-1")).get();
+        producer1.commitTransaction();
+        producer2.commitTransaction();
+        producer1.close();
+        producer2.close();
+
+        final TransactionStateManager stateManager = getProtocolHandler()
+                .getTransactionCoordinator(conf.getKafkaTenant())
+                .getTxnManager();
+        final Function<String, TransactionState> getTransactionState = transactionalId ->
+                Optional.ofNullable(stateManager.getTransactionState(transactionalId).getRight())
+                        .map(optEpochAndMetadata -> optEpochAndMetadata.map(epochAndMetadata ->
+                                epochAndMetadata.getTransactionMetadata().getState()).orElse(TransactionState.EMPTY))
+                        .orElse(TransactionState.EMPTY);
+        Awaitility.await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> {
+                    assertEquals(getTransactionState.apply("X1"), TransactionState.COMPLETE_COMMIT);
+                    assertEquals(getTransactionState.apply("X2"), TransactionState.COMPLETE_COMMIT);
+                });
     }
 
     public void basicProduceAndConsumeTest(String topicName,

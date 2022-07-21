@@ -50,7 +50,7 @@ public class TransactionMarkerRequestCompletionHandler {
     public void onComplete(WriteTxnMarkersResponse writeTxnMarkerResponse) {
         log.info("Received WriteTxnMarker response from node with correlation id $correlationId");
 
-        for (TransactionMarkerChannelManager.TxnIdAndMarkerEntry txnIdAndMarker : txnIdAndMarkerEntries) {
+        txnIdAndMarkerEntries.forEach(txnIdAndMarker -> {
             String transactionalId = txnIdAndMarker.getTransactionalId();
             WriteTxnMarkersRequest.TxnMarkerEntry txnMarker = txnIdAndMarker.getEntry();
             Map<TopicPartition, Errors> errors = writeTxnMarkerResponse.errors(txnMarker.producerId());
@@ -114,7 +114,7 @@ public class TransactionMarkerRequestCompletionHandler {
                     txnMarker.coordinatorEpoch(),
                     abortSendOrRetryPartitions.retryPartitions,
                     namespacePrefixForUserTopics);
-        }
+        });
     }
 
     private AbortSendingRetryPartitions hasAbortSendOrRetryPartitions(
