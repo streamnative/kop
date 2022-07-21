@@ -135,6 +135,7 @@ public class KopBrokerLookupManager {
                                     future.complete(true);
                                     return null;
                                 });
+                        return;
                     }
                     future.complete(true);
                 });
