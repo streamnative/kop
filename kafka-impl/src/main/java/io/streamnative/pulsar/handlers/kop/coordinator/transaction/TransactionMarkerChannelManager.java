@@ -51,7 +51,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.TransactionResult;
-import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
 import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
@@ -517,11 +516,9 @@ public class TransactionMarkerChannelManager {
                     for (TxnIdAndMarkerEntry txnIdAndMarkerEntry : txnIdAndMarkerEntries) {
                         sendEntries.add(txnIdAndMarkerEntry.entry);
                     }
-                    channelHandler.enqueueRequest(
-                            new WriteTxnMarkersRequest.Builder(sendEntries).build(),
-                            new TransactionMarkerRequestCompletionHandler(
-                                    0, txnStateManager, this, txnIdAndMarkerEntries,
-                                    namespacePrefixForUserTopics));
+                    channelHandler.enqueueWriteTxnMarkers(sendEntries,
+                            new TransactionMarkerRequestCompletionHandler(txnStateManager, this,
+                                    txnIdAndMarkerEntries, namespacePrefixForUserTopics));
                 });
             }
         }

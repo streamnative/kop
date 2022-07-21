@@ -14,39 +14,28 @@
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.apache.kafka.common.protocol.Errors.REQUEST_TIMED_OUT;
+import static org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
-import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder;
 import io.streamnative.pulsar.handlers.kop.security.PlainSaslServer;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import javax.security.sasl.SaslException;
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.protocol.types.Struct;
-import org.apache.kafka.common.requests.AbstractResponse;
-import org.apache.kafka.common.requests.KopRequestUtils;
-import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
 import org.apache.kafka.common.requests.SaslAuthenticateRequest;
 import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SaslHandshakeRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
-import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
 import org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerClientInitialResponse;
 import org.apache.pulsar.client.api.Authentication;
@@ -60,11 +49,11 @@ import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationOAuth2;
 @Slf4j
 public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapter {
 
-    private final CompletableFuture<ChannelHandlerContext> cnx = new CompletableFuture<>();
-    private final ConcurrentLongHashMap<InFlightRequest> inFlightRequestMap = new ConcurrentLongHashMap<>();
-    private final ConcurrentLongHashMap<PendingGenericRequest> genericRequestMap = new ConcurrentLongHashMap<>();
+    private final CompletableFuture<ChannelHandlerContext> cnxFuture = new CompletableFuture<>();
+    private final CorrelationIdGenerator correlationIdGenerator = new CorrelationIdGenerator();
+    private final ResponseContext responseContext = new ResponseContext();
+    private final ConcurrentLongHashMap<PendingRequest> pendingRequestMap = new ConcurrentLongHashMap<>();
 
-    private final AtomicInteger correlationId = new AtomicInteger(0);
     private final TransactionMarkerChannelManager transactionMarkerChannelManager;
     private final String mechanism;
 
@@ -80,73 +69,34 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
         }
     }
 
-    public void enqueueRequest(WriteTxnMarkersRequest request,
-                               TransactionMarkerRequestCompletionHandler requestCompletionHandler) {
-        InFlightRequest inFlightRequest = new InFlightRequest(request, requestCompletionHandler);
-        this.cnx.thenAccept(cnxFuture -> {
-            inFlightRequestMap.put(inFlightRequest.requestId, inFlightRequest);
-            ByteBuf byteBuf = inFlightRequest.getRequestData();
-            cnxFuture.writeAndFlush(byteBuf);
-        }).exceptionally(err -> {
-            log.error("Cannot send a WriteTxnMarkersRequest request", err);
-            inFlightRequest.onError(err);
-            return null;
+    private void enqueueRequest(ChannelHandlerContext channel, PendingRequest pendingRequest) {
+        final long correlationId = pendingRequest.getCorrelationId();
+        pendingRequestMap.put(correlationId, pendingRequest);
+        channel.writeAndFlush(Unpooled.wrappedBuffer(pendingRequest.serialize())).addListener(writeFuture -> {
+            if (!writeFuture.isSuccess()) {
+                pendingRequest.completeExceptionally(writeFuture.cause());
+                pendingRequestMap.remove(correlationId);
+                // cannot write, so we have to "close()" and trigger failure of every other
+                // pending request and discard the reference to this connection
+                channel.close();
+            }
         });
     }
 
-    @AllArgsConstructor
-    private static final class PendingGenericRequest {
-        CompletableFuture<AbstractResponse> response;
-        ApiKeys apiKeys;
-        short apiVersion;
-    }
-
-    private class InFlightRequest {
-
-        private final long requestId;
-        private final WriteTxnMarkersRequest request;
-        private final TransactionMarkerRequestCompletionHandler requestCompletionHandler;
-
-        public InFlightRequest(WriteTxnMarkersRequest request,
-                               TransactionMarkerRequestCompletionHandler requestCompletionHandler) {
-            this.request = request;
-            this.requestCompletionHandler = requestCompletionHandler;
-            this.requestId = correlationId.incrementAndGet();
-        }
-
-        public ByteBuf getRequestData() {
-            RequestHeader requestHeader = new RequestHeader(
-                    ApiKeys.WRITE_TXN_MARKERS, request.version(), "", (int) requestId);
-            return KopRequestUtils.serializeRequest(request.version(), requestHeader, request);
-        }
-
-        public void onComplete(ByteBuffer nio) {
-            WriteTxnMarkersResponse response = WriteTxnMarkersResponse
-                    .parse(nio, ApiKeys.WRITE_TXN_MARKERS.latestVersion());
-            try {
-                requestCompletionHandler.onComplete(response);
-            } catch (RuntimeException unhandledError) {
-                onError(unhandledError);
+    public void enqueueWriteTxnMarkers(final List<TxnMarkerEntry> txnMarkerEntries,
+                                       final Consumer<ResponseContext> responseContextConsumer) {
+        cnxFuture.whenComplete((cnx, e) -> {
+            if (e == null) {
+                enqueueRequest(cnx, new PendingRequest(
+                        ApiKeys.WRITE_TXN_MARKERS,
+                        correlationIdGenerator.next(),
+                        newWriteTxnMarkers(txnMarkerEntries),
+                        responseContextConsumer
+                ));
+            } else {
+                log.error("Failed to enqueue request because the channel failed", e);
             }
-        }
-
-        public void onError(Throwable error) {
-            log.info("[TransactionMarkerChannelHandler] onError", error);
-            final List<WriteTxnMarkersRequest.TxnMarkerEntry> markers = request.markers();
-            Map<Long, Map<TopicPartition, Errors>> errors = new HashMap<>(markers.size());
-            for (WriteTxnMarkersRequest.TxnMarkerEntry entry : markers) {
-                Map<TopicPartition, Errors> errorsPerPartition = new HashMap<>(entry.partitions().size());
-                for (TopicPartition partition : entry.partitions()) {
-                    errorsPerPartition.put(partition, REQUEST_TIMED_OUT);
-                    log.error("Handle error " + error
-                            + " as REQUEST_TIMED_OUT for " + partition + " producer " + entry.producerId());
-                }
-                errors.put(entry.producerId(), errorsPerPartition);
-            }
-            WriteTxnMarkersResponse response = new WriteTxnMarkersResponse(errors);
-            requestCompletionHandler.onComplete(response);
-        }
-
+        });
     }
 
     @Override
@@ -158,17 +108,11 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     @Override
     public void channelInactive(ChannelHandlerContext channelHandlerContext) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] channelInactive, failing {} + {} pending requests",
-                inFlightRequestMap.size(), genericRequestMap.size());
-        final Exception exception = new Exception("Connection to remote broker closed");
-        inFlightRequestMap.forEach((k, v) -> {
-            v.onError(exception);
-        });
-        inFlightRequestMap.clear();
-        genericRequestMap.forEach((k, v)-> {
-            v.response.completeExceptionally(exception);
-        });
-        genericRequestMap.clear();
+        log.info("[TransactionMarkerChannelHandler] channelInactive, failing {} pending requests",
+                pendingRequestMap.size());
+        pendingRequestMap.forEach((__, pendingRequest) ->
+            log.warn("Pending request ({}) was not sent when the txn marker channel is inactive", pendingRequest));
+        pendingRequestMap.clear();
         transactionMarkerChannelManager.channelFailed((InetSocketAddress) channelHandlerContext
                 .channel()
                 .remoteAddress(), this);
@@ -179,40 +123,32 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     public void channelRead(ChannelHandlerContext channelHandlerContext, Object o) throws Exception {
         ByteBuffer nio = ((ByteBuf) o).nioBuffer();
         ResponseHeader responseHeader = ResponseHeader.parse(nio);
-        InFlightRequest inFlightRequest = inFlightRequestMap.remove(responseHeader.correlationId());
-        if (inFlightRequest != null) {
-            inFlightRequest.onComplete(nio);
-            return;
+        PendingRequest pendingRequest = pendingRequestMap.remove(responseHeader.correlationId());
+        if (pendingRequest != null) {
+            pendingRequest.complete(responseContext.set(
+                    channelHandlerContext.channel().remoteAddress(),
+                    pendingRequest.getApiVersion(),
+                    responseHeader.correlationId(),
+                    pendingRequest.parseResponse(nio)
+            ));
+        } else {
+            log.error("Miss the inFlightRequest with correlationId {}.", responseHeader.correlationId());
         }
-        PendingGenericRequest genericRequest = genericRequestMap.remove(responseHeader.correlationId());
-        if (genericRequest != null) {
-            Struct responseBody = genericRequest.apiKeys.parseResponse(genericRequest.apiVersion, nio);
-            AbstractResponse response = AbstractResponse.parseResponse(genericRequest.apiKeys, responseBody);
-            genericRequest.response.complete(response);
-            return;
-        }
-        log.error("Miss the inFlightRequest with correlationId {}.", responseHeader.correlationId());
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext channelHandlerContext, Throwable throwable) throws Exception {
         log.error("Transaction marker channel handler caught exception.", throwable);
-        final Exception exception =
-                new Exception("Transaction marker channel handler caught exception: " + throwable, throwable);
-        inFlightRequestMap.forEach((k, v) -> {
-            v.onError(exception);
-        });
-        inFlightRequestMap.clear();
-        genericRequestMap.forEach((k, v)-> {
-            v.response.completeExceptionally(exception);
-        });
-        genericRequestMap.clear();
+        pendingRequestMap.forEach((__, pendingRequest) ->
+                log.warn("Pending request ({}) failed because the txn marker channel caught exception",
+                        pendingRequest, throwable));
+        pendingRequestMap.clear();
         channelHandlerContext.close();
     }
 
     public void close() {
         log.info("[TransactionMarkerChannelHandler] closing");
-        this.cnx.whenComplete((ctx, err) -> {
+        this.cnxFuture.whenComplete((ctx, err) -> {
             if (ctx != null) {
                 ctx.close();
             }
@@ -221,70 +157,32 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     public void handleAuthentication(ChannelHandlerContext channelHandlerContext) {
         if (!transactionMarkerChannelManager.getKafkaConfig().isAuthenticationEnabled()) {
-            this.cnx.complete(channelHandlerContext);
+            this.cnxFuture.complete(channelHandlerContext);
             return;
         }
         saslHandshake(channelHandlerContext)
                 .thenCompose(this::authenticate)
-                .thenApply(cnx::complete)
+                .thenApply(cnxFuture::complete)
                 .exceptionally(err -> {
-                    cnx.completeExceptionally(err);
+                    cnxFuture.completeExceptionally(err);
                     return false;
                 });
     }
 
-    private void sendGenericRequestOnTheWire(ChannelHandlerContext channel,
-                                             KafkaCommandDecoder.KafkaHeaderAndRequest request,
-                                             CompletableFuture<AbstractResponse> result) {
-        long correlationId = request.getHeader().correlationId();
-        genericRequestMap.put(correlationId, new PendingGenericRequest(result,
-                request.getHeader().apiKey(),
-                request.getHeader().apiVersion()));
-        channel.writeAndFlush(request.getBuffer())
-                .addListener(writeFuture -> {
-            if (!writeFuture.isSuccess()) {
-                genericRequestMap.remove(correlationId);
-                // cannot write, so we have to "close()" and trigger failure of every other
-                // pending request and discard the reference to this connection
-                channel.close();
-                result.completeExceptionally(writeFuture.cause());
-            }
-        });
-    }
-
     private CompletableFuture<ChannelHandlerContext> saslHandshake(ChannelHandlerContext channel) {
-        KafkaCommandDecoder.KafkaHeaderAndRequest fullRequest = buildSASLRequest();
-        CompletableFuture<AbstractResponse> result = new CompletableFuture<>();
-        sendGenericRequestOnTheWire(channel, fullRequest, result);
-        result.exceptionally(error -> {
-            // ensure that we close the channel
+        final PendingRequest pendingRequest = new PendingRequest(ApiKeys.SASL_HANDSHAKE,
+                correlationIdGenerator.next(),
+                newSaslHandshake(mechanism),
+                __ -> {});
+        enqueueRequest(channel, pendingRequest);
+        return pendingRequest.getSendFuture().thenApply(__ -> {
+            log.debug("SASL Handshake completed with success");
+            return channel;
+        }).exceptionally(error -> {
+            log.error("SASL handshake failed", error);
             channel.close();
             return null;
         });
-        return result.thenApply(response -> {
-            log.debug("SASL Handshake completed with success");
-            return channel;
-        });
-    }
-
-    private KafkaCommandDecoder.KafkaHeaderAndRequest buildSASLRequest() {
-        RequestHeader header = new RequestHeader(
-                ApiKeys.SASL_HANDSHAKE,
-                ApiKeys.SASL_HANDSHAKE.latestVersion(),
-                "tx", //ignored
-                correlationId.incrementAndGet()
-        );
-
-        SaslHandshakeRequest request = new SaslHandshakeRequest
-                .Builder(mechanism)
-                .build();
-        ByteBuffer buffer = request.serialize(header);
-        return new KafkaCommandDecoder.KafkaHeaderAndRequest(
-                header,
-                request,
-                Unpooled.wrappedBuffer(buffer),
-                null
-        );
     }
 
     private CompletableFuture<ChannelHandlerContext> authenticate(final ChannelHandlerContext channel) {
@@ -298,14 +196,8 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     }
 
     private CompletableFuture<ChannelHandlerContext> authenticateInternal(ChannelHandlerContext channel) {
-        CompletableFuture<AbstractResponse> result = new CompletableFuture<>();
+        CompletableFuture<ChannelHandlerContext> result = new CompletableFuture<>();
 
-        RequestHeader header = new RequestHeader(
-                ApiKeys.SASL_AUTHENTICATE,
-                ApiKeys.SASL_AUTHENTICATE.latestVersion(),
-                "tx", // ignored
-                correlationId.incrementAndGet()
-        );
         Authentication authentication = transactionMarkerChannelManager.getAuthentication();
 
         try {
@@ -331,38 +223,46 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
                     saslAuthBytes = new byte[0];
                     break;
             }
-            SaslAuthenticateRequest request = new SaslAuthenticateRequest
-                    .Builder(ByteBuffer.wrap(saslAuthBytes))
-                    .build();
 
-            ByteBuffer buffer = request.serialize(header);
-
-            KafkaCommandDecoder.KafkaHeaderAndRequest fullRequest = new KafkaCommandDecoder.KafkaHeaderAndRequest(
-                    header,
-                    request,
-                    Unpooled.wrappedBuffer(buffer),
-                    null
+            final PendingRequest pendingRequest = new PendingRequest(
+                    ApiKeys.SASL_AUTHENTICATE,
+                    correlationIdGenerator.next(),
+                    newSaslAuthenticate(saslAuthBytes),
+                    __ -> {}
             );
-            sendGenericRequestOnTheWire(channel, fullRequest, result);
-
+            enqueueRequest(channel, pendingRequest);
+            pendingRequest.getSendFuture().whenComplete((response, e) -> {
+                if (e != null) {
+                    result.completeExceptionally(e);
+                    return;
+                }
+                final SaslAuthenticateResponse saslResponse = (SaslAuthenticateResponse) response;
+                if (saslResponse.error() == Errors.NONE) {
+                    log.debug("Success step AUTH to KOP broker {} {} {}", saslResponse.error(),
+                            saslResponse.errorMessage(), saslResponse.saslAuthBytes());
+                    result.complete(channel);
+                } else {
+                    log.error("Failed authentication against KOP broker {}{}", saslResponse.error(),
+                            saslResponse.errorMessage());
+                    result.completeExceptionally(saslResponse.error().exception());
+                }
+            });
         } catch (PulsarClientException | SaslException ex) {
             log.error("Transaction marker channel handler authentication failed.", ex);
             result.completeExceptionally(ex);
         }
-
-        return result.thenApply(response -> {
-            SaslAuthenticateResponse saslResponse = (SaslAuthenticateResponse) response;
-            if (saslResponse.error() != Errors.NONE) {
-                log.error("Failed authentication against KOP broker {}{}", saslResponse.error(),
-                        saslResponse.errorMessage());
-                close();
-                throw new CompletionException(saslResponse.error().exception());
-            } else {
-                log.debug("Success step AUTH to KOP broker {} {} {}", saslResponse.error(),
-                        saslResponse.errorMessage(), saslResponse.saslAuthBytes());
-            }
-            return channel;
-        });
+        return result;
     }
 
+    private static SaslHandshakeRequest newSaslHandshake(final String mechanism) {
+        return new SaslHandshakeRequest.Builder(mechanism).build();
+    }
+
+    private static SaslAuthenticateRequest newSaslAuthenticate(final byte[] saslAuthBytes) {
+        return new SaslAuthenticateRequest.Builder(ByteBuffer.wrap(saslAuthBytes)).build();
+    }
+
+    private static WriteTxnMarkersRequest newWriteTxnMarkers(final List<TxnMarkerEntry> txnMarkerEntries) {
+        return new WriteTxnMarkersRequest.Builder(txnMarkerEntries).build();
+    }
 }
