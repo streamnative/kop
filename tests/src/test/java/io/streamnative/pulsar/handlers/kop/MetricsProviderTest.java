@@ -67,7 +67,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         this.conf.setOffsetsTopicNumPartitions(50);
         this.conf.setKafkaTxnLogTopicNumPartitions(50);
         this.conf.setKafkaTransactionCoordinatorEnabled(true);
-        this.conf.setBrokerDeduplicationEnabled(true);
+        this.conf.setBrokerDeduplicationEnabled(false);
         super.internalSetup();
         log.info("success internal setup");
     }
