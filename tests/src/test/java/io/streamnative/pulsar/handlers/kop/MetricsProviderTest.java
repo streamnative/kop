@@ -203,8 +203,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         //Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_LATENCY{success=\"true\",quantile=\"0.99\", "
         //        + "request=\"Produce\"}"));
         Assert.assertTrue(sb.toString().contains("kop_server_REQUEST_QUEUED_LATENCY_count{success=\"true\", "
-                + "request=\"Produce\"}"));
-
+                + "cluster=\"test\",request=\"Produce\"}"));
         // response stats
         Assert.assertTrue(sb.toString().contains("kop_server_RESPONSE_BLOCKED_TIMES"));
         Assert.assertTrue(sb.toString().contains("kop_server_RESPONSE_BLOCKED_LATENCY"));
@@ -220,25 +219,25 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         Assert.assertTrue(sb.toString().contains("kop_server_FETCH_DECODE"));
 
         // consumer stats
-        Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_OUT{group=\"DemoKafkaOnPulsarConsumer\","
-                + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
-        Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT{group=\"DemoKafkaOnPulsarConsumer\","
-                + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 1130"));
+        Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_OUT{cluster=\"test\","
+                + "group=\"DemoKafkaOnPulsarConsumer\",partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
+        Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT{cluster=\"test\","
+                + "group=\"DemoKafkaOnPulsarConsumer\",partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 1130"));
         Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT"));
         Assert.assertTrue(sb.toString().contains("kop_server_CONSUME_MESSAGE_CONVERSIONS"));
-        Assert.assertTrue(sb.toString().contains("kop_server_CONSUME_MESSAGE_CONVERSIONS{partition=\"0\","
-                + "topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
+        Assert.assertTrue(sb.toString().contains("kop_server_CONSUME_MESSAGE_CONVERSIONS{cluster=\"test\","
+                + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
         Assert.assertTrue(sb.toString().contains("kop_server_CONSUME_MESSAGE_CONVERSIONS_TIME_NANOS"));
 
         // producer stats
         Assert.assertTrue(sb.toString().contains("kop_server_BATCH_COUNT_PER_MEMORYRECORDS"));
-        Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_IN{partition=\"0\","
+        Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_IN{cluster=\"test\",partition=\"0\","
                 + "topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
-        Assert.assertTrue(sb.toString().contains("kop_server_BYTES_IN{partition=\"0\","
+        Assert.assertTrue(sb.toString().contains("kop_server_BYTES_IN{cluster=\"test\",partition=\"0\","
                 + "topic=\"kopKafkaProducePulsarMetrics1\"} 1170"));
         Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_MESSAGE_CONVERSIONS"));
-        Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_MESSAGE_CONVERSIONS{partition=\"0\","
-                + "topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
+        Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_MESSAGE_CONVERSIONS{cluster=\"test\","
+                + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
         Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_MESSAGE_CONVERSIONS_TIME_NANOS"));
 
         // network stats
