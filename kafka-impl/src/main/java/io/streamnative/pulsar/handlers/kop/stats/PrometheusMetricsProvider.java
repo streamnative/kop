@@ -17,7 +17,8 @@ import com.google.common.annotations.VisibleForTesting;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import io.prometheus.client.Collector;
 import io.prometheus.client.CollectorRegistry;
-import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executors;
@@ -36,6 +37,9 @@ public class PrometheusMetricsProvider implements PrometheusRawMetricsProvider {
 
     public static final String PROMETHEUS_STATS_LATENCY_ROLLOVER_SECONDS = "prometheusStatsLatencyRolloverSeconds";
     public static final int DEFAULT_PROMETHEUS_STATS_LATENCY_ROLLOVER_SECONDS = 60;
+
+    private static final String KOP_PROMETHEUS_STATS_CLUSTER = "cluster";
+    private final Map<String, String> defaultStatsLoggerLabels = new HashMap<>();
 
     private final CollectorRegistry registry;
 
@@ -61,6 +65,9 @@ public class PrometheusMetricsProvider implements PrometheusRawMetricsProvider {
         int latencyRolloverSeconds = conf.getInt(PROMETHEUS_STATS_LATENCY_ROLLOVER_SECONDS,
                 DEFAULT_PROMETHEUS_STATS_LATENCY_ROLLOVER_SECONDS);
 
+        defaultStatsLoggerLabels.putIfAbsent(KOP_PROMETHEUS_STATS_CLUSTER,
+                conf.getString(KOP_PROMETHEUS_STATS_CLUSTER));
+
         executor.scheduleAtFixedRate(() -> {
             rotateLatencyCollection();
         }, 1, latencyRolloverSeconds, TimeUnit.SECONDS);
@@ -72,7 +79,7 @@ public class PrometheusMetricsProvider implements PrometheusRawMetricsProvider {
     }
 
     public StatsLogger getStatsLogger(String scope) {
-        return new PrometheusStatsLogger(PrometheusMetricsProvider.this, scope, Collections.emptyMap());
+        return new PrometheusStatsLogger(PrometheusMetricsProvider.this, scope, defaultStatsLoggerLabels);
     }
 
     @Override
