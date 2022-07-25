@@ -22,7 +22,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
@@ -35,8 +34,9 @@ import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
  */
 @AllArgsConstructor
 @Slf4j
-public class TransactionMarkerRequestCompletionHandler implements Consumer<ResponseContext> {
+public class TransactionMarkerRequestCompletionHandler {
 
+    private final Integer brokerId;
     private final TransactionStateManager txnStateManager;
     private final TransactionMarkerChannelManager txnMarkerChannelManager;
     private final List<TransactionMarkerChannelManager.TxnIdAndMarkerEntry> txnIdAndMarkerEntries;
@@ -47,14 +47,8 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
         private Set<TopicPartition> retryPartitions = new HashSet<>();
     }
 
-    @Override
-    public void accept(ResponseContext responseContext) {
-        final WriteTxnMarkersResponse writeTxnMarkerResponse = (WriteTxnMarkersResponse) responseContext.getResponse();
-        if (log.isDebugEnabled()) {
-            log.debug("Received WriteTxnMarker response {} from node {} with correlation id {}",
-                    responseContext.getResponseDescription(), responseContext.getRemoteAddress(),
-                    responseContext.getCorrelationId());
-        }
+    public void onComplete(WriteTxnMarkersResponse writeTxnMarkerResponse) {
+        log.info("Received WriteTxnMarker response from node with correlation id $correlationId");
 
         txnIdAndMarkerEntries.forEach(txnIdAndMarker -> {
             String transactionalId = txnIdAndMarker.getTransactionalId();
@@ -94,40 +88,33 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                         + transactionalId + ", but there is no metadata in the cache; this is not expected");
             }
 
-            tryAddTxnMarker(transactionalId, txnMarker, errors, errorsAndData.getRight().get());
+            AbortSendingRetryPartitions abortSendOrRetryPartitions =
+                    hasAbortSendOrRetryPartitions(transactionalId, txnMarker, errorsAndData.getRight().get(), errors);
+
+            if (abortSendOrRetryPartitions.abortSending.get()) {
+                return;
+            }
+
+            if (abortSendOrRetryPartitions.retryPartitions.isEmpty()) {
+                txnMarkerChannelManager.maybeWriteTxnCompletion(transactionalId);
+                return;
+            }
+
+            if (log.isDebugEnabled()) {
+                log.debug("Re-enqueuing {} transaction markers for transactional id {} under coordinator epoch {}",
+                        txnMarker.transactionResult(), transactionalId, txnMarker.coordinatorEpoch());
+            }
+
+            // re-enqueue with possible new leaders of the partitions
+            txnMarkerChannelManager.addTxnMarkersToBrokerQueue(
+                    transactionalId,
+                    txnMarker.producerId(),
+                    txnMarker.producerEpoch(),
+                    txnMarker.transactionResult(),
+                    txnMarker.coordinatorEpoch(),
+                    abortSendOrRetryPartitions.retryPartitions,
+                    namespacePrefixForUserTopics);
         });
-    }
-
-    private void tryAddTxnMarker(String transactionalId,
-                                 WriteTxnMarkersRequest.TxnMarkerEntry txnMarker,
-                                 Map<TopicPartition, Errors> errors,
-                                 TransactionStateManager.CoordinatorEpochAndTxnMetadata epochAndMetadata) {
-        AbortSendingRetryPartitions abortSendOrRetryPartitions =
-                hasAbortSendOrRetryPartitions(transactionalId, txnMarker, epochAndMetadata, errors);
-
-        if (abortSendOrRetryPartitions.abortSending.get()) {
-            return;
-        }
-
-        if (abortSendOrRetryPartitions.retryPartitions.isEmpty()) {
-            txnMarkerChannelManager.maybeWriteTxnCompletion(transactionalId);
-            return;
-        }
-
-        if (log.isDebugEnabled()) {
-            log.debug("Re-enqueuing {} transaction markers for transactional id {} under coordinator epoch {}",
-                    txnMarker.transactionResult(), transactionalId, txnMarker.coordinatorEpoch());
-        }
-
-        // re-enqueue with possible new leaders of the partitions
-        txnMarkerChannelManager.addTxnMarkersToBrokerQueue(
-                transactionalId,
-                txnMarker.producerId(),
-                txnMarker.producerEpoch(),
-                txnMarker.transactionResult(),
-                txnMarker.coordinatorEpoch(),
-                abortSendOrRetryPartitions.retryPartitions,
-                namespacePrefixForUserTopics);
     }
 
     private AbortSendingRetryPartitions hasAbortSendOrRetryPartitions(
