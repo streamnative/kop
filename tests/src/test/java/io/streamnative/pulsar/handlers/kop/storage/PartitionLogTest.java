@@ -41,6 +41,8 @@ public class PartitionLogTest {
 
     private static final PartitionLog PARTITION_LOG = new PartitionLog(
             kafkaConfig,
+            null,
+            null,
             Time.SYSTEM,
             new TopicPartition("test", 1),
             "test",

@@ -28,6 +28,8 @@ public interface KopServerStats {
 
     String KOP_EVENT_SCOPE = "kop_event";
 
+    String WAITING_FETCHES_TRIGGERED = "WAITING_FETCHES_TRIGGERED";
+
     /**
      * Request stats.
      */

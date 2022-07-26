@@ -41,6 +41,7 @@ import io.netty.channel.DefaultEventLoop;
 import io.netty.channel.EventLoopGroup;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -54,13 +55,23 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -414,14 +425,17 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         KafkaConsumer<String, String> consumer1 = createKafkaConsumer(maxWaitMs, minBytes);
         consumer1.assign(topicPartitions);
         Long startTime1 = System.currentTimeMillis();
-        consumer1.poll(Duration.ofMillis(maxWaitMs));
+        ConsumerRecords<String, String> emptyResult = consumer1.poll(Duration.ofMillis(maxWaitMs));
         Long endTime1 = System.currentTimeMillis();
         log.info("cost time1:" + (endTime1 - startTime1));
+        assertEquals(0, emptyResult.count());
 
         // case2: consuming an topic after producing data.
+        @Cleanup
         KafkaProducer<String, String> kProducer = createKafkaProducer();
         produceData(kProducer, topicPartitions, 10);
 
+        @Cleanup
         KafkaConsumer<String, String> consumer2 = createKafkaConsumer(maxWaitMs, minBytes);
         consumer2.assign(topicPartitions);
         consumer2.seekToBeginning(topicPartitions);
@@ -697,6 +711,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             TopicPartition tp = topicPartitions.get(index);
             for (int messageIndex = 0; messageIndex < numMessagesPerPartition; messageIndex++) {
                 String suffix = tp.toString() + "-" + messageIndex;
+                TimeUnit.MILLISECONDS.sleep(100);
                 producer
                     .send(
                         new ProducerRecord<>(
@@ -1022,5 +1037,66 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         // Now, the managed ledger is closed
         verifySendMessageToPartition(topicPartition, newNormalRecords(), Errors.NOT_LEADER_FOR_PARTITION, -1L);
         verifySendMessageToPartition(topicPartition, newAbortTxnMarker(), Errors.NOT_LEADER_FOR_PARTITION, -1L);
+    }
+
+
+    /**
+     * Test the sending speed of fetch request when the readable data is less than fetch.minBytes.
+     */
+    @Test(timeOut = 60000)
+    public void testFetchMinBytesSingleConsumer() throws Exception {
+        String topicName = "testMinBytesTopic";
+        TopicPartition tp = new TopicPartition(topicName, 0);
+
+        // create partitioned topic.
+        admin.topics().createPartitionedTopic(topicName, 1);
+        List<TopicPartition> topicPartitions = new ArrayList<>();
+        topicPartitions.add(tp);
+
+        int maxWaitMs = 3000; // very long time
+        int minBytes = 1;
+        // case1: consuming an empty topic.
+        @Cleanup
+        KafkaConsumer<String, String> consumer1 = createKafkaConsumer(maxWaitMs, minBytes);
+        consumer1.assign(topicPartitions);
+        ConsumerRecords<String, String> emptyResult = consumer1.poll(Duration.ofMillis(maxWaitMs));
+        assertEquals(0, emptyResult.count());
+
+        ExecutorService executorService = Executors.newFixedThreadPool(1);
+
+        long startTime = System.currentTimeMillis();
+        AtomicLong endTime = new AtomicLong(0);
+        CountDownLatch latch = new CountDownLatch(1);
+        executorService.submit(() -> {
+            int totalRead = 0;
+            do {
+                ConsumerRecords<String, String> result = consumer1.poll(Duration.ofMillis(maxWaitMs));
+                result.forEach(record -> {
+                    log.info("Received record : {}", record.value());
+                });
+                log.info("The consumer read {} records totalRead {}", result.count(), totalRead);
+                totalRead += result.count();
+                assertTrue(result.count() > 0);
+            } while (totalRead < 10);
+            assertEquals(10, totalRead);
+            endTime.set(System.currentTimeMillis());
+            latch.countDown();
+        });
+
+        @Cleanup
+        KafkaProducer<String, String> kProducer = createKafkaProducer();
+        produceData(kProducer, topicPartitions, 10);
+
+        latch.await();
+        assertTrue(endTime.get() - startTime <= maxWaitMs);
+
+        HttpClient httpClient = HttpClientBuilder.create().build();
+        final String metricsEndPoint = pulsar.getWebServiceAddress() + "/metrics";
+        HttpResponse response = httpClient.execute(new HttpGet(metricsEndPoint));
+        InputStream inputStream = response.getEntity().getContent();
+        String metrics = IOUtils.toString(inputStream, StandardCharsets.UTF_8);
+        log.info("metrics {}", metrics);
+
+        assertTrue(metrics.contains("kop_server_WAITING_FETCHES_TRIGGERED{cluster=\"test\"} 1"));
     }
 }
