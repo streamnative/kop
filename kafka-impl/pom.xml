@@ -22,7 +22,7 @@
   <parent>
     <groupId>io.streamnative.pulsar.handlers</groupId>
     <artifactId>pulsar-protocol-handler-kafka-parent</artifactId>
-    <version>2.11.0-SNAPSHOT</version>
+    <version>2.10.1.4</version>
   </parent>
 
   <groupId>io.streamnative.pulsar.handlers</groupId>
@@ -79,6 +79,12 @@
     <dependency>
       <groupId>com.fasterxml.jackson.dataformat</groupId>
       <artifactId>jackson-dataformat-yaml</artifactId>
+    </dependency>
+
+    <!-- Add javax.annotation.* dependency -->
+    <dependency>
+      <groupId>com.google.code.findbugs</groupId>
+      <artifactId>jsr305</artifactId>
     </dependency>
 
     <dependency>

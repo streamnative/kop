@@ -29,7 +29,7 @@
 
   <groupId>io.streamnative.pulsar.handlers</groupId>
   <artifactId>pulsar-protocol-handler-kafka-parent</artifactId>
-  <version>2.11.0-SNAPSHOT</version>
+  <version>2.10.1.4</version>
   <name>StreamNative :: Pulsar Protocol Handler :: KoP Parent</name>
   <description>Parent for Kafka on Pulsar implemented using Pulsar Protocol Handler.</description>
 
@@ -44,7 +44,7 @@
     <lombok.version>1.18.22</lombok.version>
     <mockito.version>2.22.0</mockito.version>
     <pulsar.group.id>io.streamnative</pulsar.group.id>
-    <pulsar.version>2.10.0.1</pulsar.version>
+    <pulsar.version>2.10.1.4</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
     <testng.version>6.14.3</testng.version>
@@ -52,6 +52,7 @@
     <grpc.version>1.45.1</grpc.version>
     <junit.version>4.13.1</junit.version>
     <fusionauth-jwt.version>5.2.0</fusionauth-jwt.version>
+    <jsr305.version>3.0.2</jsr305.version>
 
     <!-- plugin dependencies -->
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
@@ -92,6 +93,13 @@
   <!-- dependency definitions -->
   <dependencyManagement>
     <dependencies>
+      <dependency>
+        <groupId>${pulsar.group.id}</groupId>
+        <artifactId>pulsar</artifactId>
+        <version>${pulsar.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>org.apache.kafka</groupId>
         <artifactId>kafka-clients</artifactId>
@@ -238,6 +246,12 @@
         <groupId>io.streamnative.pulsar.handlers</groupId>
         <artifactId>test-listener</artifactId>
         <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>com.google.code.findbugs</groupId>
+        <artifactId>jsr305</artifactId>
+        <version>${jsr305.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
