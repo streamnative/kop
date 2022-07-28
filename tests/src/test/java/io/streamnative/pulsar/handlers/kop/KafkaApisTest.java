@@ -1090,13 +1090,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         latch.await();
         assertTrue(endTime.get() - startTime <= maxWaitMs);
 
-        HttpClient httpClient = HttpClientBuilder.create().build();
-        final String metricsEndPoint = pulsar.getWebServiceAddress() + "/metrics";
-        HttpResponse response = httpClient.execute(new HttpGet(metricsEndPoint));
-        InputStream inputStream = response.getEntity().getContent();
-        String metrics = IOUtils.toString(inputStream, StandardCharsets.UTF_8);
-        log.info("metrics {}", metrics);
-
-        assertTrue(metrics.contains("kop_server_WAITING_FETCHES_TRIGGERED{cluster=\"test\"} 1"));
+        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
+        Long waitingFetchesTriggered = handler.getRequestStats().getWaitingFetchesTriggered().get();
+        assertTrue(waitingFetchesTriggered > 0);
     }
 }
