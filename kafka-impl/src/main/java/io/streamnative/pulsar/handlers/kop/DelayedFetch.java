@@ -60,11 +60,17 @@ public class DelayedFetch extends DelayedOperation {
 
     @Override
     public void onExpiration() {
+        if (this.callback.isDone()) {
+            return;
+        }
         callback.complete(readRecordsResult);
     }
 
     @Override
     public void onComplete() {
+        if (this.callback.isDone()) {
+            return;
+        }
         replicaManager.readFromLocalLog(
             readCommitted, namespacePrefix, fetchMaxBytes, readPartitionInfo, context
         ).thenAccept(readRecordsResult -> {
@@ -81,6 +87,9 @@ public class DelayedFetch extends DelayedOperation {
 
     @Override
     public boolean tryComplete() {
+        if (this.callback.isDone()) {
+            return true;
+        }
         for (Map.Entry<TopicPartition, PartitionLog.ReadRecordsResult> entry : readRecordsResult.entrySet()) {
             TopicPartition tp = entry.getKey();
             PartitionLog.ReadRecordsResult result = entry.getValue();
