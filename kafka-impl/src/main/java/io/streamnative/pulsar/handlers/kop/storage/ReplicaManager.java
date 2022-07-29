@@ -174,8 +174,6 @@ public class ReplicaManager {
                     long currentWait = now - startTime;
                     long remainingMaxWait = timeout - currentWait;
                     long maxWait = Math.min(remainingMaxWait, timeout);
-                    log.info("[Test] MaxWait : {} fetchMinBytes : {} bytesReadable: {}",
-                            maxWait, fetchMinBytes, bytesReadable);
                     if (maxWait <= 0 || fetchInfos.isEmpty()
                             || bytesReadable.longValue() >= fetchMinBytes || errorReadingData.booleanValue()) {
                         future.complete(readResults);
@@ -217,7 +215,6 @@ public class ReplicaManager {
             }
         };
         readPartitionInfo.forEach((tp, fetchInfo) -> {
-
             getPartitionLog(tp, context.getNamespacePrefix())
                     .readRecords(fetchInfo, readCommitted,
                             limitBytes, maxReadEntriesNum, context)

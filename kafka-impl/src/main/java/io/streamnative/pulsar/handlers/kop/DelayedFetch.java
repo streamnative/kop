@@ -36,7 +36,7 @@ public class DelayedFetch extends DelayedOperation {
     private final boolean readCommitted;
     private final String namespacePrefix;
     private final MessageFetchContext context;
-    private volatile Boolean hasError;
+    protected volatile Boolean hasError;
 
     protected static final AtomicReferenceFieldUpdater<DelayedFetch, Boolean> HAS_ERROR_UPDATER =
             AtomicReferenceFieldUpdater.newUpdater(DelayedFetch.class, Boolean.class, "hasError");

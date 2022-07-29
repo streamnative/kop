@@ -36,6 +36,7 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -63,7 +64,6 @@ import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.commons.compress.utils.Lists;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.protocol.Errors;
@@ -151,12 +151,12 @@ public class PartitionLog {
     @AllArgsConstructor
     public static class ReadRecordsResult {
 
-        DecodeResult decodeResult;
-        List<FetchResponse.AbortedTransaction> abortedTransactions;
-        long highWatermark;
-        long lastStableOffset;
-        Position lastPosition;
-        Errors errors;
+        private DecodeResult decodeResult;
+        private List<FetchResponse.AbortedTransaction> abortedTransactions;
+        private long highWatermark;
+        private long lastStableOffset;
+        private Position lastPosition;
+        private Errors errors;
 
         public Errors errors() {
             return errors == null ? Errors.NONE : errors;
@@ -361,16 +361,15 @@ public class PartitionLog {
             final int maxReadEntriesNum,
             final MessageFetchContext context) {
         final long startPrepareMetadataNanos = MathUtils.nowInNano();
-        CompletableFuture<ReadRecordsResult> future = new CompletableFuture<>();
+        final CompletableFuture<ReadRecordsResult> future = new CompletableFuture<>();
         final long offset = partitionData.fetchOffset;
         KafkaTopicManager topicManager = context.getTopicManager();
-        // the future that is returned by getTopicConsumerManager is always completed normally
+        // The future that is returned by getTopicConsumerManager is always completed normally
         topicManager.getTopicConsumerManager(fullPartitionName).thenAccept(tcm -> {
             if (tcm == null) {
                 registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
                 // remove null future cache
-                context.getSharedState()
-                        .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullPartitionName);
+                context.getSharedState().getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullPartitionName);
                 if (log.isDebugEnabled()) {
                     log.debug("Fetch for {}: no tcm for topic {} return NOT_LEADER_FOR_PARTITION.",
                             topicPartition, fullPartitionName);
@@ -383,19 +382,16 @@ public class PartitionLog {
             }
 
             if (log.isDebugEnabled()) {
-                log.debug("Fetch for {}: remove tcm to get cursor for fetch offset: {} .",
-                        topicPartition, offset);
+                log.debug("Fetch for {}: remove tcm to get cursor for fetch offset: {} .", topicPartition, offset);
             }
 
-            final CompletableFuture<Pair<ManagedCursor, Long>> cursorFuture =
-                    tcm.removeCursorFuture(offset);
+            final CompletableFuture<Pair<ManagedCursor, Long>> cursorFuture = tcm.removeCursorFuture(offset);
 
             if (cursorFuture == null) {
                 // tcm is closed, just return a NONE error because the channel may be still active
                 log.warn("KafkaTopicConsumerManager is closed, remove TCM of {}", fullPartitionName);
                 registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
-                context.getSharedState()
-                        .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullPartitionName);
+                context.getSharedState().getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullPartitionName);
                 future.complete(ReadRecordsResult.error(Errors.NONE));
                 return;
             }
@@ -410,8 +406,7 @@ public class PartitionLog {
 
                 if (cursorLongPair == null) {
                     log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
-                                    + "Fetch for topic return error.",
-                            offset, topicPartition);
+                                    + "Fetch for topic return error.", offset, topicPartition);
                     registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
                     future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_FOR_PARTITION));
                     return;
@@ -433,25 +428,14 @@ public class PartitionLog {
                                     future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_FOR_PARTITION));
                                 } else {
                                     log.error("Read entry error on {}", partitionData, throwable);
-                                    future.complete(ReadRecordsResult.error(Errors.forException(throwable)));
+                                    future.complete(ReadRecordsResult.error(Errors.UNKNOWN_SERVER_ERROR));
                                 }
-                            } else if (entries == null) {
-                                future.complete(ReadRecordsResult.error(
-                                        Errors.forException(new ApiException("Cursor is null"))));
-                            } else {
-                                long readSize = entries.stream().mapToLong(Entry::getLength).sum();
-                                limitBytes.addAndGet(-1 * readSize);
-                                handleEntries(future,
-                                        context.getHeader().apiVersion(),
-                                        entries,
-                                        topicPartition,
-                                        partitionData,
-                                        tcm,
-                                        cursor,
-                                        cursorOffset,
-                                        readCommitted,
-                                        context);
+                                return;
                             }
+                            long readSize = entries.stream().mapToLong(Entry::getLength).sum();
+                            limitBytes.addAndGet(-1 * readSize);
+                            handleEntries(future, entries, partitionData, tcm,
+                                    cursor, cursorOffset, readCommitted, context);
                         });
             });
         });
@@ -490,9 +474,7 @@ public class PartitionLog {
 
     private void handleEntries(
             final CompletableFuture<ReadRecordsResult> future,
-            final short apiVersion,
             final List<Entry> entries,
-            final TopicPartition topicPartition,
             final FetchRequest.PartitionData partitionData,
             final KafkaTopicConsumerManager tcm,
             final ManagedCursor cursor,
@@ -522,6 +504,7 @@ public class PartitionLog {
         }
 
         // use compatible magic value by apiVersion
+        final short apiVersion = context.getHeader().apiVersion();
         final byte magic;
         if (apiVersion <= 1) {
             magic = RecordBatch.MAGIC_VALUE_V0;
@@ -609,6 +592,12 @@ public class PartitionLog {
         return committedEntries;
     }
 
+    /**
+     * Read Entries by cursor.
+     *
+     * @return CompletableFuture<List<Entry>>
+     *     When the comparable future complete normally, the list of entry's will never be null.
+     */
     private CompletableFuture<List<Entry>> readEntries(final ManagedCursor cursor,
                                                        final TopicPartition topicPartition,
                                                        final AtomicLong cursorOffset,
@@ -621,7 +610,7 @@ public class PartitionLog {
 
         final CompletableFuture<List<Entry>> readFuture = new CompletableFuture<>();
         if (adjustedMaxBytes <= 0) {
-            readFuture.complete(Lists.newArrayList());
+            readFuture.complete(Collections.emptyList());
             return readFuture;
         }
 
