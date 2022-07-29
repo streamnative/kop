@@ -167,7 +167,11 @@ public class PartitionLog {
                                            long highWatermark,
                                            long lastStableOffset,
                                            Position lastPosition) {
-            return new ReadRecordsResult(decodeResult, abortedTransactions, highWatermark, lastStableOffset, lastPosition, null);
+            return new ReadRecordsResult(decodeResult,
+                    abortedTransactions,
+                    highWatermark,
+                    lastStableOffset,
+                    lastPosition, null);
         }
 
         public static ReadRecordsResult error(Errors errors) {
