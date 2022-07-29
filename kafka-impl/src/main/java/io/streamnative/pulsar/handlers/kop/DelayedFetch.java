@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.requests.FetchRequest;
 
@@ -66,32 +67,27 @@ public class DelayedFetch extends DelayedOperation {
     public void onComplete() {
         replicaManager.readFromLocalLog(
             readCommitted, namespacePrefix, fetchMaxBytes, readPartitionInfo, context
-        ).thenAccept(callback::complete)
-                .thenAccept(__ -> {
-                    readRecordsResult.forEach((ignore, result) -> {
-                        if (result.decodeResult() != null) {
-                            result.decodeResult().recycle();
-                        }
-                    });
-                    this.context.getStatsLogger().getWaitingFetchesTriggered().add(1);
-                });
+        ).thenAccept(readRecordsResult -> {
+            this.context.getStatsLogger().getWaitingFetchesTriggered().add(1);
+            this.callback.complete(readRecordsResult);
+        }).thenAccept(__ -> {
+            readRecordsResult.forEach((ignore, result) -> {
+                if (result.decodeResult() != null) {
+                    result.decodeResult().recycle();
+                }
+            });
+        });
     }
 
     @Override
     public boolean tryComplete() {
         for (Map.Entry<TopicPartition, PartitionLog.ReadRecordsResult> entry : readRecordsResult.entrySet()) {
             TopicPartition tp = entry.getKey();
-//                PartitionLog.ReadRecordsResult result = entry.getValue();
-//                long logEndOffset = replicaManager
-//                        .getPartitionLog(tp, namespacePrefix)
-//                        .getLogEndOffset(context.getTopicManager());
-//                log.info("WKKKK logEndOffset: {}", logEndOffset);
-//                // The log end offset moved, try to complete.
-//                if (logEndOffset > result.highWatermark()) {
-//                    return forceComplete();
-//                }
-            boolean messageProduced = replicaManager.getPartitionLog(tp, namespacePrefix).messageProduced();
-            if (messageProduced) {
+            PartitionLog.ReadRecordsResult result = entry.getValue();
+            PartitionLog partitionLog = replicaManager.getPartitionLog(tp, namespacePrefix);
+            PositionImpl currLastPosition = (PositionImpl) partitionLog.getLastPosition(context.getTopicManager());
+            PositionImpl lastPosition = (PositionImpl) result.lastPosition();
+            if (currLastPosition.compareTo(lastPosition) > 0) {
                 return forceComplete();
             }
         }

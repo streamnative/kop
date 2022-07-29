@@ -56,6 +56,7 @@ import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.NonDurableCursorImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
@@ -160,6 +161,7 @@ public class PartitionLog {
         List<FetchResponse.AbortedTransaction> abortedTransactions;
         long highWatermark;
         long lastStableOffset;
+        Position lastPosition;
         Errors errors;
 
         public Errors errors() {
@@ -167,14 +169,24 @@ public class PartitionLog {
         }
 
         public static ReadRecordsResult of(DecodeResult decodeResult,
-                              List<FetchResponse.AbortedTransaction> abortedTransactions,
-                              long highWatermark,
-                              long lastStableOffset) {
-            return new ReadRecordsResult(decodeResult, abortedTransactions, highWatermark, lastStableOffset, null);
+                                           List<FetchResponse.AbortedTransaction> abortedTransactions,
+                                           long highWatermark,
+                                           long lastStableOffset,
+                                           Position lastPosition) {
+            return new ReadRecordsResult(decodeResult, abortedTransactions, highWatermark, lastStableOffset, lastPosition, null);
         }
 
         public static ReadRecordsResult error(Errors errors) {
-            return new ReadRecordsResult(null, null, -1, -1, errors);
+            return ReadRecordsResult.error(PositionImpl.EARLIEST, errors);
+        }
+
+        public static ReadRecordsResult error(Position position, Errors errors) {
+            return new ReadRecordsResult(null,
+                    null,
+                    -1,
+                    -1,
+                    position,
+                    errors);
         }
 
         public FetchResponse.PartitionData<Records> toPartitionData() {
@@ -322,6 +334,26 @@ public class PartitionLog {
     private long getLogEndOffset(PersistentTopic persistentTopic) {
         final ManagedLedger managedLedger = persistentTopic.getManagedLedger();
         return MessageMetadataUtils.getLogEndOffset(managedLedger);
+    }
+
+    public Position getLastPosition(KafkaTopicManager topicManager) {
+        final CompletableFuture<Optional<PersistentTopic>> topicFuture =
+                topicManager.getTopic(fullPartitionName);
+        if (topicFuture.isCompletedExceptionally()) {
+            return PositionImpl.EARLIEST;
+        }
+        if (topicFuture.isDone() && !topicFuture.getNow(Optional.empty()).isPresent()) {
+            return PositionImpl.EARLIEST;
+        }
+        Optional<PersistentTopic> topicOpt = topicFuture.getNow(Optional.empty());
+        if (topicOpt.isPresent()) {
+            return getLastPosition(topicOpt.get());
+        }
+        return PositionImpl.EARLIEST;
+    }
+
+    public Position getLastPosition(PersistentTopic persistentTopic) {
+        return persistentTopic.getLastPosition();
     }
 
     public boolean messageProduced() {
@@ -490,7 +522,7 @@ public class PartitionLog {
             }
         }
         if (committedEntries.isEmpty()) {
-            future.complete(ReadRecordsResult.error(Errors.NONE));
+            future.complete(ReadRecordsResult.error(tcm.getManagedLedger().getLastConfirmedEntry(), Errors.NONE));
             return;
         }
 
@@ -550,11 +582,13 @@ public class PartitionLog {
             } else {
                 abortedTransactions = null;
             }
+
             future.complete(ReadRecordsResult.of(
                     decodeResult,
                     abortedTransactions,
                     highWatermark,
-                    lso));
+                    lso,
+                    tcm.getManagedLedger().getLastConfirmedEntry()));
         }, context.getDecodeExecutor());
     }
 
