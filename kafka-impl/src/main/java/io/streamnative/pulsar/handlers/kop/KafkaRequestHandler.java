@@ -1583,16 +1583,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             request.metadata().sessionId()));
                 } else {
                     MessageFetchContext context = MessageFetchContext
-                            .get(this, transactionCoordinator,
+                            .get(this, transactionCoordinator, maxReadEntriesNum, namespacePrefix,
                                     getKafkaTopicManagerSharedState(), this.executor, fetch);
                     this.getReplicaManager().fetchMessage(
                             request.maxWait(),
                             fetchMinBytes,
                             fetchMaxBytes,
-                            maxReadEntriesNum,
                             interesting,
                             request.isolationLevel(),
-                            namespacePrefix,
                             context
                     ).thenAccept(resultMap -> {
                         LinkedHashMap<TopicPartition, FetchResponse.PartitionData<Records>> partitions =

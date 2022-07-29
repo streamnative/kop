@@ -356,11 +356,11 @@ public class PartitionLog {
 
     public CompletableFuture<ReadRecordsResult> readRecords(
             final FetchRequest.PartitionData partitionData,
-            final long startPrepareMetadataNanos,
             final boolean readCommitted,
             final AtomicLong limitBytes,
             final int maxReadEntriesNum,
             final MessageFetchContext context) {
+        final long startPrepareMetadataNanos = MathUtils.nowInNano();
         CompletableFuture<ReadRecordsResult> future = new CompletableFuture<>();
         final long offset = partitionData.fetchOffset;
         KafkaTopicManager topicManager = context.getTopicManager();

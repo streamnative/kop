@@ -42,6 +42,8 @@ public final class MessageFetchContext {
     private volatile RequestStats statsLogger;
     private volatile TransactionCoordinator tc;
     private volatile String clientHost;
+    private volatile String namespacePrefix;
+    private volatile int maxReadEntriesNum;
 
     private volatile RequestHeader header;
 
@@ -51,6 +53,8 @@ public final class MessageFetchContext {
     // recycler and get for this object
     public static MessageFetchContext get(KafkaRequestHandler requestHandler,
                                           TransactionCoordinator tc,
+                                          final int maxReadEntriesNum,
+                                          final String namespacePrefix,
                                           KafkaTopicManagerSharedState sharedState,
                                           ScheduledExecutorService decodeExecutor,
                                           KafkaHeaderAndRequest kafkaHeaderAndRequest) {
@@ -63,6 +67,8 @@ public final class MessageFetchContext {
         context.tc = tc;
         context.clientHost = kafkaHeaderAndRequest.getClientHost();
         context.header = kafkaHeaderAndRequest.getHeader();
+        context.namespacePrefix = namespacePrefix;
+        context.maxReadEntriesNum = maxReadEntriesNum;
         return context;
     }
 
@@ -79,6 +85,8 @@ public final class MessageFetchContext {
         tc = null;
         clientHost = null;
         header = null;
+        maxReadEntriesNum = -1;
+        namespacePrefix = null;
         recyclerHandle.recycle(this);
     }
 }

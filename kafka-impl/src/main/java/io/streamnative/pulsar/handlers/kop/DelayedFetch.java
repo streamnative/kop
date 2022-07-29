@@ -30,13 +30,12 @@ import org.apache.kafka.common.requests.FetchRequest;
 public class DelayedFetch extends DelayedOperation {
     private final CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> callback;
     private final ReplicaManager replicaManager;
+    private final long bytesReadable;
     private final int fetchMaxBytes;
     private final AtomicInteger maxReadEntriesNum;
-    final boolean readCommitted;
-    final String namespacePrefix;
-
-    final MessageFetchContext context;
-
+    private final boolean readCommitted;
+    private final String namespacePrefix;
+    private final MessageFetchContext context;
     private volatile Boolean hasError;
 
     protected static final AtomicReferenceFieldUpdater<DelayedFetch, Boolean> HAS_ERROR_UPDATER =
@@ -48,9 +47,8 @@ public class DelayedFetch extends DelayedOperation {
 
     public DelayedFetch(long delayMs,
                         final int fetchMaxBytes,
-                        final int maxReadEntriesNum,
+                        final long bytesReadable,
                         final boolean readCommitted,
-                        final String namespacePrefix,
                         final MessageFetchContext context,
                         Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo,
                         Map<TopicPartition, PartitionLog.ReadRecordsResult> readRecordsResult,
@@ -58,20 +56,20 @@ public class DelayedFetch extends DelayedOperation {
                         CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> callback) {
         super(delayMs, Optional.empty());
         this.readCommitted = readCommitted;
-        this.namespacePrefix = namespacePrefix;
+        this.namespacePrefix = context.getNamespacePrefix();
         this.context = context;
         this.callback = callback;
         this.readRecordsResult = readRecordsResult;
         this.readPartitionInfo = readPartitionInfo;
         this.replicaManager = replicaManager;
+        this.bytesReadable = bytesReadable;
         this.fetchMaxBytes = fetchMaxBytes;
-        this.maxReadEntriesNum = new AtomicInteger(maxReadEntriesNum);
+        this.maxReadEntriesNum = new AtomicInteger(context.getMaxReadEntriesNum());
         this.hasError = false;
     }
 
     @Override
     public void onExpiration() {
-        log.info("[Test] onExpiration {}", fetchMaxBytes);
         if (this.callback.isDone()) {
             return;
         }
@@ -80,7 +78,6 @@ public class DelayedFetch extends DelayedOperation {
 
     @Override
     public void onComplete() {
-        log.info("[Test] onComplete {}", fetchMaxBytes);
         if (this.callback.isDone()) {
             return;
         }
@@ -88,7 +85,7 @@ public class DelayedFetch extends DelayedOperation {
             callback.complete(readRecordsResult);
         }
         replicaManager.readFromLocalLog(
-            readCommitted, namespacePrefix, fetchMaxBytes, maxReadEntriesNum.get(), readPartitionInfo, context
+            readCommitted, fetchMaxBytes, maxReadEntriesNum.get(), readPartitionInfo, context
         ).thenAccept(readRecordsResult -> {
             this.context.getStatsLogger().getWaitingFetchesTriggered().add(1);
             this.callback.complete(readRecordsResult);
@@ -116,9 +113,17 @@ public class DelayedFetch extends DelayedOperation {
                 return forceComplete();
             }
             PositionImpl lastPosition = (PositionImpl) result.lastPosition();
-            log.info("[Test] currLastPosition {} lastPosition {}", currLastPosition, lastPosition);
             if (currLastPosition.compareTo(lastPosition) > 0) {
-                this.maxReadEntriesNum.set(maxReadEntriesNum.get() * 10);
+                int diffBytes = (int) (fetchMaxBytes - bytesReadable);
+                if (diffBytes != fetchMaxBytes) {
+                    int adjustedMaxReadEntriesNum = (diffBytes / fetchMaxBytes) * 2 + maxReadEntriesNum.get();
+                    if (log.isDebugEnabled()) {
+                        log.debug("The fetch max bytes is {}, byte readable is {}, "
+                                        + "try to adjust the max read entries num to: {}.",
+                                fetchMaxBytes, bytesReadable, adjustedMaxReadEntriesNum);
+                    }
+                    this.maxReadEntriesNum.set(adjustedMaxReadEntriesNum);
+                }
                 return forceComplete();
             }
         }

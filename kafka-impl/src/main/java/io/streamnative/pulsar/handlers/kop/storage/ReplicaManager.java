@@ -32,7 +32,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.commons.lang3.mutable.MutableBoolean;
 import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.kafka.common.TopicPartition;
@@ -149,10 +148,8 @@ public class ReplicaManager {
             final long timeout,
             final int fetchMinBytes,
             final int fetchMaxBytes,
-            final int maxReadEntriesNum,
             final ConcurrentHashMap<TopicPartition, FetchRequest.PartitionData> fetchInfos,
             final IsolationLevel isolationLevel,
-            final String namespacePrefix,
             final MessageFetchContext context) {
         CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> future =
                 new CompletableFuture<>();
@@ -160,7 +157,7 @@ public class ReplicaManager {
                 (context.getTc() != null && isolationLevel.equals(IsolationLevel.READ_COMMITTED));
         final long startTime = SystemTime.SYSTEM.hiResClockMs();
 
-        readFromLocalLog(readCommitted, namespacePrefix, fetchMaxBytes, maxReadEntriesNum, fetchInfos, context)
+        readFromLocalLog(readCommitted, fetchMaxBytes, context.getMaxReadEntriesNum(), fetchInfos, context)
                 .thenAccept(readResults -> {
                     final MutableLong bytesReadable = new MutableLong(0);
                     final MutableBoolean errorReadingData = new MutableBoolean(false);
@@ -189,9 +186,8 @@ public class ReplicaManager {
                     DelayedFetch delayedFetch = new DelayedFetch(
                             maxWait,
                             fetchMaxBytes,
-                            maxReadEntriesNum,
+                            bytesReadable.getValue(),
                             readCommitted,
-                            namespacePrefix,
                             context,
                             fetchInfos,
                             readResults,
@@ -206,7 +202,6 @@ public class ReplicaManager {
 
     public CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> readFromLocalLog(
             final boolean readCommitted,
-            final String namespacePrefix,
             final int fetchMaxBytes,
             final int maxReadEntriesNum,
             final Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo,
@@ -222,10 +217,10 @@ public class ReplicaManager {
             }
         };
         readPartitionInfo.forEach((tp, fetchInfo) -> {
-            final long startPrepareMetadataNanos = MathUtils.nowInNano();
-            getPartitionLog(tp, namespacePrefix)
-                    .readRecords(fetchInfo, startPrepareMetadataNanos,
-                            readCommitted, limitBytes, maxReadEntriesNum, context)
+
+            getPartitionLog(tp, context.getNamespacePrefix())
+                    .readRecords(fetchInfo, readCommitted,
+                            limitBytes, maxReadEntriesNum, context)
                     .thenAccept(readResult -> {
                         result.put(tp, readResult);
                         complete.run();
