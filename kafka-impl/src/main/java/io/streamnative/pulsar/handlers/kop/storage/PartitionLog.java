@@ -359,6 +359,7 @@ public class PartitionLog {
             final long startPrepareMetadataNanos,
             final boolean readCommitted,
             final AtomicLong limitBytes,
+            final int maxReadEntriesNum,
             final MessageFetchContext context) {
         CompletableFuture<ReadRecordsResult> future = new CompletableFuture<>();
         final long offset = partitionData.fetchOffset;
@@ -421,7 +422,7 @@ public class PartitionLog {
                 requestStats.getPrepareMetadataStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
                 long adjustedMaxBytes = Math.min(partitionData.maxBytes, limitBytes.get());
-                readEntries(cursor, topicPartition, cursorOffset, context.getMaxReadEntriesNum(),
+                readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum,
                         adjustedMaxBytes, context.getTopicManager()).whenComplete((entries, throwable) -> {
                             if (throwable != null) {
                                 tcm.deleteOneCursorAsync(cursorLongPair.getLeft(),
@@ -577,12 +578,16 @@ public class PartitionLog {
                 abortedTransactions = null;
             }
 
+            Entry lastEntry = entries.get(entries.size() - 1);
+            Position lastPosition = lastEntry.getPosition();
+
             future.complete(ReadRecordsResult.of(
                     decodeResult,
                     abortedTransactions,
                     highWatermark,
                     lso,
-                    tcm.getManagedLedger().getLastConfirmedEntry()));
+                    lastPosition
+                    ));
         }, context.getDecodeExecutor());
     }
 

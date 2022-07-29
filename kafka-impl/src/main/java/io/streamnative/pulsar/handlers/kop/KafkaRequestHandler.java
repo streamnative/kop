@@ -1589,6 +1589,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             request.maxWait(),
                             fetchMinBytes,
                             fetchMaxBytes,
+                            maxReadEntriesNum,
                             interesting,
                             request.isolationLevel(),
                             namespacePrefix,

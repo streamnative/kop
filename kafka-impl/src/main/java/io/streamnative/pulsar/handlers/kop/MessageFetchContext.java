@@ -38,7 +38,6 @@ public final class MessageFetchContext {
     private final Handle<MessageFetchContext> recyclerHandle;
 
     private volatile KafkaRequestHandler requestHandler;
-    private volatile int maxReadEntriesNum;
     private volatile KafkaTopicManager topicManager;
     private volatile RequestStats statsLogger;
     private volatile TransactionCoordinator tc;
@@ -59,7 +58,6 @@ public final class MessageFetchContext {
         context.requestHandler = requestHandler;
         context.sharedState = sharedState;
         context.decodeExecutor = decodeExecutor;
-        context.maxReadEntriesNum = requestHandler.getMaxReadEntriesNum();
         context.topicManager = requestHandler.getTopicManager();
         context.statsLogger = requestHandler.requestStats;
         context.tc = tc;
@@ -76,7 +74,6 @@ public final class MessageFetchContext {
         requestHandler = null;
         sharedState = null;
         decodeExecutor = null;
-        maxReadEntriesNum = 0;
         topicManager = null;
         statsLogger = null;
         tc = null;

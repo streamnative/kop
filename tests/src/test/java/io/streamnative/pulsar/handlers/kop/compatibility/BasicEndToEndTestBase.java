@@ -69,6 +69,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
+        conf.setMaxReadEntriesNum(1);
         super.internalSetup();
     }
 

@@ -19,6 +19,8 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.kafka.common.TopicPartition;
@@ -29,10 +31,16 @@ public class DelayedFetch extends DelayedOperation {
     private final CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> callback;
     private final ReplicaManager replicaManager;
     private final int fetchMaxBytes;
+    private final AtomicInteger maxReadEntriesNum;
     final boolean readCommitted;
     final String namespacePrefix;
 
     final MessageFetchContext context;
+
+    private volatile Boolean hasError;
+
+    protected static final AtomicReferenceFieldUpdater<DelayedFetch, Boolean> HAS_ERROR_UPDATER =
+            AtomicReferenceFieldUpdater.newUpdater(DelayedFetch.class, Boolean.class, "hasError");
 
     private final Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo;
 
@@ -40,6 +48,7 @@ public class DelayedFetch extends DelayedOperation {
 
     public DelayedFetch(long delayMs,
                         final int fetchMaxBytes,
+                        final int maxReadEntriesNum,
                         final boolean readCommitted,
                         final String namespacePrefix,
                         final MessageFetchContext context,
@@ -56,6 +65,8 @@ public class DelayedFetch extends DelayedOperation {
         this.readPartitionInfo = readPartitionInfo;
         this.replicaManager = replicaManager;
         this.fetchMaxBytes = fetchMaxBytes;
+        this.maxReadEntriesNum = new AtomicInteger(maxReadEntriesNum);
+        this.hasError = false;
     }
 
     @Override
@@ -73,8 +84,11 @@ public class DelayedFetch extends DelayedOperation {
         if (this.callback.isDone()) {
             return;
         }
+        if (HAS_ERROR_UPDATER.get(this)) {
+            callback.complete(readRecordsResult);
+        }
         replicaManager.readFromLocalLog(
-            readCommitted, namespacePrefix, fetchMaxBytes, readPartitionInfo, context
+            readCommitted, namespacePrefix, fetchMaxBytes, maxReadEntriesNum.get(), readPartitionInfo, context
         ).thenAccept(readRecordsResult -> {
             this.context.getStatsLogger().getWaitingFetchesTriggered().add(1);
             this.callback.complete(readRecordsResult);
@@ -97,9 +111,14 @@ public class DelayedFetch extends DelayedOperation {
             PartitionLog.ReadRecordsResult result = entry.getValue();
             PartitionLog partitionLog = replicaManager.getPartitionLog(tp, namespacePrefix);
             PositionImpl currLastPosition = (PositionImpl) partitionLog.getLastPosition(context.getTopicManager());
+            if (currLastPosition.compareTo(PositionImpl.EARLIEST) == 0) {
+                HAS_ERROR_UPDATER.compareAndSet(this, false, true);
+                return forceComplete();
+            }
             PositionImpl lastPosition = (PositionImpl) result.lastPosition();
             log.info("[Test] currLastPosition {} lastPosition {}", currLastPosition, lastPosition);
             if (currLastPosition.compareTo(lastPosition) > 0) {
+                this.maxReadEntriesNum.set(maxReadEntriesNum.get() * 10);
                 return forceComplete();
             }
         }

@@ -149,6 +149,7 @@ public class ReplicaManager {
             final long timeout,
             final int fetchMinBytes,
             final int fetchMaxBytes,
+            final int maxReadEntriesNum,
             final ConcurrentHashMap<TopicPartition, FetchRequest.PartitionData> fetchInfos,
             final IsolationLevel isolationLevel,
             final String namespacePrefix,
@@ -159,7 +160,7 @@ public class ReplicaManager {
                 (context.getTc() != null && isolationLevel.equals(IsolationLevel.READ_COMMITTED));
         final long startTime = SystemTime.SYSTEM.hiResClockMs();
 
-        readFromLocalLog(readCommitted, namespacePrefix, fetchMaxBytes, fetchInfos, context)
+        readFromLocalLog(readCommitted, namespacePrefix, fetchMaxBytes, maxReadEntriesNum, fetchInfos, context)
                 .thenAccept(readResults -> {
                     final MutableLong bytesReadable = new MutableLong(0);
                     final MutableBoolean errorReadingData = new MutableBoolean(false);
@@ -188,6 +189,7 @@ public class ReplicaManager {
                     DelayedFetch delayedFetch = new DelayedFetch(
                             maxWait,
                             fetchMaxBytes,
+                            maxReadEntriesNum,
                             readCommitted,
                             namespacePrefix,
                             context,
@@ -206,6 +208,7 @@ public class ReplicaManager {
             final boolean readCommitted,
             final String namespacePrefix,
             final int fetchMaxBytes,
+            final int maxReadEntriesNum,
             final Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo,
             final MessageFetchContext context) {
         AtomicLong limitBytes = new AtomicLong(fetchMaxBytes);
@@ -221,7 +224,8 @@ public class ReplicaManager {
         readPartitionInfo.forEach((tp, fetchInfo) -> {
             final long startPrepareMetadataNanos = MathUtils.nowInNano();
             getPartitionLog(tp, namespacePrefix)
-                    .readRecords(fetchInfo, startPrepareMetadataNanos, readCommitted, limitBytes, context)
+                    .readRecords(fetchInfo, startPrepareMetadataNanos,
+                            readCommitted, limitBytes, maxReadEntriesNum, context)
                     .thenAccept(readResult -> {
                         result.put(tp, readResult);
                         complete.run();
