@@ -60,6 +60,7 @@ public class DelayedFetch extends DelayedOperation {
 
     @Override
     public void onExpiration() {
+        log.info("[Test] onExpiration {}", fetchMaxBytes);
         if (this.callback.isDone()) {
             return;
         }
@@ -68,6 +69,7 @@ public class DelayedFetch extends DelayedOperation {
 
     @Override
     public void onComplete() {
+        log.info("[Test] onComplete {}", fetchMaxBytes);
         if (this.callback.isDone()) {
             return;
         }
@@ -96,6 +98,7 @@ public class DelayedFetch extends DelayedOperation {
             PartitionLog partitionLog = replicaManager.getPartitionLog(tp, namespacePrefix);
             PositionImpl currLastPosition = (PositionImpl) partitionLog.getLastPosition(context.getTopicManager());
             PositionImpl lastPosition = (PositionImpl) result.lastPosition();
+            log.info("[Test] currLastPosition {} lastPosition {}", currLastPosition, lastPosition);
             if (currLastPosition.compareTo(lastPosition) > 0) {
                 return forceComplete();
             }

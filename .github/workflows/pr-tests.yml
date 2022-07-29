@@ -52,7 +52,7 @@ jobs:
       run: mvn test -ntp -B -DfailIfNoTests=false -pl oauth-client
 
     - name: tests module
-      run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test' -pl tests
+      run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=BasicEndToEnd*Test' -pl tests
       timeout-minutes: 60
 
     - name: package surefire artifacts

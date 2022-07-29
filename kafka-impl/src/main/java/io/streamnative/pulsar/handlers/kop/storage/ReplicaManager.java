@@ -176,7 +176,7 @@ public class ReplicaManager {
                     long currentWait = now - startTime;
                     long remainingMaxWait = timeout - currentWait;
                     long maxWait = Math.min(remainingMaxWait, timeout);
-
+                    log.info("[Test] MaxWait : {} fetchMinBytes : {}", maxWait, fetchMaxBytes);
                     if (maxWait <= 0 || fetchInfos.isEmpty()
                             || bytesReadable.longValue() >= fetchMinBytes || errorReadingData.booleanValue()) {
                         future.complete(readResults);
