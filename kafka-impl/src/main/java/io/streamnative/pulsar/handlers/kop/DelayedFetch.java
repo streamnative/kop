@@ -116,7 +116,8 @@ public class DelayedFetch extends DelayedOperation {
             if (currLastPosition.compareTo(lastPosition) > 0) {
                 int diffBytes = (int) (fetchMaxBytes - bytesReadable);
                 if (diffBytes != fetchMaxBytes) {
-                    int adjustedMaxReadEntriesNum = (diffBytes / fetchMaxBytes) * 2 + maxReadEntriesNum.get();
+                    int adjustedMaxReadEntriesNum = (diffBytes / fetchMaxBytes) * maxReadEntriesNum.get() * 2
+                            + maxReadEntriesNum.get();
                     if (log.isDebugEnabled()) {
                         log.debug("The fetch max bytes is {}, byte readable is {}, "
                                         + "try to adjust the max read entries num to: {}.",
