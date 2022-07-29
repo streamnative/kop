@@ -43,7 +43,6 @@ import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -98,9 +97,6 @@ public class PartitionLog {
 
     private static final String PID_PREFIX = "KOP-PID-PREFIX";
 
-    protected static final AtomicReferenceFieldUpdater<PartitionLog, Boolean> MESSAGE_PRODUCED_UPDATER =
-            AtomicReferenceFieldUpdater.newUpdater(PartitionLog.class, Boolean.class, "messageProduced");
-
     private static final KopLogValidator.CompressionCodec DEFAULT_COMPRESSION =
             new KopLogValidator.CompressionCodec(CompressionType.NONE.name, CompressionType.NONE.id);
 
@@ -112,7 +108,6 @@ public class PartitionLog {
     private final String fullPartitionName;
     private final EntryFormatter entryFormatter;
     private final ProducerStateManager producerStateManager;
-    private volatile Boolean messageProduced;
 
     public PartitionLog(KafkaServiceConfiguration kafkaConfig,
                         ReplicaManager replicaManager,
@@ -130,7 +125,6 @@ public class PartitionLog {
         this.fullPartitionName = fullPartitionName;
         this.entryFormatter = entryFormatter;
         this.producerStateManager = producerStateManager;
-        this.messageProduced = true;
     }
 
     @Data
@@ -354,10 +348,6 @@ public class PartitionLog {
 
     public Position getLastPosition(PersistentTopic persistentTopic) {
         return persistentTopic.getLastPosition();
-    }
-
-    public boolean messageProduced() {
-        return MESSAGE_PRODUCED_UPDATER.compareAndSet(this, true, false);
     }
 
     public CompletableFuture<ReadRecordsResult> readRecords(
@@ -766,7 +756,6 @@ public class PartitionLog {
                         time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
                 appendFuture.completeExceptionally(e);
             }
-            MESSAGE_PRODUCED_UPDATER.set(this, true);
             replicaManager.tryCompleteDelayedFetch(new DelayedOperationKey.TopicPartitionOperationKey(topicPartition));
             encodeResult.recycle();
         });
