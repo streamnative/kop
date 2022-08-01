@@ -19,7 +19,6 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
@@ -32,12 +31,14 @@ public class DelayedFetch extends DelayedOperation {
     private final ReplicaManager replicaManager;
     private final long bytesReadable;
     private final int fetchMaxBytes;
-    private final AtomicInteger maxReadEntriesNum;
     private final boolean readCommitted;
     private final String namespacePrefix;
+    private final Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo;
+    private final Map<TopicPartition, PartitionLog.ReadRecordsResult> readRecordsResult;
     private final MessageFetchContext context;
     protected volatile Boolean hasError;
     protected volatile Boolean produceHappened;
+    protected volatile Integer maxReadEntriesNum;
 
     protected static final AtomicReferenceFieldUpdater<DelayedFetch, Boolean> HAS_ERROR_UPDATER =
             AtomicReferenceFieldUpdater.newUpdater(DelayedFetch.class, Boolean.class, "hasError");
@@ -45,9 +46,8 @@ public class DelayedFetch extends DelayedOperation {
     protected static final AtomicReferenceFieldUpdater<DelayedFetch, Boolean> IS_PRODUCE_HAPPENED_UPDATER =
             AtomicReferenceFieldUpdater.newUpdater(DelayedFetch.class, Boolean.class, "produceHappened");
 
-    private final Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo;
-
-    private final Map<TopicPartition, PartitionLog.ReadRecordsResult> readRecordsResult;
+    protected static final AtomicReferenceFieldUpdater<DelayedFetch, Integer> MAX_READ_ENTRIES_NUM_UPDATER =
+            AtomicReferenceFieldUpdater.newUpdater(DelayedFetch.class, Integer.class, "maxReadEntriesNum");
 
     public DelayedFetch(long delayMs,
                         final int fetchMaxBytes,
@@ -68,7 +68,7 @@ public class DelayedFetch extends DelayedOperation {
         this.replicaManager = replicaManager;
         this.bytesReadable = bytesReadable;
         this.fetchMaxBytes = fetchMaxBytes;
-        this.maxReadEntriesNum = new AtomicInteger(context.getMaxReadEntriesNum());
+        this.maxReadEntriesNum = context.getMaxReadEntriesNum();
         this.hasError = false;
         this.produceHappened = false;
     }
@@ -87,13 +87,15 @@ public class DelayedFetch extends DelayedOperation {
         }
         if (HAS_ERROR_UPDATER.get(this) || !IS_PRODUCE_HAPPENED_UPDATER.get(this)) {
             callback.complete(readRecordsResult);
+            return;
         }
         replicaManager.readFromLocalLog(
-            readCommitted, fetchMaxBytes, maxReadEntriesNum.get(), readPartitionInfo, context
+            readCommitted, fetchMaxBytes, maxReadEntriesNum, readPartitionInfo, context
         ).thenAccept(readRecordsResult -> {
             this.context.getStatsLogger().getWaitingFetchesTriggered().add(1);
             this.callback.complete(readRecordsResult);
         }).thenAccept(__ -> {
+            // Ensure the old decode result are recycled.
             readRecordsResult.forEach((ignore, result) -> {
                 if (result.decodeResult() != null) {
                     result.decodeResult().recycle();
@@ -120,14 +122,14 @@ public class DelayedFetch extends DelayedOperation {
             if (currLastPosition.compareTo(lastPosition) > 0) {
                 int diffBytes = (int) (fetchMaxBytes - bytesReadable);
                 if (diffBytes != fetchMaxBytes) {
-                    int adjustedMaxReadEntriesNum = (diffBytes / fetchMaxBytes) * maxReadEntriesNum.get() * 2
-                            + maxReadEntriesNum.get();
+                    int adjustedMaxReadEntriesNum = (diffBytes / fetchMaxBytes) * maxReadEntriesNum * 2
+                            + maxReadEntriesNum;
                     if (log.isDebugEnabled()) {
                         log.debug("The fetch max bytes is {}, byte readable is {}, "
                                         + "try to adjust the max read entries num to: {}.",
                                 fetchMaxBytes, bytesReadable, adjustedMaxReadEntriesNum);
                     }
-                    this.maxReadEntriesNum.set(adjustedMaxReadEntriesNum);
+                    MAX_READ_ENTRIES_NUM_UPDATER.set(this, adjustedMaxReadEntriesNum);
                 }
                 return IS_PRODUCE_HAPPENED_UPDATER.compareAndSet(this, false, true) && forceComplete();
             }
