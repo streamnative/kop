@@ -37,9 +37,13 @@ public class DelayedFetch extends DelayedOperation {
     private final String namespacePrefix;
     private final MessageFetchContext context;
     protected volatile Boolean hasError;
+    protected volatile Boolean produceHappened;
 
     protected static final AtomicReferenceFieldUpdater<DelayedFetch, Boolean> HAS_ERROR_UPDATER =
             AtomicReferenceFieldUpdater.newUpdater(DelayedFetch.class, Boolean.class, "hasError");
+
+    protected static final AtomicReferenceFieldUpdater<DelayedFetch, Boolean> IS_PRODUCE_HAPPENED_UPDATER =
+            AtomicReferenceFieldUpdater.newUpdater(DelayedFetch.class, Boolean.class, "produceHappened");
 
     private final Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo;
 
@@ -66,14 +70,14 @@ public class DelayedFetch extends DelayedOperation {
         this.fetchMaxBytes = fetchMaxBytes;
         this.maxReadEntriesNum = new AtomicInteger(context.getMaxReadEntriesNum());
         this.hasError = false;
+        this.produceHappened = false;
     }
 
     @Override
     public void onExpiration() {
-        if (this.callback.isDone()) {
-            return;
+        if (log.isDebugEnabled()) {
+            log.debug("Delayed fetch on expiration triggered.");
         }
-        callback.complete(readRecordsResult);
     }
 
     @Override
@@ -81,7 +85,7 @@ public class DelayedFetch extends DelayedOperation {
         if (this.callback.isDone()) {
             return;
         }
-        if (HAS_ERROR_UPDATER.get(this)) {
+        if (HAS_ERROR_UPDATER.get(this) || !IS_PRODUCE_HAPPENED_UPDATER.get(this)) {
             callback.complete(readRecordsResult);
         }
         replicaManager.readFromLocalLog(
@@ -125,7 +129,7 @@ public class DelayedFetch extends DelayedOperation {
                     }
                     this.maxReadEntriesNum.set(adjustedMaxReadEntriesNum);
                 }
-                return forceComplete();
+                return IS_PRODUCE_HAPPENED_UPDATER.compareAndSet(this, false, true) && forceComplete();
             }
         }
         return false;
