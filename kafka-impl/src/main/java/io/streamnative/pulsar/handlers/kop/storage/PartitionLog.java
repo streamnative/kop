@@ -478,15 +478,12 @@ public class PartitionLog {
         final List<Entry> committedEntries;
         if (readCommitted) {
             committedEntries = getCommittedEntries(entries, lso);
-            if (log.isDebugEnabled()) {
-                log.debug("Read {} entries but only {} entries are committed",
-                        entries.size(), committedEntries.size());
-            }
         } else {
             committedEntries = entries;
         }
         if (log.isDebugEnabled()) {
-            log.debug("Read {} entries", entries.size());
+            log.debug("Read {} entries but only {} entries are committed",
+                    entries.size(), committedEntries.size());
         }
         if (committedEntries.isEmpty()) {
             future.complete(ReadRecordsResult.error(tcm.getManagedLedger().getLastConfirmedEntry(), Errors.NONE));
@@ -511,26 +508,30 @@ public class PartitionLog {
                 groupName = "";
             }
             final long startDecodingEntriesNanos = MathUtils.nowInNano();
+
+            // Get the last entry position for delayed fetch.
+            Position lastPosition = this.getLastPositionFromEntries(committedEntries);
             final DecodeResult decodeResult = entryFormatter.decode(committedEntries, magic);
             requestStats.getFetchDecodeStats().registerSuccessfulEvent(
                     MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
 
             // collect consumer metrics
             decodeResult.updateConsumerStats(topicPartition, committedEntries.size(), groupName, requestStats);
-            List<FetchResponse.AbortedTransaction> abortedTransactions;
+            List<FetchResponse.AbortedTransaction> abortedTransactions = null;
             if (readCommitted) {
                 abortedTransactions = this.getAbortedIndexList(partitionData.fetchOffset);
-            } else {
-                abortedTransactions = null;
             }
-
-            // Get the last entry position for delayed fetch.
-            Entry lastEntry = committedEntries.get(committedEntries.size() - 1);
-            Position lastPosition = lastEntry.getPosition();
 
             future.complete(ReadRecordsResult.of(decodeResult, abortedTransactions, highWatermark,
                     lso, lastPosition));
         }, context.getDecodeExecutor());
+    }
+
+    private Position getLastPositionFromEntries(List<Entry> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return PositionImpl.EARLIEST;
+        }
+        return entries.get(entries.size() - 1).getPosition();
     }
 
     private List<Entry> getCommittedEntries(List<Entry> entries, long lso) {
