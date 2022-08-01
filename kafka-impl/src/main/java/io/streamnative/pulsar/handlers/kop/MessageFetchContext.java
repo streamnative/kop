@@ -17,10 +17,14 @@ import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.requests.RequestHeader;
+import org.apache.pulsar.metadata.api.GetResult;
 
 /**
  * MessageFetchContext handling FetchRequest.
@@ -74,6 +78,29 @@ public final class MessageFetchContext {
 
     private MessageFetchContext(Handle<MessageFetchContext> recyclerHandle) {
         this.recyclerHandle = recyclerHandle;
+    }
+
+    public CompletableFuture<String> getCurrentConnectedGroupNameAsync() {
+        return this.requestHandler.getCurrentConnectedGroup()
+                .computeIfAbsent(this.clientHost, clientHost -> {
+                    CompletableFuture<String> storeGroupIdFuture = new CompletableFuture<>();
+                    String groupIdPath = GroupIdUtils.groupIdPathFormat(clientHost, header.clientId());
+                    this.requestHandler.getMetadataStore()
+                            .get(this.requestHandler.getGroupIdStoredPath() + groupIdPath)
+                            .thenAccept(getResultOpt -> {
+                                if (getResultOpt.isPresent()) {
+                                    GetResult getResult = getResultOpt.get();
+                                    storeGroupIdFuture.complete(new String(getResult.getValue() == null
+                                            ? new byte[0] : getResult.getValue(), StandardCharsets.UTF_8));
+                                } else {
+                                    storeGroupIdFuture.complete("");
+                                }
+                            }).exceptionally(ex -> {
+                                storeGroupIdFuture.completeExceptionally(ex);
+                                return null;
+                            });
+                    return storeGroupIdFuture;
+                });
     }
 
     public void recycle() {

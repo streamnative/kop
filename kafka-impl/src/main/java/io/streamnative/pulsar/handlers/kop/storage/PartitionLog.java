@@ -29,12 +29,10 @@ import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
 import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
-import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -76,7 +74,6 @@ import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.metadata.api.GetResult;
 
 /**
  * Analyze result.
@@ -435,7 +432,7 @@ public class PartitionLog {
                             long readSize = entries.stream().mapToLong(Entry::getLength).sum();
                             limitBytes.addAndGet(-1 * readSize);
                             handleEntries(future, entries, partitionData, tcm,
-                                    cursor, cursorOffset, readCommitted, context);
+                                    cursor, cursorOffset.get(), readCommitted, context);
                         });
             });
         });
@@ -472,21 +469,20 @@ public class PartitionLog {
                 MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
     }
 
-    private void handleEntries(
-            final CompletableFuture<ReadRecordsResult> future,
-            final List<Entry> entries,
-            final FetchRequest.PartitionData partitionData,
-            final KafkaTopicConsumerManager tcm,
-            final ManagedCursor cursor,
-            final AtomicLong cursorOffset,
-            final boolean readCommitted,
-            final MessageFetchContext context) {
+    private void handleEntries(final CompletableFuture<ReadRecordsResult> future,
+                               final List<Entry> entries,
+                               final FetchRequest.PartitionData partitionData,
+                               final KafkaTopicConsumerManager tcm,
+                               final ManagedCursor cursor,
+                               final long cursorOffset,
+                               final boolean readCommitted,
+                               final MessageFetchContext context) {
         final long highWatermark = MessageMetadataUtils.getHighWatermark(cursor.getManagedLedger());
         // Add new offset back to TCM after entries are read successfully
-        tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
+        tcm.add(cursorOffset, Pair.of(cursor, cursorOffset));
         final long lso = (readCommitted
                 ? this.firstUndecidedOffset().orElse(highWatermark) : highWatermark);
-        List<Entry> committedEntries = entries;
+        final List<Entry> committedEntries;
         if (readCommitted) {
             committedEntries = getCommittedEntries(entries, lso);
             if (log.isDebugEnabled()) {
@@ -494,9 +490,10 @@ public class PartitionLog {
                         entries.size(), committedEntries.size());
             }
         } else {
-            if (log.isDebugEnabled()) {
-                log.debug("Read {} entries", entries.size());
-            }
+            committedEntries = entries;
+        }
+        if (log.isDebugEnabled()) {
+            log.debug("Read {} entries", entries.size());
         }
         if (committedEntries.isEmpty()) {
             future.complete(ReadRecordsResult.error(tcm.getManagedLedger().getLastConfirmedEntry(), Errors.NONE));
@@ -514,46 +511,19 @@ public class PartitionLog {
             magic = RecordBatch.CURRENT_MAGIC_VALUE;
         }
 
-        CompletableFuture<String> groupNameFuture = context.getRequestHandler()
-                .getCurrentConnectedGroup()
-                .computeIfAbsent(context.getClientHost(), clientHost -> {
-                    CompletableFuture<String> storeGroupIdFuture = new CompletableFuture<>();
-                    String groupIdPath = GroupIdUtils.groupIdPathFormat(clientHost, context.getHeader().clientId());
-                    context.getRequestHandler().getMetadataStore()
-                            .get(context.getRequestHandler().getGroupIdStoredPath() + groupIdPath)
-                            .thenAccept(getResultOpt -> {
-                                if (getResultOpt.isPresent()) {
-                                    GetResult getResult = getResultOpt.get();
-                                    storeGroupIdFuture.complete(new String(getResult.getValue() == null
-                                            ? new byte[0] : getResult.getValue(), StandardCharsets.UTF_8));
-                                } else {
-                                    storeGroupIdFuture.complete("");
-                                }
-                            }).exceptionally(ex -> {
-                                storeGroupIdFuture.completeExceptionally(ex);
-                                return null;
-                            });
-                    return storeGroupIdFuture;
-                });
-
         // this part is heavyweight, and we should not execute in the ManagedLedger Ordered executor thread
-        groupNameFuture.whenCompleteAsync((groupName, ex) -> {
+        context.getCurrentConnectedGroupNameAsync().whenCompleteAsync((groupName, ex) -> {
             if (ex != null) {
                 log.error("Get groupId failed.", ex);
                 groupName = "";
             }
-
-
             final long startDecodingEntriesNanos = MathUtils.nowInNano();
-            final DecodeResult decodeResult = entryFormatter.decode(entries, magic);
+            final DecodeResult decodeResult = entryFormatter.decode(committedEntries, magic);
             requestStats.getFetchDecodeStats().registerSuccessfulEvent(
                     MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
 
             // collect consumer metrics
-            decodeResult.updateConsumerStats(topicPartition,
-                    entries.size(),
-                    groupName,
-                    requestStats);
+            decodeResult.updateConsumerStats(topicPartition, committedEntries.size(), groupName, requestStats);
             List<FetchResponse.AbortedTransaction> abortedTransactions;
             if (readCommitted) {
                 abortedTransactions = this.getAbortedIndexList(partitionData.fetchOffset);
@@ -561,16 +531,12 @@ public class PartitionLog {
                 abortedTransactions = null;
             }
 
-            Entry lastEntry = entries.get(entries.size() - 1);
+            // Get the last entry position for delayed fetch.
+            Entry lastEntry = committedEntries.get(committedEntries.size() - 1);
             Position lastPosition = lastEntry.getPosition();
 
-            future.complete(ReadRecordsResult.of(
-                    decodeResult,
-                    abortedTransactions,
-                    highWatermark,
-                    lso,
-                    lastPosition
-                    ));
+            future.complete(ReadRecordsResult.of(decodeResult, abortedTransactions, highWatermark,
+                    lso, lastPosition));
         }, context.getDecodeExecutor());
     }
 
