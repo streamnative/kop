@@ -295,7 +295,8 @@ public class PartitionLog {
                 }
 
                 if (entryFormatter instanceof KafkaMixedEntryFormatter) {
-                    final long logEndOffset = getLogEndOffset(persistentTopicOpt.get());
+                    final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
+                    final long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
                     appendInfo.firstOffset(Optional.of(logEndOffset));
                 }
                 final EncodeRequest encodeRequest = EncodeRequest.get(validRecords, appendInfo);
@@ -326,11 +327,6 @@ public class PartitionLog {
         return appendFuture;
     }
 
-    private long getLogEndOffset(PersistentTopic persistentTopic) {
-        final ManagedLedger managedLedger = persistentTopic.getManagedLedger();
-        return MessageMetadataUtils.getLogEndOffset(managedLedger);
-    }
-
     public Position getLastPosition(KafkaTopicManager topicManager) {
         final CompletableFuture<Optional<PersistentTopic>> topicFuture =
                 topicManager.getTopic(fullPartitionName);
@@ -347,16 +343,15 @@ public class PartitionLog {
         return PositionImpl.EARLIEST;
     }
 
-    public Position getLastPosition(PersistentTopic persistentTopic) {
+    private Position getLastPosition(PersistentTopic persistentTopic) {
         return persistentTopic.getLastPosition();
     }
 
-    public CompletableFuture<ReadRecordsResult> readRecords(
-            final FetchRequest.PartitionData partitionData,
-            final boolean readCommitted,
-            final AtomicLong limitBytes,
-            final int maxReadEntriesNum,
-            final MessageFetchContext context) {
+    public CompletableFuture<ReadRecordsResult> readRecords(final FetchRequest.PartitionData partitionData,
+                                                            final boolean readCommitted,
+                                                            final AtomicLong limitBytes,
+                                                            final int maxReadEntriesNum,
+                                                            final MessageFetchContext context) {
         final long startPrepareMetadataNanos = MathUtils.nowInNano();
         final CompletableFuture<ReadRecordsResult> future = new CompletableFuture<>();
         final long offset = partitionData.fetchOffset;
@@ -392,14 +387,7 @@ public class PartitionLog {
                 future.complete(ReadRecordsResult.error(Errors.NONE));
                 return;
             }
-            cursorFuture.whenComplete((cursorLongPair, ex) -> {
-                if (ex != null) {
-                    registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
-                    context.getSharedState()
-                            .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullPartitionName);
-                    future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_FOR_PARTITION));
-                    return;
-                }
+            cursorFuture.thenAccept((cursorLongPair) -> {
 
                 if (cursorLongPair == null) {
                     log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
@@ -414,19 +402,18 @@ public class PartitionLog {
                 requestStats.getPrepareMetadataStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
                 long adjustedMaxBytes = Math.min(partitionData.maxBytes, limitBytes.get());
-                readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum,
-                        adjustedMaxBytes, context.getTopicManager()).whenComplete((entries, throwable) -> {
+                readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes, topicManager)
+                        .whenComplete((entries, throwable) -> {
                             if (throwable != null) {
                                 tcm.deleteOneCursorAsync(cursorLongPair.getLeft(),
                                         "cursor.readEntry fail. deleteCursor");
                                 if (throwable instanceof ManagedLedgerException.CursorAlreadyClosedException
-                                        || throwable
-                                        instanceof ManagedLedgerException.ManagedLedgerFencedException) {
+                                        || throwable instanceof ManagedLedgerException.ManagedLedgerFencedException) {
                                     future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_FOR_PARTITION));
-                                } else {
-                                    log.error("Read entry error on {}", partitionData, throwable);
-                                    future.complete(ReadRecordsResult.error(Errors.UNKNOWN_SERVER_ERROR));
+                                    return;
                                 }
+                                log.error("Read entry error on {}", partitionData, throwable);
+                                future.complete(ReadRecordsResult.error(Errors.UNKNOWN_SERVER_ERROR));
                                 return;
                             }
                             long readSize = entries.stream().mapToLong(Entry::getLength).sum();
@@ -434,6 +421,12 @@ public class PartitionLog {
                             handleEntries(future, entries, partitionData, tcm,
                                     cursor, cursorOffset.get(), readCommitted, context);
                         });
+            }).exceptionally(ex -> {
+                registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
+                context.getSharedState()
+                        .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullPartitionName);
+                future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_FOR_PARTITION));
+                return null;
             });
         });
 
