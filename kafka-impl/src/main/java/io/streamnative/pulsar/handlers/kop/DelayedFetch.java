@@ -19,6 +19,7 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
@@ -38,7 +39,7 @@ public class DelayedFetch extends DelayedOperation {
     private final MessageFetchContext context;
     protected volatile Boolean hasError;
     protected volatile Boolean produceHappened;
-    protected volatile Integer maxReadEntriesNum;
+    protected volatile int maxReadEntriesNum;
 
     protected static final AtomicReferenceFieldUpdater<DelayedFetch, Boolean> HAS_ERROR_UPDATER =
             AtomicReferenceFieldUpdater.newUpdater(DelayedFetch.class, Boolean.class, "hasError");
@@ -46,8 +47,8 @@ public class DelayedFetch extends DelayedOperation {
     protected static final AtomicReferenceFieldUpdater<DelayedFetch, Boolean> IS_PRODUCE_HAPPENED_UPDATER =
             AtomicReferenceFieldUpdater.newUpdater(DelayedFetch.class, Boolean.class, "produceHappened");
 
-    protected static final AtomicReferenceFieldUpdater<DelayedFetch, Integer> MAX_READ_ENTRIES_NUM_UPDATER =
-            AtomicReferenceFieldUpdater.newUpdater(DelayedFetch.class, Integer.class, "maxReadEntriesNum");
+    protected static final AtomicIntegerFieldUpdater<DelayedFetch> MAX_READ_ENTRIES_NUM_UPDATER =
+            AtomicIntegerFieldUpdater.newUpdater(DelayedFetch.class, "maxReadEntriesNum");
 
     public DelayedFetch(long delayMs,
                         final int fetchMaxBytes,
