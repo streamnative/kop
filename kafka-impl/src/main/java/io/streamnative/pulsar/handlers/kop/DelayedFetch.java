@@ -49,15 +49,15 @@ public class DelayedFetch extends DelayedOperation {
     protected static final AtomicIntegerFieldUpdater<DelayedFetch> MAX_READ_ENTRIES_NUM_UPDATER =
             AtomicIntegerFieldUpdater.newUpdater(DelayedFetch.class, "maxReadEntriesNum");
 
-    public DelayedFetch(long delayMs,
+    public DelayedFetch(final long delayMs,
                         final int fetchMaxBytes,
                         final long bytesReadable,
                         final boolean readCommitted,
                         final MessageFetchContext context,
-                        Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo,
-                        Map<TopicPartition, PartitionLog.ReadRecordsResult> readRecordsResult,
-                        ReplicaManager replicaManager,
-                        CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> callback) {
+                        final ReplicaManager replicaManager,
+                        final Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo,
+                        final Map<TopicPartition, PartitionLog.ReadRecordsResult> readRecordsResult,
+                        final CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> callback) {
         super(delayMs, Optional.empty());
         this.readCommitted = readCommitted;
         this.context = context;

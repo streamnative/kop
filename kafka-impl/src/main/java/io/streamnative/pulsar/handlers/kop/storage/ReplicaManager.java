@@ -187,9 +187,9 @@ public class ReplicaManager {
                             bytesReadable.getValue(),
                             readCommitted,
                             context,
+                            this,
                             fetchInfos,
                             readResults,
-                            this,
                             future
                     );
                     fetchPurgatory.tryCompleteElseWatch(delayedFetch, delayedFetchKeys);
