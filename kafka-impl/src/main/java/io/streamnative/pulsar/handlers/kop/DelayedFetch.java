@@ -33,7 +33,6 @@ public class DelayedFetch extends DelayedOperation {
     private final long bytesReadable;
     private final int fetchMaxBytes;
     private final boolean readCommitted;
-    private final String namespacePrefix;
     private final Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo;
     private final Map<TopicPartition, PartitionLog.ReadRecordsResult> readRecordsResult;
     private final MessageFetchContext context;
@@ -61,7 +60,6 @@ public class DelayedFetch extends DelayedOperation {
                         CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> callback) {
         super(delayMs, Optional.empty());
         this.readCommitted = readCommitted;
-        this.namespacePrefix = context.getNamespacePrefix();
         this.context = context;
         this.callback = callback;
         this.readRecordsResult = readRecordsResult;
@@ -113,7 +111,7 @@ public class DelayedFetch extends DelayedOperation {
         for (Map.Entry<TopicPartition, PartitionLog.ReadRecordsResult> entry : readRecordsResult.entrySet()) {
             TopicPartition tp = entry.getKey();
             PartitionLog.ReadRecordsResult result = entry.getValue();
-            PartitionLog partitionLog = replicaManager.getPartitionLog(tp, namespacePrefix);
+            PartitionLog partitionLog = replicaManager.getPartitionLog(tp, context.getNamespacePrefix());
             PositionImpl currLastPosition = (PositionImpl) partitionLog.getLastPosition(context.getTopicManager());
             if (currLastPosition.compareTo(PositionImpl.EARLIEST) == 0) {
                 HAS_ERROR_UPDATER.compareAndSet(this, false, true);
