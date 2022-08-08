@@ -105,7 +105,7 @@ public final class MessagePublishContext implements PublishContext {
                     topic.getName(), producerName, ledgerId, entryId);
             }
 
-            topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.MICROSECONDS);
+            topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.NANOSECONDS);
 
             // duplicated message
             if (ledgerId == -1 && entryId == -1) {
