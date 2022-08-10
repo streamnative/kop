@@ -369,7 +369,7 @@ public class TransactionMetadata {
                         + "producer epoch {} or previous producer epoch {}",
                         expectedProducerEpoch, producerEpoch, lastProducerEpoch);
                 // TODO the error should be Errors.PRODUCER_FENCED
-                errorsOrBumpEpochResult = Either.left(Errors.UNKNOWN_SERVER_ERROR);
+                errorsOrBumpEpochResult = Either.left(Errors.INVALID_PRODUCER_EPOCH);
             }
         }
 
