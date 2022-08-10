@@ -529,8 +529,10 @@ public class TransactionCoordinator {
     }
 
     private Errors producerEpochFenceErrors() {
-        return Errors.forException(new Throwable("There is a newer producer with the same transactionalId "
-                + "which fences the current one."));
+        if (log.isDebugEnabled()) {
+            log.debug("There is a newer producer with the same transactionalId which fences the current one.");
+        }
+        return Errors.INVALID_PRODUCER_EPOCH;
     }
 
     public void handleEndTransaction(String transactionalId,

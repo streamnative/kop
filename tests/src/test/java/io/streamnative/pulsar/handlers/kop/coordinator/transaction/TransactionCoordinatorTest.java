@@ -445,7 +445,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 errorsCallback
         );
         // TODO: Should have PRODUCER_FENCED
-        assertEquals(Errors.UNKNOWN_SERVER_ERROR, error);
+        assertEquals(Errors.INVALID_PRODUCER_EPOCH, error);
     }
 
     @Test(timeOut = defaultTestTimeout)
@@ -473,7 +473,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 errorsCallback
         );
         // TODO: Should have PRODUCER_FENCED
-        assertEquals(Errors.UNKNOWN_SERVER_ERROR, error);
+        assertEquals(Errors.INVALID_PRODUCER_EPOCH, error);
     }
 
     @Test(timeOut = defaultTestTimeout)
@@ -622,7 +622,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 TransactionResult.COMMIT,
                 errorsCallback);
         // TODO: Should have PRODUCER_FENCED
-        assertEquals(Errors.UNKNOWN_SERVER_ERROR, error);
+        assertEquals(Errors.INVALID_PRODUCER_EPOCH, error);
         verify(transactionManager, atLeastOnce())
                 .getTransactionState(eq(transactionalId));
     }
@@ -947,7 +947,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 TransactionResult.COMMIT,
                 errorsCallback);
         // TODO: Should have PRODUCER_FENCED
-        assertEquals(Errors.UNKNOWN_SERVER_ERROR, error);
+        assertEquals(Errors.INVALID_PRODUCER_EPOCH, error);
         verify(transactionManager, atLeastOnce())
                 .getTransactionState(eq(transactionalId));
     }
@@ -1165,7 +1165,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 -1L,
                 (short) -1,
                 // TODO: Should be Errors.PRODUCER_FENCED
-                Errors.UNKNOWN_SERVER_ERROR), result);
+                Errors.INVALID_PRODUCER_EPOCH), result);
         verify(transactionManager, atLeastOnce()).validateTransactionTimeoutMs(anyInt());
         verify(transactionManager, times(2)).getTransactionState(eq(transactionalId));
     }
@@ -1384,7 +1384,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 Optional.of(new ProducerIdAndEpoch(producerId, producerEpoch)), initProducerIdMockCallback);
         // TODO: Should be Errors.PRODUCER_FENCED
         assertEquals(new TransactionCoordinator.InitProducerIdResult(
-                RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH, Errors.UNKNOWN_SERVER_ERROR), result);
+                RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH, Errors.INVALID_PRODUCER_EPOCH), result);
     }
 
     @Test(timeOut = defaultTestTimeout)
@@ -1414,7 +1414,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 Optional.of(new ProducerIdAndEpoch(producerId, producerEpoch)), initProducerIdMockCallback);
         // TODO: Should be Errors.PRODUCER_FENCED
         assertEquals(new TransactionCoordinator.InitProducerIdResult(
-                RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH, Errors.UNKNOWN_SERVER_ERROR), result);
+                RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH, Errors.INVALID_PRODUCER_EPOCH), result);
     }
 
     @Test(timeOut = defaultTestTimeout)
@@ -1508,7 +1508,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 Optional.of(new ProducerIdAndEpoch(producerId, (short) 10)), initProducerIdMockCallback);
         // TODO: Should be Errors.PRODUCER_FENCED
         assertEquals(new TransactionCoordinator.InitProducerIdResult(
-                RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH, Errors.UNKNOWN_SERVER_ERROR), result);
+                RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH, Errors.INVALID_PRODUCER_EPOCH), result);
     }
 
     @Test(timeOut = defaultTestTimeout)
@@ -1621,7 +1621,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 initProducerIdMockCallback);
         assertEquals(new TransactionCoordinator
                 .InitProducerIdResult(RecordBatch.NO_PRODUCER_ID,
-                RecordBatch.NO_PRODUCER_EPOCH, Errors.UNKNOWN_SERVER_ERROR), result);
+                RecordBatch.NO_PRODUCER_EPOCH, Errors.INVALID_PRODUCER_EPOCH), result);
     }
 
     @Test(timeOut = defaultTestTimeout)
@@ -1731,7 +1731,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
         AtomicBoolean isCalledOnComplete = new AtomicBoolean(false);
         transactionCoordinator.abortTimedOutTransactions((__, error) -> {
                 isCalledOnComplete.set(true);
-                assertEquals(Errors.UNKNOWN_SERVER_ERROR, error);
+                assertEquals(Errors.INVALID_PRODUCER_EPOCH, error);
                 // We can't test in here, because current API don't support PRODUCER_FENCED,
                 // we need upgrade kafka dependency.
 
