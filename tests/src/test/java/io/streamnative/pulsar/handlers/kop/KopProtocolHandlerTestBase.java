@@ -291,6 +291,8 @@ public abstract class KopProtocolHandlerTestBase {
 
         mockZooKeeper = createMockZooKeeper(configClusterName, serviceUrl, serviceUrlTls, brokerServiceUrl,
             brokerServiceUrlTls);
+
+        mockZooKeeperGlobal = createMockZooKeeperGlobal();
         mockBookKeeper = createMockBookKeeper(bkExecutor);
 
         if (enableSchemaRegistry) {
@@ -422,6 +424,10 @@ public abstract class KopProtocolHandlerTestBase {
                 .getBytes(StandardCharsets.UTF_8), dummyAclList, CreateMode.PERSISTENT);
 
         return zk;
+    }
+
+    public static MockZooKeeper createMockZooKeeperGlobal() {
+        return  MockZooKeeper.newInstanceForGlobalZK(MoreExecutors.newDirectExecutorService());
     }
 
     protected MetadataStoreExtended createLocalMetadataStore(PulsarMetadataEventSynchronizer synchronizer) {
