@@ -168,6 +168,7 @@ import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceName;
+import org.apache.pulsar.common.naming.SystemTopicNames;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
@@ -640,7 +641,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 .map(namespace -> pulsarService.getNamespaceService()
                         .getListOfPersistentTopics(NamespaceName.get(namespace))
                 ).collect(Collectors.toList()),
-                topics -> topics.stream().flatMap(List::stream));
+                topics -> topics.stream()
+                        .flatMap(list -> list.stream()
+                                .filter(topic -> !SystemTopicNames.isEventSystemTopic(TopicName.get(topic)))));
     }
 
     private CompletableFuture<ListPair<String>> authorizeTopicsAsync(final Collection<String> topics,
