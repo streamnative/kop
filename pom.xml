@@ -36,7 +36,15 @@
   <properties>
     <javac.target>17</javac.target>
     <redirectTestOutputToFile>true</redirectTestOutputToFile>
-
+    <!-- required for running tests on JDK11+ -->
+    <test.additional.args>
+      --add-opens java.base/jdk.internal.loader=ALL-UNNAMED
+      --add-opens java.base/java.lang=ALL-UNNAMED <!--Mockito-->
+      --add-opens java.base/java.io=ALL-UNNAMED <!--Bookkeeper NativeIO-->
+      --add-opens java.base/java.util=ALL-UNNAMED <!--System Lambda-->
+      --add-opens java.base/sun.net=ALL-UNNAMED <!--netty.DnsResolverUtil-->
+      --add-opens java.management/sun.management=ALL-UNNAMED <!--JvmDefaultGCMetricsLogger-->
+    </test.additional.args>
     <!-- dependencies -->
     <jackson.version>2.13.2</jackson.version>
     <jackson-databind.version>2.13.2.1</jackson-databind.version>
@@ -326,6 +334,7 @@
             -Dpulsar.allocator.pooled=false
             -Dpulsar.allocator.leak_detection=Advanced
             -Dlog4j.configurationFile="log4j2.xml"
+            ${test.additional.args}
           </argLine>
           <reuseForks>false</reuseForks>
           <forkCount>1</forkCount>
