@@ -23,6 +23,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_QUEUED_
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_READ;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.NETWORK_TOTAL_BYTES_IN;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.NETWORK_TOTAL_BYTES_OUT;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.PENDING_TOPIC_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PREPARE_METADATA;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_ENCODE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_PARSE_LATENCY;
@@ -88,6 +89,12 @@ public class RequestStats {
     private final OpStatsLogger responseBlockedLatency;
 
     @StatsDoc(
+            name = PENDING_TOPIC_LATENCY,
+            help = "pending topic latency stats of Kop"
+    )
+    private final OpStatsLogger pendingTopicLatencyStats;
+
+    @StatsDoc(
         name = PRODUCE_ENCODE,
         help = "produce encode stats of Kop"
     )
@@ -145,6 +152,7 @@ public class RequestStats {
         this.responseBlockedLatency = statsLogger.getOpStatsLogger(RESPONSE_BLOCKED_LATENCY);
         this.responseBlockedTimes = statsLogger.getCounter(RESPONSE_BLOCKED_TIMES);
 
+        this.pendingTopicLatencyStats = statsLogger.getOpStatsLogger(PENDING_TOPIC_LATENCY);
         this.produceEncodeStats = statsLogger.getOpStatsLogger(PRODUCE_ENCODE);
         this.messagePublishStats = statsLogger.getOpStatsLogger(MESSAGE_PUBLISH);
         this.messageQueuedLatencyStats = statsLogger.getOpStatsLogger(MESSAGE_QUEUED_LATENCY);

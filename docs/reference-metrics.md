@@ -50,16 +50,17 @@ The KoP metrics are exposed under "/metrics" at port `8000` along with Pulsar me
 
 ### Producer metrics
 
-| Name | Type | Description |
-|---|---|---|
-| kop_server_PRODUCE_ENCODE | Summary | The memory record encode latency |
-| kop_server_MESSAGE_PUBLISH | Summary | The message publish latency to Pulsar ManagedLedger|
-| kop_server_MESSAGE_QUEUED_LATENCY | Summary | The message queued latency in KoP message publish queue|
-| kop_server_BYTES_IN | Counter | The producer bytes in stats. <br> Available labels: *topic*, *partition*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li></ul>|
-| kop_server_MESSAGE_IN | Counter | The producer message in stats. <br> Available labels: *topic*, *partition*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li></ul>|
-| kop_server_BATCH_COUNT_PER_MEMORYRECORDS | Gauge | The number of batches in each memory records|
-| kop_server_PRODUCE_MESSAGE_CONVERSIONS | Counter | The producer message conversions in stats. <br> Available labels: *topic*, *partition*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li></ul>|
-| kop_server_PRODUCE_MESSAGE_CONVERSIONS_TIME_NANOS | Summary | The producer message convert latency in nanoseconds. <br> Available labels: *topic*, *partition*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li></ul>|
+| Name                                              | Type    | Description                                                                                                                                                                                                                  |
+|---------------------------------------------------|---------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| kop_server_PENDING_TOPIC_LATENCY                  | Summary | The latency for when a pending topic future finishes                                                                                                                                                                         |
+| kop_server_PRODUCE_ENCODE                         | Summary | The memory record encode latency                                                                                                                                                                                             |
+| kop_server_MESSAGE_PUBLISH                        | Summary | The message publish latency to Pulsar ManagedLedger                                                                                                                                                                          |
+| kop_server_MESSAGE_QUEUED_LATENCY                 | Summary | The message queued latency in KoP message publish queue                                                                                                                                                                      |
+| kop_server_BYTES_IN                               | Counter | The producer bytes in stats. <br> Available labels: *topic*, *partition*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li></ul>                         |
+| kop_server_MESSAGE_IN                             | Counter | The producer message in stats. <br> Available labels: *topic*, *partition*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li></ul>                       |
+| kop_server_BATCH_COUNT_PER_MEMORYRECORDS          | Gauge   | The number of batches in each memory records                                                                                                                                                                                 |
+| kop_server_PRODUCE_MESSAGE_CONVERSIONS            | Counter | The producer message conversions in stats. <br> Available labels: *topic*, *partition*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li></ul>           |
+| kop_server_PRODUCE_MESSAGE_CONVERSIONS_TIME_NANOS | Summary | The producer message convert latency in nanoseconds. <br> Available labels: *topic*, *partition*. </br> <ul><li>*topic*: the topic name to produce.</li><li>*partition*: the partition id for the topic to produce</li></ul> |
 
 ### Consumer metrics
 
