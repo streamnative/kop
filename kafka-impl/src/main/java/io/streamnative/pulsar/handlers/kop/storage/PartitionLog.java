@@ -200,11 +200,15 @@ public class PartitionLog {
                 }
                 final EncodeRequest encodeRequest = EncodeRequest.get(validRecords, appendInfo);
 
+                requestStats.getPendingTopicLatencyStats().registerSuccessfulEvent(
+                        time.nanoseconds() - beforeRecordsProcess, TimeUnit.NANOSECONDS);
+
+                long beforeEncodingStarts = time.nanoseconds();
                 final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
                 encodeRequest.recycle();
 
                 requestStats.getProduceEncodeStats().registerSuccessfulEvent(
-                        time.nanoseconds() - beforeRecordsProcess, TimeUnit.NANOSECONDS);
+                        time.nanoseconds() - beforeEncodingStarts, TimeUnit.NANOSECONDS);
                 appendRecordsContext.getStartSendOperationForThrottling()
                         .accept(encodeResult.getEncodedByteBuf().readableBytes());
 
