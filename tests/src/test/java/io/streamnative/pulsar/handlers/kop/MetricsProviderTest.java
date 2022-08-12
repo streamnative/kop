@@ -163,7 +163,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         InputStream inputStream = response.getEntity().getContent();
         InputStreamReader isReader = new InputStreamReader(inputStream);
         BufferedReader reader = new BufferedReader(isReader);
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         String line;
         Pattern formatPattern = Pattern.compile("^(\\w+)(\\{(\\w+=[\\\"\\.\\w]+(,\\s?\\w+=[\\\"\\.\\w]+)*)\\})?"
                 + "\\s(-?[\\d\\w\\.]+)(\\s(\\d+))?$");
@@ -185,7 +185,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
             sb.append(line);
         }
 
-        log.info("Metrics string:\n{}", sb.toString());
+        log.info("Metrics string:\n{}", sb);
 
         // channel stats
         Assert.assertTrue(sb.toString().contains("kop_server_ALIVE_CHANNEL_COUNT"));
@@ -209,6 +209,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         Assert.assertTrue(sb.toString().contains("kop_server_RESPONSE_BLOCKED_LATENCY"));
 
         // produce stats
+        Assert.assertTrue(sb.toString().contains("kop_server_PENDING_TOPIC_LATENCY"));
         Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_ENCODE"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_PUBLISH"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_QUEUED_LATENCY"));
