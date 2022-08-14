@@ -53,6 +53,7 @@ import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -828,7 +829,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         this::startSendOperationForThrottling,
                         this::completeSendOperationForThrottling,
                         pendingTopicFuturesMap);
-                getReplicaManager().appendRecords(
+                ReplicaManager replicaManager = getReplicaManager();
+                replicaManager.appendRecords(
                         timeoutMs,
                         false,
                         namespacePrefix,
@@ -846,6 +848,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     mergedResponse.putAll(unauthorizedTopicResponsesMap);
                     mergedResponse.putAll(invalidRequestResponses);
                     resultFuture.complete(new ProduceResponse(mergedResponse));
+                    response.keySet().forEach(tp -> {
+                        replicaManager.tryCompleteDelayedFetch(new DelayedOperationKey.TopicPartitionOperationKey(tp));
+                    });
                 });
             }
         };

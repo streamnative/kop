@@ -31,7 +31,6 @@ import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
-import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -715,7 +714,6 @@ public class PartitionLog {
                         time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
                 appendFuture.completeExceptionally(e);
             }
-            replicaManager.tryCompleteDelayedFetch(new DelayedOperationKey.TopicPartitionOperationKey(topicPartition));
             encodeResult.recycle();
         });
     }
