@@ -69,7 +69,6 @@ public class EntryFormatterTest {
     private static final PartitionLog PARTITION_LOG = new PartitionLog(
             pulsarServiceConfiguration,
             null,
-            null,
             Time.SYSTEM,
             new TopicPartition("test", 1),
             "test",

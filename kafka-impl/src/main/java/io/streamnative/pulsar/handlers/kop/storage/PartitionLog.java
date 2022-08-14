@@ -97,7 +97,6 @@ public class PartitionLog {
             new KopLogValidator.CompressionCodec(CompressionType.NONE.name, CompressionType.NONE.id);
 
     private final KafkaServiceConfiguration kafkaConfig;
-    private final ReplicaManager replicaManager;
     private final RequestStats requestStats;
     private final Time time;
     private final TopicPartition topicPartition;
@@ -106,7 +105,6 @@ public class PartitionLog {
     private final ProducerStateManager producerStateManager;
 
     public PartitionLog(KafkaServiceConfiguration kafkaConfig,
-                        ReplicaManager replicaManager,
                         RequestStats requestStats,
                         Time time,
                         TopicPartition topicPartition,
@@ -114,7 +112,6 @@ public class PartitionLog {
                         EntryFormatter entryFormatter,
                         ProducerStateManager producerStateManager) {
         this.kafkaConfig = kafkaConfig;
-        this.replicaManager = replicaManager;
         this.requestStats = requestStats;
         this.time = time;
         this.topicPartition = topicPartition;

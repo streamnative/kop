@@ -30,19 +30,16 @@ import org.apache.kafka.common.utils.Time;
 public class PartitionLogManager {
 
     private final KafkaServiceConfiguration kafkaConfig;
-    private final ReplicaManager replicaManager;
     private final RequestStats requestStats;
     private final Map<String, PartitionLog> logMap;
     private final EntryFormatter formatter;
     private final Time time;
 
     public PartitionLogManager(KafkaServiceConfiguration kafkaConfig,
-                               ReplicaManager replicaManager,
                                RequestStats requestStats,
                                EntryFormatter entryFormatter,
                                Time time) {
         this.kafkaConfig = kafkaConfig;
-        this.replicaManager = replicaManager;
         this.requestStats = requestStats;
         this.logMap = Maps.newConcurrentMap();
         this.formatter = entryFormatter;
@@ -53,7 +50,7 @@ public class PartitionLogManager {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
 
         return logMap.computeIfAbsent(kopTopic, key ->
-                new PartitionLog(kafkaConfig, replicaManager, requestStats, time, topicPartition, kopTopic, formatter,
+                new PartitionLog(kafkaConfig, requestStats, time, topicPartition, kopTopic, formatter,
                         new ProducerStateManager(kopTopic))
         );
     }

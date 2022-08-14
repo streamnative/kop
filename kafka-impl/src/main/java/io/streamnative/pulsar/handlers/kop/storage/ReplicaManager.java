@@ -60,7 +60,7 @@ public class ReplicaManager {
                           EntryFormatter entryFormatter,
                           DelayedOperationPurgatory<DelayedOperation> producePurgatory,
                           DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
-        this.logManager = new PartitionLogManager(kafkaConfig, this, requestStats, entryFormatter, time);
+        this.logManager = new PartitionLogManager(kafkaConfig, requestStats, entryFormatter, time);
         this.producePurgatory = producePurgatory;
         this.fetchPurgatory = fetchPurgatory;
         this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
