@@ -371,6 +371,7 @@ public class PartitionLog {
             }
             if (checkOffsetOutOfRange(tcm, offset, topicPartition, startPrepareMetadataNanos)) {
                 future.complete(ReadRecordsResult.error(Errors.OFFSET_OUT_OF_RANGE));
+                return;
             }
 
             if (log.isDebugEnabled()) {

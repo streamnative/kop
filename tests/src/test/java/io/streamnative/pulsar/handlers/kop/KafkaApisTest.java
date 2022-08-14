@@ -54,14 +54,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
@@ -102,6 +98,7 @@ import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.RequestHeader;
+import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.service.Topic;
@@ -1039,53 +1036,38 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
      */
     @Test(timeOut = 60000)
     public void testFetchMinBytesSingleConsumer() throws Exception {
-        String topicName = "testMinBytesTopic";
-        TopicPartition tp = new TopicPartition(topicName, 0);
-
-        // create partitioned topic.
-        admin.topics().createPartitionedTopic(topicName, 1);
-        List<TopicPartition> topicPartitions = new ArrayList<>();
-        topicPartitions.add(tp);
-
-        int maxWaitMs = 3000; // very long time
-        int minBytes = 1;
-        // case1: consuming an empty topic.
-        @Cleanup
-        KafkaConsumer<String, String> consumer1 = createKafkaConsumer(maxWaitMs, minBytes);
-        consumer1.assign(topicPartitions);
-        ConsumerRecords<String, String> emptyResult = consumer1.poll(Duration.ofMillis(maxWaitMs));
-        assertEquals(0, emptyResult.count());
-
-        ExecutorService executorService = Executors.newFixedThreadPool(1);
-
-        long startTime = System.currentTimeMillis();
-        AtomicLong endTime = new AtomicLong(0);
-        CountDownLatch latch = new CountDownLatch(1);
-        executorService.submit(() -> {
-            int totalRead = 0;
-            do {
-                ConsumerRecords<String, String> result = consumer1.poll(Duration.ofMillis(maxWaitMs));
-                result.forEach(record -> {
-                    log.info("Received record : {}", record.value());
-                });
-                log.info("The consumer read {} records totalRead {}", result.count(), totalRead);
-                totalRead += result.count();
-                assertTrue(result.count() > 0);
-            } while (totalRead < 10);
-            assertEquals(10, totalRead);
-            endTime.set(System.currentTimeMillis());
-            latch.countDown();
-        });
+        final String topic = "testMinBytesTopic";
+        final TopicPartition topicPartition = new TopicPartition(topic, 0);
+        admin.topics().createPartitionedTopic(topic, 1);
+        triggerTopicLookup(topic, 1);
+        kafkaRequestHandler.getTopicManager().setRemoteAddress(new InetSocketAddress(42));
+        final int maxWaitMs = 3000;
+        final int minBytes = 1;
 
         @Cleanup
-        KafkaProducer<String, String> kProducer = createKafkaProducer();
-        produceData(kProducer, topicPartitions, 10);
+        final KafkaHeaderAndRequest request = buildRequest(FetchRequest.Builder.forConsumer(maxWaitMs, minBytes,
+                Collections.singletonMap(topicPartition, new FetchRequest.PartitionData(
+                        0L, -1L, 1024 * 1024, Optional.empty()
+                ))));
+        final CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
+        final long startTime = System.currentTimeMillis();
+        kafkaRequestHandler.handleFetchRequest(request, future);
 
-        latch.await();
-        assertTrue(endTime.get() - startTime <= maxWaitMs);
+        // Trigger the fetch
+        final int numMessages = 10;
+        final KafkaProducer<String, String> producer = createKafkaProducer();
+        produceData(producer, Collections.singletonList(new TopicPartition(topic, 0)), numMessages);
+        AbstractResponse abstractResponse = ((ResponseCallbackWrapper)
+                future.get(maxWaitMs + 1000, TimeUnit.MILLISECONDS)).getResponse();
+        assertTrue(abstractResponse instanceof FetchResponse);
+        final FetchResponse<MemoryRecords> response = (FetchResponse<MemoryRecords>) abstractResponse;
+        assertEquals(response.error(), Errors.NONE);
+        final long endTime = System.currentTimeMillis();
+        log.info("Take {} ms to process FETCH request, record count: {}",
+                endTime - startTime, response.responseData().size());
+        assertTrue(endTime - startTime <= maxWaitMs);
 
-        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
-        Long waitingFetchesTriggered = handler.getRequestStats().getWaitingFetchesTriggered().get();
-        assertTrue(waitingFetchesTriggered > 0);
+        Long waitingFetchesTriggered = kafkaRequestHandler.getRequestStats().getWaitingFetchesTriggered().get();
+        assertEquals((long) waitingFetchesTriggered, 1);
     }
 }
