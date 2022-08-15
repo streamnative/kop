@@ -1579,7 +1579,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 int fetchMinBytes = Math.min(request.minBytes(), fetchMaxBytes);
                 if (interesting.isEmpty()) {
                     if (log.isDebugEnabled()) {
-                        log.info("Fetch interesting is empty.");
+                        log.debug("Fetch interesting is empty. Partitions: [{}]", request.fetchData());
                     }
                     resultFuture.complete(new FetchResponse<>(
                             Errors.NONE,
