@@ -96,9 +96,7 @@ public class DelayedFetch extends DelayedOperation {
         }).thenAccept(__ -> {
             // Ensure the old decode result are recycled.
             readRecordsResult.forEach((ignore, result) -> {
-                if (result.decodeResult() != null) {
-                    result.decodeResult().recycle();
-                }
+                result.recycle();
             });
         });
     }

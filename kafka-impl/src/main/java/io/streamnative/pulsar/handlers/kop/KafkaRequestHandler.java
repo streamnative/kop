@@ -1610,9 +1610,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 ((Integer) THROTTLE_TIME_MS.defaultValue),
                                 request.metadata().sessionId()), () ->
                                 resultMap.forEach((__, readRecordsResult) -> {
-                                    if (readRecordsResult.decodeResult() != null) {
-                                        readRecordsResult.decodeResult().recycle();
-                                    }
+                                    readRecordsResult.recycle();
                                 })
                         ));
                         context.recycle();

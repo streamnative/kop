@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.storage;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
+import io.netty.util.Recycler;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicConsumerManager;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
@@ -144,6 +145,18 @@ public class PartitionLog {
     @AllArgsConstructor
     public static class ReadRecordsResult {
 
+        private static final Recycler<ReadRecordsResult> RECYCLER = new Recycler<ReadRecordsResult>() {
+            protected ReadRecordsResult newObject(Handle<ReadRecordsResult> handle) {
+                return new ReadRecordsResult(handle);
+            }
+        };
+
+        private ReadRecordsResult(Recycler.Handle<ReadRecordsResult> recyclerHandle) {
+            this.recyclerHandle = recyclerHandle;
+        }
+
+        private final Recycler.Handle<ReadRecordsResult> recyclerHandle;
+
         private DecodeResult decodeResult;
         private List<FetchResponse.AbortedTransaction> abortedTransactions;
         private long highWatermark;
@@ -155,16 +168,34 @@ public class PartitionLog {
             return errors == null ? Errors.NONE : errors;
         }
 
-        public static ReadRecordsResult of(DecodeResult decodeResult,
-                                           List<FetchResponse.AbortedTransaction> abortedTransactions,
-                                           long highWatermark,
-                                           long lastStableOffset,
-                                           Position lastPosition) {
-            return new ReadRecordsResult(decodeResult,
+        public static ReadRecordsResult get(DecodeResult decodeResult,
+                                            List<FetchResponse.AbortedTransaction> abortedTransactions,
+                                            long highWatermark,
+                                            long lastStableOffset,
+                                            Position lastPosition) {
+            return ReadRecordsResult.get(
+                    decodeResult,
                     abortedTransactions,
                     highWatermark,
                     lastStableOffset,
-                    lastPosition, null);
+                    lastPosition,
+                    null);
+        }
+
+        public static ReadRecordsResult get(DecodeResult decodeResult,
+                                            List<FetchResponse.AbortedTransaction> abortedTransactions,
+                                            long highWatermark,
+                                            long lastStableOffset,
+                                            Position lastPosition,
+                                            Errors errors) {
+            ReadRecordsResult readRecordsResult = RECYCLER.get();
+            readRecordsResult.decodeResult = decodeResult;
+            readRecordsResult.abortedTransactions = abortedTransactions;
+            readRecordsResult.highWatermark = highWatermark;
+            readRecordsResult.lastStableOffset = lastStableOffset;
+            readRecordsResult.lastPosition = lastPosition;
+            readRecordsResult.errors = errors;
+            return readRecordsResult;
         }
 
         public static ReadRecordsResult error(Errors errors) {
@@ -172,7 +203,7 @@ public class PartitionLog {
         }
 
         public static ReadRecordsResult error(Position position, Errors errors) {
-            return new ReadRecordsResult(null,
+            return ReadRecordsResult.get(null,
                     null,
                     -1,
                     -1,
@@ -181,6 +212,15 @@ public class PartitionLog {
         }
 
         public FetchResponse.PartitionData<Records> toPartitionData() {
+
+            // There are three cases:
+            //
+            // 1. errors == null :
+            //        The decode result count > 0
+            // 2. errors == ERROR.NONE :
+            //        Get the empty result.
+            // 3. errors == Others error :
+            //        Get errors.
             if (errors != null) {
                 return new FetchResponse.PartitionData<>(
                         errors,
@@ -199,6 +239,17 @@ public class PartitionLog {
                     decodeResult.getRecords());
         }
 
+        public void recycle() {
+            this.errors = null;
+            this.lastPosition = null;
+            this.lastStableOffset = -1;
+            this.highWatermark = -1;
+            this.abortedTransactions = null;
+            if (this.decodeResult != null) {
+                this.decodeResult.recycle();
+                this.decodeResult = null;
+            }
+        }
     }
     /**
      * AppendOrigin is used mark the data origin.
@@ -519,8 +570,7 @@ public class PartitionLog {
                 abortedTransactions = this.getAbortedIndexList(partitionData.fetchOffset);
             }
 
-            future.complete(ReadRecordsResult.of(decodeResult, abortedTransactions, highWatermark,
-                    lso, lastPosition));
+            future.complete(ReadRecordsResult.get(decodeResult, abortedTransactions, highWatermark, lso, lastPosition));
         }, context.getDecodeExecutor());
     }
 
