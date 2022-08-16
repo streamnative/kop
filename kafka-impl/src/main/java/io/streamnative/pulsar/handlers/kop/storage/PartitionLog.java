@@ -151,10 +151,6 @@ public class PartitionLog {
             }
         };
 
-        private ReadRecordsResult(Recycler.Handle<ReadRecordsResult> recyclerHandle) {
-            this.recyclerHandle = recyclerHandle;
-        }
-
         private final Recycler.Handle<ReadRecordsResult> recyclerHandle;
 
         private DecodeResult decodeResult;
@@ -163,6 +159,10 @@ public class PartitionLog {
         private long lastStableOffset;
         private Position lastPosition;
         private Errors errors;
+
+        private ReadRecordsResult(Recycler.Handle<ReadRecordsResult> recyclerHandle) {
+            this.recyclerHandle = recyclerHandle;
+        }
 
         public Errors errors() {
             return errors == null ? Errors.NONE : errors;
