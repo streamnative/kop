@@ -20,6 +20,7 @@ import static org.mockito.Mockito.mock;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -65,10 +66,12 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 30000)
     public void testMetadataRequestForMultiListeners() throws Exception {
-        final Map<Integer, String> bindPortToAdvertisedAddress = new HashMap<>();
+        final Map<Integer, InetSocketAddress> bindPortToAdvertisedAddress = new HashMap<>();
         final int anotherKafkaPort = PortManager.nextFreePort();
-        bindPortToAdvertisedAddress.put(kafkaBrokerPort, "192.168.0.1:" + PortManager.nextFreePort());
-        bindPortToAdvertisedAddress.put(anotherKafkaPort, "192.168.0.2:" + PortManager.nextFreePort());
+        bindPortToAdvertisedAddress.put(kafkaBrokerPort,
+                InetSocketAddress.createUnresolved("192.168.0.1", PortManager.nextFreePort()));
+        bindPortToAdvertisedAddress.put(anotherKafkaPort,
+                InetSocketAddress.createUnresolved("192.168.0.2", PortManager.nextFreePort()));
 
         super.resetConfig();
         conf.setKafkaListeners("PLAINTEXT://0.0.0.0:" + kafkaBrokerPort + ",GW://0.0.0.0:" + anotherKafkaPort);
@@ -92,7 +95,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
                 doReturn(mock(Channel.class)).when(mockCtx).channel();
                 requestHandler.ctx = mockCtx;
 
-                final String expectedAddress = bindPortToAdvertisedAddress.get(inetSocketAddress.getPort());
+                final InetSocketAddress expectedAddress = bindPortToAdvertisedAddress.get(inetSocketAddress.getPort());
 
                 final KafkaHeaderAndRequest metadataRequest = KafkaApisTest.buildRequest(
                         new MetadataRequest.Builder(Collections.singletonList(topic), true),
@@ -103,10 +106,12 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
                 Assert.assertEquals(metadataResponse.brokers().size(), 1);
                 final List<Node> brokers = new ArrayList<>(metadataResponse.brokers());
                 Assert.assertEquals(brokers.size(), 1);
-                Assert.assertEquals(brokers.get(0).host() + ":" + brokers.get(0).port(), expectedAddress);
+                Assert.assertEquals(brokers.get(0).host(), expectedAddress.getHostName());
+                Assert.assertEquals(brokers.get(0).port(), expectedAddress.getPort());
 
                 Node controller = metadataResponse.controller();
-                Assert.assertEquals(controller.host() + ":" + controller.port(), expectedAddress);
+                Assert.assertEquals(controller.host(), expectedAddress.getHostName());
+                Assert.assertEquals(controller.port(), expectedAddress.getPort());
 
                 final List<MetadataResponse.TopicMetadata> topicMetadataList =
                         new ArrayList<>(metadataResponse.topicMetadata());
@@ -118,8 +123,8 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
                 for (int i = 0; i < numPartitions; i++) {
                     final PartitionMetadata partitionMetadata = partitionMetadataList.get(i);
                     Assert.assertEquals(partitionMetadata.error(), Errors.NONE);
-                    Assert.assertEquals(partitionMetadata.leader().host() + ":" + partitionMetadata.leader().port(),
-                            expectedAddress);
+                    Assert.assertEquals(partitionMetadata.leader().host(), expectedAddress.getHostName());
+                    Assert.assertEquals(partitionMetadata.leader().port(), expectedAddress.getPort());
                 }
             } catch (Exception e) {
                 Assert.fail(e.getMessage());
