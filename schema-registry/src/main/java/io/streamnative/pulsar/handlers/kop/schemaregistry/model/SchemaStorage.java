@@ -31,7 +31,7 @@ public interface SchemaStorage {
     /**
      * Find a schema by unique id.
      * @param id the id
-     * @return the Schema or null
+     * @return the Schema or null if it has been deleted
      */
     CompletableFuture<Schema> findSchemaById(int id);
 
@@ -115,7 +115,9 @@ public interface SchemaStorage {
                 if (err != null) {
                     res.completeExceptionally(err);
                 } else {
-                    schemas.add(downloadedSchema);
+                    if (downloadedSchema != null) {
+                        schemas.add(downloadedSchema);
+                    }
                     if (index == ids.size() - 1) {
                         res.complete(schemas);
                         return;

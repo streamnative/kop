@@ -95,6 +95,7 @@ public class NamespaceBundleOwnershipListenerImpl implements NamespaceBundleOwne
     // Kafka topics are always persistent so there is no need to get owned non-persistent topics.
     // However, `NamespaceService#getOwnedTopicListForNamespaceBundle` calls `getFullListTopics`, which always calls
     // `getListOfNonPersistentTopics`. So this method is a supplement to the existing NamespaceService API.
+    // The returned value completes exceptionally or with a non-null value
     private CompletableFuture<List<String>> getOwnedPersistentTopicList(final NamespaceBundle bundle) {
         final NamespaceName namespaceName = bundle.getNamespaceObject();
         final CompletableFuture<List<String>> topicsFuture = namespaceService.getListOfPersistentTopics(namespaceName)

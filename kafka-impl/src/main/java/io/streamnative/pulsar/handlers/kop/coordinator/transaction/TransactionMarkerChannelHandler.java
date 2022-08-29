@@ -149,7 +149,9 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     public void close() {
         log.info("[TransactionMarkerChannelHandler] closing");
         this.cnxFuture.whenComplete((ctx, err) -> {
-            if (ctx != null) {
+            if (err != null) {
+                log.error("Failed to establish connection", err);
+            } else {
                 ctx.close();
             }
         });

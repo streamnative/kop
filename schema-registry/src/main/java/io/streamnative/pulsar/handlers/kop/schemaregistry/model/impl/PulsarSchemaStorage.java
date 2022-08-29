@@ -179,6 +179,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                 .orElse(null)));
     }
 
+    // The future could complete with null when the schema is deleted
     private CompletableFuture<SchemaEntry> fetchSchemaEntry(Supplier<SchemaEntry> procedure) {
         return fetch(procedure,
                 (schemaEntry) -> schemaEntry != null && schemaEntry.status == SchemaStatus.DELETED,

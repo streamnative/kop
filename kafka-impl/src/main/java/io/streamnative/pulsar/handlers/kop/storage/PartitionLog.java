@@ -307,7 +307,7 @@ public class PartitionLog {
      * @param persistentTopic The persistentTopic, use to publish message and check message deduplication.
      * @param byteBuf Message byteBuf
      * @param appendInfo Pre-analyzed recode info, we can get sequence, message num ...
-     * @return offset
+     * @return a future that completes exceptionally or with a non-null offset
      */
     private CompletableFuture<Long> publishMessage(final PersistentTopic persistentTopic,
                                                    final ByteBuf byteBuf,

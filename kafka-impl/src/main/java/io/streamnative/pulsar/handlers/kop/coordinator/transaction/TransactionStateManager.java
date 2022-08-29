@@ -670,6 +670,7 @@ public class TransactionStateManager {
             if (throwable != null) {
                 log.error("Failed to load transaction log.", throwable);
                 loadFuture.completeExceptionally(throwable);
+                return;
             }
             if (message.getMessageId().compareTo(lastMessageId) >= 0) {
                 // reach the end of partition

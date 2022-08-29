@@ -57,7 +57,6 @@ import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
-import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordBatch;
@@ -269,7 +268,7 @@ public final class MessageFetchContext {
                             addErrorPartitionResponse(topicPartition, Errors.TOPIC_AUTHORIZATION_FAILED);
                             return;
                         }
-                        if (!isAuthorized) {
+                        if (isAuthorized == null || !isAuthorized) {
                             addErrorPartitionResponse(topicPartition, Errors.TOPIC_AUTHORIZATION_FAILED);
                             return;
                         }
@@ -383,9 +382,6 @@ public final class MessageFetchContext {
                                                 addErrorPartitionResponse(topicPartition,
                                                         Errors.forException(throwable));
                                             }
-                                        } else if (entries == null) {
-                                            addErrorPartitionResponse(topicPartition,
-                                                    Errors.forException(new ApiException("Cursor is null")));
                                         } else {
                                             long readSize = entries.stream().mapToLong(Entry::getLength).sum();
                                             limitBytes.addAndGet(-1 * readSize);
@@ -474,7 +470,7 @@ public final class MessageFetchContext {
         groupNameFuture.whenCompleteAsync((groupName, ex) -> {
             if (ex != null) {
                 log.error("Get groupId failed.", ex);
-                groupName = "";
+                groupName = null;
             }
 
 

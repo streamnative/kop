@@ -28,6 +28,7 @@ import io.netty.util.Recycler;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.util.concurrent.TimeUnit;
+import javax.annotation.Nullable;
 import lombok.Getter;
 import lombok.NonNull;
 import org.apache.kafka.common.TopicPartition;
@@ -96,7 +97,7 @@ public class DecodeResult {
 
     public void updateConsumerStats(final TopicPartition topicPartition,
                                     int entrySize,
-                                    final String groupId,
+                                    @Nullable final String groupId,
                                     RequestStats statsLogger) {
         final int numMessages = EntryFormatter.parseNumMessages(records);
 
@@ -107,6 +108,10 @@ public class DecodeResult {
         statsLoggerForThisPartition.getCounter(CONSUME_MESSAGE_CONVERSIONS).add(conversionCount);
         statsLoggerForThisPartition.getOpStatsLogger(CONSUME_MESSAGE_CONVERSIONS_TIME_NANOS)
                 .registerSuccessfulEvent(conversionTimeNanos, TimeUnit.NANOSECONDS);
+
+        if (groupId == null) {
+            return;
+        }
 
         final StatsLogger statsLoggerForThisGroup = statsLoggerForThisPartition.scopeLabel(GROUP_SCOPE, groupId);
 

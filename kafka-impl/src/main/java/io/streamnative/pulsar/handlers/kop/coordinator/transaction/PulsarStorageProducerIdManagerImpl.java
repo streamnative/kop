@@ -195,13 +195,15 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
     public synchronized void shutdown() {
         if (reader != null) {
             reader.whenComplete((r, e) -> {
-                if (r != null) {
-                    r.closeAsync().whenComplete((___, err) -> {
-                       if (err != null) {
-                           log.error("Error closing reader for {}", topic, err);
-                       }
-                    });
+                if (e != null) {
+                    log.error("Failed to create reader", e);
+                    return;
                 }
+                r.closeAsync().whenComplete((___, err) -> {
+                    if (err != null) {
+                        log.error("Error closing reader for {}", topic, err);
+                    }
+                });
             });
         }
     }

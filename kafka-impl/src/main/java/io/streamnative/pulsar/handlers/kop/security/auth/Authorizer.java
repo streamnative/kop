@@ -28,7 +28,8 @@ public interface Authorizer {
      *
      * @param principal login info
      * @param resource resources to be authorized
-     * @return a boolean to determine whether authorized or not
+     * @return a boolean to determine whether authorized or not. It's possible to be null if the authorization provider
+     * was customized.
      */
     CompletableFuture<Boolean> canLookupAsync(KafkaPrincipal principal, Resource resource);
 
@@ -39,7 +40,8 @@ public interface Authorizer {
      *
      * @param principal login info
      * @param resource resources to be authorized
-     * @return a boolean to determine whether authorized or not
+     * @return a boolean to determine whether authorized or not. It's possible to be null if the authorization provider
+     * was customized.
      */
     CompletableFuture<Boolean> canGetTopicList(KafkaPrincipal principal, Resource resource);
 
@@ -48,7 +50,8 @@ public interface Authorizer {
      *
      * @param principal login info
      * @param resource resources to be authorized
-     * @return a boolean to determine whether authorized or not
+     * @return a boolean to determine whether authorized or not. It's possible to be null if the authorization provider
+     * was customized.
      */
     CompletableFuture<Boolean> canAccessTenantAsync(KafkaPrincipal principal, Resource resource);
 
@@ -58,7 +61,8 @@ public interface Authorizer {
      *
      * @param principal login info
      * @param resource resources to be authorized
-     * @return a boolean to determine whether authorized or not
+     * @return a boolean to determine whether authorized or not. It's possible to be null if the authorization provider
+     * was customized.
      */
     CompletableFuture<Boolean> canCreateTopicAsync(KafkaPrincipal principal, Resource resource);
 
@@ -68,7 +72,8 @@ public interface Authorizer {
      *
      * @param principal login info
      * @param resource resources to be authorized
-     * @return a boolean to determine whether authorized or not
+     * @return a boolean to determine whether authorized or not. It's possible to be null if the authorization provider
+     * was customized.
      */
     CompletableFuture<Boolean> canDeleteTopicAsync(KafkaPrincipal principal, Resource resource);
 
@@ -78,7 +83,8 @@ public interface Authorizer {
      *
      * @param principal login info
      * @param resource resources to be authorized
-     * @return a boolean to determine whether authorized or not
+     * @return a boolean to determine whether authorized or not. It's possible to be null if the authorization provider
+     * was customized.
      */
     CompletableFuture<Boolean> canAlterTopicAsync(KafkaPrincipal principal, Resource resource);
 
@@ -88,7 +94,8 @@ public interface Authorizer {
      *
      * @param principal login info
      * @param resource resources to be authorized
-     * @return a boolean to determine whether authorized or not
+     * @return a boolean to determine whether authorized or not. It's possible to be null if the authorization provider
+     * was customized.
      */
     CompletableFuture<Boolean> canManageTenantAsync(KafkaPrincipal principal, Resource resource);
 
@@ -99,7 +106,8 @@ public interface Authorizer {
      *
      * @param principal login info
      * @param resource resources to be authorized
-     * @return a boolean to determine whether authorized or not
+     * @return a boolean to determine whether authorized or not. It's possible to be null if the authorization provider
+     * was customized.
      */
     CompletableFuture<Boolean> canProduceAsync(KafkaPrincipal principal, Resource resource);
 
@@ -110,7 +118,8 @@ public interface Authorizer {
      *
      * @param principal login info
      * @param resource resources to be authorized
-     * @return a boolean to determine whether authorized or not
+     * @return a boolean to determine whether authorized or not. It's possible to be null if the authorization provider
+     * was customized.
      */
     CompletableFuture<Boolean> canConsumeAsync(KafkaPrincipal principal, Resource resource);
 

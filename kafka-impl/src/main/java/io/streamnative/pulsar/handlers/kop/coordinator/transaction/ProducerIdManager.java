@@ -18,6 +18,11 @@ import java.util.concurrent.CompletableFuture;
 public interface ProducerIdManager {
     CompletableFuture<Void> initialize();
 
+    /**
+     * Generate a producer id.
+     *
+     * @return a future that completes exceptionally or with a non-null value
+     */
     CompletableFuture<Long> generateProducerId();
 
     void shutdown();

@@ -135,6 +135,7 @@ public class KafkaTopicConsumerManager implements Closeable {
     // get one cursor offset pair.
     // remove from cache, so another same offset read could happen.
     // each success remove should have a following add.
+    // The returned future completes exceptionally or a nullable value
     public CompletableFuture<Pair<ManagedCursor, Long>> removeCursorFuture(long offset) {
         if (closed.get()) {
             return null;

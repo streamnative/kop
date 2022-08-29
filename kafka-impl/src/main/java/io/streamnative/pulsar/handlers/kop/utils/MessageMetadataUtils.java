@@ -134,6 +134,14 @@ public class MessageMetadataUtils {
         }
     }
 
+    /**
+     * Peek the base offset from an Entry.
+     *
+     * @param entry the BookKeeper Entry
+     * @return the offset stored in the broker entry metadata
+     * @throws MetadataCorruptedException if the broker entry metadata doesn't contain the index field from
+     * {@link org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor}
+     */
     public static long peekBaseOffsetFromEntry(Entry entry) throws MetadataCorruptedException {
         return peekBaseOffset(entry.getDataBuffer(), entry.getPosition());
     }
