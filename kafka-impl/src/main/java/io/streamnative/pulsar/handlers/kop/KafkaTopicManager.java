@@ -78,7 +78,7 @@ public class KafkaTopicManager {
             () -> {
                 final CompletableFuture<KafkaTopicConsumerManager> tcmFuture = new CompletableFuture<>();
                 getTopic(topicName).whenComplete((persistentTopic, throwable) -> {
-                    if (persistentTopic.isPresent() && throwable == null) {
+                    if (throwable == null && persistentTopic.isPresent()) {
                         if (log.isDebugEnabled()) {
                             log.debug("[{}] Call getTopicConsumerManager for {}, and create TCM for {}.",
                                     requestHandler.ctx.channel(), topicName, persistentTopic);
