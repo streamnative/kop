@@ -511,7 +511,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 if (allowAutoTopicCreation) {
                     String namespace = TopicName.get(topicName).getNamespace();
                     admin.namespaces().getPoliciesAsync(namespace).whenComplete((policies, err) -> {
-                        if (err != null || policies == null) {
+                        if (err != null) {
                             log.error("[{}] Cannot get policies for namespace {}", ctx.channel(), namespace, err);
                             future.complete(TopicAndMetadata.INVALID_PARTITIONS);
                         } else {
@@ -832,12 +832,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         authorizedRequestInfo,
                         PartitionLog.AppendOrigin.Client,
                         appendRecordsContext
-                ).whenComplete((response, ex) -> {
+                ).thenAccept(response -> {
                     appendRecordsContext.recycle();
-                    if (ex != null) {
-                        resultFuture.completeExceptionally(ex.getCause());
-                        return;
-                    }
                     Map<TopicPartition, PartitionResponse> mergedResponse = new HashMap<>();
                     mergedResponse.putAll(response);
                     mergedResponse.putAll(unauthorizedTopicResponsesMap);
@@ -867,7 +863,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             completeOne.run();
                             return;
                         }
-                        if (!isAuthorized) {
+                        if (isAuthorized == null || !isAuthorized) {
                             unauthorizedTopicResponsesMap.put(topicPartition,
                                     new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
                             completeOne.run();
@@ -938,10 +934,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         log.warn("Store groupId failed, the groupId might already stored.", ex);
                     }
                     findBroker(TopicName.get(pulsarTopicName))
-                            .whenComplete((node, throwable) -> {
-                                if (node.error() != Errors.NONE || throwable != null) {
-                                    log.error("[{}] Request {}: Error while find coordinator.",
-                                            ctx.channel(), findCoordinator.getHeader(), throwable);
+                            .thenAccept(node -> {
+                                if (node.error() != Errors.NONE) {
+                                    log.error("[{}] Request {}: Error while find coordinator: {}.",
+                                            ctx.channel(), findCoordinator.getHeader(), node.error());
 
                                     resultFuture.complete(KafkaResponseUtils
                                             .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
@@ -1035,7 +1031,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     completeOneAuthorization.run();
                                     return;
                                 }
-                                if (!isAuthorized) {
+                                if (isAuthorized == null || !isAuthorized) {
                                     unauthorizedPartitionData.put(tp, OffsetFetchResponse.UNAUTHORIZED_PARTITION);
                                     completeOneAuthorization.run();
                                     return;
@@ -1053,7 +1049,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         }
 
-        authorizeFuture.whenComplete((partitionList, ex) -> {
+        authorizeFuture.thenAccept(partitionList -> {
             KeyValue<Errors, Map<TopicPartition, OffsetFetchResponse.PartitionData>> keyValue =
                     getGroupCoordinator().handleFetchOffsets(
                             request.groupId(),
@@ -1218,6 +1214,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture
                 .allOf(responseData.values().toArray(new CompletableFuture<?>[0]))
                 .whenComplete((ignore, ex) -> {
+                    if (ex != null) {
+                        resultFuture.completeExceptionally(ex);
+                        return;
+                    }
                     ListOffsetResponse response = KafkaResponseUtils.newListOffset(
                             CoreUtils.mapValue(responseData, CompletableFuture::join), legacy);
                     resultFuture.complete(response);
@@ -1253,7 +1253,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     completeOne.run();
                                     return;
                                 }
-                                if (!isAuthorized) {
+                                if (isAuthorized == null || !isAuthorized) {
                                     responseData.put(topic, CompletableFuture.completedFuture(
                                             Pair.of(Errors.TOPIC_AUTHORIZATION_FAILED, null)
                                     ));
@@ -1307,7 +1307,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             completeOne.run();
                             return;
                         }
-                        if (!isAuthorized) {
+                        if (isAuthorized == null || !isAuthorized) {
                             responseData.put(topic, CompletableFuture.completedFuture(
                                     Pair.of(Errors.TOPIC_AUTHORIZATION_FAILED, null)));
                             completeOne.run();
@@ -1513,7 +1513,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
                             return;
                         }
-                        if (!isAuthorized) {
+                        if (isAuthorized == null || !isAuthorized) {
                             completeOne.accept(
                                     () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
                             return;
@@ -1778,7 +1778,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                    .accept(topic, new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, ex.getMessage()));
                            return;
                        }
-                       if (!isAuthorized) {
+                       if (isAuthorized == null || !isAuthorized) {
                            log.error("CreateTopics authorize failed, topic - {}.", fullTopicName);
                            completeOneErrorTopic
                                    .accept(topic, new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null));
@@ -1875,7 +1875,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     Collections.emptyList())));
                                     return;
                                 }
-                                if (isAuthorized) {
+                                if (isAuthorized != null && isAuthorized) {
                                     completeOne.accept(() -> authorizedResources.add(configResource));
                                     return;
                                 }
@@ -1963,7 +1963,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     completeOne.accept(() -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
                     return;
                 }
-                if (!isAuthorized) {
+                if (isAuthorized == null || !isAuthorized) {
                     completeOne.accept(() -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
                     return;
                 }
@@ -2034,7 +2034,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         request.consumerGroupId(),
                         request.producerId(),
                         request.producerEpoch(),
-                        convertTxnOffsets(convertedOffsetData)).whenComplete((resultMap, throwable) -> {
+                        convertTxnOffsets(convertedOffsetData)).thenAccept(resultMap -> {
 
                     // recover to original topic name
                     replaceTopicPartition(resultMap, replacingIndex);
@@ -2066,7 +2066,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
                             return;
                         }
-                        if (!isAuthorized) {
+                        if (isAuthorized == null || !isAuthorized) {
                             completeOne.accept(()-> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
                             return;
                         }
@@ -2147,18 +2147,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     controlRecords,
                     PartitionLog.AppendOrigin.Coordinator,
                     appendRecordsContext
-            ).whenComplete((result, ex) -> {
+            ).thenAccept(result -> {
                 appendRecordsContext.recycle();
-                if (ex != null) {
-                    log.error("[{}] Append txn marker ({}) failed.", ctx.channel(), marker, ex);
-                    Map<TopicPartition, Errors> currentErrors = new HashMap<>();
-                    controlRecords.forEach(((topicPartition, partitionResponse) -> {
-                        currentErrors.put(topicPartition, Errors.KAFKA_STORAGE_ERROR);
-                    }));
-                    updateErrors.accept(producerId, currentErrors);
-                    completeOne.run();
-                    return;
-                }
                 Map<TopicPartition, Errors> currentErrors = new HashMap<>();
                 result.forEach(((topicPartition, partitionResponse) -> {
                     if (log.isDebugEnabled()) {
@@ -2257,7 +2247,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             completeOne.accept(topic, Errors.TOPIC_AUTHORIZATION_FAILED);
                             return;
                         }
-                        if (!isAuthorize) {
+                        if (isAuthorize == null || !isAuthorize) {
                             completeOne.accept(topic, Errors.TOPIC_AUTHORIZATION_FAILED);
                             return;
                         }
@@ -2306,7 +2296,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             completeOne.accept(topicPartition, Errors.TOPIC_AUTHORIZATION_FAILED);
                             return;
                         }
-                        if (!isAuthorize) {
+                        if (isAuthorize == null || !isAuthorize) {
                             completeOne.accept(topicPartition, Errors.TOPIC_AUTHORIZATION_FAILED);
                             return;
                         }
@@ -2393,7 +2383,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, ex.getMessage()));
                                 return;
                             }
-                            if (!isAuthorized) {
+                            if (isAuthorized == null || !isAuthorized) {
                                 completeOneErrorTopic.accept(topic,
                                         new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null));
                                 return;

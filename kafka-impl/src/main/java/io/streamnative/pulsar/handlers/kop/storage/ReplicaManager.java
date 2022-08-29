@@ -57,6 +57,7 @@ public class ReplicaManager {
         return logManager.getLog(topicPartition, namespacePrefix);
     }
 
+    // The returned future always completes with a non-null value
     public CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> appendRecords(
             final long timeout,
             final boolean internalTopicsAllowed,

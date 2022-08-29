@@ -57,6 +57,7 @@ public class KopBrokerLookupManager {
         this.selfAdvertisedListeners = conf.getKafkaAdvertisedListeners();
     }
 
+    // The returned future completes exceptionally or with a non-null value
     public CompletableFuture<Optional<InetSocketAddress>> findBroker(String topic,
                                                                      @Nullable EndPoint advertisedEndPoint) {
         return getTopicBroker(topic)
@@ -118,6 +119,7 @@ public class KopBrokerLookupManager {
         return lookupClient.getBrokerAddress(TopicName.get(topic));
     }
 
+    // The returned future always completes with a non-null value
     public CompletableFuture<Boolean> isTopicExists(final String topic) {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
         TopicName topicName = TopicName.get(topic);

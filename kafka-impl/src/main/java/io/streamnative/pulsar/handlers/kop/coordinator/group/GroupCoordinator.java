@@ -703,6 +703,7 @@ public class GroupCoordinator {
         ));
     }
 
+    // The returned future always completes with a non-null value
     public CompletableFuture<Map<TopicPartition, Errors>> handleTxnCommitOffsets(
         String groupId,
         long producerId,

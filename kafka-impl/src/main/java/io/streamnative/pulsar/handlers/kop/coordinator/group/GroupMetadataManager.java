@@ -1307,14 +1307,7 @@ public class GroupMetadataManager {
                 return null;
             });
         });
-        FutureUtil.waitForAll(groupFutureList).whenComplete((ignored, throwable) -> {
-            if (throwable != null) {
-                log.error("Failed to handle txn completion.");
-                completableFuture.completeExceptionally(throwable);
-            } else {
-                completableFuture.complete(null);
-            }
-        });
+        FutureUtil.waitForAll(groupFutureList).thenAccept(__ -> completableFuture.complete(null));
     }
 
     /**

@@ -349,7 +349,7 @@ public class TransactionMarkerChannelManager {
                         });
                     });
         }
-        FutureUtil.waitForAll(addressFutureList).whenComplete((ignored, throwable) -> {
+        FutureUtil.waitForAll(addressFutureList).thenAccept(__ -> {
             addressAndPartitionMap.forEach((address, partitions) -> {
                 TxnMarkerEntry entry = new TxnMarkerEntry(
                         producerId, producerEpoch, coordinatorEpoch, result, partitions);
@@ -511,7 +511,10 @@ public class TransactionMarkerChannelManager {
             txnMarkerQueue.forEachTxnTopicPartition((__, queue) -> queue.drainTo(txnIdAndMarkerEntries));
             if (!txnIdAndMarkerEntries.isEmpty()) {
                 getChannel(txnMarkerQueue.address).whenComplete((channelHandler, throwable) -> {
-
+                    if (throwable != null) {
+                        log.error("Failed to getChannel for {}", txnMarkerQueue.address, throwable);
+                        return;
+                    }
                     List<TxnMarkerEntry> sendEntries = new ArrayList<>();
                     for (TxnIdAndMarkerEntry txnIdAndMarkerEntry : txnIdAndMarkerEntries) {
                         sendEntries.add(txnIdAndMarkerEntry.entry);

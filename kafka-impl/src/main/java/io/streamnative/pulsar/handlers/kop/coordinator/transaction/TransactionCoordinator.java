@@ -381,6 +381,7 @@ public class TransactionCoordinator {
                 && txnMetadata.isEpochExhausted(producerIdAndEpoch.epoch));
     }
 
+    // The returned future completes exceptionally or with a non-null value
     private CompletableFuture<Either<Errors, EpochAndTxnTransitMetadata>> prepareInitProducerIdTransit(
             String transactionalId,
             Integer transactionTimeoutMs,

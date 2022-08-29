@@ -116,6 +116,7 @@ public class KafkaTopicManager {
     }
 
     // A wrapper of `BrokerService#getTopic` that is to find the topic's associated `PersistentTopic` instance
+    // The returned future completes exceptionally or with a non-null value
     public CompletableFuture<Optional<PersistentTopic>> getTopic(String topicName) {
         if (closed.get()) {
             if (log.isDebugEnabled()) {
@@ -137,7 +138,7 @@ public class KafkaTopicManager {
                     return;
                 }
             }
-            if (t2 != null && t2.isPresent()) {
+            if (t2.isPresent()) {
                 topicCompletableFuture.complete(Optional.of((PersistentTopic) t2.get()));
                 return;
             }
