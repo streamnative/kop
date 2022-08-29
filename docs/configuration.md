@@ -120,6 +120,7 @@ The `pulsar.version` should be same with the version of your `pulsar-client` dep
 | Name                                     | Description                                                  | Default |
 | ---------------------------------------- | ------------------------------------------------------------ | ------- |
 | kopPrometheusStatsLatencyRolloverSeconds | Kop metrics exposed to prometheus rollover latency in seconds. | 60      |
+| kopEnableGroupLevelConsumerMetrics       | Enable the group level consumer metrics.                     | false   |
 
 ## Group Coordinator
 
