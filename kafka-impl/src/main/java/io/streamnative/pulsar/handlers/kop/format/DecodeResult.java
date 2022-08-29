@@ -107,9 +107,12 @@ public class DecodeResult {
         statsLoggerForThisPartition.getCounter(CONSUME_MESSAGE_CONVERSIONS).add(conversionCount);
         statsLoggerForThisPartition.getOpStatsLogger(CONSUME_MESSAGE_CONVERSIONS_TIME_NANOS)
                 .registerSuccessfulEvent(conversionTimeNanos, TimeUnit.NANOSECONDS);
-
-        final StatsLogger statsLoggerForThisGroup = statsLoggerForThisPartition.scopeLabel(GROUP_SCOPE, groupId);
-
+        final StatsLogger statsLoggerForThisGroup;
+        if (groupId != null) {
+            statsLoggerForThisGroup = statsLoggerForThisPartition.scopeLabel(GROUP_SCOPE, groupId);
+        } else {
+            statsLoggerForThisGroup = statsLoggerForThisPartition;
+        }
         statsLoggerForThisGroup.getCounter(BYTES_OUT).add(records.sizeInBytes());
         statsLoggerForThisGroup.getCounter(MESSAGE_OUT).add(numMessages);
         statsLoggerForThisGroup.getCounter(ENTRIES_OUT).add(entrySize);

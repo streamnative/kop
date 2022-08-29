@@ -60,6 +60,16 @@ import org.testng.annotations.Test;
 @Slf4j
 public class MetricsProviderTest extends KopProtocolHandlerTestBase {
 
+    protected final boolean isEnableGroupLevelConsumerMetrics;
+
+    public MetricsProviderTest() {
+        this(true);
+    }
+
+    public MetricsProviderTest(boolean isEnableGroupLevelConsumerMetrics) {
+        this.isEnableGroupLevelConsumerMetrics = isEnableGroupLevelConsumerMetrics;
+    }
+
     @BeforeMethod
     @Override
     protected void setup() throws Exception {
@@ -68,6 +78,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         this.conf.setKafkaTxnLogTopicNumPartitions(50);
         this.conf.setKafkaTransactionCoordinatorEnabled(true);
         this.conf.setBrokerDeduplicationEnabled(true);
+        this.conf.setKopEnableGroupLevelConsumerMetrics(isEnableGroupLevelConsumerMetrics);
         super.internalSetup();
         log.info("success internal setup");
     }
@@ -220,10 +231,19 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         Assert.assertTrue(sb.toString().contains("kop_server_FETCH_DECODE"));
 
         // consumer stats
-        Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_OUT{cluster=\"test\","
-                + "group=\"DemoKafkaOnPulsarConsumer\",partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
-        Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT{cluster=\"test\","
-                + "group=\"DemoKafkaOnPulsarConsumer\",partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 1130"));
+        if (isEnableGroupLevelConsumerMetrics) {
+            Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_OUT{cluster=\"test\","
+                    + "group=\"DemoKafkaOnPulsarConsumer\",partition=\"0\","
+                    + "topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
+            Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT{cluster=\"test\","
+                    + "group=\"DemoKafkaOnPulsarConsumer\",partition=\"0\","
+                    + "topic=\"kopKafkaProducePulsarMetrics1\"} 1130"));
+        } else {
+            Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_OUT{cluster=\"test\","
+                    + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
+            Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT{cluster=\"test\","
+                    + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 1130"));
+        }
         Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT"));
         Assert.assertTrue(sb.toString().contains("kop_server_CONSUME_MESSAGE_CONVERSIONS"));
         Assert.assertTrue(sb.toString().contains("kop_server_CONSUME_MESSAGE_CONVERSIONS{cluster=\"test\","
@@ -248,6 +268,9 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testUpdateGroupId() {
+        if (!isEnableGroupLevelConsumerMetrics) {
+            return;
+        }
         final String topic = "testUpdateGroupId";
         final String clientId = "my-client";
         final String group1 = "my-group-1";
