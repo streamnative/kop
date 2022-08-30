@@ -18,23 +18,26 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.function.BiFunction;
-import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import lombok.experimental.Accessors;
 
 /**
  * Context for producing messages.
  */
-@Builder
 @Getter
+@RequiredArgsConstructor
 public class ProduceContext<K, V> {
 
-    private Producer<K, V> producer;
-    private String topic;
-    private Integer partition;
-    private Long timestamp;
-    private K key;
-    private V value;
-    private List<Header> headers;
+    private final Producer<K, V> producer;
+    private final String topic;
+    private final Integer partition;
+    private final Long timestamp;
+    private final K key;
+    private final V value;
+    private final List<Header> headers;
     private final CompletableFuture<RecordMetadata> future = new CompletableFuture<>();
 
     /**
@@ -128,5 +131,27 @@ public class ProduceContext<K, V> {
             throw new IllegalArgumentException("producer is null");
         }
         return producer.sendAsync(this);
+    }
+
+    public static <K, V> ProduceContextBuilder<K, V> builder() {
+        return new ProduceContextBuilder<>();
+    }
+
+    @Accessors(fluent = true)
+    @NoArgsConstructor
+    @Setter
+    public static class ProduceContextBuilder<K, V> {
+
+        private Producer<K, V> producer;
+        private String topic;
+        private Integer partition;
+        private Long timestamp;
+        private K key;
+        private V value;
+        private List<Header> headers;
+
+        public ProduceContext<K, V> build() {
+            return new ProduceContext<>(producer, topic, partition, timestamp, key, value, headers);
+        }
     }
 }
