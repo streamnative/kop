@@ -35,6 +35,9 @@ jobs:
     - name: Build with Maven skipTests
       run: mvn clean install -ntp -B -DskipTests
 
+    - name: Building JavaDocs
+      run: mvn -ntp -B javadoc:jar
+
     - name: Spotbugs check
       run: mvn -ntp -B spotbugs:check
 
