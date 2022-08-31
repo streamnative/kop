@@ -14,17 +14,27 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
 
+import io.netty.buffer.ByteBuf;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.common.api.proto.MarkersMessageIdData;
+import org.apache.pulsar.common.protocol.Markers;
 import org.testng.annotations.Test;
 
 /**
@@ -94,6 +104,36 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
         // from the offset that has been committed before
         kafkaConsumer = newKafkaConsumer(topic, subscription);
         assertEquals(kafkaConsumer.poll(Duration.ofSeconds(1)).count(), 0);
+        kafkaConsumer.close();
+    }
+
+    @Test(timeOut = 20000)
+    public void testSkipReplicatedSubscriptionsMarker() throws Exception {
+        final String topic = "testSkipReplicatedSubscriptionsMarker";
+        final List<String> messages = IntStream.range(0, 10).mapToObj(Integer::toString).collect(Collectors.toList());
+        final String subscription = "same-sub-test";
+
+        @Cleanup
+        final Producer<byte[]> pulsarProducer = newPulsarProducer(topic);
+        Map<String, MarkersMessageIdData> clusters = new TreeMap<>();
+        clusters.put("us-east", new MarkersMessageIdData().setLedgerId(10).setEntryId(11));
+        clusters.put("us-cent", new MarkersMessageIdData().setLedgerId(20).setEntryId(21));
+        ByteBuf subscriptionUpdate = Markers.newReplicatedSubscriptionsUpdate("subscriptionName", clusters);
+
+        Optional<Topic> optionalTopic = pulsar.getBrokerService()
+                .getTopicIfExists(KopTopic.toString(topic, 0, "public/default")).get();
+        assertTrue(optionalTopic.isPresent());
+        Topic t = optionalTopic.get();
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        t.publishMessage(subscriptionUpdate, (e, ledgerId, entryId) -> {
+            future.complete(null);
+        });
+        future.get();
+        sendSingleMessages(pulsarProducer, messages);
+        KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic, subscription);
+        final List<String> kafkaReceives = receiveMessages(kafkaConsumer, messages.size());
+        assertEquals(kafkaReceives, messages);
+        kafkaConsumer.commitSync(Duration.ofSeconds(1));
         kafkaConsumer.close();
     }
 }
