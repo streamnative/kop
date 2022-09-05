@@ -117,9 +117,10 @@ public class ByteBufUtils {
                     baseOffset,
                     metadata.getPublishTime(),
                     0,
-                    metadata.getTxnidMostBits(),
-                    (short) metadata.getTxnidLeastBits(),
-                    new EndTransactionMarker(controlRecordType, 0)
+                    metadata.hasTxnidMostBits() ? metadata.getTxnidMostBits() : Long.MAX_VALUE,
+                    metadata.hasTxnidLeastBits() ? (short) metadata.getTxnidLeastBits() : 0,
+                    new EndTransactionMarker(controlRecordType == ControlRecordType.UNKNOWN
+                            ? ControlRecordType.ABORT : controlRecordType, 0)
                     ));
         }
         long startConversionNanos = MathUtils.nowInNano();
