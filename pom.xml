@@ -53,6 +53,7 @@
     <junit.version>4.13.1</junit.version>
     <fusionauth-jwt.version>5.2.0</fusionauth-jwt.version>
     <jsr305.version>3.0.2</jsr305.version>
+    <snakeyaml.version>1.31</snakeyaml.version>
 
     <!-- plugin dependencies -->
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
@@ -253,6 +254,12 @@
         <groupId>com.google.code.findbugs</groupId>
         <artifactId>jsr305</artifactId>
         <version>${jsr305.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.yaml</groupId>
+        <artifactId>snakeyaml</artifactId>
+        <version>${snakeyaml.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
