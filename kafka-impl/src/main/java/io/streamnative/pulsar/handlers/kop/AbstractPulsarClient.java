@@ -59,7 +59,14 @@ public abstract class AbstractPulsarClient implements Closeable {
         }
     }
 
-    protected static PulsarClientImpl createPulsarClient(final PulsarService pulsarService,
+    /**
+     * Create a Pulsar client.
+     * @param pulsarService the PulsarService for the client
+     * @param kafkaConfig the Kafka config object
+     * @param customConfig a custom Consumer for setting values in kafkaConfig
+     * @return the created Pulsar client
+     */
+    public static PulsarClientImpl createPulsarClient(final PulsarService pulsarService,
                                                          final KafkaServiceConfiguration kafkaConfig,
                                                          final Consumer<ClientConfigurationData> customConfig) {
         // It's migrated from PulsarService#getClient()
