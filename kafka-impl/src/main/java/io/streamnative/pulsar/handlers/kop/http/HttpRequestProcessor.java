@@ -87,9 +87,13 @@ public abstract class HttpRequestProcessor implements AutoCloseable {
         return httpResponse;
     }
 
-    protected abstract int statusCodeFromThrowable(Throwable err);
+    protected int statusCodeFromThrowable(Throwable err) {
+        return INTERNAL_SERVER_ERROR.code();
+    }
 
-    protected abstract String getErrorResponseContentType();
+    protected String getErrorResponseContentType() {
+        return "text/plain";
+    }
 
     /**
      * Build a FullHttpResponse from an error. The response body is a serialized ErrorModel.
