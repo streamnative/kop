@@ -18,6 +18,7 @@ import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 import static org.testng.Assert.assertEquals;
 
 import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
@@ -47,7 +48,7 @@ public class HttpRequestProcessorTest {
         }
 
         @Override
-        protected CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request) {
+        protected CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request, Channel channel) {
             return CompletableFuture.completedFuture(
                     new DefaultFullHttpResponse(HTTP_1_1, NO_CONTENT, Unpooled.EMPTY_BUFFER));
         }

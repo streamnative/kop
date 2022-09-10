@@ -31,6 +31,9 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.migration.metadata.MigrationMetadata;
+import io.streamnative.pulsar.handlers.kop.migration.metadata.MigrationMetadataManager;
+import io.streamnative.pulsar.handlers.kop.migration.metadata.MigrationStatus;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -91,6 +94,8 @@ import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
@@ -105,6 +110,7 @@ import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
+import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
@@ -193,6 +199,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final ScheduledExecutorService executor;
     private final PulsarAdmin admin;
     private final MetadataStoreExtended metadataStore;
+    private final MigrationMetadataManager migrationMetadataManager;
     private final SaslAuthenticator authenticator;
     private final Authorizer authorizer;
     private final AdminManager adminManager;
@@ -235,7 +242,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 && authenticator.session() != null
                 && authenticator.session().getPrincipal() != null
                 && authenticator.session().getPrincipal().getTenantSpec() != null) {
-            String tenantSpec =  authenticator.session().getPrincipal().getTenantSpec();
+            String tenantSpec = authenticator.session().getPrincipal().getTenantSpec();
             return extractTenantFromTenantSpec(tenantSpec);
         }
         // fallback to using system (default) tenant
@@ -291,7 +298,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                boolean skipMessagesWithoutIndex,
                                RequestStats requestStats,
                                OrderedScheduler sendResponseScheduler,
-                               KafkaTopicManagerSharedState kafkaTopicManagerSharedState) throws Exception {
+                               KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
+                               MigrationMetadataManager migrationMetadataManager) throws Exception {
         super(requestStats, kafkaConfig, sendResponseScheduler);
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
@@ -300,6 +308,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
         this.metadataStore = pulsarService.getLocalMetadataStore();
+        this.migrationMetadataManager = migrationMetadataManager;
         final boolean authenticationEnabled = pulsarService.getBrokerService().isAuthenticationEnabled()
                 && !kafkaConfig.getSaslAllowedMechanisms().isEmpty();
         this.authenticator = authenticationEnabled
@@ -801,6 +810,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
+    private void produceToKafka(String topic, MemoryRecords records, MigrationMetadata migrationMetadata) {
+        Producer<String, ByteBuffer> producer =
+                migrationMetadataManager.getKafkaProducerForTopic(topic, "public/default",
+                        migrationMetadata.getKafkaClusterAddress());
+        for (Record record : records.records()) {
+            producer.send(new ProducerRecord<>(topic, record.value()));
+        }
+        producer.flush();
+    }
+
     @Override
     protected void handleProduceRequest(KafkaHeaderAndRequest produceHar,
                                         CompletableFuture<AbstractResponse> resultFuture) {
@@ -814,6 +833,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         final Map<TopicPartition, PartitionResponse> unauthorizedTopicResponsesMap = new ConcurrentHashMap<>();
         final Map<TopicPartition, PartitionResponse> invalidRequestResponses = new HashMap<>();
+        final Map<TopicPartition, PartitionResponse> migrationInProgressResponses = new HashMap<>();
         final Map<TopicPartition, MemoryRecords> authorizedRequestInfo = new ConcurrentHashMap<>();
         int timeoutMs = produceRequest.timeout();
         String namespacePrefix = currentNamespacePrefix();
@@ -848,43 +868,55 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     mergedResponse.putAll(response);
                     mergedResponse.putAll(unauthorizedTopicResponsesMap);
                     mergedResponse.putAll(invalidRequestResponses);
+                    mergedResponse.putAll(migrationInProgressResponses);
                     resultFuture.complete(new ProduceResponse(mergedResponse));
                 });
             }
         };
 
         produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
-            try {
-                validateRecords(produceHar.getRequest().version(), records);
-            } catch (ApiException ex) {
-                invalidRequestResponses.put(topicPartition,
-                        new ProduceResponse.PartitionResponse(Errors.forException(ex)));
-                completeOne.run();
-                return;
-            }
-            final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
-            authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
-                    .whenCompleteAsync((isAuthorized, ex) -> {
-                        if (ex != null) {
-                            log.error("Write topic authorize failed, topic - {}. {}",
-                                    fullPartitionName, ex.getMessage());
-                            unauthorizedTopicResponsesMap.put(topicPartition,
-                                    new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+            migrationMetadataManager.getMigrationMetadata(topicPartition.topic(), "public/default", ctx.channel())
+                    .thenAccept(migrationMetadata -> {
+                        MigrationStatus migrationStatus = migrationMetadata.getMigrationStatus();
+                        if (migrationStatus == MigrationStatus.NOT_STARTED) {
+                            produceToKafka(topicPartition.topic(), records, migrationMetadata);
+                        } else if (migrationStatus == MigrationStatus.STARTED) {
+                            migrationInProgressResponses.put(topicPartition,
+                                    new ProduceResponse.PartitionResponse(
+                                            Errors.forCode(Errors.REBALANCE_IN_PROGRESS.code())));
+                        }
+                        try {
+                            validateRecords(produceHar.getRequest().version(), records);
+                        } catch (ApiException ex) {
+                            invalidRequestResponses.put(topicPartition,
+                                    new ProduceResponse.PartitionResponse(Errors.forException(ex)));
                             completeOne.run();
                             return;
                         }
-                        if (!isAuthorized) {
-                            unauthorizedTopicResponsesMap.put(topicPartition,
-                                    new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
-                            completeOne.run();
-                            return;
-                        }
-                        authorizedRequestInfo.put(topicPartition, records);
-                        completeOne.run();
-                    }, ctx.executor());
+                        final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
+                        authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
+                                .whenCompleteAsync((isAuthorized, ex) -> {
+                                    if (ex != null) {
+                                        log.error("Write topic authorize failed, topic - {}. {}",
+                                                fullPartitionName, ex.getMessage());
+                                        unauthorizedTopicResponsesMap.put(topicPartition,
+                                                new ProduceResponse.PartitionResponse(
+                                                        Errors.TOPIC_AUTHORIZATION_FAILED));
+                                        completeOne.run();
+                                        return;
+                                    }
+                                    if (!isAuthorized) {
+                                        unauthorizedTopicResponsesMap.put(topicPartition,
+                                                new ProduceResponse.PartitionResponse(
+                                                        Errors.TOPIC_AUTHORIZATION_FAILED));
+                                        completeOne.run();
+                                        return;
+                                    }
+                                    authorizedRequestInfo.put(topicPartition, records);
+                                    completeOne.run();
+                                }, ctx.executor());
+                    });
         });
-
-
     }
 
     private void validateRecords(short version, MemoryRecords records) {
@@ -1555,7 +1587,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         String namespacePrefix = currentNamespacePrefix();
         MessageFetchContext.get(this, transactionCoordinator, fetch, resultFuture,
-                fetchPurgatory, namespacePrefix).handleFetch();
+                fetchPurgatory, namespacePrefix, migrationMetadataManager).handleFetch();
     }
 
     @Override

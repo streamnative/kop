@@ -39,6 +39,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.serialization.ByteBufferDeserializer;
@@ -231,6 +232,10 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
             return null;
         }).whenComplete((value, throwable) -> {
             if (throwable != null) {
+                if (throwable instanceof UnknownTopicOrPartitionException) {
+                    throwable = new UnknownTopicOrPartitionException(
+                            String.format("Topic %s not found in Kafka at %s", topic, kafkaClusterAddress));
+                }
                 wrappingFuture.completeExceptionally(throwable);
             } else {
                 wrappingFuture.complete(null);

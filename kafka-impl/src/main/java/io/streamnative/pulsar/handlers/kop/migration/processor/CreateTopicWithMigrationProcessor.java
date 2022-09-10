@@ -13,24 +13,58 @@
  */
 package io.streamnative.pulsar.handlers.kop.migration.processor;
 
+import io.netty.channel.Channel;
 import io.netty.handler.codec.http.FullHttpRequest;
+import io.netty.handler.codec.http.HttpResponseStatus;
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.http.HttpJsonRequestProcessor;
+import io.streamnative.pulsar.handlers.kop.migration.metadata.MigrationMetadataManager;
 import io.streamnative.pulsar.handlers.kop.migration.requests.CreateTopicWithMigrationRequest;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.errors.ApiException;
+import org.apache.kafka.common.errors.TopicExistsException;
+import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 
 /**
  * Http processor for creating a KoP topic with migration configuration.
  */
-public class CreateTopicWithMigrationProcessor extends HttpJsonRequestProcessor<CreateTopicWithMigrationRequest, Void> {
-    public CreateTopicWithMigrationProcessor(Class<CreateTopicWithMigrationRequest> requestModel) {
+@Slf4j
+public class CreateTopicWithMigrationProcessor
+        extends HttpJsonRequestProcessor<CreateTopicWithMigrationRequest, String> {
+    private final KafkaServiceConfiguration kafkaConfig;
+    private final MigrationMetadataManager migrationMetadataManager;
+
+    public CreateTopicWithMigrationProcessor(Class<CreateTopicWithMigrationRequest> requestModel,
+                                             KafkaServiceConfiguration kafkaConfig,
+                                             MigrationMetadataManager migrationMetadataManager) {
         super(requestModel, "/migration/createTopic", "POST");
+        this.kafkaConfig = kafkaConfig;
+        this.migrationMetadataManager = migrationMetadataManager;
     }
 
     @Override
-    protected CompletableFuture<Void> processRequest(CreateTopicWithMigrationRequest payload,
-                                                     List<String> patternGroups,
-                                                     FullHttpRequest request) {
-        return null;
+    protected int statusCodeFromThrowable(Throwable err) {
+        if (err instanceof UnknownTopicOrPartitionException) {
+            return HttpResponseStatus.NOT_FOUND.code();
+        }
+        if (err instanceof ApiException) {
+            if (err instanceof TopicExistsException) {
+                return HttpResponseStatus.CONFLICT.code();
+            }
+            return HttpResponseStatus.BAD_REQUEST.code();
+        }
+        return HttpResponseStatus.INTERNAL_SERVER_ERROR.code();
+    }
+
+    @Override
+    protected CompletableFuture<String> processRequest(CreateTopicWithMigrationRequest payload,
+                                                       List<String> patternGroups, FullHttpRequest request,
+                                                       Channel channel) {
+        String topic = payload.getTopic();
+        return migrationMetadataManager.createWithMigration(topic, "public/default", payload.getKafkaClusterAddress(),
+                        channel)
+                .thenApply(ignored -> "Topic " + topic + " created");
     }
 }
