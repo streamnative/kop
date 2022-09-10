@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,23 +13,60 @@
  */
 package io.streamnative.pulsar.handlers.kop.migration.processor;
 
+import com.google.common.collect.ImmutableMap;
 import io.netty.handler.codec.http.FullHttpRequest;
+import io.streamnative.pulsar.handlers.kop.AdminManager;
 import io.streamnative.pulsar.handlers.kop.http.HttpJsonRequestProcessor;
+import io.streamnative.pulsar.handlers.kop.migration.MigrationStatus;
 import io.streamnative.pulsar.handlers.kop.migration.requests.CreateTopicWithMigrationRequest;
+import io.streamnative.pulsar.handlers.kop.migration.workflow.MigrationWorkflowManager;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.requests.ApiError;
+import org.apache.kafka.common.requests.CreateTopicsRequest;
 
 /**
  * Http processor for creating a KoP topic with migration configuration.
  */
-public class CreateTopicWithMigrationProcessor extends HttpJsonRequestProcessor<CreateTopicWithMigrationRequest, Void> {
-    public CreateTopicWithMigrationProcessor(Class<CreateTopicWithMigrationRequest> requestModel) {
+@Slf4j
+public class CreateTopicWithMigrationProcessor
+        extends HttpJsonRequestProcessor<CreateTopicWithMigrationRequest, String> {
+    private final AdminManager adminManager;
+    private final MigrationWorkflowManager migrationWorkflowManager;
+
+    public CreateTopicWithMigrationProcessor(Class<CreateTopicWithMigrationRequest> requestModel,
+                                             AdminManager adminManager,
+                                             MigrationWorkflowManager migrationWorkflowManager) {
         super(requestModel, "/migration/createTopic", "POST");
+        this.adminManager = adminManager;
+        this.migrationWorkflowManager = migrationWorkflowManager;
     }
 
     @Override
-    protected CompletableFuture<Void> processRequest(CreateTopicWithMigrationRequest payload, List<String> patternGroups,
-                                                     FullHttpRequest request) {
-        return null;
+    protected CompletableFuture<String> processRequest(CreateTopicWithMigrationRequest payload,
+                                                       List<String> patternGroups,
+                                                       FullHttpRequest request) {
+        String topic = payload.getTopic();
+//        Properties properties = new Properties();
+//        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, payload.getKafkaClusterAddress());
+//        AdminClient kafkaAdminClient = AdminClient.create(properties);
+
+        // TODO: Check existence in Kafka
+//        try {
+//            log.info("kafkaAdminClient.describeTopics: " + kafkaAdminClient.describeTopics(Collections
+//            .singletonList(payload.getTopic())));
+//        } catch (UnknownTopicOrPartitionException e) {
+//            throw new IllegalArgumentException("Topic doesn't exist in Kafka");
+//        }
+
+        return migrationWorkflowManager.createWithMigration(payload.getTopic(), payload.getKafkaClusterAddress())
+                .thenApply(ignored -> "Topic " + topic + " created");
     }
 }
