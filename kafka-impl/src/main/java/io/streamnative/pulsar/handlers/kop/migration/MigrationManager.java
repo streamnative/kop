@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,15 +13,17 @@
  */
 package io.streamnative.pulsar.handlers.kop.migration;
 
+import io.streamnative.pulsar.handlers.kop.AdminManager;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.http.HttpChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.http.HttpHandler;
-import io.streamnative.pulsar.handlers.kop.migration.requests.CreateTopicWithMigrationRequest;
-import io.streamnative.pulsar.handlers.kop.migration.requests.StartMigrationRequest;
 import io.streamnative.pulsar.handlers.kop.migration.processor.CreateTopicWithMigrationProcessor;
 import io.streamnative.pulsar.handlers.kop.migration.processor.MigrationStatusProcessor;
 import io.streamnative.pulsar.handlers.kop.migration.processor.StartMigrationProcessor;
+import io.streamnative.pulsar.handlers.kop.migration.requests.CreateTopicWithMigrationRequest;
+import io.streamnative.pulsar.handlers.kop.migration.requests.StartMigrationRequest;
+import io.streamnative.pulsar.handlers.kop.migration.workflow.MigrationWorkflowManager;
 import java.net.InetSocketAddress;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
@@ -36,20 +38,30 @@ import org.apache.pulsar.client.api.PulsarClientException;
 public class MigrationManager {
     private final KafkaServiceConfiguration kafkaConfig;
     private final PulsarClient pulsarClient;
+    private final AdminManager adminManager;
+    private final MigrationWorkflowManager migrationWorkflowManager;
 
     /**
      * Creates a MigrationManager.
-     * @param kafkaConfig the KafkaConfig used by the underlying PulsarClient
-     * @param pulsar the PulsarService
+     *
+     * @param kafkaConfig              the KafkaConfig used by the underlying PulsarClient
+     * @param pulsar                   the PulsarService
+     * @param migrationWorkflowManager the MigrationWorkflowManager that manages the topic migration workflow
      */
     public MigrationManager(KafkaServiceConfiguration kafkaConfig,
-                            PulsarService pulsar) {
+                            PulsarService pulsar,
+                            AdminManager adminManager,
+                            MigrationWorkflowManager migrationWorkflowManager) {
         this.kafkaConfig = kafkaConfig;
-        this.pulsarClient = SystemTopicClient.createPulsarClient(pulsar, kafkaConfig, (___) -> {});
+        this.pulsarClient = SystemTopicClient.createPulsarClient(pulsar, kafkaConfig, (___) -> {
+        });
+        this.adminManager = adminManager;
+        this.migrationWorkflowManager = migrationWorkflowManager;
     }
 
     /**
      * Get the address of the KoP migration service.
+     *
      * @return the address of the KoP migration service
      */
     public InetSocketAddress getAddress() {
@@ -58,6 +70,7 @@ public class MigrationManager {
 
     /**
      * Build an HttpChannelInitializer for KoP migration service.
+     *
      * @return the HttpChannelInitializer for KoP migration service
      */
     public Optional<HttpChannelInitializer> build() {
@@ -65,7 +78,8 @@ public class MigrationManager {
             return Optional.empty();
         }
         HttpHandler handler = new MigrationHandler();
-        handler.addProcessor(new CreateTopicWithMigrationProcessor(CreateTopicWithMigrationRequest.class));
+        handler.addProcessor(
+                new CreateTopicWithMigrationProcessor(CreateTopicWithMigrationRequest.class, migrationWorkflowManager));
         handler.addProcessor(new StartMigrationProcessor(StartMigrationRequest.class));
         handler.addProcessor(new MigrationStatusProcessor(Void.class));
 

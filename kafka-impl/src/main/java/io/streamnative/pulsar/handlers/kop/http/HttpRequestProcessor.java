@@ -24,17 +24,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.google.common.annotations.VisibleForTesting;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.util.CharsetUtil;
-import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.SchemaStorageException;
-import lombok.AllArgsConstructor;
-
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import lombok.AllArgsConstructor;
 
 /**
  * Abstract request processor for HTTP requests.
@@ -142,7 +141,7 @@ public abstract class HttpRequestProcessor implements AutoCloseable {
 
     protected abstract boolean acceptRequest(FullHttpRequest request);
 
-    protected abstract CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request);
+    protected abstract CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request, Channel channel);
 
     @VisibleForTesting
     static FullHttpResponse buildJsonResponse(Object content, String contentType) {

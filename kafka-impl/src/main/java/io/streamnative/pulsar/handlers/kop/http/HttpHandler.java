@@ -63,7 +63,7 @@ public abstract class HttpHandler extends SimpleChannelInboundHandler<FullHttpRe
 
         HttpRequestProcessor processor = processorOr.get();
 
-        CompletableFuture<FullHttpResponse> fullHttpResponse = processor.processRequest(request);
+        CompletableFuture<FullHttpResponse> fullHttpResponse = processor.processRequest(request, ctx.channel());
         fullHttpResponse.thenAccept(resp -> {
             if (log.isDebugEnabled()) {
                 log.debug("{} at {} request {} response {}", getName(), ctx.channel().localAddress(), request,

@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.http;
 
 import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
 import io.netty.buffer.ByteBufInputStream;
+import io.netty.channel.Channel;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -65,7 +66,7 @@ public abstract class HttpJsonRequestProcessor<K, R> extends HttpRequestProcesso
     }
 
     @Override
-    public CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request) {
+    public CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request, Channel channel) {
         List<String> groups = detectGroups(request);
         K decodeRequest;
         try (ByteBufInputStream inputStream = new ByteBufInputStream(request.content())) {
@@ -82,7 +83,7 @@ public abstract class HttpJsonRequestProcessor<K, R> extends HttpRequestProcesso
 
         CompletableFuture<FullHttpResponse> result;
         try {
-            result = processRequest(decodeRequest, groups, request).thenApply(resp -> {
+            result = processRequest(decodeRequest, groups, request, channel).thenApply(resp -> {
                 if (resp == null) {
                     return buildErrorResponse(NOT_FOUND, "Not found", "text/plain");
                 }
@@ -126,5 +127,5 @@ public abstract class HttpJsonRequestProcessor<K, R> extends HttpRequestProcesso
     }
 
     protected abstract CompletableFuture<R> processRequest(K payload, List<String> patternGroups,
-                                                           FullHttpRequest request) throws Exception;
+                                                           FullHttpRequest request, Channel channel) throws Exception;
 }
