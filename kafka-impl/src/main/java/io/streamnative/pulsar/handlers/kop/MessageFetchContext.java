@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
-
 import com.google.common.collect.Lists;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
@@ -32,11 +31,18 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
+import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -65,9 +71,12 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.record.SimpleRecord;
+import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
@@ -75,6 +84,8 @@ import org.apache.kafka.common.requests.FetchResponse.PartitionData;
 import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
+import org.apache.kafka.common.serialization.ByteBufferDeserializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.pulsar.metadata.api.GetResult;
 
 /**
@@ -263,6 +274,59 @@ public final class MessageFetchContext {
 
         AtomicLong limitBytes = new AtomicLong(fetchRequest.maxBytes());
         fetchRequest.fetchData().forEach((topicPartition, partitionData) -> {
+            Path path = Paths.get("/tmp/" + topicPartition.topic());
+            List<String> lines;
+            try {
+                lines = Files.readLines(path.toFile(), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                e.printStackTrace();
+                return;
+            }
+            MigrationStatus migrationStatus = MigrationStatus.valueOf(lines.get(1));
+            if (migrationStatus == MigrationStatus.NOT_STARTED) {
+                Properties props = new Properties();
+                props.put("bootstrap.servers", lines.get(0));
+                props.put("key.deserializer", StringDeserializer.class);
+                props.put("value.deserializer", ByteBufferDeserializer.class);
+                log.info("Trying to proxy request");
+                Consumer<String, ByteBuffer> consumer = new KafkaConsumer<>(props);
+                consumer.subscribe(fetchRequest.fetchData().keySet().stream().map(TopicPartition::topic)
+                        .collect(Collectors.toList()));
+                ConsumerRecords<String, ByteBuffer> records = consumer.poll(Duration.ofMillis(100));
+                MemoryRecordsBuilder memoryRecordsBuilder = null;
+                long highWatermark = 0;
+                for (ConsumerRecord<String, ByteBuffer> record : records) {
+                    log.info("topicPartition.topic(): " + topicPartition.topic());
+                    log.info("Record: " + record);
+                    if (memoryRecordsBuilder == null) {
+                        memoryRecordsBuilder = MemoryRecords.builder(record.value(), CompressionType.NONE,
+                                TimestampType.LOG_APPEND_TIME, record.offset());
+                    } else {
+                        memoryRecordsBuilder.append(new SimpleRecord(record.timestamp(), record.value().array()));
+                    }
+                    highWatermark = Math.max(highWatermark, record.offset());
+                }
+                if (memoryRecordsBuilder != null) {
+                    responseData.put(topicPartition,
+                            new PartitionData<>(
+                                    Errors.NONE,
+                                    highWatermark,
+                                    highWatermark,
+                                    highWatermark,
+                                    null,
+                                    memoryRecordsBuilder.build()));
+                }
+                consumer.close();
+            } else if (migrationStatus == MigrationStatus.STARTED) {
+                responseData.put(topicPartition,
+                        new PartitionData<>(
+                                Errors.forCode(Errors.REBALANCE_IN_PROGRESS.code()),
+                                FetchResponse.INVALID_HIGHWATERMARK,
+                                FetchResponse.INVALID_LAST_STABLE_OFFSET,
+                                FetchResponse.INVALID_LOG_START_OFFSET,
+                                null,
+                                MemoryRecords.EMPTY));
+            }
             final long startPrepareMetadataNanos = MathUtils.nowInNano();
 
             final String fullTopicName = KopTopic.toString(topicPartition, namespacePrefix);

@@ -925,8 +925,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         completeOne.run();
                     }, ctx.executor());
         });
-
-
     }
 
     private void validateRecords(short version, MemoryRecords records) {
