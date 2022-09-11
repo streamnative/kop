@@ -31,6 +31,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.migration.MigrationStatus;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -53,8 +54,12 @@ import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -64,6 +69,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -91,6 +97,10 @@ import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.curator.shaded.com.google.common.io.Files;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
@@ -105,6 +115,7 @@ import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
+import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
@@ -159,6 +170,8 @@ import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitResponse;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
+import org.apache.kafka.common.serialization.ByteBufferSerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
@@ -814,6 +827,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         final Map<TopicPartition, PartitionResponse> unauthorizedTopicResponsesMap = new ConcurrentHashMap<>();
         final Map<TopicPartition, PartitionResponse> invalidRequestResponses = new HashMap<>();
+        final Map<TopicPartition, PartitionResponse> migrationInProgressResponses = new HashMap<>();
         final Map<TopicPartition, MemoryRecords> authorizedRequestInfo = new ConcurrentHashMap<>();
         int timeoutMs = produceRequest.timeout();
         String namespacePrefix = currentNamespacePrefix();
@@ -848,12 +862,40 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     mergedResponse.putAll(response);
                     mergedResponse.putAll(unauthorizedTopicResponsesMap);
                     mergedResponse.putAll(invalidRequestResponses);
+                    mergedResponse.putAll(migrationInProgressResponses);
                     resultFuture.complete(new ProduceResponse(mergedResponse));
                 });
             }
         };
 
         produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
+            Path path = Paths.get("/tmp/" + topicPartition.topic());
+            List<String> lines;
+            try {
+                lines = Files.readLines(path.toFile(), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                e.printStackTrace();
+                return;
+            }
+            MigrationStatus migrationStatus = MigrationStatus.valueOf(lines.get(1));
+            if (migrationStatus == MigrationStatus.NOT_STARTED) {
+                Properties props = new Properties();
+                props.put("bootstrap.servers", lines.get(0));
+                props.put("key.serializer", StringSerializer.class);
+                props.put("value.serializer", ByteBufferSerializer.class);
+                log.info("Trying to proxy request");
+                Producer<String, ByteBuffer> producer = new KafkaProducer<>(props);
+                for (Record record : records.records()) {
+                    log.info("topicPartition.topic(): " + topicPartition.topic());
+                    log.info("Record: " + record);
+                    producer.send(new ProducerRecord<>(topicPartition.topic(), record.value()));
+                    producer.flush();
+                }
+                producer.close();
+            } else if (migrationStatus == MigrationStatus.STARTED) {
+                migrationInProgressResponses.put(topicPartition,
+                        new ProduceResponse.PartitionResponse(Errors.forCode(Errors.REBALANCE_IN_PROGRESS.code())));
+            }
             try {
                 validateRecords(produceHar.getRequest().version(), records);
             } catch (ApiException ex) {
