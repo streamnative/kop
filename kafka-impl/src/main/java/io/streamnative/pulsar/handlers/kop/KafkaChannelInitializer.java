@@ -22,9 +22,11 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateHandler;
+import io.streamnative.pulsar.handlers.kop.migration.MigrationManager;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import lombok.Getter;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
@@ -65,6 +67,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
 
     private final LengthFieldPrepender lengthFieldPrepender;
 
+    private final MigrationManager migrationManager;
+
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
                                    TenantContextManager tenantContextManager,
@@ -77,7 +81,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    boolean skipMessagesWithoutIndex,
                                    RequestStats requestStats,
                                    OrderedScheduler sendResponseScheduler,
-                                   KafkaTopicManagerSharedState kafkaTopicManagerSharedState) {
+                                   KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
+                                   MigrationManager migrationManager) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -98,6 +103,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.sendResponseScheduler = sendResponseScheduler;
         this.kafkaTopicManagerSharedState = kafkaTopicManagerSharedState;
         this.lengthFieldPrepender = new LengthFieldPrepender(4);
+        this.migrationManager = migrationManager;
     }
 
     @Override
@@ -123,7 +129,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 tenantContextManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex, requestStats, sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState, migrationManager);
     }
 
     @VisibleForTesting
@@ -133,6 +139,6 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex, RequestStats.NULL_INSTANCE,
                 sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState, migrationManager);
     }
 }

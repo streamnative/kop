@@ -26,8 +26,10 @@ import io.streamnative.pulsar.handlers.kop.migration.requests.StartMigrationRequ
 import io.streamnative.pulsar.handlers.kop.migration.workflow.MigrationWorkflowManager;
 import java.net.InetSocketAddress;
 import java.util.Optional;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 
@@ -39,6 +41,8 @@ public class MigrationManager {
     private final KafkaServiceConfiguration kafkaConfig;
     private final PulsarClient pulsarClient;
     private final AdminManager adminManager;
+    private final BrokerService brokerService;
+    @Getter
     private final MigrationWorkflowManager migrationWorkflowManager;
 
     /**
@@ -51,11 +55,14 @@ public class MigrationManager {
     public MigrationManager(KafkaServiceConfiguration kafkaConfig,
                             PulsarService pulsar,
                             AdminManager adminManager,
+                            BrokerService brokerService,
                             MigrationWorkflowManager migrationWorkflowManager) {
         this.kafkaConfig = kafkaConfig;
         this.pulsarClient = SystemTopicClient.createPulsarClient(pulsar, kafkaConfig, (___) -> {
         });
         this.adminManager = adminManager;
+        this.migrationWorkflowManager = migrationWorkflowManager;
+        this.brokerService = brokerService;
         this.migrationWorkflowManager = migrationWorkflowManager;
     }
 
@@ -81,7 +88,7 @@ public class MigrationManager {
         handler.addProcessor(
                 new CreateTopicWithMigrationProcessor(CreateTopicWithMigrationRequest.class, adminManager,
                         migrationWorkflowManager));
-        handler.addProcessor(new StartMigrationProcessor(StartMigrationRequest.class));
+        handler.addProcessor(new StartMigrationProcessor(StartMigrationRequest.class, migrationWorkflowManager));
         handler.addProcessor(new MigrationStatusProcessor(Void.class));
 
         return Optional.of(new HttpChannelInitializer(handler));

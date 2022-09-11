@@ -31,7 +31,9 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
-import io.streamnative.pulsar.handlers.kop.migration.MigrationStatus;
+import io.streamnative.pulsar.handlers.kop.migration.MigrationManager;
+import io.streamnative.pulsar.handlers.kop.migration.workflow.MigrationStatus;
+import io.streamnative.pulsar.handlers.kop.migration.workflow.MigrationWorkflowManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -236,6 +238,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final long maxPendingBytes;
     private final long resumeThresholdPendingBytes;
     private final AtomicLong pendingBytes = new AtomicLong(0);
+    private final MigrationManager migrationManager;
     private volatile boolean autoReadDisabledPublishBufferLimiting = false;
 
     private String getCurrentTenant() {
@@ -304,7 +307,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                boolean skipMessagesWithoutIndex,
                                RequestStats requestStats,
                                OrderedScheduler sendResponseScheduler,
-                               KafkaTopicManagerSharedState kafkaTopicManagerSharedState) throws Exception {
+                               KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
+                               MigrationManager migrationManager) throws Exception {
         super(requestStats, kafkaConfig, sendResponseScheduler);
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
@@ -339,6 +343,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.resumeThresholdPendingBytes = this.maxPendingBytes / 2;
         this.failedAuthenticationDelayMs = kafkaConfig.getFailedAuthenticationDelayMs();
         this.kafkaTopicManagerSharedState = kafkaTopicManagerSharedState;
+        this.migrationManager = migrationManager;
 
         // update alive channel count stats
         RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
@@ -868,6 +873,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
         };
 
+        MigrationWorkflowManager migrationWorkflowManager = migrationManager.getMigrationWorkflowManager();
         produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
             Path path = Paths.get("/tmp/" + topicPartition.topic());
             List<String> lines;
@@ -879,6 +885,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
             MigrationStatus migrationStatus = MigrationStatus.valueOf(lines.get(1));
             if (migrationStatus == MigrationStatus.NOT_STARTED) {
+                String topic = topicPartition.topic();
+                migrationWorkflowManager.startProxyRequest(topic);
                 Properties props = new Properties();
                 props.put("bootstrap.servers", lines.get(0));
                 props.put("key.serializer", StringSerializer.class);
@@ -892,6 +900,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     producer.flush();
                 }
                 producer.close();
+                migrationWorkflowManager.finishProxyRequest(topic);
             } else if (migrationStatus == MigrationStatus.STARTED) {
                 migrationInProgressResponses.put(topicPartition,
                         new ProduceResponse.PartitionResponse(Errors.forCode(Errors.REBALANCE_IN_PROGRESS.code())));
@@ -1600,7 +1609,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         String namespacePrefix = currentNamespacePrefix();
         MessageFetchContext.get(this, transactionCoordinator, fetch, resultFuture,
-                fetchPurgatory, namespacePrefix).handleFetch();
+                fetchPurgatory, namespacePrefix).handleFetch(migrationManager.getMigrationWorkflowManager());
     }
 
     @Override

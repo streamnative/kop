@@ -285,10 +285,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         conf.addProperty("cluster", kafkaConfig.getClusterName());
         statsProvider.start(conf);
         brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
-        schemaRegistryManager = new SchemaRegistryManager(kafkaConfig, pulsarService,
-                brokerService.getAuthenticationService());
-        migrationWorkflowManager = new ManagedLedgerPropertiesWorkflowManager(pulsarService, adminManager);
-        migrationManager = new MigrationManager(kafkaConfig, pulsarService, adminManager, migrationWorkflowManager);
+        PulsarService pulsarService = brokerService.getPulsar();
+        schemaRegistryManager =
+                new SchemaRegistryManager(kafkaConfig, pulsarService, brokerService.getAuthenticationService());
+        MigrationWorkflowManager migrationWorkflowManager =
+                new ManagedLedgerPropertiesWorkflowManager(pulsarService, null);
+        migrationManager =
+                new MigrationManager(kafkaConfig, pulsarService, adminManager, brokerService, migrationWorkflowManager);
     }
 
     private TransactionCoordinator createAndBootTransactionCoordinator(String tenant) {
@@ -413,7 +416,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 kafkaConfig.isSkipMessagesWithoutIndex(),
                 requestStats,
                 sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState,
+                migrationManager);
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
@@ -437,8 +441,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
             EndPoint.parseListeners(kafkaConfig.getListeners(), kafkaConfig.getKafkaProtocolMap()).
                     forEach((listener, endPoint) ->
-                            builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint))
-                    );
+                            builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint)));
 
             Optional<HttpChannelInitializer> migrationChannelInitializer = migrationManager.build();
             migrationChannelInitializer.ifPresent(

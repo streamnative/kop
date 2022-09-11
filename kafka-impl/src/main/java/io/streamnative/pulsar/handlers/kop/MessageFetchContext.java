@@ -21,7 +21,8 @@ import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndReq
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
-import io.streamnative.pulsar.handlers.kop.migration.MigrationStatus;
+import io.streamnative.pulsar.handlers.kop.migration.workflow.MigrationStatus;
+import io.streamnative.pulsar.handlers.kop.migration.workflow.MigrationWorkflowManager;
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
@@ -38,7 +39,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -268,30 +268,27 @@ public final class MessageFetchContext {
     }
 
     // handle request
-    public void handleFetch() {
+    public void handleFetch(MigrationWorkflowManager migrationWorkflowManager) {
         final boolean readCommitted =
                 (tc != null && fetchRequest.isolationLevel().equals(IsolationLevel.READ_COMMITTED));
 
         AtomicLong limitBytes = new AtomicLong(fetchRequest.maxBytes());
         fetchRequest.fetchData().forEach((topicPartition, partitionData) -> {
-            Path path = Paths.get("/tmp/" + topicPartition.topic());
-            List<String> lines;
-            try {
-                lines = Files.readLines(path.toFile(), StandardCharsets.UTF_8);
-            } catch (IOException e) {
-                e.printStackTrace();
-                return;
-            }
-            MigrationStatus migrationStatus = MigrationStatus.valueOf(lines.get(1));
+            String topic = topicPartition.topic();
+            MigrationStatus migrationStatus = migrationWorkflowManager.getMigrationStatus(topic);
             if (migrationStatus == MigrationStatus.NOT_STARTED) {
+                migrationWorkflowManager.startProxyRequest(topic);
                 Properties props = new Properties();
-                props.put("bootstrap.servers", lines.get(0));
+                props.put("bootstrap.servers", migrationWorkflowManager.getKafkaClusterAddress(topic));
                 props.put("key.deserializer", StringDeserializer.class);
                 props.put("value.deserializer", ByteBufferDeserializer.class);
+                // Disable offset auto commit to make this a simple fetch and not saving KoP internal consumer metadata
+                // in Kafka
+                props.put("enable.auto.commit", false);
                 log.info("Trying to proxy request");
                 Consumer<String, ByteBuffer> consumer = new KafkaConsumer<>(props);
-                consumer.subscribe(fetchRequest.fetchData().keySet().stream().map(TopicPartition::topic)
-                        .collect(Collectors.toList()));
+                // Using assign() instead of subscribe() to disable Kafka group management
+                consumer.assign(new ArrayList<>(fetchRequest.fetchData().keySet()));
                 ConsumerRecords<String, ByteBuffer> records = consumer.poll(Duration.ofMillis(100));
                 MemoryRecordsBuilder memoryRecordsBuilder = null;
                 long highWatermark = 0;
@@ -317,6 +314,7 @@ public final class MessageFetchContext {
                                     memoryRecordsBuilder.build()));
                 }
                 consumer.close();
+                migrationWorkflowManager.finishProxyRequest(topic);
             } else if (migrationStatus == MigrationStatus.STARTED) {
                 responseData.put(topicPartition,
                         new PartitionData<>(

@@ -13,24 +13,15 @@
  */
 package io.streamnative.pulsar.handlers.kop.migration.processor;
 
-import com.google.common.collect.ImmutableMap;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.streamnative.pulsar.handlers.kop.AdminManager;
 import io.streamnative.pulsar.handlers.kop.http.HttpJsonRequestProcessor;
-import io.streamnative.pulsar.handlers.kop.migration.MigrationStatus;
 import io.streamnative.pulsar.handlers.kop.migration.requests.CreateTopicWithMigrationRequest;
 import io.streamnative.pulsar.handlers.kop.migration.workflow.MigrationWorkflowManager;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.requests.ApiError;
-import org.apache.kafka.common.requests.CreateTopicsRequest;
+import org.apache.pulsar.broker.service.BrokerService;
 
 /**
  * Http processor for creating a KoP topic with migration configuration.
@@ -39,6 +30,7 @@ import org.apache.kafka.common.requests.CreateTopicsRequest;
 public class CreateTopicWithMigrationProcessor
         extends HttpJsonRequestProcessor<CreateTopicWithMigrationRequest, String> {
     private final AdminManager adminManager;
+    private final BrokerService brokerService;
     private final MigrationWorkflowManager migrationWorkflowManager;
 
     public CreateTopicWithMigrationProcessor(Class<CreateTopicWithMigrationRequest> requestModel,

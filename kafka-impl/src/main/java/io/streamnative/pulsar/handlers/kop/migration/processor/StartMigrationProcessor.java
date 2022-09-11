@@ -16,20 +16,28 @@ package io.streamnative.pulsar.handlers.kop.migration.processor;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.streamnative.pulsar.handlers.kop.http.HttpJsonRequestProcessor;
 import io.streamnative.pulsar.handlers.kop.migration.requests.StartMigrationRequest;
+import io.streamnative.pulsar.handlers.kop.migration.workflow.MigrationWorkflowManager;
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
  * Http processor for starting a Kafka to KoP migration.
  */
+@Slf4j
 public class StartMigrationProcessor extends HttpJsonRequestProcessor<StartMigrationRequest, Void> {
-    public StartMigrationProcessor(Class<StartMigrationRequest> requestModel) {
+    private final MigrationWorkflowManager migrationWorkflowManager;
+    public StartMigrationProcessor(Class<StartMigrationRequest> requestModel,
+                                   MigrationWorkflowManager migrationWorkflowManager) {
         super(requestModel, "/migration/start", "POST");
+        this.migrationWorkflowManager = migrationWorkflowManager;
     }
 
     @Override
     protected CompletableFuture<Void> processRequest(StartMigrationRequest payload, List<String> patternGroups,
                                                      FullHttpRequest request) {
-        return null;
+        migrationWorkflowManager.startMigration(payload.getTopic());
+        return CompletableFuture.completedFuture(null);
     }
 }
