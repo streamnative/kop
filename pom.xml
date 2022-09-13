@@ -52,7 +52,7 @@
     <lombok.version>1.18.22</lombok.version>
     <mockito.version>2.22.0</mockito.version>
     <pulsar.group.id>io.streamnative</pulsar.group.id>
-    <pulsar.version>2.10.0.1</pulsar.version>
+    <pulsar.version>2.10.1.6</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
     <apicurio.version>2.1.1.Final</apicurio.version>
