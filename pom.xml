@@ -51,7 +51,7 @@
     <awaitility.version>4.0.3</awaitility.version>
     <grpc.version>1.45.1</grpc.version>
     <junit.version>4.13.1</junit.version>
-    <fusionauth-jwt.version>5.2.0</fusionauth-jwt.version>
+    <fusionauth-jwt.version>5.2.1</fusionauth-jwt.version>
     <jsr305.version>3.0.2</jsr305.version>
     <snakeyaml.version>1.31</snakeyaml.version>
 
