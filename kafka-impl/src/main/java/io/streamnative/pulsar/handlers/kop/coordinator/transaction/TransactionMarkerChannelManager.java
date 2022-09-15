@@ -27,7 +27,6 @@ import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -77,7 +76,8 @@ public class TransactionMarkerChannelManager {
 
     private final Bootstrap bootstrap;
 
-    private Map<InetSocketAddress, CompletableFuture<TransactionMarkerChannelHandler>> handlerMap = new HashMap<>();
+    private final Map<InetSocketAddress, CompletableFuture<TransactionMarkerChannelHandler>> handlerMap =
+            new ConcurrentHashMap<>();
 
     private TransactionStateManager txnStateManager;
 
