@@ -589,6 +589,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final Map<String, List<Integer>> topicToPartitionIndexes = new HashMap<>();
         fullTopicNames.forEach(fullTopicName -> {
             final TopicName topicName = TopicName.get(fullTopicName);
+            // Skip Pulsar's system topic
+            if (topicName.getLocalName().startsWith("__change_events")
+                    && topicName.getPartitionedTopicName().endsWith("__change_events")) {
+                return;
+            }
             topicToPartitionIndexes.computeIfAbsent(
                     topicName.getPartitionedTopicName(),
                     ignored -> new ArrayList<>()
