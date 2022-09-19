@@ -166,8 +166,8 @@ public class MessageMetadataUtils {
         }
     }
 
-    public static long getMockOffset(long ledgerId, long entryId) {
-        return ledgerId + entryId;
+    public static String getMockOffset(long ledgerId, long entryId) {
+        return Long.toString(ledgerId) + "-" + Long.toString(entryId);
     }
 
     public static CompletableFuture<Position> asyncFindPosition(final ManagedLedger managedLedger,

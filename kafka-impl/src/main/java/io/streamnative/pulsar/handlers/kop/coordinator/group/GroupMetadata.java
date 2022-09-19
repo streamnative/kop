@@ -51,6 +51,7 @@ import lombok.Setter;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.common.schema.KeyValue;
 
@@ -166,11 +167,22 @@ public class GroupMetadata {
      */
     @Data
     static class CommitRecordMetadataAndOffset {
-        private final Optional<Long> appendedBatchOffset;
+        private final Optional<String> appendedBatchOffset;
         private final OffsetAndMetadata offsetAndMetadata;
 
         public boolean olderThan(CommitRecordMetadataAndOffset that) {
-            return appendedBatchOffset.get() < that.appendedBatchOffset.get();
+            String[] thisLedgerIdAndEntryId = StringUtils.split(appendedBatchOffset.get(), "-");
+            String[] thatLedgerIdAndEntryId = StringUtils.split(that.appendedBatchOffset.get(), "-");
+
+            long thisLedgerId = NumberUtils.toLong(thisLedgerIdAndEntryId[0]);
+            long thatLedgerId = NumberUtils.toLong(thatLedgerIdAndEntryId[0]);
+            if (thisLedgerId != thatLedgerId) {
+                return thisLedgerId < thatLedgerId;
+            }
+
+            long thisEntryId = NumberUtils.toLong(thisLedgerIdAndEntryId.length == 2 ? thisLedgerIdAndEntryId[1] : "0");
+            long thatEntryId = NumberUtils.toLong(thatLedgerIdAndEntryId.length == 2 ? thatLedgerIdAndEntryId[1] : "0");
+            return thisEntryId < thatEntryId;
         }
     }
 

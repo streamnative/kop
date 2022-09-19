@@ -44,6 +44,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManage
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.OffsetKey;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -805,13 +806,13 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         committedOffsetsFirstProducer.forEach((tp, offset) -> {
             assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
             assertEquals(
-                Optional.of((long) firstProduceRecordOffset),
+                Optional.of(MessageMetadataUtils.getMockOffset(0, firstProduceRecordOffset)),
                 group.offsetWithRecordMetadata(tp).flatMap(CommitRecordMetadataAndOffset::appendedBatchOffset));
         });
         committedOffsetsSecondProducer.forEach((tp, offset) -> {
             assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
             assertEquals(
-                Optional.of((long) secondProduceRecordOffset),
+                Optional.of(MessageMetadataUtils.getMockOffset(0, secondProduceRecordOffset)),
                 group.offsetWithRecordMetadata(tp).flatMap(CommitRecordMetadataAndOffset::appendedBatchOffset));
         });
 

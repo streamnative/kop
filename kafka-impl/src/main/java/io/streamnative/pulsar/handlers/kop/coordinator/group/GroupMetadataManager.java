@@ -533,7 +533,7 @@ public class GroupMetadataManager {
             .thenApplyAsync(messageId -> {
                 if (!group.is(GroupState.Dead)) {
                     MessageIdImpl lastMessageId = (MessageIdImpl) messageId;
-                    long baseOffset = MessageMetadataUtils.getMockOffset(
+                    String baseOffset = MessageMetadataUtils.getMockOffset(
                         lastMessageId.getLedgerId(),
                         lastMessageId.getEntryId()
                     );
@@ -872,11 +872,11 @@ public class GroupMetadataManager {
                         pendingOffsets.remove(batch.producerId());
                     }
                 } else {
-                    Optional<Long> batchBaseOffset = Optional.empty();
+                    Optional<String> batchBaseOffset = Optional.empty();
                     for (Record record : batch) {
                         checkArgument(record.hasKey(), "Group metadata/offset entry key should not be null");
                         if (!batchBaseOffset.isPresent()) {
-                            batchBaseOffset = Optional.of(record.offset());
+                            batchBaseOffset = Optional.of(MessageMetadataUtils.getMockOffset(0, record.offset()));
                         }
                         BaseKey bk = readMessageKey(record.key());
 
