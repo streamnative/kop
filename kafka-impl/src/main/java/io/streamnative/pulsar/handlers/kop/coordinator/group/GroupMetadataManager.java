@@ -63,6 +63,7 @@ import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
 import org.apache.bookkeeper.common.util.MathUtils;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.tuple.Triple;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
@@ -533,14 +534,10 @@ public class GroupMetadataManager {
             .thenApplyAsync(messageId -> {
                 if (!group.is(GroupState.Dead)) {
                     MessageIdImpl lastMessageId = (MessageIdImpl) messageId;
-                    String baseOffset = MessageMetadataUtils.getMockOffset(
-                        lastMessageId.getLedgerId(),
-                        lastMessageId.getEntryId()
-                    );
                     filteredOffsetMetadata.forEach((tp, offsetAndMetadata) -> {
                         CommitRecordMetadataAndOffset commitRecordMetadataAndOffset =
                             new CommitRecordMetadataAndOffset(
-                                Optional.of(baseOffset),
+                                Optional.of(new PositionImpl(lastMessageId.getLedgerId(), lastMessageId.getEntryId())),
                                 offsetAndMetadata
                             );
                         if (isTxnOffsetCommit) {
@@ -872,11 +869,11 @@ public class GroupMetadataManager {
                         pendingOffsets.remove(batch.producerId());
                     }
                 } else {
-                    Optional<String> batchBaseOffset = Optional.empty();
+                    Optional<PositionImpl> batchBaseOffset = Optional.empty();
                     for (Record record : batch) {
                         checkArgument(record.hasKey(), "Group metadata/offset entry key should not be null");
                         if (!batchBaseOffset.isPresent()) {
-                            batchBaseOffset = Optional.of(MessageMetadataUtils.getMockOffset(0, record.offset()));
+                            batchBaseOffset = Optional.of(new PositionImpl(0, record.offset()));
                         }
                         BaseKey bk = readMessageKey(record.key());
 
