@@ -554,7 +554,14 @@ public class PartitionLog {
         }
 
         // this part is heavyweight, and we should not execute in the ManagedLedger Ordered executor thread
-        context.getCurrentConnectedGroupNameAsync().whenCompleteAsync((groupName, ex) -> {
+        final CompletableFuture<String> groupNameFuture;
+        if (kafkaConfig.isKopEnableGroupLevelConsumerMetrics()) {
+            groupNameFuture = context.getCurrentConnectedGroupNameAsync();
+        } else {
+            groupNameFuture = CompletableFuture.completedFuture(null);
+        }
+
+        groupNameFuture.whenCompleteAsync((groupName, ex) -> {
             if (ex != null) {
                 log.error("Get groupId failed.", ex);
                 groupName = "";
@@ -573,9 +580,17 @@ public class PartitionLog {
             if (readCommitted) {
                 abortedTransactions = this.getAbortedIndexList(partitionData.fetchOffset);
             }
+            if (log.isDebugEnabled()) {
+                log.debug("Partition {} read entry completed in {} ns",
+                        topicPartition, MathUtils.nowInNano() - startDecodingEntriesNanos);
+            }
 
             future.complete(ReadRecordsResult.get(decodeResult, abortedTransactions, highWatermark, lso, lastPosition));
-        }, context.getDecodeExecutor());
+        }, context.getDecodeExecutor()).exceptionally(ex -> {
+            log.error("Partition {} read entry exceptionally. ", topicPartition, ex);
+            future.complete(ReadRecordsResult.error(Errors.KAFKA_STORAGE_ERROR));
+            return null;
+        });;
     }
 
     private Position getLastPositionFromEntries(List<Entry> entries) {
