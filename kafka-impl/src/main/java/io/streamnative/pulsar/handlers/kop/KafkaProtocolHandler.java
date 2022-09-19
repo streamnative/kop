@@ -147,7 +147,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Override
     public boolean accept(String protocol) {
-        return PROTOCOL_NAME.equals(protocol.toLowerCase());
+        return PROTOCOL_NAME.equalsIgnoreCase(protocol);
     }
 
     @Override
@@ -413,11 +413,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         checkState(kafkaConfig != null);
         checkState(brokerService != null);
 
-        producePurgatory = DelayedOperationPurgatory.<DelayedOperation>builder()
+        producePurgatory = DelayedOperationPurgatory.builder()
                 .purgatoryName("produce")
                 .timeoutTimer(SystemTimer.builder().executorName("produce").build())
                 .build();
-        fetchPurgatory = DelayedOperationPurgatory.<DelayedOperation>builder()
+        fetchPurgatory = DelayedOperationPurgatory.builder()
                 .purgatoryName("fetch")
                 .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
                 .build();
@@ -431,9 +431,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                             builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint))
                     );
             Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer = schemaRegistryManager.build();
-            if (schemaRegistryChannelInitializer.isPresent()) {
-                builder.put(schemaRegistryManager.getAddress(), schemaRegistryChannelInitializer.get());
-            }
+            schemaRegistryChannelInitializer.ifPresent(
+                    registryChannelInitializer -> builder.put(schemaRegistryManager.getAddress(),
+                            registryChannelInitializer));
             channelInitializerMap = builder.build();
             return channelInitializerMap;
         } catch (Exception e){

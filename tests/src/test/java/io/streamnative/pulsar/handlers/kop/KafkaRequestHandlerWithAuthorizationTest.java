@@ -261,9 +261,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         String localName = TopicName.get(topic).getLocalName();
 
         HashMap<String, MetadataResponse.TopicMetadata> topicMap = new HashMap<>();
-        response.topicMetadata().forEach(metadata -> {
-            topicMap.put(metadata.topic(), metadata);
-        });
+        response.topicMetadata().forEach(metadata -> topicMap.put(metadata.topic(), metadata));
         assertTrue(topicMap.containsKey(localName));
         assertEquals(topicMap.get(localName).partitionMetadata().size(), DEFAULT_PARTITION_NUM);
         assertNull(response.errors().get(localName));
@@ -401,9 +399,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         OffsetFetchResponse offsetFetchResponse = (OffsetFetchResponse) response;
         assertEquals(offsetFetchResponse.responseData().size(), 1);
         assertEquals(offsetFetchResponse.error(), Errors.NONE);
-        offsetFetchResponse.responseData().forEach((topicPartition, partitionData) -> {
-            assertEquals(partitionData.error, Errors.NONE);
-        });
+        offsetFetchResponse.responseData()
+                .forEach((topicPartition, partitionData) -> assertEquals(partitionData.error, Errors.NONE));
     }
 
     @Test(timeOut = 20000)
@@ -432,9 +429,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         OffsetFetchResponse offsetFetchResponse = (OffsetFetchResponse) response;
         assertEquals(offsetFetchResponse.responseData().size(), 1);
         assertEquals(offsetFetchResponse.error(), Errors.NONE);
-        offsetFetchResponse.responseData().forEach((topicPartition, partitionData) -> {
-            assertEquals(partitionData.error, Errors.TOPIC_AUTHORIZATION_FAILED);
-        });
+        offsetFetchResponse.responseData().forEach((topicPartition, partitionData) -> assertEquals(partitionData.error,
+                Errors.TOPIC_AUTHORIZATION_FAILED));
     }
 
     @Test(timeOut = 20000)
@@ -459,9 +455,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         OffsetCommitResponse offsetCommitResponse = (OffsetCommitResponse) response;
         assertEquals(offsetCommitResponse.responseData().size(), 1);
         assertFalse(offsetCommitResponse.errorCounts().isEmpty());
-        offsetCommitResponse.responseData().forEach((__, error) -> {
-            assertEquals(error, Errors.TOPIC_AUTHORIZATION_FAILED);
-        });
+        offsetCommitResponse.responseData()
+                .forEach((__, error) -> assertEquals(error, Errors.TOPIC_AUTHORIZATION_FAILED));
     }
 
     @Test(timeOut = 20000)
@@ -527,9 +522,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         TxnOffsetCommitResponse txnOffsetCommitResponse = (TxnOffsetCommitResponse) response;
 
         assertEquals(txnOffsetCommitResponse.errorCounts().size(), 1);
-        txnOffsetCommitResponse.errors().values().forEach(errors -> {
-            assertEquals(errors, Errors.TOPIC_AUTHORIZATION_FAILED);
-        });
+        txnOffsetCommitResponse.errors().values()
+                .forEach(errors -> assertEquals(errors, Errors.TOPIC_AUTHORIZATION_FAILED));
     }
 
     @Test(timeOut = 20000)
@@ -626,9 +620,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         AddPartitionsToTxnResponse addPartitionsToTxnResponse = (AddPartitionsToTxnResponse) response;
 
         assertEquals(addPartitionsToTxnResponse.errorCounts().size(), 1);
-        addPartitionsToTxnResponse.errors().values().forEach(errors -> {
-            assertEquals(errors, Errors.TOPIC_AUTHORIZATION_FAILED);
-        });
+        addPartitionsToTxnResponse.errors().values()
+                .forEach(errors -> assertEquals(errors, Errors.TOPIC_AUTHORIZATION_FAILED));
     }
 
     @Test(timeOut = 20000)

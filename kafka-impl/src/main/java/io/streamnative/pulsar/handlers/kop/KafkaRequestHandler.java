@@ -18,7 +18,6 @@ import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_ALLNAMESPACES_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -1551,10 +1550,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             log.debug("[{}] Request {} Fetch request. Size: {}. Each item: ",
                 ctx.channel(), fetch.getHeader(), request.fetchData().size());
 
-            request.fetchData().forEach((topic, data) -> {
-                log.debug("  Fetch request topic:{} data:{}.",
-                    topic, data.toString());
-            });
+            request.fetchData().forEach((topic, data) -> log.debug("  Fetch request topic:{} data:{}.",
+                topic, data.toString()));
         }
         TransactionCoordinator transactionCoordinator = null;
         if (request.isolationLevel().equals(IsolationLevel.READ_COMMITTED)
@@ -1577,7 +1574,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         Map<String, byte[]> protocols = new HashMap<>();
         request.groupProtocols()
-            .stream()
             .forEach(protocol -> protocols.put(protocol.name(), Utils.toArray(protocol.metadata())));
         getGroupCoordinator().handleJoinGroup(
             request.groupId(),
@@ -1669,9 +1665,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         getGroupCoordinator().handleLeaveGroup(
             request.groupId(),
             request.memberId()
-        ).thenAccept(errors -> {
-            resultFuture.complete(KafkaResponseUtils.newLeaveGroup(errors));
-        });
+        ).thenAccept(errors -> resultFuture.complete(KafkaResponseUtils.newLeaveGroup(errors)));
     }
 
     @Override
@@ -1816,9 +1810,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         Map<ConfigResource, ApiError> results = new HashMap<>();
         request.configs().forEach((ConfigResource configResource, AlterConfigsRequest.Config newConfig) -> {
-            newConfig.entries().forEach(entry -> {
-                log.info("Ignoring ALTER_CONFIG for {} {} = {}", configResource, entry.name(), entry.value());
-            });
+            newConfig.entries().forEach(
+                    entry -> log.info("Ignoring ALTER_CONFIG for {} {} = {}", configResource, entry.name(),
+                            entry.value()));
             results.put(configResource, ApiError.NONE);
         });
         resultFuture.complete(new AlterConfigsResponse(0, results));
@@ -1917,11 +1911,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         InitProducerIdRequest request = (InitProducerIdRequest) kafkaHeaderAndRequest.getRequest();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         transactionCoordinator.handleInitProducerId(
-                request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(), (resp) -> {
-                    response.complete(
-                            new InitProducerIdResponse(0, resp.getError(), resp.getProducerId(),
-                                    resp.getProducerEpoch()));
-                });
+                request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(),
+                (resp) -> response.complete(
+                        new InitProducerIdResponse(0, resp.getError(), resp.getProducerId(),
+                                resp.getProducerEpoch())));
     }
 
     @Override
@@ -2039,7 +2032,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     StringBuffer traceInfo = new StringBuffer();
                     replacingIndex.forEach((inner, outer) ->
                             traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
-                    log.trace("TXN_OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo.toString());
+                    log.trace("TXN_OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo);
                 }
 
                 getGroupCoordinator().handleTxnCommitOffsets(
@@ -2164,9 +2157,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 if (ex != null) {
                     log.error("[{}] Append txn marker ({}) failed.", ctx.channel(), marker, ex);
                     Map<TopicPartition, Errors> currentErrors = new HashMap<>();
-                    controlRecords.forEach(((topicPartition, partitionResponse) -> {
-                        currentErrors.put(topicPartition, Errors.KAFKA_STORAGE_ERROR);
-                    }));
+                    controlRecords.forEach(((topicPartition, partitionResponse) -> currentErrors.put(topicPartition,
+                            Errors.KAFKA_STORAGE_ERROR)));
                     updateErrors.accept(producerId, currentErrors);
                     completeOne.run();
                     return;
@@ -2323,16 +2315,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             return;
                         }
                         topicManager
-                            .getTopicConsumerManager(fullTopicName)
-                                .thenAccept(topicManager -> {
-                                    topicManager.findPositionForIndex(offset)
-                                            .thenAccept(position -> {
-                                                adminManager.truncateTopic(fullTopicName, offset, position,
+                                .getTopicConsumerManager(fullTopicName)
+                                .thenAccept(topicManager -> topicManager.findPositionForIndex(offset)
+                                        .thenAccept(
+                                                position -> adminManager.truncateTopic(fullTopicName, offset, position,
                                                         __ -> completeOne.accept(topicPartition, Errors.NONE),
                                                         __ -> completeOne.accept(topicPartition,
-                                                                Errors.UNKNOWN_TOPIC_OR_PARTITION));
-                                            });
-                                });
+                                                                Errors.UNKNOWN_TOPIC_OR_PARTITION))));
 
                     });
         });
@@ -2475,13 +2464,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // most of this error happens when topic is in loading/unloading status,
         return KafkaResponseUtils.newMetadataPartition(
                 Errors.NOT_LEADER_FOR_PARTITION, kafkaPartitionIndex);
-    }
-
-    static AbstractResponse failedResponse(KafkaHeaderAndRequest requestHar, Throwable e) {
-        if (log.isDebugEnabled()) {
-            log.debug("Request {} get failed response ", requestHar.getHeader().apiKey(), e);
-        }
-        return requestHar.getRequest().getErrorResponse(((Integer) THROTTLE_TIME_MS.defaultValue), e);
     }
 
     private void throwIfTransactionCoordinatorDisabled() {

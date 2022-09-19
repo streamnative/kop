@@ -42,7 +42,6 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -198,7 +197,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
 
     @Test
-    public void testResponseToByteBuf() throws Exception {
+    public void testResponseToByteBuf() {
         int correlationId = 7777;
         String clientId = "KopClientId";
 
@@ -220,7 +219,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             kopRequest, apiVersionsResponse);
 
         // 1. serialize response into ByteBuf
-        ByteBuf serializedResponse = handler.responseToByteBuf(kopResponse.getResponse(), kopRequest);
+        ByteBuf serializedResponse = KafkaCommandDecoder.responseToByteBuf(kopResponse.getResponse(), kopRequest);
 
         // 2. verify responseToByteBuf works well.
         ByteBuffer byteBuffer = serializedResponse.nioBuffer();
@@ -302,7 +301,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             throws ExecutionException, InterruptedException {
         Map<TopicPartition, RecordsToDelete> toDelete = new HashMap<>();
         topicToNumPartitions.forEach((topic, numPartitions) -> {
-             try (KConsumer consumer = new KConsumer(topic, getKafkaBrokerPort());) {
+             try (KConsumer consumer = new KConsumer(topic, getKafkaBrokerPort())) {
                     Collection<TopicPartition> topicPartitions = new ArrayList<>();
                     for (int i = 0; i < numPartitions; i++) {
                         topicPartitions.add(new TopicPartition(topic, i));
@@ -352,7 +351,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(props);
-        Map<String, Integer> topicToNumPartitions = new HashMap<String, Integer>(){{
+        Map<String, Integer> topicToNumPartitions = new HashMap<>() {{
             put("testCreateTopics-0", 1);
             put("testCreateTopics-1", 3);
             put("my-tenant/my-ns/testCreateTopics-2", 1);
@@ -373,7 +372,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(props);
-        Map<String, Integer> topicToNumPartitions = new HashMap<String, Integer>(){{
+        Map<String, Integer> topicToNumPartitions = new HashMap<>() {{
             put("testDeleteRecords-0", 1);
             put("testDeleteRecords-1", 3);
             put("my-tenant/my-ns/testDeleteRecords-2", 1);
@@ -500,7 +499,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             assertTrue(e.getCause() instanceof UnknownTopicOrPartitionException);
         }
 
-        final Map<String, Integer> expectedTopicPartitions = new HashMap<String, Integer>() {{
+        final Map<String, Integer> expectedTopicPartitions = new HashMap<>() {{
             put("testDescribeTopics-topic-1", 1);
             put("testDescribeTopics-topic-2", 3);
         }};
@@ -617,7 +616,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 10000)
-    public void testConvertOffsetCommitRetentionMsIfSetDefaultValue() throws Exception {
+    public void testConvertOffsetCommitRetentionMsIfSetDefaultValue() {
 
         String memberId = "test_member_id";
         int generationId = 0;
@@ -651,7 +650,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 10000)
-    public void testConvertOffsetCommitRetentionMsIfRetentionMsSet() throws Exception {
+    public void testConvertOffsetCommitRetentionMsIfRetentionMsSet() {
 
         long currentTime = 100;
         int offsetsConfigRetentionMs = 1000;
@@ -774,7 +773,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(props);
-        Map<String, Integer> topicToNumPartitions = new HashMap<String, Integer>(){{
+        Map<String, Integer> topicToNumPartitions = new HashMap<>() {{
             put("testCreateTopics-0", 1);
             put("testCreateTopics-1", 3);
             put("my-tenant/my-ns/testCreateTopics-2", 1);
@@ -824,9 +823,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertEquals(1, replacedMap.size());
 
         // 5. after replace, replacedMap has a short topic name
-        replacedMap.forEach(((topicPartition, s) -> {
-            assertEquals(tp0, topicPartition);
-        }));
+        replacedMap.forEach(((topicPartition, s) -> assertEquals(tp0, topicPartition)));
     }
 
     @Test
@@ -854,9 +851,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertEquals(1, replacedMap.size());
 
         // 5. after replace, replacedMap has a short topic name
-        replacedMap.forEach(((topicPartition, s) -> {
-            assertEquals(tp0, topicPartition);
-        }));
+        replacedMap.forEach(((topicPartition, s) -> assertEquals(tp0, topicPartition)));
     }
 
     @Test(timeOut = 20000)
@@ -898,20 +893,15 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertEquals(1, groupDescription.members().size());
 
         // member assignment topic name must be short topic name
-        groupDescription.members().forEach(memberDescription -> {
-            memberDescription.assignment().topicPartitions().forEach(topicPartition -> {
-                assertEquals(topic, topicPartition.topic());
-            });
-        });
+        groupDescription.members().forEach(memberDescription -> memberDescription.assignment().topicPartitions()
+                .forEach(topicPartition -> assertEquals(topic, topicPartition.topic())));
 
         Map<TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata> offsetAndMetadataMap =
                 kafkaAdmin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get();
         assertEquals(1, offsetAndMetadataMap.size());
 
         //  topic name from offset fetch response must be short topic name
-        offsetAndMetadataMap.keySet().forEach(topicPartition -> {
-            assertEquals(topic, topicPartition.topic());
-        });
+        offsetAndMetadataMap.keySet().forEach(topicPartition -> assertEquals(topic, topicPartition.topic()));
 
         consumer.close();
         kafkaAdmin.close();
@@ -1165,7 +1155,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             String topicName = "kopBrokerHandleTopicMetadataRequest-" + brokerAllowAutoTopicCreation + "-"
                     + overrideNameSpaceAutoTopicCreation + "-"
                     + allowAutoTopicCreationInRequest;
-            List<String> kafkaTopics = Arrays.asList(topicName);
+            List<String> kafkaTopics = List.of(topicName);
             KafkaHeaderAndRequest metadataRequest =
                     createTopicMetadataRequest(kafkaTopics, allowAutoTopicCreationInRequest);
             CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
