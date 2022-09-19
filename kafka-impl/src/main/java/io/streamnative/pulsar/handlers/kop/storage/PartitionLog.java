@@ -590,7 +590,7 @@ public class PartitionLog {
             log.error("Partition {} read entry exceptionally. ", topicPartition, ex);
             future.complete(ReadRecordsResult.error(Errors.KAFKA_STORAGE_ERROR));
             return null;
-        });;
+        });
     }
 
     private Position getLastPositionFromEntries(List<Entry> entries) {
