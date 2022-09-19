@@ -470,6 +470,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
+            doc = "KOP Enable the group level consumer metrics. (Default: false)"
+    )
+    private boolean kopEnableGroupLevelConsumerMetrics = false;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
             doc = "The allowed namespaces to list topics with a comma separator.\n"
                     + " For example, \"public/default,public/kafka\".\n"
                     + "If it's not set or empty, the allowed namespaces will be \"<kafkaTenant>/<kafkaNamespace>\"."

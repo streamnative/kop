@@ -34,17 +34,25 @@
   <description>Parent for Kafka on Pulsar implemented using Pulsar Protocol Handler.</description>
 
   <properties>
-    <javac.target>1.8</javac.target>
+    <javac.target>17</javac.target>
     <redirectTestOutputToFile>true</redirectTestOutputToFile>
-
+    <!-- required for running tests on JDK11+ -->
+    <test.additional.args>
+      --add-opens java.base/jdk.internal.loader=ALL-UNNAMED
+      --add-opens java.base/java.lang=ALL-UNNAMED <!--Mockito-->
+      --add-opens java.base/java.io=ALL-UNNAMED <!--Bookkeeper NativeIO-->
+      --add-opens java.base/java.util=ALL-UNNAMED <!--System Lambda-->
+      --add-opens java.base/sun.net=ALL-UNNAMED <!--netty.DnsResolverUtil-->
+      --add-opens java.management/sun.management=ALL-UNNAMED <!--JvmDefaultGCMetricsLogger-->
+    </test.additional.args>
     <!-- dependencies -->
     <jackson.version>2.13.2</jackson.version>
     <jackson-databind.version>2.13.2.1</jackson-databind.version>
     <kafka.version>2.1.1</kafka.version>
-    <lombok.version>1.18.22</lombok.version>
+    <lombok.version>1.18.24</lombok.version>
     <mockito.version>2.22.0</mockito.version>
     <pulsar.group.id>io.streamnative</pulsar.group.id>
-    <pulsar.version>2.10.0.1</pulsar.version>
+    <pulsar.version>2.11.0.0-rc3</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
     <apicurio.version>2.1.1.Final</apicurio.version>
@@ -52,13 +60,15 @@
     <awaitility.version>4.0.3</awaitility.version>
     <grpc.version>1.45.1</grpc.version>
     <junit.version>4.13.1</junit.version>
-    <fusionauth-jwt.version>5.2.0</fusionauth-jwt.version>
+    <fusionauth-jwt.version>5.2.1</fusionauth-jwt.version>
+    <snakeyaml.version>1.31</snakeyaml.version>
 
     <!-- plugin dependencies -->
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
     <maven-checkstyle-plugin.version>3.1.1</maven-checkstyle-plugin.version>
     <maven-compiler-plugin.version>3.8.1</maven-compiler-plugin.version>
-    <maven-shade-plugin.version>3.2.4</maven-shade-plugin.version>
+    <maven-javadoc-plugin.version>3.4.1</maven-javadoc-plugin.version>
+    <maven-shade-plugin.version>3.4.0</maven-shade-plugin.version>
     <maven-surefire-plugin.version>3.0.0-M3</maven-surefire-plugin.version>
     <puppycrawl.checkstyle.version>8.37</puppycrawl.checkstyle.version>
     <spotbugs-maven-plugin.version>4.2.2</spotbugs-maven-plugin.version>
@@ -241,6 +251,12 @@
         <artifactId>test-listener</artifactId>
         <version>${project.version}</version>
       </dependency>
+
+      <dependency>
+        <groupId>org.yaml</groupId>
+        <artifactId>snakeyaml</artifactId>
+        <version>${snakeyaml.version}</version>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
@@ -281,6 +297,16 @@
     </pluginManagement>
     <plugins>
       <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <version>${maven-javadoc-plugin.version}</version>
+        <configuration>
+          <source>8</source>
+          <doclint>none</doclint>
+        </configuration>
+      </plugin>
+
+      <plugin>
         <groupId>com.github.spotbugs</groupId>
         <artifactId>spotbugs-maven-plugin</artifactId>
         <version>${spotbugs-maven-plugin.version}</version>
@@ -315,6 +341,7 @@
             -Dpulsar.allocator.pooled=false
             -Dpulsar.allocator.leak_detection=Advanced
             -Dlog4j.configurationFile="log4j2.xml"
+            ${test.additional.args}
           </argLine>
           <reuseForks>false</reuseForks>
           <forkCount>1</forkCount>
@@ -453,6 +480,7 @@
           </plugin>
           <plugin>
             <artifactId>maven-javadoc-plugin</artifactId>
+            <version>${maven-javadoc-plugin.version}</version>
             <executions>
               <execution>
                 <id>attach-javadocs</id>
@@ -462,7 +490,8 @@
               </execution>
             </executions>
             <configuration>
-              <additionalJOption>-Xdoclint:none</additionalJOption>
+              <source>8</source>
+              <doclint>none</doclint>
             </configuration>
           </plugin>
           <plugin>

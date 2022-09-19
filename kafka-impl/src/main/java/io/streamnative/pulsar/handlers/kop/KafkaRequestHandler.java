@@ -376,25 +376,27 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 log.debug("Try to remove all stored groupID on the metadata store. Current connected clientIds: {}",
                         currentConnectedClientId);
             }
-            currentConnectedClientId.forEach(clientId -> {
-                String path = groupIdStoredPath + GroupIdUtils.groupIdPathFormat(clientHost, clientId);
-                metadataStore.delete(path, Optional.empty())
-                        .whenComplete((__, ex) -> {
-                            if (ex != null) {
-                                if (ex.getCause() instanceof MetadataStoreException.NotFoundException) {
-                                    if (log.isDebugEnabled()) {
-                                        log.debug("The groupId store path doesn't exist. Path: [{}]", path);
+            if (kafkaConfig.isKopEnableGroupLevelConsumerMetrics()) {
+                currentConnectedClientId.forEach(clientId -> {
+                    String path = groupIdStoredPath + GroupIdUtils.groupIdPathFormat(clientHost, clientId);
+                    metadataStore.delete(path, Optional.empty())
+                            .whenComplete((__, ex) -> {
+                                if (ex != null) {
+                                    if (ex.getCause() instanceof MetadataStoreException.NotFoundException) {
+                                        if (log.isDebugEnabled()) {
+                                            log.debug("The groupId store path doesn't exist. Path: [{}]", path);
+                                        }
+                                        return;
                                     }
+                                    log.error("Delete groupId failed. Path: [{}]", path, ex);
                                     return;
                                 }
-                                log.error("Delete groupId failed. Path: [{}]", path, ex);
-                                return;
-                            }
-                            if (log.isDebugEnabled()) {
-                                log.debug("Delete groupId success. Path: [{}]", path);
-                            }
-                        });
-            });
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Delete groupId success. Path: [{}]", path);
+                                }
+                            });
+                });
+            }
 
             // update alive channel count stat
             RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.decrementAndGet();
@@ -592,6 +594,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final Map<String, List<Integer>> topicToPartitionIndexes = new HashMap<>();
         fullTopicNames.forEach(fullTopicName -> {
             final TopicName topicName = TopicName.get(fullTopicName);
+            // Skip Pulsar's system topic
+            if (topicName.getLocalName().startsWith("__change_events")
+                    && topicName.getPartitionedTopicName().endsWith("__change_events")) {
+                return;
+            }
             topicToPartitionIndexes.computeIfAbsent(
                     topicName.getPartitionedTopicName(),
                     ignored -> new ArrayList<>()
@@ -927,13 +934,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         } else if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
             partition = getGroupCoordinator().partitionFor(request.coordinatorKey());
             pulsarTopicName = getGroupCoordinator().getTopicPartitionName(partition);
-            String groupId = request.coordinatorKey();
-            String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
-                    findCoordinator.getHeader().clientId());
-            currentConnectedClientId.add(findCoordinator.getHeader().clientId());
+            if (kafkaConfig.isKopEnableGroupLevelConsumerMetrics()) {
+                String groupId = request.coordinatorKey();
+                String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
+                        findCoordinator.getHeader().clientId());
+                currentConnectedClientId.add(findCoordinator.getHeader().clientId());
 
-            // Store group name to metadata store for current client, use to collect consumer metrics.
-            storeGroupIdFuture = storeGroupId(groupId, groupIdPath);
+                // Store group name to metadata store for current client, use to collect consumer metrics.
+                storeGroupIdFuture = storeGroupId(groupId, groupIdPath);
+            } else {
+                storeGroupIdFuture = CompletableFuture.completedFuture(null);
+            }
+
         } else {
             throw new NotImplementedException("FindCoordinatorRequest not support unknown type "
                 + request.coordinatorType());

@@ -53,7 +53,7 @@ Pulsar is a multi-tenant system that requires users to specify the [tenant and n
 | kafkaMetadataTenant    | The tenant used for storing Kafka metadata topics    | public  |
 | kafkaEnableMultiTenantMetadata    | Use the SASL username as `kafkaMetadataTenant`  | true  |
 | kafkaMetadataNamespace | The namespace used for storing Kafka metadata topics | __kafka |
-| kopAllowedNamespaces   | The allowed namespace to list topics with a comma separator.<br>For example, "public/default,public/kafka".<br>If it's not set or empty, the allowed namespaces will be "<kafkaTenant>/<kafkaNamespace>". | |
+| kopAllowedNamespaces   | The allowed namespace to list topics with a comma separator.<br>For example, `kopAllowedNamespaces=public/default,public/kafka`.<br>If it is not configured or is empty, the allowed namespaces will get values from `kafkaTenant` and `kafkaNamespace`, which is `<kafkaTenant>/<kafkaNamespace>`. | |
 
 When you enable `kafkaEnableMultiTenantMetadata`, KoP uses separate tenants for handling the system metadata.
 This enables you to fully isolate your tenants in your Pulsar cluster.
@@ -120,6 +120,7 @@ The `pulsar.version` should be same with the version of your `pulsar-client` dep
 | Name                                     | Description                                                  | Default |
 | ---------------------------------------- | ------------------------------------------------------------ | ------- |
 | kopPrometheusStatsLatencyRolloverSeconds | Kop metrics exposed to prometheus rollover latency in seconds. | 60      |
+| kopEnableGroupLevelConsumerMetrics       | Enable the group level consumer metrics.                     | false   |
 
 ## Group Coordinator
 

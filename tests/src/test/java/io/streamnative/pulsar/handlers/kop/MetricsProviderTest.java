@@ -60,6 +60,16 @@ import org.testng.annotations.Test;
 @Slf4j
 public class MetricsProviderTest extends KopProtocolHandlerTestBase {
 
+    protected final boolean isEnableGroupLevelConsumerMetrics;
+
+    public MetricsProviderTest() {
+        this(true);
+    }
+
+    public MetricsProviderTest(boolean isEnableGroupLevelConsumerMetrics) {
+        this.isEnableGroupLevelConsumerMetrics = isEnableGroupLevelConsumerMetrics;
+    }
+
     @BeforeMethod
     @Override
     protected void setup() throws Exception {
@@ -68,6 +78,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         this.conf.setKafkaTxnLogTopicNumPartitions(50);
         this.conf.setKafkaTransactionCoordinatorEnabled(true);
         this.conf.setBrokerDeduplicationEnabled(true);
+        this.conf.setKopEnableGroupLevelConsumerMetrics(isEnableGroupLevelConsumerMetrics);
         super.internalSetup();
         log.info("success internal setup");
     }
@@ -163,7 +174,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         InputStream inputStream = response.getEntity().getContent();
         InputStreamReader isReader = new InputStreamReader(inputStream);
         BufferedReader reader = new BufferedReader(isReader);
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         String line;
         Pattern formatPattern = Pattern.compile("^(\\w+)(\\{(\\w+=[\\\"\\.\\w]+(,\\s?\\w+=[\\\"\\.\\w]+)*)\\})?"
                 + "\\s(-?[\\d\\w\\.]+)(\\s(\\d+))?$");
@@ -185,7 +196,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
             sb.append(line);
         }
 
-        log.info("Metrics string:\n{}", sb.toString());
+        log.info("Metrics string:\n{}", sb);
 
         // channel stats
         Assert.assertTrue(sb.toString().contains("kop_server_ALIVE_CHANNEL_COUNT"));
@@ -209,6 +220,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         Assert.assertTrue(sb.toString().contains("kop_server_RESPONSE_BLOCKED_LATENCY"));
 
         // produce stats
+        Assert.assertTrue(sb.toString().contains("kop_server_PENDING_TOPIC_LATENCY"));
         Assert.assertTrue(sb.toString().contains("kop_server_PRODUCE_ENCODE"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_PUBLISH"));
         Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_QUEUED_LATENCY"));
@@ -219,10 +231,19 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         Assert.assertTrue(sb.toString().contains("kop_server_FETCH_DECODE"));
 
         // consumer stats
-        Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_OUT{cluster=\"test\","
-                + "group=\"DemoKafkaOnPulsarConsumer\",partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
-        Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT{cluster=\"test\","
-                + "group=\"DemoKafkaOnPulsarConsumer\",partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 1130"));
+        if (isEnableGroupLevelConsumerMetrics) {
+            Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_OUT{cluster=\"test\","
+                    + "group=\"DemoKafkaOnPulsarConsumer\",partition=\"0\","
+                    + "topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
+            Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT{cluster=\"test\","
+                    + "group=\"DemoKafkaOnPulsarConsumer\",partition=\"0\","
+                    + "topic=\"kopKafkaProducePulsarMetrics1\"} 1130"));
+        } else {
+            Assert.assertTrue(sb.toString().contains("kop_server_MESSAGE_OUT{cluster=\"test\","
+                    + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 10"));
+            Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT{cluster=\"test\","
+                    + "partition=\"0\",topic=\"kopKafkaProducePulsarMetrics1\"} 1130"));
+        }
         Assert.assertTrue(sb.toString().contains("kop_server_BYTES_OUT"));
         Assert.assertTrue(sb.toString().contains("kop_server_CONSUME_MESSAGE_CONVERSIONS"));
         Assert.assertTrue(sb.toString().contains("kop_server_CONSUME_MESSAGE_CONVERSIONS{cluster=\"test\","
@@ -247,6 +268,9 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testUpdateGroupId() {
+        if (!isEnableGroupLevelConsumerMetrics) {
+            return;
+        }
         final String topic = "testUpdateGroupId";
         final String clientId = "my-client";
         final String group1 = "my-group-1";
