@@ -20,6 +20,7 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.P
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.Stable;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
@@ -404,6 +405,36 @@ public class GroupMetadataTest {
         assertEquals(group.numPendingOffsetCommits(), 0);
         assertEquals(group.numOffsets(), 1);
         assertEquals(Optional.of(offset), group.offset(partition, NAMESPACE_PREFIX));
+    }
+
+    @Test
+    public void testOffsetIncreasingCommit() {
+        TopicPartition topicPartition = new TopicPartition("foo", 1);
+        long offset = 20L;
+
+        Map<TopicPartition, OffsetAndMetadata> pendingOffsetCommits = new HashMap<>();
+        pendingOffsetCommits.put(topicPartition, OffsetAndMetadata.apply(offset));
+        group.prepareOffsetCommit(pendingOffsetCommits);
+        group.onOffsetCommitAppend(topicPartition,
+                new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 1000)),
+                        OffsetAndMetadata.apply(offset)));
+        assertEquals(group.offset(topicPartition, NAMESPACE_PREFIX).get().offset(), offset);
+
+        offset = 21L;
+        pendingOffsetCommits.put(topicPartition, OffsetAndMetadata.apply(offset));
+        group.prepareOffsetCommit(pendingOffsetCommits);
+        group.onOffsetCommitAppend(topicPartition,
+                new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 1001)),
+                        OffsetAndMetadata.apply(offset)));
+        assertEquals(group.offset(topicPartition, NAMESPACE_PREFIX).get().offset(), offset);
+
+        offset = 22L;
+        pendingOffsetCommits.put(topicPartition, OffsetAndMetadata.apply(offset));
+        group.prepareOffsetCommit(pendingOffsetCommits);
+        group.onOffsetCommitAppend(topicPartition,
+                new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 999)),
+                        OffsetAndMetadata.apply(offset)));
+        assertNotEquals(group.offset(topicPartition, NAMESPACE_PREFIX).get().offset(), offset);
     }
 
     @Test
