@@ -399,7 +399,8 @@ public class GroupMetadataTest {
 
         group.onOffsetCommitAppend(
             partition,
-            new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, commitRecordOffset)), OffsetAndMetadata.apply(37)));
+            new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, commitRecordOffset)),
+                    OffsetAndMetadata.apply(37)));
         assertEquals(group.numPendingOffsetCommits(), 0);
         assertEquals(group.numOffsets(), 1);
         assertEquals(Optional.of(offset), group.offset(partition, NAMESPACE_PREFIX));
@@ -442,7 +443,8 @@ public class GroupMetadataTest {
         assertTrue(group.hasOffsets());
         assertEquals(Optional.empty(), group.offset(partition, NAMESPACE_PREFIX));
 
-        group.onOffsetCommitAppend(partition, new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 3L)), secondOffset));
+        group.onOffsetCommitAppend(partition,
+                new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 3L)), secondOffset));
         assertTrue(group.hasOffsets());
         assertEquals(Optional.of(secondOffset), group.offset(partition, NAMESPACE_PREFIX));
     }
@@ -464,11 +466,13 @@ public class GroupMetadataTest {
         group.prepareOffsetCommit(offsets);
         assertTrue(group.hasOffsets());
 
-        group.onOffsetCommitAppend(partition, new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 4L)), firstOffset));
+        group.onOffsetCommitAppend(partition,
+                new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 4L)), firstOffset));
         assertTrue(group.hasOffsets());
         assertEquals(Optional.of(firstOffset), group.offset(partition, NAMESPACE_PREFIX));
 
-        group.onOffsetCommitAppend(partition, new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 5L)), secondOffset));
+        group.onOffsetCommitAppend(partition,
+                new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 5L)), secondOffset));
         assertTrue(group.hasOffsets());
         assertEquals(Optional.of(secondOffset), group.offset(partition, NAMESPACE_PREFIX));
     }
@@ -492,7 +496,8 @@ public class GroupMetadataTest {
         assertTrue(group.hasOffsets());
 
         group.onTxnOffsetCommitAppend(producerId, partition,
-            new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 3L)), OffsetAndMetadata.apply(37)));
+            new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 3L)),
+                    OffsetAndMetadata.apply(37)));
         group.onOffsetCommitAppend(partition,
             new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 4L)), consumerOffsetCommit));
         assertTrue(group.hasOffsets());
@@ -526,7 +531,8 @@ public class GroupMetadataTest {
         assertTrue(group.hasOffsets());
 
         group.onOffsetCommitAppend(
-            partition, new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 3L)), consumerOffsetCommit));
+            partition, new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 3L)),
+                        consumerOffsetCommit));
         group.onTxnOffsetCommitAppend(producerId, partition,
             new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 4L)), txnOffsetCommit));
         assertTrue(group.hasOffsets());
