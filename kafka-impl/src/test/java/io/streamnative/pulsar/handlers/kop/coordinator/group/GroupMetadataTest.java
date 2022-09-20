@@ -20,6 +20,7 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.P
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.Stable;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
@@ -35,6 +36,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import lombok.val;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.kafka.common.TopicPartition;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
@@ -398,10 +400,41 @@ public class GroupMetadataTest {
 
         group.onOffsetCommitAppend(
             partition,
-            new CommitRecordMetadataAndOffset(Optional.of(commitRecordOffset), OffsetAndMetadata.apply(37)));
+            new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, commitRecordOffset)),
+                    OffsetAndMetadata.apply(37)));
         assertEquals(group.numPendingOffsetCommits(), 0);
         assertEquals(group.numOffsets(), 1);
         assertEquals(Optional.of(offset), group.offset(partition, NAMESPACE_PREFIX));
+    }
+
+    @Test
+    public void testOffsetIncreasingCommit() {
+        TopicPartition topicPartition = new TopicPartition("foo", 1);
+        long offset = 20L;
+
+        Map<TopicPartition, OffsetAndMetadata> pendingOffsetCommits = new HashMap<>();
+        pendingOffsetCommits.put(topicPartition, OffsetAndMetadata.apply(offset));
+        group.prepareOffsetCommit(pendingOffsetCommits);
+        group.onOffsetCommitAppend(topicPartition,
+                new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 1000)),
+                        OffsetAndMetadata.apply(offset)));
+        assertEquals(group.offset(topicPartition, NAMESPACE_PREFIX).get().offset(), offset);
+
+        offset = 21L;
+        pendingOffsetCommits.put(topicPartition, OffsetAndMetadata.apply(offset));
+        group.prepareOffsetCommit(pendingOffsetCommits);
+        group.onOffsetCommitAppend(topicPartition,
+                new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 1001)),
+                        OffsetAndMetadata.apply(offset)));
+        assertEquals(group.offset(topicPartition, NAMESPACE_PREFIX).get().offset(), offset);
+
+        offset = 22L;
+        pendingOffsetCommits.put(topicPartition, OffsetAndMetadata.apply(offset));
+        group.prepareOffsetCommit(pendingOffsetCommits);
+        group.onOffsetCommitAppend(topicPartition,
+                new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 999)),
+                        OffsetAndMetadata.apply(offset)));
+        assertNotEquals(group.offset(topicPartition, NAMESPACE_PREFIX).get().offset(), offset);
     }
 
     @Test
@@ -441,7 +474,8 @@ public class GroupMetadataTest {
         assertTrue(group.hasOffsets());
         assertEquals(Optional.empty(), group.offset(partition, NAMESPACE_PREFIX));
 
-        group.onOffsetCommitAppend(partition, new CommitRecordMetadataAndOffset(Optional.of(3L), secondOffset));
+        group.onOffsetCommitAppend(partition,
+                new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 3L)), secondOffset));
         assertTrue(group.hasOffsets());
         assertEquals(Optional.of(secondOffset), group.offset(partition, NAMESPACE_PREFIX));
     }
@@ -463,11 +497,13 @@ public class GroupMetadataTest {
         group.prepareOffsetCommit(offsets);
         assertTrue(group.hasOffsets());
 
-        group.onOffsetCommitAppend(partition, new CommitRecordMetadataAndOffset(Optional.of(4L), firstOffset));
+        group.onOffsetCommitAppend(partition,
+                new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 4L)), firstOffset));
         assertTrue(group.hasOffsets());
         assertEquals(Optional.of(firstOffset), group.offset(partition, NAMESPACE_PREFIX));
 
-        group.onOffsetCommitAppend(partition, new CommitRecordMetadataAndOffset(Optional.of(5L), secondOffset));
+        group.onOffsetCommitAppend(partition,
+                new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 5L)), secondOffset));
         assertTrue(group.hasOffsets());
         assertEquals(Optional.of(secondOffset), group.offset(partition, NAMESPACE_PREFIX));
     }
@@ -491,9 +527,10 @@ public class GroupMetadataTest {
         assertTrue(group.hasOffsets());
 
         group.onTxnOffsetCommitAppend(producerId, partition,
-            new CommitRecordMetadataAndOffset(Optional.of(3L), OffsetAndMetadata.apply(37)));
+            new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 3L)),
+                    OffsetAndMetadata.apply(37)));
         group.onOffsetCommitAppend(partition,
-            new CommitRecordMetadataAndOffset(Optional.of(4L), consumerOffsetCommit));
+            new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 4L)), consumerOffsetCommit));
         assertTrue(group.hasOffsets());
         assertEquals(Optional.of(consumerOffsetCommit), group.offset(partition, NAMESPACE_PREFIX));
 
@@ -525,9 +562,10 @@ public class GroupMetadataTest {
         assertTrue(group.hasOffsets());
 
         group.onOffsetCommitAppend(
-            partition, new CommitRecordMetadataAndOffset(Optional.of(3L), consumerOffsetCommit));
+            partition, new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 3L)),
+                        consumerOffsetCommit));
         group.onTxnOffsetCommitAppend(producerId, partition,
-            new CommitRecordMetadataAndOffset(Optional.of(4L), txnOffsetCommit));
+            new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 4L)), txnOffsetCommit));
         assertTrue(group.hasOffsets());
         // The transactional offset commit hasn't been committed yet, so we should materialize
         // the consumer offset commit.
@@ -559,9 +597,9 @@ public class GroupMetadataTest {
         assertTrue(group.hasOffsets());
 
         group.onOffsetCommitAppend(partition,
-            new CommitRecordMetadataAndOffset(Optional.of(3L), consumerOffsetCommit));
+            new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 3L)), consumerOffsetCommit));
         group.onTxnOffsetCommitAppend(producerId, partition,
-            new CommitRecordMetadataAndOffset(Optional.of(4L), txnOffsetCommit));
+            new CommitRecordMetadataAndOffset(Optional.of(new PositionImpl(1000, 4L)), txnOffsetCommit));
         assertTrue(group.hasOffsets());
         // The transactional offset commit hasn't been committed yet, so we should materialize the consumer
         // offset commit.
