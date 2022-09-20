@@ -807,13 +807,13 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
             assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
             assertEquals(
                 Optional.of(new PositionImpl(0, firstProduceRecordOffset)),
-                group.offsetWithRecordMetadata(tp).flatMap(CommitRecordMetadataAndOffset::appendedBatchOffset));
+                group.offsetWithRecordMetadata(tp).flatMap(CommitRecordMetadataAndOffset::appendedPosition));
         });
         committedOffsetsSecondProducer.forEach((tp, offset) -> {
             assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
             assertEquals(
                 Optional.of(new PositionImpl(0, secondProduceRecordOffset)),
-                group.offsetWithRecordMetadata(tp).flatMap(CommitRecordMetadataAndOffset::appendedBatchOffset));
+                group.offsetWithRecordMetadata(tp).flatMap(CommitRecordMetadataAndOffset::appendedPosition));
         });
 
     }
