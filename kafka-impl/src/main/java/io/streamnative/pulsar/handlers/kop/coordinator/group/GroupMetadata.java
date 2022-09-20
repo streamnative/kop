@@ -50,6 +50,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.common.schema.KeyValue;
@@ -166,11 +167,11 @@ public class GroupMetadata {
      */
     @Data
     static class CommitRecordMetadataAndOffset {
-        private final Optional<Long> appendedBatchOffset;
+        private final Optional<PositionImpl> appendedPosition;
         private final OffsetAndMetadata offsetAndMetadata;
 
         public boolean olderThan(CommitRecordMetadataAndOffset that) {
-            return appendedBatchOffset.get() < that.appendedBatchOffset.get();
+            return appendedPosition.get().compareTo(that.appendedPosition.get()) < 0;
         }
     }
 
@@ -431,7 +432,7 @@ public class GroupMetadata {
     public void onOffsetCommitAppend(TopicPartition topicPartition,
                                      CommitRecordMetadataAndOffset offsetWithCommitRecordMetadata) {
         if (pendingOffsetCommits.containsKey(topicPartition)) {
-            if (!offsetWithCommitRecordMetadata.appendedBatchOffset.isPresent()) {
+            if (!offsetWithCommitRecordMetadata.appendedPosition.isPresent()) {
                 throw new IllegalStateException("Cannot complete offset commit write without providing the metadata"
                     + " of the record in the log.");
             }
@@ -532,7 +533,7 @@ public class GroupMetadata {
         if (isCommit) {
             if (null != pendingOffsets) {
                 pendingOffsets.forEach((topicPartition, commitRecordMetadataAndOffset) -> {
-                    if (!commitRecordMetadataAndOffset.appendedBatchOffset.isPresent()) {
+                    if (!commitRecordMetadataAndOffset.appendedPosition.isPresent()) {
                         throw new IllegalStateException(String.format("Trying to complete a transactional offset"
                                 + " commit for producerId %s and groupId %s even though the offset commit record"
                                 + " itself hasn't been appended to the log.", producerId, groupId));

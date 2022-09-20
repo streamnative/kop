@@ -166,10 +166,6 @@ public class MessageMetadataUtils {
         }
     }
 
-    public static long getMockOffset(long ledgerId, long entryId) {
-        return ledgerId + entryId;
-    }
-
     public static CompletableFuture<Position> asyncFindPosition(final ManagedLedger managedLedger,
                                                                 final long offset,
                                                                 final boolean skipMessagesWithoutIndex) {
