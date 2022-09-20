@@ -1097,7 +1097,7 @@ public class GroupMetadataManager {
                     updatedOffsetAndMetadata = offsetAndMetadata;
                 }
                 return new CommitRecordMetadataAndOffset(
-                    commitRecordMetadataAndOffset.appendedBatchOffset(),
+                    commitRecordMetadataAndOffset.appendedPosition(),
                     updatedOffsetAndMetadata
                 );
             }
