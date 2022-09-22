@@ -522,8 +522,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 allowed = policies.autoTopicCreationOverride.isAllowAutoTopicCreation();
                             }
                             if (!allowed) {
-                                log.error("[{}] Topic {} doesn't exist and it's not allowed" +
-                                                "to auto create partitioned topic", ctx.channel(), topicName);
+                                log.error("[{}] Topic {} doesn't exist and it's not allowed "
+                                                 + "to auto create partitioned topic", ctx.channel(), topicName);
                                 future.complete(TopicAndMetadata.INVALID_PARTITIONS);
                             } else {
                                 log.info("[{}] Topic {} doesn't exist, auto create it with {} partitions",
