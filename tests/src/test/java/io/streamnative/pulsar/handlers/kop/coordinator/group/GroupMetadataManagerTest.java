@@ -1119,7 +1119,6 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
             .value(buffer)
             .eventTime(Time.SYSTEM.milliseconds())
             .send();
-        groupMetadataManager.removeLoadingPartition(consumerGroupPartitionId);
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
         groupMetadataManager.scheduleLoadGroupAndOffsets(consumerGroupPartitionId,
             groupMetadata -> onLoadedFuture.complete(groupMetadata)
