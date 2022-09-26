@@ -162,17 +162,20 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
             @Cleanup
             KConsumer kConsumer = new KConsumer(topicName, getKafkaBrokerPort(), "testKafkaProduce-KafkaConsume");
             kConsumer.getConsumer().subscribe(Collections.singleton(topicName));
+            int[] receivedKeys = new int[totalMsgs];
             for (int i = 0; i < totalMsgs; ) {
                 ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
-                if (log.isDebugEnabled()) {
-                    for (ConsumerRecord<Integer, String> record : records) {
-                        log.debug("Kafka consumer get i: {} message: {}, key: {}", i, record.value(), record.key());
-                        assertEquals(record.key().intValue(), i);
-                        i++;
+                for (ConsumerRecord<Integer, String> record : records) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Kafka consumer get i: {} offset: {}, message: {}, key: {}",
+                                i, record.offset(), record.value(), record.key());
                     }
-                } else {
-                    i += records.count();
+                    receivedKeys[i++] = record.key();
                 }
+            }
+            log.info("Received keys: {}", receivedKeys);
+            for (int i = 0; i < totalMsgs; i++) {
+                assertEquals(receivedKeys[i], i);
             }
         } finally {
             if (consumer != null) {
