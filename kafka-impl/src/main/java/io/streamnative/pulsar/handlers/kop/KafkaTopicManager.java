@@ -17,14 +17,11 @@ import java.net.SocketAddress;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
-import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerService;
-import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.common.naming.TopicName;
 
 /**
  * KafkaTopicManager manages a Map of topic to KafkaTopicConsumerManager.
@@ -37,6 +34,7 @@ public class KafkaTopicManager {
     private final KafkaRequestHandler requestHandler;
     private final BrokerService brokerService;
     private final LookupClient lookupClient;
+    private final KafkaTopicLookupService kafkaTopicLookupService;
     private volatile SocketAddress remoteAddress;
 
     private final InternalServerCnx internalServerCnx;
@@ -49,6 +47,7 @@ public class KafkaTopicManager {
         this.brokerService = pulsarService.getBrokerService();
         this.internalServerCnx = new InternalServerCnx(requestHandler);
         this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
+        this.kafkaTopicLookupService = new KafkaTopicLookupService(pulsarService.getBrokerService());
      }
 
     // update Ctx information, since at internalServerCnx create time there is no ctx passed into kafkaRequestHandler.
@@ -115,84 +114,6 @@ public class KafkaTopicManager {
         return producer;
     }
 
-    // A wrapper of `BrokerService#getTopic` that is to find the topic's associated `PersistentTopic` instance
-    public CompletableFuture<Optional<PersistentTopic>> getTopic(String topicName) {
-        if (closed.get()) {
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Return null for getTopic({}) since channel is closing",
-                        requestHandler.ctx.channel(), topicName);
-            }
-            return CompletableFuture.completedFuture(Optional.empty());
-        }
-        CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture = new CompletableFuture<>();
-        brokerService.getTopicIfExists(topicName).whenComplete((t2, throwable) -> {
-            TopicName topicNameObject = TopicName.get(topicName);
-            if (throwable != null) {
-                // Failed to getTopic from current broker, remove cache, which added in getTopicBroker.
-                KopBrokerLookupManager.removeTopicManagerCache(topicName);
-                if (topicNameObject.getPartitionIndex() == 0) {
-                    log.warn("Get partition-0 error [{}].", throwable.getMessage());
-                } else {
-                    handleGetTopicException(topicName, topicCompletableFuture, throwable);
-                    return;
-                }
-            }
-            if (t2 != null && t2.isPresent()) {
-                topicCompletableFuture.complete(Optional.of((PersistentTopic) t2.get()));
-                return;
-            }
-            // Fallback try use non-partitioned topic
-            if (topicNameObject.getPartitionIndex() == 0) {
-                String nonPartitionedTopicName = topicNameObject.getPartitionedTopicName();
-                if (log.isDebugEnabled()) {
-                    log.debug("[{}]Try to get non-partitioned topic for name {}",
-                            requestHandler.ctx.channel(), nonPartitionedTopicName);
-                }
-                brokerService.getTopicIfExists(nonPartitionedTopicName).whenComplete((nonPartitionedTopic, ex) -> {
-                    if (ex != null) {
-                        handleGetTopicException(nonPartitionedTopicName, topicCompletableFuture, ex);
-                        // Failed to getTopic from current broker, remove non-partitioned topic cache,
-                        // which added in getTopicBroker.
-                        KopBrokerLookupManager.removeTopicManagerCache(nonPartitionedTopicName);
-                        return;
-                    }
-                    if (nonPartitionedTopic.isPresent()) {
-                        PersistentTopic persistentTopic = (PersistentTopic) nonPartitionedTopic.get();
-                        topicCompletableFuture.complete(Optional.of(persistentTopic));
-                    } else {
-                        log.error("[{}]Get empty non-partitioned topic for name {}",
-                                requestHandler.ctx.channel(), nonPartitionedTopicName);
-                        KopBrokerLookupManager.removeTopicManagerCache(nonPartitionedTopicName);
-                        topicCompletableFuture.complete(Optional.empty());
-                    }
-                });
-                return;
-            }
-            log.error("[{}]Get empty topic for name {}", requestHandler.ctx.channel(), topicName);
-            KopBrokerLookupManager.removeTopicManagerCache(topicName);
-            topicCompletableFuture.complete(Optional.empty());
-        });
-        // cache for removing producer
-        requestHandler.getKafkaTopicManagerSharedState().getTopics().put(topicName, topicCompletableFuture);
-        return topicCompletableFuture;
-    }
-
-    private void handleGetTopicException(@NonNull final String topicName,
-                                  @NonNull final CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture,
-                                  @NonNull final Throwable ex) {
-        // The ServiceUnitNotReadyException is retryable, so we should print a warning log instead of error log
-        if (ex instanceof BrokerServiceException.ServiceUnitNotReadyException) {
-            log.warn("[{}] Failed to getTopic {}: {}",
-                    requestHandler.ctx.channel(), topicName, ex.getMessage());
-            topicCompletableFuture.complete(Optional.empty());
-        } else {
-            log.error("[{}] Failed to getTopic {}. exception:",
-                    requestHandler.ctx.channel(), topicName, ex);
-            topicCompletableFuture.completeExceptionally(ex);
-        }
-
-    }
-
     public Optional<Producer> registerProducerInPersistentTopic(String topicName, PersistentTopic persistentTopic) {
         if (closed.get()) {
             if (log.isDebugEnabled()) {
@@ -217,6 +138,21 @@ public class KafkaTopicManager {
 
         requestHandler.getKafkaTopicManagerSharedState()
                 .handlerKafkaRequestHandlerClosed(remoteAddress, requestHandler);
+    }
+
+    public CompletableFuture<Optional<PersistentTopic>> getTopic(String topicName) {
+        if (closed.get()) {
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] Return null for getTopic({}) since channel is closing",
+                        requestHandler.ctx.channel(), topicName);
+            }
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture =
+                kafkaTopicLookupService.getTopic(topicName, requestHandler.ctx.channel());
+        // cache for removing producer
+        requestHandler.getKafkaTopicManagerSharedState().getTopics().put(topicName, topicCompletableFuture);
+        return topicCompletableFuture;
     }
 
     public void invalidateCacheForFencedManagerLedgerOnTopic(String fullTopicName) {
