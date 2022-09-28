@@ -89,83 +89,100 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
         // create partitioned topic with 1 partition.
         pulsar.getAdminClient().topics().createPartitionedTopic(topicName, 1);
 
-        @Cleanup
-        Consumer<byte[]> consumer = pulsarClient.newConsumer()
-            .topic(pulsarTopicName)
-            .subscriptionName("testKafkaProduce-PulsarConsume")
-            .subscribe();
-
-        final Properties props = new Properties();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        props.put(ProducerConfig.BATCH_SIZE_CONFIG, batchSize); // avoid all messages are in a single batch
-
-        // 1. produce message with Kafka producer.
-        @Cleanup
-        KafkaProducer<Integer, String> producer = new KafkaProducer<>(props);
-
-        int totalMsgs = 100;
-        String messageStrPrefix = "Message_Kop_KafkaProducePulsarConsumeOrder_";
-
-        for (int i = 0; i < totalMsgs; i++) {
-            final int index = i;
-            producer.send(new ProducerRecord<>(topicName, i, messageStrPrefix + i), (recordMetadata, e) -> {
-                assertNull(e);
-                log.info("Success write message {} to offset {}", index, recordMetadata.offset());
-            });
-        }
-
-        // 2. Consume messages use Pulsar client Consumer.
-        if (conf.getEntryFormat().equals("pulsar")) {
-            Message<byte[]> msg = null;
-            int numBatches = 0;
-            for (int i = 0; i < totalMsgs; i++) {
-                msg = consumer.receive(1000, TimeUnit.MILLISECONDS);
-                assertNotNull(msg);
-                Integer key = kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey()));
-                assertEquals(messageStrPrefix + key.toString(), new String(msg.getValue()));
-
-                if (log.isDebugEnabled()) {
-                    log.debug("Pulsar consumer get i: {} message: {}, key: {}",
-                            i,
-                            new String(msg.getData()),
-                            kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey())).toString());
-                }
-                assertEquals(i, key.intValue());
-
-                consumer.acknowledge(msg);
-
-                BatchMessageIdImpl id =
-                        (BatchMessageIdImpl) ((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId();
-                if (id.getBatchIndex() == 0) {
-                    numBatches++;
-                }
+        Consumer<byte[]> consumer = null;
+        try {
+            if (conf.getEntryFormat().equals("pulsar")) {
+                // start the Pulsar Consumer only if we are using Pulsar format
+                // otherwise it will receive messages that cannot be deserialized in the background
+                // consumer loop.
+                consumer = pulsarClient.newConsumer()
+                        .topic(pulsarTopicName)
+                        .subscriptionName("testKafkaProduce-PulsarConsume")
+                        .subscribe();
             }
 
-            // verify have received all messages
-            msg = consumer.receive(100, TimeUnit.MILLISECONDS);
-            assertNull(msg);
-            // Check number of batches is in range (1, totalMsgs) to avoid each batch has only one message or all
-            // messages are batched into a single batch.
-            log.info("Successfully write {} batches of {} messages to bookie", numBatches, totalMsgs);
-            assertTrue(numBatches > 1 && numBatches < totalMsgs);
-        }
+            final Properties props = new Properties();
+            props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+            props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
+            props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+            props.put(ProducerConfig.BATCH_SIZE_CONFIG, batchSize); // avoid all messages are in a single batch
 
-        // 3. Consume messages use Kafka consumer.
-        @Cleanup
-        KConsumer kConsumer = new KConsumer(topicName, getKafkaBrokerPort(), "testKafkaProduce-KafkaConsume");
-        kConsumer.getConsumer().subscribe(Collections.singleton(topicName));
-        for (int i = 0; i < totalMsgs; ) {
-            ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(1));
-            if (log.isDebugEnabled()) {
-                for (ConsumerRecord<Integer, String> record : records) {
-                    log.debug("Kafka consumer get i: {} message: {}, key: {}", i, record.value(), record.key());
-                    assertEquals(record.key().intValue(), i);
-                    i++;
+            // 1. produce message with Kafka producer.
+            @Cleanup
+            KafkaProducer<Integer, String> producer = new KafkaProducer<>(props);
+
+            int totalMsgs = 100;
+            String messageStrPrefix = "Message_Kop_KafkaProducePulsarConsumeOrder_";
+
+            for (int i = 0; i < totalMsgs; i++) {
+                final int index = i;
+                producer.send(new ProducerRecord<>(topicName, i, messageStrPrefix + i), (recordMetadata, e) -> {
+                    assertNull(e);
+                    log.info("Success write message {} to offset {}", index, recordMetadata.offset());
+                });
+            }
+
+            // 2. Consume messages use Pulsar client Consumer.
+            if (conf.getEntryFormat().equals("pulsar")) {
+                Message<byte[]> msg = null;
+                int numBatches = 0;
+                for (int i = 0; i < totalMsgs; i++) {
+                    msg = consumer.receive(1000, TimeUnit.MILLISECONDS);
+                    assertNotNull(msg);
+                    Integer key = kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey()));
+                    assertEquals(messageStrPrefix + key.toString(), new String(msg.getValue()));
+
+                    if (log.isDebugEnabled()) {
+                        log.debug("Pulsar consumer get i: {} message: {}, key: {}",
+                                i,
+                                new String(msg.getData()),
+                                kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey())).toString());
+                    }
+                    assertEquals(i, key.intValue());
+
+                    consumer.acknowledge(msg);
+
+                    BatchMessageIdImpl id =
+                            (BatchMessageIdImpl) ((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId();
+                    if (id.getBatchIndex() == 0) {
+                        numBatches++;
+                    }
                 }
-            } else {
-                i += records.count();
+
+                // verify have received all messages
+                msg = consumer.receive(100, TimeUnit.MILLISECONDS);
+                assertNull(msg);
+                // Check number of batches is in range (1, totalMsgs) to avoid each batch has only one message or all
+                // messages are batched into a single batch.
+                log.info("Successfully write {} batches of {} messages to bookie", numBatches, totalMsgs);
+                assertTrue(numBatches > 1 && numBatches < totalMsgs);
+            }
+
+            // 3. Consume messages use Kafka consumer.
+            @Cleanup
+            KConsumer kConsumer = new KConsumer(topicName, getKafkaBrokerPort(), "testKafkaProduce-KafkaConsume");
+            kConsumer.getConsumer().subscribe(Collections.singleton(topicName));
+            int[] receivedKeys = new int[totalMsgs];
+            for (int i = 0; i < totalMsgs; ) {
+                ConsumerRecords<Integer, String> records = kConsumer.getConsumer().poll(Duration.ofSeconds(5));
+                if (records.isEmpty()) {
+                    break;
+                }
+                for (ConsumerRecord<Integer, String> record : records) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Kafka consumer get i: {} offset: {}, message: {}, key: {}",
+                                i, record.offset(), record.value(), record.key());
+                    }
+                    receivedKeys[i++] = record.key();
+                }
+            }
+            log.info("Received keys: {}", receivedKeys);
+            for (int i = 0; i < totalMsgs; i++) {
+                assertEquals(receivedKeys[i], i);
+            }
+        } finally {
+            if (consumer != null) {
+                consumer.close();
             }
         }
     }
